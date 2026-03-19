@@ -92,6 +92,70 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
             CREATE INDEX IF NOT EXISTS idx_mb_cache_created ON mb_cache(created_at);
+
+            CREATE TABLE IF NOT EXISTS library_artists (
+                name TEXT PRIMARY KEY,
+                album_count INTEGER DEFAULT 0,
+                track_count INTEGER DEFAULT 0,
+                total_size INTEGER DEFAULT 0,
+                formats_json TEXT DEFAULT '[]',
+                primary_format TEXT,
+                has_photo INTEGER DEFAULT 0,
+                dir_mtime REAL,
+                updated_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS library_albums (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                artist TEXT NOT NULL REFERENCES library_artists(name),
+                name TEXT NOT NULL,
+                path TEXT UNIQUE NOT NULL,
+                track_count INTEGER DEFAULT 0,
+                total_size INTEGER DEFAULT 0,
+                total_duration REAL DEFAULT 0,
+                formats_json TEXT DEFAULT '[]',
+                year TEXT,
+                genre TEXT,
+                has_cover INTEGER DEFAULT 0,
+                musicbrainz_albumid TEXT,
+                dir_mtime REAL,
+                updated_at TEXT,
+                UNIQUE(artist, name)
+            );
+
+            CREATE TABLE IF NOT EXISTS library_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                album_id INTEGER REFERENCES library_albums(id) ON DELETE CASCADE,
+                artist TEXT NOT NULL,
+                album TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                title TEXT,
+                track_number INTEGER,
+                disc_number INTEGER DEFAULT 1,
+                format TEXT,
+                bitrate INTEGER,
+                duration REAL,
+                size INTEGER,
+                year TEXT,
+                genre TEXT,
+                albumartist TEXT,
+                musicbrainz_albumid TEXT,
+                musicbrainz_trackid TEXT,
+                path TEXT UNIQUE NOT NULL,
+                updated_at TEXT,
+                -- AudioMuse sonic analysis (nullable, populated by AI enrichment)
+                bpm REAL,
+                audio_key TEXT,
+                audio_scale TEXT,
+                energy REAL,
+                mood_json TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_lib_albums_artist ON library_albums(artist);
+            CREATE INDEX IF NOT EXISTS idx_lib_tracks_album ON library_tracks(album_id);
+            CREATE INDEX IF NOT EXISTS idx_lib_tracks_artist ON library_tracks(artist);
+            CREATE INDEX IF NOT EXISTS idx_lib_tracks_genre ON library_tracks(genre);
+            CREATE INDEX IF NOT EXISTS idx_lib_tracks_year ON library_tracks(year);
         """)
 
 
@@ -304,3 +368,213 @@ def get_all_dir_mtimes(prefix: str = "") -> dict[str, tuple[float, dict | None]]
 def delete_dir_mtime(path: str):
     with get_db_ctx() as conn:
         conn.execute("DELETE FROM dir_mtimes WHERE path = ?", (path,))
+
+
+# ── Library helpers ──────────────────────────────────────────────
+
+def get_library_artists(q: str | None = None, sort: str = "name",
+                        page: int = 1, per_page: int = 60) -> tuple[list[dict], int]:
+    query = "SELECT * FROM library_artists WHERE 1=1"
+    count_query = "SELECT COUNT(*) FROM library_artists WHERE 1=1"
+    params: list = []
+    count_params: list = []
+
+    if q:
+        query += " AND name LIKE ?"
+        count_query += " AND name LIKE ?"
+        like = f"%{q}%"
+        params.append(like)
+        count_params.append(like)
+
+    sort_map = {
+        "name": "name ASC",
+        "albums": "album_count DESC",
+        "tracks": "track_count DESC",
+        "size": "total_size DESC",
+        "updated": "updated_at DESC",
+    }
+    query += f" ORDER BY {sort_map.get(sort, 'name ASC')}"
+    query += " LIMIT ? OFFSET ?"
+    params.extend([per_page, (page - 1) * per_page])
+
+    with get_db_ctx() as conn:
+        total = conn.execute(count_query, count_params).fetchone()[0]
+        rows = conn.execute(query, params).fetchall()
+    return [_row_to_lib_artist(r) for r in rows], total
+
+
+def get_library_artist(name: str) -> dict | None:
+    with get_db_ctx() as conn:
+        row = conn.execute("SELECT * FROM library_artists WHERE name = ?", (name,)).fetchone()
+    return _row_to_lib_artist(row) if row else None
+
+
+def get_library_albums(artist: str) -> list[dict]:
+    with get_db_ctx() as conn:
+        rows = conn.execute(
+            "SELECT * FROM library_albums WHERE artist = ? ORDER BY year, name", (artist,)
+        ).fetchall()
+    return [_row_to_lib_album(r) for r in rows]
+
+
+def get_library_album(artist: str, album: str) -> dict | None:
+    with get_db_ctx() as conn:
+        row = conn.execute(
+            "SELECT * FROM library_albums WHERE artist = ? AND name = ?", (artist, album)
+        ).fetchone()
+    return _row_to_lib_album(row) if row else None
+
+
+def get_library_tracks(album_id: int) -> list[dict]:
+    with get_db_ctx() as conn:
+        rows = conn.execute(
+            "SELECT * FROM library_tracks WHERE album_id = ? ORDER BY disc_number, track_number",
+            (album_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_library_stats() -> dict:
+    with get_db_ctx() as conn:
+        artists = conn.execute("SELECT COUNT(*) FROM library_artists").fetchone()[0]
+        albums = conn.execute("SELECT COUNT(*) FROM library_albums").fetchone()[0]
+        tracks = conn.execute("SELECT COUNT(*) FROM library_tracks").fetchone()[0]
+        size = conn.execute("SELECT COALESCE(SUM(total_size), 0) FROM library_artists").fetchone()[0]
+        fmt_rows = conn.execute(
+            "SELECT format, COUNT(*) as cnt FROM library_tracks WHERE format IS NOT NULL GROUP BY format ORDER BY cnt DESC"
+        ).fetchall()
+    formats = {r["format"]: r["cnt"] for r in fmt_rows}
+    return {
+        "artists": artists,
+        "albums": albums,
+        "tracks": tracks,
+        "total_size": size,
+        "formats": formats,
+    }
+
+
+def get_library_track_count() -> int:
+    with get_db_ctx() as conn:
+        return conn.execute("SELECT COUNT(*) FROM library_tracks").fetchone()[0]
+
+
+def upsert_artist(data: dict):
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as conn:
+        conn.execute("""
+            INSERT INTO library_artists (name, album_count, track_count, total_size,
+                formats_json, primary_format, has_photo, dir_mtime, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                album_count=excluded.album_count, track_count=excluded.track_count,
+                total_size=excluded.total_size, formats_json=excluded.formats_json,
+                primary_format=excluded.primary_format, has_photo=excluded.has_photo,
+                dir_mtime=excluded.dir_mtime, updated_at=excluded.updated_at
+        """, (
+            data["name"], data.get("album_count", 0), data.get("track_count", 0),
+            data.get("total_size", 0), json.dumps(data.get("formats", [])),
+            data.get("primary_format"), data.get("has_photo", 0),
+            data.get("dir_mtime"), now,
+        ))
+
+
+def upsert_album(data: dict) -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as conn:
+        conn.execute("""
+            INSERT INTO library_albums (artist, name, path, track_count, total_size,
+                total_duration, formats_json, year, genre, has_cover,
+                musicbrainz_albumid, dir_mtime, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET
+                artist=excluded.artist, name=excluded.name,
+                track_count=excluded.track_count, total_size=excluded.total_size,
+                total_duration=excluded.total_duration, formats_json=excluded.formats_json,
+                year=excluded.year, genre=excluded.genre, has_cover=excluded.has_cover,
+                musicbrainz_albumid=excluded.musicbrainz_albumid,
+                dir_mtime=excluded.dir_mtime, updated_at=excluded.updated_at
+        """, (
+            data["artist"], data["name"], data["path"],
+            data.get("track_count", 0), data.get("total_size", 0),
+            data.get("total_duration", 0), json.dumps(data.get("formats", [])),
+            data.get("year"), data.get("genre"), data.get("has_cover", 0),
+            data.get("musicbrainz_albumid"), data.get("dir_mtime"), now,
+        ))
+        row = conn.execute("SELECT id FROM library_albums WHERE path = ?", (data["path"],)).fetchone()
+    return row["id"]
+
+
+def upsert_track(data: dict):
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as conn:
+        conn.execute("""
+            INSERT INTO library_tracks (album_id, artist, album, filename, title,
+                track_number, disc_number, format, bitrate, duration, size,
+                year, genre, albumartist, musicbrainz_albumid, musicbrainz_trackid,
+                path, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET
+                album_id=excluded.album_id, artist=excluded.artist, album=excluded.album,
+                filename=excluded.filename, title=excluded.title,
+                track_number=excluded.track_number, disc_number=excluded.disc_number,
+                format=excluded.format, bitrate=excluded.bitrate,
+                duration=excluded.duration, size=excluded.size,
+                year=excluded.year, genre=excluded.genre, albumartist=excluded.albumartist,
+                musicbrainz_albumid=excluded.musicbrainz_albumid,
+                musicbrainz_trackid=excluded.musicbrainz_trackid,
+                updated_at=excluded.updated_at
+        """, (
+            data.get("album_id"), data["artist"], data["album"],
+            data["filename"], data.get("title"), data.get("track_number"),
+            data.get("disc_number", 1), data.get("format"), data.get("bitrate"),
+            data.get("duration"), data.get("size"), data.get("year"),
+            data.get("genre"), data.get("albumartist"),
+            data.get("musicbrainz_albumid"), data.get("musicbrainz_trackid"),
+            data["path"], now,
+        ))
+
+
+def update_track_audiomuse(path: str, bpm: float | None, key: str | None,
+                          scale: str | None, energy: float | None, mood: dict | None):
+    """Update AudioMuse sonic analysis fields for a track."""
+    with get_db_ctx() as conn:
+        conn.execute(
+            "UPDATE library_tracks SET bpm=?, audio_key=?, audio_scale=?, energy=?, mood_json=? WHERE path=?",
+            (bpm, key, scale, energy, json.dumps(mood) if mood else None, path),
+        )
+
+
+def delete_artist(name: str):
+    with get_db_ctx() as conn:
+        album_ids = [r["id"] for r in conn.execute(
+            "SELECT id FROM library_albums WHERE artist = ?", (name,)
+        ).fetchall()]
+        for aid in album_ids:
+            conn.execute("DELETE FROM library_tracks WHERE album_id = ?", (aid,))
+        conn.execute("DELETE FROM library_albums WHERE artist = ?", (name,))
+        conn.execute("DELETE FROM library_artists WHERE name = ?", (name,))
+
+
+def delete_album(path: str):
+    with get_db_ctx() as conn:
+        row = conn.execute("SELECT id FROM library_albums WHERE path = ?", (path,)).fetchone()
+        if row:
+            conn.execute("DELETE FROM library_tracks WHERE album_id = ?", (row["id"],))
+            conn.execute("DELETE FROM library_albums WHERE path = ?", (path,))
+
+
+def delete_track(path: str):
+    with get_db_ctx() as conn:
+        conn.execute("DELETE FROM library_tracks WHERE path = ?", (path,))
+
+
+def _row_to_lib_artist(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    d["formats"] = json.loads(d.pop("formats_json", "[]") or "[]")
+    return d
+
+
+def _row_to_lib_album(row: sqlite3.Row) -> dict:
+    d = dict(row)
+    d["formats"] = json.loads(d.pop("formats_json", "[]") or "[]")
+    return d

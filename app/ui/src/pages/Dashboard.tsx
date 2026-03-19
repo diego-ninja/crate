@@ -12,10 +12,12 @@ import {
 } from "@/components/ui/table";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { useApi } from "@/hooks/use-api";
+import { api } from "@/lib/api";
 import { FormatDonut } from "@/components/charts/FormatDonut";
 import { DecadeBar } from "@/components/charts/DecadeBar";
 import { formatNumber, encPath } from "@/lib/utils";
-import { Users, Disc3, Music, HardDrive, Loader2, ArrowRight, Play } from "lucide-react";
+import { Users, Disc3, Music, HardDrive, Loader2, ArrowRight, Play, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { usePlayer } from "@/contexts/PlayerContext";
 
@@ -324,14 +326,29 @@ export function Dashboard() {
                   <span>Scan in progress...</span>
                 </div>
               )}
-              <Button
-                className="mt-2"
-                variant="outline"
-                onClick={() => navigate("/health")}
-              >
-                <ArrowRight size={14} className="mr-2" />
-                Go to Health Scan
-              </Button>
+              <div className="flex gap-2 mt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate("/health")}
+                >
+                  <ArrowRight size={14} className="mr-1" />
+                  Health Scan
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    try {
+                      await api("/api/tasks/sync-library", "POST");
+                      toast.success("Library sync started", { description: "Check Tasks page for progress" });
+                    } catch {
+                      toast.error("Sync already running or failed");
+                    }
+                  }}
+                >
+                  <RefreshCw size={14} className="mr-1" />
+                  Sync Library
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

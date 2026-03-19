@@ -40,7 +40,7 @@ export function Browse() {
   const [hasMore, setHasMore] = useState(true);
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [sort, setSort] = useState("name");
+  const [sort, setSort] = useState("recent");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -178,6 +178,7 @@ export function Browse() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="recent">Recently Added</SelectItem>
             <SelectItem value="name">Name A-Z</SelectItem>
             <SelectItem value="albums">Most Albums</SelectItem>
             <SelectItem value="size">Largest</SelectItem>

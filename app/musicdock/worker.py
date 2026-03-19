@@ -14,6 +14,8 @@ from musicdock.artwork import scan_missing_covers, fetch_cover_from_caa, save_co
 from musicdock.matcher import match_album, apply_match
 from musicdock.audio import get_audio_files
 from musicdock.lastfm import get_artist_info, get_best_artist_image
+from musicdock.library_sync import LibrarySync
+from musicdock.library_watcher import LibraryWatcher
 
 log = logging.getLogger(__name__)
 
@@ -81,10 +83,23 @@ def run_worker(config: dict):
         log.warning("Resetting orphaned task %s (type=%s) to pending", t["id"], t["type"])
         update_task(t["id"], status="pending", progress="")
 
+    # Initial library sync
+    try:
+        sync = LibrarySync(config)
+        log.info("Running initial library sync...")
+        sync_result = sync.full_sync()
+        log.info("Library sync complete: %s", sync_result)
+
+        watcher = LibraryWatcher(config, sync)
+        watcher.start()
+    except Exception:
+        log.exception("Library sync/watcher failed to start")
+
     log.info("Worker started with %d slots, polling for tasks...", MAX_WORKERS)
 
     _last_enrich_check = 0
     _last_import_check = 0
+    _last_lib_sync = time.time()
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
     try:
@@ -99,6 +114,15 @@ def run_worker(config: dict):
                     set_cache("imports_pending", {"count": count})
                 except Exception:
                     pass
+
+            # Periodic incremental library sync every 30 min
+            if time.time() - _last_lib_sync > 1800:
+                _last_lib_sync = time.time()
+                try:
+                    sync = LibrarySync(load_config())
+                    sync.full_sync()
+                except Exception:
+                    log.exception("Periodic library sync failed")
 
             # Periodic enrichment check every 6 hours
             if time.time() - _last_enrich_check > 21600:
@@ -401,6 +425,13 @@ def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
     return {"enriched": enriched, "skipped": skipped, "total": total}
 
 
+def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
+    sync = LibrarySync(config)
+    return sync.full_sync(
+        progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
+    )
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "fetch_artwork_all": _handle_fetch_artwork_all,
@@ -408,4 +439,5 @@ TASK_HANDLERS = {
     "batch_covers": _handle_batch_covers,
     "compute_analytics": _handle_compute_analytics,
     "enrich_artists": _handle_enrich_artists,
+    "library_sync": _handle_library_sync,
 }

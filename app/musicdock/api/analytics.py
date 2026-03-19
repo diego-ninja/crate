@@ -1,34 +1,105 @@
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from musicdock.analytics import compute_analytics
 from musicdock.missing import find_missing_albums
 from musicdock.quality import quality_report
 from musicdock.audio import read_tags, get_audio_files
 from musicdock.api._deps import library_path, extensions, safe_path, get_config
-from musicdock.db import list_tasks, get_latest_scan, get_cache, set_cache, create_task
+from musicdock.db import (
+    list_tasks, get_latest_scan, get_library_stats, get_library_track_count,
+    get_db_ctx,
+)
 from musicdock.importer import ImportQueue
 
 router = APIRouter()
 
-_ANALYTICS_TTL = 3600  # 1 hour
-_STATS_TTL = 300       # 5 minutes
+
+def _has_library_data() -> bool:
+    return get_library_track_count() > 0
 
 
 @router.get("/api/analytics")
 def api_analytics():
-    cached = get_cache("analytics", max_age_seconds=_ANALYTICS_TTL)
-    if cached:
-        return cached
+    if not _has_library_data():
+        return {
+            "computing": True,
+            "formats": {},
+            "decades": {},
+            "top_artists": [],
+            "bitrates": {},
+            "genres": {},
+            "sizes_by_format_gb": {},
+            "avg_tracks_per_album": 0,
+            "total_duration_hours": 0,
+        }
 
-    # Don't compute synchronously — it takes minutes for large libraries.
-    # Trigger worker computation and return empty placeholder.
-    pending = list_tasks(status="pending", task_type="compute_analytics", limit=1)
-    running = list_tasks(status="running", task_type="compute_analytics", limit=1)
-    if not pending and not running:
-        create_task("compute_analytics")
+    with get_db_ctx() as conn:
+        # Genres
+        genre_rows = conn.execute(
+            "SELECT genre, COUNT(*) as c FROM library_tracks WHERE genre IS NOT NULL AND genre != '' GROUP BY genre ORDER BY c DESC LIMIT 30"
+        ).fetchall()
+        genres = {r["genre"]: r["c"] for r in genre_rows}
 
-    return {"computing": True, "formats": {}, "decades": {}, "top_artists": [], "bitrates": {}, "genres": {}, "sizes_by_format_gb": {}, "avg_tracks_per_album": 0, "total_duration_hours": 0}
+        # Decades
+        decade_rows = conn.execute(
+            "SELECT (CAST(year AS INTEGER)/10)*10 || 's' as decade, COUNT(*) as c FROM library_tracks WHERE year IS NOT NULL AND year != '' AND length(year) >= 4 GROUP BY decade ORDER BY decade"
+        ).fetchall()
+        decades = {r["decade"]: r["c"] for r in decade_rows}
+
+        # Formats
+        format_rows = conn.execute(
+            "SELECT format, COUNT(*) as c FROM library_tracks WHERE format IS NOT NULL GROUP BY format"
+        ).fetchall()
+        formats = {r["format"]: r["c"] for r in format_rows}
+
+        # Bitrates (bucketed)
+        bitrate_rows = conn.execute("""
+            SELECT
+                CASE
+                    WHEN bitrate IS NULL OR bitrate = 0 THEN 'unknown'
+                    WHEN bitrate < 128000 THEN '<128k'
+                    WHEN bitrate < 192000 THEN '128-191k'
+                    WHEN bitrate < 256000 THEN '192-255k'
+                    WHEN bitrate < 320000 THEN '256-319k'
+                    WHEN bitrate = 320000 THEN '320k'
+                    ELSE '>320k'
+                END as bucket,
+                COUNT(*) as c
+            FROM library_tracks GROUP BY bucket ORDER BY bucket
+        """).fetchall()
+        bitrates = {r["bucket"]: r["c"] for r in bitrate_rows}
+
+        # Top artists by album count
+        top_rows = conn.execute(
+            "SELECT artist, COUNT(DISTINCT name) as albums FROM library_albums GROUP BY artist ORDER BY albums DESC LIMIT 25"
+        ).fetchall()
+        top_artists = [{"name": r["artist"], "albums": r["albums"]} for r in top_rows]
+
+        # Total duration
+        dur_row = conn.execute("SELECT COALESCE(SUM(duration), 0) as total FROM library_tracks").fetchone()
+        total_duration_hours = round(dur_row["total"] / 3600, 1) if dur_row["total"] else 0
+
+        # Sizes by format
+        size_rows = conn.execute(
+            "SELECT format, SUM(size) as total FROM library_tracks WHERE format IS NOT NULL GROUP BY format"
+        ).fetchall()
+        sizes_by_format_gb = {r["format"]: round(r["total"] / (1024**3), 2) for r in size_rows if r["total"]}
+
+        # Avg tracks per album
+        album_count = conn.execute("SELECT COUNT(*) FROM library_albums").fetchone()[0]
+        track_count = conn.execute("SELECT COUNT(*) FROM library_tracks").fetchone()[0]
+        avg_tracks = round(track_count / album_count, 1) if album_count else 0
+
+    return {
+        "genres": genres,
+        "decades": decades,
+        "formats": formats,
+        "bitrates": bitrates,
+        "top_artists": top_artists,
+        "total_duration_hours": total_duration_hours,
+        "sizes_by_format_gb": sizes_by_format_gb,
+        "avg_tracks_per_album": avg_tracks,
+    }
 
 
 @router.get("/api/activity/recent")
@@ -61,15 +132,26 @@ def api_activity_recent():
 
 @router.get("/api/stats")
 def api_stats():
-    cached = get_cache("stats", max_age_seconds=_STATS_TTL)
-    if cached:
-        # Refresh dynamic fields from DB
+    if _has_library_data():
+        stats = get_library_stats()
         scan = get_latest_scan()
-        cached["last_scan"] = scan["scanned_at"] if scan else cached.get("last_scan")
-        cached["pending_tasks"] = len(list_tasks(status="pending"))
-        return cached
+        config = get_config()
+        queue = ImportQueue(config)
+        pending_imports = len(queue.scan_pending())
+        pending_tasks = len(list_tasks(status="pending"))
 
-    # Compute stats inline (usually fast enough, ~2-5s for 48K tracks)
+        return {
+            "artists": stats["artists"],
+            "albums": stats["albums"],
+            "tracks": stats["tracks"],
+            "formats": stats["formats"],
+            "total_size_gb": round(stats["total_size"] / (1024**3), 2) if stats["total_size"] else 0,
+            "last_scan": scan["scanned_at"] if scan else None,
+            "pending_imports": pending_imports,
+            "pending_tasks": pending_tasks,
+        }
+
+    # Fallback to filesystem
     lib = library_path()
     exts = extensions()
     artists = albums = tracks = total_size = 0
@@ -92,32 +174,40 @@ def api_stats():
     config = get_config()
     queue = ImportQueue(config)
     pending_imports = len(queue.scan_pending())
-
     pending_tasks = len(list_tasks(status="pending"))
 
     scan = get_latest_scan()
     last_scan = scan["scanned_at"] if scan else None
 
-    data = {
+    return {
         "artists": artists, "albums": albums, "tracks": tracks,
         "formats": formats, "total_size_gb": round(total_size / (1024**3), 2),
         "last_scan": last_scan,
         "pending_imports": pending_imports,
         "pending_tasks": pending_tasks,
     }
-    set_cache("stats", data)
-    return data
-
-
-_TIMELINE_TTL = 3600  # 1 hour
 
 
 @router.get("/api/timeline")
 def api_timeline():
-    cached = get_cache("timeline", max_age_seconds=_TIMELINE_TTL)
-    if cached:
-        return cached
+    if _has_library_data():
+        with get_db_ctx() as conn:
+            rows = conn.execute(
+                "SELECT year, artist, name, track_count FROM library_albums WHERE year IS NOT NULL AND year != '' ORDER BY year"
+            ).fetchall()
 
+        years: dict[str, list[dict]] = {}
+        for r in rows:
+            year = r["year"][:4] if r["year"] else ""
+            if year and year.isdigit():
+                years.setdefault(year, []).append({
+                    "artist": r["artist"],
+                    "album": r["name"],
+                    "tracks": r["track_count"],
+                })
+        return {y: albums for y, albums in sorted(years.items())}
+
+    # Fallback to filesystem
     lib = library_path()
     exts = extensions()
     years: dict[str, list[dict]] = {}
@@ -139,9 +229,7 @@ def api_timeline():
                     "tracks": len(tracks),
                 })
 
-    result = {y: albums for y, albums in sorted(years.items())}
-    set_cache("timeline", result)
-    return result
+    return {y: albums for y, albums in sorted(years.items())}
 
 
 @router.get("/api/quality")
