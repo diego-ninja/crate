@@ -127,6 +127,40 @@ def get_track_data_from_db(item_ids: list[str]) -> dict[str, dict]:
         return {}
 
 
+def get_track_data_by_titles(artist: str, titles: list[str]) -> dict[str, dict]:
+    """Query AudioMuse by artist+title. Returns {title_lower: {tempo, key, scale, energy}}."""
+    import psycopg2
+
+    pg_host = os.environ.get("AUDIOMUSE_POSTGRES_HOST", "audiomuse-postgres")
+    pg_user = os.environ.get("AUDIOMUSE_POSTGRES_USER", "audiomuse")
+    pg_pass = os.environ.get("AUDIOMUSE_POSTGRES_PASSWORD", "audiomusepassword")
+    pg_db = os.environ.get("AUDIOMUSE_POSTGRES_DB", "audiomusedb")
+
+    try:
+        conn = psycopg2.connect(host=pg_host, user=pg_user, password=pg_pass, dbname=pg_db, connect_timeout=5)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT title, tempo, key, scale, energy FROM score WHERE LOWER(author) = LOWER(%s) AND tempo IS NOT NULL",
+            (artist,),
+        )
+
+        result = {}
+        for row in cur.fetchall():
+            result[row[0].lower()] = {
+                "tempo": round(row[1]) if row[1] else None,
+                "key": row[2],
+                "scale": row[3],
+                "energy": round(row[4], 2) if row[4] else None,
+            }
+
+        cur.close()
+        conn.close()
+        return result
+    except Exception as e:
+        log.warning("AudioMuse title query failed: %s", e)
+        return {}
+
+
 def get_analyzed_count() -> int:
     """Get count of analyzed tracks."""
     import psycopg2

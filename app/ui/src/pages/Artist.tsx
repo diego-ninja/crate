@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { AlbumCard } from "@/components/album/AlbumCard";
+import { MissingAlbumCard } from "@/components/album/MissingAlbumCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -24,6 +25,8 @@ import {
   HardDrive,
   ChevronDown,
   ChevronUp,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 
 interface ArtistData {
@@ -85,6 +88,9 @@ export function Artist() {
   const [navidromeLink, setNavidromeLink] = useState<NavidromeArtistLink | null>(null);
   const [topTracks, setTopTracks] = useState<TopTrack[]>([]);
   const [activeSection, setActiveSection] = useState<"discography" | "top-tracks" | "similar" | "about">("discography");
+  const [showMissing, setShowMissing] = useState(true);
+  const [missingAlbums, setMissingAlbums] = useState<{ title: string; first_release_date: string; type: string }[]>([]);
+  const [missingLoaded, setMissingLoaded] = useState(false);
   const bgRef = useRef<HTMLImageElement>(null);
 
   // Fetch Last.fm info
@@ -116,6 +122,16 @@ export function Artist() {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [data?.name]);
+
+  // Fetch missing albums (lazy, on discography tab activation)
+  useEffect(() => {
+    if (!data?.name || activeSection !== "discography" || missingLoaded) return;
+    let cancelled = false;
+    api<{ missing: { title: string; first_release_date: string; type: string }[] }>(`/api/missing/${encPath(data.name)}`)
+      .then((d) => { if (!cancelled) { setMissingAlbums(d.missing ?? []); setMissingLoaded(true); } })
+      .catch(() => { if (!cancelled) setMissingLoaded(true); });
+    return () => { cancelled = true; };
+  }, [data?.name, activeSection, missingLoaded]);
 
   if (loading) {
     return (
@@ -319,7 +335,18 @@ export function Artist() {
         {activeSection === "discography" && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">{data.albums.length} Albums</h2>
+              <div className="flex items-center gap-4">
+                <h2 className="text-lg font-semibold">{data.albums.length} Albums</h2>
+                {missingAlbums.length > 0 && (
+                  <button
+                    onClick={() => setShowMissing(!showMissing)}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {showMissing ? <Eye size={14} /> : <EyeOff size={14} />}
+                    {showMissing ? "Hide" : "Show"} missing ({missingAlbums.length})
+                  </button>
+                )}
+              </div>
               <Select value={sort} onValueChange={setSort}>
                 <SelectTrigger className="w-[140px] bg-card border-border h-8 text-xs">
                   <SelectValue />
@@ -332,17 +359,42 @@ export function Artist() {
               </Select>
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
-              {sortedAlbums.map((a) => (
-                <AlbumCard
-                  key={a.name}
-                  artist={data.name}
-                  name={a.name}
-                  year={a.year}
-                  tracks={a.tracks}
-                  formats={a.formats}
-                  hasCover={a.has_cover}
-                />
-              ))}
+              {(() => {
+                type GridItem = { kind: "local"; album: typeof sortedAlbums[0] } | { kind: "missing"; album: typeof missingAlbums[0] };
+                const items: GridItem[] = sortedAlbums.map((a) => ({ kind: "local" as const, album: a }));
+                if (showMissing) {
+                  for (const m of missingAlbums) {
+                    items.push({ kind: "missing" as const, album: m });
+                  }
+                }
+                if (sort === "year") {
+                  items.sort((a, b) => {
+                    const ya = a.kind === "local" ? (a.album.year || "") : (a.album.first_release_date || "");
+                    const yb = b.kind === "local" ? (b.album.year || "") : (b.album.first_release_date || "");
+                    return yb.localeCompare(ya);
+                  });
+                }
+                return items.map((item) =>
+                  item.kind === "local" ? (
+                    <AlbumCard
+                      key={`local-${item.album.name}`}
+                      artist={data.name}
+                      name={item.album.name}
+                      year={item.album.year}
+                      tracks={item.album.tracks}
+                      formats={item.album.formats}
+                      hasCover={item.album.has_cover}
+                    />
+                  ) : (
+                    <MissingAlbumCard
+                      key={`missing-${item.album.title}`}
+                      title={item.album.title}
+                      year={item.album.first_release_date}
+                      type={item.album.type}
+                    />
+                  ),
+                );
+              })()}
             </div>
           </div>
         )}

@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from musicdock.artwork import scan_missing_covers, fetch_cover_from_caa, extract_embedded_cover, save_cover
-from musicdock.audio import get_audio_files
+from musicdock.audio import get_audio_files, read_tags
 from musicdock.api._deps import library_path, extensions, safe_path
 
 router = APIRouter()
@@ -65,6 +65,51 @@ def api_artwork_extract(data: ExtractRequest):
 
     save_cover(album_dir, image)
     return {"status": "saved", "path": str(album_dir / "cover.jpg")}
+
+
+@router.post("/api/artwork/fetch-artist/{name}")
+def api_artwork_fetch_artist(name: str):
+    lib = library_path()
+    exts = extensions()
+
+    artist_dir = lib / name
+    if not artist_dir.is_dir():
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+
+    fetched = 0
+    failed = 0
+    skipped = 0
+    total = 0
+
+    for album_dir in sorted(artist_dir.iterdir()):
+        if not album_dir.is_dir() or album_dir.name.startswith("."):
+            continue
+
+        total += 1
+
+        if (album_dir / "cover.jpg").exists():
+            skipped += 1
+            continue
+
+        tracks = get_audio_files(album_dir, exts)
+        if not tracks:
+            skipped += 1
+            continue
+
+        tags = read_tags(tracks[0])
+        mbid = tags.get("musicbrainz_albumid")
+        if not mbid:
+            skipped += 1
+            continue
+
+        image = fetch_cover_from_caa(mbid)
+        if image:
+            save_cover(album_dir, image)
+            fetched += 1
+        else:
+            failed += 1
+
+    return {"fetched": fetched, "failed": failed, "skipped": skipped, "total": total}
 
 
 @router.post("/api/artwork/fetch-all")

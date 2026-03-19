@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, Response
 
 from musicdock.audio import read_tags, get_audio_files
 from musicdock.api._deps import library_path, extensions, safe_path, COVER_NAMES, exclude_dirs
-from musicdock.db import get_cache, set_cache
+from musicdock.db import get_cache, set_cache, get_all_dir_mtimes, set_dir_mtime, delete_dir_mtime
 from musicdock.lastfm import get_artist_info, download_artist_image
 
 router = APIRouter()
@@ -18,8 +18,40 @@ ARTIST_PHOTO_NAMES = ["artist.jpg", "artist.png", "photo.jpg"]
 _ARTISTS_CACHE_TTL = 300  # 5 minutes
 
 
+def _compute_artist_entry(d: Path, exts: set[str]) -> dict:
+    """Compute browse data for a single artist directory."""
+    album_count = 0
+    track_count = 0
+    total_size = 0
+    fmt_counts: dict[str, int] = {}
+
+    for album_dir in d.iterdir():
+        if not album_dir.is_dir() or album_dir.name.startswith("."):
+            continue
+        album_count += 1
+        for f in album_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in exts:
+                track_count += 1
+                ext = f.suffix.lower()
+                fmt_counts[ext] = fmt_counts.get(ext, 0) + 1
+                total_size += f.stat().st_size
+
+    primary_format = max(fmt_counts, key=fmt_counts.get) if fmt_counts else None
+    has_photo = any((d / p).exists() for p in ARTIST_PHOTO_NAMES)
+
+    return {
+        "name": d.name,
+        "albums": album_count,
+        "tracks": track_count,
+        "total_size_mb": round(total_size / (1024 ** 2)),
+        "formats": list(fmt_counts.keys()),
+        "primary_format": primary_format,
+        "has_photo": has_photo,
+    }
+
+
 def _build_artists_list() -> list[dict]:
-    """Build full artists list (expensive). Cached in SQLite."""
+    """Build artists list incrementally using mtime tracking."""
     cached = get_cache("artists_list", max_age_seconds=_ARTISTS_CACHE_TTL)
     if cached:
         return cached["artists"]
@@ -27,40 +59,30 @@ def _build_artists_list() -> list[dict]:
     lib = library_path()
     exts = extensions()
     excluded = exclude_dirs()
+
+    stored = get_all_dir_mtimes("browse:")
     artists = []
 
-    for d in sorted(lib.iterdir()):
-        if not d.is_dir() or d.name.startswith(".") or d.name.startswith("_") or d.name in excluded:
-            continue
+    valid_dirs = [d for d in sorted(lib.iterdir())
+                  if d.is_dir() and not d.name.startswith(".") and not d.name.startswith("_") and d.name not in excluded]
 
-        album_count = 0
-        track_count = 0
-        total_size = 0
-        fmt_counts: dict[str, int] = {}
+    for d in valid_dirs:
+        key = f"browse:{d}"
+        current_mtime = d.stat().st_mtime
 
-        for album_dir in d.iterdir():
-            if not album_dir.is_dir() or album_dir.name.startswith("."):
-                continue
-            album_count += 1
-            for f in album_dir.iterdir():
-                if f.is_file() and f.suffix.lower() in exts:
-                    track_count += 1
-                    ext = f.suffix.lower()
-                    fmt_counts[ext] = fmt_counts.get(ext, 0) + 1
-                    total_size += f.stat().st_size
+        entry = stored.get(key)
+        if entry and entry[0] == current_mtime and entry[1] is not None:
+            artists.append(entry[1])
+        else:
+            data = _compute_artist_entry(d, exts)
+            set_dir_mtime(key, current_mtime, data)
+            artists.append(data)
 
-        primary_format = max(fmt_counts, key=fmt_counts.get) if fmt_counts else None
-        has_photo = any((d / p).exists() for p in ARTIST_PHOTO_NAMES)
-
-        artists.append({
-            "name": d.name,
-            "albums": album_count,
-            "tracks": track_count,
-            "total_size_mb": round(total_size / (1024 ** 2)),
-            "formats": list(fmt_counts.keys()),
-            "primary_format": primary_format,
-            "has_photo": has_photo,
-        })
+    # Clean up stale entries
+    current_keys = {f"browse:{d}" for d in valid_dirs}
+    for old_key in stored:
+        if old_key not in current_keys:
+            delete_dir_mtime(old_key)
 
     set_cache("artists_list", {"artists": artists})
     return artists

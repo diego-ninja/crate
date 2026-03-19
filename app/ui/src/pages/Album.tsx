@@ -92,12 +92,13 @@ export function Album() {
   }, [artist, album]);
 
   useEffect(() => {
-    if (!navidromeData?.songs?.length) return;
-    const ids = navidromeData.songs.map((s) => s.id).join(",");
-    api<Record<string, AudioMuseTrack>>(`/api/audiomuse/tracks?ids=${ids}`)
-      .then(setAudiomuseData)
+    if (!data?.artist) return;
+    api<Record<string, AudioMuseTrack>>(`/api/audiomuse/artist/${encPath(data.artist)}/tracks`)
+      .then((d) => {
+        if (d && Object.keys(d).length > 0) setAudiomuseData(d);
+      })
       .catch(() => {});
-  }, [navidromeData]);
+  }, [data?.artist]);
 
   async function findMatches() {
     if (!artist || !album) return;

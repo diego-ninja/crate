@@ -2,6 +2,9 @@ import os
 import logging
 
 import requests
+from thefuzz import fuzz
+
+from musicdock.db import get_cache, set_cache
 
 log = logging.getLogger(__name__)
 
@@ -121,22 +124,66 @@ def get_top_songs(artist_name: str, count: int = 50) -> list:
 
 
 def find_artist_by_name(name: str) -> dict | None:
+    cache_key = f"nd:artist:{name.lower()}"
+    cached = get_cache(cache_key)
+    if cached:
+        return cached
+
     result = search(name, artist_count=20, album_count=0, song_count=0)
-    for artist in result.get("artist", []):
+    artists = result.get("artist", [])
+
+    # Exact match
+    for artist in artists:
         if artist.get("name", "").lower() == name.lower():
+            set_cache(cache_key, artist)
             return artist
+
+    # Fuzzy match
+    best_score = 0
+    best_artist = None
+    for artist in artists:
+        score = fuzz.ratio(name.lower(), artist.get("name", "").lower())
+        if score > best_score:
+            best_score = score
+            best_artist = artist
+
+    if best_artist and best_score >= 80:
+        set_cache(cache_key, best_artist)
+        return best_artist
+
     return None
 
 
 def find_album(artist_name: str, album_name: str) -> dict | None:
+    cache_key = f"nd:album:{artist_name.lower()}:{album_name.lower()}"
+    cached = get_cache(cache_key)
+    if cached:
+        return cached
+
     result = search(f"{artist_name} {album_name}", artist_count=0, album_count=20, song_count=0)
-    for album in result.get("album", []):
+    albums = result.get("album", [])
+
+    # Exact match
+    for album in albums:
         if album.get("artist", "").lower() == artist_name.lower() and album.get("name", "").lower() == album_name.lower():
+            set_cache(cache_key, album)
             return album
-    # Fuzzy: try partial match
-    for album in result.get("album", []):
-        if album_name.lower() in album.get("name", "").lower() and artist_name.lower() in album.get("artist", "").lower():
-            return album
+
+    # Fuzzy match
+    best_score = 0
+    best_album = None
+    for album in albums:
+        artist_score = fuzz.ratio(artist_name.lower(), album.get("artist", "").lower())
+        album_score = fuzz.ratio(album_name.lower(), album.get("name", "").lower())
+        score = (artist_score + album_score) // 2
+        if score > best_score:
+            best_score = score
+            best_album = album
+
+    if best_album and best_score >= 80:
+        set_cache(cache_key, best_album)
+        return best_album
+
     return None
 
 

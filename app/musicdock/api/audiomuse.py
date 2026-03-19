@@ -38,6 +38,12 @@ def audiomuse_track_data(ids: str = ""):
     return audiomuse.get_track_data_from_db(item_ids)
 
 
+@router.get("/api/audiomuse/artist/{artist_name}/tracks")
+def audiomuse_artist_tracks(artist_name: str):
+    """Get analysis data for all tracks by an artist. Returns {title_lower: {tempo, key, scale, energy}}."""
+    return audiomuse.get_track_data_by_titles(artist_name, [])
+
+
 @router.get("/api/audiomuse/tasks")
 def audiomuse_tasks():
     result = audiomuse.get_active_tasks()

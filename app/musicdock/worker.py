@@ -7,6 +7,7 @@ from pathlib import Path
 
 from musicdock.config import load_config
 from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, set_cache, get_cache, list_tasks, get_task
+from musicdock.importer import ImportQueue
 from musicdock.scanner import LibraryScanner
 from musicdock.report import save_report
 from musicdock.artwork import scan_missing_covers, fetch_cover_from_caa, save_cover
@@ -83,10 +84,22 @@ def run_worker(config: dict):
     log.info("Worker started with %d slots, polling for tasks...", MAX_WORKERS)
 
     _last_enrich_check = 0
+    _last_import_check = 0
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
     try:
         while not _shutdown:
+            # Periodic import queue check every 60s
+            if time.time() - _last_import_check > 60:
+                _last_import_check = time.time()
+                try:
+                    config = load_config()
+                    queue = ImportQueue(config)
+                    count = len(queue.scan_pending())
+                    set_cache("imports_pending", {"count": count})
+                except Exception:
+                    pass
+
             # Periodic enrichment check every 6 hours
             if time.time() - _last_enrich_check > 21600:
                 _last_enrich_check = time.time()
@@ -313,8 +326,8 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
         last_progress_time[0] = now
         update_task(task_id, progress=json.dumps(data))
 
-    update_task(task_id, progress=json.dumps({"phase": "analytics", "artists_done": 0, "artists_total": 0, "tracks_processed": 0}))
-    data = compute_analytics(lib, exts, progress_callback=_progress)
+    update_task(task_id, progress=json.dumps({"phase": "analytics", "artists_done": 0, "artists_total": 0, "tracks_processed": 0, "cached": 0, "recomputed": 0}))
+    data = compute_analytics(lib, exts, progress_callback=_progress, incremental=True)
     set_cache("analytics", data)
 
     update_task(task_id, progress=json.dumps({"phase": "stats", "message": "Computing stats..."}))

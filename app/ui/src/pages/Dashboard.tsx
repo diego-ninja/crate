@@ -141,6 +141,8 @@ export function Dashboard() {
           <CardContent>
             {analytics?.formats && Object.keys(analytics.formats).length > 0 ? (
               <FormatDonut data={analytics.formats} />
+            ) : stats?.formats && Object.keys(stats.formats).length > 0 ? (
+              <FormatDonut data={stats.formats} />
             ) : (
               <div className="flex items-center justify-center h-[250px] text-muted-foreground">
                 <Loader2 size={18} className="animate-spin mr-2" />

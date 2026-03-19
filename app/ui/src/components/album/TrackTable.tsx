@@ -140,7 +140,8 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
           const ndSong = hasNavidrome ? findNavidromeSong(t, i) : undefined;
           const isCurrentTrack = ndSong && currentTrack?.id === ndSong.id;
           const isCurrentPlaying = isCurrentTrack && isPlaying;
-          const amTrack = ndSong && audiomuseData ? audiomuseData[ndSong.id] : undefined;
+          const trackTitle = (t.tags.title || t.filename).toLowerCase();
+          const amTrack = audiomuseData ? (audiomuseData[trackTitle] ?? audiomuseData[ndSong?.id ?? ""]) : undefined;
           return (
             <TableRow key={t.filename} className={cn(isCurrentTrack && "bg-primary/5")}>
               {hasNavidrome && (

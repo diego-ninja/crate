@@ -15,6 +15,13 @@ interface AlbumCardProps {
   hasCover?: boolean;
 }
 
+function hashColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  const h = Math.abs(hash) % 360;
+  return `hsl(${h}, 30%, 15%)`;
+}
+
 interface NavidromeSong {
   id: string;
   title: string;
@@ -80,8 +87,12 @@ export function AlbumCard({
           />
         ) : null}
         {(imgError || !imgLoaded) && (
-          <div className={`absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center transition-opacity duration-300 ${imgLoaded && !imgError ? "opacity-0" : "opacity-100"}`}>
-            <Music size={32} className="text-muted-foreground" />
+          <div
+            className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${imgLoaded && !imgError ? "opacity-0" : "opacity-100"}`}
+            style={{ background: `linear-gradient(135deg, ${hashColor(name)}, ${hashColor(name + name)})` }}
+          >
+            <span className="text-3xl font-bold text-white/25">{name.charAt(0).toUpperCase()}</span>
+            <Music size={16} className="text-white/10 absolute bottom-2 right-2" />
           </div>
         )}
         {/* Play overlay */}

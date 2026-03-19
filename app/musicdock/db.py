@@ -83,6 +83,12 @@ def init_db():
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS dir_mtimes (
+                path TEXT PRIMARY KEY,
+                mtime REAL NOT NULL,
+                data_json TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
             CREATE INDEX IF NOT EXISTS idx_mb_cache_created ON mb_cache(created_at);
@@ -254,3 +260,42 @@ def set_cache(key: str, value: dict):
             "ON CONFLICT(key) DO UPDATE SET value_json = ?, updated_at = ?",
             (key, json.dumps(value), now, json.dumps(value), now),
         )
+
+
+# ── Directory mtime tracking ────────────────────────────────────
+
+def get_dir_mtime(path: str) -> tuple[float, dict | None] | None:
+    with get_db_ctx() as conn:
+        row = conn.execute("SELECT mtime, data_json FROM dir_mtimes WHERE path = ?", (path,)).fetchone()
+    if not row:
+        return None
+    data = json.loads(row["data_json"]) if row["data_json"] else None
+    return (row["mtime"], data)
+
+
+def set_dir_mtime(path: str, mtime: float, data: dict | None = None):
+    with get_db_ctx() as conn:
+        data_json = json.dumps(data) if data is not None else None
+        conn.execute(
+            "INSERT INTO dir_mtimes (path, mtime, data_json) VALUES (?, ?, ?) "
+            "ON CONFLICT(path) DO UPDATE SET mtime = ?, data_json = ?",
+            (path, mtime, data_json, mtime, data_json),
+        )
+
+
+def get_all_dir_mtimes(prefix: str = "") -> dict[str, tuple[float, dict | None]]:
+    with get_db_ctx() as conn:
+        if prefix:
+            rows = conn.execute("SELECT path, mtime, data_json FROM dir_mtimes WHERE path LIKE ?", (prefix + "%",)).fetchall()
+        else:
+            rows = conn.execute("SELECT path, mtime, data_json FROM dir_mtimes").fetchall()
+    result = {}
+    for row in rows:
+        data = json.loads(row["data_json"]) if row["data_json"] else None
+        result[row["path"]] = (row["mtime"], data)
+    return result
+
+
+def delete_dir_mtime(path: str):
+    with get_db_ctx() as conn:
+        conn.execute("DELETE FROM dir_mtimes WHERE path = ?", (path,))
