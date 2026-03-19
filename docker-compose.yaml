@@ -224,17 +224,17 @@ services:
   #     traefik.http.routers.slskd.tls: true
   #     traefik.http.routers.slskd.tls.certresolver: letsencrypt
 
-  # Librarian — Music library management
-  librarian-api:
-    build: ./librarian
-    container_name: librarian-api
+  # MusicDock — Music stack management
+  musicdock-api:
+    build: ./app
+    container_name: musicdock-api
     restart: unless-stopped
     user: ${PUID}:${PGID}
     group_add:
       - "${DOCKER_GID:-988}"
     environment:
       - TZ=${TZ}
-      - LIBRARIAN_CONFIG=/app/config.yaml
+      - MUSICDOCK_CONFIG=/app/config.yaml
       - DATA_DIR=/data
       - LASTFM_APIKEY=${LASTFM_APIKEY}
       - FANART_API_KEY=${FANART_API_KEY:-}
@@ -248,7 +248,7 @@ services:
       - AUDIOMUSE_POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
       - AUDIOMUSE_POSTGRES_DB=${AUDIOMUSE_POSTGRES_DB}
     volumes:
-      - ./librarian/config.yaml:/app/config.yaml:ro
+      - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music:ro
       - ${DATA_DIR}/librarian:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -256,14 +256,14 @@ services:
       - musicdock
     command: ["api"]
 
-  librarian-worker:
-    build: ./librarian
-    container_name: librarian-worker
+  musicdock-worker:
+    build: ./app
+    container_name: musicdock-worker
     restart: unless-stopped
     user: ${PUID}:${PGID}
     environment:
       - TZ=${TZ}
-      - LIBRARIAN_CONFIG=/app/config.yaml
+      - MUSICDOCK_CONFIG=/app/config.yaml
       - DATA_DIR=/data
       - LASTFM_APIKEY=${LASTFM_APIKEY}
       - FANART_API_KEY=${FANART_API_KEY:-}
@@ -272,29 +272,29 @@ services:
       - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD:-0n053nd41}
       - DOMAIN=${DOMAIN}
     volumes:
-      - ./librarian/config.yaml:/app/config.yaml:ro
+      - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
       - ${DATA_DIR}/librarian:/data
     networks:
       - musicdock
     command: ["worker"]
 
-  librarian-ui:
-    build: ./librarian/ui
-    container_name: librarian-ui
+  musicdock-ui:
+    build: ./app/ui
+    container_name: musicdock-ui
     restart: unless-stopped
     depends_on:
-      - librarian-api
+      - musicdock-api
     networks:
       - musicdock
     labels:
       traefik.enable: true
       traefik.docker.network: musicdock
-      traefik.http.routers.librarian.rule: Host(`librarian.${DOMAIN}`)
-      traefik.http.routers.librarian.entryPoints: websecure
-      traefik.http.services.librarian.loadbalancer.server.port: 80
-      traefik.http.routers.librarian.tls: true
-      traefik.http.routers.librarian.tls.certresolver: letsencrypt
+      traefik.http.routers.admin.rule: Host(`admin.${DOMAIN}`)
+      traefik.http.routers.admin.entryPoints: websecure
+      traefik.http.services.admin.loadbalancer.server.port: 80
+      traefik.http.routers.admin.tls: true
+      traefik.http.routers.admin.tls.certresolver: letsencrypt
 
   # AudioMuse-AI — Sonic analysis and intelligent playlists
   audiomuse-redis:

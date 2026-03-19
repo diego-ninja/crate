@@ -34,15 +34,15 @@ services:
     labels:
       traefik.http.routers.tidarr.rule: Host(`search.musicdock.local`)
 
-  librarian-api:
+  musicdock-api:
     ports:
-      - "${LIBRARIAN_PORT}:8585"
+      - "${MUSICDOCK_API_PORT}:8585"
 
-  librarian-ui:
+  musicdock-ui:
     ports:
-      - "${LIBRARIAN_UI_PORT:-8580}:80"
+      - "${MUSICDOCK_UI_PORT:-8580}:80"
     labels:
-      traefik.http.routers.librarian.rule: Host(`librarian.musicdock.local`)
+      traefik.http.routers.admin.rule: Host(`admin.musicdock.local`)
 
   audiomuse:
     labels:

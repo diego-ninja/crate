@@ -15,7 +15,7 @@ DC_LOCAL      := $(DC) -f docker-compose.yaml -f docker-compose.override.yaml
 
 # Dominios locales
 LOCAL_DOMAIN  := musicdock.local
-LOCAL_HOSTS   := traefik auth collection play search web api librarian ai
+LOCAL_HOSTS   := traefik auth collection play search web api admin ai
 
 # Colores
 GREEN  := \033[0;32m
@@ -122,9 +122,9 @@ deploy: _confirm-deploy ## Deploy completo al servidor: sync + build + restart
 	@echo "$(YELLOW)Sincronizando ficheros...$(NC)"
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
-		librarian/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/librarian/
+		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
 	@echo "$(YELLOW)Building servicios en remoto...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build librarian-api librarian-ui"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build musicdock-api musicdock-ui"
 	@echo "$(YELLOW)Pulling imagenes en remoto...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
 	@echo "$(YELLOW)Reiniciando servicios...$(NC)"
@@ -135,7 +135,7 @@ deploy: _confirm-deploy ## Deploy completo al servidor: sync + build + restart
 deploy-sync: ## Solo sincronizar ficheros al servidor (sin restart)
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
-		librarian/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/librarian/
+		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
 
 .PHONY: deploy-restart
 deploy-restart: ## Reiniciar servicios en remoto (sin sync)
@@ -177,25 +177,25 @@ _confirm-deploy:
 
 .PHONY: lib-scan
 lib-scan: ## Scan de la biblioteca de musica (busca problemas)
-	@$(DC_LOCAL) run --rm librarian-worker scan
+	@$(DC_LOCAL) run --rm musicdock-worker scan
 
 .PHONY: lib-fix
 lib-fix: ## Fix con dry-run (muestra que haria sin tocar nada)
-	@$(DC_LOCAL) run --rm librarian-worker fix --dry-run
+	@$(DC_LOCAL) run --rm musicdock-worker fix --dry-run
 
 .PHONY: lib-fix-apply
 lib-fix-apply: ## Fix real (aplica correcciones con confianza >= umbral)
 	@echo "$(RED)ATENCION: Esto modificara ficheros en la biblioteca$(NC)"
 	@read -p "Seguro? [y/N] " confirm && [ "$$confirm" = "y" ] || { echo "Cancelado"; exit 1; }
-	@$(DC_LOCAL) run --rm librarian-worker fix --apply
+	@$(DC_LOCAL) run --rm musicdock-worker fix --apply
 
 .PHONY: lib-report
 lib-report: ## Genera informe de salud de la biblioteca
-	@$(DC_LOCAL) run --rm librarian-worker report
+	@$(DC_LOCAL) run --rm musicdock-worker report
 
 .PHONY: lib-build-ui
-lib-build-ui: ## Build de la UI del librarian
-	@$(DC_LOCAL) build librarian-ui
+lib-build-ui: ## Build de la UI del app
+	@$(DC_LOCAL) build musicdock-ui
 	@echo "$(GREEN)Librarian UI construida$(NC)"
 
 .PHONY: clean

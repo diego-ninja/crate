@@ -6,8 +6,8 @@ data/
 media/
 
 # Node
-librarian/ui/node_modules/
-librarian/ui/dist/
+node_modules/
+dist/
 
 # Python
 __pycache__/
