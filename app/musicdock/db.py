@@ -262,6 +262,11 @@ def set_cache(key: str, value: dict):
         )
 
 
+def delete_cache(key: str):
+    with get_db_ctx() as conn:
+        conn.execute("DELETE FROM cache WHERE key = ?", (key,))
+
+
 # ── Directory mtime tracking ────────────────────────────────────
 
 def get_dir_mtime(path: str) -> tuple[float, dict | None] | None:

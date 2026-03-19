@@ -27,7 +27,9 @@ import {
   ChevronUp,
   Eye,
   EyeOff,
+  RefreshCw,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface ArtistData {
   name: string;
@@ -300,6 +302,24 @@ export function Artist() {
                     </a>
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                  onClick={async () => {
+                    try {
+                      const res = await api<{ enriched: boolean; has_photo: boolean; has_bio: boolean }>(`/api/artist/${encPath(data.name)}/enrich`, "POST");
+                      if (res.enriched) {
+                        toast.success("Artist enriched", { description: `Photo: ${res.has_photo ? "yes" : "no"}, bio: ${res.has_bio ? "yes" : "no"}` });
+                        window.location.reload();
+                      } else {
+                        toast.error("No data found on Last.fm/fanart.tv");
+                      }
+                    } catch { toast.error("Enrichment failed"); }
+                  }}
+                >
+                  <RefreshCw size={14} className="mr-1" /> Enrich
+                </Button>
               </div>
             </div>
           </div>

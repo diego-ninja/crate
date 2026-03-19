@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from musicdock.audio import read_tags, get_audio_files
 from musicdock.api._deps import library_path, extensions, safe_path, COVER_NAMES, exclude_dirs
 from musicdock.db import get_cache, set_cache, get_all_dir_mtimes, set_dir_mtime, delete_dir_mtime
-from musicdock.lastfm import get_artist_info, download_artist_image
+from musicdock.lastfm import get_artist_info, get_best_artist_image
 
 router = APIRouter()
 
@@ -186,6 +186,40 @@ def api_artist_info(name: str):
     if not info:
         return JSONResponse({"error": "Not found on Last.fm"}, status_code=404)
     return info
+
+
+@router.post("/api/artist/{name}/enrich")
+def api_artist_enrich(name: str):
+    """Force re-enrich an artist: Last.fm info + fanart.tv/Last.fm photo."""
+    from musicdock.db import delete_cache
+
+    # Clear cached data to force re-fetch
+    delete_cache(f"lastfm:artist:{name.lower()}")
+    delete_cache(f"fanart:artist:{name.lower()}")
+    delete_cache(f"fanart:bg:{name.lower()}")
+
+    # Re-fetch Last.fm info
+    info = get_artist_info(name)
+
+    # Re-fetch photo
+    lib = library_path()
+    artist_dir = safe_path(lib, name)
+    photo_saved = False
+    if artist_dir and artist_dir.is_dir():
+        img_data = get_best_artist_image(name)
+        if img_data:
+            try:
+                (artist_dir / "artist.jpg").write_bytes(img_data)
+                photo_saved = True
+            except OSError:
+                pass
+
+    return {
+        "enriched": info is not None,
+        "has_bio": bool(info and info.get("bio")),
+        "has_photo": photo_saved,
+        "tags": info.get("tags", []) if info else [],
+    }
 
 
 @router.get("/api/artist/{name:path}")

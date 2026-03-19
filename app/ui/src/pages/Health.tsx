@@ -2,11 +2,13 @@ import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { IssueList } from "@/components/scanner/IssueList";
 import { ScanProgress, type ScanProgressData } from "@/components/scanner/ScanProgress";
 import { useSse } from "@/hooks/use-sse";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { Wrench } from "lucide-react";
 
 interface Issue {
   type: string;
@@ -54,10 +56,20 @@ function parseScanProgress(status: SseStatus | null): { rich: ScanProgressData |
   };
 }
 
+interface FixPreview {
+  dry_run: boolean;
+  threshold: number;
+  auto_fixable: number;
+  needs_review: number;
+}
+
 export function Health() {
   const [scanning, setScanning] = useState(false);
   const [issues, setIssues] = useState<Issue[] | null>(null);
   const [filter, setFilter] = useState<string | null>(null);
+  const [fixPreview, setFixPreview] = useState<FixPreview | null>(null);
+  const [showFixConfirm, setShowFixConfirm] = useState(false);
+  const [fixing, setFixing] = useState(false);
 
   const { data: sseStatus } = useSse<SseStatus>("/api/status/stream", {
     enabled: scanning,
@@ -89,6 +101,32 @@ export function Health() {
   async function runScan(only?: string) {
     await api("/api/scan", "POST", only ? { only } : {});
     setScanning(true);
+  }
+
+  async function previewFix() {
+    try {
+      const preview = await api<FixPreview>("/api/fix", "POST", { dry_run: true });
+      setFixPreview(preview);
+      setShowFixConfirm(true);
+    } catch {
+      toast.error("Failed to preview fixes");
+    }
+  }
+
+  async function applyFix() {
+    setShowFixConfirm(false);
+    setFixing(true);
+    try {
+      const result = await api<FixPreview>("/api/fix", "POST", { dry_run: false });
+      toast.success(`Fixed ${result.auto_fixable} issues`, {
+        description: `${result.needs_review} issues need manual review`,
+      });
+      loadIssues();
+    } catch {
+      toast.error("Fix failed");
+    } finally {
+      setFixing(false);
+    }
   }
 
   const { rich: richProgress, text: progressText, percent } = parseScanProgress(sseStatus);
@@ -128,6 +166,16 @@ export function Health() {
         <Button variant="outline" onClick={() => runScan("naming")} disabled={scanning}>
           Naming
         </Button>
+        {issues && issues.length > 0 && !scanning && (
+          <Button
+            variant="outline"
+            className="ml-auto text-yellow-500 border-yellow-500/30 hover:bg-yellow-500/10"
+            onClick={previewFix}
+            disabled={fixing}
+          >
+            <Wrench size={14} className="mr-1" /> Fix Issues
+          </Button>
+        )}
       </div>
 
       {scanning && (
@@ -174,6 +222,20 @@ export function Health() {
       )}
 
       {filteredIssues !== null && <IssueList issues={filteredIssues} />}
+
+      <ConfirmDialog
+        open={showFixConfirm}
+        onOpenChange={setShowFixConfirm}
+        title="Apply Fixes"
+        description={
+          fixPreview
+            ? `${fixPreview.auto_fixable} issues can be auto-fixed (confidence >= ${fixPreview.threshold}%). ${fixPreview.needs_review} issues need manual review and will be skipped. This will move duplicate/nested folders to trash and rename badly named folders.`
+            : "Apply auto-fixable issues?"
+        }
+        confirmLabel={`Fix ${fixPreview?.auto_fixable ?? 0} issues`}
+        variant="destructive"
+        onConfirm={applyFix}
+      />
     </div>
   );
 }

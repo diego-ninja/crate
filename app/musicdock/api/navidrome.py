@@ -58,7 +58,7 @@ def navidrome_artist_link(name: str):
         return {
             "id": artist["id"],
             "name": artist.get("name", name),
-            "navidrome_url": f"https://play.{domain}/app/#/artist/{artist['id']}",
+            "navidrome_url": f"https://play.{domain}/app/#/artist/{artist['id']}/show",
         }
     except Exception as e:
         log.warning("Artist link failed for %s: %s", name, e)
