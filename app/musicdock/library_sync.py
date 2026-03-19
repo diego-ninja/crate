@@ -90,6 +90,11 @@ class LibrarySync:
     def sync_artist(self, artist_dir: Path) -> int:
         artist_name = artist_dir.name
 
+        # Ensure artist exists in DB before syncing albums (FK constraint)
+        if not get_library_artist(artist_name):
+            upsert_artist({"name": artist_name, "album_count": 0, "track_count": 0,
+                           "total_size": 0, "formats": [], "dir_mtime": artist_dir.stat().st_mtime})
+
         album_dirs = sorted([
             d for d in artist_dir.iterdir()
             if d.is_dir() and not d.name.startswith(".")

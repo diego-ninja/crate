@@ -4,7 +4,6 @@ from pydantic import BaseModel
 
 from musicdock.api._deps import get_config
 from musicdock.db import create_task, get_task, list_tasks, get_latest_scan
-from musicdock.fixer import LibraryFixer
 
 router = APIRouter()
 
@@ -88,21 +87,14 @@ def fix_issues(body: FixRequest | None = None):
     manual = [i for i in issues if i.get("confidence", 0) < threshold]
 
     if not dry_run:
-        from musicdock.models import Issue, IssueType, Severity
-        from pathlib import Path
-        issue_objs = []
-        for i in issues:
-            issue_objs.append(Issue(
-                type=IssueType(i["type"]),
-                severity=Severity(i["severity"]),
-                confidence=i["confidence"],
-                description=i["description"],
-                paths=[Path(p) for p in i["paths"]],
-                suggestion=i["suggestion"],
-                details=i.get("details", {}),
-            ))
-        fixer = LibraryFixer(config)
-        fixer.fix(issue_objs, dry_run=False)
+        task_id = create_task("fix_issues", {"threshold": threshold})
+        return {
+            "dry_run": False,
+            "threshold": threshold,
+            "auto_fixable": len(auto),
+            "needs_review": len(manual),
+            "task_id": task_id,
+        }
 
     return {
         "dry_run": dry_run,

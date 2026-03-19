@@ -432,8 +432,101 @@ def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
     )
 
 
+def _handle_fix_issues(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.fixer import LibraryFixer
+    from musicdock.models import Issue, IssueType, Severity
+    from musicdock.db import get_latest_scan
+
+    latest = get_latest_scan()
+    if not latest or not latest["issues"]:
+        return {"error": "No issues to fix"}
+
+    threshold = params.get("threshold", config.get("confidence_threshold", 90))
+    issues = latest["issues"]
+    issue_objs = []
+    for i in issues:
+        issue_objs.append(Issue(
+            type=IssueType(i["type"]),
+            severity=Severity(i["severity"]),
+            confidence=i["confidence"],
+            description=i["description"],
+            paths=[Path(p) for p in i["paths"]],
+            suggestion=i["suggestion"],
+            details=i.get("details", {}),
+        ))
+
+    update_task(task_id, progress=json.dumps({"phase": "fixing", "total": len(issue_objs)}))
+    fixer = LibraryFixer(config)
+    fixer.fix(issue_objs, dry_run=False)
+
+    auto = sum(1 for i in issue_objs if i.confidence >= threshold)
+    return {"fixed": auto, "total": len(issue_objs)}
+
+
+def _handle_fetch_cover(task_id: str, params: dict, config: dict) -> dict:
+    mbid = params.get("mbid")
+    path = params.get("path")
+    if not mbid:
+        return {"error": "No MBID"}
+
+    lib = Path(config["library_path"])
+    album_dir = lib / path if path else None
+
+    image = fetch_cover_from_caa(mbid)
+    if not image:
+        return {"error": "No cover found on CAA"}
+
+    if album_dir and album_dir.is_dir():
+        save_cover(album_dir, image)
+        return {"status": "saved", "path": str(album_dir / "cover.jpg")}
+
+    return {"error": "Album directory not found"}
+
+
+def _handle_fetch_artist_covers(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.audio import read_tags as _read_tags
+
+    artist_name = params.get("artist", "")
+    lib = Path(config["library_path"])
+    exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a"]))
+    artist_dir = lib / artist_name
+
+    if not artist_dir.is_dir():
+        return {"error": "Artist not found"}
+
+    fetched = failed = skipped = total = 0
+    for album_dir in sorted(artist_dir.iterdir()):
+        if not album_dir.is_dir() or album_dir.name.startswith("."):
+            continue
+        total += 1
+        if (album_dir / "cover.jpg").exists():
+            skipped += 1
+            continue
+        tracks = get_audio_files(album_dir, exts)
+        if not tracks:
+            skipped += 1
+            continue
+        tags = _read_tags(tracks[0])
+        mbid = tags.get("musicbrainz_albumid")
+        if not mbid:
+            skipped += 1
+            continue
+        update_task(task_id, progress=json.dumps({"album": album_dir.name, "done": total}))
+        image = fetch_cover_from_caa(mbid)
+        if image:
+            save_cover(album_dir, image)
+            fetched += 1
+        else:
+            failed += 1
+
+    return {"fetched": fetched, "failed": failed, "skipped": skipped, "total": total}
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
+    "fix_issues": _handle_fix_issues,
+    "fetch_cover": _handle_fetch_cover,
+    "fetch_artist_covers": _handle_fetch_artist_covers,
     "fetch_artwork_all": _handle_fetch_artwork_all,
     "batch_retag": _handle_batch_retag,
     "batch_covers": _handle_batch_covers,

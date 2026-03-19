@@ -122,8 +122,9 @@ export function Health() {
         description: `${result.needs_review} issues need manual review`,
       });
       loadIssues();
-    } catch {
-      toast.error("Fix failed");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      toast.error("Fix failed", { description: msg });
     } finally {
       setFixing(false);
     }
