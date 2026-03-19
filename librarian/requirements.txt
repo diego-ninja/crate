@@ -1,0 +1,13 @@
+mutagen>=1.47
+musicbrainzngs>=0.7.1
+watchdog>=4.0
+thefuzz[speedup]>=0.22
+rich>=13.7
+pyyaml>=6.0
+fastapi[standard]>=0.115
+uvicorn[standard]>=0.34
+jinja2>=3.1
+beets>=2.0
+requests>=2.31
+psycopg2-binary>=2.9
+

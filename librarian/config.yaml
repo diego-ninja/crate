@@ -1,0 +1,76 @@
+library_path: /music
+
+exclude_dirs:
+  - music
+
+# Umbral de confianza (0-100). Por encima de este valor, fix automatico.
+# Por debajo, solo reporta.
+confidence_threshold: 90
+
+# Scan programado (cron expression o intervalo)
+scan_interval: 6h
+
+# Watchdog: monitorizar cambios en tiempo real
+watch_enabled: true
+
+# Formatos de audio reconocidos
+audio_extensions:
+  - .flac
+  - .mp3
+  - .m4a
+  - .ogg
+  - .opus
+  - .wma
+  - .wav
+
+# Estructura esperada: {artist}/{album}/{track}
+naming:
+  # Limpiar tags de scene (WEB-2020-FiH, @320, etc)
+  clean_scene_tags: true
+  # Eliminar prefijos de año en carpetas (2012 - Album -> Album)
+  strip_year_prefix: false
+
+# Scanners
+scanners:
+  nested_library:
+    enabled: true
+    description: "Detecta bibliotecas anidadas (music/music/)"
+
+  duplicates:
+    enabled: true
+    description: "Albums duplicados del mismo artista"
+    # Metodo de comparacion: tags, filename, fuzzy
+    match_method: tags
+    # Cuando hay duplicado, preferir por calidad
+    prefer: [flac, m4a, mp3]
+    prefer_complete: true  # Preferir el album con mas tracks
+
+  incomplete:
+    enabled: true
+    description: "Albums con tracks faltantes vs MusicBrainz"
+    # Minimo de tracks para considerar un album (ignora singles)
+    min_tracks: 3
+
+  mergeable:
+    enabled: true
+    description: "Albums parciales que juntos forman el completo"
+    # Similaridad minima de nombre para considerar merge
+    name_similarity: 85
+
+  naming:
+    enabled: true
+    description: "Nombres de carpetas inconsistentes o con basura"
+
+# Import sources (directorios de descarga)
+import_sources:
+  - name: tidal
+    path: /music/.imports/tidal
+  - name: soulseek
+    path: /music/.imports/soulseek
+  - name: tidalrr
+    path: /music/.imports/tidalrr
+
+# Reportes
+reports:
+  output_dir: /data/reports
+  format: json  # json o text

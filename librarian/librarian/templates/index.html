@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MusicDock Librarian</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    :root {
+      --bg: #0f0f0f;
+      --bg-card: #1a1a1a;
+      --bg-hover: #252525;
+      --border: #2a2a2a;
+      --text: #e0e0e0;
+      --text-dim: #888;
+      --accent: #7c3aed;
+      --accent-hover: #6d28d9;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #eab308;
+      --orange: #f97316;
+      --blue: #3b82f6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 1rem 0;
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    h1 { font-size: 1.5rem; font-weight: 600; }
+    h1 span { color: var(--accent); }
+    h2 { font-size: 1.1rem; font-weight: 500; margin-bottom: 1rem; color: var(--text-dim); }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .stat-card .value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .stat-card .label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      letter-spacing: 0.05em;
+    }
+
+    .actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+
+    button, .btn {
+      background: var(--bg-card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.15s;
+    }
+
+    button:hover, .btn:hover { background: var(--bg-hover); border-color: var(--accent); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+    button.primary:hover { background: var(--accent-hover); }
+    button.danger { border-color: var(--red); color: var(--red); }
+    button.danger:hover { background: var(--red); color: white; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .scan-status {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .scan-status .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .issues-section { margin-bottom: 2rem; }
+
+    .issue-filters {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      padding: 0.25rem 0.75rem;
+      font-size: 0.8rem;
+      border-radius: 20px;
+    }
+
+    .filter-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+
+    .issue-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .issue {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      transition: background 0.15s;
+    }
+
+    .issue:hover { background: var(--bg-hover); }
+
+    .issue-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .issue-meta {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge.critical { background: var(--red); color: white; }
+    .badge.high { background: var(--orange); color: white; }
+    .badge.medium { background: var(--yellow); color: #000; }
+    .badge.low { background: var(--border); color: var(--text-dim); }
+
+    .badge.type {
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+    }
+
+    .confidence {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .issue-description { font-size: 0.9rem; margin-bottom: 0.25rem; }
+    .issue-suggestion { font-size: 0.8rem; color: var(--green); }
+
+    .issue-paths {
+      margin-top: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem;
+      color: var(--text-dim);
+    }
+
+    .reports-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .reports-list a {
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-family: monospace;
+    }
+
+    .reports-list a:hover { text-decoration: underline; }
+
+    .section-divider {
+      border-top: 1px solid var(--border);
+      margin: 2rem 0;
+      padding-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1><span>♫</span> MusicDock Librarian</h1>
+      <div id="status-indicator"></div>
+    </header>
+
+    <!-- Stats -->
+    <div id="stats" class="stats-grid">
+      <div class="stat-card"><div class="value">-</div><div class="label">Artists</div></div>
+      <div class="stat-card"><div class="value">-</div><div class="label">Albums</div></div>
+      <div class="stat-card"><div class="value">-</div><div class="label">Tracks</div></div>
+      <div class="stat-card"><div class="value">-</div><div class="label">Size</div></div>
+      <div class="stat-card"><div class="value" id="issue-count">0</div><div class="label">Issues</div></div>
+    </div>
+
+    <!-- Scan Actions -->
+    <h2>Scan</h2>
+    <div class="actions">
+      <button class="primary" onclick="startScan()">Scan All</button>
+      <button onclick="startScan('nested')">Nested Libraries</button>
+      <button onclick="startScan('duplicates')">Duplicates</button>
+      <button onclick="startScan('incomplete')">Incomplete</button>
+      <button onclick="startScan('mergeable')">Mergeable</button>
+      <button onclick="startScan('naming')">Naming</button>
+    </div>
+
+    <div id="scan-status" class="scan-status" style="display:none;">
+      <div class="spinner"></div>
+      <span id="scan-progress">Scanning...</span>
+    </div>
+
+    <!-- Issues -->
+    <div class="issues-section">
+      <h2>Issues</h2>
+      <div class="issue-filters">
+        <button class="filter-btn active" onclick="filterIssues(null, this)">All</button>
+        <button class="filter-btn" onclick="filterIssues('nested_library', this)">Nested</button>
+        <button class="filter-btn" onclick="filterIssues('duplicate_album', this)">Duplicates</button>
+        <button class="filter-btn" onclick="filterIssues('incomplete_album', this)">Incomplete</button>
+        <button class="filter-btn" onclick="filterIssues('mergeable_album', this)">Mergeable</button>
+        <button class="filter-btn" onclick="filterIssues('bad_naming', this)">Naming</button>
+      </div>
+      <div id="issue-list" class="issue-list">
+        <div class="empty-state">Run a scan to find issues</div>
+      </div>
+    </div>
+
+    <!-- Fix Actions -->
+    <div class="section-divider">
+      <h2>Fix</h2>
+      <div class="actions">
+        <button onclick="runFix(true)">Dry Run (preview)</button>
+        <button class="danger" onclick="runFix(false)">Apply Fixes</button>
+      </div>
+      <div id="fix-result"></div>
+    </div>
+
+    <!-- Reports -->
+    <div class="section-divider">
+      <h2>Reports</h2>
+      <div class="reports-list">
+        {% for r in reports %}
+        <a href="/api/reports/{{ r }}" target="_blank">{{ r }}</a>
+        {% endfor %}
+        {% if not reports %}
+        <div class="empty-state">No reports yet</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentFilter = null;
+    let allIssues = [];
+
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        const cards = document.querySelectorAll('.stat-card .value');
+        cards[0].textContent = data.artists.toLocaleString();
+        cards[1].textContent = data.albums.toLocaleString();
+        cards[2].textContent = data.tracks.toLocaleString();
+        cards[3].textContent = data.total_size_gb + ' GB';
+      } catch (e) {
+        console.error('Failed to load stats', e);
+      }
+    }
+
+    async function startScan(only) {
+      const body = only ? { only } : {};
+      const res = await fetch('/api/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (res.status === 409) {
+        alert('Scan already in progress');
+        return;
+      }
+
+      document.getElementById('scan-status').style.display = 'flex';
+      document.getElementById('scan-progress').textContent = `Scanning ${only || 'all'}...`;
+      pollStatus();
+    }
+
+    async function pollStatus() {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+
+      if (data.scanning) {
+        document.getElementById('scan-progress').textContent = data.progress || 'Scanning...';
+        setTimeout(pollStatus, 2000);
+      } else {
+        document.getElementById('scan-status').style.display = 'none';
+        document.getElementById('issue-count').textContent = data.issue_count;
+        loadIssues();
+      }
+    }
+
+    async function loadIssues() {
+      const url = currentFilter ? `/api/issues?type=${currentFilter}` : '/api/issues';
+      const res = await fetch(url);
+      allIssues = await res.json();
+      renderIssues(allIssues);
+    }
+
+    function filterIssues(type, btn) {
+      currentFilter = type;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      loadIssues();
+    }
+
+    function renderIssues(issues) {
+      const container = document.getElementById('issue-list');
+      if (!issues.length) {
+        container.innerHTML = '<div class="empty-state">No issues found</div>';
+        return;
+      }
+
+      container.innerHTML = issues.map(i => `
+        <div class="issue">
+          <div class="issue-header">
+            <div class="issue-description">${escHtml(i.description)}</div>
+            <div class="issue-meta">
+              <span class="badge type">${i.type.replace('_', ' ')}</span>
+              <span class="badge ${i.severity}">${i.severity}</span>
+              <span class="confidence">${i.confidence}%</span>
+            </div>
+          </div>
+          <div class="issue-suggestion">${escHtml(i.suggestion)}</div>
+          <div class="issue-paths">${i.paths.map(p => escHtml(p.replace('/music/', ''))).join('<br>')}</div>
+        </div>
+      `).join('');
+    }
+
+    function escHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    async function runFix(dryRun) {
+      if (!dryRun && !confirm('Apply fixes? This will modify your library.')) return;
+
+      const res = await fetch('/api/fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dry_run: dryRun }),
+      });
+      const data = await res.json();
+      const el = document.getElementById('fix-result');
+
+      if (data.error) {
+        el.innerHTML = `<div class="issue" style="border-color:var(--red)">${data.error}</div>`;
+        return;
+      }
+
+      el.innerHTML = `
+        <div class="issue">
+          <strong>${dryRun ? 'Dry Run' : 'Applied'}:</strong>
+          ${data.auto_fixable} auto-fixable (threshold: ${data.threshold}%),
+          ${data.needs_review} need manual review
+        </div>
+      `;
+    }
+
+    // Initial load
+    loadStats();
+
+    // Check if scan was running
+    fetch('/api/status').then(r => r.json()).then(data => {
+      if (data.scanning) {
+        document.getElementById('scan-status').style.display = 'flex';
+        pollStatus();
+      } else if (data.issue_count > 0) {
+        document.getElementById('issue-count').textContent = data.issue_count;
+        loadIssues();
+      }
+    });
+  </script>
+</body>
+</html>

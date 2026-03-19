@@ -1,0 +1,398 @@
+networks:
+  musicdock:
+    external: true
+
+services:
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - 'no-new-privileges:true'
+    networks:
+      - musicdock
+    environment:
+      - TZ=${TZ}
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
+    ports:
+      - "${TRAEFIK_HTTP_PORT}:80"
+      - "${TRAEFIK_HTTPS_PORT}:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DATA_DIR}/traefik/traefik.yml:/traefik.yml:ro
+      - ${DATA_DIR}/traefik/acme.json:/acme.json
+      - ${DATA_DIR}/traefik/conf:/conf
+      - ${DATA_DIR}/traefik/logs:/var/log/traefik
+    labels:
+      traefik.enable: true
+      traefik.http.services.traefik.loadbalancer.server.port: 80
+      traefik.http.routers.traefik-secure.rule: Host(`traefik.${DOMAIN}`)
+      traefik.http.routers.traefik-secure.entryPoints: websecure
+      traefik.http.routers.traefik-secure.service: api@internal
+    depends_on:
+      - authelia
+
+  authelia:
+    image: authelia/authelia:latest
+    container_name: authelia
+    environment:
+      - TZ=${TZ}
+      - X_AUTHELIA_CONFIG_FILTERS=template
+    volumes:
+      - '${DATA_DIR}/authelia/secrets:/secrets:ro'
+      - '${DATA_DIR}/authelia/config:/config'
+      - '${DATA_DIR}/authelia/logs:/var/log/authelia/'
+    networks:
+      - musicdock
+    ports:
+      - "${AUTHELIA_PORT}:9091"
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.authelia.rule: Host(`auth.${DOMAIN}`)
+      traefik.http.routers.authelia.entryPoints: websecure
+
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR}/lidarr:/config
+      - ${MEDIA_DIR}:/data
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:lidarr
+      - TP_THEME=nord
+    ports:
+      - "${LIDARR_PORT}:8686"
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.lidarr.rule: Host(`collection.${DOMAIN}`)
+      traefik.http.routers.lidarr.entryPoints: websecure
+      traefik.http.services.lidarr.loadbalancer.server.port: 8686
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    restart: always
+    volumes:
+      - ${DATA_DIR}/navidrome:/data
+      - ${MEDIA_DIR}/music:/music:ro
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK=0002
+      - TZ=${TZ}
+      - ND_LOGLEVEL=${NAVIDROME_LOG_LEVEL}
+      - ND_SESSIONTIMEOUT=24h
+      - ND_BASEURL=/
+      - ND_ENABLEGRAVATAR=true
+      - ND_ENABLESHARING=true
+      - ND_SCANSCHEDULE=@every 1h
+      - ND_AUTOIMPORTPLAYLISTS=true
+      - ND_ENABLETRANSCODINGCONFIG=true
+      - ND_TRANSCODINGCACHESIZE=150MB
+      - ND_FFMPEGPATH=/usr/bin/ffmpeg
+      - ND_IMAGECACHESIZE=300MB
+      - ND_MAXMPDCLIENTS=10
+      - ND_CACHESIZE=200MB
+      - ND_MAXSIDELOADEDASSETS=500
+      - ND_DEFAULTTHEME=DARK
+      - ND_DEFAULTLANGUAGE=${LANGUAGE}
+      - ND_ENABLEDOWNLOADS=true
+      - ND_GATRACKINGID=
+      - ND_PASSWORDREQUIREMENT=8^(?=.*[a-z])(?=.*[A-Z])
+      - ND_REVERSEPROXYWHITELIST=0.0.0.0/0
+      - ND_ENABLEUSEREDITING=false
+      - ND_LASTFM_ENABLED=true
+      - ND_LASTFM_APIKEY=${LASTFM_APIKEY}
+      - ND_LASTFM_SECRET=${LASTFM_SECRET}
+      - ND_LASTFM_LANGUAGE=${LANGUAGE}
+      - ND_SPOTIFY_ID=${SPOTIFY_ID}
+      - ND_SPOTIFY_SECRET=${SPOTIFY_SECRET}
+    ports:
+      - "${NAVIDROME_PORT}:4533"
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.services.navidrome.loadbalancer.server.port: 4533
+      traefik.http.routers.navidrome.rule: Host(`play.${DOMAIN}`)
+      traefik.http.routers.navidrome-secure.entryPoints: websecure
+      traefik.http.routers.navidrome-secure.rule: Host(`play.${DOMAIN}`)
+      traefik.http.routers.navidrome-secure.tls: true
+      traefik.http.routers.navidrome-secure.tls.certresolver: letsencrypt
+      traefik.http.routers.navidrome-subsonic.rule: Host(`api.${DOMAIN}`) && PathPrefix(`/rest/`) && !Query(`c`, `NavidromeUI`)
+      traefik.http.routers.navidrome-subsonic.entryPoints: websecure
+
+  tidarr:
+    image: cstaelen/tidarr:latest
+    container_name: tidarr
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - ADMIN_PASSWORD=${TIDARR_PASSWORD}
+      - ENABLE_BEETS=true
+      - REACT_APP_TIDAL_COUNTRY_CODE=${TIDAL_COUNTRY_CODE}
+    volumes:
+      - ${DATA_DIR}/tidarr:/home/app/standalone/shared
+      - ${MEDIA_DIR}/downloads/tidal/incomplete:/home/app/standalone/download/incomplete
+      - ${MEDIA_DIR}/downloads/tidal/albums:/home/app/standalone/download/albums
+      - ${MEDIA_DIR}/downloads/tidal/tracks:/home/app/standalone/download/tracks
+      - ${MEDIA_DIR}/downloads/tidal/playlists:/home/app/standalone/download/playlists
+      - ${MEDIA_DIR}/music:/home/app/standalone/library
+      - ${MEDIA_DIR}/music:/music
+      - ${MEDIA_DIR}/downloads/tidal/videos:/home/app/standalone/download/videos
+    ports:
+      - "${TIDARR_PORT}:8484"
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.tidarr.rule: Host(`search.${DOMAIN}`)
+      traefik.http.routers.tidarr.entryPoints: websecure
+      traefik.http.services.tidarr.loadbalancer.server.port: 8484
+      traefik.http.services.tidarr.loadbalancer.server.scheme: http
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ${DATA_DIR}/nginx/html:/usr/share/nginx/html:ro
+      - ${DATA_DIR}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ${DATA_DIR}/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ${DATA_DIR}/nginx/logs:/var/log/nginx
+    ports:
+      - "${NGINX_PORT}:80"
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.diego-ninja.rule: Host(`diego.ninja`)
+      traefik.http.routers.diego-ninja.entryPoints: websecure
+      traefik.http.services.diego-ninja.loadbalancer.server.port: 80
+      traefik.http.routers.diego-ninja.middlewares: diego-ninja-headers
+      traefik.http.middlewares.diego-ninja-headers.headers.customRequestHeaders.X-Forwarded-Proto: https
+      traefik.http.middlewares.diego-ninja-headers.headers.customResponseHeaders.X-Frame-Options: SAMEORIGIN
+      traefik.http.middlewares.diego-ninja-headers.headers.customResponseHeaders.X-Content-Type-Options: nosniff
+      traefik.http.middlewares.diego-ninja-headers.headers.customResponseHeaders.Referrer-Policy: strict-origin-when-cross-origin
+      traefik.http.routers.diego-ninja.tls: true
+      traefik.http.routers.diego-ninja.tls.certresolver: letsencrypt
+
+  # Soulseek client — commented out to free resources
+  # slskd:
+  #   image: slskd/slskd:latest
+  #   container_name: slskd
+  #   restart: unless-stopped
+  #   user: ${PUID}:${PGID}
+  #   environment:
+  #     - TZ=${TZ}
+  #     - SLSKD_REMOTE_CONFIGURATION=true
+  #     - SLSKD_SHARED_DIR=/data/music
+  #     - SLSKD_DOWNLOADS_DIR=/data/downloads/soulseek
+  #     - SLSKD_INCOMPLETE_DIR=/data/downloads/soulseek/incomplete
+  #     - SLSKD_WEB_AUTHENTICATION_API_KEYS_SOULSYNC=${SLSKD_API_KEY}
+  #     - SLSKD_SOULSEEK_LISTEN_IP=0.0.0.0
+  #     - SLSKD_SOULSEEK_LISTEN_PORT=${SLSKD_LISTEN_PORT}
+  #   volumes:
+  #     - ${DATA_DIR}/slskd:/app
+  #     - ${MEDIA_DIR}:/data
+  #   ports:
+  #     - "${SLSKD_PORT}:5030"
+  #     - "${SLSKD_LISTEN_PORT}:${SLSKD_LISTEN_PORT}"
+  #   networks:
+  #     - musicdock
+  #   labels:
+  #     traefik.enable: true
+  #     traefik.docker.network: musicdock
+  #     traefik.http.routers.slskd.rule: Host(`soulseek.${DOMAIN}`)
+  #     traefik.http.routers.slskd.entryPoints: websecure
+  #     traefik.http.services.slskd.loadbalancer.server.port: 5030
+  #     traefik.http.routers.slskd.tls: true
+  #     traefik.http.routers.slskd.tls.certresolver: letsencrypt
+
+  # Librarian — Music library management
+  librarian-api:
+    build: ./librarian
+    container_name: librarian-api
+    restart: unless-stopped
+    user: ${PUID}:${PGID}
+    group_add:
+      - "${DOCKER_GID:-988}"
+    environment:
+      - TZ=${TZ}
+      - LIBRARIAN_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - LASTFM_APIKEY=${LASTFM_APIKEY}
+      - FANART_API_KEY=${FANART_API_KEY:-}
+      - NAVIDROME_URL=http://navidrome:4533
+      - NAVIDROME_USER=admin
+      - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD:-0n053nd41}
+      - DOMAIN=${DOMAIN}
+      - AUDIOMUSE_URL=http://audiomuse:8000
+      - AUDIOMUSE_POSTGRES_HOST=audiomuse-postgres
+      - AUDIOMUSE_POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
+      - AUDIOMUSE_POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
+      - AUDIOMUSE_POSTGRES_DB=${AUDIOMUSE_POSTGRES_DB}
+    volumes:
+      - ./librarian/config.yaml:/app/config.yaml:ro
+      - ${MEDIA_DIR}/music:/music:ro
+      - ${DATA_DIR}/librarian:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - musicdock
+    command: ["api"]
+
+  librarian-worker:
+    build: ./librarian
+    container_name: librarian-worker
+    restart: unless-stopped
+    user: ${PUID}:${PGID}
+    environment:
+      - TZ=${TZ}
+      - LIBRARIAN_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - LASTFM_APIKEY=${LASTFM_APIKEY}
+      - FANART_API_KEY=${FANART_API_KEY:-}
+      - NAVIDROME_URL=http://navidrome:4533
+      - NAVIDROME_USER=admin
+      - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD:-0n053nd41}
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./librarian/config.yaml:/app/config.yaml:ro
+      - ${MEDIA_DIR}/music:/music
+      - ${DATA_DIR}/librarian:/data
+    networks:
+      - musicdock
+    command: ["worker"]
+
+  librarian-ui:
+    build: ./librarian/ui
+    container_name: librarian-ui
+    restart: unless-stopped
+    depends_on:
+      - librarian-api
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.librarian.rule: Host(`librarian.${DOMAIN}`)
+      traefik.http.routers.librarian.entryPoints: websecure
+      traefik.http.services.librarian.loadbalancer.server.port: 80
+      traefik.http.routers.librarian.tls: true
+      traefik.http.routers.librarian.tls.certresolver: letsencrypt
+
+  # AudioMuse-AI — Sonic analysis and intelligent playlists
+  audiomuse-redis:
+    image: redis:7-alpine
+    container_name: audiomuse-redis
+    restart: unless-stopped
+    volumes:
+      - audiomuse_redis:/data
+    networks:
+      - musicdock
+
+  audiomuse-postgres:
+    image: postgres:15-alpine
+    container_name: audiomuse-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${AUDIOMUSE_POSTGRES_DB}
+    volumes:
+      - audiomuse_postgres:/var/lib/postgresql/data
+    networks:
+      - musicdock
+
+  audiomuse:
+    image: ghcr.io/neptunehub/audiomuse-ai:latest
+    container_name: audiomuse
+    restart: unless-stopped
+    environment:
+      - SERVICE_TYPE=flask
+      - TZ=${TZ}
+      - MEDIASERVER_TYPE=navidrome
+      - NAVIDROME_URL=http://navidrome:4533
+      - NAVIDROME_USER=${AUDIOMUSE_NAVIDROME_USER}
+      - NAVIDROME_PASSWORD=${AUDIOMUSE_NAVIDROME_PASSWORD}
+      - POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${AUDIOMUSE_POSTGRES_DB}
+      - POSTGRES_HOST=audiomuse-postgres
+      - POSTGRES_PORT=5432
+      - REDIS_URL=redis://audiomuse-redis:6379/0
+      - GEMINI_API_KEY=${AUDIOMUSE_GEMINI_API_KEY}
+      - CLAP_ENABLED=false
+      - TEMP_DIR=/app/temp_audio
+    volumes:
+      - audiomuse_temp_flask:/app/temp_audio
+    ports:
+      - "${AUDIOMUSE_PORT}:8000"
+    depends_on:
+      - audiomuse-redis
+      - audiomuse-postgres
+      - navidrome
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.audiomuse.rule: Host(`ai.${DOMAIN}`)
+      traefik.http.routers.audiomuse.entryPoints: websecure
+      traefik.http.services.audiomuse.loadbalancer.server.port: 8000
+      traefik.http.routers.audiomuse.tls: true
+      traefik.http.routers.audiomuse.tls.certresolver: letsencrypt
+
+  audiomuse-worker:
+    image: ghcr.io/neptunehub/audiomuse-ai:latest
+    container_name: audiomuse-worker
+    restart: unless-stopped
+    mem_limit: 2g
+    environment:
+      - SERVICE_TYPE=worker
+      - TZ=${TZ}
+      - MEDIASERVER_TYPE=navidrome
+      - NAVIDROME_URL=http://navidrome:4533
+      - NAVIDROME_USER=${AUDIOMUSE_NAVIDROME_USER}
+      - NAVIDROME_PASSWORD=${AUDIOMUSE_NAVIDROME_PASSWORD}
+      - POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${AUDIOMUSE_POSTGRES_DB}
+      - POSTGRES_HOST=audiomuse-postgres
+      - POSTGRES_PORT=5432
+      - REDIS_URL=redis://audiomuse-redis:6379/0
+      - GEMINI_API_KEY=${AUDIOMUSE_GEMINI_API_KEY}
+      - CLAP_ENABLED=false
+      - TEMP_DIR=/app/temp_audio
+    volumes:
+      - audiomuse_temp_worker:/app/temp_audio
+    depends_on:
+      - audiomuse-redis
+      - audiomuse-postgres
+    networks:
+      - musicdock
+
+volumes:
+  audiomuse_redis:
+    driver: local
+  audiomuse_postgres:
+    driver: local
+  audiomuse_temp_flask:
+    driver: local
+  audiomuse_temp_worker:
+    driver: local

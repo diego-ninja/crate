@@ -1,0 +1,267 @@
+networks:
+  musicdock:
+    external: true
+
+volumes:
+  nextcloud_aio_mastercontainer:
+    name: nextcloud_aio_mastercontainer      
+      
+services:
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - 'no-new-privileges=true'
+    networks:
+      - musicdock
+    environment:
+      - TZ=${TZ}
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
+    ports:
+      - "${TRAEFIK_HTTP_PORT}:80"
+      - "${TRAEFIK_HTTPS_PORT}:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DATA_DIR}/traefik/traefik.yml:/traefik.yml:ro
+      - ${DATA_DIR}/traefik/acme.json:/acme.json
+      - ${DATA_DIR}/traefik/conf:/conf
+      - ${DATA_DIR}/traefik/logs:/var/log/traefik
+    labels:
+      traefik.enable: true
+      traefik.http.services.traefik.loadbalancer.server.port: 80
+      traefik.http.routers.traefik-secure.rule: Host(`traefik.${DOMAIN}`)
+      traefik.http.routers.traefik-secure.entryPoints: websecure
+      traefik.http.routers.traefik-secure.service: api@internal
+    depends_on:
+      - authelia
+
+  authelia:
+    image: authelia/authelia:latest
+    container_name: authelia
+    environment:
+      - TZ=${TZ}
+      - X_AUTHELIA_CONFIG_FILTERS=template
+    volumes:
+      - '${DATA_DIR}/authelia/secrets:/secrets:ro'
+      - '${DATA_DIR}/authelia/config:/config'
+      - '${DATA_DIR}/authelia/logs:/var/log/authelia/'
+    networks:
+      - musicdock
+    ports:
+      - "${AUTHELIA_PORT}:9091"
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.authelia.rule: Host(`auth.${DOMAIN}`)
+      traefik.http.routers.authelia.entryPoints: websecure
+
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR}/lidarr:/config
+      - ${MEDIA_DIR}:/data
+      - ${MEDIA_DIR}/music:/data/music
+      - ${MEDIA_DIR}/downloads:/data/downloads
+      - ${MEDIA_DIR}/downloads/soulseek:/data/downloads/soulseek
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:lidarr
+      - TP_THEME=nord
+    ports:
+      - "${LIDARR_PORT}:8686"
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.lidarr.rule: Host(`collection.${DOMAIN}`)
+      traefik.http.routers.lidarr.entryPoints: websecure
+      traefik.http.services.lidarr.loadbalancer.server.port: 8686
+
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: navidrome
+    restart: always
+    volumes:
+      - ${DATA_DIR}/navidrome:/data
+      - ${MEDIA_DIR}/music:/music:ro
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK=0002
+      - TZ=${TZ}
+      # Configuración general
+      - ND_LOGLEVEL=${NAVIDROME_LOG_LEVEL}
+      - ND_SESSIONTIMEOUT=24h
+      - ND_BASEURL=/
+      - ND_ENABLEGRAVATAR=true
+      - ND_ENABLESHARING=true  
+      # Escaneo
+      - ND_SCANSCHEDULE=@every 1h
+      - ND_AUTOIMPORTPLAYLISTS=true
+      # Transcodificación
+      - ND_ENABLETRANSCODINGCONFIG=true
+      - ND_TRANSCODINGCACHESIZE=150MB
+      - ND_FFMPEGPATH=/usr/bin/ffmpeg
+      # Caché y rendimiento
+      - ND_IMAGECACHESIZE=300MB
+      - ND_MAXMPDCLIENTS=10
+      - ND_CACHESIZE=200MB
+      - ND_MAXSIDELOADEDASSETS=500
+      # Seguridad
+      - ND_DEFAULTTHEME=DARK
+      - ND_DEFAULTLANGUAGE=${LANGUAGE}
+      - ND_ENABLEDOWNLOADS=true
+      - ND_GATRACKINGID=
+      - ND_PASSWORDREQUIREMENT=8^(?=.*[a-z])(?=.*[A-Z])
+      - ND_REVERSEPROXYWHITELIST=0.0.0.0/0
+      - ND_ENABLEUSEREDITING=false
+      # Lastfm
+      - ND_LASTFM_ENABLED=true
+      - ND_LASTFM_APIKEY=${LASTFM_APIKEY}
+      - ND_LASTFM_SECRET=${LASTFM_SECRET}
+      - ND_LASTFM_LANGUAGE=${LANGUAGE}
+      # Spotify
+      - ND_SPOTIFY_ID=${SPOTIFY_ID}
+      - ND_SPOTIFY_SECRET=${SPOTIFY_SECRET}
+    ports:
+      - "${NAVIDROME_PORT}:4533"
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.services.navidrome.loadbalancer.server.port: 4533
+      traefik.http.routers.navidrome.rule: Host(`play.${DOMAIN}`)
+      traefik.http.routers.navidrome-secure.entryPoints: websecure
+      traefik.http.routers.navidrome-secure.rule: Host(`play.${DOMAIN}`)
+      traefik.http.routers.navidrome-secure.tls: true
+      traefik.http.routers.navidrome-secure.tls.certresolver: letsencrypt
+      traefik.http.routers.navidrome-subsonic.rule: Host(`api.${DOMAIN}`) && PathPrefix(`/rest/`) && !Query(`c`, `NavidromeUI`)
+      traefik.http.routers.navidrome-subsonic.entryPoints: websecure
+
+  tidarr:
+    image: cstaelen/tidarr:latest
+    container_name: tidarr
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - ADMIN_PASSWORD=${TIDARR_PASSWORD}
+      - ENABLE_BEETS=true
+      - REACT_APP_TIDAL_COUNTRY_CODE=${TIDAL_COUNTRY_CODE}
+    volumes:
+      - ${DATA_DIR}/tidarr:/home/app/standalone/shared
+      - ${MEDIA_DIR}/downloads/tidal:/home/app/standalone/download/incomplete
+      - ${MEDIA_DIR}/music:/home/app/standalone/download/albums
+      - ${MEDIA_DIR}/music:/home/app/standalone/download/tracks
+      - ${MEDIA_DIR}/music:/home/app/standalone/download/playlists
+      - ${MEDIA_DIR}/music/tidal/videos:/home/app/standalone/download/videos
+    ports:
+      - "${TIDARR_PORT}:8484"
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.tidarr.rule: Host(`search.${DOMAIN}`)
+      traefik.http.routers.tidarr.entryPoints: websecure
+      traefik.http.services.tidarr.loadbalancer.server.port: 8484
+      traefik.http.services.tidarr.loadbalancer.server.scheme: http
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ${DATA_DIR}/postgres:/var/lib/postgresql/data
+    networks:
+      - musicdock
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - ${DATA_DIR}/redis:/data
+    networks:
+      - musicdock
+
+  nextcloud:
+    image: nextcloud:28-apache
+    container_name: nextcloud
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_HOST_PASSWORD=${REDIS_PASSWORD}
+      - NEXTCLOUD_ADMIN_USER=${NEXTCLOUD_ADMIN_USER}
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+      - NEXTCLOUD_TRUSTED_DOMAINS=cloud.${DOMAIN}
+      - OVERWRITEPROTOCOL=https
+      - OVERWRITEHOST=cloud.${DOMAIN}
+      - OVERWRITECLIURL=https://cloud.${DOMAIN}
+      - PHP_MEMORY_LIMIT=2G
+      - PHP_UPLOAD_LIMIT=10G
+      - APACHE_BODY_LIMIT=0
+    volumes:
+      - ${DATA_DIR}/nextcloud/app:/var/www/html
+      - ${DATA_DIR}/nextcloud/data:/var/www/html/data
+      - ${MEDIA_DIR}/nextcloud:/var/www/html/data/shared
+      - ${MEDIA_DIR}/music:/var/www/html/data/music:ro
+    ports:
+      - "${NEXTCLOUD_PORT}:80"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - musicdock
+    labels:
+      traefik.enable: true
+      traefik.docker.network: musicdock
+      traefik.http.routers.nextcloud.rule: Host(`cloud.${DOMAIN}`)
+      traefik.http.routers.nextcloud.entryPoints: websecure
+      traefik.http.services.nextcloud.loadbalancer.server.port: 80
+      traefik.http.routers.nextcloud.middlewares: nextcloud-chain
+      traefik.http.middlewares.nextcloud-headers.headers.customRequestHeaders.X-Forwarded-Proto: https
+      traefik.http.middlewares.nextcloud-headers.headers.hostsProxyHeaders: X-Forwarded-For  
+      traefik.http.middlewares.nextcloud-redirect.redirectregex.regex: ^https://(.*)/.well-known/(card|cal)dav
+      traefik.http.middlewares.nextcloud-redirect.redirectregex.replacement: https://$${1}/remote.php/dav/
+      traefik.http.middlewares.nextcloud-chain.chain.middlewares: nextcloud-headers,nextcloud-redirect
+
+  # Cron job para Nextcloud
+  nextcloud-cron:
+    image: nextcloud:28-apache
+    container_name: nextcloud-cron
+    restart: unless-stopped
+    volumes:
+      - ${DATA_DIR}/nextcloud/app:/var/www/html
+      - ${DATA_DIR}/nextcloud/data:/var/www/html/data
+      - ${MEDIA_DIR}/nextcloud:/var/www/html/data/shared
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    depends_on:
+      - postgres
+    networks:
+      - musicdock
+    entrypoint: /cron.sh

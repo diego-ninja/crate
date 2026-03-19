@@ -1,0 +1,24 @@
+# Secrets
+.env
+
+# Data directories
+data/
+media/
+
+# Node
+librarian/ui/node_modules/
+librarian/ui/dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
