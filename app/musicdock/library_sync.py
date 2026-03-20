@@ -167,18 +167,20 @@ class LibrarySync:
 
         # Get existing tracks for this album to reuse data for unchanged files
         existing_album_row = None
-        with get_db_ctx() as conn:
-            existing_album_row = conn.execute(
-                "SELECT id FROM library_albums WHERE path = ?", (str(album_dir),)
-            ).fetchone()
+        with get_db_ctx() as cur:
+            cur.execute(
+                "SELECT id FROM library_albums WHERE path = %s", (str(album_dir),)
+            )
+            existing_album_row = cur.fetchone()
 
         existing_tracks_by_path: dict[str, dict] = {}
         if existing_album_row:
-            with get_db_ctx() as conn:
-                rows = conn.execute(
-                    "SELECT * FROM library_tracks WHERE album_id = ?",
+            with get_db_ctx() as cur:
+                cur.execute(
+                    "SELECT * FROM library_tracks WHERE album_id = %s",
                     (existing_album_row["id"],),
-                ).fetchall()
+                )
+                rows = cur.fetchall()
                 existing_tracks_by_path = {r["path"]: dict(r) for r in rows}
 
         total_size = 0
@@ -300,8 +302,8 @@ class LibrarySync:
 
         # Remove deleted tracks
         for old_path in set(existing_tracks_by_path.keys()) - synced_paths:
-            with get_db_ctx() as conn:
-                conn.execute("DELETE FROM library_tracks WHERE path = ?", (old_path,))
+            with get_db_ctx() as cur:
+                cur.execute("DELETE FROM library_tracks WHERE path = %s", (old_path,))
 
         return {
             "track_count": len(track_data_list),
@@ -311,8 +313,9 @@ class LibrarySync:
 
     def remove_stale(self) -> int:
         removed = 0
-        with get_db_ctx() as conn:
-            artists = conn.execute("SELECT name FROM library_artists").fetchall()
+        with get_db_ctx() as cur:
+            cur.execute("SELECT name FROM library_artists")
+            artists = cur.fetchall()
 
         for row in artists:
             artist_dir = self.library_path / row["name"]
@@ -321,8 +324,9 @@ class LibrarySync:
                 removed += 1
                 log.info("Removed stale artist: %s", row["name"])
 
-        with get_db_ctx() as conn:
-            albums = conn.execute("SELECT path, artist FROM library_albums").fetchall()
+        with get_db_ctx() as cur:
+            cur.execute("SELECT path, artist FROM library_albums")
+            albums = cur.fetchall()
 
         for row in albums:
             if not Path(row["path"]).is_dir():

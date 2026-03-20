@@ -33,27 +33,27 @@ def api_analytics():
             "total_duration_hours": 0,
         }
 
-    with get_db_ctx() as conn:
+    with get_db_ctx() as cur:
         # Genres
-        genre_rows = conn.execute(
+        cur.execute(
             "SELECT genre, COUNT(*) as c FROM library_tracks WHERE genre IS NOT NULL AND genre != '' GROUP BY genre ORDER BY c DESC LIMIT 30"
-        ).fetchall()
-        genres = {r["genre"]: r["c"] for r in genre_rows}
+        )
+        genres = {r["genre"]: r["c"] for r in cur.fetchall()}
 
         # Decades
-        decade_rows = conn.execute(
+        cur.execute(
             "SELECT (CAST(year AS INTEGER)/10)*10 || 's' as decade, COUNT(*) as c FROM library_tracks WHERE year IS NOT NULL AND year != '' AND length(year) >= 4 GROUP BY decade ORDER BY decade"
-        ).fetchall()
-        decades = {r["decade"]: r["c"] for r in decade_rows}
+        )
+        decades = {r["decade"]: r["c"] for r in cur.fetchall()}
 
         # Formats
-        format_rows = conn.execute(
+        cur.execute(
             "SELECT format, COUNT(*) as c FROM library_tracks WHERE format IS NOT NULL GROUP BY format"
-        ).fetchall()
-        formats = {r["format"]: r["c"] for r in format_rows}
+        )
+        formats = {r["format"]: r["c"] for r in cur.fetchall()}
 
         # Bitrates (bucketed)
-        bitrate_rows = conn.execute("""
+        cur.execute("""
             SELECT
                 CASE
                     WHEN bitrate IS NULL OR bitrate = 0 THEN 'unknown'
@@ -65,29 +65,32 @@ def api_analytics():
                     ELSE '>320k'
                 END as bucket,
                 COUNT(*) as c
-            FROM library_tracks GROUP BY bucket ORDER BY bucket
-        """).fetchall()
-        bitrates = {r["bucket"]: r["c"] for r in bitrate_rows}
+            FROM library_tracks GROUP BY 1 ORDER BY 1
+        """)
+        bitrates = {r["bucket"]: r["c"] for r in cur.fetchall()}
 
         # Top artists by album count
-        top_rows = conn.execute(
+        cur.execute(
             "SELECT artist, COUNT(DISTINCT name) as albums FROM library_albums GROUP BY artist ORDER BY albums DESC LIMIT 25"
-        ).fetchall()
-        top_artists = [{"name": r["artist"], "albums": r["albums"]} for r in top_rows]
+        )
+        top_artists = [{"name": r["artist"], "albums": r["albums"]} for r in cur.fetchall()]
 
         # Total duration
-        dur_row = conn.execute("SELECT COALESCE(SUM(duration), 0) as total FROM library_tracks").fetchone()
+        cur.execute("SELECT COALESCE(SUM(duration), 0) as total FROM library_tracks")
+        dur_row = cur.fetchone()
         total_duration_hours = round(dur_row["total"] / 3600, 1) if dur_row["total"] else 0
 
         # Sizes by format
-        size_rows = conn.execute(
+        cur.execute(
             "SELECT format, SUM(size) as total FROM library_tracks WHERE format IS NOT NULL GROUP BY format"
-        ).fetchall()
-        sizes_by_format_gb = {r["format"]: round(r["total"] / (1024**3), 2) for r in size_rows if r["total"]}
+        )
+        sizes_by_format_gb = {r["format"]: round(r["total"] / (1024**3), 2) for r in cur.fetchall() if r["total"]}
 
         # Avg tracks per album
-        album_count = conn.execute("SELECT COUNT(*) FROM library_albums").fetchone()[0]
-        track_count = conn.execute("SELECT COUNT(*) FROM library_tracks").fetchone()[0]
+        cur.execute("SELECT COUNT(*) AS cnt FROM library_albums")
+        album_count = cur.fetchone()["cnt"]
+        cur.execute("SELECT COUNT(*) AS cnt FROM library_tracks")
+        track_count = cur.fetchone()["cnt"]
         avg_tracks = round(track_count / album_count, 1) if album_count else 0
 
     return {
@@ -191,10 +194,11 @@ def api_stats():
 @router.get("/api/timeline")
 def api_timeline():
     if _has_library_data():
-        with get_db_ctx() as conn:
-            rows = conn.execute(
+        with get_db_ctx() as cur:
+            cur.execute(
                 "SELECT year, artist, name, track_count FROM library_albums WHERE year IS NOT NULL AND year != '' ORDER BY year"
-            ).fetchall()
+            )
+            rows = cur.fetchall()
 
         years: dict[str, list[dict]] = {}
         for r in rows:

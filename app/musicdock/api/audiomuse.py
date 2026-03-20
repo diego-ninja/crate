@@ -74,22 +74,17 @@ def analyze_album(artist: str, album: str):
 def get_analysis_data(name: str):
     """Get BPM/key/energy/mood data from our library_tracks table."""
     from musicdock.db import get_db_ctx
-    with get_db_ctx() as conn:
-        rows = conn.execute(
+    with get_db_ctx() as cur:
+        cur.execute(
             "SELECT title, bpm, audio_key, audio_scale, energy, mood_json FROM library_tracks "
-            "WHERE artist = ? AND bpm IS NOT NULL",
+            "WHERE artist = %s AND bpm IS NOT NULL",
             (name,),
-        ).fetchall()
+        )
+        rows = cur.fetchall()
 
-    import json
     result = {}
     for r in rows:
-        mood = None
-        if r["mood_json"]:
-            try:
-                mood = json.loads(r["mood_json"])
-            except Exception:
-                pass
+        mood = r["mood_json"]
         result[r["title"].lower() if r["title"] else ""] = {
             "tempo": round(r["bpm"]) if r["bpm"] else None,
             "key": r["audio_key"],

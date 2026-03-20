@@ -364,11 +364,12 @@ def api_artist(name: str):
 
     # Get genres from tracks
     genres: dict[str, int] = {}
-    with get_db_ctx() as conn:
-        genre_rows = conn.execute(
-            "SELECT genre, COUNT(*) as cnt FROM library_tracks WHERE artist = ? AND genre IS NOT NULL AND genre != '' GROUP BY genre ORDER BY cnt DESC LIMIT 5",
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT genre, COUNT(*) as cnt FROM library_tracks WHERE artist = %s AND genre IS NOT NULL AND genre != '' GROUP BY genre ORDER BY cnt DESC LIMIT 5",
             (name,),
-        ).fetchall()
+        )
+        genre_rows = cur.fetchall()
     for row in genre_rows:
         genres[row["genre"]] = row["cnt"]
     top_genres = list(genres.keys())
@@ -509,15 +510,17 @@ def api_search(q: str = ""):
         return _fs_search(q_stripped)
 
     like = f"%{q_stripped}%"
-    with get_db_ctx() as conn:
-        artist_rows = conn.execute(
-            "SELECT name FROM library_artists WHERE name LIKE ? LIMIT 20",
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT name FROM library_artists WHERE name LIKE %s LIMIT 20",
             (like,),
-        ).fetchall()
-        album_rows = conn.execute(
-            "SELECT artist, name FROM library_albums WHERE name LIKE ? OR artist LIKE ? LIMIT 50",
+        )
+        artist_rows = cur.fetchall()
+        cur.execute(
+            "SELECT artist, name FROM library_albums WHERE name LIKE %s OR artist LIKE %s LIMIT 50",
             (like, like),
-        ).fetchall()
+        )
+        album_rows = cur.fetchall()
 
     artists = [{"name": r["name"]} for r in artist_rows]
     albums = [{"artist": r["artist"], "name": r["name"]} for r in album_rows]

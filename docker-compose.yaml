@@ -224,6 +224,20 @@ services:
   #     traefik.http.routers.slskd.tls: true
   #     traefik.http.routers.slskd.tls.certresolver: letsencrypt
 
+  # MusicDock — PostgreSQL database
+  musicdock-postgres:
+    image: postgres:15-alpine
+    container_name: musicdock-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${MUSICDOCK_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${MUSICDOCK_POSTGRES_DB}
+    volumes:
+      - musicdock_postgres:/var/lib/postgresql/data
+    networks:
+      - musicdock
+
   # MusicDock — Music stack management
   musicdock-api:
     build: ./app
@@ -250,6 +264,10 @@ services:
       - AUDIOMUSE_POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
       - AUDIOMUSE_POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
       - AUDIOMUSE_POSTGRES_DB=${AUDIOMUSE_POSTGRES_DB}
+      - MUSICDOCK_POSTGRES_USER=${MUSICDOCK_POSTGRES_USER}
+      - MUSICDOCK_POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD}
+      - MUSICDOCK_POSTGRES_DB=${MUSICDOCK_POSTGRES_DB}
+      - MUSICDOCK_POSTGRES_HOST=musicdock-postgres
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music:ro
@@ -257,6 +275,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - musicdock
+    depends_on:
+      - musicdock-postgres
     command: ["api"]
 
   musicdock-worker:
@@ -277,12 +297,18 @@ services:
       - SPOTIFY_ID=${SPOTIFY_ID}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET}
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY}
+      - MUSICDOCK_POSTGRES_USER=${MUSICDOCK_POSTGRES_USER}
+      - MUSICDOCK_POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD}
+      - MUSICDOCK_POSTGRES_DB=${MUSICDOCK_POSTGRES_DB}
+      - MUSICDOCK_POSTGRES_HOST=musicdock-postgres
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
       - ${DATA_DIR}/librarian:/data
     networks:
       - musicdock
+    depends_on:
+      - musicdock-postgres
     command: ["worker"]
 
   musicdock-ui:
@@ -394,6 +420,8 @@ services:
       - musicdock
 
 volumes:
+  musicdock_postgres:
+    driver: local
   audiomuse_redis:
     driver: local
   audiomuse_postgres:
