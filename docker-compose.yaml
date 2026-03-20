@@ -133,6 +133,7 @@ services:
       traefik.http.routers.navidrome-secure.rule: Host(`play.${DOMAIN}`)
       traefik.http.routers.navidrome-secure.tls: true
       traefik.http.routers.navidrome-secure.tls.certresolver: letsencrypt
+      traefik.http.routers.navidrome-secure.middlewares: musicdock-auth-soft@docker
       traefik.http.routers.navidrome-subsonic.rule: Host(`api.${DOMAIN}`) && PathPrefix(`/rest/`) && !Query(`c`, `NavidromeUI`)
       traefik.http.routers.navidrome-subsonic.entryPoints: websecure
 

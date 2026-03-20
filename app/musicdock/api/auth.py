@@ -108,6 +108,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "id": payload["user_id"],
                     "email": payload["email"],
                     "role": payload.get("role", "user"),
+                    "username": payload.get("username"),
+                    "name": payload.get("name"),
                 }
 
         if not user:
@@ -149,7 +151,7 @@ async def login(body: LoginRequest):
     if not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     update_user_last_login(user["id"])
-    token = create_jwt(user["id"], user["email"], user["role"])
+    token = create_jwt(user["id"], user["email"], user["role"], username=user.get("username"), name=user.get("name"))
     response = JSONResponse(content=_user_public(user))
     _set_auth_cookie(response, token)
     return response
@@ -168,7 +170,7 @@ async def register(body: RegisterRequest):
         role="user",
     )
     update_user_last_login(user["id"])
-    token = create_jwt(user["id"], user["email"], user["role"])
+    token = create_jwt(user["id"], user["email"], user["role"], username=user.get("username"), name=user.get("name"))
     response = JSONResponse(content=_user_public(user), status_code=201)
     _set_auth_cookie(response, token)
     return response
@@ -214,12 +216,16 @@ async def auth_verify(request: Request):
 @router.get("/verify-soft")
 async def auth_verify_soft(request: Request):
     """Soft verify: always 200, injects Remote-User if authenticated (for play, search).
-    This allows services with their own auth to work — but auto-logs in if MusicDock cookie exists."""
+    This allows services with their own auth to work — but auto-logs in if MusicDock cookie exists.
+    Uses username (not email) as Remote-User for Navidrome compatibility."""
     user = getattr(request.state, "user", None)
     response = Response(status_code=200)
     if user:
-        response.headers["Remote-User"] = user["email"]
+        # Use username for Remote-User (Navidrome matches by username)
+        username = user.get("username") or user.get("email", "").split("@")[0]
+        response.headers["Remote-User"] = username
         response.headers["Remote-Name"] = user.get("name", "")
+        response.headers["Remote-Email"] = user.get("email", "")
         response.headers["Remote-Role"] = user.get("role", "user")
     return response
 
@@ -283,7 +289,7 @@ async def google_callback(request: Request, code: str = ""):
             user = create_user(email=email, name=name, avatar=avatar, google_id=google_id)
 
     update_user_last_login(user["id"])
-    token = create_jwt(user["id"], user["email"], user["role"])
+    token = create_jwt(user["id"], user["email"], user["role"], username=user.get("username"), name=user.get("name"))
     response = RedirectResponse(url=f"https://admin.{domain}/")
     _set_auth_cookie(response, token)
     return response

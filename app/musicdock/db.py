@@ -115,6 +115,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
+                username TEXT UNIQUE,
                 name TEXT,
                 password_hash TEXT,
                 avatar TEXT,
@@ -135,6 +136,12 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+
+        # Migration: add username column if missing
+        try:
+            cur.execute("ALTER TABLE users ADD COLUMN username TEXT UNIQUE")
+        except Exception:
+            pass  # column already exists
 
         _seed_admin(cur)
 
@@ -662,9 +669,12 @@ def _seed_admin(cur):
         now = datetime.now(timezone.utc).isoformat()
         password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "admin123")
         cur.execute(
-            "INSERT INTO users (email, name, password_hash, role, created_at) VALUES (%s, %s, %s, %s, %s)",
-            ("yosoy@diego.ninja", "Diego", hash_password(password), "admin", now),
+            "INSERT INTO users (email, username, name, password_hash, role, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+            ("yosoy@diego.ninja", "admin", "Diego", hash_password(password), "admin", now),
         )
+    else:
+        # Ensure admin has username set
+        cur.execute("UPDATE users SET username = 'admin' WHERE email = 'yosoy@diego.ninja' AND (username IS NULL OR username = '')")
 
 
 def create_user(email: str, name: str | None = None, password_hash: str | None = None,
