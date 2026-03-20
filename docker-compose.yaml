@@ -288,13 +288,6 @@ services:
       - musicdock-postgres
     labels:
       # Forward-auth middlewares (consumed by other services via @docker)
-      traefik.enable: true
-      traefik.http.middlewares.musicdock-auth.forwardAuth.address: http://musicdock-api:8585/api/auth/verify
-      traefik.http.middlewares.musicdock-auth.forwardAuth.trustForwardHeader: true
-      traefik.http.middlewares.musicdock-auth.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
-      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.address: http://musicdock-api:8585/api/auth/verify-soft
-      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.trustForwardHeader: true
-      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
     command: ["api"]
 
   musicdock-worker:
@@ -349,6 +342,13 @@ services:
       traefik.http.services.admin.loadbalancer.server.port: 80
       traefik.http.routers.admin.tls: true
       traefik.http.routers.admin.tls.certresolver: letsencrypt
+      # Forward-auth middlewares (used by other services)
+      traefik.http.middlewares.musicdock-auth.forwardAuth.address: http://musicdock-api:8585/api/auth/verify
+      traefik.http.middlewares.musicdock-auth.forwardAuth.trustForwardHeader: true
+      traefik.http.middlewares.musicdock-auth.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
+      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.address: http://musicdock-api:8585/api/auth/verify-soft
+      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.trustForwardHeader: true
+      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
       # traefik.http.routers.admin.middlewares: authelia@docker  # Enable after creating users
 
   # AudioMuse-AI — Sonic analysis and intelligent playlists
