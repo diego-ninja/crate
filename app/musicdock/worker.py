@@ -38,7 +38,7 @@ MAX_WORKERS = 3
 _active_tasks: set[str] = set()
 
 # Tasks that do heavy DB writes — only one at a time
-DB_HEAVY_TASKS = {"library_sync", "compute_analytics"}
+DB_HEAVY_TASKS = {"library_sync"}
 _db_heavy_running = False
 _db_heavy_lock = __import__("threading").Lock()
 
