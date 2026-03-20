@@ -3,10 +3,7 @@ import secrets
 from datetime import datetime, timezone, timedelta
 
 import jwt
-from passlib.hash import bcrypt as _bcrypt_handler
-
-# Fix passlib + bcrypt >= 4.1 compatibility
-bcrypt = _bcrypt_handler.using(truncate_error=True)
+import bcrypt as _bcrypt
 
 from musicdock.db import get_setting, set_setting
 
@@ -27,11 +24,11 @@ def _get_jwt_secret() -> str:
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hash(password)
+    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.verify(password, password_hash)
+    return _bcrypt.checkpw(password.encode(), password_hash.encode())
 
 
 def create_jwt(user_id: int, email: str, role: str) -> str:
