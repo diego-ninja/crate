@@ -128,12 +128,11 @@ services:
       traefik.enable: true
       traefik.docker.network: musicdock
       traefik.http.services.navidrome.loadbalancer.server.port: 4533
+      traefik.http.routers.navidrome.entryPoints: websecure
       traefik.http.routers.navidrome.rule: Host(`play.${DOMAIN}`)
-      traefik.http.routers.navidrome-secure.entryPoints: websecure
-      traefik.http.routers.navidrome-secure.rule: Host(`play.${DOMAIN}`)
-      traefik.http.routers.navidrome-secure.tls: true
-      traefik.http.routers.navidrome-secure.tls.certresolver: letsencrypt
-      traefik.http.routers.navidrome-secure.middlewares: musicdock-auth-soft@docker
+      traefik.http.routers.navidrome.tls: true
+      traefik.http.routers.navidrome.tls.certresolver: letsencrypt
+      traefik.http.routers.navidrome.middlewares: musicdock-auth-soft@docker
       traefik.http.routers.navidrome-subsonic.rule: Host(`api.${DOMAIN}`) && PathPrefix(`/rest/`) && !Query(`c`, `NavidromeUI`)
       traefik.http.routers.navidrome-subsonic.entryPoints: websecure
 
