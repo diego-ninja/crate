@@ -26,6 +26,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    from musicdock.api.auth import AutheliaMiddleware
+    app.add_middleware(AutheliaMiddleware)
+
+    from musicdock.api.auth import router as auth_router
     from musicdock.api.browse import router as browse_router
     from musicdock.api.tags import router as tags_router
     from musicdock.api.scanner import router as scanner_router
@@ -44,7 +48,8 @@ def create_app() -> FastAPI:
     from musicdock.api.audiomuse import router as audiomuse_router
     from musicdock.api.enrichment import router as enrichment_router
 
-    # Enrichment + audiomuse BEFORE browse (browse has {name:path} catch-all)
+    # Auth + enrichment + audiomuse BEFORE browse (browse has {name:path} catch-all)
+    app.include_router(auth_router)
     app.include_router(enrichment_router)
     app.include_router(audiomuse_router)
     app.include_router(navidrome_router)

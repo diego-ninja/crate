@@ -91,18 +91,21 @@ export function Album() {
     return () => { cancelled = true; };
   }, [artist, album]);
 
-  useEffect(() => {
-    if (!data?.artist) return;
-    // Try internal analysis first, fallback to AudioMuse
-    api<Record<string, AudioMuseTrack>>(`/api/analyze/artist/${encPath(data.artist)}/data`)
+  function fetchAudiomuseData(artistName: string) {
+    api<Record<string, AudioMuseTrack>>(`/api/analyze/artist/${encPath(artistName)}/data`)
       .then((d) => {
         if (d && Object.keys(d).length > 0) setAudiomuseData(d);
-        else return api<Record<string, AudioMuseTrack>>(`/api/audiomuse/artist/${encPath(data.artist)}/tracks`);
+        else return api<Record<string, AudioMuseTrack>>(`/api/audiomuse/artist/${encPath(artistName)}/tracks`);
       })
       .then((d) => {
         if (d && Object.keys(d).length > 0) setAudiomuseData(d);
       })
       .catch(() => {});
+  }
+
+  useEffect(() => {
+    if (!data?.artist) return;
+    fetchAudiomuseData(data.artist);
   }, [data?.artist]);
 
   async function findMatches() {
@@ -157,6 +160,8 @@ export function Album() {
           totalSizeMb={data.total_size_mb}
           hasCover={data.has_cover}
           navidromeData={navidromeData}
+          hasAnalysis={audiomuseData != null && Object.values(audiomuseData).some((t) => t.tempo != null)}
+          onAnalysisComplete={() => data?.artist && fetchAudiomuseData(data.artist)}
         >
           <Button
             size="sm"

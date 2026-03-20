@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,12 @@ import {
   Clock,
   Disc3,
   BrainCircuit,
+  Loader2,
 } from "lucide-react";
 import { encPath, formatDuration, formatSize } from "@/lib/utils";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
+import { toast } from "sonner";
 
 interface NavidromeAlbumData {
   id: string;
@@ -38,6 +40,8 @@ interface AlbumHeaderProps {
   totalSizeMb: number;
   hasCover: boolean;
   navidromeData?: NavidromeAlbumData | null;
+  hasAnalysis?: boolean;
+  onAnalysisComplete?: () => void;
   children?: React.ReactNode;
 }
 
@@ -50,19 +54,42 @@ export function AlbumHeader({
   totalSizeMb,
   hasCover,
   navidromeData,
+  hasAnalysis,
+  onAnalysisComplete,
   children,
 }: AlbumHeaderProps) {
   const { playAll } = usePlayer();
   const coverUrl = `/api/cover/${encPath(artist)}/${encPath(album)}`;
   const [coverLoaded, setCoverLoaded] = useState(false);
   const [coverError, setCoverError] = useState(false);
-  const [audiomuseUrl, setAudiomuseUrl] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
-  useEffect(() => {
-    api<{ available: boolean; analyzed_tracks: number; url: string }>("/api/audiomuse/status")
-      .then((s) => { if (s.available) setAudiomuseUrl(s.url); })
-      .catch(() => {});
-  }, []);
+  async function handleAnalyze() {
+    setAnalyzing(true);
+    try {
+      const res = await api<{ task_id: string }>(`/api/analyze/album/${encPath(artist)}/${encPath(album)}`, "POST");
+      const taskId = res.task_id;
+      const poll = setInterval(async () => {
+        try {
+          const task = await api<{ status: string }>(`/api/tasks/${taskId}`);
+          if (task.status === "completed") {
+            clearInterval(poll);
+            setAnalyzing(false);
+            toast.success("Analysis complete");
+            onAnalysisComplete?.();
+          } else if (task.status === "failed") {
+            clearInterval(poll);
+            setAnalyzing(false);
+            toast.error("Analysis failed");
+          }
+        } catch { /* keep polling */ }
+      }, 3000);
+      setTimeout(() => { clearInterval(poll); setAnalyzing(false); }, 120000);
+    } catch {
+      setAnalyzing(false);
+      toast.error("Failed to start analysis");
+    }
+  }
   const displayName = albumTags.album || album;
   const displayArtist = albumTags.artist || artist;
   const letter = displayName.charAt(0).toUpperCase();
@@ -202,13 +229,19 @@ export function AlbumHeader({
                   )}
                 </>
               )}
-              {audiomuseUrl && (
-                <Button size="sm" variant="outline" className="border-white/20 text-white/70 hover:text-white hover:bg-white/10" asChild>
-                  <a href={`${audiomuseUrl}/collection`} target="_blank" rel="noopener noreferrer">
-                    <BrainCircuit size={14} className="mr-1" /> Analyze in AudioMuse
-                  </a>
-                </Button>
-              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                onClick={handleAnalyze}
+                disabled={analyzing}
+              >
+                {analyzing ? (
+                  <><Loader2 size={14} className="animate-spin mr-1" /> Analyzing...</>
+                ) : (
+                  <><BrainCircuit size={14} className="mr-1" /> {hasAnalysis ? "Re-analyze" : "Analyze Audio"}</>
+                )}
+              </Button>
               {children}
             </div>
           </div>

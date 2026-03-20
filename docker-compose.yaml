@@ -29,6 +29,7 @@ services:
       traefik.http.routers.traefik-secure.rule: Host(`traefik.${DOMAIN}`)
       traefik.http.routers.traefik-secure.entryPoints: websecure
       traefik.http.routers.traefik-secure.service: api@internal
+      traefik.http.routers.traefik-secure.middlewares: authelia@docker
     depends_on:
       - authelia
 
@@ -51,6 +52,10 @@ services:
       traefik.docker.network: musicdock
       traefik.http.routers.authelia.rule: Host(`auth.${DOMAIN}`)
       traefik.http.routers.authelia.entryPoints: websecure
+      # Forward-auth middleware for protected services
+      traefik.http.middlewares.authelia.forwardAuth.address: http://authelia:9091/api/authz/forward-auth
+      traefik.http.middlewares.authelia.forwardAuth.trustForwardHeader: true
+      traefik.http.middlewares.authelia.forwardAuth.authResponseHeaders: Remote-User,Remote-Groups,Remote-Email,Remote-Name
 
   lidarr:
     image: lscr.io/linuxserver/lidarr:latest
@@ -327,6 +332,7 @@ services:
       traefik.http.services.admin.loadbalancer.server.port: 80
       traefik.http.routers.admin.tls: true
       traefik.http.routers.admin.tls.certresolver: letsencrypt
+      traefik.http.routers.admin.middlewares: authelia@docker
 
   # AudioMuse-AI — Sonic analysis and intelligent playlists
   audiomuse-redis:

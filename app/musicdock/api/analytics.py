@@ -7,9 +7,10 @@ from musicdock.audio import read_tags, get_audio_files
 from musicdock.api._deps import library_path, extensions, safe_path, get_config
 from musicdock.db import (
     list_tasks, get_latest_scan, get_library_stats, get_library_track_count,
-    get_db_ctx,
+    get_db_ctx, get_setting,
 )
 from musicdock.importer import ImportQueue
+from musicdock import navidrome
 
 router = APIRouter()
 
@@ -143,6 +144,33 @@ def api_stats():
         pending_imports = len(queue.scan_pending())
         pending_tasks = len(list_tasks(status="pending"))
 
+        with get_db_ctx() as cur:
+            cur.execute("SELECT COALESCE(SUM(duration), 0) / 3600.0 AS val FROM library_tracks")
+            total_duration_hours = round(cur.fetchone()["val"], 1)
+
+            cur.execute("SELECT AVG(bitrate) AS val FROM library_tracks WHERE bitrate IS NOT NULL")
+            row = cur.fetchone()
+            avg_bitrate = round(row["val"]) if row["val"] else 0
+
+            cur.execute(
+                "SELECT genre, COUNT(*) AS c FROM library_tracks "
+                "WHERE genre IS NOT NULL AND genre != '' "
+                "GROUP BY genre ORDER BY c DESC LIMIT 10"
+            )
+            top_genres = [{"name": r["genre"], "count": r["c"]} for r in cur.fetchall()]
+
+            cur.execute(
+                "SELECT artist, name, year, updated_at FROM library_albums "
+                "ORDER BY updated_at DESC LIMIT 10"
+            )
+            recent_albums = [
+                {"artist": r["artist"], "name": r["name"], "year": r["year"], "updated_at": r["updated_at"]}
+                for r in cur.fetchall()
+            ]
+
+            cur.execute("SELECT COUNT(*) AS c FROM library_tracks WHERE bpm IS NOT NULL")
+            analyzed_tracks = cur.fetchone()["c"]
+
         return {
             "artists": stats["artists"],
             "albums": stats["albums"],
@@ -152,6 +180,11 @@ def api_stats():
             "last_scan": scan["scanned_at"] if scan else None,
             "pending_imports": pending_imports,
             "pending_tasks": pending_tasks,
+            "total_duration_hours": total_duration_hours,
+            "avg_bitrate": avg_bitrate,
+            "top_genres": top_genres,
+            "recent_albums": recent_albums,
+            "analyzed_tracks": analyzed_tracks,
         }
 
     # Fallback to filesystem
@@ -188,6 +221,46 @@ def api_stats():
         "last_scan": last_scan,
         "pending_imports": pending_imports,
         "pending_tasks": pending_tasks,
+    }
+
+
+DEFAULT_MAX_WORKERS = 3
+
+
+@router.get("/api/activity/live")
+def api_activity_live():
+    running = list_tasks(status="running")
+    running_tasks = []
+    for t in running:
+        progress = t.get("progress", "")
+        running_tasks.append({"id": t["id"], "type": t["type"], "progress": progress})
+
+    recent = list_tasks(limit=10)
+    recent_tasks = [
+        {"id": t["id"], "type": t["type"], "status": t["status"], "updated_at": t["updated_at"]}
+        for t in recent
+    ]
+
+    max_workers = int(get_setting("max_workers", str(DEFAULT_MAX_WORKERS)) or DEFAULT_MAX_WORKERS)
+    worker_slots = {"max": max_workers, "active": len(running)}
+
+    # System health checks
+    pg_ok = True  # if we got here, postgres is up
+    try:
+        nd_ok = navidrome.ping()
+    except Exception:
+        nd_ok = False
+    watcher_ok = True  # watcher runs in-process with worker
+
+    return {
+        "running_tasks": running_tasks,
+        "recent_tasks": recent_tasks,
+        "worker_slots": worker_slots,
+        "systems": {
+            "postgres": pg_ok,
+            "navidrome": nd_ok,
+            "watcher": watcher_ok,
+        },
     }
 
 
