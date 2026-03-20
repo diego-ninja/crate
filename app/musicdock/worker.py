@@ -1175,7 +1175,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
         enriched += 1
         log.info("Enriched %s / %s (score=%d, mbid=%s, files=%d)",
                  artist_name, clean_album, best_score, release_mbid, written_files)
-        import time; time.sleep(1)  # MB rate limit: 1 req/sec
+        time.sleep(1)  # MB rate limit: 1 req/sec
 
     return {"enriched": enriched, "skipped": skipped, "failed": failed, "total": total}
 
