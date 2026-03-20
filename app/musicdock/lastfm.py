@@ -194,6 +194,42 @@ def get_fanart_background(artist_name: str) -> str | None:
     return None
 
 
+def get_fanart_all_images(artist_name: str) -> dict | None:
+    """Get ALL available image URLs from fanart.tv. Returns dict with backgrounds, thumbs, logos, banners."""
+    api_key = _fanart_key()
+    if not api_key:
+        return None
+
+    cache_key = f"fanart:all:{artist_name.lower()}"
+    cached = get_cache(cache_key, max_age_seconds=86400 * 7)
+    if cached:
+        return cached
+
+    mbid = _get_artist_mbid(artist_name)
+    if not mbid:
+        return None
+
+    try:
+        resp = requests.get(f"{FANART_BASE}{mbid}", params={"api_key": api_key}, timeout=10)
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        log.debug("Fanart.tv all-images lookup failed for %s", artist_name)
+        return None
+
+    result = {
+        "backgrounds": [img["url"] for img in data.get("artistbackground", []) if img.get("url")],
+        "thumbs": [img["url"] for img in data.get("artistthumb", []) if img.get("url")],
+        "logos": [img["url"] for img in data.get("hdmusiclogo", []) if img.get("url")],
+        "banners": [img["url"] for img in data.get("musicbanner", []) if img.get("url")],
+    }
+
+    set_cache(cache_key, result)
+    return result
+
+
 def get_best_artist_image(artist_name: str) -> bytes | None:
     """Try all sources to get an artist image: fanart.tv > Last.fm (non-placeholder).
     Returns image bytes or None."""

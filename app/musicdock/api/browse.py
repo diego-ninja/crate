@@ -242,10 +242,19 @@ def api_artists(
 
 
 @router.get("/api/artist/{name}/background")
-def api_artist_background(name: str):
-    """Return artist background image URL (1920x1080 panoramic from fanart.tv)."""
-    from musicdock.lastfm import get_fanart_background, download_artist_image
-    url = get_fanart_background(name)
+def api_artist_background(name: str, random_pick: bool = Query(False, alias="random")):
+    """Return artist background image (1920x1080 panoramic from fanart.tv)."""
+    import random as _random
+    from musicdock.lastfm import get_fanart_all_images, get_fanart_background, download_artist_image
+
+    fanart = get_fanart_all_images(name)
+    backgrounds = fanart.get("backgrounds", []) if fanart else []
+
+    if backgrounds:
+        url = _random.choice(backgrounds) if random_pick else backgrounds[0]
+    else:
+        url = get_fanart_background(name)
+
     if not url:
         return Response(status_code=404)
     image_data = download_artist_image(url)
@@ -255,7 +264,20 @@ def api_artist_background(name: str):
 
 
 @router.get("/api/artist/{name}/photo")
-def api_artist_photo(name: str):
+def api_artist_photo(name: str, random_pick: bool = Query(False, alias="random")):
+    import random as _random
+    from musicdock.lastfm import get_fanart_all_images, download_artist_image
+
+    # When random=true, pick from fanart.tv thumbs directly
+    if random_pick:
+        fanart = get_fanart_all_images(name)
+        thumbs = fanart.get("thumbs", []) if fanart else []
+        if thumbs:
+            url = _random.choice(thumbs)
+            image_data = download_artist_image(url)
+            if image_data:
+                return Response(content=image_data, media_type="image/jpeg")
+
     lib = library_path()
     artist_dir = safe_path(lib, name)
     if not artist_dir or not artist_dir.is_dir():

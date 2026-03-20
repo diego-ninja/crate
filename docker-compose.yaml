@@ -242,6 +242,9 @@ services:
       - NAVIDROME_USER=admin
       - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD:-0n053nd41}
       - DOMAIN=${DOMAIN}
+      - SPOTIFY_ID=${SPOTIFY_ID}
+      - SPOTIFY_SECRET=${SPOTIFY_SECRET}
+      - SETLISTFM_API_KEY=${SETLISTFM_API_KEY}
       - AUDIOMUSE_URL=http://audiomuse:8000
       - AUDIOMUSE_POSTGRES_HOST=audiomuse-postgres
       - AUDIOMUSE_POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
@@ -271,6 +274,9 @@ services:
       - NAVIDROME_USER=admin
       - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD:-0n053nd41}
       - DOMAIN=${DOMAIN}
+      - SPOTIFY_ID=${SPOTIFY_ID}
+      - SPOTIFY_SECRET=${SPOTIFY_SECRET}
+      - SETLISTFM_API_KEY=${SETLISTFM_API_KEY}
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music

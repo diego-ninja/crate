@@ -47,7 +47,6 @@ const navItems = [
   { to: "/artwork", icon: Image, label: "Album Art" },
   { to: "/organizer", icon: FolderSync, label: "Organizer" },
   { to: "/imports", icon: Download, label: "Imports", badgeKey: "pending_imports" as const },
-  { to: "/tasks", icon: ListTodo, label: "Tasks", badgeKey: "running_tasks" as const },
   { section: "Music" },
   { to: "/playlists", icon: ListMusic, label: "Playlists" },
   { external: "https://search.lespedants.org", icon: Search, label: "Download" },
@@ -59,6 +58,7 @@ const navItems = [
   { to: "/missing-albums", icon: Disc3, label: "Missing Albums" },
   { to: "/quality", icon: ShieldCheck, label: "Quality" },
   { section: "System" },
+  { to: "/tasks", icon: ListTodo, label: "Tasks", badgeKey: "running_tasks" as const },
   { to: "/stack", icon: Server, label: "Stack" },
 ] as const;
 

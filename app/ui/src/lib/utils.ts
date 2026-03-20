@@ -32,6 +32,13 @@ export function formatCompact(n: number): string {
   return String(n);
 }
 
+export function formatDurationMs(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export function encPath(s: string): string {
   return encodeURIComponent(s);
 }

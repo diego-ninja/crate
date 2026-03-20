@@ -158,6 +158,11 @@ class LibrarySync:
         return total_tracks
 
     def sync_album(self, album_dir: Path, artist_name: str) -> dict:
+        # Ensure artist exists (FK constraint)
+        if not get_library_artist(artist_name):
+            upsert_artist({"name": artist_name, "album_count": 0, "track_count": 0,
+                           "total_size": 0, "formats": [], "dir_mtime": album_dir.parent.stat().st_mtime})
+
         audio_files = get_audio_files(album_dir, list(self.extensions))
 
         # Get existing tracks for this album to reuse data for unchanged files

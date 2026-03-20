@@ -83,17 +83,21 @@ def run_worker(config: dict):
         log.warning("Resetting orphaned task %s (type=%s) to pending", t["id"], t["type"])
         update_task(t["id"], status="pending", progress="")
 
-    # Initial library sync
+    # Start filesystem watcher (non-blocking)
     try:
         sync = LibrarySync(config)
-        log.info("Running initial library sync...")
-        sync_result = sync.full_sync()
-        log.info("Library sync complete: %s", sync_result)
-
         watcher = LibraryWatcher(config, sync)
         watcher.start()
+        log.info("Filesystem watcher started")
     except Exception:
-        log.exception("Library sync/watcher failed to start")
+        log.exception("Library watcher failed to start")
+
+    # Queue initial library sync as a task (non-blocking)
+    pending_sync = list_tasks(status="pending", task_type="library_sync", limit=1)
+    running_sync = list_tasks(status="running", task_type="library_sync", limit=1)
+    if not pending_sync and not running_sync:
+        create_task("library_sync")
+        log.info("Queued initial library sync task")
 
     log.info("Worker started with %d slots, polling for tasks...", MAX_WORKERS)
 

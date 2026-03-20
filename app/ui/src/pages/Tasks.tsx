@@ -184,6 +184,9 @@ export function Tasks() {
         </Button>
       </h1>
 
+      {/* Worker Status */}
+      <WorkerStatus running={running.length} pending={pending.length} />
+
       {/* Active tasks */}
       {(running.length > 0 || pending.length > 0) && (
         <Card className="bg-card">
@@ -314,5 +317,72 @@ export function Tasks() {
         onConfirm={() => { if (cancelId) handleCancel(cancelId); }}
       />
     </div>
+  );
+}
+
+function WorkerStatus({ running, pending }: { running: number; pending: number }) {
+  const MAX_SLOTS = 3;
+  const [showLogs, setShowLogs] = useState(false);
+  const [logs, setLogs] = useState<string | null>(null);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  async function toggleLogs() {
+    if (showLogs) {
+      setShowLogs(false);
+      return;
+    }
+    setShowLogs(true);
+    setLogsLoading(true);
+    try {
+      const d = await api<{ name: string; logs: string }>("/api/stack/container/musicdock-worker/logs?tail=40");
+      setLogs(d.logs);
+    } catch {
+      setLogs("Failed to load logs");
+    } finally {
+      setLogsLoading(false);
+    }
+  }
+
+  return (
+    <Card className="bg-card">
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <div className="text-sm font-medium">Worker</div>
+            <div className="flex gap-1">
+              {Array.from({ length: MAX_SLOTS }, (_, i) => (
+                <div
+                  key={i}
+                  className={`w-3 h-3 rounded-full transition-colors ${
+                    i < running ? "bg-blue-500 animate-pulse" : "bg-border"
+                  }`}
+                  title={i < running ? "Active" : "Idle"}
+                />
+              ))}
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {running}/{MAX_SLOTS} active
+              {pending > 0 && ` · ${pending} queued`}
+            </span>
+          </div>
+          <Button variant="ghost" size="sm" onClick={toggleLogs} className="text-xs text-muted-foreground">
+            {showLogs ? "Hide logs" : "Worker logs"}
+          </Button>
+        </div>
+        {showLogs && (
+          <div className="bg-[#060608] rounded-lg p-3 max-h-[250px] overflow-auto mt-2">
+            {logsLoading ? (
+              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                <Loader2 size={12} className="animate-spin" /> Loading...
+              </div>
+            ) : (
+              <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                {logs || "No logs"}
+              </pre>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

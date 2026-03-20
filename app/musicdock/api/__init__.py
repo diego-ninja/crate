@@ -67,6 +67,7 @@ def create_app() -> FastAPI:
     from musicdock.api.navidrome import router as navidrome_router
     from musicdock.api.stack import router as stack_router
     from musicdock.api.audiomuse import router as audiomuse_router
+    from musicdock.api.enrichment import router as enrichment_router
 
     app.include_router(browse_router)
     app.include_router(tags_router)
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(navidrome_router)
     app.include_router(stack_router)
     app.include_router(audiomuse_router)
+    app.include_router(enrichment_router)
 
     # Static files and templates
     base = Path(__file__).resolve().parent.parent

@@ -14,7 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
-import { encPath, formatSize, formatNumber, formatCompact, formatDuration } from "@/lib/utils";
+import {
+  encPath,
+  formatSize,
+  formatNumber,
+  formatCompact,
+  formatDuration,
+  formatDurationMs,
+} from "@/lib/utils";
 import {
   Play,
   Pause,
@@ -28,8 +35,16 @@ import {
   Eye,
   EyeOff,
   RefreshCw,
+  Globe,
+  Users,
+  Calendar,
+  MapPin,
+  BarChart3,
+  ListMusic,
 } from "lucide-react";
 import { toast } from "sonner";
+
+// ── Types ──
 
 interface ArtistData {
   name: string;
@@ -47,16 +62,6 @@ interface ArtistData {
   primary_format?: string;
 }
 
-interface ArtistInfo {
-  bio: string;
-  tags: string[];
-  similar: { name: string }[];
-  listeners: number;
-  playcount: number;
-  image_url: string;
-  url: string;
-}
-
 interface NavidromeArtistLink {
   id: string;
   name: string;
@@ -72,6 +77,70 @@ interface TopTrack {
   track: number;
 }
 
+interface EnrichmentData {
+  lastfm?: {
+    bio?: string;
+    tags?: string[];
+    similar?: { name: string }[];
+    listeners?: number;
+    playcount?: number;
+    url?: string;
+  };
+  spotify?: {
+    popularity?: number;
+    followers?: number;
+    genres?: string[];
+    top_tracks?: {
+      name: string;
+      album: string;
+      duration_ms: number;
+      popularity: number;
+      preview_url?: string;
+    }[];
+    related_artists?: {
+      name: string;
+      images?: { url: string }[];
+      genres?: string[];
+      popularity?: number;
+    }[];
+    url?: string;
+  };
+  setlist?: {
+    probable_setlist?: {
+      title: string;
+      frequency: number;
+      play_count: number;
+      last_played?: string;
+    }[];
+    total_shows?: number;
+    last_show?: { date: string; venue: string; city: string };
+  };
+  musicbrainz?: {
+    type?: string;
+    begin_date?: string;
+    country?: string;
+    area?: string;
+    members?: {
+      name: string;
+      type: string;
+      begin?: string;
+      end?: string | null;
+      attributes?: string[];
+    }[];
+    urls?: Record<string, string>;
+  };
+  fanart?: {
+    backgrounds?: string[];
+    thumbs?: string[];
+    logos?: string[];
+    banners?: string[];
+  };
+}
+
+type TabKey = "overview" | "top-tracks" | "discography" | "setlist" | "similar" | "about";
+
+// ── Main Component ──
+
 export function Artist() {
   const { name } = useParams<{ name: string }>();
   const decodedName = name ? decodeURIComponent(name) : "";
@@ -84,24 +153,26 @@ export function Artist() {
   const [photoLoaded, setPhotoLoaded] = useState(false);
   const [photoError, setPhotoError] = useState(false);
   const [bgLoaded, setBgLoaded] = useState(false);
-  const [info, setInfo] = useState<ArtistInfo | null>(null);
-  const [, setInfoLoaded] = useState(false);
-  const [bioExpanded, setBioExpanded] = useState(false);
   const [navidromeLink, setNavidromeLink] = useState<NavidromeArtistLink | null>(null);
   const [topTracks, setTopTracks] = useState<TopTrack[]>([]);
-  const [activeSection, setActiveSection] = useState<"discography" | "top-tracks" | "similar" | "about">("discography");
+  const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [showMissing, setShowMissing] = useState(true);
   const [missingAlbums, setMissingAlbums] = useState<{ title: string; first_release_date: string; type: string }[]>([]);
   const [missingLoaded, setMissingLoaded] = useState(false);
+  const [bioExpanded, setBioExpanded] = useState(false);
+  const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
+  const [enrichmentLoading, setEnrichmentLoading] = useState(false);
   const bgRef = useRef<HTMLImageElement>(null);
 
-  // Fetch Last.fm info
+  // Fetch enrichment data
   useEffect(() => {
     if (!data?.name) return;
     let cancelled = false;
-    api<ArtistInfo>(`/api/artist/${encPath(data.name)}/info`)
-      .then((d) => { if (!cancelled) { setInfo(d); setInfoLoaded(true); } })
-      .catch(() => { setInfoLoaded(true); });
+    setEnrichmentLoading(true);
+    api<EnrichmentData>(`/api/artist/${encPath(data.name)}/enrichment`)
+      .then((d) => { if (!cancelled) setEnrichment(d); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setEnrichmentLoading(false); });
     return () => { cancelled = true; };
   }, [data?.name]);
 
@@ -125,15 +196,15 @@ export function Artist() {
     return () => { cancelled = true; };
   }, [data?.name]);
 
-  // Fetch missing albums (lazy, on discography tab activation)
+  // Fetch missing albums (lazy, on discography tab)
   useEffect(() => {
-    if (!data?.name || activeSection !== "discography" || missingLoaded) return;
+    if (!data?.name || activeTab !== "discography" || missingLoaded) return;
     let cancelled = false;
     api<{ missing: { title: string; first_release_date: string; type: string }[] }>(`/api/missing/${encPath(data.name)}`)
       .then((d) => { if (!cancelled) { setMissingAlbums(d.missing ?? []); setMissingLoaded(true); } })
       .catch(() => { if (!cancelled) setMissingLoaded(true); });
     return () => { cancelled = true; };
-  }, [data?.name, activeSection, missingLoaded]);
+  }, [data?.name, activeTab, missingLoaded]);
 
   if (loading) {
     return (
@@ -141,7 +212,7 @@ export function Artist() {
         <div className="h-[360px] bg-card animate-pulse" />
         <div className="px-8 pt-6">
           <div className="flex gap-2 mb-6">
-            {Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-9 w-28" />)}
+            {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-9 w-28" />)}
           </div>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
             {Array.from({ length: 8 }, (_, i) => (
@@ -169,17 +240,26 @@ export function Artist() {
     return a.name.localeCompare(b.name);
   });
 
+  // Merge genres from all sources
   const allTags = (() => {
     const seen = new Set<string>();
     const result: string[] = [];
-    for (const t of [...(data.genres ?? []), ...(info?.tags ?? [])]) {
+    for (const t of [
+      ...(data.genres ?? []),
+      ...(enrichment?.lastfm?.tags ?? []),
+      ...(enrichment?.spotify?.genres ?? []),
+    ]) {
       const lower = t.toLowerCase();
       if (!seen.has(lower)) { seen.add(lower); result.push(t); }
     }
     return result;
   })();
 
-  const bioText = info?.bio ?? "";
+  const bioText = enrichment?.lastfm?.bio ?? "";
+  const mb = enrichment?.musicbrainz;
+  const spotify = enrichment?.spotify;
+  const lastfm = enrichment?.lastfm;
+  const setlistData = enrichment?.setlist;
 
   function playTopTrack(_track: TopTrack, index: number) {
     const tracks: PlayerTrack[] = topTracks.map((t) => ({
@@ -191,44 +271,81 @@ export function Artist() {
     player.playAll(tracks, index);
   }
 
-  const sections = [
-    { key: "discography" as const, label: "Discography", count: data.albums.length },
-    { key: "top-tracks" as const, label: "Top Tracks", count: topTracks.length },
-    { key: "similar" as const, label: "Similar Artists", count: info?.similar?.length ?? 0 },
-    { key: "about" as const, label: "About", count: bioText ? 1 : 0 },
+  // Merge similar artists from Last.fm + Spotify related
+  const mergedSimilar = (() => {
+    const seen = new Set<string>();
+    const result: { name: string; image?: string; genres?: string[]; popularity?: number }[] = [];
+    for (const a of (spotify?.related_artists ?? [])) {
+      const lower = a.name.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        result.push({
+          name: a.name,
+          image: a.images?.[0]?.url,
+          genres: a.genres,
+          popularity: a.popularity,
+        });
+      }
+    }
+    for (const a of (lastfm?.similar ?? [])) {
+      const lower = a.name.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        result.push({ name: a.name });
+      }
+    }
+    return result;
+  })();
+
+  // External links
+  const externalLinks = (() => {
+    const links: { label: string; url: string; color: string }[] = [];
+    if (spotify?.url) links.push({ label: "Spotify", url: spotify.url, color: "text-green-400" });
+    if (lastfm?.url) links.push({ label: "Last.fm", url: lastfm.url, color: "text-red-400" });
+    if (mb?.urls?.wikipedia) links.push({ label: "Wikipedia", url: mb.urls.wikipedia, color: "text-white/60" });
+    if (mb?.urls?.official) links.push({ label: "Official", url: mb.urls.official, color: "text-blue-400" });
+    if (mb?.urls?.instagram) links.push({ label: "Instagram", url: mb.urls.instagram, color: "text-pink-400" });
+    if (mb?.urls?.spotify && !spotify?.url) links.push({ label: "Spotify", url: mb.urls.spotify, color: "text-green-400" });
+    if (navidromeLink?.navidrome_url) links.push({ label: "Navidrome", url: navidromeLink.navidrome_url, color: "text-cyan-400" });
+    return links;
+  })();
+
+  const tabs: { key: TabKey; label: string }[] = [
+    { key: "overview", label: "Overview" },
+    { key: "top-tracks", label: "Top Tracks" },
+    { key: "discography", label: "Discography" },
+    { key: "setlist", label: "Probable Setlist" },
+    { key: "similar", label: "Similar Artists" },
+    { key: "about", label: "About" },
   ];
+
+  const activeMembers = mb?.members?.filter((m) => !m.end) ?? [];
 
   return (
     <div className="-mx-8 -mt-8">
       {/* ═══ HERO BANNER ═══ */}
       <div className="relative h-[360px] md:h-[400px] overflow-hidden">
-        {/* Background image */}
         <img
           ref={bgRef}
-          src={`/api/artist/${encPath(data.name)}/background`}
+          src={`/api/artist/${encPath(data.name)}/background?random=true`}
           alt=""
           className={`absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-1000 ${bgLoaded ? "opacity-40" : "opacity-0"}`}
           onLoad={() => setBgLoaded(true)}
           onError={() => {}}
         />
-
-        {/* Gradient overlays */}
         <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] via-[#0a0a0a]/80 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-[#0a0a0a]/40" />
-
-        {/* Noise texture overlay */}
         <div className="absolute inset-0 opacity-[0.03]" style={{
           backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")",
         }} />
 
-        {/* Content */}
         <div className="absolute inset-0 flex items-end px-8 pb-8">
-          <div className="flex items-end gap-6 max-w-4xl w-full">
+          <div className="flex items-end gap-6 max-w-5xl w-full">
             {/* Artist photo */}
             <div className="w-[160px] h-[160px] md:w-[180px] md:h-[180px] rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
               {!photoError ? (
                 <img
-                  src={`/api/artist/${encPath(data.name)}/photo`}
+                  src={`/api/artist/${encPath(data.name)}/photo?random=true`}
                   alt={data.name}
                   className={`w-full h-full object-cover transition-opacity duration-500 ${photoLoaded ? "opacity-100" : "opacity-0"}`}
                   onLoad={() => setPhotoLoaded(true)}
@@ -244,31 +361,61 @@ export function Artist() {
 
             {/* Artist info */}
             <div className="flex-1 min-w-0 pb-1">
-              {/* Breadcrumb */}
               <div className="text-xs text-white/40 mb-2">
                 <Link to="/browse" className="hover:text-white/70 transition-colors">Browse</Link>
                 <span className="mx-1.5">/</span>
                 <span className="text-white/60">{data.name}</span>
               </div>
 
-              {/* Name */}
-              <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white leading-none mb-3 truncate">
+              <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white leading-none mb-2 truncate">
                 {data.name}
               </h1>
 
+              {/* Origin + formation year */}
+              {(mb?.country || mb?.begin_date) && (
+                <div className="flex items-center gap-3 text-sm text-white/50 mb-2">
+                  {mb?.country && (
+                    <span className="flex items-center gap-1"><MapPin size={13} />{mb.area ? `${mb.area}, ` : ""}{mb.country}</span>
+                  )}
+                  {mb?.begin_date && (
+                    <span className="flex items-center gap-1"><Calendar size={13} />Est. {mb.begin_date}</span>
+                  )}
+                  {mb?.type && (
+                    <span className="flex items-center gap-1"><Users size={13} />{mb.type}</span>
+                  )}
+                </div>
+              )}
+
               {/* Stats row */}
-              <div className="flex items-center gap-4 text-sm text-white/50 mb-3 flex-wrap">
+              <div className="flex items-center gap-4 text-sm text-white/50 mb-2 flex-wrap">
                 <span className="flex items-center gap-1.5"><Disc3 size={14} />{data.albums.length} albums</span>
                 <span className="flex items-center gap-1.5"><Music size={14} />{formatNumber(totalTracks)} tracks</span>
                 <span className="flex items-center gap-1.5"><HardDrive size={14} />{formatSize(totalSize)}</span>
-                {info && info.listeners > 0 && (
-                  <span className="flex items-center gap-1.5"><Headphones size={14} />{formatCompact(info.listeners)} listeners</span>
+                {lastfm && (lastfm.listeners ?? 0) > 0 && (
+                  <span className="flex items-center gap-1.5"><Headphones size={14} />{formatCompact(lastfm.listeners!)} listeners</span>
                 )}
               </div>
 
+              {/* Spotify popularity bar */}
+              {spotify?.popularity != null && spotify.popularity > 0 && (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-white/40">Popularity</span>
+                  <div className="w-[60px] h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${spotify.popularity}%`,
+                        background: `linear-gradient(90deg, #6b7280, #22c55e)`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs text-white/40">{spotify.popularity}%</span>
+                </div>
+              )}
+
               {/* Tags */}
               {allTags.length > 0 && (
-                <div className="flex gap-1.5 flex-wrap mb-4">
+                <div className="flex gap-1.5 flex-wrap mb-3">
                   {allTags.slice(0, 8).map((g) => (
                     <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">
                       {g}
@@ -292,13 +439,6 @@ export function Artist() {
                   <Button size="sm" variant="outline" className="border-white/20 text-white/70 hover:text-white hover:bg-white/10" asChild>
                     <a href={navidromeLink.navidrome_url} target="_blank" rel="noopener noreferrer">
                       <ExternalLink size={14} className="mr-1" /> Navidrome
-                    </a>
-                  </Button>
-                )}
-                {info?.url && (
-                  <Button size="sm" variant="outline" className="border-white/20 text-white/70 hover:text-white hover:bg-white/10" asChild>
-                    <a href={info.url} target="_blank" rel="noopener noreferrer">
-                      Last.fm
                     </a>
                   </Button>
                 )}
@@ -326,23 +466,20 @@ export function Artist() {
         </div>
       </div>
 
-      {/* ═══ SECTION TABS ═══ */}
+      {/* ═══ TABS ═══ */}
       <div className="px-8 border-b border-border sticky top-0 bg-[#0a0a0a]/95 backdrop-blur-sm z-10">
         <div className="flex gap-1 -mb-px">
-          {sections.filter(s => s.count > 0).map((s) => (
+          {tabs.map((t) => (
             <button
-              key={s.key}
-              onClick={() => setActiveSection(s.key)}
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
               className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-                activeSection === s.key
+                activeTab === t.key
                   ? "border-violet-500 text-white"
                   : "border-transparent text-white/40 hover:text-white/70"
               }`}
             >
-              {s.label}
-              {s.key !== "about" && (
-                <span className="ml-1.5 text-xs text-white/30">{s.count}</span>
-              )}
+              {t.label}
             </button>
           ))}
         </div>
@@ -351,8 +488,185 @@ export function Artist() {
       {/* ═══ CONTENT ═══ */}
       <div className="px-8 pt-6 pb-12">
 
-        {/* Discography */}
-        {activeSection === "discography" && (
+        {/* ── Overview Tab ── */}
+        {activeTab === "overview" && (
+          <div className="space-y-8">
+            {/* Bio */}
+            {bioText && (
+              <div className="max-w-3xl">
+                <h3 className="text-sm font-semibold text-white/70 mb-2">Biography</h3>
+                <p className="text-sm text-white/60 leading-relaxed whitespace-pre-line">
+                  {bioExpanded ? bioText : bioText.slice(0, 400)}
+                  {!bioExpanded && bioText.length > 400 && "..."}
+                </p>
+                {bioText.length > 400 && (
+                  <button
+                    onClick={() => setBioExpanded(!bioExpanded)}
+                    className="text-xs text-violet-400 hover:text-violet-300 mt-2 flex items-center gap-1"
+                  >
+                    {bioExpanded ? <><ChevronUp size={12} /> Less</> : <><ChevronDown size={12} /> More</>}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Top 5 Tracks mini-list */}
+            {topTracks.length > 0 && (
+              <div className="max-w-2xl">
+                <h3 className="text-sm font-semibold text-white/70 mb-2">Top Tracks</h3>
+                <div className="space-y-0.5">
+                  {topTracks.slice(0, 5).map((track, i) => {
+                    const isCurrent = player.queue[player.currentIndex]?.id === track.id;
+                    const isCurrentPlaying = isCurrent && player.isPlaying;
+                    return (
+                      <button
+                        key={track.id}
+                        onClick={() => {
+                          if (isCurrentPlaying) player.pause();
+                          else if (isCurrent) player.resume();
+                          else playTopTrack(track, i);
+                        }}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors group text-left ${isCurrent ? "bg-white/[0.03]" : ""}`}
+                      >
+                        {isCurrent ? (
+                          isCurrentPlaying ? <Pause size={13} className="text-violet-400 w-5 fill-current" /> : <Play size={13} className="text-violet-400 w-5 fill-current" />
+                        ) : (
+                          <>
+                            <span className="w-5 text-right text-xs text-white/30 group-hover:hidden">{i + 1}</span>
+                            <Play size={13} className="text-violet-400 hidden group-hover:block w-5 fill-current" />
+                          </>
+                        )}
+                        <span className={`flex-1 text-sm truncate ${isCurrent ? "text-violet-400" : "text-white/80"}`}>{track.title}</span>
+                        <span className="text-xs text-white/30">{formatDuration(track.duration)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Quick stats grid */}
+            <div>
+              <h3 className="text-sm font-semibold text-white/70 mb-3">Stats</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-w-3xl">
+                {mb?.type && <StatCard label="Type" value={mb.type} icon={<Users size={14} />} />}
+                {mb?.begin_date && <StatCard label="Formed" value={mb.begin_date} icon={<Calendar size={14} />} />}
+                {mb?.country && <StatCard label="Country" value={mb.country} icon={<MapPin size={14} />} />}
+                {activeMembers.length > 0 && <StatCard label="Active Members" value={String(activeMembers.length)} icon={<Users size={14} />} />}
+                {(lastfm?.listeners ?? 0) > 0 && <StatCard label="Listeners" value={formatCompact(lastfm!.listeners!)} icon={<Headphones size={14} />} />}
+                {(spotify?.followers ?? 0) > 0 && <StatCard label="Followers" value={formatCompact(spotify!.followers!)} icon={<Users size={14} />} />}
+                {(spotify?.popularity ?? 0) > 0 && <StatCard label="Popularity" value={`${spotify!.popularity}%`} icon={<BarChart3 size={14} />} />}
+                {(lastfm?.playcount ?? 0) > 0 && <StatCard label="Scrobbles" value={formatCompact(lastfm!.playcount!)} icon={<Music size={14} />} />}
+              </div>
+            </div>
+
+            {/* External links */}
+            {externalLinks.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-white/70 mb-3">Links</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {externalLinks.map((link) => (
+                    <a
+                      key={link.label}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-white/10 hover:border-white/20 hover:bg-white/5 transition-colors ${link.color}`}
+                    >
+                      <Globe size={12} /> {link.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {enrichmentLoading && (
+              <div className="space-y-3 max-w-3xl">
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-20 w-full" />
+                <Skeleton className="h-4 w-32" />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Top Tracks Tab ── */}
+        {activeTab === "top-tracks" && (
+          <div className="max-w-4xl">
+            {topTracks.length === 0 && !(spotify?.top_tracks?.length) ? (
+              <div className="text-center py-12 text-muted-foreground">No top tracks available</div>
+            ) : (
+              <div>
+                {/* Header row */}
+                <div className="flex items-center gap-4 px-4 py-2 text-xs text-white/30 border-b border-white/5 mb-1">
+                  <span className="w-8 text-right">#</span>
+                  <span className="flex-1">Title</span>
+                  <span className="w-32 hidden sm:block">Album</span>
+                  <span className="w-20 text-right">Duration</span>
+                  <span className="w-20 text-right hidden sm:block">Popularity</span>
+                  <span className="w-8" />
+                </div>
+                <div className="space-y-0.5">
+                  {/* Navidrome top tracks first */}
+                  {topTracks.map((track, i) => {
+                    const isCurrent = player.queue[player.currentIndex]?.id === track.id;
+                    const isCurrentPlaying = isCurrent && player.isPlaying;
+                    return (
+                      <button
+                        key={`nd-${track.id}`}
+                        onClick={() => {
+                          if (isCurrentPlaying) player.pause();
+                          else if (isCurrent) player.resume();
+                          else playTopTrack(track, i);
+                        }}
+                        className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors group text-left ${isCurrent ? "bg-white/[0.03]" : ""}`}
+                      >
+                        {isCurrent ? (
+                          isCurrentPlaying ? <Pause size={14} className="text-violet-400 w-8 text-right fill-current" /> : <Play size={14} className="text-violet-400 w-8 text-right fill-current" />
+                        ) : (
+                          <>
+                            <span className="w-8 text-right text-sm text-white/30 group-hover:hidden">{i + 1}</span>
+                            <Play size={14} className="text-violet-400 hidden group-hover:block w-8 text-right fill-current" />
+                          </>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-sm font-medium truncate ${isCurrent ? "text-violet-400" : "text-white/90"}`}>{track.title}</div>
+                        </div>
+                        <div className="w-32 hidden sm:block text-xs text-white/40 truncate">{track.album}</div>
+                        <div className="w-20 text-right text-xs text-white/30">{formatDuration(track.duration)}</div>
+                        <div className="w-20 hidden sm:block" />
+                        <div className="w-8" />
+                      </button>
+                    );
+                  })}
+                  {/* Spotify-only tracks (not in Navidrome) */}
+                  {spotify?.top_tracks?.filter(
+                    (st) => !topTracks.some((t) => t.title.toLowerCase() === st.name.toLowerCase())
+                  ).map((st, i) => (
+                    <div
+                      key={`sp-${i}`}
+                      className="w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left opacity-60"
+                    >
+                      <span className="w-8 text-right text-sm text-white/30">{topTracks.length + i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-white/70 truncate">{st.name}</div>
+                      </div>
+                      <div className="w-32 hidden sm:block text-xs text-white/40 truncate">{st.album}</div>
+                      <div className="w-20 text-right text-xs text-white/30">{formatDurationMs(st.duration_ms)}</div>
+                      <div className="w-20 text-right hidden sm:block">
+                        <PopularityBar value={st.popularity} />
+                      </div>
+                      <div className="w-8" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Discography Tab ── */}
+        {activeTab === "discography" && (
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-4">
@@ -419,70 +733,109 @@ export function Artist() {
           </div>
         )}
 
-        {/* Top Tracks */}
-        {activeSection === "top-tracks" && (
+        {/* ── Probable Setlist Tab ── */}
+        {activeTab === "setlist" && (
           <div className="max-w-3xl">
-            {topTracks.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">No top tracks available</div>
+            {!setlistData?.probable_setlist?.length ? (
+              <div className="text-center py-12 text-muted-foreground">
+                No concert data available from Setlist.fm
+              </div>
             ) : (
-              <div className="space-y-1">
-                {topTracks.map((track, i) => {
-                  const isCurrent = player.queue[player.currentIndex]?.id === track.id;
-                  const isCurrentPlaying = isCurrent && player.isPlaying;
-                  return (
-                    <button
-                      key={track.id}
-                      onClick={() => {
-                        if (isCurrentPlaying) player.pause();
-                        else if (isCurrent) player.resume();
-                        else playTopTrack(track, i);
-                      }}
-                      className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg hover:bg-white/5 transition-colors group text-left ${isCurrent ? "bg-white/[0.03]" : ""}`}
-                    >
-                      {isCurrent ? (
-                        isCurrentPlaying ? (
-                          <Pause size={14} className="text-violet-400 w-6 text-right fill-current" />
-                        ) : (
-                          <Play size={14} className="text-violet-400 w-6 text-right fill-current" />
-                        )
-                      ) : (
-                        <>
-                          <span className="w-6 text-right text-sm text-white/30 group-hover:hidden">{i + 1}</span>
-                          <Play size={14} className="text-violet-400 hidden group-hover:block w-6 text-right fill-current" />
-                        </>
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-lg font-semibold">Probable Setlist</h2>
+                    <p className="text-xs text-white/40 mt-0.5">
+                      Based on {setlistData.total_shows ?? 0} recent concerts
+                      {setlistData.last_show && (
+                        <> &middot; Last show: {setlistData.last_show.date} at {setlistData.last_show.venue}, {setlistData.last_show.city}</>
                       )}
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-medium truncate ${isCurrent ? "text-violet-400" : "text-white/90"}`}>{track.title}</div>
-                        <div className="text-xs text-white/40 truncate">{track.album}</div>
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="bg-violet-600 hover:bg-violet-500 text-white"
+                    onClick={async () => {
+                      try {
+                        await api(`/api/artist/${encPath(data.name)}/setlist-playlist`, "POST");
+                        toast.success("Setlist playlist created in Navidrome");
+                      } catch {
+                        toast.error("Failed to create playlist");
+                      }
+                    }}
+                  >
+                    <ListMusic size={14} className="mr-1" /> Create Playlist in Navidrome
+                  </Button>
+                </div>
+
+                {/* Header */}
+                <div className="flex items-center gap-4 px-4 py-2 text-xs text-white/30 border-b border-white/5 mb-1">
+                  <span className="w-8 text-right">#</span>
+                  <span className="flex-1">Song</span>
+                  <span className="w-28">Frequency</span>
+                  <span className="w-16 text-right">Plays</span>
+                  <span className="w-24 text-right hidden sm:block">Last Played</span>
+                </div>
+
+                <div className="space-y-0.5">
+                  {setlistData.probable_setlist.map((song, i) => (
+                    <div key={i} className="flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors">
+                      <span className="w-8 text-right text-sm text-white/30">{i + 1}</span>
+                      <span className="flex-1 text-sm text-white/90 truncate">{song.title}</span>
+                      <div className="w-28 flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${Math.round(song.frequency * 100)}%`,
+                              background: "linear-gradient(90deg, #7c3aed, #a78bfa)",
+                            }}
+                          />
+                        </div>
+                        <span className="text-xs text-white/40 w-8 text-right">{Math.round(song.frequency * 100)}%</span>
                       </div>
-                      <span className="text-xs text-white/30">{formatDuration(track.duration)}</span>
-                    </button>
-                  );
-                })}
+                      <span className="w-16 text-right text-xs text-white/40">{song.play_count}</span>
+                      <span className="w-24 text-right text-xs text-white/30 hidden sm:block">{song.last_played ?? "-"}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* Similar Artists */}
-        {activeSection === "similar" && info?.similar && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">
-            {info.similar.map((s) => (
-              <SimilarArtistCard key={s.name} name={s.name} />
-            ))}
+        {/* ── Similar Artists Tab ── */}
+        {activeTab === "similar" && (
+          <div>
+            {mergedSimilar.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">No similar artists available</div>
+            ) : (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">
+                {mergedSimilar.map((s) => (
+                  <SimilarArtistCard
+                    key={s.name}
+                    name={s.name}
+                    genres={s.genres}
+                    popularity={s.popularity}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {/* About */}
-        {activeSection === "about" && (
-          <div className="max-w-2xl space-y-6">
+        {/* ── About Tab ── */}
+        {activeTab === "about" && (
+          <div className="max-w-3xl space-y-8">
+            {/* Full bio */}
             {bioText && (
               <div>
+                <h3 className="text-sm font-semibold text-white/70 mb-2">Biography</h3>
                 <p className="text-sm text-white/60 leading-relaxed whitespace-pre-line">
-                  {bioExpanded ? bioText : bioText.slice(0, 300)}
-                  {!bioExpanded && bioText.length > 300 && "..."}
+                  {bioExpanded ? bioText : bioText.slice(0, 600)}
+                  {!bioExpanded && bioText.length > 600 && "..."}
                 </p>
-                {bioText.length > 300 && (
+                {bioText.length > 600 && (
                   <button
                     onClick={() => setBioExpanded(!bioExpanded)}
                     className="text-xs text-violet-400 hover:text-violet-300 mt-2 flex items-center gap-1"
@@ -493,28 +846,97 @@ export function Artist() {
               </div>
             )}
 
-            {info && (info.listeners > 0 || info.playcount > 0) && (
-              <div className="flex gap-6">
-                {info.listeners > 0 && (
-                  <div>
-                    <div className="text-2xl font-bold text-white/90">{formatCompact(info.listeners)}</div>
-                    <div className="text-xs text-white/40">listeners</div>
-                  </div>
-                )}
-                {info.playcount > 0 && (
-                  <div>
-                    <div className="text-2xl font-bold text-white/90">{formatCompact(info.playcount)}</div>
-                    <div className="text-xs text-white/40">scrobbles</div>
-                  </div>
-                )}
+            {/* Members */}
+            {mb?.members && mb.members.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-white/70 mb-3">Members</h3>
+                <div className="space-y-2">
+                  {mb.members.map((m, i) => (
+                    <div key={i} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+                      <div>
+                        <span className="text-sm text-white/80">{m.name}</span>
+                        {m.attributes && m.attributes.length > 0 && (
+                          <span className="text-xs text-white/40 ml-2">{m.attributes.join(", ")}</span>
+                        )}
+                      </div>
+                      <span className="text-xs text-white/30">
+                        {m.begin ?? "?"} - {m.end ?? "present"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
+            {/* Big numbers */}
+            <div>
+              <h3 className="text-sm font-semibold text-white/70 mb-3">Numbers</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {(lastfm?.listeners ?? 0) > 0 && (
+                  <div>
+                    <div className="text-2xl font-bold text-white/90">{formatCompact(lastfm!.listeners!)}</div>
+                    <div className="text-xs text-white/40">listeners</div>
+                  </div>
+                )}
+                {(spotify?.followers ?? 0) > 0 && (
+                  <div>
+                    <div className="text-2xl font-bold text-white/90">{formatCompact(spotify!.followers!)}</div>
+                    <div className="text-xs text-white/40">followers</div>
+                  </div>
+                )}
+                {(lastfm?.playcount ?? 0) > 0 && (
+                  <div>
+                    <div className="text-2xl font-bold text-white/90">{formatCompact(lastfm!.playcount!)}</div>
+                    <div className="text-xs text-white/40">scrobbles</div>
+                  </div>
+                )}
+                {(spotify?.popularity ?? 0) > 0 && (
+                  <div>
+                    <div className="text-2xl font-bold text-white/90">{spotify!.popularity}%</div>
+                    <div className="text-xs text-white/40">popularity</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Formation info */}
+            {(mb?.begin_date || mb?.country) && (
+              <div>
+                <h3 className="text-sm font-semibold text-white/70 mb-3">Formation</h3>
+                <div className="flex gap-6 text-sm text-white/50">
+                  {mb?.begin_date && <div><span className="text-white/70 font-medium">{mb.begin_date}</span> formed</div>}
+                  {mb?.country && <div><span className="text-white/70 font-medium">{mb.country}</span></div>}
+                  {mb?.area && <div><span className="text-white/70 font-medium">{mb.area}</span></div>}
+                </div>
+              </div>
+            )}
+
+            {/* Library stats */}
             <div className="flex gap-6 text-sm text-white/40">
               <div><span className="text-white/70 font-medium">{data.albums.length}</span> albums in library</div>
               <div><span className="text-white/70 font-medium">{formatNumber(totalTracks)}</span> tracks</div>
               <div><span className="text-white/70 font-medium">{formatSize(totalSize)}</span></div>
             </div>
+
+            {/* External links (full list) */}
+            {externalLinks.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold text-white/70 mb-3">Links</h3>
+                <div className="flex gap-2 flex-wrap">
+                  {externalLinks.map((link) => (
+                    <a
+                      key={link.label}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-white/10 hover:border-white/20 hover:bg-white/5 transition-colors ${link.color}`}
+                    >
+                      <Globe size={12} /> {link.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -522,7 +944,35 @@ export function Artist() {
   );
 }
 
-function SimilarArtistCard({ name }: { name: string }) {
+// ── Sub-components ──
+
+function StatCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
+  return (
+    <div className="bg-white/[0.03] border border-white/5 rounded-lg px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-white/40 mb-1">{icon}<span className="text-[11px]">{label}</span></div>
+      <div className="text-sm font-semibold text-white/80">{value}</div>
+    </div>
+  );
+}
+
+function PopularityBar({ value }: { value: number }) {
+  return (
+    <div className="flex items-center gap-1">
+      <div className="w-[40px] h-1 bg-white/10 rounded-full overflow-hidden">
+        <div
+          className="h-full rounded-full"
+          style={{
+            width: `${value}%`,
+            background: "linear-gradient(90deg, #6b7280, #22c55e)",
+          }}
+        />
+      </div>
+      <span className="text-[10px] text-white/30">{value}</span>
+    </div>
+  );
+}
+
+function SimilarArtistCard({ name, genres, popularity }: { name: string; genres?: string[]; popularity?: number }) {
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const letter = name.charAt(0).toUpperCase();
@@ -535,7 +985,7 @@ function SimilarArtistCard({ name }: { name: string }) {
       <div className="w-full aspect-square rounded-xl overflow-hidden mb-2 ring-1 ring-white/5 group-hover:ring-violet-500/30 transition-all duration-300 group-hover:scale-[1.03]">
         {!imgError ? (
           <img
-            src={`/api/artist/${encPath(name)}/photo`}
+            src={`/api/artist/${encPath(name)}/photo?random=true`}
             alt={name}
             loading="lazy"
             className={`w-full h-full object-cover transition-opacity duration-500 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
@@ -550,6 +1000,14 @@ function SimilarArtistCard({ name }: { name: string }) {
         )}
       </div>
       <div className="text-sm font-medium text-white/70 group-hover:text-white truncate transition-colors">{name}</div>
+      {genres && genres.length > 0 && (
+        <div className="text-[10px] text-white/30 truncate mt-0.5">{genres.slice(0, 2).join(", ")}</div>
+      )}
+      {popularity != null && popularity > 0 && (
+        <div className="flex justify-center mt-1">
+          <PopularityBar value={popularity} />
+        </div>
+      )}
     </Link>
   );
 }
