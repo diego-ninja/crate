@@ -26,8 +26,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    from musicdock.api.auth import AutheliaMiddleware
-    app.add_middleware(AutheliaMiddleware)
+    from musicdock.api.auth import AuthMiddleware
+    app.add_middleware(AuthMiddleware)
 
     from musicdock.api.auth import router as auth_router
     from musicdock.api.browse import router as browse_router

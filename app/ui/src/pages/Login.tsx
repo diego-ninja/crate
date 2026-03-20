@@ -1,0 +1,109 @@
+import { useState, type FormEvent } from "react";
+import { Navigate } from "react-router";
+import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { useAuth } from "@/contexts/AuthContext";
+import { api, ApiError } from "@/lib/api";
+
+export function Login() {
+  const { user, loading, refetch } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to="/" replace />;
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setSubmitting(true);
+    try {
+      await api("/api/auth/login", "POST", { email, password });
+      await refetch();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message || "Invalid credentials");
+      } else {
+        setError("Something went wrong");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        <div className="bg-card border border-border rounded-lg p-8 shadow-xl">
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-bold text-foreground">
+              <span className="text-primary">&#9835;</span> MusicDock
+            </h1>
+            <p className="text-sm text-muted-foreground mt-2">Sign in to your account</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoFocus
+                autoComplete="email"
+              />
+            </div>
+            <div>
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
+
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
+            </Button>
+          </form>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-card px-2 text-muted-foreground">or</span>
+            </div>
+          </div>
+
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => { window.location.href = "/api/auth/google"; }}
+          >
+            Sign in with Google
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

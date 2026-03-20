@@ -111,6 +111,33 @@ def init_db():
                 data_json JSONB
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT,
+                password_hash TEXT,
+                avatar TEXT,
+                role TEXT NOT NULL DEFAULT 'user',
+                google_id TEXT UNIQUE,
+                created_at TEXT NOT NULL,
+                last_login TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+
+        _seed_admin(cur)
+
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_mb_cache_created ON mb_cache(created_at)")
@@ -625,6 +652,97 @@ def delete_track(path: str):
     with get_db_ctx() as cur:
         cur.execute("DELETE FROM library_tracks WHERE path = %s", (path,))
 
+
+# ── Users ─────────────────────────────────────────────────────────
+
+def _seed_admin(cur):
+    cur.execute("SELECT COUNT(*) AS cnt FROM users")
+    if cur.fetchone()["cnt"] == 0:
+        from musicdock.auth import hash_password
+        now = datetime.now(timezone.utc).isoformat()
+        password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "admin123")
+        cur.execute(
+            "INSERT INTO users (email, name, password_hash, role, created_at) VALUES (%s, %s, %s, %s, %s)",
+            ("yosoy@diego.ninja", "Diego", hash_password(password), "admin", now),
+        )
+
+
+def create_user(email: str, name: str | None = None, password_hash: str | None = None,
+                avatar: str | None = None, role: str = "user", google_id: str | None = None) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            """INSERT INTO users (email, name, password_hash, avatar, role, google_id, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+            (email, name, password_hash, avatar, role, google_id, now),
+        )
+        return dict(cur.fetchone())
+
+
+def get_user_by_email(email: str) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_google_id(google_id: str) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM users WHERE google_id = %s", (google_id,))
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_id(user_id: int) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def update_user_last_login(user_id: int):
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute("UPDATE users SET last_login = %s WHERE id = %s", (now, user_id))
+
+
+def list_users() -> list[dict]:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT id, email, name, avatar, role, google_id, created_at, last_login FROM users ORDER BY id")
+        rows = cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_user(user_id: int):
+    with get_db_ctx() as cur:
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+
+
+# ── Sessions ─────────────────────────────────────────────────────
+
+def create_session(session_id: str, user_id: int, expires_at: str) -> dict:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (%s, %s, %s, %s) RETURNING *",
+            (session_id, user_id, expires_at, now),
+        )
+        return dict(cur.fetchone())
+
+
+def get_session(session_id: str) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM sessions WHERE id = %s", (session_id,))
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def delete_session(session_id: str):
+    with get_db_ctx() as cur:
+        cur.execute("DELETE FROM sessions WHERE id = %s", (session_id,))
+
+
+# ── Library helpers ──────────────────────────────────────────────
 
 def _row_to_lib_artist(row: dict) -> dict:
     d = dict(row)

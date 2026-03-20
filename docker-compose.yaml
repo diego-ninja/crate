@@ -273,6 +273,10 @@ services:
       - MUSICDOCK_POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD}
       - MUSICDOCK_POSTGRES_DB=${MUSICDOCK_POSTGRES_DB}
       - MUSICDOCK_POSTGRES_HOST=musicdock-postgres
+      - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-admin123}
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music:ro
@@ -306,6 +310,10 @@ services:
       - MUSICDOCK_POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD}
       - MUSICDOCK_POSTGRES_DB=${MUSICDOCK_POSTGRES_DB}
       - MUSICDOCK_POSTGRES_HOST=musicdock-postgres
+      - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-admin123}
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music

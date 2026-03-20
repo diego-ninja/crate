@@ -1,8 +1,9 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PlayerProvider } from "@/contexts/PlayerContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { Shell } from "@/components/layout/Shell";
 import { Loader2 } from "lucide-react";
 
@@ -23,6 +24,8 @@ const Playlists = lazy(() => import("@/pages/Playlists").then(m => ({ default: m
 const Stack = lazy(() => import("@/pages/Stack").then(m => ({ default: m.Stack })));
 const Genres = lazy(() => import("@/pages/Genres").then(m => ({ default: m.Genres })));
 const Timeline = lazy(() => import("@/pages/Timeline").then(m => ({ default: m.Timeline })));
+const Login = lazy(() => import("@/pages/Login").then(m => ({ default: m.Login })));
+const Users = lazy(() => import("@/pages/Users").then(m => ({ default: m.Users })));
 
 function PageSpinner() {
   return (
@@ -32,37 +35,54 @@ function PageSpinner() {
   );
 }
 
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <PageSpinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
-      <PlayerProvider>
-        <TooltipProvider>
-          <Suspense fallback={<PageSpinner />}>
-            <Routes>
-              <Route element={<Shell />}>
-                <Route index element={<Dashboard />} />
-                <Route path="browse" element={<Browse />} />
-                <Route path="artist/:name" element={<Artist />} />
-                <Route path="album/:artist/:album" element={<Album />} />
-                <Route path="health" element={<Health />} />
-                <Route path="duplicates" element={<Duplicates />} />
-                <Route path="artwork" element={<Artwork />} />
-                <Route path="organizer" element={<Organizer />} />
-                <Route path="imports" element={<Imports />} />
-                <Route path="analytics" element={<Analytics />} />
-                <Route path="missing-albums" element={<MissingAlbums />} />
-                <Route path="quality" element={<Quality />} />
-                <Route path="tasks" element={<Tasks />} />
-                <Route path="playlists" element={<Playlists />} />
-                <Route path="stack" element={<Stack />} />
-                <Route path="genres" element={<Genres />} />
-                <Route path="timeline" element={<Timeline />} />
-              </Route>
-            </Routes>
-          </Suspense>
-        </TooltipProvider>
-        <Toaster theme="dark" position="bottom-right" richColors />
-      </PlayerProvider>
+      <AuthProvider>
+        <PlayerProvider>
+          <TooltipProvider>
+            <Suspense fallback={<PageSpinner />}>
+              <Routes>
+                <Route path="login" element={<Login />} />
+                <Route
+                  element={
+                    <ProtectedRoute>
+                      <Shell />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<Dashboard />} />
+                  <Route path="browse" element={<Browse />} />
+                  <Route path="artist/:name" element={<Artist />} />
+                  <Route path="album/:artist/:album" element={<Album />} />
+                  <Route path="health" element={<Health />} />
+                  <Route path="duplicates" element={<Duplicates />} />
+                  <Route path="artwork" element={<Artwork />} />
+                  <Route path="organizer" element={<Organizer />} />
+                  <Route path="imports" element={<Imports />} />
+                  <Route path="analytics" element={<Analytics />} />
+                  <Route path="missing-albums" element={<MissingAlbums />} />
+                  <Route path="quality" element={<Quality />} />
+                  <Route path="tasks" element={<Tasks />} />
+                  <Route path="playlists" element={<Playlists />} />
+                  <Route path="stack" element={<Stack />} />
+                  <Route path="genres" element={<Genres />} />
+                  <Route path="timeline" element={<Timeline />} />
+                  <Route path="users" element={<Users />} />
+                </Route>
+              </Routes>
+            </Suspense>
+          </TooltipProvider>
+          <Toaster theme="dark" position="bottom-right" richColors />
+        </PlayerProvider>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

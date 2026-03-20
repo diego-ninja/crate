@@ -20,10 +20,13 @@ import {
   Server,
   BrainCircuit,
   User,
+  Users,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { Badge } from "@/components/ui/badge";
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -38,11 +41,6 @@ interface SidebarStats {
 interface NavidromeStatus {
   connected: boolean;
   version: string;
-}
-
-interface AuthUser {
-  user: string | null;
-  groups: string[];
 }
 
 const navItems = [
@@ -65,14 +63,15 @@ const navItems = [
   { to: "/missing-albums", icon: Disc3, label: "Missing Albums" },
   { to: "/quality", icon: ShieldCheck, label: "Quality" },
   { section: "System" },
-  { to: "/tasks", icon: ListTodo, label: "Tasks", badgeKey: "running_tasks" as const },
-  { to: "/stack", icon: Server, label: "Stack" },
+  { to: "/tasks", icon: ListTodo, label: "Tasks", badgeKey: "running_tasks" as const, adminOnly: true },
+  { to: "/stack", icon: Server, label: "Stack", adminOnly: true },
+  { to: "/users", icon: Users, label: "Users", adminOnly: true },
 ] as const;
 
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [stats, setStats] = useState<SidebarStats>({});
   const [navidrome, setNavidrome] = useState<NavidromeStatus | null>(null);
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const { user, isAdmin, logout } = useAuth();
 
   const fetchStats = useCallback(async () => {
     try {
@@ -101,9 +100,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     api<NavidromeStatus>("/api/navidrome/status")
       .then(setNavidrome)
       .catch(() => setNavidrome({ connected: false, version: "" }));
-    api<AuthUser>("/api/auth/me")
-      .then(setAuthUser)
-      .catch(() => null);
   }, []);
 
   return (
@@ -149,6 +145,9 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             </a>
           );
         }
+        if ("adminOnly" in item && item.adminOnly && !isAdmin) {
+          return null;
+        }
         const Icon = item.icon;
         const badgeValue = "badgeKey" in item && item.badgeKey ? stats[item.badgeKey] : undefined;
         return (
@@ -177,18 +176,25 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         );
       })}
       </div>
-      {authUser?.user && (
+      {user && (
         <div className="border-t border-border px-4 py-3 mt-auto">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <User size={14} />
-            <span className="flex-1 truncate">{authUser.user}</span>
-            <a
-              href="https://auth.lespedants.org/logout"
+            {user.avatar ? (
+              <img src={user.avatar} alt="" className="w-5 h-5 rounded-full" />
+            ) : (
+              <User size={14} />
+            )}
+            <span className="flex-1 truncate">{user.name}</span>
+            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+              {user.role}
+            </Badge>
+            <button
+              onClick={logout}
               title="Logout"
               className="hover:text-foreground transition-colors"
             >
               <LogOut size={14} />
-            </a>
+            </button>
           </div>
         </div>
       )}
