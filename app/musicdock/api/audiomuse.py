@@ -50,3 +50,51 @@ def audiomuse_tasks():
     if result is None:
         return JSONResponse({"error": "AudioMuse unavailable"}, status_code=502)
     return result
+
+
+# ── Internal audio analysis (lightweight, no AudioMuse needed) ──
+
+@router.post("/api/analyze/artist/{name}")
+def analyze_artist(name: str):
+    """Queue audio analysis for all tracks by an artist."""
+    from musicdock.db import create_task
+    task_id = create_task("analyze_tracks", {"artist": name})
+    return {"status": "queued", "task_id": task_id}
+
+
+@router.post("/api/analyze/album/{artist}/{album}")
+def analyze_album(artist: str, album: str):
+    """Queue audio analysis for a single album."""
+    from musicdock.db import create_task
+    task_id = create_task("analyze_tracks", {"artist": artist, "album": album})
+    return {"status": "queued", "task_id": task_id}
+
+
+@router.get("/api/analyze/artist/{name}/data")
+def get_analysis_data(name: str):
+    """Get BPM/key/energy/mood data from our library_tracks table."""
+    from musicdock.db import get_db_ctx
+    with get_db_ctx() as conn:
+        rows = conn.execute(
+            "SELECT title, bpm, audio_key, audio_scale, energy, mood_json FROM library_tracks "
+            "WHERE artist = ? AND bpm IS NOT NULL",
+            (name,),
+        ).fetchall()
+
+    import json
+    result = {}
+    for r in rows:
+        mood = None
+        if r["mood_json"]:
+            try:
+                mood = json.loads(r["mood_json"])
+            except Exception:
+                pass
+        result[r["title"].lower() if r["title"] else ""] = {
+            "tempo": round(r["bpm"]) if r["bpm"] else None,
+            "key": r["audio_key"],
+            "scale": r["audio_scale"],
+            "energy": round(r["energy"], 2) if r["energy"] else None,
+            "mood": mood,
+        }
+    return result

@@ -526,8 +526,72 @@ def _handle_fetch_artist_covers(task_id: str, params: dict, config: dict) -> dic
     return {"fetched": fetched, "failed": failed, "skipped": skipped, "total": total}
 
 
+def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
+    """Analyze audio tracks for BPM, key, energy, mood."""
+    from musicdock.audio_analysis import analyze_track
+    from musicdock.db import get_library_albums, get_library_tracks, update_track_audiomuse
+
+    artist = params.get("artist")
+    album_name = params.get("album")
+    lib = Path(config["library_path"])
+
+    # Collect tracks to analyze
+    tracks_to_analyze = []
+    if artist and album_name:
+        # Single album
+        from musicdock.db import get_library_album
+        album_data = get_library_album(artist, album_name)
+        if album_data:
+            tracks = get_library_tracks(album_data["id"])
+            tracks_to_analyze = [(t["path"], t) for t in tracks if not t.get("bpm")]
+    elif artist:
+        # All albums for artist
+        albums = get_library_albums(artist)
+        for a in albums:
+            tracks = get_library_tracks(a["id"])
+            tracks_to_analyze.extend((t["path"], t) for t in tracks if not t.get("bpm"))
+    else:
+        return {"error": "No artist specified"}
+
+    total = len(tracks_to_analyze)
+    analyzed = 0
+    failed = 0
+
+    for i, (path, track) in enumerate(tracks_to_analyze):
+        if _shutdown or _is_cancelled(task_id):
+            break
+
+        if i % 5 == 0:
+            update_task(task_id, progress=json.dumps({
+                "track": track.get("title", Path(path).stem),
+                "done": i, "total": total,
+                "analyzed": analyzed,
+            }))
+
+        try:
+            result = analyze_track(path)
+            if result.get("bpm") is not None:
+                update_track_audiomuse(
+                    path,
+                    bpm=result["bpm"],
+                    key=result["key"],
+                    scale=result["scale"],
+                    energy=result["energy"],
+                    mood=result["mood"],
+                )
+                analyzed += 1
+            else:
+                failed += 1
+        except Exception:
+            log.debug("Failed to analyze %s", path)
+            failed += 1
+
+    return {"analyzed": analyzed, "failed": failed, "total": total}
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
+    "analyze_tracks": _handle_analyze_tracks,
     "fix_issues": _handle_fix_issues,
     "fetch_cover": _handle_fetch_cover,
     "fetch_artist_covers": _handle_fetch_artist_covers,

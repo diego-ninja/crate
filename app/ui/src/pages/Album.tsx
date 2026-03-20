@@ -93,7 +93,12 @@ export function Album() {
 
   useEffect(() => {
     if (!data?.artist) return;
-    api<Record<string, AudioMuseTrack>>(`/api/audiomuse/artist/${encPath(data.artist)}/tracks`)
+    // Try internal analysis first, fallback to AudioMuse
+    api<Record<string, AudioMuseTrack>>(`/api/analyze/artist/${encPath(data.artist)}/data`)
+      .then((d) => {
+        if (d && Object.keys(d).length > 0) setAudiomuseData(d);
+        else return api<Record<string, AudioMuseTrack>>(`/api/audiomuse/artist/${encPath(data.artist)}/tracks`);
+      })
       .then((d) => {
         if (d && Object.keys(d).length > 0) setAudiomuseData(d);
       })
