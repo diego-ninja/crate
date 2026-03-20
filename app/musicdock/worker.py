@@ -1029,10 +1029,11 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     """Enrich albums and tracks with MusicBrainz IDs."""
+    import re
     import mutagen
     import musicbrainzngs
     from musicdock.matcher import _search_musicbrainz, _get_release_detail, _score_match, _gather_local_info
-    from musicdock.db import get_library_albums, get_library_tracks, get_library_artists, get_db_ctx
+    from musicdock.db import get_library_albums, get_library_tracks, get_db_ctx
 
     musicbrainzngs.set_useragent("musicdock", "0.1", "https://github.com/musicdock")
     lib = Path(config["library_path"])
@@ -1076,8 +1077,6 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
                 "enriched": enriched, "skipped": skipped,
             }))
 
-        # Strip year prefix for search
-        import re
         clean_album = re.sub(r"^\d{4}\s*-\s*", "", album_name)
 
         # Search MB
@@ -1087,7 +1086,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
         candidates = _search_musicbrainz(artist_name, clean_album, track_count)
         if not candidates:
             failed += 1
-            import time; time.sleep(1)
+            time.sleep(1)
             continue
 
         # Get details of top candidates and score them
@@ -1118,14 +1117,14 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
             if score > best_score:
                 best_score = score
                 best_release = release
-            import time; time.sleep(0.5)
+            time.sleep(0.5)
 
         if not best_release or best_score < min_score:
             failed += 1
-            import time; time.sleep(0.5)
+            time.sleep(0.5)
             continue
 
-        # Write MBIDs to DB
+        # Write MBIDs to DB — single connection for album + all its tracks
         release_mbid = best_release["mbid"]
         release_group_id = best_release.get("release_group_id", "")
         mb_tracks = best_release.get("tracks", [])
@@ -1135,24 +1134,23 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
                 "UPDATE library_albums SET musicbrainz_albumid = %s WHERE id = %s",
                 (release_mbid, album["id"]),
             )
+            for j, db_track in enumerate(tracks_db):
+                if j >= len(mb_tracks):
+                    break
+                track_mbid = mb_tracks[j].get("mbid", "")
+                if track_mbid:
+                    cur.execute(
+                        "UPDATE library_tracks SET musicbrainz_albumid = %s, musicbrainz_trackid = %s WHERE id = %s",
+                        (release_mbid, track_mbid, db_track["id"]),
+                    )
 
-        # Match MB tracks to local tracks by position and write MBIDs
+        # Write to file tags
         written_files = 0
         for j, db_track in enumerate(tracks_db):
             if j >= len(mb_tracks):
                 break
             mb_track = mb_tracks[j]
             track_mbid = mb_track.get("mbid", "")
-
-            # Update DB
-            if track_mbid:
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE library_tracks SET musicbrainz_albumid = %s, musicbrainz_trackid = %s WHERE id = %s",
-                        (release_mbid, track_mbid, db_track["id"]),
-                    )
-
-            # Write to file tags
             track_path = db_track.get("path", "")
             if track_path and Path(track_path).is_file():
                 try:
