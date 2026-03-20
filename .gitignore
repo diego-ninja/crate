@@ -4,6 +4,7 @@
 # Data directories
 data/
 media/
+test-music/
 
 # Node
 node_modules/

@@ -26,7 +26,47 @@ NC     := \033[0m
 .DEFAULT_GOAL := help
 
 # ===========================================================================
-# LOCAL
+# DEV (entorno de desarrollo local)
+# ===========================================================================
+
+DC_DEV := $(DC) -f docker-compose.dev.yaml
+
+.PHONY: dev
+dev: ## Levantar entorno de dev (API + Worker + Postgres + test music)
+	@$(DC_DEV) up -d --build
+	@echo "$(GREEN)Dev stack levantado$(NC)"
+	@echo "  API: http://localhost:8585"
+	@echo "  UI:  cd app/ui && API_URL=http://localhost:8585 npm run dev"
+	@echo "  Login: admin / admin"
+
+.PHONY: dev-down
+dev-down: ## Parar entorno de dev
+	@$(DC_DEV) down
+
+.PHONY: dev-logs
+dev-logs: ## Ver logs de dev (uso: make dev-logs o make dev-logs s=worker)
+	@if [ -n "$(s)" ]; then \
+		$(DC_DEV) logs -f $(s); \
+	else \
+		$(DC_DEV) logs -f; \
+	fi
+
+.PHONY: dev-rebuild
+dev-rebuild: ## Rebuild y restart entorno dev
+	@$(DC_DEV) up -d --build --force-recreate
+	@echo "$(GREEN)Dev stack rebuildeado$(NC)"
+
+.PHONY: dev-reset
+dev-reset: ## Reset entorno dev (borra datos)
+	@$(DC_DEV) down -v
+	@echo "$(GREEN)Dev stack reseteado (datos borrados)$(NC)"
+
+.PHONY: dev-test
+dev-test: ## Correr tests en el contenedor dev
+	@$(DC_DEV) exec worker pytest tests/ -v
+
+# ===========================================================================
+# LOCAL (stack completo con Traefik)
 # ===========================================================================
 
 .PHONY: up

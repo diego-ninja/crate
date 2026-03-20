@@ -1,0 +1,90 @@
+# Local development stack
+# Usage: docker compose -f docker-compose.dev.yaml up -d
+# UI: http://localhost:8580
+# API: http://localhost:8585
+
+networks:
+  musicdock-dev:
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: musicdock-dev-postgres
+    environment:
+      - POSTGRES_USER=musicdock
+      - POSTGRES_PASSWORD=musicdock
+      - POSTGRES_DB=musicdock
+    volumes:
+      - dev_postgres:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - musicdock-dev
+
+  api:
+    build: ./app
+    container_name: musicdock-dev-api
+    environment:
+      - TZ=Europe/Madrid
+      - MUSICDOCK_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - MUSICDOCK_POSTGRES_USER=musicdock
+      - MUSICDOCK_POSTGRES_PASSWORD=musicdock
+      - MUSICDOCK_POSTGRES_DB=musicdock
+      - MUSICDOCK_POSTGRES_HOST=postgres
+      - DOMAIN=localhost
+      - JWT_SECRET=dev-secret-not-for-production
+      - DEFAULT_ADMIN_PASSWORD=admin
+      - LASTFM_APIKEY=${LASTFM_APIKEY:-}
+      - FANART_API_KEY=${FANART_API_KEY:-}
+      - SPOTIFY_ID=${SPOTIFY_ID:-}
+      - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
+      - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
+      - NAVIDROME_URL=
+      - NUMBA_CACHE_DIR=/tmp/numba_cache
+    volumes:
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ./test-music:/music:ro
+      - dev_data:/data
+    ports:
+      - "8585:8585"
+    networks:
+      - musicdock-dev
+    depends_on:
+      - postgres
+    command: ["api"]
+
+  worker:
+    build: ./app
+    container_name: musicdock-dev-worker
+    environment:
+      - TZ=Europe/Madrid
+      - MUSICDOCK_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - MUSICDOCK_POSTGRES_USER=musicdock
+      - MUSICDOCK_POSTGRES_PASSWORD=musicdock
+      - MUSICDOCK_POSTGRES_DB=musicdock
+      - MUSICDOCK_POSTGRES_HOST=postgres
+      - DOMAIN=localhost
+      - JWT_SECRET=dev-secret-not-for-production
+      - DEFAULT_ADMIN_PASSWORD=admin
+      - LASTFM_APIKEY=${LASTFM_APIKEY:-}
+      - FANART_API_KEY=${FANART_API_KEY:-}
+      - SPOTIFY_ID=${SPOTIFY_ID:-}
+      - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
+      - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
+      - NAVIDROME_URL=
+      - NUMBA_CACHE_DIR=/tmp/numba_cache
+    volumes:
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ./test-music:/music
+      - dev_data:/data
+    networks:
+      - musicdock-dev
+    depends_on:
+      - postgres
+    command: ["worker"]
+
+volumes:
+  dev_postgres:
+  dev_data:
