@@ -286,8 +286,6 @@ services:
       - musicdock
     depends_on:
       - musicdock-postgres
-    labels:
-      # Forward-auth middlewares (consumed by other services via @docker)
     command: ["api"]
 
   musicdock-worker:
