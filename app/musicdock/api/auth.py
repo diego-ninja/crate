@@ -223,10 +223,10 @@ async def auth_verify_soft(request: Request):
     if user:
         # Use username for Remote-User (Navidrome matches by username)
         username = user.get("username") or user.get("email", "").split("@")[0]
-        response.headers["Remote-User"] = username
-        response.headers["Remote-Name"] = user.get("name", "")
-        response.headers["Remote-Email"] = user.get("email", "")
-        response.headers["Remote-Role"] = user.get("role", "user")
+        response.headers["Remote-User"] = username or "unknown"
+        response.headers["Remote-Name"] = user.get("name") or ""
+        response.headers["Remote-Email"] = user.get("email") or ""
+        response.headers["Remote-Role"] = user.get("role") or "user"
     return response
 
 
