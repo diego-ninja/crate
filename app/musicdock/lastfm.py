@@ -105,12 +105,15 @@ def _get_artist_mbid(artist_name: str) -> str | None:
         return cached.get("mbid")
 
     try:
-        result = musicbrainzngs.search_artists(artist=artist_name, limit=1)
+        result = musicbrainzngs.search_artists(artist=artist_name, limit=10)
         artists = result.get("artist-list", [])
-        if artists:
-            mbid = artists[0]["id"]
-            set_mb_cache(cache_key, {"mbid": mbid})
-            return mbid
+        name_lower = artist_name.lower()
+        for a in artists:
+            # Only accept exact name match to avoid The Armed → The Beatles
+            if a.get("name", "").lower() == name_lower:
+                mbid = a["id"]
+                set_mb_cache(cache_key, {"mbid": mbid})
+                return mbid
     except Exception:
         log.debug("MB artist search failed for %s", artist_name)
 
