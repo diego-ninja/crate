@@ -171,9 +171,9 @@ def analyze_track(filepath: str | Path) -> dict:
     except Exception:
         log.warning("Audio analysis failed for %s", filepath, exc_info=True)
 
-    # Convert all numpy types to Python native types (PostgreSQL doesn't understand numpy)
+    # Force all numeric values to Python native float (psycopg2 can't serialize numpy.float64)
     for k, v in result.items():
-        if v is not None and not isinstance(v, (int, float, str, dict)):
+        if v is not None and k != "mood" and not isinstance(v, str):
             try:
                 result[k] = float(v)
             except (TypeError, ValueError):
