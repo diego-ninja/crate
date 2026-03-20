@@ -138,10 +138,12 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
 
         # Migration: add username column if missing
-        try:
-            cur.execute("ALTER TABLE users ADD COLUMN username TEXT UNIQUE")
-        except Exception:
-            pass  # column already exists
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE users ADD COLUMN username TEXT UNIQUE;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
 
         _seed_admin(cur)
 
