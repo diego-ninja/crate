@@ -55,7 +55,7 @@ export function useNotifications() {
   }, []);
 
   // Listen for task completion via SSE
-  const { data } = useSse<TaskEvent>("/api/tasks/events", {
+  const { data } = useSse<TaskEvent>("/api/events", {
     enabled: typeof Notification !== "undefined" && Notification.permission === "granted",
   });
 

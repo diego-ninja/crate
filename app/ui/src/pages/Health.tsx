@@ -71,7 +71,7 @@ export function Health() {
   const [showFixConfirm, setShowFixConfirm] = useState(false);
   const [fixing, setFixing] = useState(false);
 
-  const { data: sseStatus } = useSse<SseStatus>("/api/status/stream", {
+  const { data: sseStatus } = useSse<SseStatus>("/api/events", {
     enabled: scanning,
   });
 
