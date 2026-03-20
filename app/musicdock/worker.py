@@ -33,7 +33,7 @@ def _is_cancelled(task_id: str) -> bool:
     return task is not None and task.get("status") == "cancelled"
 
 
-MAX_WORKERS = 3
+MAX_WORKERS = 5
 
 _active_tasks: set[str] = set()
 

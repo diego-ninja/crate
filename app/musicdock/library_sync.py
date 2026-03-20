@@ -90,6 +90,9 @@ class LibrarySync:
     def sync_artist(self, artist_dir: Path) -> int:
         artist_name = artist_dir.name
 
+        # Prefer canonical name from audio tags (e.g. "Model/Actriz" vs folder "Model-Actriz")
+        artist_name = self._canonical_artist_name(artist_dir, artist_name)
+
         # Ensure artist exists in DB before syncing albums (FK constraint)
         if not get_library_artist(artist_name):
             upsert_artist({"name": artist_name, "album_count": 0, "track_count": 0,
