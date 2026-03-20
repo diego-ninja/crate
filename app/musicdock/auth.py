@@ -3,7 +3,10 @@ import secrets
 from datetime import datetime, timezone, timedelta
 
 import jwt
-from passlib.hash import bcrypt
+from passlib.hash import bcrypt as _bcrypt_handler
+
+# Fix passlib + bcrypt >= 4.1 compatibility
+bcrypt = _bcrypt_handler.using(truncate_error=True)
 
 from musicdock.db import get_setting, set_setting
 
