@@ -103,6 +103,21 @@ def rebuild_library(request: Request):
     return {"task_id": task_id}
 
 
+# ── MBID Enrichment ──────────────────────────────────────────────
+
+@router.post("/enrich-mbids")
+def enrich_mbids(request: Request, body: dict | None = None):
+    _require_admin(request)
+    params = {}
+    if body:
+        if body.get("artist"):
+            params["artist"] = body["artist"]
+        if body.get("min_score"):
+            params["min_score"] = body["min_score"]
+    task_id = create_task("enrich_mbids", params)
+    return {"task_id": task_id}
+
+
 # ── Audit Log ────────────────────────────────────────────────────
 
 @router.get("/audit-log")

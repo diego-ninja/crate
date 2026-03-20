@@ -39,7 +39,7 @@ MAX_WORKERS = 5
 _active_tasks: set[str] = set()
 
 # Tasks that do heavy DB writes — only one at a time
-DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair"}
+DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
 _db_heavy_running = False
 _db_heavy_lock = __import__("threading").Lock()
 
@@ -1027,6 +1027,161 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
     return result
 
 
+def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
+    """Enrich albums and tracks with MusicBrainz IDs."""
+    import mutagen
+    import musicbrainzngs
+    from musicdock.matcher import _search_musicbrainz, _get_release_detail, _score_match, _gather_local_info
+    from musicdock.db import get_library_albums, get_library_tracks, get_library_artists, get_db_ctx
+
+    musicbrainzngs.set_useragent("musicdock", "0.1", "https://github.com/musicdock")
+    lib = Path(config["library_path"])
+    exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
+    artist_filter = params.get("artist")
+    min_score = params.get("min_score", 70)
+
+    # Collect albums to process
+    if artist_filter:
+        albums = get_library_albums(artist_filter)
+    else:
+        with get_db_ctx() as cur:
+            cur.execute(
+                "SELECT * FROM library_albums WHERE musicbrainz_albumid IS NULL OR musicbrainz_albumid = ''"
+            )
+            albums = [dict(r) for r in cur.fetchall()]
+
+    total = len(albums)
+    enriched = 0
+    skipped = 0
+    failed = 0
+
+    for i, album in enumerate(albums):
+        if _shutdown or _is_cancelled(task_id):
+            break
+
+        album_name = album.get("tag_album") or album.get("name", "")
+        artist_name = album.get("artist", "")
+        album_path = album.get("path", "")
+
+        # Skip if already has MBID
+        existing_mbid = album.get("musicbrainz_albumid")
+        if existing_mbid and existing_mbid.strip():
+            skipped += 1
+            continue
+
+        if i % 5 == 0:
+            update_task(task_id, progress=json.dumps({
+                "artist": artist_name, "album": album_name,
+                "done": i, "total": total,
+                "enriched": enriched, "skipped": skipped,
+            }))
+
+        # Strip year prefix for search
+        import re
+        clean_album = re.sub(r"^\d{4}\s*-\s*", "", album_name)
+
+        # Search MB
+        tracks_db = get_library_tracks(album["id"]) if "id" in album else []
+        track_count = len(tracks_db) or album.get("track_count", 0)
+
+        candidates = _search_musicbrainz(artist_name, clean_album, track_count)
+        if not candidates:
+            failed += 1
+            import time; time.sleep(1)
+            continue
+
+        # Get details of top candidates and score them
+        best_release = None
+        best_score = 0
+
+        album_dir = Path(album_path) if album_path else None
+        if album_dir and album_dir.is_dir():
+            local_info = _gather_local_info(get_audio_files(album_dir, list(exts)))
+        else:
+            # Build minimal local_info from DB
+            local_info = {
+                "artist": artist_name,
+                "album": clean_album,
+                "track_count": track_count,
+                "tracks": [
+                    {"title": t.get("title", ""), "length_sec": int(t.get("duration", 0)), "tracknumber": str(t.get("track_number", "")), "filename": t.get("filename", "")}
+                    for t in tracks_db
+                ],
+                "total_length": sum(int(t.get("duration", 0)) for t in tracks_db),
+            }
+
+        for candidate in candidates[:3]:
+            release = _get_release_detail(candidate["mbid"])
+            if not release:
+                continue
+            score = _score_match(local_info, release)
+            if score > best_score:
+                best_score = score
+                best_release = release
+            import time; time.sleep(0.5)
+
+        if not best_release or best_score < min_score:
+            failed += 1
+            import time; time.sleep(0.5)
+            continue
+
+        # Write MBIDs to DB
+        release_mbid = best_release["mbid"]
+        release_group_id = best_release.get("release_group_id", "")
+        mb_tracks = best_release.get("tracks", [])
+
+        with get_db_ctx() as cur:
+            cur.execute(
+                "UPDATE library_albums SET musicbrainz_albumid = %s WHERE id = %s",
+                (release_mbid, album["id"]),
+            )
+
+        # Match MB tracks to local tracks by position and write MBIDs
+        written_files = 0
+        for j, db_track in enumerate(tracks_db):
+            if j >= len(mb_tracks):
+                break
+            mb_track = mb_tracks[j]
+            track_mbid = mb_track.get("mbid", "")
+
+            # Update DB
+            if track_mbid:
+                with get_db_ctx() as cur:
+                    cur.execute(
+                        "UPDATE library_tracks SET musicbrainz_albumid = %s, musicbrainz_trackid = %s WHERE id = %s",
+                        (release_mbid, track_mbid, db_track["id"]),
+                    )
+
+            # Write to file tags
+            track_path = db_track.get("path", "")
+            if track_path and Path(track_path).is_file():
+                try:
+                    audio = mutagen.File(track_path, easy=True)
+                    if audio is not None:
+                        changed = False
+                        if release_mbid:
+                            audio["musicbrainz_albumid"] = release_mbid
+                            changed = True
+                        if track_mbid:
+                            audio["musicbrainz_trackid"] = track_mbid
+                            changed = True
+                        if release_group_id:
+                            audio["musicbrainz_releasegroupid"] = release_group_id
+                            changed = True
+                        if changed:
+                            audio.save()
+                            written_files += 1
+                except Exception:
+                    log.warning("Failed to write MBID tags to %s", track_path)
+
+        enriched += 1
+        log.info("Enriched %s / %s (score=%d, mbid=%s, files=%d)",
+                 artist_name, clean_album, best_score, release_mbid, written_files)
+        import time; time.sleep(1)  # MB rate limit: 1 req/sec
+
+    return {"enriched": enriched, "skipped": skipped, "failed": failed, "total": total}
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
@@ -1053,4 +1208,5 @@ TASK_HANDLERS = {
     "update_album_tags": _handle_update_album_tags,
     "update_track_tags": _handle_update_track_tags,
     "resolve_duplicates": _handle_resolve_duplicates,
+    "enrich_mbids": _handle_enrich_mbids,
 }
