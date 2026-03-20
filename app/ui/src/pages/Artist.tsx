@@ -155,6 +155,7 @@ export function Artist() {
   const [bgLoaded, setBgLoaded] = useState(false);
   const [navidromeLink, setNavidromeLink] = useState<NavidromeArtistLink | null>(null);
   const [topTracks, setTopTracks] = useState<TopTrack[]>([]);
+  const [enriching, setEnriching] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [showMissing, setShowMissing] = useState(true);
   const [missingAlbums, setMissingAlbums] = useState<{ title: string; first_release_date: string; type: string }[]>([]);
@@ -446,19 +447,35 @@ export function Artist() {
                   size="sm"
                   variant="outline"
                   className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                  disabled={enriching}
                   onClick={async () => {
+                    setEnriching(true);
                     try {
-                      const res = await api<{ enriched: boolean; has_photo: boolean; has_bio: boolean }>(`/api/artist/${encPath(data.name)}/enrich`, "POST");
-                      if (res.enriched) {
-                        toast.success("Artist enriched", { description: `Photo: ${res.has_photo ? "yes" : "no"}, bio: ${res.has_bio ? "yes" : "no"}` });
-                        window.location.reload();
-                      } else {
-                        toast.error("No data found on Last.fm/fanart.tv");
-                      }
-                    } catch { toast.error("Enrichment failed"); }
+                      const res = await api<{ status: string; task_id: string }>(`/api/artist/${encPath(data.name)}/enrich`, "POST");
+                      toast.success("Enrichment started", { description: "This may take a moment..." });
+                      // Poll task status
+                      const taskId = res.task_id;
+                      const poll = setInterval(async () => {
+                        try {
+                          const task = await api<{ status: string }>(`/api/tasks/${taskId}`);
+                          if (task.status === "completed") {
+                            clearInterval(poll);
+                            setEnriching(false);
+                            toast.success("Artist enriched!");
+                            window.location.reload();
+                          } else if (task.status === "failed") {
+                            clearInterval(poll);
+                            setEnriching(false);
+                            toast.error("Enrichment failed");
+                          }
+                        } catch { /* keep polling */ }
+                      }, 3000);
+                      // Timeout after 2 min
+                      setTimeout(() => { clearInterval(poll); setEnriching(false); }, 120000);
+                    } catch { setEnriching(false); toast.error("Failed to start enrichment"); }
                   }}
                 >
-                  <RefreshCw size={14} className="mr-1" /> Enrich
+                  <RefreshCw size={14} className={`mr-1 ${enriching ? "animate-spin" : ""}`} /> {enriching ? "Enriching..." : "Enrich"}
                 </Button>
               </div>
             </div>
