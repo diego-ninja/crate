@@ -144,7 +144,7 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      - ADMIN_PASSWORD=${TIDARR_PASSWORD}
+      # Auth disabled — MusicDock handles access via Traefik middleware
       - ENABLE_BEETS=true
       - REACT_APP_TIDAL_COUNTRY_CODE=${TIDAL_COUNTRY_CODE}
     volumes:
@@ -165,6 +165,9 @@ services:
       traefik.docker.network: musicdock
       traefik.http.routers.tidarr.rule: Host(`search.${DOMAIN}`)
       traefik.http.routers.tidarr.entryPoints: websecure
+      traefik.http.routers.tidarr.tls: true
+      traefik.http.routers.tidarr.tls.certresolver: letsencrypt
+      traefik.http.routers.tidarr.middlewares: musicdock-auth-soft@docker
       traefik.http.services.tidarr.loadbalancer.server.port: 8484
       traefik.http.services.tidarr.loadbalancer.server.scheme: http
 
