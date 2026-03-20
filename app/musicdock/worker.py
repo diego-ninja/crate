@@ -37,11 +37,26 @@ MAX_WORKERS = 3
 
 _active_tasks: set[str] = set()
 
+# Tasks that do heavy DB writes — only one at a time
+DB_HEAVY_TASKS = {"library_sync", "compute_analytics"}
+_db_heavy_running = False
+_db_heavy_lock = __import__("threading").Lock()
+
 
 def _run_task(task: dict, config: dict):
+    global _db_heavy_running
     task_id = task["id"]
     task_type = task["type"]
     params = task.get("params", {})
+    is_db_heavy = task_type in DB_HEAVY_TASKS
+
+    if is_db_heavy:
+        with _db_heavy_lock:
+            if _db_heavy_running:
+                # Re-queue: another DB-heavy task is running
+                update_task(task_id, status="pending", progress="Waiting for DB-heavy task to finish")
+                return
+            _db_heavy_running = True
 
     _active_tasks.add(task_id)
     log.info("Processing task %s (type=%s)", task_id, task_type)
@@ -64,6 +79,9 @@ def _run_task(task: dict, config: dict):
         update_task(task_id, status="failed", error=str(e))
     finally:
         _active_tasks.discard(task_id)
+        if is_db_heavy:
+            with _db_heavy_lock:
+                _db_heavy_running = False
 
 
 def run_worker(config: dict):
