@@ -110,18 +110,14 @@ def run_worker(config: dict):
     except Exception:
         log.exception("Library watcher failed to start")
 
-    # Queue initial library sync as a task (non-blocking)
-    pending_sync = list_tasks(status="pending", task_type="library_sync", limit=1)
-    running_sync = list_tasks(status="running", task_type="library_sync", limit=1)
-    if not pending_sync and not running_sync:
-        create_task("library_sync")
-        log.info("Queued initial library sync task")
+    # Initial library sync if needed
+    from musicdock.scheduler import check_and_create_scheduled_tasks, mark_run
+    check_and_create_scheduled_tasks()
 
     log.info("Worker started with %d slots, polling for tasks...", MAX_WORKERS)
 
-    _last_enrich_check = 0
+    _last_schedule_check = time.time()
     _last_import_check = 0
-    _last_lib_sync = time.time()
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
     try:
@@ -130,29 +126,19 @@ def run_worker(config: dict):
             if time.time() - _last_import_check > 60:
                 _last_import_check = time.time()
                 try:
-                    config = load_config()
-                    queue = ImportQueue(config)
+                    queue = ImportQueue(load_config())
                     count = len(queue.scan_pending())
                     set_cache("imports_pending", {"count": count})
                 except Exception:
                     pass
 
-            # Periodic incremental library sync every 30 min
-            if time.time() - _last_lib_sync > 1800:
-                _last_lib_sync = time.time()
+            # Check scheduled tasks every 60s
+            if time.time() - _last_schedule_check > 60:
+                _last_schedule_check = time.time()
                 try:
-                    sync = LibrarySync(load_config())
-                    sync.full_sync()
+                    check_and_create_scheduled_tasks()
                 except Exception:
-                    log.exception("Periodic library sync failed")
-
-            # Periodic enrichment check every 6 hours
-            if time.time() - _last_enrich_check > 21600:
-                _last_enrich_check = time.time()
-                pending = list_tasks(status="pending", task_type="enrich_artists", limit=1)
-                running = list_tasks(status="running", task_type="enrich_artists", limit=1)
-                if not pending and not running:
-                    create_task("enrich_artists")
+                    log.debug("Schedule check failed")
 
             # Read dynamic slot count from settings
             current_max = int(get_setting("max_workers", str(MAX_WORKERS)) or MAX_WORKERS)

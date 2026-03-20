@@ -6,39 +6,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
-from musicdock.db import init_db, get_cache, create_task, list_tasks
-from musicdock.api._deps import library_path
+from musicdock.db import init_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Pre-compute analytics/stats if cache is empty and no compute task is running
-    if not get_cache("analytics") and not list_tasks(status="running", task_type="compute_analytics", limit=1) and not list_tasks(status="pending", task_type="compute_analytics", limit=1):
-        create_task("compute_analytics")
-    # Trigger Last.fm enrichment if coverage is below 80%
-    _maybe_trigger_enrichment()
+    # Scheduled tasks are managed by the worker process — no task creation here
     yield
-
-
-def _maybe_trigger_enrichment():
-    try:
-        lib = library_path()
-        artist_dirs = [d for d in lib.iterdir() if d.is_dir() and not d.name.startswith(".") and not d.name.startswith("_")]
-        total = len(artist_dirs)
-        if total == 0:
-            return
-        cached_count = sum(
-            1 for d in artist_dirs
-            if get_cache(f"lastfm:artist:{d.name.lower()}", max_age_seconds=86400)
-        )
-        if cached_count < total * 0.8:
-            pending = list_tasks(status="pending", task_type="enrich_artists", limit=1)
-            running = list_tasks(status="running", task_type="enrich_artists", limit=1)
-            if not pending and not running:
-                create_task("enrich_artists")
-    except Exception:
-        pass
 
 
 def create_app() -> FastAPI:

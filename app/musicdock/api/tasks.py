@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from musicdock.db import list_tasks, get_task, update_task, create_task, get_setting, set_setting
 from musicdock.docker_ctl import restart_container
+from musicdock.scheduler import get_schedules, set_schedules
 
 router = APIRouter()
 
@@ -114,6 +115,47 @@ def api_cancel_all_tasks():
         update_task(t["id"], status="cancelled")
         cancelled += 1
     return {"cancelled": cancelled}
+
+
+@router.get("/api/worker/schedules")
+def api_get_schedules():
+    """Get configured task schedules."""
+    schedules = get_schedules()
+    # Add last run times
+    result = {}
+    for task_type, interval in schedules.items():
+        last_key = f"schedule:last_run:{task_type}"
+        last_run = get_setting(last_key)
+        result[task_type] = {
+            "interval_seconds": interval,
+            "interval_human": _format_interval(interval),
+            "last_run": last_run,
+            "enabled": interval > 0,
+        }
+    return result
+
+
+@router.post("/api/worker/schedules")
+def api_set_schedules(body: dict):
+    """Update task schedules. Body: {task_type: interval_seconds, ...}. Set to 0 to disable."""
+    current = get_schedules()
+    for k, v in body.items():
+        if isinstance(v, (int, float)) and v >= 0:
+            current[k] = int(v)
+    set_schedules(current)
+    return {"schedules": current}
+
+
+def _format_interval(seconds: int) -> str:
+    if seconds <= 0:
+        return "disabled"
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
 
 
 @router.post("/api/tasks/{task_id}/cancel")
