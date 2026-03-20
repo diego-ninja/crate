@@ -154,33 +154,49 @@ def find_artist_by_name(name: str) -> dict | None:
     return None
 
 
+def _strip_year_prefix(name: str) -> str:
+    """Remove 'YYYY - ' prefix from album names (folder naming convention)."""
+    import re
+    return re.sub(r"^\d{4}\s*-\s*", "", name)
+
+
 def find_album(artist_name: str, album_name: str) -> dict | None:
     cache_key = f"nd:album:{artist_name.lower()}:{album_name.lower()}"
     cached = get_cache(cache_key)
     if cached:
         return cached
 
-    result = search(f"{artist_name} {album_name}", artist_count=0, album_count=20, song_count=0)
+    # Strip year prefix for search (MusicDock uses "2024 - Album Name", Navidrome uses "Album Name")
+    clean_name = _strip_year_prefix(album_name)
+
+    result = search(f"{artist_name} {clean_name}", artist_count=0, album_count=20, song_count=0)
     albums = result.get("album", [])
 
-    # Exact match
+    clean_lower = clean_name.lower()
+
+    # Exact match (try both original and stripped name)
     for album in albums:
-        if album.get("artist", "").lower() == artist_name.lower() and album.get("name", "").lower() == album_name.lower():
+        nd_name = album.get("name", "").lower()
+        nd_artist = album.get("artist", "").lower()
+        if nd_artist == artist_name.lower() and (nd_name == album_name.lower() or nd_name == clean_lower):
             set_cache(cache_key, album)
             return album
 
-    # Fuzzy match
+    # Fuzzy match (use stripped name for better scores)
     best_score = 0
     best_album = None
     for album in albums:
         artist_score = fuzz.ratio(artist_name.lower(), album.get("artist", "").lower())
-        album_score = fuzz.ratio(album_name.lower(), album.get("name", "").lower())
+        album_score = max(
+            fuzz.ratio(clean_lower, album.get("name", "").lower()),
+            fuzz.ratio(album_name.lower(), album.get("name", "").lower()),
+        )
         score = (artist_score + album_score) // 2
         if score > best_score:
             best_score = score
             best_album = album
 
-    if best_album and best_score >= 80:
+    if best_album and best_score >= 75:
         set_cache(cache_key, best_album)
         return best_album
 
