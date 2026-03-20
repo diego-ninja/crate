@@ -76,7 +76,10 @@ def get_analysis_data(name: str):
     from musicdock.db import get_db_ctx
     with get_db_ctx() as cur:
         cur.execute(
-            "SELECT title, bpm, audio_key, audio_scale, energy, mood_json FROM library_tracks "
+            "SELECT title, bpm, audio_key, audio_scale, energy, mood_json, "
+            "danceability, valence, acousticness, instrumentalness, "
+            "loudness, dynamic_range, spectral_complexity "
+            "FROM library_tracks "
             "WHERE artist = %s AND bpm IS NOT NULL",
             (name,),
         )
@@ -91,5 +94,12 @@ def get_analysis_data(name: str):
             "scale": r["audio_scale"],
             "energy": round(r["energy"], 2) if r["energy"] else None,
             "mood": mood,
+            "danceability": r["danceability"],
+            "valence": r["valence"],
+            "acousticness": r["acousticness"],
+            "instrumentalness": r["instrumentalness"],
+            "loudness": r["loudness"],
+            "dynamic_range": r["dynamic_range"],
+            "spectral_complexity": r["spectral_complexity"],
         }
     return result

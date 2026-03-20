@@ -3,6 +3,7 @@ import { useParams } from "react-router";
 import { useApi } from "@/hooks/use-api";
 import { AlbumHeader } from "@/components/album/AlbumHeader";
 import { TrackTable } from "@/components/album/TrackTable";
+import { AudioProfileCard } from "@/components/album/AudioProfileCard";
 import { TagEditor } from "@/components/album/TagEditor";
 import { MatchCard } from "@/components/scanner/MatchCard";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,14 @@ export interface AudioMuseTrack {
   key: string | null;
   scale: string | null;
   energy: number | null;
+  mood: Record<string, number> | null;
+  danceability: number | null;
+  valence: number | null;
+  acousticness: number | null;
+  instrumentalness: number | null;
+  loudness: number | null;
+  dynamic_range: number | null;
+  spectral_complexity: number | null;
 }
 
 interface AlbumData {
@@ -217,6 +226,10 @@ export function Album() {
               ))
             )}
           </div>
+        )}
+
+        {audiomuseData && Object.keys(audiomuseData).length > 0 && (
+          <AudioProfileCard audiomuseData={audiomuseData} />
         )}
 
         <div>

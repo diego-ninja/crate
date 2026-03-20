@@ -216,6 +216,16 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_tracks_genre ON library_tracks(genre)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_tracks_year ON library_tracks(year)")
 
+        # Migration: add extended audio analysis columns
+        for col in ("danceability", "valence", "acousticness", "instrumentalness",
+                     "loudness", "dynamic_range", "spectral_complexity"):
+            cur.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE library_tracks ADD COLUMN {col} DOUBLE PRECISION;
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+
 
 # ── Task CRUD ─────────────────────────────────────────────────────
 
@@ -632,11 +642,20 @@ def upsert_track(data: dict):
 
 
 def update_track_audiomuse(path: str, bpm: float | None, key: str | None,
-                          scale: str | None, energy: float | None, mood: dict | None):
+                          scale: str | None, energy: float | None, mood: dict | None,
+                          danceability: float | None = None, valence: float | None = None,
+                          acousticness: float | None = None, instrumentalness: float | None = None,
+                          loudness: float | None = None, dynamic_range: float | None = None,
+                          spectral_complexity: float | None = None):
     with get_db_ctx() as cur:
         cur.execute(
-            "UPDATE library_tracks SET bpm=%s, audio_key=%s, audio_scale=%s, energy=%s, mood_json=%s WHERE path=%s",
-            (bpm, key, scale, energy, json.dumps(mood) if mood else None, path),
+            "UPDATE library_tracks SET bpm=%s, audio_key=%s, audio_scale=%s, energy=%s, mood_json=%s, "
+            "danceability=%s, valence=%s, acousticness=%s, instrumentalness=%s, "
+            "loudness=%s, dynamic_range=%s, spectral_complexity=%s "
+            "WHERE path=%s",
+            (bpm, key, scale, energy, json.dumps(mood) if mood else None,
+             danceability, valence, acousticness, instrumentalness,
+             loudness, dynamic_range, spectral_complexity, path),
         )
 
 

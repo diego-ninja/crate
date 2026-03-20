@@ -28,7 +28,10 @@ def analyze_track(filepath: str | Path) -> dict:
     import librosa
 
     filepath = str(filepath)
-    result = {"bpm": None, "key": None, "scale": None, "energy": None, "mood": None}
+    result = {"bpm": None, "key": None, "scale": None, "energy": None, "mood": None,
+              "danceability": None, "valence": None, "acousticness": None,
+              "instrumentalness": None, "loudness": None, "dynamic_range": None,
+              "spectral_complexity": None}
 
     try:
         # Load audio (mono, 22050 Hz, max 120s for efficiency)
@@ -95,6 +98,75 @@ def analyze_track(filepath: str | Path) -> dict:
             result["mood"] = _compute_mood_heuristic(y, sr)
         except Exception:
             log.debug("Mood computation failed for %s", filepath)
+
+        # ── Danceability (onset regularity + beat strength + tempo) ──
+        try:
+            onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+            tempo_val = result["bpm"] or 120.0
+            tempo_score = min(1.0, max(0.0, 1.0 - abs(tempo_val - 120) / 80))
+            onset_std = float(np.std(onset_env))
+            onset_mean = float(np.mean(onset_env)) + 1e-6
+            regularity = max(0.0, 1.0 - onset_std / onset_mean)
+            beat_strength = min(1.0, float(np.mean(onset_env)) / 10.0)
+            result["danceability"] = round(min(1.0, regularity * 0.4 + beat_strength * 0.3 + tempo_score * 0.3), 3)
+        except Exception:
+            log.debug("Danceability extraction failed for %s", filepath)
+
+        # ── Valence (brightness + tempo + mode) ──
+        try:
+            centroid = float(np.mean(librosa.feature.spectral_centroid(y=y, sr=sr)))
+            brightness = min(1.0, centroid / 5000)
+            tempo_val = result["bpm"] or 120.0
+            tempo_contrib = min(1.0, tempo_val / 200)
+            mode_weight = 0.7 if result.get("scale") == "major" else 0.3
+            result["valence"] = round(min(1.0, brightness * 0.35 + tempo_contrib * 0.3 + mode_weight * 0.35), 3)
+        except Exception:
+            log.debug("Valence extraction failed for %s", filepath)
+
+        # ── Acousticness (inverse spectral rolloff) ──
+        try:
+            rolloff = float(np.mean(librosa.feature.spectral_rolloff(y=y, sr=sr)))
+            rolloff_norm = min(1.0, rolloff / (sr / 2))
+            result["acousticness"] = round(max(0.0, 1.0 - rolloff_norm), 3)
+        except Exception:
+            log.debug("Acousticness extraction failed for %s", filepath)
+
+        # ── Instrumentalness (spectral flatness) ──
+        try:
+            flatness = float(np.mean(librosa.feature.spectral_flatness(y=y)))
+            result["instrumentalness"] = round(min(1.0, flatness * 10), 3)
+        except Exception:
+            log.debug("Instrumentalness extraction failed for %s", filepath)
+
+        # ── Loudness (dB from mean RMS) ──
+        try:
+            rms_vals = librosa.feature.rms(y=y)[0]
+            mean_rms = float(np.mean(rms_vals))
+            if mean_rms > 0:
+                result["loudness"] = round(float(20 * np.log10(mean_rms)), 3)
+        except Exception:
+            log.debug("Loudness extraction failed for %s", filepath)
+
+        # ── Dynamic range (dB ratio of max to min RMS) ──
+        try:
+            rms_vals = librosa.feature.rms(y=y)[0]
+            rms_nonzero = rms_vals[rms_vals > 0]
+            if len(rms_nonzero) > 1:
+                dr = float(20 * np.log10(np.max(rms_nonzero) / np.min(rms_nonzero)))
+                result["dynamic_range"] = round(dr, 3)
+        except Exception:
+            log.debug("Dynamic range extraction failed for %s", filepath)
+
+        # ── Spectral complexity (chroma entropy normalized) ──
+        try:
+            chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+            chroma_norm = chroma / (np.sum(chroma, axis=0, keepdims=True) + 1e-8)
+            entropy = -np.sum(chroma_norm * np.log2(chroma_norm + 1e-8), axis=0)
+            mean_entropy = float(np.mean(entropy))
+            max_entropy = np.log2(12)
+            result["spectral_complexity"] = round(min(1.0, mean_entropy / max_entropy), 3)
+        except Exception:
+            log.debug("Spectral complexity extraction failed for %s", filepath)
 
     except Exception:
         log.warning("Audio analysis failed for %s", filepath, exc_info=True)

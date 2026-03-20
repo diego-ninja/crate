@@ -8,7 +8,13 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, BarChart3 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 import { formatDuration, formatBitrate } from "@/lib/utils";
 import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { cn } from "@/lib/utils";
@@ -34,6 +40,14 @@ interface AudioMuseTrack {
   key: string | null;
   scale: string | null;
   energy: number | null;
+  mood: Record<string, number> | null;
+  danceability: number | null;
+  valence: number | null;
+  acousticness: number | null;
+  instrumentalness: number | null;
+  loudness: number | null;
+  dynamic_range: number | null;
+  spectral_complexity: number | null;
 }
 
 interface TrackTableProps {
@@ -71,6 +85,81 @@ function EnergyBar({ value }: { value: number }) {
       </div>
       <span className="text-xs text-muted-foreground font-mono">{Math.round(pct * 100)}</span>
     </div>
+  );
+}
+
+const FEATURE_BARS: { key: keyof AudioMuseTrack; label: string; color: string }[] = [
+  { key: "danceability", label: "Danceability", color: "#a855f7" },
+  { key: "valence", label: "Valence", color: "#eab308" },
+  { key: "acousticness", label: "Acousticness", color: "#22c55e" },
+  { key: "instrumentalness", label: "Instrumental", color: "#3b82f6" },
+  { key: "energy", label: "Energy", color: "#f97316" },
+  { key: "spectral_complexity", label: "Complexity", color: "#06b6d4" },
+];
+
+function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
+  const hasFeatures = FEATURE_BARS.some((f) => track[f.key] != null);
+  if (!hasFeatures && track.loudness == null && !track.mood) return null;
+
+  const topMoods = track.mood
+    ? Object.entries(track.mood)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+    : [];
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary">
+            <BarChart3 size={13} />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent
+          side="left"
+          className="bg-[#1a1a1a] border border-white/10 p-3 w-[220px] text-foreground"
+        >
+          <div className="space-y-1.5">
+            {FEATURE_BARS.map((f) => {
+              const val = track[f.key] as number | null;
+              if (val == null) return null;
+              return (
+                <div key={f.key} className="flex items-center gap-2">
+                  <span className="text-[10px] text-white/50 w-[70px] shrink-0">{f.label}</span>
+                  <div className="h-1 w-[80px] bg-white/10 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full"
+                      style={{ width: `${Math.round(val * 100)}%`, background: f.color }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-white/40 font-mono w-[28px] text-right">
+                    {Math.round(val * 100)}%
+                  </span>
+                </div>
+              );
+            })}
+            {track.loudness != null && (
+              <div className="flex items-center gap-2 pt-0.5">
+                <span className="text-[10px] text-white/50 w-[70px] shrink-0">Loudness</span>
+                <span className="text-[10px] text-white/60 font-mono">{track.loudness.toFixed(1)} dB</span>
+              </div>
+            )}
+            {topMoods.length > 0 && (
+              <div className="flex gap-1 pt-1 flex-wrap">
+                {topMoods.map(([mood, score]) => (
+                  <span
+                    key={mood}
+                    className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10"
+                  >
+                    {mood} {Math.round(score * 100)}%
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -133,6 +222,7 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
           {hasAudiomuse && <TableHead className="text-muted-foreground font-mono text-xs">BPM</TableHead>}
           {hasAudiomuse && <TableHead className="text-muted-foreground text-xs">Key</TableHead>}
           {hasAudiomuse && <TableHead className="text-muted-foreground text-xs">Energy</TableHead>}
+          {hasAudiomuse && <TableHead className="w-8" />}
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -210,6 +300,11 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
               {hasAudiomuse && (
                 <TableCell>
                   {amTrack?.energy != null ? <EnergyBar value={amTrack.energy} /> : null}
+                </TableCell>
+              )}
+              {hasAudiomuse && (
+                <TableCell>
+                  {amTrack ? <TrackAudioInfo track={amTrack} /> : null}
                 </TableCell>
               )}
             </TableRow>

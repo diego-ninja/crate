@@ -630,6 +630,13 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
                     scale=result["scale"],
                     energy=result["energy"],
                     mood=result["mood"],
+                    danceability=result.get("danceability"),
+                    valence=result.get("valence"),
+                    acousticness=result.get("acousticness"),
+                    instrumentalness=result.get("instrumentalness"),
+                    loudness=result.get("loudness"),
+                    dynamic_range=result.get("dynamic_range"),
+                    spectral_complexity=result.get("spectral_complexity"),
                 )
                 analyzed += 1
             else:
