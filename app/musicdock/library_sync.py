@@ -88,14 +88,15 @@ class LibrarySync:
         }
 
     def sync_artist(self, artist_dir: Path) -> int:
-        artist_name = artist_dir.name
+        folder_name = artist_dir.name
 
         # Prefer canonical name from audio tags (e.g. "Model/Actriz" vs folder "Model-Actriz")
-        artist_name = self._canonical_artist_name(artist_dir, artist_name)
+        artist_name = self._canonical_artist_name(artist_dir, folder_name)
 
         # Ensure artist exists in DB before syncing albums (FK constraint)
         if not get_library_artist(artist_name):
-            upsert_artist({"name": artist_name, "album_count": 0, "track_count": 0,
+            upsert_artist({"name": artist_name, "folder_name": folder_name,
+                           "album_count": 0, "track_count": 0,
                            "total_size": 0, "formats": [], "dir_mtime": artist_dir.stat().st_mtime})
 
         album_dirs = sorted([
@@ -149,6 +150,7 @@ class LibrarySync:
 
         upsert_artist({
             "name": artist_name,
+            "folder_name": folder_name,
             "album_count": len(album_dirs),
             "track_count": total_tracks,
             "total_size": total_size,
@@ -314,14 +316,34 @@ class LibrarySync:
             "formats": formats_list,
         }
 
+    def _canonical_artist_name(self, artist_dir: Path, fallback: str) -> str:
+        """Return the canonical artist name from audio tags, falling back to folder name."""
+        for album_dir in artist_dir.iterdir():
+            if not album_dir.is_dir() or album_dir.name.startswith("."):
+                continue
+            for f in album_dir.iterdir():
+                if f.is_file() and f.suffix.lower() in self.extensions:
+                    try:
+                        tags = read_tags(f)
+                        # Prefer albumartist, then artist tag
+                        name = tags.get("albumartist") or tags.get("artist")
+                        if name and name.strip():
+                            return name.strip()
+                    except Exception:
+                        pass
+                    return fallback
+        return fallback
+
     def remove_stale(self) -> int:
         removed = 0
         with get_db_ctx() as cur:
-            cur.execute("SELECT name FROM library_artists")
+            cur.execute("SELECT name, folder_name FROM library_artists")
             artists = cur.fetchall()
 
         for row in artists:
-            artist_dir = self.library_path / row["name"]
+            # Use folder_name to locate the directory; fall back to name for legacy rows
+            dir_name = row["folder_name"] or row["name"]
+            artist_dir = self.library_path / dir_name
             if not artist_dir.is_dir():
                 delete_artist(row["name"])
                 removed += 1

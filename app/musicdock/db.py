@@ -237,6 +237,14 @@ def init_db():
                 END $$
             """)
 
+        # Migration: add folder_name to library_artists (filesystem dir name, may differ from canonical name)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_artists ADD COLUMN folder_name TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
 
 # ── Task CRUD ─────────────────────────────────────────────────────
 
@@ -503,7 +511,10 @@ def get_library_artists(q: str | None = None, sort: str = "name",
 
 def get_library_artist(name: str) -> dict | None:
     with get_db_ctx() as cur:
-        cur.execute("SELECT * FROM library_artists WHERE name = %s", (name,))
+        cur.execute(
+            "SELECT * FROM library_artists WHERE name = %s OR folder_name = %s",
+            (name, name),
+        )
         row = cur.fetchone()
     return _row_to_lib_artist(row) if row else None
 
@@ -577,16 +588,18 @@ def upsert_artist(data: dict):
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
         cur.execute("""
-            INSERT INTO library_artists (name, album_count, track_count, total_size,
+            INSERT INTO library_artists (name, folder_name, album_count, track_count, total_size,
                 formats_json, primary_format, has_photo, dir_mtime, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(name) DO UPDATE SET
+                folder_name=EXCLUDED.folder_name,
                 album_count=EXCLUDED.album_count, track_count=EXCLUDED.track_count,
                 total_size=EXCLUDED.total_size, formats_json=EXCLUDED.formats_json,
                 primary_format=EXCLUDED.primary_format, has_photo=EXCLUDED.has_photo,
                 dir_mtime=EXCLUDED.dir_mtime, updated_at=EXCLUDED.updated_at
         """, (
-            data["name"], data.get("album_count", 0), data.get("track_count", 0),
+            data["name"], data.get("folder_name") or data["name"],
+            data.get("album_count", 0), data.get("track_count", 0),
             data.get("total_size", 0), json.dumps(data.get("formats", [])),
             data.get("primary_format"), data.get("has_photo", 0),
             data.get("dir_mtime"), now,
