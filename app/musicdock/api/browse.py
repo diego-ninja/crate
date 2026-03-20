@@ -512,12 +512,12 @@ def api_search(q: str = ""):
     like = f"%{q_stripped}%"
     with get_db_ctx() as cur:
         cur.execute(
-            "SELECT name FROM library_artists WHERE name LIKE %s LIMIT 20",
+            "SELECT name FROM library_artists WHERE name ILIKE %s LIMIT 20",
             (like,),
         )
         artist_rows = cur.fetchall()
         cur.execute(
-            "SELECT artist, name FROM library_albums WHERE name LIKE %s OR artist LIKE %s LIMIT 50",
+            "SELECT artist, name FROM library_albums WHERE name ILIKE %s OR artist ILIKE %s LIMIT 50",
             (like, like),
         )
         album_rows = cur.fetchall()

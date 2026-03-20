@@ -419,8 +419,8 @@ def get_library_artists(q: str | None = None, sort: str = "name",
     count_params: list = []
 
     if q:
-        query += " AND name LIKE %s"
-        count_query += " AND name LIKE %s"
+        query += " AND name ILIKE %s"
+        count_query += " AND name ILIKE %s"
         like = f"%{q}%"
         params.append(like)
         count_params.append(like)
