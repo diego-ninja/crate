@@ -161,7 +161,7 @@ export function Analytics() {
 
 function BarList({
   data,
-  color = "#7c3aed",
+  color = "#88c0d0",
   suffix = "",
 }: {
   data: Record<string, number>;

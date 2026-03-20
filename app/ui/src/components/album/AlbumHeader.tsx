@@ -123,8 +123,8 @@ export function AlbumHeader({
       />
 
       {/* Gradient overlays */}
-      <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] via-[#0a0a0a]/80 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-[#0a0a0a]/40" />
+      <div className="absolute inset-0 bg-gradient-to-r from-[#2e3440] via-[#2e3440]/80 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#2e3440] via-transparent to-[#2e3440]/40" />
 
       {/* Noise texture */}
       <div className="absolute inset-0 opacity-[0.03]" style={{
@@ -147,7 +147,7 @@ export function AlbumHeader({
                 />
               ) : null}
               {(coverError || !coverLoaded) && (
-                <div className={`absolute inset-0 bg-gradient-to-br from-violet-600/40 to-violet-900/20 flex items-center justify-center transition-opacity duration-500 ${coverLoaded && !coverError ? "opacity-0" : "opacity-100"}`}>
+                <div className={`absolute inset-0 bg-gradient-to-br from-cyan-600/40 to-cyan-900/20 flex items-center justify-center transition-opacity duration-500 ${coverLoaded && !coverError ? "opacity-0" : "opacity-100"}`}>
                   <span className="text-5xl font-black text-white/40">{letter}</span>
                 </div>
               )}
@@ -217,7 +217,7 @@ export function AlbumHeader({
                 <>
                   <Button
                     size="sm"
-                    className="bg-violet-600 hover:bg-violet-500 text-white"
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white"
                     onClick={handlePlayAll}
                     disabled={!navidromeData.songs.length}
                   >

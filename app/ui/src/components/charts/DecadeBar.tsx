@@ -22,10 +22,10 @@ export function DecadeBar({ data }: DecadeBarProps) {
   return (
     <ResponsiveContainer width="100%" height={250}>
       <BarChart data={entries}>
-        <XAxis dataKey="name" tick={{ fill: "#737373", fontSize: 12 }} />
-        <YAxis tick={{ fill: "#737373", fontSize: 12 }} />
+        <XAxis dataKey="name" tick={{ fill: "#7b88a1", fontSize: 12 }} />
+        <YAxis tick={{ fill: "#7b88a1", fontSize: 12 }} />
         <Tooltip
-          contentStyle={{ background: "#141414", border: "1px solid #262626", borderRadius: 8 }}
+          contentStyle={{ background: "#3b4252", border: "1px solid #4c566a", borderRadius: 8 }}
         />
         <Bar dataKey="value" fill="#22c55e" radius={[4, 4, 0, 0]} />
       </BarChart>

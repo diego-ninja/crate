@@ -22,12 +22,12 @@ export function BitrateChart({ data }: BitrateChartProps) {
   return (
     <ResponsiveContainer width="100%" height={250}>
       <BarChart data={entries}>
-        <XAxis dataKey="name" tick={{ fill: "#737373", fontSize: 12 }} />
-        <YAxis tick={{ fill: "#737373", fontSize: 12 }} />
+        <XAxis dataKey="name" tick={{ fill: "#7b88a1", fontSize: 12 }} />
+        <YAxis tick={{ fill: "#7b88a1", fontSize: 12 }} />
         <Tooltip
-          contentStyle={{ background: "#141414", border: "1px solid #262626", borderRadius: 8 }}
+          contentStyle={{ background: "#3b4252", border: "1px solid #4c566a", borderRadius: 8 }}
         />
-        <Bar dataKey="value" fill="#7c3aed" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="value" fill="#88c0d0" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

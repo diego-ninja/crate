@@ -100,7 +100,7 @@ export function AlbumCard({
           onClick={handlePlay}
           className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
         >
-          <div className="w-12 h-12 rounded-full bg-violet-600 flex items-center justify-center shadow-lg shadow-black/40 hover:bg-violet-500 transition-colors hover:scale-110">
+          <div className="w-12 h-12 rounded-full bg-cyan-600 flex items-center justify-center shadow-lg shadow-black/40 hover:bg-cyan-500 transition-colors hover:scale-110">
             <Play size={22} className="text-white fill-white ml-0.5" />
           </div>
         </div>

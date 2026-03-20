@@ -11,7 +11,7 @@ interface AnalyticsData {
 }
 
 const GENRE_COLORS = [
-  "from-violet-600/40 to-violet-900/20",
+  "from-cyan-600/40 to-cyan-900/20",
   "from-blue-600/40 to-blue-900/20",
   "from-cyan-600/40 to-cyan-900/20",
   "from-emerald-600/40 to-emerald-900/20",

@@ -94,9 +94,9 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
                 />
                 <Radar
                   dataKey="value"
-                  fill="#7c3aed"
+                  fill="#88c0d0"
                   fillOpacity={0.3}
-                  stroke="#7c3aed"
+                  stroke="#88c0d0"
                 />
               </RadarChart>
             </ResponsiveContainer>
@@ -130,7 +130,7 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
                 <span className="text-[11px] text-white/50 w-[60px]">{d.feature}</span>
                 <div className="h-1 w-[80px] bg-white/10 rounded-full overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-violet-500"
+                    className="h-full rounded-full bg-cyan-500"
                     style={{ width: `${Math.round(d.value * 100)}%` }}
                   />
                 </div>

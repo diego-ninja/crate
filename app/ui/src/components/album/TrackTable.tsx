@@ -15,6 +15,13 @@ import {
   TooltipContent,
   TooltipProvider,
 } from "@/components/ui/tooltip";
+import {
+  RadarChart,
+  PolarGrid,
+  PolarAngleAxis,
+  Radar,
+  ResponsiveContainer,
+} from "recharts";
 import { formatDuration, formatBitrate } from "@/lib/utils";
 import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { cn } from "@/lib/utils";
@@ -101,6 +108,12 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
   const hasFeatures = FEATURE_BARS.some((f) => track[f.key] != null);
   if (!hasFeatures && track.loudness == null && !track.mood) return null;
 
+  const radarData = FEATURE_BARS.map((f) => ({
+    feature: f.label.slice(0, 5),
+    value: (track[f.key] as number | null) ?? 0,
+  }));
+  const hasRadar = radarData.some((d) => d.value > 0);
+
   const topMoods = track.mood
     ? Object.entries(track.mood)
         .sort((a, b) => b[1] - a[1])
@@ -117,46 +130,58 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
         </TooltipTrigger>
         <TooltipContent
           side="left"
-          className="bg-[#1a1a1a] border border-white/10 p-3 w-[220px] text-foreground"
+          className="bg-[#3b4252] border border-white/10 p-4 w-[280px] text-foreground"
         >
-          <div className="space-y-1.5">
+          <div className="text-[11px] font-semibold text-white/70 mb-2">Audio Profile</div>
+          {hasRadar && (
+            <div className="w-[120px] h-[120px] mx-auto mb-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
+                  <PolarGrid stroke="rgba(255,255,255,0.08)" />
+                  <PolarAngleAxis dataKey="feature" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 9 }} />
+                  <Radar dataKey="value" fill="#88c0d0" fillOpacity={0.3} stroke="#88c0d0" />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          <div className="space-y-1">
             {FEATURE_BARS.map((f) => {
               const val = track[f.key] as number | null;
               if (val == null) return null;
               return (
                 <div key={f.key} className="flex items-center gap-2">
                   <span className="text-[10px] text-white/50 w-[70px] shrink-0">{f.label}</span>
-                  <div className="h-1 w-[80px] bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-1.5 flex-1 bg-white/10 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full"
                       style={{ width: `${Math.round(val * 100)}%`, background: f.color }}
                     />
                   </div>
                   <span className="text-[10px] text-white/40 font-mono w-[28px] text-right">
-                    {Math.round(val * 100)}%
+                    {Math.round(val * 100)}
                   </span>
                 </div>
               );
             })}
-            {track.loudness != null && (
-              <div className="flex items-center gap-2 pt-0.5">
-                <span className="text-[10px] text-white/50 w-[70px] shrink-0">Loudness</span>
-                <span className="text-[10px] text-white/60 font-mono">{track.loudness.toFixed(1)} dB</span>
-              </div>
-            )}
-            {topMoods.length > 0 && (
-              <div className="flex gap-1 pt-1 flex-wrap">
-                {topMoods.map(([mood, score]) => (
-                  <span
-                    key={mood}
-                    className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10"
-                  >
-                    {mood} {Math.round(score * 100)}%
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
+          {track.loudness != null && (
+            <div className="flex items-center gap-2 mt-2 pt-1.5 border-t border-white/5">
+              <span className="text-[10px] text-white/50 w-[70px] shrink-0">Loudness</span>
+              <span className="text-[10px] text-white/60 font-mono">{track.loudness.toFixed(1)} dB</span>
+            </div>
+          )}
+          {topMoods.length > 0 && (
+            <div className="flex gap-1 pt-2 flex-wrap">
+              {topMoods.map(([mood, score]) => (
+                <span
+                  key={mood}
+                  className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10"
+                >
+                  {mood} {Math.round(score * 100)}%
+                </span>
+              ))}
+            </div>
+          )}
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

@@ -234,7 +234,7 @@ def get_fanart_all_images(artist_name: str) -> dict | None:
 
 
 def get_best_artist_image(artist_name: str) -> bytes | None:
-    """Try all sources to get an artist image: fanart.tv > Last.fm (non-placeholder).
+    """Try all sources to get an artist image: fanart.tv > Spotify > Last.fm (non-placeholder).
     Returns image bytes or None."""
     # Try fanart.tv first (best quality)
     fanart_url = get_fanart_artist_image(artist_name)
@@ -242,6 +242,19 @@ def get_best_artist_image(artist_name: str) -> bytes | None:
         data = download_artist_image(fanart_url)
         if data:
             return data
+
+    # Try Spotify
+    try:
+        from musicdock.spotify import search_artist as spotify_search
+        sp = spotify_search(artist_name)
+        if sp and sp.get("images"):
+            img_url = sp["images"][0].get("url") if sp["images"] else None
+            if img_url:
+                data = download_artist_image(img_url)
+                if data:
+                    return data
+    except Exception:
+        pass
 
     # Try Last.fm (only if non-placeholder)
     info = get_artist_info(artist_name)

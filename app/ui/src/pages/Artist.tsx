@@ -337,8 +337,8 @@ export function Artist() {
           onLoad={() => setBgLoaded(true)}
           onError={() => {}}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] via-[#0a0a0a]/80 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-[#0a0a0a]/40" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#2e3440] via-[#2e3440]/80 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#2e3440] via-transparent to-[#2e3440]/40" />
         <div className="absolute inset-0 opacity-[0.03]" style={{
           backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")",
         }} />
@@ -357,7 +357,7 @@ export function Artist() {
                 />
               ) : null}
               {(photoError || !photoLoaded) && (
-                <div className={`w-full h-full bg-gradient-to-br from-violet-600/40 to-violet-900/20 flex items-center justify-center ${photoLoaded && !photoError ? "hidden" : ""}`}>
+                <div className={`w-full h-full bg-gradient-to-br from-cyan-600/40 to-cyan-900/20 flex items-center justify-center ${photoLoaded && !photoError ? "hidden" : ""}`}>
                   <span className="text-5xl font-black text-white/40">{letter}</span>
                 </div>
               )}
@@ -433,7 +433,7 @@ export function Artist() {
                 {topTracks.length > 0 && (
                   <Button
                     size="sm"
-                    className="bg-violet-600 hover:bg-violet-500 text-white"
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white"
                     onClick={() => topTracks[0] && playTopTrack(topTracks[0], 0)}
                   >
                     <Play size={14} className="mr-1 fill-current" /> Play Top Tracks
@@ -522,7 +522,7 @@ export function Artist() {
       </div>
 
       {/* ═══ TABS ═══ */}
-      <div className="px-8 border-b border-border sticky top-0 bg-[#0a0a0a]/95 backdrop-blur-sm z-10">
+      <div className="px-8 border-b border-border sticky top-0 bg-[#2e3440]/95 backdrop-blur-sm z-10">
         <div className="flex gap-1 -mb-px">
           {tabs.map((t) => (
             <button
@@ -530,7 +530,7 @@ export function Artist() {
               onClick={() => setActiveTab(t.key)}
               className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
                 activeTab === t.key
-                  ? "border-violet-500 text-white"
+                  ? "border-cyan-500 text-white"
                   : "border-transparent text-white/40 hover:text-white/70"
               }`}
             >
@@ -557,7 +557,7 @@ export function Artist() {
                 {bioText.length > 400 && (
                   <button
                     onClick={() => setBioExpanded(!bioExpanded)}
-                    className="text-xs text-violet-400 hover:text-violet-300 mt-2 flex items-center gap-1"
+                    className="text-xs text-cyan-400 hover:text-cyan-300 mt-2 flex items-center gap-1"
                   >
                     {bioExpanded ? <><ChevronUp size={12} /> Less</> : <><ChevronDown size={12} /> More</>}
                   </button>
@@ -584,14 +584,14 @@ export function Artist() {
                         className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors group text-left ${isCurrent ? "bg-white/[0.03]" : ""}`}
                       >
                         {isCurrent ? (
-                          isCurrentPlaying ? <Pause size={13} className="text-violet-400 w-5 fill-current" /> : <Play size={13} className="text-violet-400 w-5 fill-current" />
+                          isCurrentPlaying ? <Pause size={13} className="text-cyan-400 w-5 fill-current" /> : <Play size={13} className="text-cyan-400 w-5 fill-current" />
                         ) : (
                           <>
                             <span className="w-5 text-right text-xs text-white/30 group-hover:hidden">{i + 1}</span>
-                            <Play size={13} className="text-violet-400 hidden group-hover:block w-5 fill-current" />
+                            <Play size={13} className="text-cyan-400 hidden group-hover:block w-5 fill-current" />
                           </>
                         )}
-                        <span className={`flex-1 text-sm truncate ${isCurrent ? "text-violet-400" : "text-white/80"}`}>{track.title}</span>
+                        <span className={`flex-1 text-sm truncate ${isCurrent ? "text-cyan-400" : "text-white/80"}`}>{track.title}</span>
                         <span className="text-xs text-white/30">{formatDuration(track.duration)}</span>
                       </button>
                     );
@@ -677,15 +677,15 @@ export function Artist() {
                         className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors group text-left ${isCurrent ? "bg-white/[0.03]" : ""}`}
                       >
                         {isCurrent ? (
-                          isCurrentPlaying ? <Pause size={14} className="text-violet-400 w-8 text-right fill-current" /> : <Play size={14} className="text-violet-400 w-8 text-right fill-current" />
+                          isCurrentPlaying ? <Pause size={14} className="text-cyan-400 w-8 text-right fill-current" /> : <Play size={14} className="text-cyan-400 w-8 text-right fill-current" />
                         ) : (
                           <>
                             <span className="w-8 text-right text-sm text-white/30 group-hover:hidden">{i + 1}</span>
-                            <Play size={14} className="text-violet-400 hidden group-hover:block w-8 text-right fill-current" />
+                            <Play size={14} className="text-cyan-400 hidden group-hover:block w-8 text-right fill-current" />
                           </>
                         )}
                         <div className="flex-1 min-w-0">
-                          <div className={`text-sm font-medium truncate ${isCurrent ? "text-violet-400" : "text-white/90"}`}>{track.title}</div>
+                          <div className={`text-sm font-medium truncate ${isCurrent ? "text-cyan-400" : "text-white/90"}`}>{track.title}</div>
                         </div>
                         <div className="w-32 hidden sm:block text-xs text-white/40 truncate">{track.album}</div>
                         <div className="w-20 text-right text-xs text-white/30">{formatDuration(track.duration)}</div>
@@ -809,7 +809,7 @@ export function Artist() {
                   </div>
                   <Button
                     size="sm"
-                    className="bg-violet-600 hover:bg-violet-500 text-white"
+                    className="bg-cyan-600 hover:bg-cyan-500 text-white"
                     onClick={async () => {
                       try {
                         await api(`/api/artist/${encPath(data.name)}/setlist-playlist`, "POST");
@@ -843,7 +843,7 @@ export function Artist() {
                             className="h-full rounded-full"
                             style={{
                               width: `${Math.round(song.frequency * 100)}%`,
-                              background: "linear-gradient(90deg, #7c3aed, #a78bfa)",
+                              background: "linear-gradient(90deg, #88c0d0, #81a1c1)",
                             }}
                           />
                         </div>
@@ -893,7 +893,7 @@ export function Artist() {
                 {bioText.length > 600 && (
                   <button
                     onClick={() => setBioExpanded(!bioExpanded)}
-                    className="text-xs text-violet-400 hover:text-violet-300 mt-2 flex items-center gap-1"
+                    className="text-xs text-cyan-400 hover:text-cyan-300 mt-2 flex items-center gap-1"
                   >
                     {bioExpanded ? <><ChevronUp size={12} /> Less</> : <><ChevronDown size={12} /> More</>}
                   </button>
@@ -1037,7 +1037,7 @@ function SimilarArtistCard({ name, genres, popularity }: { name: string; genres?
       to={`/artist/${encPath(name)}`}
       className="group text-center"
     >
-      <div className="w-full aspect-square rounded-xl overflow-hidden mb-2 ring-1 ring-white/5 group-hover:ring-violet-500/30 transition-all duration-300 group-hover:scale-[1.03]">
+      <div className="w-full aspect-square rounded-xl overflow-hidden mb-2 ring-1 ring-white/5 group-hover:ring-cyan-500/30 transition-all duration-300 group-hover:scale-[1.03]">
         {!imgError ? (
           <img
             src={`/api/artist/${encPath(name)}/photo?random=true`}
@@ -1049,7 +1049,7 @@ function SimilarArtistCard({ name, genres, popularity }: { name: string; genres?
           />
         ) : null}
         {(imgError || !imgLoaded) && (
-          <div className={`w-full h-full bg-gradient-to-br from-violet-600/20 to-violet-900/10 flex items-center justify-center ${imgLoaded && !imgError ? "hidden" : ""}`}>
+          <div className={`w-full h-full bg-gradient-to-br from-cyan-600/20 to-cyan-900/10 flex items-center justify-center ${imgLoaded && !imgError ? "hidden" : ""}`}>
             <span className="text-3xl font-bold text-white/20">{letter}</span>
           </div>
         )}

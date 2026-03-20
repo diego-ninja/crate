@@ -103,7 +103,7 @@ export function Dashboard() {
       label: "Artists",
       value: formatNumber(stats?.artists ?? 0),
       icon: Users,
-      color: "border-l-violet-500",
+      color: "border-l-cyan-500",
     },
     {
       label: "Albums",

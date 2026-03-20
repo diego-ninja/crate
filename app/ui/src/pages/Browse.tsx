@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams } from "react-router";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,14 +33,16 @@ interface PaginatedResponse {
 const PER_PAGE = 60;
 
 export function Browse() {
+  const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get("q") ?? "";
   const [artists, setArtists] = useState<ArtistItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
+  const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
   const [sort, setSort] = useState("recent");
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const sentinelRef = useRef<HTMLDivElement>(null);

@@ -16,7 +16,7 @@ function hashColor(str: string): string {
 
 const typeBadgeClass: Record<string, string> = {
   Album: "border-blue-500/30 text-blue-500",
-  EP: "border-violet-500/30 text-violet-500",
+  EP: "border-cyan-500/30 text-cyan-500",
   Single: "border-yellow-500/30 text-yellow-500",
   Compilation: "border-orange-500/30 text-orange-500",
 };

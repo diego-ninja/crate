@@ -415,7 +415,7 @@ function LogLine({ line }: { line: string }) {
       <span className={`flex-1 break-all ${level === "debug" || level === "trace" ? "text-white/30" : "text-white/60"}`}>
         {parts.map((part, i) =>
           i % 2 === 1 ? (
-            <span key={i} className="text-violet-400/70">{part}</span>
+            <span key={i} className="text-cyan-400/70">{part}</span>
           ) : (
             <span key={i}>{part}</span>
           )

@@ -4,7 +4,7 @@ const COLORS: Record<string, string> = {
   flac: "#22c55e",
   mp3: "#3b82f6",
   m4a: "#f97316",
-  ogg: "#7c3aed",
+  ogg: "#88c0d0",
   opus: "#eab308",
 };
 
@@ -37,13 +37,13 @@ export function FormatDonut({ data }: FormatDonutProps) {
           {entries.map((entry) => (
             <Cell
               key={entry.key}
-              fill={COLORS[entry.key] || "#7c3aed"}
+              fill={COLORS[entry.key] || "#88c0d0"}
             />
           ))}
         </Pie>
         <Tooltip
-          contentStyle={{ background: "#141414", border: "1px solid #262626", borderRadius: 8 }}
-          labelStyle={{ color: "#e5e5e5" }}
+          contentStyle={{ background: "#3b4252", border: "1px solid #4c566a", borderRadius: 8 }}
+          labelStyle={{ color: "#eceff4" }}
         />
       </PieChart>
     </ResponsiveContainer>

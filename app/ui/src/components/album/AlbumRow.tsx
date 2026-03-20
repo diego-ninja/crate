@@ -49,7 +49,7 @@ export function AlbumRow({
           />
         ) : null}
         {(placeholder || imgError || !imgLoaded) && (
-          <div className={`absolute inset-0 bg-gradient-to-br from-violet-600/20 to-violet-900/10 flex items-center justify-center ${imgLoaded && !imgError && !placeholder ? "opacity-0" : "opacity-100"}`}>
+          <div className={`absolute inset-0 bg-gradient-to-br from-cyan-600/20 to-cyan-900/10 flex items-center justify-center ${imgLoaded && !imgError && !placeholder ? "opacity-0" : "opacity-100"}`}>
             <Music size={18} className="text-muted-foreground" />
           </div>
         )}
