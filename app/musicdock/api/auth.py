@@ -194,10 +194,9 @@ async def auth_me(request: Request):
 
 @router.get("/verify")
 async def auth_verify(request: Request):
-    """Traefik forward-auth endpoint. Returns 200 with headers or 401 with redirect."""
+    """Hard verify: 401 + redirect if not authenticated (for admin, protected services)."""
     user = getattr(request.state, "user", None)
     if not user:
-        # Build redirect URL to login with original URL as parameter
         domain = os.environ.get("DOMAIN", "localhost")
         original_url = request.headers.get("X-Forwarded-Uri", "/")
         original_host = request.headers.get("X-Forwarded-Host", f"admin.{domain}")
@@ -207,7 +206,21 @@ async def auth_verify(request: Request):
         return Response(status_code=401, headers={"Location": login_url})
     response = Response(status_code=200)
     response.headers["Remote-User"] = user["email"]
+    response.headers["Remote-Name"] = user.get("name", "")
     response.headers["Remote-Role"] = user.get("role", "user")
+    return response
+
+
+@router.get("/verify-soft")
+async def auth_verify_soft(request: Request):
+    """Soft verify: always 200, injects Remote-User if authenticated (for play, search).
+    This allows services with their own auth to work — but auto-logs in if MusicDock cookie exists."""
+    user = getattr(request.state, "user", None)
+    response = Response(status_code=200)
+    if user:
+        response.headers["Remote-User"] = user["email"]
+        response.headers["Remote-Name"] = user.get("name", "")
+        response.headers["Remote-Role"] = user.get("role", "user")
     return response
 
 

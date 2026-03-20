@@ -286,6 +286,15 @@ services:
       - musicdock
     depends_on:
       - musicdock-postgres
+    labels:
+      # Forward-auth middlewares (consumed by other services via @docker)
+      traefik.enable: false
+      traefik.http.middlewares.musicdock-auth.forwardAuth.address: http://musicdock-api:8585/api/auth/verify
+      traefik.http.middlewares.musicdock-auth.forwardAuth.trustForwardHeader: true
+      traefik.http.middlewares.musicdock-auth.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
+      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.address: http://musicdock-api:8585/api/auth/verify-soft
+      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.trustForwardHeader: true
+      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
     command: ["api"]
 
   musicdock-worker:
