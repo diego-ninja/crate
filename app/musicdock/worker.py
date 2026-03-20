@@ -547,6 +547,51 @@ def _handle_fetch_artist_covers(task_id: str, params: dict, config: dict) -> dic
     return {"fetched": fetched, "failed": failed, "skipped": skipped, "total": total}
 
 
+def _handle_enrich_single(task_id: str, params: dict, config: dict) -> dict:
+    """Enrich a single artist: Last.fm + Spotify + Setlist.fm + MusicBrainz + fanart.tv."""
+    from musicdock.api.enrichment import _fetch_enrichment
+    from musicdock.db import set_cache, delete_cache
+
+    name = params.get("artist", "")
+    if not name:
+        return {"error": "No artist specified"}
+
+    update_task(task_id, progress=json.dumps({"artist": name, "phase": "enriching"}))
+
+    # Clear old cache
+    delete_cache(f"enrichment:{name.lower()}")
+    delete_cache(f"lastfm:artist:{name.lower()}")
+    delete_cache(f"fanart:artist:{name.lower()}")
+    delete_cache(f"fanart:bg:{name.lower()}")
+    delete_cache(f"fanart:all:{name.lower()}")
+
+    # Fetch fresh
+    result = _fetch_enrichment(name)
+    if result:
+        set_cache(f"enrichment:{name.lower()}", result)
+
+    # Also download photo
+    from musicdock.lastfm import get_best_artist_image
+    lib = Path(config["library_path"])
+    artist_dir = lib / name
+    if artist_dir.is_dir():
+        img = get_best_artist_image(name)
+        if img:
+            try:
+                (artist_dir / "artist.jpg").write_bytes(img)
+            except OSError:
+                pass
+
+    return {
+        "artist": name,
+        "has_lastfm": "lastfm" in result,
+        "has_spotify": "spotify" in result,
+        "has_setlist": "setlist" in result,
+        "has_musicbrainz": "musicbrainz" in result,
+        "has_fanart": "fanart" in result,
+    }
+
+
 def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
     """Analyze audio tracks for BPM, key, energy, mood."""
     from musicdock.audio_analysis import analyze_track
@@ -613,6 +658,7 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
+    "enrich_artist": _handle_enrich_single,
     "fix_issues": _handle_fix_issues,
     "fetch_cover": _handle_fetch_cover,
     "fetch_artist_covers": _handle_fetch_artist_covers,

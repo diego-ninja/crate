@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from thefuzz import fuzz
 
 from musicdock import spotify, setlistfm, musicbrainz_ext, navidrome
-from musicdock.lastfm import get_fanart_all_images
+from musicdock.lastfm import get_artist_info, get_fanart_all_images
 
 log = logging.getLogger(__name__)
 
@@ -14,19 +14,54 @@ router = APIRouter()
 
 @router.get("/api/artist/{name}/enrichment")
 def get_artist_enrichment(name: str):
-    result: dict = {"artist": name}
+    """Get consolidated enrichment data. Returns cached if available, otherwise fetches inline.
+    For background enrichment, use POST /api/artist/{name}/enrich which queues a worker task."""
+    from musicdock.db import get_cache, set_cache
+
+    cache_key = f"enrichment:{name.lower()}"
+    cached = get_cache(cache_key, max_age_seconds=86400)  # 24h
+    if cached:
+        return cached
+
+    # Fetch inline (first visit)
+    result = _fetch_enrichment(name)
+    if result:
+        set_cache(cache_key, result)
+    return result or {}
+
+
+def _fetch_enrichment(name: str) -> dict:
+    result: dict = {}
+
+    # Last.fm
+    try:
+        info = get_artist_info(name)
+        if info:
+            result["lastfm"] = info
+    except Exception:
+        log.debug("Last.fm enrichment failed for %s", name)
 
     # Spotify
     try:
         sp = spotify.search_artist(name)
         if sp:
-            result["spotify"] = sp
-            top = spotify.get_top_tracks(sp["id"])
-            if top:
-                result["spotify_top_tracks"] = top
-            related = spotify.get_related_artists(sp["id"])
-            if related:
-                result["spotify_related"] = related
+            spotify_data = {
+                "popularity": sp.get("popularity"),
+                "followers": sp.get("followers"),
+                "genres": sp.get("genres", []),
+                "url": sp.get("url"),
+            }
+            try:
+                top = spotify.get_top_tracks(sp["id"])
+                spotify_data["top_tracks"] = top or []
+            except Exception:
+                spotify_data["top_tracks"] = []
+            try:
+                related = spotify.get_related_artists(sp["id"])
+                spotify_data["related_artists"] = related or []
+            except Exception:
+                spotify_data["related_artists"] = []
+            result["spotify"] = spotify_data
     except Exception:
         log.debug("Spotify enrichment failed for %s", name)
 
@@ -34,7 +69,10 @@ def get_artist_enrichment(name: str):
     try:
         setlist = setlistfm.get_probable_setlist(name)
         if setlist:
-            result["probable_setlist"] = setlist
+            result["setlist"] = {
+                "probable_setlist": setlist,
+                "total_shows": len(setlist),
+            }
     except Exception:
         log.debug("Setlist.fm enrichment failed for %s", name)
 
