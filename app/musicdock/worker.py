@@ -642,7 +642,7 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
             else:
                 failed += 1
         except Exception:
-            log.debug("Failed to analyze %s", path)
+            log.warning("Failed to analyze %s", path, exc_info=True)
             failed += 1
 
     return {"analyzed": analyzed, "failed": failed, "total": total}

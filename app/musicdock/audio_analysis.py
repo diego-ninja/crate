@@ -171,6 +171,14 @@ def analyze_track(filepath: str | Path) -> dict:
     except Exception:
         log.warning("Audio analysis failed for %s", filepath, exc_info=True)
 
+    # Convert all numpy types to Python native types (PostgreSQL doesn't understand numpy)
+    for k, v in result.items():
+        if v is not None and not isinstance(v, (int, float, str, dict)):
+            try:
+                result[k] = float(v)
+            except (TypeError, ValueError):
+                pass
+
     return result
 
 
