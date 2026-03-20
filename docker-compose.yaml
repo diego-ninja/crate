@@ -317,6 +317,7 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-admin123}
+      - NUMBA_CACHE_DIR=/tmp/numba_cache
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
