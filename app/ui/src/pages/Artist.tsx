@@ -170,7 +170,6 @@ export function Artist() {
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [enrichmentLoading, setEnrichmentLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteMode, setDeleteMode] = useState<"db_only" | "full">("db_only");
   const { isAdmin } = useAuth();
   const bgRef = useRef<HTMLImageElement>(null);
 
@@ -1017,37 +1016,12 @@ export function Artist() {
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}
         title={`Delete ${data?.name ?? "artist"}?`}
-        description={
-          <div className="flex flex-col gap-3">
-            <p>Choose how to delete this artist:</p>
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant={deleteMode === "db_only" ? "default" : "outline"}
-                onClick={() => setDeleteMode("db_only")}
-              >
-                DB Only
-              </Button>
-              <Button
-                size="sm"
-                variant={deleteMode === "full" ? "destructive" : "outline"}
-                onClick={() => setDeleteMode("full")}
-              >
-                Full Delete (files + DB)
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {deleteMode === "full"
-                ? "This will permanently delete all files from disk and remove the artist from the database."
-                : "This will only remove the artist from the database. Files on disk will remain."}
-            </p>
-          </div>
-        }
-        confirmLabel={deleteMode === "full" ? "Delete Everything" : "Delete from DB"}
+        description="This will remove the artist and all their albums/tracks from the database. Files on disk will remain."
+        confirmLabel="Delete from DB"
         variant="destructive"
         onConfirm={async () => {
           try {
-            await api(`/api/manage/artist/${encPath(data!.name)}/delete`, "POST", { mode: deleteMode });
+            await api(`/api/manage/artist/${encPath(data!.name)}/delete`, "POST", { mode: "db_only" });
             toast.success(`Artist ${data!.name} deleted`);
             window.location.href = "/browse";
           } catch {
