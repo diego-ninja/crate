@@ -27,7 +27,7 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
         for attempt in range(10):
             try:
                 _pool = psycopg2.pool.ThreadedConnectionPool(
-                    minconn=2, maxconn=10, dsn=_get_dsn()
+                    minconn=2, maxconn=30, dsn=_get_dsn()
                 )
                 break
             except psycopg2.OperationalError:
@@ -47,7 +47,15 @@ def get_db():
 @contextmanager
 def get_db_ctx():
     pool = _get_pool()
-    conn = pool.getconn()
+    for attempt in range(3):
+        try:
+            conn = pool.getconn()
+            break
+        except psycopg2.pool.PoolError:
+            if attempt < 2:
+                time.sleep(0.5)
+            else:
+                raise
     try:
         conn.autocommit = False
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -57,7 +65,10 @@ def get_db_ctx():
         conn.rollback()
         raise
     finally:
-        cur.close()
+        try:
+            cur.close()
+        except Exception:
+            pass
         pool.putconn(conn)
 
 
