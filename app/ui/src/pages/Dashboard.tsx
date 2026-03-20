@@ -304,11 +304,18 @@ export function Dashboard() {
               {recentAlbums.map((album, i) => (
                 <button
                   key={`${album.artist}-${album.name}-${i}`}
-                  onClick={() => navigate(`/artist/${encPath(album.artist)}`)}
+                  onClick={() => navigate(`/album/${encPath(album.artist)}/${encPath(album.name)}`)}
                   className="flex-shrink-0 w-[140px] group text-left"
                 >
                   <div className="relative w-[140px] h-[140px] rounded-lg overflow-hidden bg-secondary mb-2">
-                    <div className="w-full h-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+                    <img
+                      src={`/api/cover/${encPath(album.artist)}/${encPath(album.name)}`}
+                      alt={album.name}
+                      loading="lazy"
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center -z-10">
                       <Disc3 size={28} className="text-primary/40" />
                     </div>
                   </div>

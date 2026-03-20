@@ -160,11 +160,11 @@ def api_stats():
             top_genres = [{"name": r["genre"], "count": r["c"]} for r in cur.fetchall()]
 
             cur.execute(
-                "SELECT artist, name, year, updated_at FROM library_albums "
-                "ORDER BY updated_at DESC LIMIT 10"
+                "SELECT artist, name, year, dir_mtime FROM library_albums "
+                "ORDER BY dir_mtime DESC NULLS LAST LIMIT 10"
             )
             recent_albums = [
-                {"artist": r["artist"], "name": r["name"], "year": r["year"], "updated_at": r["updated_at"]}
+                {"artist": r["artist"], "name": r["name"], "year": r["year"]}
                 for r in cur.fetchall()
             ]
 
