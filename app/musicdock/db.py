@@ -44,6 +44,19 @@ def get_db_ctx():
         conn.close()
 
 
+def db_retry(fn, *args, retries: int = 3, **kwargs):
+    """Execute a DB function with retry on 'database is locked'."""
+    import time as _time
+    for attempt in range(retries):
+        try:
+            return fn(*args, **kwargs)
+        except sqlite3.OperationalError as e:
+            if "database is locked" in str(e) and attempt < retries - 1:
+                _time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
+
+
 def init_db():
     _get_db_path().parent.mkdir(parents=True, exist_ok=True)
     with get_db_ctx() as conn:

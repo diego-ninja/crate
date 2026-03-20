@@ -320,17 +320,37 @@ export function Tasks() {
   );
 }
 
+interface WorkerInfo {
+  max_slots: number;
+  running: number;
+  pending: number;
+  running_tasks: { id: string; type: string }[];
+  pending_tasks: { id: string; type: string }[];
+}
+
 function WorkerStatus({ running, pending }: { running: number; pending: number }) {
-  const MAX_SLOTS = 3;
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [workerInfo, setWorkerInfo] = useState<WorkerInfo | null>(null);
+  const [restarting, setRestarting] = useState(false);
+
+  useEffect(() => {
+    api<WorkerInfo>("/api/worker/status")
+      .then(setWorkerInfo)
+      .catch(() => {});
+    const timer = setInterval(() => {
+      api<WorkerInfo>("/api/worker/status")
+        .then(setWorkerInfo)
+        .catch(() => {});
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const maxSlots = workerInfo?.max_slots ?? 3;
 
   async function toggleLogs() {
-    if (showLogs) {
-      setShowLogs(false);
-      return;
-    }
+    if (showLogs) { setShowLogs(false); return; }
     setShowLogs(true);
     setLogsLoading(true);
     try {
@@ -343,6 +363,37 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
     }
   }
 
+  async function setSlots(n: number) {
+    try {
+      await api("/api/worker/slots", "POST", { slots: n });
+      setWorkerInfo((prev) => prev ? { ...prev, max_slots: n } : prev);
+      toast.success(`Worker slots set to ${n}`);
+    } catch {
+      toast.error("Failed to set slots");
+    }
+  }
+
+  async function restartWorker() {
+    setRestarting(true);
+    try {
+      await api("/api/worker/restart", "POST");
+      toast.success("Worker restarting...");
+    } catch {
+      toast.error("Restart failed");
+    } finally {
+      setTimeout(() => setRestarting(false), 5000);
+    }
+  }
+
+  async function cancelAll() {
+    try {
+      const res = await api<{ cancelled: number }>("/api/worker/cancel-all", "POST");
+      toast.success(`Cancelled ${res.cancelled} tasks`);
+    } catch {
+      toast.error("Failed to cancel tasks");
+    }
+  }
+
   return (
     <Card className="bg-card">
       <CardContent className="pt-6">
@@ -350,7 +401,7 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
           <div className="flex items-center gap-3">
             <div className="text-sm font-medium">Worker</div>
             <div className="flex gap-1">
-              {Array.from({ length: MAX_SLOTS }, (_, i) => (
+              {Array.from({ length: maxSlots }, (_, i) => (
                 <div
                   key={i}
                   className={`w-3 h-3 rounded-full transition-colors ${
@@ -361,13 +412,46 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
               ))}
             </div>
             <span className="text-xs text-muted-foreground">
-              {running}/{MAX_SLOTS} active
+              {running}/{maxSlots} active
               {pending > 0 && ` · ${pending} queued`}
             </span>
           </div>
-          <Button variant="ghost" size="sm" onClick={toggleLogs} className="text-xs text-muted-foreground">
-            {showLogs ? "Hide logs" : "Worker logs"}
-          </Button>
+          <div className="flex items-center gap-1">
+            {/* Slot controls */}
+            <div className="flex items-center gap-0.5 mr-2 border border-border rounded-md">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setSlots(n)}
+                  className={`px-2 py-1 text-[10px] font-mono transition-colors ${
+                    n === maxSlots
+                      ? "bg-primary text-primary-foreground"
+                      : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                  } ${n === 1 ? "rounded-l-md" : ""} ${n === 5 ? "rounded-r-md" : ""}`}
+                  title={`Set to ${n} slots`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+            <Button variant="ghost" size="sm" onClick={cancelAll} className="text-xs text-red-500 hover:text-red-400" title="Cancel all tasks">
+              <Ban size={12} className="mr-1" /> Cancel all
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={restartWorker}
+              disabled={restarting}
+              className="text-xs text-yellow-500 hover:text-yellow-400"
+              title="Restart worker"
+            >
+              {restarting ? <Loader2 size={12} className="animate-spin mr-1" /> : <RefreshCw size={12} className="mr-1" />}
+              Restart
+            </Button>
+            <Button variant="ghost" size="sm" onClick={toggleLogs} className="text-xs text-muted-foreground">
+              {showLogs ? "Hide logs" : "Logs"}
+            </Button>
+          </div>
         </div>
         {showLogs && (
           <div className="bg-[#060608] rounded-lg p-3 max-h-[250px] overflow-auto mt-2">

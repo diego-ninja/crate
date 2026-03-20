@@ -3,9 +3,12 @@ import json as _json
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from musicdock.db import list_tasks, get_task, update_task, create_task
+from musicdock.db import list_tasks, get_task, update_task, create_task, get_setting, set_setting
+from musicdock.docker_ctl import restart_container
 
 router = APIRouter()
+
+DEFAULT_MAX_WORKERS = 3
 
 
 @router.get("/api/tasks")
@@ -65,6 +68,52 @@ def api_sync_library():
         return JSONResponse({"error": "Library sync already in progress"}, status_code=409)
     task_id = create_task("library_sync")
     return {"status": "started", "task_id": task_id}
+
+
+@router.get("/api/worker/status")
+def api_worker_status():
+    """Get worker status: slots, running/pending tasks."""
+    running = list_tasks(status="running")
+    pending = list_tasks(status="pending")
+    max_workers = int(get_setting("max_workers", str(DEFAULT_MAX_WORKERS)) or DEFAULT_MAX_WORKERS)
+    return {
+        "max_slots": max_workers,
+        "running": len(running),
+        "pending": len(pending),
+        "running_tasks": [{"id": t["id"], "type": t["type"]} for t in running],
+        "pending_tasks": [{"id": t["id"], "type": t["type"]} for t in pending],
+    }
+
+
+@router.post("/api/worker/slots")
+def api_set_worker_slots(body: dict):
+    """Set max worker slots (1-5). Worker reads this on next poll."""
+    slots = body.get("slots", DEFAULT_MAX_WORKERS)
+    if not isinstance(slots, int) or slots < 1 or slots > 5:
+        return JSONResponse({"error": "Slots must be 1-5"}, status_code=400)
+    set_setting("max_workers", str(slots))
+    return {"max_slots": slots}
+
+
+@router.post("/api/worker/restart")
+def api_restart_worker():
+    """Restart the worker container."""
+    ok = restart_container("musicdock-worker")
+    if ok:
+        return {"status": "restarting"}
+    return JSONResponse({"error": "Restart failed"}, status_code=500)
+
+
+@router.post("/api/worker/cancel-all")
+def api_cancel_all_tasks():
+    """Cancel all running and pending tasks."""
+    running = list_tasks(status="running")
+    pending = list_tasks(status="pending")
+    cancelled = 0
+    for t in running + pending:
+        update_task(t["id"], status="cancelled")
+        cancelled += 1
+    return {"cancelled": cancelled}
 
 
 @router.post("/api/tasks/{task_id}/cancel")

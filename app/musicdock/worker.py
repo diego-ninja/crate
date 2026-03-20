@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from musicdock.config import load_config
-from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, set_cache, get_cache, list_tasks, get_task
+from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, set_cache, get_cache, list_tasks, get_task, get_setting
 from musicdock.importer import ImportQueue
 from musicdock.scanner import LibraryScanner
 from musicdock.report import save_report
@@ -154,8 +154,11 @@ def run_worker(config: dict):
                 if not pending and not running:
                     create_task("enrich_artists")
 
+            # Read dynamic slot count from settings
+            current_max = int(get_setting("max_workers", str(MAX_WORKERS)) or MAX_WORKERS)
+
             # Only claim if we have free slots
-            if len(_active_tasks) >= MAX_WORKERS:
+            if len(_active_tasks) >= current_max:
                 time.sleep(0.5)
                 continue
 
