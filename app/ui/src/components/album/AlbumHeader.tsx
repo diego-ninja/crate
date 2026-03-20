@@ -68,9 +68,12 @@ export function AlbumHeader({
     setAnalyzing(true);
     try {
       const res = await api<{ task_id: string }>(`/api/analyze/album/${encPath(artist)}/${encPath(album)}`, "POST");
+      toast.success("Analysis started...");
       const taskId = res.task_id;
       const poll = setInterval(async () => {
         try {
+          // Refresh audio data on every poll (shows results as they come in)
+          onAnalysisComplete?.();
           const task = await api<{ status: string }>(`/api/tasks/${taskId}`);
           if (task.status === "completed") {
             clearInterval(poll);
@@ -83,7 +86,7 @@ export function AlbumHeader({
             toast.error("Analysis failed");
           }
         } catch { /* keep polling */ }
-      }, 3000);
+      }, 4000);
       setTimeout(() => { clearInterval(poll); setAnalyzing(false); }, 120000);
     } catch {
       setAnalyzing(false);
