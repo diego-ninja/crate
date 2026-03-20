@@ -194,10 +194,17 @@ async def auth_me(request: Request):
 
 @router.get("/verify")
 async def auth_verify(request: Request):
-    """Traefik forward-auth endpoint. Returns 200 with headers or 401."""
+    """Traefik forward-auth endpoint. Returns 200 with headers or 401 with redirect."""
     user = getattr(request.state, "user", None)
     if not user:
-        return Response(status_code=401)
+        # Build redirect URL to login with original URL as parameter
+        domain = os.environ.get("DOMAIN", "localhost")
+        original_url = request.headers.get("X-Forwarded-Uri", "/")
+        original_host = request.headers.get("X-Forwarded-Host", f"admin.{domain}")
+        original_proto = request.headers.get("X-Forwarded-Proto", "https")
+        redirect_to = f"{original_proto}://{original_host}{original_url}"
+        login_url = f"https://admin.{domain}/login?redirect={redirect_to}"
+        return Response(status_code=401, headers={"Location": login_url})
     response = Response(status_code=200)
     response.headers["Remote-User"] = user["email"]
     response.headers["Remote-Role"] = user.get("role", "user")

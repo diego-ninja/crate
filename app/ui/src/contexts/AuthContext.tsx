@@ -40,8 +40,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUser = useCallback(async () => {
     try {
-      const data = await api<{ user: AuthUser }>("/api/auth/me");
-      setUser(data.user);
+      const data = await api<AuthUser>("/api/auth/me");
+      if (data && data.id) setUser(data);
+      else setUser(null);
     } catch {
       setUser(null);
     } finally {

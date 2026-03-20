@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,8 @@ import { api, ApiError } from "@/lib/api";
 
 export function Login() {
   const { user, loading, refetch } = useAuth();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get("redirect");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -22,6 +24,10 @@ export function Login() {
   }
 
   if (user) {
+    if (redirectTo) {
+      window.location.href = redirectTo;
+      return null;
+    }
     return <Navigate to="/" replace />;
   }
 
@@ -31,6 +37,10 @@ export function Login() {
     setSubmitting(true);
     try {
       await api("/api/auth/login", "POST", { email, password });
+      if (redirectTo) {
+        window.location.href = redirectTo;
+        return;
+      }
       await refetch();
     } catch (err) {
       if (err instanceof ApiError) {
