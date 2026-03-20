@@ -22,6 +22,7 @@ import {
   User,
   Users,
   LogOut,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -66,6 +67,7 @@ const navItems = [
   { to: "/tasks", icon: ListTodo, label: "Tasks", badgeKey: "running_tasks" as const, adminOnly: true },
   { to: "/stack", icon: Server, label: "Stack", adminOnly: true },
   { to: "/users", icon: Users, label: "Users", adminOnly: true },
+  { to: "/settings", icon: Settings, label: "Settings", adminOnly: true },
 ] as const;
 
 export function Sidebar({ onNavigate }: SidebarProps) {

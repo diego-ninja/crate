@@ -189,3 +189,24 @@ def find_album(artist_name: str, album_name: str) -> dict | None:
 
 def stream_song(song_id: str) -> requests.Response:
     return _request_raw("stream", id=song_id)
+
+
+def start_scan() -> bool:
+    try:
+        _request("startScan")
+        return True
+    except Exception:
+        log.warning("Failed to trigger Navidrome scan", exc_info=True)
+        return False
+
+
+def get_scan_status() -> dict:
+    try:
+        sr = _request("getScanStatus")
+        status = sr.get("scanStatus", {})
+        return {
+            "scanning": status.get("scanning", False),
+            "count": status.get("count", 0),
+        }
+    except Exception:
+        return {"scanning": False, "count": 0}

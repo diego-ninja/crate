@@ -1,12 +1,13 @@
 import json
 import logging
+import shutil
 import signal
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from musicdock.config import load_config
-from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, set_cache, get_cache, list_tasks, get_task, get_setting
+from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, set_cache, get_cache, list_tasks, get_task, get_setting, get_db_ctx
 from musicdock.importer import ImportQueue
 from musicdock.scanner import LibraryScanner
 from musicdock.report import save_report
@@ -38,7 +39,7 @@ MAX_WORKERS = 5
 _active_tasks: set[str] = set()
 
 # Tasks that do heavy DB writes — only one at a time
-DB_HEAVY_TASKS = {"library_sync"}
+DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair"}
 _db_heavy_running = False
 _db_heavy_lock = __import__("threading").Lock()
 
@@ -393,18 +394,25 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.db import get_library_artists
+
     lib = Path(config["library_path"])
-    artists = sorted([d.name for d in lib.iterdir() if d.is_dir() and not d.name.startswith(".")])
-    total = len(artists)
+    # Use DB artists (canonical names) instead of folder names
+    all_artists, total = get_library_artists(per_page=10000)
     enriched = 0
     skipped = 0
 
-    for i, name in enumerate(artists):
+    for i, artist in enumerate(all_artists):
         if _shutdown or _is_cancelled(task_id):
             break
 
-        artist_dir = lib / name
-        has_photo = artist_dir.is_dir() and (artist_dir / "artist.jpg").exists()
+        name = artist["name"]
+        folder = artist.get("folder_name") or name
+        artist_dir = lib / folder
+
+        has_photo = artist_dir.is_dir() and any(
+            (artist_dir / p).exists() for p in ("artist.jpg", "artist.png", "photo.jpg")
+        )
         cached = get_cache(f"lastfm:artist:{name.lower()}", max_age_seconds=86400)
 
         if cached and has_photo:
@@ -558,8 +566,11 @@ def _handle_enrich_single(task_id: str, params: dict, config: dict) -> dict:
 
     # Also download photo
     from musicdock.lastfm import get_best_artist_image
+    from musicdock.db import get_library_artist as _get_lib_artist
     lib = Path(config["library_path"])
-    artist_dir = lib / name
+    db_artist = _get_lib_artist(name)
+    folder = (db_artist.get("folder_name") if db_artist else None) or name
+    artist_dir = lib / folder
     if artist_dir.is_dir():
         img = get_best_artist_image(name)
         if img:
@@ -648,6 +659,279 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
     return {"analyzed": analyzed, "failed": failed, "total": total}
 
 
+def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.health_check import LibraryHealthCheck
+
+    checker = LibraryHealthCheck(config)
+    report = checker.run(
+        progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
+    )
+    set_cache("health_report", report)
+    return {"issue_count": len(report.get("issues", [])), "summary": report.get("summary", {})}
+
+
+def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.repair import LibraryRepair
+    from musicdock.navidrome import start_scan
+
+    dry_run = params.get("dry_run", True)
+    auto_only = params.get("auto_only", True)
+
+    # Get latest health report
+    report = get_cache("health_report")
+    if not report:
+        # Run health check first
+        from musicdock.health_check import LibraryHealthCheck
+        checker = LibraryHealthCheck(config)
+        report = checker.run(
+            progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
+        )
+        set_cache("health_report", report)
+
+    repairer = LibraryRepair(config)
+    result = repairer.repair(
+        report, dry_run=dry_run, auto_only=auto_only, task_id=task_id,
+        progress_callback=lambda d: update_task(task_id, progress=json.dumps(d)),
+    )
+
+    if not dry_run and result.get("fs_changed"):
+        start_scan()
+
+    return result
+
+
+def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.health_check import LibraryHealthCheck
+    from musicdock.repair import LibraryRepair
+    from musicdock.navidrome import start_scan
+    from musicdock.scheduler import mark_run
+
+    update_task(task_id, progress=json.dumps({"phase": "health_check"}))
+    checker = LibraryHealthCheck(config)
+    report = checker.run(
+        progress_callback=lambda d: update_task(task_id, progress=json.dumps({**d, "phase": "health_check"}))
+    )
+    set_cache("health_report", report)
+
+    update_task(task_id, progress=json.dumps({"phase": "repair"}))
+    repairer = LibraryRepair(config)
+    repair_result = repairer.repair(
+        report, dry_run=False, auto_only=True, task_id=task_id,
+        progress_callback=lambda d: update_task(task_id, progress=json.dumps({**d, "phase": "repair"})),
+    )
+
+    update_task(task_id, progress=json.dumps({"phase": "sync"}))
+    sync = LibrarySync(config)
+    sync_result = sync.full_sync(
+        progress_callback=lambda d: update_task(task_id, progress=json.dumps({**d, "phase": "sync"}))
+    )
+
+    if repair_result.get("fs_changed"):
+        start_scan()
+
+    mark_run("library_pipeline")
+
+    return {
+        "health": {"issue_count": len(report.get("issues", []))},
+        "repair": {"actions": len(repair_result.get("actions", []))},
+        "sync": sync_result,
+    }
+
+
+def _handle_delete_artist(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.db import delete_artist as db_delete_artist, log_audit, delete_cache
+    from musicdock.navidrome import start_scan
+
+    name = params.get("name", "")
+    mode = params.get("mode", "db_only")
+    lib = Path(config["library_path"])
+
+    # Find folder
+    from musicdock.db import get_library_artist
+    artist = get_library_artist(name)
+    folder = (artist.get("folder_name") if artist else None) or name
+    artist_dir = lib / folder
+
+    if mode == "full" and artist_dir.is_dir():
+        shutil.rmtree(str(artist_dir))
+        log.info("Deleted artist directory: %s", artist_dir)
+
+    db_delete_artist(name)
+
+    # Clean caches
+    for prefix in ("enrichment:", "lastfm:artist:", "fanart:artist:", "fanart:bg:",
+                    "fanart:all:", "nd:artist:", "spotify:artist:"):
+        delete_cache(f"{prefix}{name.lower()}")
+
+    log_audit("delete_artist", "artist", name,
+              details={"mode": mode, "folder": folder}, task_id=task_id)
+
+    if mode == "full":
+        start_scan()
+
+    return {"deleted": name, "mode": mode}
+
+
+def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.db import delete_album as db_delete_album, log_audit, get_library_albums, upsert_artist, get_library_artist
+    from musicdock.navidrome import start_scan
+
+    artist_name = params.get("artist", "")
+    album_name = params.get("album", "")
+    mode = params.get("mode", "db_only")
+    lib = Path(config["library_path"])
+
+    # Find album path
+    artist_data = get_library_artist(artist_name)
+    folder = (artist_data.get("folder_name") if artist_data else None) or artist_name
+    album_dir = lib / folder / album_name
+
+    if mode == "full" and album_dir.is_dir():
+        shutil.rmtree(str(album_dir))
+
+    db_delete_album(str(album_dir))
+
+    # Update artist counters
+    if artist_data:
+        albums = get_library_albums(artist_name)
+        upsert_artist({
+            "name": artist_name,
+            "folder_name": folder,
+            "album_count": len(albums),
+            "track_count": sum(a.get("track_count", 0) for a in albums),
+            "total_size": sum(a.get("total_size", 0) for a in albums),
+            "formats": [],
+            "has_photo": artist_data.get("has_photo", 0),
+        })
+
+    log_audit("delete_album", "album", f"{artist_name}/{album_name}",
+              details={"mode": mode}, task_id=task_id)
+
+    if mode == "full":
+        start_scan()
+
+    return {"deleted": f"{artist_name}/{album_name}", "mode": mode}
+
+
+def _handle_move_artist(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.db import get_library_artist, get_library_albums, log_audit
+    from musicdock.navidrome import start_scan
+
+    name = params.get("name", "")
+    new_name = params.get("new_name", "")
+    lib = Path(config["library_path"])
+
+    artist = get_library_artist(name)
+    if not artist:
+        return {"error": f"Artist not found: {name}"}
+
+    folder = artist.get("folder_name") or name
+    old_dir = lib / folder
+    new_dir = lib / new_name
+
+    # Rename folder on disk
+    if old_dir.is_dir():
+        shutil.move(str(old_dir), str(new_dir))
+
+    # Update DB
+    with get_db_ctx() as cur:
+        cur.execute("UPDATE library_artists SET name = %s, folder_name = %s WHERE name = %s",
+                    (new_name, new_name, name))
+        cur.execute("UPDATE library_albums SET artist = %s WHERE artist = %s", (new_name, name))
+        cur.execute("UPDATE library_tracks SET artist = %s WHERE artist = %s", (new_name, name))
+        # Update album paths
+        cur.execute("SELECT id, path FROM library_albums WHERE artist = %s", (new_name,))
+        for row in cur.fetchall():
+            old_path = row["path"]
+            new_path = old_path.replace(f"/{folder}/", f"/{new_name}/", 1)
+            cur.execute("UPDATE library_albums SET path = %s WHERE id = %s", (new_path, row["id"]))
+        # Update track paths
+        cur.execute("SELECT id, path FROM library_tracks WHERE artist = %s", (new_name,))
+        for row in cur.fetchall():
+            old_path = row["path"]
+            new_path = old_path.replace(f"/{folder}/", f"/{new_name}/", 1)
+            cur.execute("UPDATE library_tracks SET path = %s WHERE id = %s", (new_path, row["id"]))
+
+    # Re-tag audio files (albumartist)
+    try:
+        import mutagen
+        for audio_file in new_dir.rglob("*"):
+            if audio_file.is_file() and audio_file.suffix.lower() in {".flac", ".mp3", ".m4a", ".ogg", ".opus"}:
+                try:
+                    mf = mutagen.File(audio_file, easy=True)
+                    if mf is not None:
+                        mf["albumartist"] = new_name
+                        mf.save()
+                except Exception:
+                    log.warning("Failed to retag %s", audio_file)
+    except Exception:
+        log.warning("Retagging failed for %s", new_name, exc_info=True)
+
+    log_audit("move_artist", "artist", name,
+              details={"new_name": new_name}, task_id=task_id)
+    start_scan()
+
+    return {"moved": name, "new_name": new_name}
+
+
+def _handle_wipe_library(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.db import wipe_library_tables, log_audit
+
+    wipe_library_tables()
+    log_audit("wipe_library", "database", "library", task_id=task_id)
+
+    if params.get("rebuild"):
+        create_task("rebuild_library")
+
+    return {"wiped": True, "rebuild": params.get("rebuild", False)}
+
+
+def _handle_rebuild_library(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.db import wipe_library_tables, log_audit
+
+    update_task(task_id, progress=json.dumps({"phase": "wipe"}))
+    wipe_library_tables()
+    log_audit("rebuild_library_wipe", "database", "library", task_id=task_id)
+
+    # Run full pipeline
+    result = _handle_library_pipeline(task_id, params, config)
+
+    log_audit("rebuild_library_complete", "database", "library",
+              details=result, task_id=task_id)
+
+    return result
+
+
+def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.db import delete_cache, get_library_artist, log_audit
+
+    name = params.get("artist", "")
+    lib = Path(config["library_path"])
+
+    # Clear caches
+    for prefix in ("enrichment:", "lastfm:artist:", "fanart:artist:", "fanart:bg:",
+                    "fanart:all:", "nd:artist:", "spotify:artist:"):
+        delete_cache(f"{prefix}{name.lower()}")
+
+    # Delete artist photo
+    artist = get_library_artist(name)
+    folder = (artist.get("folder_name") if artist else None) or name
+    artist_dir = lib / folder
+    for photo in ("artist.jpg", "artist.png", "photo.jpg"):
+        photo_path = artist_dir / photo
+        if photo_path.exists():
+            try:
+                photo_path.unlink()
+            except OSError:
+                pass
+
+    log_audit("reset_enrichment", "artist", name, task_id=task_id)
+
+    # Re-enrich
+    result = _handle_enrich_single(task_id, {"artist": name}, config)
+    return {"reset": name, "enrichment": result}
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
@@ -661,4 +945,13 @@ TASK_HANDLERS = {
     "compute_analytics": _handle_compute_analytics,
     "enrich_artists": _handle_enrich_artists,
     "library_sync": _handle_library_sync,
+    "health_check": _handle_health_check,
+    "repair": _handle_repair,
+    "library_pipeline": _handle_library_pipeline,
+    "delete_artist": _handle_delete_artist,
+    "delete_album": _handle_delete_album,
+    "move_artist": _handle_move_artist,
+    "wipe_library": _handle_wipe_library,
+    "rebuild_library": _handle_rebuild_library,
+    "reset_enrichment": _handle_reset_enrichment,
 }

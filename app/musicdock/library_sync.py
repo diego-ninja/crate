@@ -39,26 +39,44 @@ class LibrarySync:
             d for d in self.library_path.iterdir()
             if d.is_dir() and not d.name.startswith(".") and d.name not in self.exclude_dirs
         ])
-        total_artists = len(artist_dirs)
 
-        for i, artist_dir in enumerate(artist_dirs):
+        # Group folders by canonical artist name (multiple folders may map to one artist)
+        # Uses case-insensitive key to merge "At the Drive-In" / "At The Drive-In"
+        canonical_map: dict[str, list[Path]] = {}  # canonical_name → [dirs]
+        name_key_map: dict[str, str] = {}  # lower_key → best canonical_name
+        for artist_dir in artist_dirs:
+            canonical = self._canonical_artist_name(artist_dir, artist_dir.name)
+            lower_key = canonical.lower()
+            # Keep the first canonical name seen (from audio tags) as the authoritative one
+            if lower_key not in name_key_map:
+                name_key_map[lower_key] = canonical
+            best_name = name_key_map[lower_key]
+            canonical_map.setdefault(best_name, []).append(artist_dir)
+
+        total_artists = len(canonical_map)
+
+        for i, (artist_name, dirs) in enumerate(sorted(canonical_map.items())):
             try:
-                existing = get_library_artist(artist_dir.name)
-                dir_mtime = artist_dir.stat().st_mtime
+                # Use first folder as primary for mtime/photo checks
+                primary_dir = dirs[0]
+                folder_names = [d.name for d in dirs]
+                existing = get_library_artist(artist_name) or get_library_artist(dirs[0].name)
 
-                if existing and existing.get("dir_mtime") and existing["dir_mtime"] >= dir_mtime:
+                # Check if any folder has changed
+                max_mtime = max(d.stat().st_mtime for d in dirs)
+                if existing and existing.get("dir_mtime") and existing["dir_mtime"] >= max_mtime:
                     tracks_total += existing.get("track_count", 0)
                     if progress_callback and i % 50 == 0:
                         progress_callback({
                             "phase": "sync",
-                            "artist": artist_dir.name,
+                            "artist": artist_name,
                             "artists_done": i + 1,
                             "artists_total": total_artists,
                             "tracks_total": tracks_total,
                         })
                     continue
 
-                count = self.sync_artist(artist_dir)
+                count = self.sync_artist_dirs(artist_name, dirs)
                 tracks_total += count
 
                 if existing:
@@ -67,50 +85,58 @@ class LibrarySync:
                     artists_added += 1
 
             except Exception:
-                log.exception("Failed to sync artist %s", artist_dir.name)
+                log.exception("Failed to sync artist %s", artist_name)
 
             if progress_callback and i % 10 == 0:
                 progress_callback({
                     "phase": "sync",
-                    "artist": artist_dir.name,
+                    "artist": artist_name,
                     "artists_done": i + 1,
                     "artists_total": total_artists,
                     "tracks_total": tracks_total,
                 })
 
-        artists_removed = self.remove_stale()
-
         return {
             "artists_added": artists_added,
             "artists_updated": artists_updated,
-            "artists_removed": artists_removed,
+            "artists_removed": 0,
+            "artists_merged": 0,
             "tracks_total": tracks_total,
         }
 
     def sync_artist(self, artist_dir: Path) -> int:
+        """Sync a single artist folder (used by watcher for incremental sync)."""
         folder_name = artist_dir.name
-
-        # Prefer canonical name from audio tags (e.g. "Model/Actriz" vs folder "Model-Actriz")
         artist_name = self._canonical_artist_name(artist_dir, folder_name)
+        return self.sync_artist_dirs(artist_name, [artist_dir])
 
-        # Ensure artist exists in DB before syncing albums (FK constraint)
-        if not get_library_artist(artist_name):
-            upsert_artist({"name": artist_name, "folder_name": folder_name,
+    def sync_artist_dirs(self, artist_name: str, artist_dirs: list[Path]) -> int:
+        """Sync one or more folders that all belong to the same canonical artist."""
+        primary_dir = artist_dirs[0]
+        primary_folder = primary_dir.name
+
+        # Ensure artist exists in DB; use exact DB name for FK consistency
+        existing = get_library_artist(artist_name)
+        if existing:
+            artist_name = existing["name"]
+        else:
+            upsert_artist({"name": artist_name, "folder_name": primary_folder,
                            "album_count": 0, "track_count": 0,
-                           "total_size": 0, "formats": [], "dir_mtime": artist_dir.stat().st_mtime})
+                           "total_size": 0, "formats": [], "dir_mtime": primary_dir.stat().st_mtime})
 
-        album_dirs = sorted([
-            d for d in artist_dir.iterdir()
-            if d.is_dir() and not d.name.startswith(".")
-        ])
+        # Collect album dirs from ALL folders for this artist
+        album_dirs = []
+        for artist_dir in artist_dirs:
+            album_dirs.extend(sorted([
+                d for d in artist_dir.iterdir()
+                if d.is_dir() and not d.name.startswith(".")
+            ]))
 
         # Get existing albums for this artist to detect deletions
         existing_albums = get_library_albums(artist_name)
         existing_paths = {a["path"] for a in existing_albums}
 
         total_tracks = 0
-        total_size = 0
-        all_formats: Counter = Counter()
         synced_paths = set()
 
         for album_dir in album_dirs:
@@ -118,22 +144,15 @@ class LibrarySync:
                 album_path = str(album_dir)
                 synced_paths.add(album_path)
 
-                # Find existing album to check mtime
                 existing_album = next((a for a in existing_albums if a["path"] == album_path), None)
                 dir_mtime = album_dir.stat().st_mtime
 
                 if existing_album and existing_album.get("dir_mtime") and existing_album["dir_mtime"] >= dir_mtime:
                     total_tracks += existing_album.get("track_count", 0)
-                    total_size += existing_album.get("total_size", 0)
-                    for fmt in existing_album.get("formats", []):
-                        all_formats[fmt] += 1
                     continue
 
                 result = self.sync_album(album_dir, artist_name)
                 total_tracks += result["track_count"]
-                total_size += result["total_size"]
-                for fmt in result["formats"]:
-                    all_formats[fmt] += 1
 
             except Exception:
                 log.exception("Failed to sync album %s", album_dir.name)
@@ -142,29 +161,44 @@ class LibrarySync:
         for path in existing_paths - synced_paths:
             delete_album(path)
 
-        # Detect artist photo
-        has_photo = int(any((artist_dir / name).exists() for name in PHOTO_NAMES))
+        # Detect artist photo (check all folders)
+        has_photo = int(any(
+            (d / name).exists() for d in artist_dirs for name in PHOTO_NAMES
+        ))
 
-        formats_list = sorted(all_formats.keys())
-        primary_format = all_formats.most_common(1)[0][0] if all_formats else None
+        # Recalculate totals from ALL albums in DB
+        all_albums = get_library_albums(artist_name)
+        db_track_count = sum(a.get("track_count", 0) for a in all_albums)
+        db_total_size = sum(a.get("total_size", 0) for a in all_albums)
+        db_formats: Counter = Counter()
+        for a in all_albums:
+            fmt = a.get("format")
+            if fmt:
+                db_formats[fmt] += 1
+
+        formats_list = sorted(db_formats.keys())
+        primary_format = db_formats.most_common(1)[0][0] if db_formats else None
 
         upsert_artist({
             "name": artist_name,
-            "folder_name": folder_name,
-            "album_count": len(album_dirs),
-            "track_count": total_tracks,
-            "total_size": total_size,
+            "folder_name": primary_folder,
+            "album_count": len(all_albums),
+            "track_count": db_track_count,
+            "total_size": db_total_size,
             "formats": formats_list,
             "primary_format": primary_format,
             "has_photo": has_photo,
-            "dir_mtime": artist_dir.stat().st_mtime,
+            "dir_mtime": max(d.stat().st_mtime for d in artist_dirs),
         })
 
         return total_tracks
 
     def sync_album(self, album_dir: Path, artist_name: str) -> dict:
-        # Ensure artist exists (FK constraint)
-        if not get_library_artist(artist_name):
+        # Ensure artist exists (FK constraint) and use exact DB name for FK references
+        existing = get_library_artist(artist_name)
+        if existing:
+            artist_name = existing["name"]  # Use exact DB name (case may differ)
+        else:
             upsert_artist({"name": artist_name, "album_count": 0, "track_count": 0,
                            "total_size": 0, "formats": [], "dir_mtime": album_dir.parent.stat().st_mtime})
 
@@ -334,17 +368,115 @@ class LibrarySync:
                     return fallback
         return fallback
 
+    @staticmethod
+    def _normalize_key(name: str) -> str:
+        """Normalize artist name for dedup: lowercase, normalize unicode hyphens/quotes/spaces."""
+        import unicodedata
+        # Normalize unicode (NFC)
+        name = unicodedata.normalize("NFC", name.lower().strip())
+        # Replace common unicode hyphens/dashes with ASCII hyphen
+        for ch in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uff0d":
+            name = name.replace(ch, "-")
+        # Collapse multiple spaces/hyphens
+        import re
+        name = re.sub(r"\s+", " ", name)
+        name = re.sub(r"-+", "-", name)
+        return name
+
+    def _merge_duplicate_artists(self) -> int:
+        """Merge artists with same normalized name into one canonical entry."""
+        merged = 0
+        with get_db_ctx() as cur:
+            cur.execute("SELECT name, album_count, track_count FROM library_artists")
+            all_artists = cur.fetchall()
+
+        # Group by normalized key
+        groups: dict[str, list[dict]] = {}
+        for row in all_artists:
+            key = self._normalize_key(row["name"])
+            groups.setdefault(key, []).append(dict(row))
+
+        for key, artists in groups.items():
+            if len(artists) < 2:
+                continue
+            # Sort: most albums first, then most tracks
+            artists.sort(key=lambda a: (a["album_count"], a["track_count"]), reverse=True)
+            keep = artists[0]["name"]
+            for other in artists[1:]:
+                discard = other["name"]
+                self._merge_artist_into(discard, keep)
+                merged += 1
+                log.info("Merged duplicate artist '%s' into '%s'", discard, keep)
+
+        return merged
+
+    def _merge_artist_into(self, source: str, target: str):
+        """Move all albums and tracks from source artist to target, then delete source."""
+        with get_db_ctx() as cur:
+            # Get albums from source that would conflict with target (same album name)
+            cur.execute("""
+                SELECT s.id AS source_id, t.id AS target_id
+                FROM library_albums s
+                JOIN library_albums t ON LOWER(s.name) = LOWER(t.name) AND t.artist = %s
+                WHERE s.artist = %s
+            """, (target, source))
+            conflicts = cur.fetchall()
+
+            # For conflicting albums, move tracks to target album and delete source album
+            for c in conflicts:
+                cur.execute("UPDATE library_tracks SET album_id = %s, artist = %s WHERE album_id = %s",
+                            (c["target_id"], target, c["source_id"]))
+                cur.execute("DELETE FROM library_albums WHERE id = %s", (c["source_id"],))
+
+            # Re-assign remaining non-conflicting albums
+            cur.execute("UPDATE library_albums SET artist = %s WHERE artist = %s", (target, source))
+            # Re-assign any remaining tracks
+            cur.execute("UPDATE library_tracks SET artist = %s WHERE artist = %s", (target, source))
+            # Delete source artist
+            cur.execute("DELETE FROM library_artists WHERE name = %s", (source,))
+
     def remove_stale(self) -> int:
         removed = 0
         with get_db_ctx() as cur:
-            cur.execute("SELECT name, folder_name FROM library_artists")
+            cur.execute("SELECT name, folder_name, album_count, track_count FROM library_artists")
             artists = cur.fetchall()
 
+        # Build set of canonical artist names (those with albums) and their claimed folders
+        canonical_folders = set()
         for row in artists:
+            if row["folder_name"] and row["album_count"] > 0:
+                canonical_folders.add(row["folder_name"])
+
+        for row in artists:
+            # Remove empty entries whose name is a folder name already owned by a canonical artist
+            # e.g. "ModelActriz" (0 albums) when "Model/Actriz" (folder_name=ModelActriz) exists with albums
+            if row["album_count"] == 0 and row["track_count"] == 0:
+                # Check if this artist's name matches a folder that belongs to a canonical artist
+                if row["name"] in canonical_folders:
+                    delete_artist(row["name"])
+                    removed += 1
+                    log.info("Removed duplicate artist: %s (folder claimed by canonical entry)", row["name"])
+                    continue
+                # Also check if a folder with this name resolves to a canonical artist via tags
+                folder_dir = self.library_path / row["name"]
+                if folder_dir.is_dir():
+                    canonical = self._canonical_artist_name(folder_dir, row["name"])
+                    if canonical != row["name"] and get_library_artist(canonical):
+                        delete_artist(row["name"])
+                        removed += 1
+                        log.info("Removed duplicate artist: %s (canonical name is %s)", row["name"], canonical)
+                        continue
+
             # Use folder_name to locate the directory; fall back to name for legacy rows
             dir_name = row["folder_name"] or row["name"]
             artist_dir = self.library_path / dir_name
             if not artist_dir.is_dir():
+                # Also check if any album paths still exist
+                with get_db_ctx() as cur:
+                    cur.execute("SELECT path FROM library_albums WHERE artist = %s", (row["name"],))
+                    album_paths = [r["path"] for r in cur.fetchall()]
+                if any(Path(p).is_dir() for p in album_paths):
+                    continue
                 delete_artist(row["name"])
                 removed += 1
                 log.info("Removed stale artist: %s", row["name"])

@@ -11,7 +11,7 @@ log = logging.getLogger(__name__)
 # Default schedule: {task_type: interval_seconds}
 DEFAULT_SCHEDULES = {
     "enrich_artists": 86400,      # 24h — full enrichment of all artists
-    "library_sync": 1800,         # 30min — incremental filesystem sync
+    "library_pipeline": 1800,     # 30min — health check + repair + sync
     "compute_analytics": 3600,    # 1h — recompute analytics from DB
 }
 
@@ -22,7 +22,12 @@ def get_schedules() -> dict[str, int]:
     raw = get_setting("schedules")
     if raw:
         try:
-            return json.loads(raw)
+            schedules = json.loads(raw)
+            # Migration: rename library_sync → library_pipeline
+            if "library_sync" in schedules and "library_pipeline" not in schedules:
+                schedules["library_pipeline"] = schedules.pop("library_sync")
+                set_schedules(schedules)
+            return schedules
         except Exception:
             pass
     return dict(DEFAULT_SCHEDULES)

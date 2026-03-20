@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,10 +12,12 @@ import { formatNumber, encPath } from "@/lib/utils";
 import {
   Users, Disc3, Music, HardDrive, Loader2, ArrowRight,
   Play, RefreshCw, CheckCircle2, XCircle, Clock,
-  Activity, Database, Radio, Eye, Cpu,
+  Activity, Database, Radio, Eye, Cpu, RotateCcw, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePlayer } from "@/contexts/PlayerContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface Stats {
   artists: number;
@@ -67,7 +69,10 @@ export function Dashboard() {
   const { data: analytics, loading: loadingAnalytics, refetch: refetchAnalytics } = useApi<AnalyticsData>("/api/analytics");
   const { data: live, refetch: refetchLive } = useApi<LiveActivity>("/api/activity/live");
   const { recentlyPlayed, play: playTrack } = usePlayer();
+  const { isAdmin } = useAuth();
   const navigate = useNavigate();
+  const [showWipeConfirm, setShowWipeConfirm] = useState(false);
+  const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
 
   // Auto-refresh live activity every 5s
   useEffect(() => {
@@ -287,6 +292,28 @@ export function Dashboard() {
                   <ArrowRight size={14} className="mr-1" />
                   Health Scan
                 </Button>
+                {isAdmin && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={() => setShowRebuildConfirm(true)}
+                    >
+                      <RotateCcw size={14} className="mr-1" />
+                      Rebuild Library
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-red-500 border-red-500/30 hover:bg-red-500/10"
+                      onClick={() => setShowWipeConfirm(true)}
+                    >
+                      <Trash2 size={14} className="mr-1" />
+                      Wipe Database
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </CardContent>
@@ -468,6 +495,42 @@ export function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={showRebuildConfirm}
+        onOpenChange={setShowRebuildConfirm}
+        title="Rebuild Library"
+        description="This will wipe the entire library database and rebuild from scratch. This includes: wipe DB, health check, repair, full sync, and re-enrichment. This may take a while."
+        confirmLabel="Rebuild Library"
+        variant="destructive"
+        onConfirm={async () => {
+          try {
+            await api("/api/manage/rebuild", "POST");
+            toast.success("Library rebuild started");
+            refetchLive();
+          } catch {
+            toast.error("Failed to start rebuild");
+          }
+        }}
+      />
+
+      <ConfirmDialog
+        open={showWipeConfirm}
+        onOpenChange={setShowWipeConfirm}
+        title="Wipe Library Database"
+        description="This will permanently delete ALL library data (artists, albums, tracks) from the database. Files on disk will NOT be affected. This action cannot be undone."
+        confirmLabel="Wipe Database"
+        variant="destructive"
+        onConfirm={async () => {
+          try {
+            await api("/api/manage/wipe", "POST", { rebuild: false });
+            toast.success("Library database wiped");
+            refetchLive();
+          } catch {
+            toast.error("Failed to wipe database");
+          }
+        }}
+      />
     </div>
   );
 }

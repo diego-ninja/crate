@@ -43,8 +43,11 @@ import {
   ListMusic,
   BrainCircuit,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 // ── Types ──
 
@@ -166,6 +169,9 @@ export function Artist() {
   const [bioExpanded, setBioExpanded] = useState(false);
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [enrichmentLoading, setEnrichmentLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteMode, setDeleteMode] = useState<"db_only" | "full">("db_only");
+  const { isAdmin } = useAuth();
   const bgRef = useRef<HTMLImageElement>(null);
 
   // Fetch enrichment data
@@ -515,6 +521,16 @@ export function Artist() {
                     <><BrainCircuit size={14} className="mr-1" /> Analyze All</>
                   )}
                 </Button>
+                {isAdmin && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-red-500/30 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    onClick={() => setShowDeleteConfirm(true)}
+                  >
+                    <Trash2 size={14} className="mr-1" /> Delete
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -995,6 +1011,50 @@ export function Artist() {
           </div>
         )}
       </div>
+
+      {/* Delete Artist Confirmation */}
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title={`Delete ${data?.name ?? "artist"}?`}
+        description={
+          <div className="flex flex-col gap-3">
+            <p>Choose how to delete this artist:</p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={deleteMode === "db_only" ? "default" : "outline"}
+                onClick={() => setDeleteMode("db_only")}
+              >
+                DB Only
+              </Button>
+              <Button
+                size="sm"
+                variant={deleteMode === "full" ? "destructive" : "outline"}
+                onClick={() => setDeleteMode("full")}
+              >
+                Full Delete (files + DB)
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {deleteMode === "full"
+                ? "This will permanently delete all files from disk and remove the artist from the database."
+                : "This will only remove the artist from the database. Files on disk will remain."}
+            </p>
+          </div>
+        }
+        confirmLabel={deleteMode === "full" ? "Delete Everything" : "Delete from DB"}
+        variant="destructive"
+        onConfirm={async () => {
+          try {
+            await api(`/api/manage/artist/${encPath(data!.name)}/delete`, "POST", { mode: deleteMode });
+            toast.success(`Artist ${data!.name} deleted`);
+            window.location.href = "/browse";
+          } catch {
+            toast.error("Failed to delete artist");
+          }
+        }}
+      />
     </div>
   );
 }
