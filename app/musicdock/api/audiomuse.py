@@ -80,7 +80,7 @@ def get_analysis_data(name: str):
             "danceability, valence, acousticness, instrumentalness, "
             "loudness, dynamic_range, spectral_complexity "
             "FROM library_tracks "
-            "WHERE artist = %s AND bpm IS NOT NULL",
+            "WHERE artist ILIKE %s AND bpm IS NOT NULL",
             (name,),
         )
         rows = cur.fetchall()
