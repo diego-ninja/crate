@@ -12,4 +12,6 @@ requests>=2.31
 psycopg2-binary>=2.9
 librosa>=0.10
 numpy>=1.26
+pytest>=8.0
+httpx>=0.27
 
