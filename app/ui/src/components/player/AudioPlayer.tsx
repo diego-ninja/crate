@@ -14,11 +14,19 @@ import {
   Repeat,
   Repeat1,
   Mic2,
+  Minimize2,
+  Maximize2,
 } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
 import { useRef, useCallback } from "react";
 import { QueuePanel } from "./QueuePanel";
 import { LyricsPanel } from "./Lyrics";
+
+const MINI_KEY = "player-mini";
+
+function getStoredMini(): boolean {
+  try { return localStorage.getItem(MINI_KEY) === "1"; } catch { return false; }
+}
 
 export function AudioPlayer() {
   const {
@@ -44,11 +52,33 @@ export function AudioPlayer() {
 
   const [queueOpen, setQueueOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  const [mini, setMini] = useState(getStoredMini);
   const progressRef = useRef<HTMLDivElement>(null);
 
   if (!currentTrack) return null;
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  function toggleMini() {
+    const next = !mini;
+    setMini(next);
+    try { localStorage.setItem(MINI_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+    if (next) { setQueueOpen(false); setLyricsOpen(false); }
+  }
+
+  if (mini) {
+    return (
+      <MiniPlayer
+        track={currentTrack}
+        isPlaying={isPlaying}
+        progress={progress}
+        onPlayPause={isPlaying ? pause : resume}
+        onNext={next}
+        onExpand={toggleMini}
+        onClose={clearQueue}
+      />
+    );
+  }
 
   return (
     <>
@@ -120,8 +150,8 @@ export function AudioPlayer() {
           </div>
         </div>
 
-        {/* Right: lyrics + queue + volume + close */}
-        <div className="flex items-center gap-1 w-[200px] flex-shrink-0 justify-end">
+        {/* Right: lyrics + queue + volume + mini + close */}
+        <div className="flex items-center gap-1 w-[220px] flex-shrink-0 justify-end">
           <Button
             variant="ghost"
             size="icon"
@@ -147,6 +177,15 @@ export function AudioPlayer() {
             {volume > 0 ? <Volume2 size={14} /> : <VolumeX size={14} />}
           </Button>
           <VolumeSlider volume={volume} onChange={setVolume} />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground"
+            onClick={toggleMini}
+            title="Mini player"
+          >
+            <Minimize2 size={14} />
+          </Button>
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={clearQueue}>
             <X size={14} />
           </Button>
@@ -169,6 +208,81 @@ export function AudioPlayer() {
         />
       )}
     </>
+  );
+}
+
+function MiniPlayer({
+  track,
+  isPlaying,
+  progress,
+  onPlayPause,
+  onNext,
+  onExpand,
+  onClose,
+}: {
+  track: { title: string; artist: string; albumCover?: string };
+  isPlaying: boolean;
+  progress: number;
+  onPlayPause: () => void;
+  onNext: () => void;
+  onExpand: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed bottom-4 right-4 z-50 w-[320px] bg-card border border-border rounded-xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
+      {/* Progress bar on top */}
+      <div className="h-0.5 bg-secondary rounded-t-xl overflow-hidden">
+        <div
+          className="h-full bg-primary transition-[width] duration-200"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="flex items-center gap-3 p-3">
+        {track.albumCover ? (
+          <img
+            src={track.albumCover}
+            alt=""
+            className="w-11 h-11 rounded-lg object-cover flex-shrink-0 bg-secondary"
+          />
+        ) : (
+          <div className="w-11 h-11 rounded-lg bg-secondary flex-shrink-0" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium truncate">{track.title}</div>
+          <div className="text-[11px] text-muted-foreground truncate">{track.artist}</div>
+        </div>
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={onPlayPause}
+          >
+            {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onNext}>
+            <SkipForward size={14} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground"
+            onClick={onExpand}
+            title="Full player"
+          >
+            <Maximize2 size={12} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground"
+            onClick={onClose}
+          >
+            <X size={12} />
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
 

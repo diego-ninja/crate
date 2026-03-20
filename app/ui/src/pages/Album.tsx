@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
 
 export interface AudioMuseTrack {
   tempo: number | null;
@@ -132,13 +133,31 @@ export function Album() {
 
   async function applyMatch(match: MatchResult) {
     if (!artist || !album) return;
-    await api("/api/match/apply", "POST", {
-      artist_folder: artist,
-      album_folder: album,
-      release: match,
-    });
-    setPendingMatch(null);
-    refetch();
+    try {
+      const { task_id } = await api<{ task_id: string }>("/api/match/apply", "POST", {
+        artist_folder: artist,
+        album_folder: album,
+        release: match,
+      });
+      setPendingMatch(null);
+      toast.success("Applying tags...");
+      const poll = setInterval(async () => {
+        try {
+          const task = await api<{ status: string; result?: { updated?: number; errors?: unknown[] } }>(`/api/tasks/${task_id}`);
+          if (task.status === "completed") {
+            clearInterval(poll);
+            toast.success(`Tags applied (${task.result?.updated ?? 0} tracks updated)`);
+            refetch();
+          } else if (task.status === "failed") {
+            clearInterval(poll);
+            toast.error("Failed to apply tags");
+          }
+        } catch { /* keep polling */ }
+      }, 2000);
+      setTimeout(() => clearInterval(poll), 60000);
+    } catch {
+      toast.error("Failed to start tag apply");
+    }
   }
 
   if (loading) {

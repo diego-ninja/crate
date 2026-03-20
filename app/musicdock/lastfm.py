@@ -233,13 +233,45 @@ def get_fanart_all_images(artist_name: str) -> dict | None:
     return result
 
 
+def _deezer_artist_image(artist_name: str) -> str | None:
+    """Search Deezer for artist image URL. No auth needed."""
+    cache_key = f"deezer:artist_img:{artist_name.lower()}"
+    cached = get_cache(cache_key, max_age_seconds=86400 * 7)
+    if cached:
+        return cached.get("url")
+
+    try:
+        resp = requests.get("https://api.deezer.com/search/artist",
+                            params={"q": artist_name}, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        for a in data.get("data", []):
+            if a.get("name", "").lower() == artist_name.lower():
+                url = a.get("picture_xl") or a.get("picture_big")
+                if url:
+                    set_cache(cache_key, {"url": url})
+                    return url
+    except Exception:
+        log.debug("Deezer lookup failed for %s", artist_name)
+
+    set_cache(cache_key, {"url": None})
+    return None
+
+
 def get_best_artist_image(artist_name: str) -> bytes | None:
-    """Try all sources to get an artist image: fanart.tv > Spotify > Last.fm (non-placeholder).
+    """Try all sources to get an artist image: fanart.tv > Deezer > Spotify > Last.fm.
     Returns image bytes or None."""
     # Try fanart.tv first (best quality)
     fanart_url = get_fanart_artist_image(artist_name)
     if fanart_url:
         data = download_artist_image(fanart_url)
+        if data:
+            return data
+
+    # Try Deezer (no auth, good coverage)
+    deezer_url = _deezer_artist_image(artist_name)
+    if deezer_url:
+        data = download_artist_image(deezer_url)
         if data:
             return data
 

@@ -1,12 +1,10 @@
-import shutil
-from typing import List
-
 import mutagen
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from musicdock.audio import read_tags, get_audio_files
+from musicdock.db import create_task
 from musicdock.api._deps import library_path, extensions, safe_path, COVER_NAMES
 
 router = APIRouter()
@@ -71,18 +69,8 @@ def api_duplicates_resolve(data: ResolveRequest):
     if not data.keep or not data.remove:
         return JSONResponse({"error": "Need 'keep' and 'remove' paths"}, status_code=400)
 
-    lib = library_path()
-    trash = lib / ".librarian-trash"
-    removed = []
-
-    for path_str in data.remove:
-        album_dir = safe_path(lib, path_str)
-        if not album_dir or not album_dir.is_dir():
-            continue
-
-        dest = trash / album_dir.relative_to(lib)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(album_dir), str(dest))
-        removed.append(path_str)
-
-    return {"kept": data.keep, "removed": removed}
+    task_id = create_task("resolve_duplicates", {
+        "keep": data.keep,
+        "remove": data.remove,
+    })
+    return {"task_id": task_id}

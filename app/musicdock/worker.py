@@ -932,6 +932,101 @@ def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
     return {"reset": name, "enrichment": result}
 
 
+def _handle_update_album_tags(task_id: str, params: dict, config: dict) -> dict:
+    import mutagen
+
+    lib = Path(config["library_path"])
+    artist_folder = params.get("artist_folder", "")
+    album_folder = params.get("album_folder", "")
+    album_fields = params.get("album_fields", {})
+    track_tags = params.get("track_tags", {})
+
+    album_dir = lib / artist_folder / album_folder
+    if not album_dir.is_dir():
+        return {"error": "Album not found"}
+
+    exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
+    tracks = get_audio_files(album_dir, list(exts))
+    updated = 0
+    errors = []
+
+    for track in tracks:
+        try:
+            audio = mutagen.File(track, easy=True)
+            if audio is None:
+                continue
+            for key, val in album_fields.items():
+                audio[key] = val
+            if track.name in track_tags:
+                for key, val in track_tags[track.name].items():
+                    audio[key] = val
+            audio.save()
+            updated += 1
+        except Exception as e:
+            errors.append({"file": track.name, "error": str(e)})
+
+    return {"updated": updated, "errors": errors}
+
+
+def _handle_update_track_tags(task_id: str, params: dict, config: dict) -> dict:
+    import mutagen
+
+    lib = Path(config["library_path"])
+    filepath = params.get("filepath", "")
+    tags = params.get("tags", {})
+
+    track_path = lib / filepath
+    if not track_path.is_file():
+        return {"error": "Track not found"}
+
+    try:
+        audio = mutagen.File(track_path, easy=True)
+        if audio is None:
+            return {"error": "Cannot read file"}
+        for key, val in tags.items():
+            audio[key] = val
+        audio.save()
+        return {"status": "ok", "file": track_path.name}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _handle_resolve_duplicates(task_id: str, params: dict, config: dict) -> dict:
+    lib = Path(config["library_path"])
+    trash = lib / ".librarian-trash"
+    keep = params.get("keep", "")
+    remove_list = params.get("remove", [])
+    removed = []
+
+    for path_str in remove_list:
+        album_dir = lib / path_str
+        if not album_dir.is_dir():
+            continue
+        dest = trash / album_dir.relative_to(lib)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(album_dir), str(dest))
+        removed.append(path_str)
+
+    return {"kept": keep, "removed": removed}
+
+
+def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.matcher import apply_match
+
+    lib = Path(config["library_path"])
+    artist_folder = params.get("artist_folder", "")
+    album_folder = params.get("album_folder", "")
+    release = params.get("release", {})
+
+    album_dir = lib / artist_folder / album_folder
+    if not album_dir.is_dir():
+        return {"error": "Album not found"}
+
+    exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
+    result = apply_match(album_dir, exts, release)
+    return result
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
@@ -954,4 +1049,8 @@ TASK_HANDLERS = {
     "wipe_library": _handle_wipe_library,
     "rebuild_library": _handle_rebuild_library,
     "reset_enrichment": _handle_reset_enrichment,
+    "match_apply": _handle_match_apply,
+    "update_album_tags": _handle_update_album_tags,
+    "update_track_tags": _handle_update_track_tags,
+    "resolve_duplicates": _handle_resolve_duplicates,
 }

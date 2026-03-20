@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -76,9 +77,29 @@ export function Duplicates() {
     const remove = comp.albums
       .filter((_, i) => i !== comp.selected)
       .map((a) => a.path);
-    await api("/api/duplicates/resolve", "POST", { keep, remove });
-    setResolved((prev) => new Set(prev).add(idx));
-    setConfirmIdx(null);
+    try {
+      const { task_id } = await api<{ task_id: string }>("/api/duplicates/resolve", "POST", { keep, remove });
+      toast.success("Resolving duplicates...");
+      const poll = setInterval(async () => {
+        try {
+          const task = await api<{ status: string }>(`/api/tasks/${task_id}`);
+          if (task.status === "completed") {
+            clearInterval(poll);
+            setResolved((prev) => new Set(prev).add(idx));
+            setConfirmIdx(null);
+            toast.success("Duplicates resolved");
+          } else if (task.status === "failed") {
+            clearInterval(poll);
+            setConfirmIdx(null);
+            toast.error("Failed to resolve duplicates");
+          }
+        } catch { /* keep polling */ }
+      }, 2000);
+      setTimeout(() => clearInterval(poll), 60000);
+    } catch {
+      toast.error("Failed to start duplicate resolution");
+      setConfirmIdx(null);
+    }
   }
 
   const confirmComp = confirmIdx !== null ? comparisons[confirmIdx] : null;

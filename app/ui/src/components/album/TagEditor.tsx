@@ -35,16 +35,30 @@ export function TagEditor({
   async function save() {
     setSaving(true);
     try {
-      await api(
+      const { task_id } = await api<{ task_id: string }>(
         `/api/tags/${encPath(artist)}/${encPath(album)}`,
         "PUT",
         values,
       );
-      toast.success("Tags saved successfully");
-      onSaved?.();
+      toast.success("Saving tags...");
+      const poll = setInterval(async () => {
+        try {
+          const task = await api<{ status: string; result?: { updated?: number } }>(`/api/tasks/${task_id}`);
+          if (task.status === "completed") {
+            clearInterval(poll);
+            setSaving(false);
+            toast.success(`Tags saved (${task.result?.updated ?? 0} tracks)`);
+            onSaved?.();
+          } else if (task.status === "failed") {
+            clearInterval(poll);
+            setSaving(false);
+            toast.error("Failed to save tags");
+          }
+        } catch { /* keep polling */ }
+      }, 2000);
+      setTimeout(() => { clearInterval(poll); setSaving(false); }, 60000);
     } catch (e) {
       toast.error(`Failed to save tags: ${e instanceof Error ? e.message : "Unknown error"}`);
-    } finally {
       setSaving(false);
     }
   }

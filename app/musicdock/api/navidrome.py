@@ -1,7 +1,7 @@
 import os
 import logging
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from musicdock import navidrome
@@ -34,14 +34,37 @@ def navidrome_search(q: str = Query("")):
 
 
 @router.get("/api/navidrome/stream/{song_id}")
-def navidrome_stream(song_id: str):
+def navidrome_stream(song_id: str, request: Request):
     try:
-        resp = navidrome.stream_song(song_id)
+        # Forward Range header to Navidrome for seeking support
+        extra_headers = {}
+        range_header = request.headers.get("range")
+        if range_header:
+            extra_headers["Range"] = range_header
+
+        import requests as http_requests
+        url = f"{navidrome._base_url()}/rest/stream"
+        params = {**navidrome._auth_params(), "id": song_id}
+        resp = http_requests.get(
+            url, params=params, timeout=30, stream=True,
+            headers=extra_headers,
+        )
+        resp.raise_for_status()
+
         content_type = resp.headers.get("content-type", "audio/mpeg")
+        status_code = resp.status_code  # 200 or 206 for partial content
+
+        headers: dict[str, str] = {"Accept-Ranges": "bytes"}
+        if "content-length" in resp.headers:
+            headers["Content-Length"] = resp.headers["content-length"]
+        if "content-range" in resp.headers:
+            headers["Content-Range"] = resp.headers["content-range"]
+
         return StreamingResponse(
             resp.iter_content(chunk_size=8192),
+            status_code=status_code,
             media_type=content_type,
-            headers={"Accept-Ranges": "bytes"},
+            headers=headers,
         )
     except Exception as e:
         log.warning("Stream failed for %s: %s", song_id, e)

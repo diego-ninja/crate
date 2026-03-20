@@ -2,7 +2,8 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from musicdock.matcher import match_album, apply_match
+from musicdock.matcher import match_album
+from musicdock.db import create_task
 from musicdock.api._deps import library_path, extensions, safe_path
 
 router = APIRouter()
@@ -33,6 +34,9 @@ def api_match_apply(data: MatchApplyRequest):
     if not album_dir or not album_dir.is_dir():
         return JSONResponse({"error": "Album not found"}, status_code=404)
 
-    exts = extensions()
-    result = apply_match(album_dir, exts, data.release)
-    return result
+    task_id = create_task("match_apply", {
+        "artist_folder": data.artist_folder,
+        "album_folder": data.album_folder,
+        "release": data.release,
+    })
+    return {"task_id": task_id}
