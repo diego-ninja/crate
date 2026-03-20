@@ -245,6 +245,14 @@ def init_db():
             END $$
         """)
 
+        # Migration: add tag_album to library_albums (album name from audio tags, may differ from folder name)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_albums ADD COLUMN tag_album TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
         # Audit log
         cur.execute("""
             CREATE TABLE IF NOT EXISTS audit_log (
@@ -627,21 +635,23 @@ def upsert_album(data: dict) -> int:
         cur.execute("""
             INSERT INTO library_albums (artist, name, path, track_count, total_size,
                 total_duration, formats_json, year, genre, has_cover,
-                musicbrainz_albumid, dir_mtime, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                musicbrainz_albumid, tag_album, dir_mtime, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(path) DO UPDATE SET
                 artist=EXCLUDED.artist, name=EXCLUDED.name,
                 track_count=EXCLUDED.track_count, total_size=EXCLUDED.total_size,
                 total_duration=EXCLUDED.total_duration, formats_json=EXCLUDED.formats_json,
                 year=EXCLUDED.year, genre=EXCLUDED.genre, has_cover=EXCLUDED.has_cover,
                 musicbrainz_albumid=EXCLUDED.musicbrainz_albumid,
+                tag_album=COALESCE(EXCLUDED.tag_album, library_albums.tag_album),
                 dir_mtime=EXCLUDED.dir_mtime, updated_at=EXCLUDED.updated_at
         """, (
             data["artist"], data["name"], data["path"],
             data.get("track_count", 0), data.get("total_size", 0),
             data.get("total_duration", 0), json.dumps(data.get("formats", [])),
             data.get("year"), data.get("genre"), data.get("has_cover", 0),
-            data.get("musicbrainz_albumid"), data.get("dir_mtime"), now,
+            data.get("musicbrainz_albumid"), data.get("tag_album"),
+            data.get("dir_mtime"), now,
         ))
         cur.execute("SELECT id FROM library_albums WHERE path = %s", (data["path"],))
         row = cur.fetchone()

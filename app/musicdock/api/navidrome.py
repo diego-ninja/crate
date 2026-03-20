@@ -111,7 +111,12 @@ def navidrome_top_tracks(name: str, count: int = 20):
 @router.get("/api/navidrome/album/{artist}/{album}/link")
 def navidrome_album_link(artist: str, album: str):
     try:
-        found = navidrome.find_album(artist, album)
+        # Get tag_album and MBID from our DB for better matching
+        from musicdock.db import get_library_album
+        db_album = get_library_album(artist, album)
+        tag_album = db_album.get("tag_album") if db_album else None
+        mbid = db_album.get("musicbrainz_albumid") if db_album else None
+        found = navidrome.find_album(artist, album, tag_album=tag_album, mbid=mbid)
         if not found:
             return JSONResponse({"error": "Album not found in Navidrome"}, status_code=404)
         full = navidrome.get_album(found["id"])

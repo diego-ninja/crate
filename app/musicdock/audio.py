@@ -16,8 +16,8 @@ def read_tags(filepath: Path) -> dict:
     def first(key):
         val = audio.get(key)
         if val and isinstance(val, list):
-            return val[0]
-        return val
+            val = val[0]
+        return val if val and val.strip() else None
 
     return {
         "title": first("title") or "",

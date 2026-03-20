@@ -160,29 +160,41 @@ def _strip_year_prefix(name: str) -> str:
     return re.sub(r"^\d{4}\s*-\s*", "", name)
 
 
-def find_album(artist_name: str, album_name: str) -> dict | None:
+def find_album(artist_name: str, album_name: str,
+               tag_album: str | None = None, mbid: str | None = None) -> dict | None:
     cache_key = f"nd:album:{artist_name.lower()}:{album_name.lower()}"
     cached = get_cache(cache_key)
     if cached:
         return cached
 
-    # Strip year prefix for search (MusicDock uses "2024 - Album Name", Navidrome uses "Album Name")
-    clean_name = _strip_year_prefix(album_name)
+    # Best name to search with: tag_album (from audio tags) > stripped folder name
+    clean_name = tag_album or _strip_year_prefix(album_name)
 
     result = search(f"{artist_name} {clean_name}", artist_count=0, album_count=20, song_count=0)
     albums = result.get("album", [])
 
+    # 1. MBID exact match (most reliable)
+    if mbid:
+        for album in albums:
+            if album.get("musicBrainzId") == mbid:
+                set_cache(cache_key, album)
+                return album
+
     clean_lower = clean_name.lower()
 
-    # Exact match (try both original and stripped name)
+    # 2. Exact name match (tag_album, stripped name, or original)
     for album in albums:
         nd_name = album.get("name", "").lower()
         nd_artist = album.get("artist", "").lower()
-        if nd_artist == artist_name.lower() and (nd_name == album_name.lower() or nd_name == clean_lower):
+        if nd_artist == artist_name.lower() and (
+            nd_name == clean_lower
+            or nd_name == album_name.lower()
+            or (tag_album and nd_name == tag_album.lower())
+        ):
             set_cache(cache_key, album)
             return album
 
-    # Fuzzy match (use stripped name for better scores)
+    # 3. Fuzzy match (use tag_album or clean name for best scores)
     best_score = 0
     best_album = None
     for album in albums:

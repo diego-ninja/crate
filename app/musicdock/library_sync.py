@@ -228,6 +228,7 @@ class LibrarySync:
         year = None
         genre = None
         mb_albumid = None
+        tag_album = None
         track_data_list = []
 
         for f in audio_files:
@@ -252,6 +253,8 @@ class LibrarySync:
                             genre = existing["genre"]
                         if not mb_albumid and existing.get("musicbrainz_albumid"):
                             mb_albumid = existing["musicbrainz_albumid"]
+                        if not tag_album and existing.get("album"):
+                            tag_album = existing["album"]
                         track_data_list.append({
                             "artist": existing["artist"],
                             "album": existing["album"],
@@ -291,6 +294,8 @@ class LibrarySync:
                 genre = tags.get("genre")
             if not mb_albumid:
                 mb_albumid = tags.get("musicbrainz_albumid")
+            if not tag_album and tags.get("album"):
+                tag_album = tags["album"]
 
             track_data_list.append({
                 "artist": tags.get("artist") or artist_name,
@@ -329,6 +334,7 @@ class LibrarySync:
             "genre": genre,
             "has_cover": has_cover,
             "musicbrainz_albumid": mb_albumid,
+            "tag_album": tag_album,
             "dir_mtime": album_dir.stat().st_mtime,
         })
 
