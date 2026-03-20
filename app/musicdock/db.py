@@ -618,6 +618,8 @@ def upsert_track(data: dict):
                 musicbrainz_albumid=EXCLUDED.musicbrainz_albumid,
                 musicbrainz_trackid=EXCLUDED.musicbrainz_trackid,
                 updated_at=EXCLUDED.updated_at
+                -- Preserve AudioMuse fields (don't overwrite with NULL)
+                -- bpm, audio_key, audio_scale, energy, mood_json are NOT touched
         """, (
             data.get("album_id"), data["artist"], data["album"],
             data["filename"], data.get("title"), data.get("track_number"),
