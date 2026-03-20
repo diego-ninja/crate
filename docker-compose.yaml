@@ -29,7 +29,7 @@ services:
       traefik.http.routers.traefik-secure.rule: Host(`traefik.${DOMAIN}`)
       traefik.http.routers.traefik-secure.entryPoints: websecure
       traefik.http.routers.traefik-secure.service: api@internal
-      traefik.http.routers.traefik-secure.middlewares: authelia@docker
+      # traefik.http.routers.traefik-secure.middlewares: authelia@docker  # Enable after creating users
     depends_on:
       - authelia
 
@@ -332,7 +332,7 @@ services:
       traefik.http.services.admin.loadbalancer.server.port: 80
       traefik.http.routers.admin.tls: true
       traefik.http.routers.admin.tls.certresolver: letsencrypt
-      traefik.http.routers.admin.middlewares: authelia@docker
+      # traefik.http.routers.admin.middlewares: authelia@docker  # Enable after creating users
 
   # AudioMuse-AI — Sonic analysis and intelligent playlists
   audiomuse-redis:

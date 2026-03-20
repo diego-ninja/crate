@@ -19,6 +19,8 @@ import {
   Clock,
   Server,
   BrainCircuit,
+  User,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -36,6 +38,11 @@ interface SidebarStats {
 interface NavidromeStatus {
   connected: boolean;
   version: string;
+}
+
+interface AuthUser {
+  user: string | null;
+  groups: string[];
 }
 
 const navItems = [
@@ -65,6 +72,7 @@ const navItems = [
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [stats, setStats] = useState<SidebarStats>({});
   const [navidrome, setNavidrome] = useState<NavidromeStatus | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -93,13 +101,16 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     api<NavidromeStatus>("/api/navidrome/status")
       .then(setNavidrome)
       .catch(() => setNavidrome({ connected: false, version: "" }));
+    api<AuthUser>("/api/auth/me")
+      .then(setAuthUser)
+      .catch(() => null);
   }, []);
 
   return (
-    <nav className="w-[220px] bg-card border-r border-border flex-shrink-0 fixed h-screen overflow-y-auto">
+    <nav className="w-[220px] bg-card border-r border-border flex-shrink-0 fixed h-screen overflow-y-auto flex flex-col">
       <div className="px-5 pb-6 pt-6 border-b border-border mb-4">
         <span className="text-lg font-bold text-foreground">
-          <span className="text-primary">&#9835;</span> Librarian
+          <span className="text-primary">&#9835;</span> MusicDock
         </span>
         {navidrome && (
           <div className="flex items-center gap-1.5 mt-2" title={navidrome.connected ? `Navidrome ${navidrome.version}` : "Navidrome disconnected"}>
@@ -110,6 +121,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           </div>
         )}
       </div>
+      <div className="flex-1 overflow-y-auto">
       {navItems.map((item, i) => {
         if ("section" in item) {
           return (
@@ -164,6 +176,22 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           </NavLink>
         );
       })}
+      </div>
+      {authUser?.user && (
+        <div className="border-t border-border px-4 py-3 mt-auto">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <User size={14} />
+            <span className="flex-1 truncate">{authUser.user}</span>
+            <a
+              href="https://auth.lespedants.org/logout"
+              title="Logout"
+              className="hover:text-foreground transition-colors"
+            >
+              <LogOut size={14} />
+            </a>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }
