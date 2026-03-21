@@ -7,7 +7,7 @@ import { BarChart3, Globe, Music, Disc3, Users, Zap, CheckCircle2 } from "lucide
 import { ResponsiveBar } from "@nivo/bar";
 import { ResponsivePie } from "@nivo/pie";
 import { ResponsiveRadar } from "@nivo/radar";
-import { ResponsiveNetwork } from "@nivo/network";
+import { Network } from "@nivo/network";
 
 interface InsightsData {
   countries: Record<string, number>;
@@ -366,22 +366,22 @@ export function Insights() {
           <CardContent>
             <div className="h-[280px]">
               {data.network.nodes.length > 0 ? (
-                <ResponsiveNetwork
-                  data={{
-                    nodes: data.network.nodes.map((n) => ({
-                      ...n,
-                      size: data.network.links.filter((l) => l.source === n.id || l.target === n.id).length * 4 + 8,
-                    })),
-                    links: data.network.links.map((l) => ({ ...l, distance: 80 })),
-                  }}
+                <Network
+                  data={data.network}
+                  width={500}
+                  height={280}
                   margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
-                  repulsivity={200}
+                  repulsivity={300}
                   iterations={120}
+                  linkDistance={60}
+                  centeringStrength={0.5}
+                  nodeSize={(n: { id: string }) => {
+                    const connections = data.network.links.filter((l) => l.source === n.id || l.target === n.id).length;
+                    return connections * 4 + 10;
+                  }}
                   nodeColor={(n: { id: string }) => {
-                    // Library artists in cyan, external in gray
-                    const isLibrary = data.popularity.some((p) => p.artist === n.id) ||
-                      data.network.links.some((l) => l.source === n.id);
-                    return isLibrary ? "#06b6d4" : "#6b7280";
+                    const isSource = data.network.links.some((l) => l.source === n.id);
+                    return isSource ? "#06b6d4" : "#6b7280";
                   }}
                   nodeBorderWidth={2}
                   nodeBorderColor={{ from: "color", modifiers: [["darker", 0.6]] }}
