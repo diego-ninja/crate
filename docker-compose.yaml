@@ -354,10 +354,12 @@ services:
       # traefik.http.routers.admin.middlewares: authelia@docker  # Enable after creating users
 
   # AudioMuse-AI — Sonic analysis and intelligent playlists
+  # Disabled by default (heavy: ~2GB RAM). Enable with: docker compose --profile audiomuse up -d
   audiomuse-redis:
     image: redis:7-alpine
     container_name: audiomuse-redis
     restart: unless-stopped
+    profiles: ["audiomuse"]
     volumes:
       - audiomuse_redis:/data
     networks:
@@ -367,6 +369,7 @@ services:
     image: postgres:15-alpine
     container_name: audiomuse-postgres
     restart: unless-stopped
+    profiles: ["audiomuse"]
     environment:
       - POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
       - POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
@@ -380,6 +383,7 @@ services:
     image: ghcr.io/neptunehub/audiomuse-ai:latest
     container_name: audiomuse
     restart: unless-stopped
+    profiles: ["audiomuse"]
     environment:
       - SERVICE_TYPE=flask
       - TZ=${TZ}
@@ -419,6 +423,7 @@ services:
     image: ghcr.io/neptunehub/audiomuse-ai:latest
     container_name: audiomuse-worker
     restart: unless-stopped
+    profiles: ["audiomuse"]
     mem_limit: 2g
     environment:
       - SERVICE_TYPE=worker

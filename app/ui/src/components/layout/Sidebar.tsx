@@ -18,7 +18,6 @@ import {
   Tag,
   Clock,
   Server,
-  BrainCircuit,
   User,
   Users,
   LogOut,
@@ -56,7 +55,8 @@ const navItems = [
   { section: "Music" },
   { to: "/playlists", icon: ListMusic, label: "Playlists" },
   { external: "https://search.lespedants.org", icon: Search, label: "Download" },
-  { external: "https://ai.lespedants.org", icon: BrainCircuit, label: "AudioMuse AI" },
+  // AudioMuse AI — disabled (profile not active)
+  // { external: "https://ai.lespedants.org", icon: BrainCircuit, label: "AudioMuse AI" },
   { section: "Insights" },
   { to: "/analytics", icon: BarChart3, label: "Analytics" },
   { to: "/genres", icon: Tag, label: "Genres" },
