@@ -108,7 +108,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     <nav className="w-[220px] bg-card border-r border-border flex-shrink-0 fixed h-screen overflow-y-auto flex flex-col">
       <div className="px-5 pb-6 pt-6 border-b border-border mb-4">
         <span className="text-lg font-bold text-foreground">
-          <span className="text-primary">&#9835;</span> MusicDock
+          <span className="text-primary">&#9835;</span> Grooveyard
         </span>
         {navidrome && (
           <div className="flex items-center gap-1.5 mt-2" title={navidrome.connected ? `Navidrome ${navidrome.version}` : "Navidrome disconnected"}>

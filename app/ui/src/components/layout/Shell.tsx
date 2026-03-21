@@ -65,7 +65,7 @@ export function Shell() {
           <Menu size={20} />
         </Button>
         <span className="text-lg font-bold text-foreground">
-          <span className="text-primary">&#9835;</span> MusicDock
+          <span className="text-primary">&#9835;</span> Grooveyard
         </span>
       </div>
 

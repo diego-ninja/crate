@@ -59,7 +59,7 @@ export function Login() {
         <div className="bg-card border border-border rounded-lg p-8 shadow-xl">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-foreground">
-              <span className="text-primary">&#9835;</span> MusicDock
+              <span className="text-primary">&#9835;</span> Grooveyard
             </h1>
             <p className="text-sm text-muted-foreground mt-2">Sign in to your account</p>
           </div>
