@@ -334,8 +334,11 @@ export function Artist() {
     <div className="-mt-[4.5rem] md:-mt-[6.5rem]">
       {/* ═══ HERO BANNER — full viewport width via vw ═══ */}
       <div
-        className="relative h-[420px] md:h-[560px] overflow-hidden -ml-4 -mr-4 md:-ml-8 md:-mr-8"
-        style={{ width: "calc(100vw - var(--sidebar-w, 0px))" }}
+        className="relative h-[420px] md:h-[560px] overflow-hidden relative"
+        style={{
+          width: "calc(100vw - var(--sidebar-w, 0px))",
+          marginLeft: "calc(-50vw + var(--sidebar-w, 0px) / 2 + 50%)",
+        }}
       >
         <img
           ref={bgRef}
