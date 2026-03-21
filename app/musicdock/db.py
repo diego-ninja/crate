@@ -1031,14 +1031,16 @@ def get_genre_detail(slug: str) -> dict | None:
         """, (genre["id"],))
         genre["artists"] = [dict(r) for r in cur.fetchall()]
 
-        # Albums in this genre
+        # Albums in this genre: from album_genres OR from artists in this genre
         cur.execute("""
-            SELECT alg.album_id, alg.weight, a.artist, a.name, a.year, a.track_count, a.has_cover
-            FROM album_genres alg
-            JOIN library_albums a ON alg.album_id = a.id
-            WHERE alg.genre_id = %s
-            ORDER BY a.year DESC NULLS LAST
-        """, (genre["id"],))
+            SELECT DISTINCT ON (a.id) a.id AS album_id, a.artist, a.name, a.year, a.track_count, a.has_cover,
+                COALESCE(alg.weight, ag.weight, 0.5) AS weight
+            FROM library_albums a
+            LEFT JOIN album_genres alg ON alg.album_id = a.id AND alg.genre_id = %s
+            LEFT JOIN artist_genres ag ON ag.artist_name = a.artist AND ag.genre_id = %s
+            WHERE alg.genre_id IS NOT NULL OR ag.genre_id IS NOT NULL
+            ORDER BY a.id, a.year DESC NULLS LAST
+        """, (genre["id"], genre["id"]))
         genre["albums"] = [dict(r) for r in cur.fetchall()]
 
         return genre
