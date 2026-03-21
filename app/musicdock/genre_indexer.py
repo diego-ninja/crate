@@ -82,6 +82,49 @@ def index_all_genres(progress_callback=None) -> dict:
         if progress_callback and i % 50 == 0:
             progress_callback({"phase": "albums", "done": i, "total": len(albums)})
 
+    # 3. Derive artist genres from their album genres (for artists without enrichment tags)
+    if progress_callback:
+        progress_callback({"phase": "deriving_artist_genres"})
+
+    with get_db_ctx() as cur:
+        # Find artists that have album_genres but no artist_genres
+        cur.execute("""
+            SELECT DISTINCT a.artist AS name
+            FROM library_albums a
+            JOIN album_genres ag ON ag.album_id = a.id
+            WHERE a.artist NOT IN (SELECT artist_name FROM artist_genres)
+        """)
+        missing_artists = [r["name"] for r in cur.fetchall()]
+
+    for i, artist_name in enumerate(missing_artists):
+        # Aggregate genres from all albums, weighted by frequency
+        with get_db_ctx() as cur:
+            cur.execute("""
+                SELECT g.name, COUNT(*) AS cnt
+                FROM album_genres ag
+                JOIN genres g ON ag.genre_id = g.id
+                JOIN library_albums a ON ag.album_id = a.id
+                WHERE a.artist = %s
+                GROUP BY g.name
+                ORDER BY cnt DESC
+            """, (artist_name,))
+            rows = cur.fetchall()
+
+        if not rows:
+            continue
+
+        max_cnt = rows[0]["cnt"]
+        genres = []
+        for r in rows:
+            weight = r["cnt"] / max_cnt  # Normalize: most frequent = 1.0
+            genres.append((r["name"], round(weight, 2), "derived"))
+
+        set_artist_genres(artist_name, genres)
+        artist_count += 1
+
+        if progress_callback and i % 50 == 0:
+            progress_callback({"phase": "deriving_artist_genres", "done": i, "total": len(missing_artists)})
+
     # Count total genres
     with get_db_ctx() as cur:
         cur.execute("SELECT COUNT(*) as cnt FROM genres")
