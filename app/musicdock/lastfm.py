@@ -296,3 +296,83 @@ def get_best_artist_image(artist_name: str) -> bytes | None:
             return data
 
     return None
+
+
+def get_lastfm_best_background(artist_name: str) -> bytes | None:
+    """Scrape Last.fm artist images page, pick the most landscape-oriented image.
+    Returns image bytes or None."""
+    cache_key = f"lastfm:bg_url:{artist_name.lower()}"
+    cached = get_cache(cache_key, max_age_seconds=604800)  # 7d
+    if cached:
+        url = cached.get("url")
+        if url:
+            return download_artist_image(url)
+        return None
+
+    try:
+        safe_name = requests.utils.quote(artist_name, safe="")
+        page_url = f"https://www.last.fm/music/{safe_name}/+images"
+        resp = requests.get(page_url, timeout=10, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; Grooveyard/1.0)",
+        })
+        if resp.status_code != 200:
+            set_cache(cache_key, {"url": None})
+            return None
+
+        # Extract image hashes from 300x300 thumbnails
+        hashes = re.findall(
+            r'lastfm\.freetls\.fastly\.net/i/u/300x300/([a-f0-9]+)\.jpg',
+            resp.text,
+        )
+        hashes = list(dict.fromkeys(hashes))  # dedupe, preserve order
+
+        if not hashes:
+            set_cache(cache_key, {"url": None})
+            return None
+
+        # Score by aspect ratio — prefer landscape (ratio > 1.3)
+        best_url = None
+        best_score = 0
+
+        for img_hash in hashes[:12]:  # check up to 12 images
+            url = f"https://lastfm.freetls.fastly.net/i/u/ar0/{img_hash}.jpg"
+            try:
+                head = requests.head(url, timeout=5, allow_redirects=True)
+                if head.status_code != 200:
+                    continue
+                # Download to check dimensions
+                img_resp = requests.get(url, timeout=10)
+                if img_resp.status_code != 200 or len(img_resp.content) < 5000:
+                    continue
+
+                from io import BytesIO
+                from PIL import Image
+                img = Image.open(BytesIO(img_resp.content))
+                w, h = img.size
+                if w < 400 or h < 300:
+                    continue
+
+                ratio = w / h
+                # Score: prefer landscape (1.3-2.0 ideal), penalize portrait and square
+                if ratio >= 1.3:
+                    score = min(ratio, 2.5) * 100 + w  # wider + higher res = better
+                elif ratio >= 1.0:
+                    score = ratio * 50 + w
+                else:
+                    score = ratio * 20  # portrait, low priority
+
+                if score > best_score:
+                    best_score = score
+                    best_url = url
+
+            except Exception:
+                continue
+
+        set_cache(cache_key, {"url": best_url})
+        if best_url:
+            return download_artist_image(best_url)
+
+    except Exception:
+        log.debug("Last.fm image scrape failed for %s", artist_name)
+
+    return None

@@ -263,14 +263,20 @@ def api_artist_background(name: str, random_pick: bool = Query(False, alias="ran
         if image_data:
             return Response(content=image_data, media_type="image/jpeg")
 
-    # 2. Deezer artist image (square but works as bg with object-cover)
+    # 2. Last.fm user images (scraped, scored by aspect ratio)
+    from musicdock.lastfm import get_lastfm_best_background
+    lfm_bg = get_lastfm_best_background(name)
+    if lfm_bg:
+        return Response(content=lfm_bg, media_type="image/jpeg")
+
+    # 3. Deezer artist image (square but works as bg with object-cover)
     deezer_url = _deezer_artist_image(name)
     if deezer_url:
         image_data = download_artist_image(deezer_url)
         if image_data:
             return Response(content=image_data, media_type="image/jpeg")
 
-    # 3. Spotify artist image
+    # 4. Spotify artist image
     try:
         from musicdock.spotify import search_artist as spotify_search
         sp = spotify_search(name)
@@ -283,7 +289,7 @@ def api_artist_background(name: str, random_pick: bool = Query(False, alias="ran
     except Exception:
         pass
 
-    # 4. Artist photo on disk (last resort)
+    # 5. Artist photo on disk (last resort)
     lib = library_path()
     artist_dir = safe_path(lib, name)
     if artist_dir and artist_dir.is_dir():
