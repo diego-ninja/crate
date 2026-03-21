@@ -144,6 +144,22 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
         except Exception:
             log.warning("Failed to persist enrichment for %s", name, exc_info=True)
 
+    # ── Update genre index ──
+    tags = persist_data.get("tags", [])
+    if tags:
+        try:
+            from musicdock.db import set_artist_genres
+            genres = []
+            for j, tag in enumerate(tags):
+                tag = tag.strip()
+                if tag and len(tag) >= 2:
+                    weight = max(0.1, 1.0 - j * 0.12)
+                    genres.append((tag, weight, "enrichment"))
+            if genres:
+                set_artist_genres(name, genres)
+        except Exception:
+            log.debug("Failed to index genres for %s", name)
+
     # ── Download photo ──
     has_photo = artist_dir.is_dir() and any(
         (artist_dir / p).exists() for p in ("artist.jpg", "artist.png", "photo.jpg")

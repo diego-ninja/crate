@@ -75,6 +75,7 @@ export default function App() {
                   <Route path="playlists" element={<Playlists />} />
                   <Route path="stack" element={<Stack />} />
                   <Route path="genres" element={<Genres />} />
+                  <Route path="genres/:slug" element={<Genres />} />
                   <Route path="timeline" element={<Timeline />} />
                   <Route path="users" element={<Users />} />
                   <Route path="settings" element={<Settings />} />
