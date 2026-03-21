@@ -79,7 +79,7 @@ export function Shell() {
         </SheetContent>
       </Sheet>
 
-      <main className={`flex-1 md:ml-[220px] p-4 pt-16 md:p-8 md:pt-8 max-w-[1100px] ${hasPlayer ? "pb-20" : ""}`}>
+      <main className={`flex-1 md:ml-[220px] p-4 pt-16 md:p-8 md:pt-8 max-w-[1100px] overflow-x-hidden ${hasPlayer ? "pb-20" : ""}`}>
         <SearchBar inputRef={searchInputRef} />
         <div key={location.pathname} className="animate-page-in">
           <Outlet />
