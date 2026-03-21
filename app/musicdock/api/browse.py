@@ -244,24 +244,56 @@ def api_artists(
 
 @router.get("/api/artist/{name}/background")
 def api_artist_background(name: str, random_pick: bool = Query(False, alias="random")):
-    """Return artist background image (1920x1080 panoramic from fanart.tv)."""
+    """Return artist background image. Tries: fanart.tv panoramic > Deezer > Spotify > artist photo on disk."""
     import random as _random
-    from musicdock.lastfm import get_fanart_all_images, get_fanart_background, download_artist_image
+    from musicdock.lastfm import get_fanart_all_images, get_fanart_background, download_artist_image, _deezer_artist_image
 
+    # 1. Fanart.tv backgrounds (best: 1920x1080 panoramic)
     fanart = get_fanart_all_images(name)
     backgrounds = fanart.get("backgrounds", []) if fanart else []
-
     if backgrounds:
         url = _random.choice(backgrounds) if random_pick else backgrounds[0]
-    else:
-        url = get_fanart_background(name)
+        image_data = download_artist_image(url)
+        if image_data:
+            return Response(content=image_data, media_type="image/jpeg")
 
-    if not url:
-        return Response(status_code=404)
-    image_data = download_artist_image(url)
-    if not image_data:
-        return Response(status_code=404)
-    return Response(content=image_data, media_type="image/jpeg")
+    url = get_fanart_background(name)
+    if url:
+        image_data = download_artist_image(url)
+        if image_data:
+            return Response(content=image_data, media_type="image/jpeg")
+
+    # 2. Deezer artist image (square but works as bg with object-cover)
+    deezer_url = _deezer_artist_image(name)
+    if deezer_url:
+        image_data = download_artist_image(deezer_url)
+        if image_data:
+            return Response(content=image_data, media_type="image/jpeg")
+
+    # 3. Spotify artist image
+    try:
+        from musicdock.spotify import search_artist as spotify_search
+        sp = spotify_search(name)
+        if sp and sp.get("images"):
+            img_url = sp["images"][0].get("url") if sp["images"] else None
+            if img_url:
+                image_data = download_artist_image(img_url)
+                if image_data:
+                    return Response(content=image_data, media_type="image/jpeg")
+    except Exception:
+        pass
+
+    # 4. Artist photo on disk (last resort)
+    lib = library_path()
+    artist_dir = safe_path(lib, name)
+    if artist_dir and artist_dir.is_dir():
+        for photo_name in ARTIST_PHOTO_NAMES:
+            photo = artist_dir / photo_name
+            if photo.exists():
+                media_type = "image/jpeg" if photo.suffix == ".jpg" else "image/png"
+                return Response(content=photo.read_bytes(), media_type=media_type)
+
+    return Response(status_code=404)
 
 
 @router.get("/api/artist/{name}/photo")
