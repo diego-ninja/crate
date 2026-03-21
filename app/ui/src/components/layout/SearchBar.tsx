@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router";
-import { Search, Play } from "lucide-react";
+import { useNavigate, useLocation } from "react-router";
+import { Search, Play, Music } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
@@ -9,10 +9,11 @@ import { usePlayer } from "@/contexts/PlayerContext";
 interface SearchResults {
   artists: { name: string }[];
   albums: { artist: string; name: string }[];
+  tracks: { title: string; artist: string; album: string }[];
 }
 
 interface ResultItem {
-  type: "artist" | "album";
+  type: "artist" | "album" | "track";
   label: string;
   sublabel: string;
   path: string;
@@ -22,9 +23,10 @@ interface ResultItem {
 
 interface SearchBarProps {
   inputRef?: React.RefObject<HTMLInputElement | null>;
+  onQueryChange?: (q: string) => void;
 }
 
-export function SearchBar({ inputRef }: SearchBarProps) {
+export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults | null>(null);
   const [open, setOpen] = useState(false);
@@ -34,7 +36,11 @@ export function SearchBar({ inputRef }: SearchBarProps) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
+  const location = useLocation();
+  const isBrowse = location.pathname === "/browse";
+
   const search = useCallback(async (q: string) => {
+    onQueryChange?.(q);
     if (q.length < 2) {
       setResults(null);
       setOpen(false);
@@ -44,9 +50,9 @@ export function SearchBar({ inputRef }: SearchBarProps) {
       `/api/search?q=${encodeURIComponent(q)}`,
     );
     setResults(data);
-    setOpen(true);
+    if (!isBrowse) setOpen(true);
     setSelectedIdx(-1);
-  }, []);
+  }, [onQueryChange, isBrowse]);
 
   useEffect(() => {
     clearTimeout(timeoutRef.current);
@@ -76,6 +82,7 @@ export function SearchBar({ inputRef }: SearchBarProps) {
 
   const artistItems: ResultItem[] = [];
   const albumItems: ResultItem[] = [];
+  const trackItems: ResultItem[] = [];
   if (results) {
     for (const a of results.artists.slice(0, 5)) {
       artistItems.push({
@@ -96,9 +103,19 @@ export function SearchBar({ inputRef }: SearchBarProps) {
         albumName: a.name,
       });
     }
+    for (const t of (results.tracks ?? []).slice(0, 8)) {
+      trackItems.push({
+        type: "track",
+        label: t.title,
+        sublabel: `${t.artist} — ${t.album}`,
+        path: `/album/${encPath(t.artist)}/${encPath(t.album)}`,
+        artistName: t.artist,
+        albumName: t.album,
+      });
+    }
   }
 
-  const items = [...artistItems, ...albumItems];
+  const items = [...artistItems, ...albumItems, ...trackItems];
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (!open || items.length === 0) return;
@@ -141,7 +158,7 @@ export function SearchBar({ inputRef }: SearchBarProps) {
         onChange={(e) => setQuery(e.target.value)}
         onFocus={() => results && setOpen(true)}
         onKeyDown={handleKeyDown}
-        placeholder="Search artists, albums..."
+        placeholder="Search artists, albums, tracks..."
         className="pl-9 bg-card border-border"
       />
       {open && items.length > 0 && (
@@ -211,6 +228,34 @@ export function SearchBar({ inputRef }: SearchBarProps) {
                     >
                       <Play size={12} fill="currentColor" />
                     </button>
+                  </button>
+                );
+              })}
+            </>
+          )}
+          {trackItems.length > 0 && (
+            <>
+              <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+                Tracks ({trackItems.length})
+              </div>
+              {trackItems.map((item, rawIdx) => {
+                const idx = artistItems.length + albumItems.length + rawIdx;
+                return (
+                  <button
+                    key={`${item.path}-${item.label}-${rawIdx}`}
+                    onClick={() => go(item.path)}
+                    onMouseEnter={() => setSelectedIdx(idx)}
+                    className={`w-full text-left px-3 py-2 flex items-center gap-3 transition-colors ${
+                      idx === selectedIdx ? "bg-secondary" : "hover:bg-secondary"
+                    }`}
+                  >
+                    <div className="w-8 h-8 rounded bg-secondary flex items-center justify-center flex-shrink-0">
+                      <Music size={14} className="text-muted-foreground" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{item.label}</div>
+                      <div className="text-xs text-muted-foreground truncate">{item.sublabel}</div>
+                    </div>
                   </button>
                 );
               })}

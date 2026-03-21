@@ -283,24 +283,34 @@ def api_artist_photo(name: str, random_pick: bool = Query(False, alias="random")
     if not artist_dir or not artist_dir.is_dir():
         return Response(status_code=404)
 
+    # 1. Check for artist photo on disk
     for photo_name in ARTIST_PHOTO_NAMES:
         photo = artist_dir / photo_name
         if photo.exists():
             media_type = "image/jpeg" if photo.suffix == ".jpg" else "image/png"
             return Response(content=photo.read_bytes(), media_type=media_type)
 
-    # Fallback: first album's cover
+    # 2. Try fetching from fanart.tv / Deezer / Spotify / Last.fm
+    from musicdock.lastfm import get_best_artist_image
+    image_data = get_best_artist_image(name)
+    if image_data:
+        save_path = artist_dir / "artist.jpg"
+        try:
+            save_path.write_bytes(image_data)
+        except OSError:
+            pass  # read-only filesystem
+        return Response(content=image_data, media_type="image/jpeg")
+
+    # 3. Last resort: first album's cover
     exts = extensions()
     for album_dir in sorted(artist_dir.iterdir()):
         if not album_dir.is_dir() or album_dir.name.startswith("."):
             continue
-
         for c in COVER_NAMES:
             cover = album_dir / c
             if cover.exists():
                 media_type = "image/jpeg" if cover.suffix == ".jpg" else "image/png"
                 return Response(content=cover.read_bytes(), media_type=media_type)
-
         tracks = get_audio_files(album_dir, exts)
         if tracks:
             audio = mutagen.File(tracks[0])
@@ -313,17 +323,6 @@ def api_artist_photo(name: str, random_pick: bool = Query(False, alias="random")
                         pic = audio.tags[key]
                         return Response(content=pic.data, media_type=pic.mime)
         break
-
-    # Fallback: fanart.tv / Last.fm
-    from musicdock.lastfm import get_best_artist_image
-    image_data = get_best_artist_image(name)
-    if image_data:
-        save_path = artist_dir / "artist.jpg"
-        try:
-            save_path.write_bytes(image_data)
-        except OSError:
-            pass  # read-only filesystem
-        return Response(content=image_data, media_type="image/jpeg")
 
     return Response(status_code=404)
 
@@ -507,7 +506,9 @@ def api_search(q: str = ""):
         return {"artists": [], "albums": []}
 
     if not _has_library_data():
-        return _fs_search(q_stripped)
+        result = _fs_search(q_stripped)
+        result["tracks"] = []
+        return result
 
     like = f"%{q_stripped}%"
     with get_db_ctx() as cur:
@@ -521,8 +522,16 @@ def api_search(q: str = ""):
             (like, like),
         )
         album_rows = cur.fetchall()
+        cur.execute(
+            "SELECT t.title, t.artist, a.name AS album FROM library_tracks t "
+            "JOIN library_albums a ON t.album_id = a.id "
+            "WHERE t.title ILIKE %s LIMIT 20",
+            (like,),
+        )
+        track_rows = cur.fetchall()
 
     artists = [{"name": r["name"]} for r in artist_rows]
     albums = [{"artist": r["artist"], "name": r["name"]} for r in album_rows]
+    tracks = [{"title": r["title"], "artist": r["artist"], "album": r["album"]} for r in track_rows]
 
-    return {"artists": artists, "albums": albums}
+    return {"artists": artists, "albums": albums, "tracks": tracks}
