@@ -345,8 +345,18 @@ export function Artist() {
           onLoad={() => setBgLoaded(true)}
           onError={() => {}}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#2e3440] via-[#2e3440]/70 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#2e3440] via-transparent to-[#2e3440]/30" />
+        {/* Left gradient — solid to transparent for text readability */}
+        <div className="absolute inset-0" style={{
+          background: "linear-gradient(to right, #2e3440 0%, rgba(46,52,64,0.85) 25%, rgba(46,52,64,0.4) 50%, transparent 75%)",
+        }} />
+        {/* Bottom gradient — long smooth fade into page background */}
+        <div className="absolute inset-0" style={{
+          background: "linear-gradient(to top, #2e3440 0%, rgba(46,52,64,0.9) 15%, rgba(46,52,64,0.4) 40%, transparent 70%)",
+        }} />
+        {/* Top vignette — subtle darkening */}
+        <div className="absolute inset-0" style={{
+          background: "linear-gradient(to bottom, rgba(46,52,64,0.5) 0%, transparent 30%)",
+        }} />
 
         <div className="absolute inset-0 flex items-end">
           <div className="flex items-end gap-6 w-full max-w-[1100px] px-8 pb-8">
