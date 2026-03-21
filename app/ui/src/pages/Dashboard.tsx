@@ -6,8 +6,8 @@ import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
-import { FormatDonut } from "@/components/charts/FormatDonut";
-import { DecadeBar } from "@/components/charts/DecadeBar";
+import { ResponsivePie } from "@nivo/pie";
+import { ResponsiveBar } from "@nivo/bar";
 import { formatNumber, encPath } from "@/lib/utils";
 import {
   Users, Disc3, Music, HardDrive, Loader2, ArrowRight,
@@ -66,7 +66,7 @@ function timeAgo(iso: string): string {
 
 export function Dashboard() {
   const { data: stats, loading: loadingStats } = useApi<Stats>("/api/stats");
-  const { data: analytics, loading: loadingAnalytics, refetch: refetchAnalytics } = useApi<AnalyticsData>("/api/analytics");
+  const { data: analytics, refetch: refetchAnalytics } = useApi<AnalyticsData>("/api/analytics");
   const { data: live, refetch: refetchLive } = useApi<LiveActivity>("/api/activity/live");
   const { recentlyPlayed, play: playTrack } = usePlayer();
   const { isAdmin } = useAuth();
@@ -397,73 +397,99 @@ export function Dashboard() {
         </Card>
       )}
 
-      {/* Row 4: Format donut + Decade bar */}
+      {/* Row 4: Format donut + Decade bar (Nivo) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Card className="bg-card col-span-1">
           <CardHeader>
-            <CardTitle className="text-sm">Format Distribution</CardTitle>
+            <CardTitle className="text-sm">Formats</CardTitle>
           </CardHeader>
           <CardContent>
-            {analytics?.formats && Object.keys(analytics.formats).length > 0 ? (
-              <FormatDonut data={analytics.formats} />
-            ) : stats?.formats && Object.keys(stats.formats).length > 0 ? (
-              <FormatDonut data={stats.formats} />
-            ) : (
-              <div className="flex items-center justify-center h-[250px] text-muted-foreground">
-                <Loader2 size={18} className="animate-spin mr-2" />
-                <span className="text-sm">{analytics?.computing ? "Computing analytics..." : loadingAnalytics ? "Loading..." : "No data"}</span>
-              </div>
-            )}
+            <div className="h-[220px]">
+              {(analytics?.formats || stats?.formats) && Object.keys(analytics?.formats || stats?.formats || {}).length > 0 ? (
+                <ResponsivePie
+                  data={Object.entries(analytics?.formats || stats?.formats || {}).map(([k, v]) => ({ id: k, value: v }))}
+                  margin={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                  innerRadius={0.6}
+                  padAngle={2}
+                  cornerRadius={4}
+                  colors={["#06b6d4", "#8b5cf6", "#f59e0b", "#ef4444", "#22c55e"]}
+                  borderWidth={0}
+                  enableArcLinkLabels={true}
+                  arcLinkLabelsColor={{ from: "color" }}
+                  arcLinkLabelsTextColor="#9ca3af"
+                  arcLinkLabelsThickness={2}
+                  arcLabelsTextColor="#fff"
+                  theme={{ tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } } }}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No data</div>
+              )}
+            </div>
           </CardContent>
         </Card>
-        <Card className="bg-card col-span-2">
+        <Card className="bg-card col-span-1 md:col-span-2">
           <CardHeader>
             <CardTitle className="text-sm">Albums by Decade</CardTitle>
           </CardHeader>
           <CardContent>
-            {analytics?.decades && Object.keys(analytics.decades).length > 0 ? (
-              <DecadeBar data={analytics.decades} />
-            ) : (
-              <div className="flex items-center justify-center h-[250px] text-muted-foreground">
-                <Loader2 size={18} className="animate-spin mr-2" />
-                <span className="text-sm">{analytics?.computing ? "Computing analytics..." : loadingAnalytics ? "Loading..." : "No data"}</span>
-              </div>
-            )}
+            <div className="h-[220px]">
+              {analytics?.decades && Object.keys(analytics.decades).length > 0 ? (
+                <ResponsiveBar
+                  data={Object.entries(analytics.decades).sort(([a], [b]) => a.localeCompare(b)).map(([decade, count]) => ({ decade, albums: count }))}
+                  keys={["albums"]}
+                  indexBy="decade"
+                  margin={{ top: 10, right: 10, bottom: 35, left: 40 }}
+                  padding={0.3}
+                  colors={["#06b6d4"]}
+                  borderRadius={4}
+                  enableLabel={false}
+                  axisBottom={{ tickRotation: -45 }}
+                  theme={{
+                    axis: { ticks: { text: { fill: "#6b7280", fontSize: 11 } } },
+                    grid: { line: { stroke: "#374151" } },
+                    tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } },
+                  }}
+                  animate={true}
+                  motionConfig="gentle"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No data</div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Row 5: Extra stats + Import Queue */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Row 5: Top Genres + Library stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <Card className="bg-card">
           <CardHeader>
-            <CardTitle className="text-sm">Library Insights</CardTitle>
+            <CardTitle className="text-sm">Top Genres</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col gap-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total Duration</span>
-                <span>{stats?.total_duration_hours ? `${stats.total_duration_hours}h` : "-"}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Avg Bitrate</span>
-                <span>{stats?.avg_bitrate ? `${Math.round(stats.avg_bitrate / 1000)}k` : "-"}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Analyzed Tracks</span>
-                <span>{formatNumber(stats?.analyzed_tracks ?? 0)}</span>
-              </div>
-              {(stats?.top_genres ?? []).length > 0 && (
-                <div className="border-t border-border pt-3 mt-1">
-                  <div className="text-xs text-muted-foreground mb-2">Top Genres</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {stats!.top_genres.slice(0, 8).map((g) => (
-                      <Badge key={g.name} variant="secondary" className="text-[10px]">
-                        {g.name} ({g.count})
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
+            <div className="h-[200px]">
+              {(stats?.top_genres ?? []).length > 0 ? (
+                <ResponsiveBar
+                  data={stats!.top_genres.slice(0, 8).map((g) => ({ genre: g.name.length > 14 ? g.name.slice(0, 14) + "..." : g.name, tracks: g.count }))}
+                  keys={["tracks"]}
+                  indexBy="genre"
+                  layout="horizontal"
+                  margin={{ top: 5, right: 20, bottom: 5, left: 100 }}
+                  padding={0.3}
+                  colors={["#8b5cf6"]}
+                  borderRadius={3}
+                  enableLabel={true}
+                  labelTextColor="#fff"
+                  theme={{
+                    axis: { ticks: { text: { fill: "#9ca3af", fontSize: 11 } } },
+                    grid: { line: { stroke: "#374151" } },
+                    tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } },
+                  }}
+                  animate={true}
+                  motionConfig="gentle"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No genre data</div>
               )}
             </div>
           </CardContent>
@@ -471,26 +497,34 @@ export function Dashboard() {
 
         <Card className="bg-card">
           <CardHeader>
-            <CardTitle className="text-sm">Import Queue</CardTitle>
+            <CardTitle className="text-sm">Library Stats</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-3">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Pending Imports</span>
-                <span>{stats?.pending_imports ?? 0}</span>
+                <span className="text-muted-foreground">Total Duration</span>
+                <span className="font-medium">{stats?.total_duration_hours ? `${stats.total_duration_hours}h` : "-"}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Avg Bitrate</span>
+                <span className="font-medium">{stats?.avg_bitrate ? `${Math.round(stats.avg_bitrate / 1000)}k` : "-"}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Analyzed Tracks</span>
+                <span className="font-medium">{formatNumber(stats?.analyzed_tracks ?? 0)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Pending Tasks</span>
-                <span>{stats?.pending_tasks ?? 0}</span>
+                <span className="font-medium">{stats?.pending_tasks ?? 0}</span>
               </div>
-              <Button
-                className="mt-2"
-                variant="outline"
-                onClick={() => navigate("/imports")}
-              >
-                <ArrowRight size={14} className="mr-2" />
-                Go to Imports
-              </Button>
+              <div className="flex gap-2 mt-2">
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => navigate("/insights")}>
+                  <ArrowRight size={14} className="mr-1" /> Insights
+                </Button>
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => navigate("/imports")}>
+                  <ArrowRight size={14} className="mr-1" /> Imports
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

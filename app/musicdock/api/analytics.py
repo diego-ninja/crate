@@ -329,6 +329,76 @@ def api_missing_albums(artist: str):
     return result
 
 
+@router.get("/api/artist-stats/{name:path}")
+def api_artist_stats(name: str):
+    """Stats for a single artist: format split, year timeline, audio features."""
+    with get_db_ctx() as cur:
+        # Format distribution
+        cur.execute("""
+            SELECT t.format, COUNT(*) AS cnt FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.artist = %s AND t.format IS NOT NULL
+            GROUP BY t.format ORDER BY cnt DESC
+        """, (name,))
+        formats = [{"id": r["format"], "value": r["cnt"]} for r in cur.fetchall()]
+
+        # Albums timeline (year + track count + popularity)
+        cur.execute("""
+            SELECT name, year, track_count, total_duration, lastfm_listeners, popularity
+            FROM library_albums WHERE artist = %s ORDER BY year
+        """, (name,))
+        albums_timeline = [dict(r) for r in cur.fetchall()]
+
+        # Audio features average per album
+        cur.execute("""
+            SELECT a.name AS album,
+                   AVG(t.bpm) AS avg_bpm,
+                   AVG(t.energy) AS avg_energy,
+                   AVG(t.danceability) AS avg_danceability,
+                   AVG(t.valence) AS avg_valence,
+                   AVG(t.acousticness) AS avg_acousticness,
+                   AVG(t.loudness) AS avg_loudness
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.artist = %s AND t.bpm IS NOT NULL
+            GROUP BY a.name, a.year ORDER BY a.year
+        """, (name,))
+        audio_by_album = []
+        for r in cur.fetchall():
+            d = dict(r)
+            # Round floats
+            for k in ("avg_bpm", "avg_energy", "avg_danceability", "avg_valence", "avg_acousticness", "avg_loudness"):
+                if d.get(k) is not None:
+                    d[k] = round(d[k], 2)
+            audio_by_album.append(d)
+
+        # Top tracks by popularity
+        cur.execute("""
+            SELECT t.title, t.album, t.duration, t.popularity, t.lastfm_listeners, t.bpm, t.energy
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.artist = %s AND t.popularity IS NOT NULL
+            ORDER BY t.popularity DESC LIMIT 10
+        """, (name,))
+        top_tracks = [dict(r) for r in cur.fetchall()]
+
+        # Genre tags
+        cur.execute("""
+            SELECT g.name, ag.weight FROM artist_genres ag
+            JOIN genres g ON ag.genre_id = g.id
+            WHERE ag.artist_name = %s ORDER BY ag.weight DESC
+        """, (name,))
+        genres = [{"name": r["name"], "weight": round(r["weight"], 2)} for r in cur.fetchall()]
+
+    return {
+        "formats": formats,
+        "albums_timeline": albums_timeline,
+        "audio_by_album": audio_by_album,
+        "top_tracks_by_popularity": top_tracks,
+        "genres": genres,
+    }
+
+
 @router.get("/api/insights")
 def api_insights():
     """Advanced analytics for the Insights page — all data for Nivo charts."""
