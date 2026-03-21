@@ -315,24 +315,60 @@ function CreatePlaylistForm({ onCreated, onCancel }: { onCreated: () => void; on
 
 // ── Smart playlist form ─────────────────────────────────────────
 
+interface FilterOptions {
+  genres: string[];
+  formats: string[];
+  keys: string[];
+  scales: string[];
+  artists: string[];
+  year_range: [string, string];
+  bpm_range: [number, number];
+}
+
+interface SmartRule {
+  field: string;
+  op: string;
+  values: string[]; // multi-select for genre, artist, etc.
+  rangeMin: string;
+  rangeMax: string;
+}
+
 function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
   const [name, setName] = useState("");
-  const [rules, setRules] = useState<{ field: string; op: string; value: string }[]>([
-    { field: "genre", op: "contains", value: "" },
+  const [rules, setRules] = useState<SmartRule[]>([
+    { field: "genre", op: "contains", values: [], rangeMin: "", rangeMax: "" },
   ]);
   const [limit, setLimit] = useState(50);
   const [match, setMatch] = useState<"all" | "any">("all");
   const [saving, setSaving] = useState(false);
+  const [options, setOptions] = useState<FilterOptions | null>(null);
+
+  useEffect(() => {
+    api<FilterOptions>("/api/playlists/filter-options").then(setOptions).catch(() => {});
+  }, []);
 
   function addRule() {
-    setRules([...rules, { field: "genre", op: "contains", value: "" }]);
+    setRules([...rules, { field: "genre", op: "contains", values: [], rangeMin: "", rangeMax: "" }]);
   }
   function removeRule(i: number) {
     setRules(rules.filter((_, idx) => idx !== i));
   }
-  function updateRule(i: number, key: string, val: string) {
+  function updateField(i: number, field: string) {
     const updated = [...rules];
-    (updated[i] as Record<string, string>)[key] = val;
+    const ops = getOpsForField(field);
+    updated[i] = { field, op: ops[0]?.value ?? "eq", values: [], rangeMin: "", rangeMax: "" };
+    setRules(updated);
+  }
+  function toggleValue(i: number, val: string) {
+    const updated = [...rules];
+    const r = updated[i]!;
+    const has = r.values.includes(val);
+    r.values = has ? r.values.filter((v) => v !== val) : [...r.values, val];
+    setRules(updated);
+  }
+  function setRange(i: number, key: "rangeMin" | "rangeMax", val: string) {
+    const updated = [...rules];
+    updated[i]![key] = val;
     setRules(updated);
   }
 
@@ -343,17 +379,47 @@ function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onC
     return [{ value: "eq", label: "equals" }];
   }
 
+  function getOptionsForField(field: string): string[] {
+    if (!options) return [];
+    switch (field) {
+      case "genre": return options.genres;
+      case "format": return options.formats;
+      case "audio_key": return options.keys;
+      case "artist": return options.artists;
+      default: return [];
+    }
+  }
+
+  function isRangeField(field: string): boolean {
+    return ["bpm", "year", "energy", "danceability", "valence"].includes(field);
+  }
+
+  function isMultiSelectField(field: string): boolean {
+    return ["genre", "format", "audio_key", "artist"].includes(field);
+  }
+
+  function ruleHasValue(rule: SmartRule): boolean {
+    if (isRangeField(rule.field)) return rule.rangeMin !== "" || rule.rangeMax !== "";
+    return rule.values.length > 0;
+  }
+
   async function submit() {
     if (!name.trim()) return;
     setSaving(true);
     try {
       const smartRules = {
         match,
-        rules: rules.filter((r) => r.value).map((r) => {
-          let value: unknown = r.value;
-          if (r.op === "between") value = r.value.split(",").map((v) => parseInt(v.trim(), 10));
-          else if (r.op === "gte" || r.op === "lte") value = parseFloat(r.value);
-          return { field: r.field, op: r.op, value };
+        rules: rules.filter(ruleHasValue).map((r) => {
+          if (isRangeField(r.field)) {
+            const min = parseFloat(r.rangeMin) || 0;
+            const max = parseFloat(r.rangeMax) || 9999;
+            return { field: r.field, op: "between", value: [min, max] };
+          }
+          if (r.values.length === 1) {
+            return { field: r.field, op: r.op, value: r.values[0] };
+          }
+          // Multiple values: create OR sub-rules
+          return { field: r.field, op: r.op, value: r.values.join("|") };
         }),
         limit,
         sort: "random",
@@ -363,7 +429,6 @@ function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onC
         is_smart: true,
         smart_rules: smartRules,
       });
-      // Generate tracks
       await api(`/api/playlists/${id}/generate`, "POST");
       toast.success("Smart playlist created");
       onCreated();
@@ -376,7 +441,7 @@ function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onC
         <Sparkles size={16} className="text-primary" />
         <span className="font-semibold text-sm">Smart Playlist</span>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="flex gap-3">
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Playlist name" className="flex-1" />
           <Select value={match} onValueChange={(v) => setMatch(v as "all" | "any")}>
@@ -389,34 +454,80 @@ function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onC
           <Input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value) || 50)} min={1} max={500} className="w-20" placeholder="Limit" />
         </div>
 
-        {rules.map((rule, i) => {
-          const ops = getOpsForField(rule.field);
-          return (
-            <div key={i} className="flex gap-2 items-center">
-              <Select value={rule.field} onValueChange={(v) => { updateRule(i, "field", v); updateRule(i, "op", getOpsForField(v)[0]?.value ?? "eq"); }}>
+        {rules.map((rule, i) => (
+          <div key={i} className="border border-border rounded-lg p-3 space-y-2">
+            <div className="flex gap-2 items-center">
+              <Select value={rule.field} onValueChange={(v) => updateField(i, v)}>
                 <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {SMART_FIELDS.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <Select value={rule.op} onValueChange={(v) => updateRule(i, "op", v)}>
-                <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {ops.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Input
-                value={rule.value}
-                onChange={(e) => updateRule(i, "value", e.target.value)}
-                placeholder={rule.op === "between" ? "e.g. 120,150" : "value"}
-                className="flex-1"
-              />
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeRule(i)}>
+
+              {isRangeField(rule.field) && (
+                <>
+                  <span className="text-xs text-muted-foreground">from</span>
+                  <Input
+                    type="number"
+                    value={rule.rangeMin}
+                    onChange={(e) => setRange(i, "rangeMin", e.target.value)}
+                    placeholder={rule.field === "year" ? options?.year_range[0] ?? "1960" : rule.field === "bpm" ? String(options?.bpm_range[0] ?? 60) : "0"}
+                    className="w-24"
+                  />
+                  <span className="text-xs text-muted-foreground">to</span>
+                  <Input
+                    type="number"
+                    value={rule.rangeMax}
+                    onChange={(e) => setRange(i, "rangeMax", e.target.value)}
+                    placeholder={rule.field === "year" ? options?.year_range[1] ?? "2026" : rule.field === "bpm" ? String(options?.bpm_range[1] ?? 200) : "1"}
+                    className="w-24"
+                  />
+                </>
+              )}
+
+              <div className="flex-1" />
+              <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0" onClick={() => removeRule(i)}>
                 <X size={14} />
               </Button>
             </div>
-          );
-        })}
+
+            {/* Multi-select options */}
+            {isMultiSelectField(rule.field) && (
+              <div>
+                {/* Selected badges */}
+                {rule.values.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {rule.values.map((v) => (
+                      <Badge key={v} variant="secondary" className="text-xs pl-2 pr-1 py-0.5 gap-1">
+                        {v}
+                        <button onClick={() => toggleValue(i, v)} className="hover:text-destructive ml-0.5">
+                          <X size={10} />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {/* Available options */}
+                <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                  {getOptionsForField(rule.field)
+                    .filter((o) => !rule.values.includes(o))
+                    .map((opt) => (
+                      <button
+                        key={opt}
+                        onClick={() => toggleValue(i, opt)}
+                        className="text-[11px] px-2 py-1 rounded-md bg-secondary/50 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  {getOptionsForField(rule.field).length === 0 && (
+                    <span className="text-xs text-muted-foreground">No options available</span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
 
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={addRule}>
@@ -424,7 +535,7 @@ function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onC
           </Button>
           <div className="flex-1" />
           <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-          <Button onClick={submit} disabled={saving || !name.trim() || rules.every((r) => !r.value)}>
+          <Button onClick={submit} disabled={saving || !name.trim() || rules.every((r) => !ruleHasValue(r))}>
             {saving ? <Loader2 size={14} className="animate-spin mr-1" /> : <Sparkles size={14} className="mr-1" />}
             Create
           </Button>

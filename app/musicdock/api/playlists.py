@@ -36,6 +36,44 @@ class SyncNavidromeRequest(BaseModel):
     playlist_id: int
 
 
+# ── Filter options ───────────────────────────────────────────────
+
+@router.get("/filter-options")
+def filter_options():
+    """Return available values for smart playlist filters."""
+    from musicdock.db import get_all_genres
+    genres = [g["name"] for g in get_all_genres()]
+
+    with get_db_ctx() as cur:
+        cur.execute("SELECT DISTINCT format FROM library_tracks WHERE format IS NOT NULL AND format != '' ORDER BY format")
+        formats = [r["format"] for r in cur.fetchall()]
+
+        cur.execute("SELECT DISTINCT audio_key FROM library_tracks WHERE audio_key IS NOT NULL AND audio_key != '' ORDER BY audio_key")
+        keys = [r["audio_key"] for r in cur.fetchall()]
+
+        cur.execute("SELECT DISTINCT audio_scale FROM library_tracks WHERE audio_scale IS NOT NULL AND audio_scale != '' ORDER BY audio_scale")
+        scales = [r["audio_scale"] for r in cur.fetchall()]
+
+        cur.execute("SELECT name FROM library_artists ORDER BY name")
+        artists = [r["name"] for r in cur.fetchall()]
+
+        cur.execute("SELECT MIN(year) AS min_y, MAX(year) AS max_y FROM library_tracks WHERE year IS NOT NULL AND year != ''")
+        yr = cur.fetchone()
+
+        cur.execute("SELECT MIN(bpm) AS min_b, MAX(bpm) AS max_b FROM library_tracks WHERE bpm IS NOT NULL")
+        bpm = cur.fetchone()
+
+    return {
+        "genres": genres,
+        "formats": formats,
+        "keys": keys,
+        "scales": scales,
+        "artists": artists,
+        "year_range": [yr["min_y"] or "1960", yr["max_y"] or "2026"],
+        "bpm_range": [int(bpm["min_b"] or 60), int(bpm["max_b"] or 200)],
+    }
+
+
 # ── CRUD ─────────────────────────────────────────────────────────
 
 @router.get("")
@@ -166,8 +204,16 @@ def _execute_smart_rules(rules: dict) -> list[dict]:
         value = rule.get("value")
 
         if field == "genre" and op == "contains":
-            conditions.append("(t.genre ILIKE %s OR a_artist.tags_json::text ILIKE %s)")
-            params.extend([f"%{value}%", f"%{value}%"])
+            if isinstance(value, str) and "|" in value:
+                genre_vals = [v.strip() for v in value.split("|") if v.strip()]
+                or_parts = []
+                for gv in genre_vals:
+                    or_parts.append("(t.genre ILIKE %s OR a_artist.tags_json::text ILIKE %s)")
+                    params.extend([f"%{gv}%", f"%{gv}%"])
+                conditions.append(f"({' OR '.join(or_parts)})")
+            else:
+                conditions.append("(t.genre ILIKE %s OR a_artist.tags_json::text ILIKE %s)")
+                params.extend([f"%{value}%", f"%{value}%"])
         elif field == "bpm" and op == "between" and isinstance(value, list):
             conditions.append("t.bpm BETWEEN %s AND %s")
             params.extend(value[:2])
@@ -190,11 +236,21 @@ def _execute_smart_rules(rules: dict) -> list[dict]:
             conditions.append("t.valence >= %s")
             params.append(value)
         elif field == "artist" and op == "eq":
-            conditions.append("t.artist = %s")
-            params.append(value)
+            if isinstance(value, str) and "|" in value:
+                vals = [v.strip() for v in value.split("|") if v.strip()]
+                conditions.append(f"t.artist IN ({','.join(['%s']*len(vals))})")
+                params.extend(vals)
+            else:
+                conditions.append("t.artist = %s")
+                params.append(value)
         elif field == "format" and op == "eq":
-            conditions.append("t.format = %s")
-            params.append(value)
+            if isinstance(value, str) and "|" in value:
+                vals = [v.strip() for v in value.split("|") if v.strip()]
+                conditions.append(f"t.format IN ({','.join(['%s']*len(vals))})")
+                params.extend(vals)
+            else:
+                conditions.append("t.format = %s")
+                params.append(value)
 
     joiner = " AND " if match_mode == "all" else " OR "
     where = joiner.join(conditions) if conditions else "1=1"
