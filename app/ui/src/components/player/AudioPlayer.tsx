@@ -17,16 +17,115 @@ import {
   Mic2,
   Minimize2,
   Maximize2,
+  Music,
 } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
 import { QueuePanel } from "./QueuePanel";
 import { LyricsPanel } from "./Lyrics";
 
 const MINI_KEY = "player-mini";
+const VIZ_KEY = "player-viz";
 
 function getStoredMini(): boolean {
   try { return localStorage.getItem(MINI_KEY) === "1"; } catch { return false; }
 }
+
+function getStoredViz(): "bars" | "wave" {
+  try {
+    const v = localStorage.getItem(VIZ_KEY);
+    if (v === "wave") return "wave";
+  } catch { /* ignore */ }
+  return "bars";
+}
+
+// ── Cover fallback ──────────────────────────────────────────────
+
+function CoverArt({ src, size, className }: { src?: string; size: number; className?: string }) {
+  const [error, setError] = useState(false);
+  const hasSrc = src && src.length > 0;
+
+  if (!hasSrc || error) {
+    return (
+      <div className={`bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center ${className}`}
+        style={{ width: size, height: size }}>
+        <Music size={size * 0.35} className="text-primary/50" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      className={`object-cover bg-secondary ${className}`}
+      style={{ width: size, height: size }}
+      onError={() => setError(true)}
+    />
+  );
+}
+
+// ── Visualizer renderers ────────────────────────────────────────
+
+function BarVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
+  if (frequencies.length === 0) return null;
+  return (
+    <div className={`flex items-end overflow-hidden pointer-events-none ${className}`}>
+      {frequencies.map((f, i) => (
+        <div
+          key={i}
+          className="flex-1 bg-primary mx-px rounded-t-sm transition-[height] duration-75"
+          style={{ height: `${f * 100}%` }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function WaveVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
+  if (frequencies.length === 0) return null;
+  const len = frequencies.length;
+  // Mirror the frequencies for a symmetric wave
+  const points: string[] = [];
+  const h = 100;
+  const w = 100;
+  for (let i = 0; i < len; i++) {
+    const x = (i / (len - 1)) * w;
+    const amp = frequencies[i]! * 40;
+    points.push(`${x},${h / 2 - amp}`);
+  }
+  const topLine = points.join(" ");
+  // Mirror bottom
+  const bottomPoints: string[] = [];
+  for (let i = 0; i < len; i++) {
+    const x = (i / (len - 1)) * w;
+    const amp = frequencies[i]! * 25;
+    bottomPoints.push(`${x},${h / 2 + amp}`);
+  }
+  const bottomLine = bottomPoints.join(" ");
+
+  return (
+    <div className={`overflow-hidden pointer-events-none ${className}`}>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full h-full">
+        <polyline
+          points={topLine}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="0.8"
+          className="text-primary"
+        />
+        <polyline
+          points={bottomLine}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="0.5"
+          className="text-primary/50"
+        />
+      </svg>
+    </div>
+  );
+}
+
+// ── Main component ──────────────────────────────────────────────
 
 export function AudioPlayer() {
   const {
@@ -54,6 +153,7 @@ export function AudioPlayer() {
   const [queueOpen, setQueueOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [mini, setMini] = useState(getStoredMini);
+  const [vizMode, setVizMode] = useState<"bars" | "wave">(getStoredViz);
   const progressRef = useRef<HTMLDivElement>(null);
 
   const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
@@ -69,6 +169,14 @@ export function AudioPlayer() {
     if (next) { setQueueOpen(false); setLyricsOpen(false); }
   }
 
+  function cycleViz() {
+    const next = vizMode === "bars" ? "wave" : "bars";
+    setVizMode(next);
+    try { localStorage.setItem(VIZ_KEY, next); } catch { /* ignore */ }
+  }
+
+  const Viz = vizMode === "wave" ? WaveVisualizer : BarVisualizer;
+
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
   if (mini || isMobile) {
@@ -80,6 +188,7 @@ export function AudioPlayer() {
         currentTime={currentTime}
         duration={duration}
         frequencies={frequencies}
+        vizMode={vizMode}
         onPlayPause={isPlaying ? pause : resume}
         onNext={next}
         onPrev={prev}
@@ -92,28 +201,13 @@ export function AudioPlayer() {
   return (
     <>
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-md border-t border-border h-20 flex items-center px-4 gap-4 animate-in slide-in-from-bottom duration-300">
-        {/* Frequency visualizer background */}
-        {frequencies.length > 0 && (
-          <div className="absolute inset-0 flex items-end justify-center overflow-hidden opacity-[0.07] pointer-events-none">
-            {frequencies.map((f, i) => (
-              <div
-                key={i}
-                className="flex-1 bg-primary mx-px rounded-t-sm transition-[height] duration-75"
-                style={{ height: `${f * 100}%` }}
-              />
-            ))}
-          </div>
-        )}
+        {/* Visualizer background */}
+        <Viz frequencies={frequencies} className="absolute inset-0 opacity-[0.07]" />
 
         {/* Left: cover + track info */}
         <div className="flex items-center gap-3 min-w-0 w-[260px] flex-shrink-0 relative z-10">
           <div className="relative flex-shrink-0">
-            <img
-              src={currentTrack.albumCover || ""}
-              alt=""
-              className="w-14 h-14 rounded-lg object-cover bg-secondary shadow-lg"
-              onError={(e) => { (e.target as HTMLImageElement).src = ""; }}
-            />
+            <CoverArt src={currentTrack.albumCover} size={56} className="rounded-lg shadow-lg" />
             {isPlaying && (
               <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center">
                 <Equalizer />
@@ -174,8 +268,30 @@ export function AudioPlayer() {
           </div>
         </div>
 
-        {/* Right: lyrics + queue + volume + mini + close */}
-        <div className="flex items-center gap-1 w-[220px] flex-shrink-0 justify-end relative z-10">
+        {/* Right: viz toggle + lyrics + queue + volume + mini + close */}
+        <div className="flex items-center gap-1 w-[240px] flex-shrink-0 justify-end relative z-10">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground"
+            onClick={cycleViz}
+            title={`Visualizer: ${vizMode}`}
+          >
+            <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+              {vizMode === "bars" ? (
+                // Bars icon
+                <>
+                  <rect x="1" y="8" width="2" height="6" rx="0.5" />
+                  <rect x="5" y="4" width="2" height="10" rx="0.5" />
+                  <rect x="9" y="6" width="2" height="8" rx="0.5" />
+                  <rect x="13" y="2" width="2" height="12" rx="0.5" />
+                </>
+              ) : (
+                // Wave icon
+                <path d="M0 8 Q4 2, 8 8 Q12 14, 16 8" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              )}
+            </svg>
+          </Button>
           <Button
             variant="ghost"
             size="icon"
@@ -245,6 +361,7 @@ function MiniPlayer({
   currentTime,
   duration,
   frequencies,
+  vizMode,
   onPlayPause,
   onNext,
   onPrev,
@@ -257,12 +374,15 @@ function MiniPlayer({
   currentTime: number;
   duration: number;
   frequencies: number[];
+  vizMode: "bars" | "wave";
   onPlayPause: () => void;
   onNext: () => void;
   onPrev: () => void;
   onExpand: () => void;
   onClose: () => void;
 }) {
+  const Viz = vizMode === "wave" ? WaveVisualizer : BarVisualizer;
+
   return (
     <div className="fixed bottom-0 left-0 right-0 md:bottom-4 md:left-auto md:right-4 z-50 md:w-[360px] bg-card/95 backdrop-blur-md border-t md:border border-border md:rounded-2xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300 overflow-hidden">
       {/* Background album art — blurred */}
@@ -274,20 +394,10 @@ function MiniPlayer({
         />
       )}
 
-      {/* Frequency visualizer as subtle background */}
-      {frequencies.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 h-full flex items-end overflow-hidden opacity-[0.08] pointer-events-none">
-          {frequencies.slice(0, 32).map((f, i) => (
-            <div
-              key={i}
-              className="flex-1 bg-primary mx-px rounded-t-sm transition-[height] duration-75"
-              style={{ height: `${f * 100}%` }}
-            />
-          ))}
-        </div>
-      )}
+      {/* Visualizer background */}
+      <Viz frequencies={frequencies} className="absolute bottom-0 left-0 right-0 h-full opacity-[0.08]" />
 
-      {/* Progress bar on top */}
+      {/* Progress bar */}
       <div className="h-1 bg-white/5 overflow-hidden relative z-10">
         <div
           className="h-full bg-primary transition-[width] duration-200"
@@ -298,12 +408,7 @@ function MiniPlayer({
       <div className="flex items-center gap-3 p-3 relative z-10">
         {/* Cover art */}
         <div className="relative flex-shrink-0">
-          <img
-            src={track.albumCover || ""}
-            alt=""
-            className="w-12 h-12 rounded-lg object-cover bg-secondary shadow-lg"
-            onError={(e) => { (e.target as HTMLImageElement).src = ""; }}
-          />
+          <CoverArt src={track.albumCover} size={48} className="rounded-lg shadow-lg" />
           {isPlaying && (
             <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary flex items-center justify-center">
               <Equalizer small />
@@ -394,7 +499,6 @@ const ProgressBar = forwardRef<
         className="h-full bg-primary rounded-full transition-[width] duration-100"
         style={{ width: `${progress}%` }}
       />
-      {/* Scrubber dot */}
       <div
         className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
         style={{ left: `${progress}%`, marginLeft: "-6px" }}

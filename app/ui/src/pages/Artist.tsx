@@ -275,7 +275,7 @@ export function Artist() {
       id: t.id,
       title: t.title,
       artist: t.artist,
-      albumCover: undefined,
+      albumCover: t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : `/api/artist/${encPath(t.artist)}/photo`,
     }));
     player.playAll(tracks, index);
   }
