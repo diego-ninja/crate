@@ -16,18 +16,77 @@ router = APIRouter()
 def get_artist_enrichment(name: str):
     """Get consolidated enrichment data. Returns cached if available, otherwise fetches inline.
     For background enrichment, use POST /api/artist/{name}/enrich which queues a worker task."""
-    from musicdock.db import get_cache, set_cache
+    from musicdock.db import get_cache, set_cache, get_library_artist
 
+    # Try cache first
     cache_key = f"enrichment:{name.lower()}"
-    cached = get_cache(cache_key, max_age_seconds=86400)  # 24h
+    cached = get_cache(cache_key, max_age_seconds=86400)
     if cached:
         return cached
+
+    # Try DB persisted data as fallback (survives cache expiry)
+    db_artist = get_library_artist(name)
+    if db_artist and db_artist.get("enriched_at"):
+        result = _build_from_db(db_artist)
+        if result:
+            set_cache(cache_key, result)
+            return result
 
     # Fetch inline (first visit)
     result = _fetch_enrichment(name)
     if result:
         set_cache(cache_key, result)
     return result or {}
+
+
+def _build_from_db(artist: dict) -> dict:
+    """Reconstruct enrichment dict from persisted DB columns."""
+    import json
+    result: dict = {}
+
+    bio = artist.get("bio")
+    tags = artist.get("tags_json")
+    similar = artist.get("similar_json")
+    listeners = artist.get("listeners")
+    if bio or tags or listeners:
+        lastfm: dict = {}
+        if bio:
+            lastfm["bio"] = bio
+        if tags:
+            lastfm["tags"] = tags if isinstance(tags, list) else json.loads(tags or "[]")
+        if similar:
+            lastfm["similar"] = similar if isinstance(similar, list) else json.loads(similar or "[]")
+        if listeners:
+            lastfm["listeners"] = listeners
+        result["lastfm"] = lastfm
+
+    if artist.get("spotify_id"):
+        result["spotify"] = {
+            "popularity": artist.get("spotify_popularity"),
+        }
+
+    mbid = artist.get("mbid")
+    if mbid:
+        mb: dict = {"mbid": mbid}
+        if artist.get("country"):
+            mb["country"] = artist["country"]
+        if artist.get("area"):
+            mb["area"] = artist["area"]
+        if artist.get("formed"):
+            mb["begin_date"] = artist["formed"]
+        if artist.get("ended"):
+            mb["end_date"] = artist["ended"]
+        if artist.get("artist_type"):
+            mb["type"] = artist["artist_type"]
+        members = artist.get("members_json")
+        if members:
+            mb["members"] = members if isinstance(members, list) else json.loads(members or "[]")
+        urls = artist.get("urls_json")
+        if urls:
+            mb["urls"] = urls if isinstance(urls, dict) else json.loads(urls or "{}")
+        result["musicbrainz"] = mb
+
+    return result
 
 
 def _fetch_enrichment(name: str) -> dict:

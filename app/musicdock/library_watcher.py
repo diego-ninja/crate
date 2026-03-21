@@ -64,12 +64,25 @@ class LibraryWatcher:
         with self._lock:
             self.debounce_timers.pop(str(album_dir), None)
         try:
-            # Resolve canonical artist name (folder "ModelActriz" → "Model/Actriz")
             artist_dir = album_dir.parent
             canonical = self.sync._canonical_artist_name(artist_dir, artist_name)
+
+            # Check if artist is new (not in DB yet)
+            from musicdock.db import get_library_artist
+            is_new = get_library_artist(canonical) is None
+
             if album_dir.is_dir():
                 log.info("Watcher: syncing album %s/%s", canonical, album_dir.name)
                 self.sync.sync_album(album_dir, canonical)
             self.sync.sync_artist(artist_dir)
+
+            # Trigger enrichment for new artists
+            if is_new:
+                try:
+                    from musicdock.db import create_task
+                    create_task("enrich_artist", {"artist": canonical})
+                    log.info("Watcher: queued enrichment for new artist %s", canonical)
+                except Exception:
+                    log.debug("Watcher: failed to queue enrichment for %s", canonical)
         except Exception:
             log.exception("Watcher: failed to sync %s/%s", artist_name, album_dir.name)

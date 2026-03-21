@@ -245,6 +245,22 @@ def init_db():
             END $$
         """)
 
+        # Migration: add enrichment columns to library_artists
+        for col, col_type in [
+            ("bio", "TEXT"), ("tags_json", "JSONB"), ("similar_json", "JSONB"),
+            ("spotify_id", "TEXT"), ("spotify_popularity", "INTEGER"),
+            ("mbid", "TEXT"), ("country", "TEXT"), ("area", "TEXT"),
+            ("formed", "TEXT"), ("ended", "TEXT"), ("artist_type", "TEXT"),
+            ("members_json", "JSONB"), ("urls_json", "JSONB"),
+            ("listeners", "INTEGER"), ("enriched_at", "TEXT"),
+        ]:
+            cur.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE library_artists ADD COLUMN {col} {col_type};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+
         # Migration: add tag_album to library_albums (album name from audio tags, may differ from folder name)
         cur.execute("""
             DO $$ BEGIN
@@ -706,6 +722,30 @@ def update_track_audiomuse(path: str, bpm: float | None, key: str | None,
              danceability, valence, acousticness, instrumentalness,
              loudness, dynamic_range, spectral_complexity, path),
         )
+
+
+def update_artist_enrichment(name: str, data: dict):
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute("""
+            UPDATE library_artists SET
+                bio = %s, tags_json = %s, similar_json = %s,
+                spotify_id = %s, spotify_popularity = %s,
+                mbid = %s, country = %s, area = %s,
+                formed = %s, ended = %s, artist_type = %s,
+                members_json = %s, urls_json = %s,
+                listeners = %s, enriched_at = %s
+            WHERE name = %s
+        """, (
+            data.get("bio"), json.dumps(data.get("tags", [])),
+            json.dumps(data.get("similar", [])),
+            data.get("spotify_id"), data.get("spotify_popularity"),
+            data.get("mbid"), data.get("country"), data.get("area"),
+            data.get("formed"), data.get("ended"), data.get("artist_type"),
+            json.dumps(data.get("members", [])),
+            json.dumps(data.get("urls", {})),
+            data.get("listeners"), now, name,
+        ))
 
 
 def delete_artist(name: str):

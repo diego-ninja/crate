@@ -395,9 +395,8 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.db import get_library_artists
+    from musicdock.enrichment import enrich_artist
 
-    lib = Path(config["library_path"])
-    # Use DB artists (canonical names) instead of folder names
     all_artists, total = get_library_artists(per_page=10000)
     enriched = 0
     skipped = 0
@@ -407,39 +406,17 @@ def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
             break
 
         name = artist["name"]
-        folder = artist.get("folder_name") or name
-        artist_dir = lib / folder
-
-        has_photo = artist_dir.is_dir() and any(
-            (artist_dir / p).exists() for p in ("artist.jpg", "artist.png", "photo.jpg")
-        )
-        cached = get_cache(f"lastfm:artist:{name.lower()}", max_age_seconds=86400)
-
-        if cached and has_photo:
-            skipped += 1
-        else:
-            # Fetch Last.fm info if not cached
-            if not cached:
-                get_artist_info(name)
-                time.sleep(0.25)
-
-            # Fetch photo if missing
-            if not has_photo and artist_dir.is_dir():
-                img_data = get_best_artist_image(name)
-                if img_data:
-                    try:
-                        (artist_dir / "artist.jpg").write_bytes(img_data)
-                    except OSError:
-                        pass
-                time.sleep(0.25)
-
-            enriched += 1
-
-        if i % 10 == 0:
+        if i % 5 == 0:
             update_task(task_id, progress=json.dumps({
                 "artist": name, "done": i + 1, "total": total,
                 "enriched": enriched, "skipped": skipped,
             }))
+
+        result = enrich_artist(name, config)
+        if result.get("skipped"):
+            skipped += 1
+        else:
+            enriched += 1
 
     return {"enriched": enriched, "skipped": skipped, "total": total}
 
@@ -542,51 +519,15 @@ def _handle_fetch_artist_covers(task_id: str, params: dict, config: dict) -> dic
 
 
 def _handle_enrich_single(task_id: str, params: dict, config: dict) -> dict:
-    """Enrich a single artist: Last.fm + Spotify + Setlist.fm + MusicBrainz + fanart.tv."""
-    from musicdock.api.enrichment import _fetch_enrichment
-    from musicdock.db import set_cache, delete_cache
+    """Enrich a single artist: all sources + photo + persist to DB."""
+    from musicdock.enrichment import enrich_artist
 
     name = params.get("artist", "")
     if not name:
         return {"error": "No artist specified"}
 
     update_task(task_id, progress=json.dumps({"artist": name, "phase": "enriching"}))
-
-    # Clear old cache
-    delete_cache(f"enrichment:{name.lower()}")
-    delete_cache(f"lastfm:artist:{name.lower()}")
-    delete_cache(f"fanart:artist:{name.lower()}")
-    delete_cache(f"fanart:bg:{name.lower()}")
-    delete_cache(f"fanart:all:{name.lower()}")
-
-    # Fetch fresh
-    result = _fetch_enrichment(name)
-    if result:
-        set_cache(f"enrichment:{name.lower()}", result)
-
-    # Also download photo
-    from musicdock.lastfm import get_best_artist_image
-    from musicdock.db import get_library_artist as _get_lib_artist
-    lib = Path(config["library_path"])
-    db_artist = _get_lib_artist(name)
-    folder = (db_artist.get("folder_name") if db_artist else None) or name
-    artist_dir = lib / folder
-    if artist_dir.is_dir():
-        img = get_best_artist_image(name)
-        if img:
-            try:
-                (artist_dir / "artist.jpg").write_bytes(img)
-            except OSError:
-                pass
-
-    return {
-        "artist": name,
-        "has_lastfm": "lastfm" in result,
-        "has_spotify": "spotify" in result,
-        "has_setlist": "setlist" in result,
-        "has_musicbrainz": "musicbrainz" in result,
-        "has_fanart": "fanart" in result,
-    }
+    return enrich_artist(name, config, force=True)
 
 
 def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:

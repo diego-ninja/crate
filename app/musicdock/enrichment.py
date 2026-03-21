@@ -1,0 +1,170 @@
+"""Unified artist enrichment — fetches all sources and persists to DB."""
+
+import json
+import logging
+import time
+from pathlib import Path
+
+from musicdock.db import (
+    get_cache, set_cache, delete_cache, get_library_artist,
+    update_artist_enrichment, get_db_ctx,
+)
+
+log = logging.getLogger(__name__)
+
+
+def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
+    """Full enrichment for a single artist. Fetches all sources, persists to DB, downloads photo.
+
+    Returns dict with source flags (has_lastfm, has_spotify, etc.)
+    """
+    from musicdock.lastfm import get_artist_info, get_best_artist_image, get_fanart_all_images
+    from musicdock import spotify, setlistfm, musicbrainz_ext
+
+    lib = Path(config["library_path"])
+    db_artist = get_library_artist(name)
+    folder = (db_artist.get("folder_name") if db_artist else None) or name
+    artist_dir = lib / folder
+
+    # Skip if recently enriched (unless force)
+    if not force and db_artist and db_artist.get("enriched_at"):
+        from datetime import datetime, timezone
+        try:
+            enriched = datetime.fromisoformat(db_artist["enriched_at"])
+            age_hours = (datetime.now(timezone.utc) - enriched).total_seconds() / 3600
+            if age_hours < 24:
+                return {"artist": name, "skipped": True, "reason": "recently_enriched"}
+        except Exception:
+            pass
+
+    if force:
+        for prefix in ("enrichment:", "lastfm:artist:", "fanart:artist:",
+                        "fanart:bg:", "fanart:all:", "deezer:artist_img:"):
+            delete_cache(f"{prefix}{name.lower()}")
+
+    enrichment_data: dict = {}
+    persist_data: dict = {}
+
+    # ── Last.fm ──
+    try:
+        info = get_artist_info(name)
+        if info:
+            enrichment_data["lastfm"] = info
+            persist_data["bio"] = info.get("bio", "")
+            persist_data["tags"] = info.get("tags", [])
+            persist_data["similar"] = info.get("similar", [])
+            persist_data["listeners"] = info.get("listeners")
+    except Exception:
+        log.debug("Last.fm failed for %s", name)
+    time.sleep(0.3)
+
+    # ── Spotify ──
+    try:
+        sp = spotify.search_artist(name)
+        if sp:
+            spotify_data = {
+                "popularity": sp.get("popularity"),
+                "followers": sp.get("followers"),
+                "genres": sp.get("genres", []),
+                "url": sp.get("url"),
+            }
+            persist_data["spotify_id"] = sp.get("id")
+            persist_data["spotify_popularity"] = sp.get("popularity")
+
+            # Merge Spotify genres into tags
+            sp_genres = sp.get("genres", [])
+            if sp_genres:
+                existing_tags = persist_data.get("tags", [])
+                merged = list(dict.fromkeys(existing_tags + sp_genres))
+                persist_data["tags"] = merged
+
+            try:
+                top = spotify.get_top_tracks(sp["id"])
+                spotify_data["top_tracks"] = top or []
+            except Exception:
+                spotify_data["top_tracks"] = []
+            try:
+                related = spotify.get_related_artists(sp["id"])
+                spotify_data["related_artists"] = related or []
+                # Merge into similar if empty
+                if not persist_data.get("similar") and related:
+                    persist_data["similar"] = [{"name": r["name"]} for r in related[:10]]
+            except Exception:
+                spotify_data["related_artists"] = []
+            enrichment_data["spotify"] = spotify_data
+    except Exception:
+        log.debug("Spotify failed for %s", name)
+    time.sleep(0.3)
+
+    # ── MusicBrainz ──
+    try:
+        mb = musicbrainz_ext.get_artist_details(name)
+        if mb:
+            enrichment_data["musicbrainz"] = mb
+            persist_data["mbid"] = mb.get("mbid")
+            persist_data["country"] = mb.get("country")
+            persist_data["area"] = mb.get("area")
+            persist_data["formed"] = mb.get("begin_date")
+            persist_data["ended"] = mb.get("end_date")
+            persist_data["artist_type"] = mb.get("type")
+            persist_data["members"] = mb.get("members", [])
+            persist_data["urls"] = mb.get("urls", {})
+    except Exception:
+        log.debug("MusicBrainz failed for %s", name)
+    time.sleep(0.3)
+
+    # ── Setlist.fm ──
+    try:
+        setlist = setlistfm.get_probable_setlist(name)
+        if setlist:
+            enrichment_data["setlist"] = {
+                "probable_setlist": setlist,
+                "total_shows": len(setlist),
+            }
+    except Exception:
+        log.debug("Setlist.fm failed for %s", name)
+    time.sleep(0.3)
+
+    # ── Fanart.tv ──
+    try:
+        fanart = get_fanart_all_images(name)
+        if fanart:
+            enrichment_data["fanart"] = fanart
+    except Exception:
+        log.debug("Fanart.tv failed for %s", name)
+
+    # ── Persist to cache ──
+    if enrichment_data:
+        set_cache(f"enrichment:{name.lower()}", enrichment_data)
+
+    # ── Persist to DB ──
+    if persist_data:
+        try:
+            update_artist_enrichment(name, persist_data)
+        except Exception:
+            log.warning("Failed to persist enrichment for %s", name, exc_info=True)
+
+    # ── Download photo ──
+    has_photo = artist_dir.is_dir() and any(
+        (artist_dir / p).exists() for p in ("artist.jpg", "artist.png", "photo.jpg")
+    )
+    if not has_photo and artist_dir.is_dir():
+        try:
+            img = get_best_artist_image(name)
+            if img:
+                (artist_dir / "artist.jpg").write_bytes(img)
+                # Update has_photo in DB
+                with get_db_ctx() as cur:
+                    cur.execute("UPDATE library_artists SET has_photo = 1 WHERE name = %s", (name,))
+        except OSError:
+            pass
+        time.sleep(0.3)
+
+    return {
+        "artist": name,
+        "has_lastfm": "lastfm" in enrichment_data,
+        "has_spotify": "spotify" in enrichment_data,
+        "has_setlist": "setlist" in enrichment_data,
+        "has_musicbrainz": "musicbrainz" in enrichment_data,
+        "has_fanart": "fanart" in enrichment_data,
+    }
