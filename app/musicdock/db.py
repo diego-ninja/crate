@@ -261,6 +261,14 @@ def init_db():
                 END $$
             """)
 
+        # Migration: bliss feature vector for song distance/similarity
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_tracks ADD COLUMN bliss_vector DOUBLE PRECISION[];
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
         # Migration: popularity columns
         for table, cols in [
             ("library_artists", [("lastfm_playcount", "BIGINT")]),
