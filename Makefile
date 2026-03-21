@@ -163,9 +163,9 @@ deploy: _confirm-deploy ## Deploy completo al servidor: sync + build + restart
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
-	@echo "$(YELLOW)Building servicios en remoto...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build musicdock-api musicdock-ui"
-	@echo "$(YELLOW)Pulling imagenes en remoto...$(NC)"
+	@echo "$(YELLOW)Building servicios (api + worker + ui)...$(NC)"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build musicdock-api musicdock-worker musicdock-ui"
+	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
 	@echo "$(YELLOW)Reiniciando servicios...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml up -d"
