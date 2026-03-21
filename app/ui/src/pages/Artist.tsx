@@ -331,7 +331,7 @@ export function Artist() {
   const activeMembers = mb?.members?.filter((m) => !m.end) ?? [];
 
   return (
-    <div className="-mt-2 md:-mt-[4.5rem]">
+    <div className="-mt-[4.5rem] md:-mt-[6.5rem]">
       {/* ═══ HERO BANNER — full viewport width ═══ */}
       <div
         className="relative h-[420px] md:h-[560px] overflow-hidden -mx-4 md:-mx-8"
