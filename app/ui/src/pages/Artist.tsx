@@ -334,14 +334,14 @@ export function Artist() {
     <div className="-mt-[4.5rem]">
       {/* ═══ HERO BANNER — full viewport width ═══ */}
       <div
-        className="relative h-[440px] overflow-hidden -mx-4 md:-mx-8"
+        className="relative h-[520px] md:h-[560px] overflow-hidden -mx-4 md:-mx-8"
         style={{ width: "calc(100vw - 220px)" }}
       >
         <img
           ref={bgRef}
           src={`/api/artist/${encPath(data.name)}/background?random=true`}
           alt=""
-          className={`absolute inset-0 w-full h-full object-cover object-right transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
+          className={`absolute inset-0 w-full h-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
           onLoad={() => setBgLoaded(true)}
           onError={() => {}}
         />
