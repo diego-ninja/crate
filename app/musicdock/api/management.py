@@ -103,6 +103,15 @@ def rebuild_library(request: Request):
     return {"task_id": task_id}
 
 
+# ── Popularity ───────────────────────────────────────────────────
+
+@router.post("/compute-popularity")
+def compute_popularity(request: Request):
+    _require_admin(request)
+    task_id = create_task("compute_popularity")
+    return {"task_id": task_id}
+
+
 # ── MBID Enrichment ──────────────────────────────────────────────
 
 @router.post("/enrich-mbids")

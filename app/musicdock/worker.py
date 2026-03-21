@@ -1121,6 +1121,13 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     return {"enriched": enriched, "skipped": skipped, "failed": failed, "total": total}
 
 
+def _handle_compute_popularity(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.popularity import compute_popularity
+    return compute_popularity(
+        progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
+    )
+
+
 def _handle_index_genres(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.genre_indexer import index_all_genres
     return index_all_genres(
@@ -1229,4 +1236,5 @@ TASK_HANDLERS = {
     "enrich_mbids": _handle_enrich_mbids,
     "sync_playlist_navidrome": _handle_sync_playlist_navidrome,
     "index_genres": _handle_index_genres,
+    "compute_popularity": _handle_compute_popularity,
 }

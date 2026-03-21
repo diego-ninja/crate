@@ -243,6 +243,15 @@ def _execute_smart_rules(rules: dict) -> list[dict]:
             else:
                 conditions.append("t.artist = %s")
                 params.append(value)
+        elif field == "popularity" and op == "gte":
+            conditions.append("t.popularity >= %s")
+            params.append(int(value))
+        elif field == "popularity" and op == "lte":
+            conditions.append("t.popularity <= %s")
+            params.append(int(value))
+        elif field == "popularity" and op == "between" and isinstance(value, list):
+            conditions.append("t.popularity BETWEEN %s AND %s")
+            params.extend([int(v) for v in value[:2]])
         elif field == "format" and op == "eq":
             if isinstance(value, str) and "|" in value:
                 vals = [v.strip() for v in value.split("|") if v.strip()]
@@ -255,7 +264,14 @@ def _execute_smart_rules(rules: dict) -> list[dict]:
     joiner = " AND " if match_mode == "all" else " OR "
     where = joiner.join(conditions) if conditions else "1=1"
 
-    sort_clause = "RANDOM()" if sort == "random" else "t.artist, t.album, t.track_number"
+    sort_map = {
+        "random": "RANDOM()",
+        "popularity": "t.popularity DESC NULLS LAST",
+        "bpm": "t.bpm ASC NULLS LAST",
+        "energy": "t.energy DESC NULLS LAST",
+        "title": "t.title ASC",
+    }
+    sort_clause = sort_map.get(sort, "RANDOM()")
 
     query = f"""
         SELECT t.path, t.title, t.artist, t.album, t.duration

@@ -261,6 +261,20 @@ def init_db():
                 END $$
             """)
 
+        # Migration: popularity columns
+        for table, cols in [
+            ("library_artists", [("lastfm_playcount", "BIGINT")]),
+            ("library_albums", [("lastfm_listeners", "INTEGER"), ("lastfm_playcount", "BIGINT"), ("popularity", "INTEGER")]),
+            ("library_tracks", [("lastfm_listeners", "INTEGER"), ("lastfm_playcount", "BIGINT"), ("popularity", "INTEGER")]),
+        ]:
+            for col, col_type in cols:
+                cur.execute(f"""
+                    DO $$ BEGIN
+                        ALTER TABLE {table} ADD COLUMN {col} {col_type};
+                    EXCEPTION WHEN duplicate_column THEN NULL;
+                    END $$
+                """)
+
         # Migration: add tag_album to library_albums (album name from audio tags, may differ from folder name)
         cur.execute("""
             DO $$ BEGIN

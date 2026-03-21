@@ -52,6 +52,7 @@ interface SmartRules {
 
 const SMART_FIELDS = [
   { value: "genre", label: "Genre" },
+  { value: "popularity", label: "Popularity" },
   { value: "bpm", label: "BPM" },
   { value: "energy", label: "Energy" },
   { value: "year", label: "Year" },
@@ -340,6 +341,7 @@ function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onC
   ]);
   const [limit, setLimit] = useState(50);
   const [match, setMatch] = useState<"all" | "any">("all");
+  const [sort, setSort] = useState<string>("random");
   const [saving, setSaving] = useState(false);
   const [options, setOptions] = useState<FilterOptions | null>(null);
 
@@ -391,7 +393,7 @@ function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onC
   }
 
   function isRangeField(field: string): boolean {
-    return ["bpm", "year", "energy", "danceability", "valence"].includes(field);
+    return ["bpm", "year", "energy", "danceability", "valence", "popularity"].includes(field);
   }
 
   function isMultiSelectField(field: string): boolean {
@@ -422,7 +424,7 @@ function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onC
           return { field: r.field, op: r.op, value: r.values.join("|") };
         }),
         limit,
-        sort: "random",
+        sort,
       };
       const { id } = await api<{ id: number }>("/api/playlists", "POST", {
         name: name.trim(),
@@ -452,6 +454,16 @@ function SmartPlaylistForm({ onCreated, onCancel }: { onCreated: () => void; onC
             </SelectContent>
           </Select>
           <Input type="number" value={limit} onChange={(e) => setLimit(Number(e.target.value) || 50)} min={1} max={500} className="w-20" placeholder="Limit" />
+          <Select value={sort} onValueChange={setSort}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="random">Random</SelectItem>
+              <SelectItem value="popularity">Most Popular</SelectItem>
+              <SelectItem value="energy">Highest Energy</SelectItem>
+              <SelectItem value="bpm">By BPM</SelectItem>
+              <SelectItem value="title">Alphabetical</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {rules.map((rule, i) => (
