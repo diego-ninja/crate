@@ -146,6 +146,7 @@ def _fs_album_detail(artist: str, album: str) -> dict | None:
             "bitrate": bitrate // 1000 if bitrate else None,
             "length_sec": round(length) if length else 0,
             "tags": tags,
+            "path": str(t.relative_to(lib)),
         })
         if not album_tags and tags.get("album"):
             album_tags = {
@@ -443,6 +444,7 @@ def api_album(artist: str, album: str):
                 "musicbrainz_albumid": t.get("musicbrainz_albumid", ""),
                 "musicbrainz_trackid": t.get("musicbrainz_trackid", ""),
             },
+            "path": str(Path(t["path"]).relative_to(lib)) if t.get("path") else "",
         })
         if not album_tags and t.get("album"):
             album_tags = {
@@ -535,3 +537,28 @@ def api_search(q: str = ""):
     tracks = [{"title": r["title"], "artist": r["artist"], "album": r["album"]} for r in track_rows]
 
     return {"artists": artists, "albums": albums, "tracks": tracks}
+
+
+@router.get("/api/stream/{filepath:path}")
+def api_stream_file(filepath: str):
+    """Stream an audio file directly from the library (fallback when Navidrome is unavailable)."""
+    from fastapi.responses import FileResponse
+    lib = library_path()
+    file_path = safe_path(lib, filepath)
+    if not file_path or not file_path.is_file():
+        return Response(status_code=404)
+
+    ext = file_path.suffix.lower()
+    media_types = {
+        ".flac": "audio/flac",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/opus",
+        ".wav": "audio/wav",
+    }
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_types.get(ext, "audio/mpeg"),
+        headers={"Accept-Ranges": "bytes"},
+    )

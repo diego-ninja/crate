@@ -129,13 +129,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const track = queue[currentIndex];
     if (!track) return;
+    // Use direct file streaming if id looks like a path, otherwise Navidrome
+    const streamUrl = track.id.includes("/")
+      ? `/api/stream/${track.id}`
+      : `/api/navidrome/stream/${track.id}`;
     // If restoring from localStorage, load but don't autoplay
     if (restoredRef.current) {
       restoredRef.current = false;
-      audio.src = `/api/navidrome/stream/${track.id}`;
+      audio.src = streamUrl;
       return;
     }
-    audio.src = `/api/navidrome/stream/${track.id}`;
+    audio.src = streamUrl;
     audio.play().catch(() => { /* autoplay blocked */ });
     setIsPlaying(true);
     // Add to recently played

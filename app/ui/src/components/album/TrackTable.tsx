@@ -33,6 +33,7 @@ interface Track {
   bitrate: number | null;
   length_sec: number;
   tags: Record<string, string>;
+  path?: string;
 }
 
 interface NavidromeSong {
@@ -192,6 +193,8 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
   const { play, playAll, pause, resume, isPlaying, queue, currentIndex } = usePlayer();
   const currentTrack = queue[currentIndex];
 
+  const hasNavidrome = navidromeSongs && navidromeSongs.length > 0;
+
   function findNavidromeSong(track: Track, index: number): NavidromeSong | undefined {
     if (!navidromeSongs) return undefined;
     const trackNum = parseInt(track.tags.tracknumber || String(index + 1), 10);
@@ -199,9 +202,16 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
       ?? navidromeSongs.find((s) => s.title.toLowerCase() === (track.tags.title || "").toLowerCase());
   }
 
-  function toPlayerTrack(track: Track, ndSong: NavidromeSong): PlayerTrack {
+  function getTrackId(track: Track, index: number): string {
+    const ndSong = findNavidromeSong(track, index);
+    if (ndSong) return ndSong.id;
+    // Fallback: use relative file path for direct streaming
+    return track.path ?? `${artist}/${track.filename}`;
+  }
+
+  function toPlayerTrack(track: Track, index: number): PlayerTrack {
     return {
-      id: ndSong.id,
+      id: getTrackId(track, index),
       title: track.tags.title || track.filename,
       artist: artist || track.tags.artist || "",
       albumCover,
@@ -209,26 +219,18 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
   }
 
   function handlePlayTrack(track: Track, index: number) {
-    const ndSong = findNavidromeSong(track, index);
-    if (!ndSong) return;
-    // Build full queue starting from this track
     const allPlayerTracks: PlayerTrack[] = [];
     let startIdx = 0;
     tracks.forEach((t, i) => {
-      const nd = findNavidromeSong(t, i);
-      if (nd) {
-        if (i === index) startIdx = allPlayerTracks.length;
-        allPlayerTracks.push(toPlayerTrack(t, nd));
-      }
+      if (i === index) startIdx = allPlayerTracks.length;
+      allPlayerTracks.push(toPlayerTrack(t, i));
     });
     if (allPlayerTracks.length > 1) {
       playAll(allPlayerTracks, startIdx);
     } else {
-      play(toPlayerTrack(track, ndSong));
+      play(toPlayerTrack(track, index));
     }
   }
-
-  const hasNavidrome = navidromeSongs && navidromeSongs.length > 0;
 
   // Only show AudioMuse columns if at least one track has data
   const hasAudiomuse = audiomuseData && Object.keys(audiomuseData).length > 0;
@@ -237,7 +239,7 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
     <Table>
       <TableHeader>
         <TableRow>
-          {hasNavidrome && <TableHead className="w-10" />}
+          <TableHead className="w-10" />
           <TableHead className="w-10">#</TableHead>
           <TableHead>Title</TableHead>
           <TableHead>Format</TableHead>
@@ -252,44 +254,41 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
       </TableHeader>
       <TableBody>
         {tracks.map((t, i) => {
-          const ndSong = hasNavidrome ? findNavidromeSong(t, i) : undefined;
-          const isCurrentTrack = ndSong && currentTrack?.id === ndSong.id;
+          const trackId = getTrackId(t, i);
+          const isCurrentTrack = currentTrack?.id === trackId;
           const isCurrentPlaying = isCurrentTrack && isPlaying;
           const trackTitle = (t.tags.title || t.filename).toLowerCase();
+          const ndSong = hasNavidrome ? findNavidromeSong(t, i) : undefined;
           const amTrack = audiomuseData ? (audiomuseData[trackTitle] ?? audiomuseData[ndSong?.id ?? ""]) : undefined;
           return (
             <TableRow key={t.filename} className={cn(isCurrentTrack && "bg-primary/5")}>
-              {hasNavidrome && (
-                <TableCell>
-                  {ndSong && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn(
-                        "h-7 w-7",
-                        isCurrentTrack ? "text-primary" : "text-muted-foreground hover:text-primary"
-                      )}
-                      onClick={() => {
-                        if (isCurrentPlaying) {
-                          pause();
-                        } else if (isCurrentTrack) {
-                          resume();
-                        } else {
-                          handlePlayTrack(t, i);
-                        }
-                      }}
-                    >
-                      {isCurrentPlaying ? (
-                        <Pause size={14} fill="currentColor" />
-                      ) : isCurrentTrack ? (
-                        <Play size={14} fill="currentColor" />
-                      ) : (
-                        <Play size={14} />
-                      )}
-                    </Button>
+              <TableCell>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-7 w-7",
+                    isCurrentTrack ? "text-primary" : "text-muted-foreground hover:text-primary"
                   )}
-                </TableCell>
-              )}
+                  onClick={() => {
+                    if (isCurrentPlaying) {
+                      pause();
+                    } else if (isCurrentTrack) {
+                      resume();
+                    } else {
+                      handlePlayTrack(t, i);
+                    }
+                  }}
+                >
+                  {isCurrentPlaying ? (
+                    <Pause size={14} fill="currentColor" />
+                  ) : isCurrentTrack ? (
+                    <Play size={14} fill="currentColor" />
+                  ) : (
+                    <Play size={14} />
+                  )}
+                </Button>
+              </TableCell>
               <TableCell className={cn("text-muted-foreground", isCurrentTrack && "text-primary")}>
                 {t.tags.tracknumber || i + 1}
               </TableCell>
