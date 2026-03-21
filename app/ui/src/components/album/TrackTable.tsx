@@ -233,7 +233,11 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
   }
 
   // Only show AudioMuse columns if at least one track has data
-  const hasAudiomuse = audiomuseData && Object.keys(audiomuseData).length > 0;
+  // Only show audio columns if at least one track in THIS album has data
+  const hasAudiomuse = audiomuseData && tracks.some((t) => {
+    const title = (t.tags.title || t.filename).toLowerCase();
+    return audiomuseData[title] != null;
+  });
 
   return (
     <Table>

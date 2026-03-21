@@ -247,9 +247,12 @@ export function Album() {
           </div>
         )}
 
-        {audiomuseData && Object.keys(audiomuseData).length > 0 && (
-          <AudioProfileCard audiomuseData={audiomuseData} />
-        )}
+        {audiomuseData && data && (() => {
+          // Filter audiomuse data to only tracks in this album
+          const albumTitles = new Set(data.tracks.map((t: { tags: { title?: string }; filename: string }) => (t.tags.title || t.filename).toLowerCase()));
+          const filtered = Object.fromEntries(Object.entries(audiomuseData).filter(([k]) => albumTitles.has(k)));
+          return Object.keys(filtered).length > 0 ? <AudioProfileCard audiomuseData={filtered} /> : null;
+        })()}
 
         <div>
           <h3 className="font-semibold mb-3">Tracks</h3>
