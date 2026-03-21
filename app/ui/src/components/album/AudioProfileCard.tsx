@@ -1,15 +1,5 @@
-import {
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  Radar,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Cell,
-} from "recharts";
+import { ResponsiveRadar } from "@nivo/radar";
+import { ResponsiveBar } from "@nivo/bar";
 import { Badge } from "@/components/ui/badge";
 import { Music, Gauge, Key, Volume2 } from "lucide-react";
 import type { AudioMuseTrack } from "@/pages/Album";
@@ -35,13 +25,20 @@ function dominantKey(tracks: AudioMuseTrack[]): string | null {
   return sorted[0]?.[0] ?? null;
 }
 
+const NIVO_THEME = {
+  axis: { ticks: { text: { fill: "#6b7280", fontSize: 11 } } },
+  grid: { line: { stroke: "#374151" } },
+  tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } },
+  labels: { text: { fill: "#9ca3af", fontSize: 10 } },
+};
+
 const FEATURE_COLORS: Record<string, string> = {
-  Danceability: "#88c0d0",
-  Valence: "#ebcb8b",
-  Acousticness: "#a3be8c",
-  Energy: "#d08770",
-  Complexity: "#b48ead",
-  Instrumental: "#81a1c1",
+  Danceability: "#06b6d4",
+  Valence: "#f59e0b",
+  Acousticness: "#22c55e",
+  Energy: "#ef4444",
+  Complexity: "#a78bfa",
+  Instrumental: "#3b82f6",
 };
 
 export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
@@ -58,12 +55,16 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
     Instrumental: avg(tracks.map((t) => t.instrumentalness)),
   };
 
-  const radarData = Object.entries(features).map(([feature, value]) => ({ feature, value }));
+  const radarDataFormatted = Object.entries(features).map(([feature, value]) => ({
+    feature,
+    value: Math.round(value * 100),
+  }));
+
   const barData = Object.entries(features)
     .filter(([, v]) => v > 0)
     .map(([name, value]) => ({ name, value: Math.round(value * 100) }));
 
-  const hasRadarData = radarData.some((d) => d.value > 0);
+  const hasRadarData = radarDataFormatted.some((d) => d.value > 0);
 
   const avgBpm = avg(tracks.map((t) => t.tempo));
   const key = dominantKey(tracks);
@@ -100,85 +101,62 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
       </div>
 
       <div className="p-5">
-        {/* Top: Big stats + Radar */}
         <div className="flex flex-col md:flex-row gap-6 items-start">
           {/* Left: Key metrics */}
           <div className="grid grid-cols-2 gap-3 md:w-[220px] shrink-0">
-            <StatBox
-              icon={<Gauge size={16} />}
-              label="Avg BPM"
-              value={avgBpm > 0 ? String(Math.round(avgBpm)) : "—"}
-              color="text-primary"
-            />
-            <StatBox
-              icon={<Key size={16} />}
-              label="Key"
-              value={key || "—"}
-              color="text-[#ebcb8b]"
-            />
-            <StatBox
-              icon={<Volume2 size={16} />}
-              label="Loudness"
-              value={avgLoudness ? `${avgLoudness.toFixed(1)} dB` : "—"}
-              color="text-[#d08770]"
-            />
-            <StatBox
-              icon={<Music size={16} />}
-              label="Energy"
-              value={avgEnergy > 0 ? `${Math.round(avgEnergy * 100)}%` : "—"}
-              color="text-[#a3be8c]"
-            />
+            <StatBox icon={<Gauge size={16} />} label="Avg BPM" value={avgBpm > 0 ? String(Math.round(avgBpm)) : "—"} color="text-primary" />
+            <StatBox icon={<Key size={16} />} label="Key" value={key || "—"} color="text-[#f59e0b]" />
+            <StatBox icon={<Volume2 size={16} />} label="Loudness" value={avgLoudness ? `${avgLoudness.toFixed(1)} dB` : "—"} color="text-[#ef4444]" />
+            <StatBox icon={<Music size={16} />} label="Energy" value={avgEnergy > 0 ? `${Math.round(avgEnergy * 100)}%` : "—"} color="text-[#22c55e]" />
           </div>
 
-          {/* Center: Radar chart */}
+          {/* Center: Nivo Radar */}
           {hasRadarData && (
-            <div className="hidden md:flex flex-1 justify-center">
-              <div className="w-[220px] h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
-                    <PolarGrid stroke="rgba(136,192,208,0.15)" />
-                    <PolarAngleAxis
-                      dataKey="feature"
-                      tick={{ fill: "rgba(236,239,244,0.5)", fontSize: 10 }}
-                    />
-                    <Radar
-                      dataKey="value"
-                      fill="#88c0d0"
-                      fillOpacity={0.25}
-                      stroke="#88c0d0"
-                      strokeWidth={2}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
+            <div className="hidden md:block flex-1">
+              <div className="h-[220px] max-w-[300px] mx-auto">
+                <ResponsiveRadar
+                  data={radarDataFormatted}
+                  keys={["value"]}
+                  indexBy="feature"
+                  maxValue={100}
+                  margin={{ top: 25, right: 50, bottom: 25, left: 50 }}
+                  curve="linearClosed"
+                  gridLabelOffset={14}
+                  dotSize={6}
+                  dotColor={{ theme: "background" }}
+                  dotBorderWidth={2}
+                  colors={["#06b6d4"]}
+                  fillOpacity={0.2}
+                  theme={NIVO_THEME}
+                  animate={true}
+                  motionConfig="gentle"
+                />
               </div>
             </div>
           )}
 
-          {/* Right: Feature bars */}
+          {/* Right: Nivo Bar */}
           <div className="flex-1 md:max-w-[280px]">
             <div className="hidden md:block h-[200px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={barData} layout="vertical" margin={{ left: 0, right: 10, top: 0, bottom: 0 }}>
-                  <XAxis type="number" domain={[0, 100]} hide />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    width={80}
-                    tick={{ fill: "rgba(236,239,244,0.5)", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={10}>
-                    {barData.map((entry) => (
-                      <Cell
-                        key={entry.name}
-                        fill={FEATURE_COLORS[entry.name] || "#88c0d0"}
-                        fillOpacity={0.7}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <ResponsiveBar
+                data={barData}
+                keys={["value"]}
+                indexBy="name"
+                layout="horizontal"
+                margin={{ top: 0, right: 30, bottom: 0, left: 80 }}
+                padding={0.35}
+                colors={(d) => FEATURE_COLORS[d.indexValue as string] || "#06b6d4"}
+                borderRadius={3}
+                enableLabel={true}
+                label={(d) => `${d.value}%`}
+                labelTextColor="#fff"
+                theme={NIVO_THEME}
+                animate={true}
+                motionConfig="gentle"
+                axisLeft={{ tickSize: 0, tickPadding: 8 }}
+                axisBottom={null}
+                enableGridX={false}
+              />
             </div>
 
             {/* Mobile: simple bars */}
@@ -189,10 +167,7 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
                   <div className="h-2 flex-1 bg-secondary rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${d.value}%`,
-                        background: FEATURE_COLORS[d.name] || "#88c0d0",
-                      }}
+                      style={{ width: `${d.value}%`, background: FEATURE_COLORS[d.name] || "#06b6d4" }}
                     />
                   </div>
                   <span className="text-[10px] text-muted-foreground font-mono w-[30px] text-right">{d.value}%</span>
@@ -202,17 +177,13 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
           </div>
         </div>
 
-        {/* Bottom: Mood tags */}
+        {/* Mood tags */}
         {topMoods.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-muted-foreground">Mood:</span>
               {topMoods.map(([mood, score]) => (
-                <Badge
-                  key={mood}
-                  variant="secondary"
-                  className="text-[11px] px-2 py-0.5"
-                >
+                <Badge key={mood} variant="secondary" className="text-[11px] px-2 py-0.5">
                   {mood} <span className="text-muted-foreground ml-1">{Math.round(score * 100)}%</span>
                 </Badge>
               ))}
