@@ -331,10 +331,10 @@ export function Artist() {
   const activeMembers = mb?.members?.filter((m) => !m.end) ?? [];
 
   return (
-    <div className="-mt-14 md:-mt-14">
+    <div className="-mt-[4.5rem]">
       {/* ═══ HERO BANNER — full viewport width ═══ */}
       <div
-        className="relative h-[400px] overflow-hidden -mx-4 md:-mx-8"
+        className="relative h-[440px] overflow-hidden -mx-4 md:-mx-8"
         style={{ width: "calc(100vw - 220px)" }}
       >
         <img
