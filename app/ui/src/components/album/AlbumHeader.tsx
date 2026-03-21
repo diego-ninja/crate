@@ -112,31 +112,36 @@ export function AlbumHeader({
   const bgUrl = `/api/artist/${encPath(artist)}/background`;
 
   return (
-    <div className="relative h-[300px] overflow-hidden -mx-8 -mt-8 mb-8">
-      {/* Artist background image (panoramic from fanart.tv) */}
+    <div
+      className="relative h-[360px] md:h-[420px] overflow-hidden -ml-4 -mr-4 md:-ml-8 md:-mr-8 -mt-16 md:-mt-[6.5rem] mb-6"
+      style={{ width: "calc(100vw - var(--sidebar-w, 0px))" }}
+    >
+      {/* Artist background image */}
       <img
         src={bgUrl}
         alt=""
-        className={`absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-1000 ${bgLoaded ? "opacity-40" : "opacity-0"}`}
+        className={`absolute inset-0 w-full h-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
         onLoad={() => setBgLoaded(true)}
         onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
       />
 
       {/* Gradient overlays */}
-      <div className="absolute inset-0 bg-gradient-to-r from-[#2e3440] via-[#2e3440]/80 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-t from-[#2e3440] via-transparent to-[#2e3440]/40" />
-
-      {/* Noise texture */}
-      <div className="absolute inset-0 opacity-[0.03]" style={{
-        backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")",
+      <div className="absolute inset-0" style={{
+        background: "linear-gradient(to right, #2e3440 0%, rgba(46,52,64,0.85) 25%, rgba(46,52,64,0.4) 50%, transparent 75%)",
+      }} />
+      <div className="absolute inset-0" style={{
+        background: "linear-gradient(to top, #2e3440 0%, rgba(46,52,64,0.9) 15%, rgba(46,52,64,0.4) 40%, transparent 70%)",
+      }} />
+      <div className="absolute inset-0" style={{
+        background: "linear-gradient(to bottom, rgba(46,52,64,0.5) 0%, transparent 30%)",
       }} />
 
       {/* Content */}
-      <div className="absolute inset-0 flex items-end px-8 pb-6">
-        <div className="flex items-end gap-6 max-w-4xl w-full">
+      <div className="absolute inset-0 flex items-end">
+        <div className="flex items-end gap-4 md:gap-6 w-full max-w-[1100px] px-4 md:px-8 pb-6 md:pb-8">
           {/* Cover art */}
           <ImageLightbox src={coverUrl} alt={`${displayName} cover art`}>
-            <div className="w-[200px] h-[200px] rounded-lg overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
+            <div className="w-[120px] h-[120px] md:w-[200px] md:h-[200px] rounded-lg overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
               {!coverError ? (
                 <img
                   src={coverUrl}
@@ -166,7 +171,7 @@ export function AlbumHeader({
             </div>
 
             {/* Album title */}
-            <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white leading-none mb-1.5 truncate">
+            <h1 className="text-xl md:text-4xl font-black tracking-tight text-white leading-none mb-1.5 truncate">
               {displayName}
             </h1>
 
