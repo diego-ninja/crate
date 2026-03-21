@@ -1121,6 +1121,78 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     return {"enriched": enriched, "skipped": skipped, "failed": failed, "total": total}
 
 
+def _handle_sync_playlist_navidrome(task_id: str, params: dict, config: dict) -> dict:
+    """Sync a Grooveyard playlist to Navidrome."""
+    from musicdock.db import get_playlist, get_playlist_tracks
+    from musicdock.navidrome import find_album, search, create_playlist as nd_create_playlist
+    from thefuzz import fuzz
+
+    playlist_id = params.get("playlist_id")
+    if not playlist_id:
+        return {"error": "No playlist_id"}
+
+    pl = get_playlist(playlist_id)
+    if not pl:
+        return {"error": "Playlist not found"}
+
+    tracks = get_playlist_tracks(playlist_id)
+    if not tracks:
+        return {"error": "Empty playlist"}
+
+    # Match each track to a Navidrome song ID
+    matched_ids = []
+    unmatched = []
+
+    for i, t in enumerate(tracks):
+        artist = t.get("artist", "")
+        title = t.get("title", "")
+        if not artist or not title:
+            unmatched.append(title or t.get("track_path", ""))
+            continue
+
+        if i % 5 == 0:
+            update_task(task_id, progress=json.dumps({
+                "phase": "matching", "done": i, "total": len(tracks),
+            }))
+
+        try:
+            results = search(f"{artist} {title}", artist_count=0, album_count=0, song_count=10)
+            songs = results.get("song", [])
+
+            best_match = None
+            best_score = 0
+            for s in songs:
+                a_score = fuzz.ratio(artist.lower(), s.get("artist", "").lower())
+                t_score = fuzz.ratio(title.lower(), s.get("title", "").lower())
+                score = (a_score + t_score) // 2
+                if score > best_score:
+                    best_score = score
+                    best_match = s
+
+            if best_match and best_score >= 70:
+                matched_ids.append(best_match["id"])
+            else:
+                unmatched.append(f"{artist} - {title}")
+        except Exception:
+            unmatched.append(f"{artist} - {title}")
+
+    if not matched_ids:
+        return {"error": "No tracks matched in Navidrome", "unmatched": unmatched}
+
+    # Create playlist in Navidrome
+    try:
+        nd_id = nd_create_playlist(pl["name"], matched_ids)
+    except Exception as e:
+        return {"error": f"Failed to create Navidrome playlist: {e}"}
+
+    return {
+        "navidrome_id": nd_id,
+        "matched": len(matched_ids),
+        "unmatched": unmatched,
+        "total": len(tracks),
+    }
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
@@ -1148,4 +1220,5 @@ TASK_HANDLERS = {
     "update_track_tags": _handle_update_track_tags,
     "resolve_duplicates": _handle_resolve_duplicates,
     "enrich_mbids": _handle_enrich_mbids,
+    "sync_playlist_navidrome": _handle_sync_playlist_navidrome,
 }
