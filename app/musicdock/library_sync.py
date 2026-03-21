@@ -316,8 +316,19 @@ class LibrarySync:
                 "path": fpath,
             })
 
-        # Detect cover
+        # Detect cover — check files on disk first, then embedded in audio
         has_cover = int(any((album_dir / name).exists() for name in COVER_NAMES))
+        if not has_cover and audio_files:
+            try:
+                first = mutagen.File(audio_files[0])
+                if first:
+                    if hasattr(first, "pictures") and first.pictures:
+                        has_cover = 1
+                    elif hasattr(first, "tags") and first.tags:
+                        if any(k.startswith("APIC") for k in first.tags):
+                            has_cover = 1
+            except Exception:
+                pass
 
         formats_list = sorted(formats.keys())
 
