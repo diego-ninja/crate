@@ -600,3 +600,50 @@ def api_stream_file(filepath: str):
         media_type=media_types.get(ext, "audio/mpeg"),
         headers={"Accept-Ranges": "bytes"},
     )
+
+
+@router.get("/api/download/track/{filepath:path}")
+def api_download_track(filepath: str):
+    """Download a single audio file."""
+    from fastapi.responses import FileResponse
+    lib = library_path()
+    file_path = safe_path(lib, filepath)
+    if not file_path or not file_path.is_file():
+        return Response(status_code=404)
+
+    return FileResponse(
+        path=str(file_path),
+        filename=file_path.name,
+        media_type="application/octet-stream",
+    )
+
+
+@router.get("/api/download/album/{artist:path}/{album:path}")
+def api_download_album(artist: str, album: str):
+    """Download an entire album as a ZIP file."""
+    import zipfile
+    import tempfile
+    from fastapi.responses import FileResponse
+
+    lib = library_path()
+    album_dir = safe_path(lib, f"{artist}/{album}")
+    if not album_dir or not album_dir.is_dir():
+        return Response(status_code=404)
+
+    # Create zip in temp
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    tmp.close()
+
+    exts = extensions()
+    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_STORED) as zf:
+        for f in sorted(album_dir.iterdir()):
+            if f.is_file() and (f.suffix.lower() in exts or f.name.lower() in ("cover.jpg", "cover.png", "folder.jpg", "front.jpg")):
+                zf.write(str(f), f.name)
+
+    safe_name = f"{artist} - {album}.zip".replace("/", "-")
+    return FileResponse(
+        path=tmp.name,
+        filename=safe_name,
+        media_type="application/zip",
+        background=None,  # Don't delete before sending
+    )

@@ -12,6 +12,7 @@ import {
   Disc3,
   BrainCircuit,
   Loader2,
+  Download,
 } from "lucide-react";
 import { encPath, formatDuration, formatSize } from "@/lib/utils";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
@@ -249,6 +250,16 @@ export function AlbumHeader({
                 ) : (
                   <><BrainCircuit size={14} className="mr-1" /> {hasAnalysis ? "Re-analyze" : "Analyze Audio"}</>
                 )}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                asChild
+              >
+                <a href={`/api/download/album/${encPath(artist)}/${encPath(album)}`} download>
+                  <Download size={14} className="mr-1" /> Download
+                </a>
               </Button>
               {children}
             </div>

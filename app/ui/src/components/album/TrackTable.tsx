@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Play, Pause, BarChart3 } from "lucide-react";
+import { Play, Pause, BarChart3, Download } from "lucide-react";
 import {
   Tooltip,
   TooltipTrigger,
@@ -254,6 +254,7 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
           {hasAudiomuse && <TableHead className="text-muted-foreground text-xs">Key</TableHead>}
           {hasAudiomuse && <TableHead className="text-muted-foreground text-xs">Energy</TableHead>}
           {hasAudiomuse && <TableHead className="w-8" />}
+          <TableHead className="w-8" />
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -335,6 +336,19 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
                   {amTrack ? <TrackAudioInfo track={amTrack} /> : null}
                 </TableCell>
               )}
+              <TableCell>
+                {t.path && (
+                  <a
+                    href={`/api/download/track/${t.path}`}
+                    download
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    title="Download track"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Download size={13} />
+                  </a>
+                )}
+              </TableCell>
             </TableRow>
           );
         })}
