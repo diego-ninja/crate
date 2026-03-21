@@ -1121,6 +1121,26 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     return {"enriched": enriched, "skipped": skipped, "failed": failed, "total": total}
 
 
+def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
+    """Compute bliss feature vectors for all tracks."""
+    from musicdock.bliss import analyze_directory, store_vectors, is_available
+
+    if not is_available():
+        return {"error": "grooveyard-bliss binary not found"}
+
+    lib = Path(config["library_path"])
+    update_task(task_id, progress=json.dumps({"phase": "analyzing", "message": "Running bliss analysis..."}))
+
+    vectors = analyze_directory(str(lib))
+    if not vectors:
+        return {"error": "No tracks analyzed"}
+
+    update_task(task_id, progress=json.dumps({"phase": "storing", "analyzed": len(vectors)}))
+    store_vectors(vectors)
+
+    return {"analyzed": len(vectors)}
+
+
 def _handle_compute_popularity(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.popularity import compute_popularity
     return compute_popularity(
@@ -1237,4 +1257,5 @@ TASK_HANDLERS = {
     "sync_playlist_navidrome": _handle_sync_playlist_navidrome,
     "index_genres": _handle_index_genres,
     "compute_popularity": _handle_compute_popularity,
+    "compute_bliss": _handle_compute_bliss,
 }

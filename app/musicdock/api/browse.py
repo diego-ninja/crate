@@ -602,6 +602,18 @@ def api_stream_file(filepath: str):
     )
 
 
+@router.get("/api/similar-tracks/{filepath:path}")
+def api_similar_tracks(filepath: str, limit: int = 20):
+    """Find tracks similar to the given track using bliss vectors."""
+    from musicdock.bliss import get_similar_from_db
+    lib = library_path()
+    full_path = safe_path(lib, filepath)
+    if not full_path or not full_path.is_file():
+        return JSONResponse({"error": "Track not found"}, status_code=404)
+    similar = get_similar_from_db(str(full_path), limit=limit)
+    return similar
+
+
 @router.get("/api/download/track/{filepath:path}")
 def api_download_track(filepath: str):
     """Download a single audio file."""

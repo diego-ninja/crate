@@ -103,6 +103,15 @@ def rebuild_library(request: Request):
     return {"task_id": task_id}
 
 
+# ── Bliss (song similarity) ──────────────────────────────────────
+
+@router.post("/compute-bliss")
+def compute_bliss(request: Request):
+    _require_admin(request)
+    task_id = create_task("compute_bliss")
+    return {"task_id": task_id}
+
+
 # ── Popularity ───────────────────────────────────────────────────
 
 @router.post("/compute-popularity")
