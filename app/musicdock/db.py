@@ -731,7 +731,7 @@ def upsert_album(data: dict) -> int:
                 track_count=EXCLUDED.track_count, total_size=EXCLUDED.total_size,
                 total_duration=EXCLUDED.total_duration, formats_json=EXCLUDED.formats_json,
                 year=EXCLUDED.year, genre=EXCLUDED.genre, has_cover=EXCLUDED.has_cover,
-                musicbrainz_albumid=EXCLUDED.musicbrainz_albumid,
+                musicbrainz_albumid=COALESCE(NULLIF(EXCLUDED.musicbrainz_albumid, ''), library_albums.musicbrainz_albumid),
                 tag_album=COALESCE(EXCLUDED.tag_album, library_albums.tag_album),
                 dir_mtime=EXCLUDED.dir_mtime, updated_at=EXCLUDED.updated_at
         """, (
@@ -763,8 +763,8 @@ def upsert_track(data: dict):
                 format=EXCLUDED.format, bitrate=EXCLUDED.bitrate,
                 duration=EXCLUDED.duration, size=EXCLUDED.size,
                 year=EXCLUDED.year, genre=EXCLUDED.genre, albumartist=EXCLUDED.albumartist,
-                musicbrainz_albumid=EXCLUDED.musicbrainz_albumid,
-                musicbrainz_trackid=EXCLUDED.musicbrainz_trackid,
+                musicbrainz_albumid=COALESCE(NULLIF(EXCLUDED.musicbrainz_albumid, ''), library_tracks.musicbrainz_albumid),
+                musicbrainz_trackid=COALESCE(NULLIF(EXCLUDED.musicbrainz_trackid, ''), library_tracks.musicbrainz_trackid),
                 updated_at=EXCLUDED.updated_at
                 -- Preserve AudioMuse fields (don't overwrite with NULL)
                 -- bpm, audio_key, audio_scale, energy, mood_json are NOT touched
