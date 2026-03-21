@@ -331,25 +331,25 @@ export function Artist() {
   const activeMembers = mb?.members?.filter((m) => !m.end) ?? [];
 
   return (
-    <div className="-mx-8 -mt-8">
-      {/* ═══ HERO BANNER ═══ */}
-      <div className="relative h-[360px] md:h-[400px] overflow-hidden">
+    <div>
+      {/* ═══ HERO BANNER — full viewport width ═══ */}
+      <div
+        className="relative h-[360px] md:h-[400px] overflow-hidden -mx-4 -mt-16 md:-mx-8 md:-mt-8"
+        style={{ width: "calc(100vw - 220px)" }}
+      >
         <img
           ref={bgRef}
           src={`/api/artist/${encPath(data.name)}/background?random=true`}
           alt=""
-          className={`absolute inset-0 w-full h-full object-cover object-top transition-opacity duration-1000 ${bgLoaded ? "opacity-40" : "opacity-0"}`}
+          className={`absolute inset-0 w-full h-full object-cover object-right transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
           onLoad={() => setBgLoaded(true)}
           onError={() => {}}
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-[#2e3440] via-[#2e3440]/80 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#2e3440] via-transparent to-[#2e3440]/40" />
-        <div className="absolute inset-0 opacity-[0.03]" style={{
-          backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E\")",
-        }} />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#2e3440] via-[#2e3440]/70 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#2e3440] via-transparent to-[#2e3440]/30" />
 
-        <div className="absolute inset-0 flex items-end px-8 pb-8">
-          <div className="flex items-end gap-6 max-w-5xl w-full">
+        <div className="absolute inset-0 flex items-end">
+          <div className="flex items-end gap-6 w-full max-w-[1100px] px-8 pb-8">
             {/* Artist photo */}
             <div className="w-[160px] h-[160px] md:w-[180px] md:h-[180px] rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
               {!photoError ? (
@@ -537,7 +537,7 @@ export function Artist() {
       </div>
 
       {/* ═══ TABS ═══ */}
-      <div className="px-8 border-b border-border sticky top-0 bg-[#2e3440]/95 backdrop-blur-sm z-10">
+      <div className="border-b border-border sticky top-0 bg-[#2e3440]/95 backdrop-blur-sm z-10 px-4 md:px-8">
         <div className="flex gap-1 -mb-px">
           {tabs.map((t) => (
             <button
@@ -556,7 +556,7 @@ export function Artist() {
       </div>
 
       {/* ═══ CONTENT ═══ */}
-      <div className="px-8 pt-6 pb-12">
+      <div className="px-4 md:px-8 pt-6 pb-12 max-w-[1100px]">
 
         {/* ── Overview Tab ── */}
         {activeTab === "overview" && (
