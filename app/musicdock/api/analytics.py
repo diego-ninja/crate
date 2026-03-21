@@ -439,14 +439,17 @@ def api_insights():
         for a in artist_set:
             network_nodes.append({"id": a})
 
-        # Spotify popularity ranking
+        # Artist popularity ranking (Spotify or Last.fm listeners)
         cur.execute("""
             SELECT name, spotify_popularity, listeners
             FROM library_artists
-            WHERE spotify_popularity IS NOT NULL AND spotify_popularity > 0
-            ORDER BY spotify_popularity DESC LIMIT 20
+            WHERE (spotify_popularity IS NOT NULL AND spotify_popularity > 0)
+               OR (listeners IS NOT NULL AND listeners > 0)
+            ORDER BY COALESCE(spotify_popularity, 0) DESC, COALESCE(listeners, 0) DESC
+            LIMIT 20
         """)
-        popularity = [{"artist": r["name"], "popularity": r["spotify_popularity"],
+        popularity = [{"artist": r["name"],
+                        "popularity": r["spotify_popularity"] or (min(100, (r["listeners"] or 0) // 10000)),
                         "listeners": r["listeners"] or 0} for r in cur.fetchall()]
 
         # Albums per decade

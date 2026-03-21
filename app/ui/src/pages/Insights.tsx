@@ -259,7 +259,7 @@ export function Insights() {
         </Card>
 
         <Card className="bg-card">
-          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Users size={14} /> Spotify Popularity</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Users size={14} /> Artist Popularity</CardTitle></CardHeader>
           <CardContent>
             <div className="h-[300px]">
               {data.popularity.length > 0 ? (
@@ -367,15 +367,26 @@ export function Insights() {
             <div className="h-[280px]">
               {data.network.nodes.length > 0 ? (
                 <ResponsiveNetwork
-                  data={data.network}
+                  data={{
+                    nodes: data.network.nodes.map((n) => ({
+                      ...n,
+                      size: data.network.links.filter((l) => l.source === n.id || l.target === n.id).length * 4 + 8,
+                    })),
+                    links: data.network.links.map((l) => ({ ...l, distance: 80 })),
+                  }}
                   margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
-                  repulsivity={100}
-                  iterations={60}
-                  nodeColor={(n) => data.network.links.some((l) => l.source === n.id || l.target === n.id) ? "#06b6d4" : "#4b5563"}
-                  nodeBorderWidth={1}
-                  nodeBorderColor={{ from: "color", modifiers: [["darker", 0.4]] }}
-                  linkThickness={1}
-                  linkColor="#374151"
+                  repulsivity={200}
+                  iterations={120}
+                  nodeColor={(n: { id: string }) => {
+                    // Library artists in cyan, external in gray
+                    const isLibrary = data.popularity.some((p) => p.artist === n.id) ||
+                      data.network.links.some((l) => l.source === n.id);
+                    return isLibrary ? "#06b6d4" : "#6b7280";
+                  }}
+                  nodeBorderWidth={2}
+                  nodeBorderColor={{ from: "color", modifiers: [["darker", 0.6]] }}
+                  linkThickness={1.5}
+                  linkColor="#4b5563"
                   animate={true}
                   motionConfig="gentle"
                 />
