@@ -43,6 +43,7 @@ interface PlayerContextValue extends PlayerState {
   cycleRepeat: () => void;
   jumpTo: (index: number) => void;
   currentTrack: Track | undefined;
+  audioElement: HTMLAudioElement | null;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -317,6 +318,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         cycleRepeat,
         jumpTo,
         currentTrack: queue[currentIndex],
+        audioElement: audioRef.current,
       }}
     >
       {children}
