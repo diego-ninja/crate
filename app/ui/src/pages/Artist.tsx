@@ -331,11 +331,11 @@ export function Artist() {
   const activeMembers = mb?.members?.filter((m) => !m.end) ?? [];
 
   return (
-    <div className="-mt-[4.5rem]">
+    <div className="-mt-2 md:-mt-[4.5rem]">
       {/* ═══ HERO BANNER — full viewport width ═══ */}
       <div
-        className="relative h-[520px] md:h-[560px] overflow-hidden -mx-4 md:-mx-8"
-        style={{ width: "calc(100vw - 220px)" }}
+        className="relative h-[420px] md:h-[560px] overflow-hidden -mx-4 md:-mx-8"
+        style={{ width: "calc(100vw - var(--sidebar-w, 0px))" }}
       >
         <img
           ref={bgRef}
@@ -359,9 +359,9 @@ export function Artist() {
         }} />
 
         <div className="absolute inset-0 flex items-end">
-          <div className="flex items-end gap-6 w-full max-w-[1100px] px-8 pb-8">
+          <div className="flex items-end gap-4 md:gap-6 w-full max-w-[1100px] px-4 md:px-8 pb-6 md:pb-8">
             {/* Artist photo */}
-            <div className="w-[160px] h-[160px] md:w-[180px] md:h-[180px] rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
+            <div className="w-[100px] h-[100px] md:w-[180px] md:h-[180px] rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
               {!photoError ? (
                 <img
                   src={`/api/artist/${encPath(data.name)}/photo?random=true`}
@@ -386,13 +386,13 @@ export function Artist() {
                 <span className="text-white/60">{data.name}</span>
               </div>
 
-              <h1 className="text-4xl md:text-5xl font-black tracking-tight text-white leading-none mb-2 truncate">
+              <h1 className="text-2xl md:text-5xl font-black tracking-tight text-white leading-none mb-2 truncate">
                 {data.name}
               </h1>
 
               {/* Origin + formation year */}
               {(mb?.country || mb?.begin_date) && (
-                <div className="flex items-center gap-3 text-sm text-white/50 mb-2">
+                <div className="hidden md:flex items-center gap-3 text-sm text-white/50 mb-2">
                   {mb?.country && (
                     <span className="flex items-center gap-1"><MapPin size={13} />{mb.area ? `${mb.area}, ` : ""}{mb.country}</span>
                   )}
@@ -406,7 +406,7 @@ export function Artist() {
               )}
 
               {/* Stats row */}
-              <div className="flex items-center gap-4 text-sm text-white/50 mb-2 flex-wrap">
+              <div className="flex items-center gap-2 md:gap-4 text-xs md:text-sm text-white/50 mb-2 flex-wrap">
                 <span className="flex items-center gap-1.5"><Disc3 size={14} />{data.albums.length} albums</span>
                 <span className="flex items-center gap-1.5"><Music size={14} />{formatNumber(totalTracks)} tracks</span>
                 <span className="flex items-center gap-1.5"><HardDrive size={14} />{formatSize(totalSize)}</span>
@@ -434,7 +434,7 @@ export function Artist() {
 
               {/* Tags */}
               {allTags.length > 0 && (
-                <div className="flex gap-1.5 flex-wrap mb-3">
+                <div className="hidden md:flex gap-1.5 flex-wrap mb-3">
                   {allTags.slice(0, 8).map((g) => (
                     <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">
                       {g}
@@ -444,7 +444,7 @@ export function Artist() {
               )}
 
               {/* Action buttons */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {topTracks.length > 0 && (
                   <Button
                     size="sm"

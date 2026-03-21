@@ -139,7 +139,7 @@ export function Dashboard() {
   return (
     <div>
       {/* Row 1: Hero stat cards */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
         {heroStats.map((s) => {
           const Icon = s.icon;
           return (
@@ -159,7 +159,7 @@ export function Dashboard() {
       </div>
 
       {/* Row 2: Live Activity Feed + System Status */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Card className="bg-card col-span-2">
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -398,7 +398,7 @@ export function Dashboard() {
       )}
 
       {/* Row 4: Format donut + Decade bar */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <Card className="bg-card col-span-1">
           <CardHeader>
             <CardTitle className="text-sm">Format Distribution</CardTitle>
@@ -434,7 +434,7 @@ export function Dashboard() {
       </div>
 
       {/* Row 5: Extra stats + Import Queue */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card className="bg-card">
           <CardHeader>
             <CardTitle className="text-sm">Library Insights</CardTitle>

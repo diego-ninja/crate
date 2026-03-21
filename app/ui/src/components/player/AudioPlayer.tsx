@@ -66,7 +66,10 @@ export function AudioPlayer() {
     if (next) { setQueueOpen(false); setLyricsOpen(false); }
   }
 
-  if (mini) {
+  // Force mini on mobile (check window width)
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+
+  if (mini || isMobile) {
     return (
       <MiniPlayer
         track={currentTrack}
@@ -229,7 +232,7 @@ function MiniPlayer({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-[320px] bg-card border border-border rounded-xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
+    <div className="fixed bottom-0 left-0 right-0 md:bottom-4 md:left-auto md:right-4 z-50 md:w-[320px] bg-card border-t md:border border-border md:rounded-xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
       {/* Progress bar on top */}
       <div className="h-0.5 bg-secondary rounded-t-xl overflow-hidden">
         <div
