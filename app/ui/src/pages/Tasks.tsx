@@ -3,14 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import {
-  Table,
-  TableHeader,
-  TableRow,
-  TableHead,
-  TableBody,
-  TableCell,
-} from "@/components/ui/table";
+// Table components removed — using expandable TaskRow instead
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
@@ -22,6 +15,8 @@ import {
   Clock,
   Ban,
   RefreshCw,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 interface TaskProgress {
@@ -48,6 +43,7 @@ interface Task {
   status: string;
   progress: TaskProgress | string;
   error: string | null;
+  params: Record<string, string> | null;
   result: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -70,11 +66,45 @@ function getStatus(status: string) {
 const TYPE_LABELS: Record<string, string> = {
   scan: "Library Scan",
   compute_analytics: "Compute Analytics",
-  enrich_artists: "Artist Enrichment",
+  enrich_artists: "Enrich All Artists",
+  enrich_artist: "Enrich Artist",
+  enrich_mbids: "Enrich MusicBrainz IDs",
   fetch_artwork_all: "Fetch All Artwork",
+  fetch_cover: "Fetch Cover",
+  fetch_artist_covers: "Fetch Artist Covers",
   batch_retag: "Batch Retag",
   batch_covers: "Batch Fetch Covers",
+  library_sync: "Library Sync",
+  library_pipeline: "Library Pipeline",
+  health_check: "Health Check",
+  repair: "Library Repair",
+  delete_artist: "Delete Artist",
+  delete_album: "Delete Album",
+  move_artist: "Move Artist",
+  wipe_library: "Wipe Library",
+  rebuild_library: "Rebuild Library",
+  reset_enrichment: "Reset Enrichment",
+  match_apply: "Apply MusicBrainz Tags",
+  update_album_tags: "Update Album Tags",
+  update_track_tags: "Update Track Tags",
+  resolve_duplicates: "Resolve Duplicates",
+  analyze_tracks: "Analyze Audio",
+  compute_popularity: "Compute Popularity",
+  index_genres: "Index Genres",
+  sync_playlist_navidrome: "Sync Playlist to Navidrome",
 };
+
+function getTaskLabel(task: Task): string {
+  const base = TYPE_LABELS[task.type] ?? task.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const params = task.params;
+  if (!params) return base;
+
+  // Add context from params
+  if (params.artist) return `${base}: ${params.artist}`;
+  if (params.name) return `${base}: ${params.name}`;
+  if (params.artist_folder && params.album_folder) return `${base}: ${params.artist_folder} / ${params.album_folder}`;
+  return base;
+}
 
 function formatDuration(start: string, end: string): string {
   const ms = new Date(end).getTime() - new Date(start).getTime();
@@ -210,7 +240,7 @@ export function Tasks() {
                       />
                       <div>
                         <div className="font-medium text-sm">
-                          {TYPE_LABELS[task.type] ?? task.type}
+                          {getTaskLabel(task)}
                         </div>
                         <div className="text-xs text-muted-foreground">
                           {task.id} · Started{" "}
@@ -254,55 +284,11 @@ export function Tasks() {
               No completed tasks
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Duration</TableHead>
-                  <TableHead>Result</TableHead>
-                  <TableHead className="text-right">Completed</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {completed.map((task) => {
-                  const cfg = getStatus(task.status);
-                  const Icon = cfg.icon;
-                  const result = task.result;
-                  let resultText = "";
-                  if (task.error) {
-                    resultText = task.error;
-                  } else if (result) {
-                    if ("issue_count" in result) resultText = `${result.issue_count} issues`;
-                    else if ("enriched" in result) resultText = `${result.enriched} enriched, ${result.skipped} skipped`;
-                    else resultText = JSON.stringify(result).slice(0, 60);
-                  }
-
-                  return (
-                    <TableRow key={task.id}>
-                      <TableCell className="text-sm font-medium">
-                        {TYPE_LABELS[task.type] ?? task.type}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          <Icon size={14} className={cfg.color} />
-                          <span className={`text-xs ${cfg.color}`}>{cfg.label}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {formatDuration(task.created_at, task.updated_at)}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
-                        {resultText}
-                      </TableCell>
-                      <TableCell className="text-right text-xs text-muted-foreground">
-                        {new Date(task.updated_at).toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <div className="space-y-1">
+              {completed.map((task) => (
+                <TaskRow key={task.id} task={task} />
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
@@ -316,6 +302,77 @@ export function Tasks() {
         variant="destructive"
         onConfirm={() => { if (cancelId) handleCancel(cancelId); }}
       />
+    </div>
+  );
+}
+
+function TaskRow({ task }: { task: Task }) {
+  const [expanded, setExpanded] = useState(false);
+  const cfg = getStatus(task.status);
+  const Icon = cfg.icon;
+
+  const resultSummary = (() => {
+    if (task.error) return task.error.length > 80 ? task.error.slice(0, 80) + "..." : task.error;
+    const r = task.result;
+    if (!r) return "";
+    if ("issue_count" in r) return `${r.issue_count} issues`;
+    if ("enriched" in r && "skipped" in r) return `${r.enriched} enriched, ${r.skipped} skipped`;
+    if ("matched" in r) return `${r.matched} matched`;
+    if ("analyzed" in r) return `${r.analyzed} analyzed`;
+    if ("deleted" in r) return `Deleted: ${r.deleted}`;
+    if ("moved" in r) return `${r.moved} → ${r.new_name}`;
+    if ("wiped" in r) return "Database wiped";
+    if ("albums_fetched" in r) return `${r.albums_fetched} albums, ${r.tracks_fetched} tracks`;
+    if ("artists_indexed" in r) return `${r.total_genres} genres indexed`;
+    if ("track_count" in r) return `${r.track_count} tracks`;
+    if ("updated" in r) return `${r.updated} tracks updated`;
+    if ("artists_added" in r) return `+${r.artists_added} artists, ${r.tracks_total} tracks`;
+    const keys = Object.keys(r);
+    if (keys.length <= 3) return keys.map((k) => `${k}: ${JSON.stringify(r[k])}`).join(", ");
+    return `${keys.length} fields`;
+  })();
+
+  const hasDetails = task.result || task.error;
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <div
+        className={`flex items-center gap-3 px-4 py-2.5 ${hasDetails ? "cursor-pointer hover:bg-secondary/30" : ""} transition-colors`}
+        onClick={() => hasDetails && setExpanded(!expanded)}
+      >
+        <Icon size={14} className={cfg.color} />
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-medium">{getTaskLabel(task)}</span>
+          {resultSummary && (
+            <span className="text-xs text-muted-foreground ml-2">{resultSummary}</span>
+          )}
+        </div>
+        <span className="text-xs text-muted-foreground flex-shrink-0">
+          {formatDuration(task.created_at, task.updated_at)}
+        </span>
+        <span className="text-[11px] text-muted-foreground flex-shrink-0 w-[140px] text-right">
+          {new Date(task.updated_at).toLocaleString()}
+        </span>
+        {hasDetails && (
+          expanded ? <ChevronUp size={14} className="text-muted-foreground flex-shrink-0" /> : <ChevronDown size={14} className="text-muted-foreground flex-shrink-0" />
+        )}
+      </div>
+      {expanded && (
+        <div className="px-4 py-3 border-t border-border bg-secondary/10">
+          {task.error && (
+            <div className="mb-2">
+              <span className="text-xs font-semibold text-red-500">Error:</span>
+              <pre className="text-xs text-red-400 mt-1 whitespace-pre-wrap break-all bg-red-500/5 p-2 rounded">{task.error}</pre>
+            </div>
+          )}
+          {task.result && (
+            <div>
+              <span className="text-xs font-semibold text-muted-foreground">Result:</span>
+              <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-all bg-secondary/30 p-2 rounded max-h-[300px] overflow-y-auto">{JSON.stringify(task.result, null, 2)}</pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
