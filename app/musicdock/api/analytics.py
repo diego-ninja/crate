@@ -327,3 +327,171 @@ def api_missing_albums(artist: str):
     exts = extensions()
     result = find_missing_albums(artist_dir, exts)
     return result
+
+
+@router.get("/api/insights")
+def api_insights():
+    """Advanced analytics for the Insights page — all data for Nivo charts."""
+    import json
+
+    with get_db_ctx() as cur:
+        # Countries (for world map)
+        cur.execute("""
+            SELECT country, COUNT(*) AS cnt
+            FROM library_artists WHERE country IS NOT NULL AND country != ''
+            GROUP BY country ORDER BY cnt DESC
+        """)
+        countries = {r["country"]: r["cnt"] for r in cur.fetchall()}
+
+        # Formation timeline (decade histogram)
+        cur.execute("""
+            SELECT formed FROM library_artists WHERE formed IS NOT NULL AND formed != ''
+        """)
+        formation_decades: dict[str, int] = {}
+        for r in cur.fetchall():
+            year = r["formed"][:4] if len(r["formed"]) >= 4 else r["formed"]
+            try:
+                decade = f"{int(year) // 10 * 10}s"
+                formation_decades[decade] = formation_decades.get(decade, 0) + 1
+            except (ValueError, TypeError):
+                pass
+
+        # BPM distribution
+        cur.execute("""
+            SELECT FLOOR(bpm / 10) * 10 AS bucket, COUNT(*) AS cnt
+            FROM library_tracks WHERE bpm IS NOT NULL
+            GROUP BY bucket ORDER BY bucket
+        """)
+        bpm_dist = [{"bpm": f"{int(r['bucket'])}-{int(r['bucket'])+9}", "count": r["cnt"]} for r in cur.fetchall()]
+
+        # Key distribution (circle of fifths)
+        cur.execute("""
+            SELECT audio_key, audio_scale, COUNT(*) AS cnt
+            FROM library_tracks WHERE audio_key IS NOT NULL AND audio_key != ''
+            GROUP BY audio_key, audio_scale ORDER BY cnt DESC
+        """)
+        keys = [{"key": f"{r['audio_key']} {r['audio_scale'] or ''}".strip(), "count": r["cnt"]} for r in cur.fetchall()]
+
+        # Energy vs Danceability scatter
+        cur.execute("""
+            SELECT energy, danceability, artist, title
+            FROM library_tracks
+            WHERE energy IS NOT NULL AND danceability IS NOT NULL
+            LIMIT 500
+        """)
+        energy_dance = [{"x": round(r["energy"], 2), "y": round(r["danceability"], 2),
+                         "artist": r["artist"], "title": r["title"]} for r in cur.fetchall()]
+
+        # Format distribution
+        cur.execute("""
+            SELECT format, COUNT(*) AS cnt FROM library_tracks
+            WHERE format IS NOT NULL GROUP BY format ORDER BY cnt DESC
+        """)
+        formats = [{"id": r["format"], "value": r["cnt"]} for r in cur.fetchall()]
+
+        # Bitrate distribution
+        cur.execute("""
+            SELECT CASE
+                WHEN bitrate IS NULL THEN 'Unknown'
+                WHEN bitrate > 900000 THEN 'Lossless'
+                WHEN bitrate > 256000 THEN '320k'
+                WHEN bitrate > 192000 THEN '256k'
+                WHEN bitrate > 128000 THEN '192k'
+                ELSE '128k-'
+            END AS bracket, COUNT(*) AS cnt
+            FROM library_tracks GROUP BY bracket ORDER BY cnt DESC
+        """)
+        bitrates = [{"id": r["bracket"], "value": r["cnt"]} for r in cur.fetchall()]
+
+        # Top genres (from genre system)
+        cur.execute("""
+            SELECT g.name, COUNT(DISTINCT ag.artist_name) AS artists, COUNT(DISTINCT alg.album_id) AS albums
+            FROM genres g
+            LEFT JOIN artist_genres ag ON g.id = ag.genre_id
+            LEFT JOIN album_genres alg ON g.id = alg.genre_id
+            GROUP BY g.id, g.name
+            HAVING COUNT(DISTINCT ag.artist_name) > 0
+            ORDER BY COUNT(DISTINCT ag.artist_name) DESC LIMIT 20
+        """)
+        top_genres = [{"genre": r["name"], "artists": r["artists"], "albums": r["albums"]} for r in cur.fetchall()]
+
+        # Similar artists network
+        cur.execute("""
+            SELECT name, similar_json, listeners, spotify_popularity
+            FROM library_artists WHERE similar_json IS NOT NULL
+        """)
+        network_nodes = []
+        network_links = []
+        artist_set = set()
+        for r in cur.fetchall():
+            name = r["name"]
+            similar = r["similar_json"]
+            if isinstance(similar, str):
+                similar = json.loads(similar) if similar else []
+            if not similar:
+                continue
+            artist_set.add(name)
+            for s in similar[:5]:
+                s_name = s.get("name", "") if isinstance(s, dict) else str(s)
+                if s_name:
+                    artist_set.add(s_name)
+                    network_links.append({"source": name, "target": s_name})
+        for a in artist_set:
+            network_nodes.append({"id": a})
+
+        # Spotify popularity ranking
+        cur.execute("""
+            SELECT name, spotify_popularity, listeners
+            FROM library_artists
+            WHERE spotify_popularity IS NOT NULL AND spotify_popularity > 0
+            ORDER BY spotify_popularity DESC LIMIT 20
+        """)
+        popularity = [{"artist": r["name"], "popularity": r["spotify_popularity"],
+                        "listeners": r["listeners"] or 0} for r in cur.fetchall()]
+
+        # Albums per decade
+        cur.execute("""
+            SELECT year, COUNT(*) AS cnt FROM library_albums
+            WHERE year IS NOT NULL AND year != '' GROUP BY year ORDER BY year
+        """)
+        albums_by_year: dict[str, int] = {}
+        for r in cur.fetchall():
+            y = r["year"][:4] if r["year"] and len(r["year"]) >= 4 else r["year"]
+            try:
+                decade = f"{int(y) // 10 * 10}s"
+                albums_by_year[decade] = albums_by_year.get(decade, 0) + r["cnt"]
+            except (ValueError, TypeError):
+                pass
+
+        # Library completeness
+        cur.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN has_photo = 1 THEN 1 ELSE 0 END) AS with_photo, SUM(CASE WHEN enriched_at IS NOT NULL THEN 1 ELSE 0 END) AS enriched FROM library_artists")
+        completeness_row = cur.fetchone()
+        cur.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN has_cover = 1 THEN 1 ELSE 0 END) AS with_cover FROM library_albums")
+        cover_row = cur.fetchone()
+        cur.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN bpm IS NOT NULL THEN 1 ELSE 0 END) AS analyzed FROM library_tracks")
+        analysis_row = cur.fetchone()
+
+        completeness = {
+            "artists_total": completeness_row["total"],
+            "artists_with_photo": completeness_row["with_photo"],
+            "artists_enriched": completeness_row["enriched"],
+            "albums_total": cover_row["total"],
+            "albums_with_cover": cover_row["with_cover"],
+            "tracks_total": analysis_row["total"],
+            "tracks_analyzed": analysis_row["analyzed"],
+        }
+
+    return {
+        "countries": countries,
+        "formation_decades": formation_decades,
+        "bpm_distribution": bpm_dist,
+        "keys": keys,
+        "energy_danceability": energy_dance,
+        "formats": formats,
+        "bitrates": bitrates,
+        "top_genres": top_genres,
+        "network": {"nodes": network_nodes, "links": network_links},
+        "popularity": popularity,
+        "albums_by_decade": albums_by_year,
+        "completeness": completeness,
+    }

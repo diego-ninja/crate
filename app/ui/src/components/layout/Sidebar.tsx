@@ -58,6 +58,7 @@ const navItems = [
   // AudioMuse AI — disabled (profile not active)
   // { external: "https://ai.lespedants.org", icon: BrainCircuit, label: "AudioMuse AI" },
   { section: "Insights" },
+  { to: "/insights", icon: BarChart3, label: "Insights" },
   { to: "/analytics", icon: BarChart3, label: "Analytics" },
   { to: "/genres", icon: Tag, label: "Genres" },
   { to: "/timeline", icon: Clock, label: "Timeline" },

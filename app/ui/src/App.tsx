@@ -17,6 +17,7 @@ const Artwork = lazy(() => import("@/pages/Artwork").then(m => ({ default: m.Art
 const Organizer = lazy(() => import("@/pages/Organizer").then(m => ({ default: m.Organizer })));
 const Imports = lazy(() => import("@/pages/Imports").then(m => ({ default: m.Imports })));
 const Analytics = lazy(() => import("@/pages/Analytics").then(m => ({ default: m.Analytics })));
+const Insights = lazy(() => import("@/pages/Insights").then(m => ({ default: m.Insights })));
 const MissingAlbums = lazy(() => import("@/pages/MissingAlbums").then(m => ({ default: m.MissingAlbums })));
 const Quality = lazy(() => import("@/pages/Quality").then(m => ({ default: m.Quality })));
 const Tasks = lazy(() => import("@/pages/Tasks").then(m => ({ default: m.Tasks })));
@@ -69,6 +70,7 @@ export default function App() {
                   <Route path="organizer" element={<Organizer />} />
                   <Route path="imports" element={<Imports />} />
                   <Route path="analytics" element={<Analytics />} />
+                  <Route path="insights" element={<Insights />} />
                   <Route path="missing-albums" element={<MissingAlbums />} />
                   <Route path="quality" element={<Quality />} />
                   <Route path="tasks" element={<Tasks />} />
