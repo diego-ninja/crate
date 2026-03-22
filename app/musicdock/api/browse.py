@@ -602,6 +602,16 @@ def api_stream_file(filepath: str):
     )
 
 
+@router.get("/api/artist-radio/{name:path}")
+def api_artist_radio(name: str, limit: int = 50):
+    """Generate an Artist Radio playlist using bliss song similarity."""
+    from musicdock.bliss import generate_artist_radio
+    tracks = generate_artist_radio(name, limit=limit)
+    if not tracks:
+        return JSONResponse({"error": "No bliss data available. Run 'Compute Bliss' first."}, status_code=404)
+    return tracks
+
+
 @router.get("/api/similar-tracks/{filepath:path}")
 def api_similar_tracks(filepath: str, limit: int = 20):
     """Find tracks similar to the given track using bliss vectors."""

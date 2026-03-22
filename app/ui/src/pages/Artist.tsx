@@ -47,6 +47,7 @@ import {
   BrainCircuit,
   Loader2,
   Trash2,
+  Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -458,6 +459,30 @@ export function Artist() {
                     <Play size={14} className="mr-1 fill-current" /> Play Top Tracks
                   </Button>
                 )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                  onClick={async () => {
+                    try {
+                      const tracks = await api<{ path: string; title: string; artist: string; album: string }[]>(`/api/artist-radio/${encPath(data.name)}?limit=50`);
+                      if (Array.isArray(tracks) && tracks.length > 0) {
+                        const playerTracks = tracks.map((t) => ({
+                          id: t.path,
+                          title: t.title,
+                          artist: t.artist,
+                          albumCover: t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : undefined,
+                        }));
+                        player.playAll(playerTracks, 0);
+                        toast.success(`Artist Radio: ${tracks.length} tracks`);
+                      } else {
+                        toast.error("No bliss data — run audio analysis first");
+                      }
+                    } catch { toast.error("Artist Radio not available"); }
+                  }}
+                >
+                  <Radio size={14} className="mr-1" /> Artist Radio
+                </Button>
                 {navidromeLink?.navidrome_url && (
                   <Button size="sm" variant="outline" className="border-white/20 text-white/70 hover:text-white hover:bg-white/10" asChild>
                     <a href={navidromeLink.navidrome_url} target="_blank" rel="noopener noreferrer">

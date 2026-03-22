@@ -105,6 +105,77 @@ def store_vectors(vectors: dict[str, list[float]]):
             )
 
 
+def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 0.4) -> list[dict]:
+    """Generate an Artist Radio playlist: mix of artist tracks + similar tracks from other artists.
+
+    mix_ratio: fraction of tracks from the artist (0.4 = 40% artist, 60% similar)
+    """
+    with get_db_ctx() as cur:
+        # Get all bliss vectors for this artist
+        cur.execute("""
+            SELECT path, title, artist, album, duration, bliss_vector
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.artist = %s AND t.bliss_vector IS NOT NULL
+        """, (artist_name,))
+        artist_tracks = [dict(r) for r in cur.fetchall()]
+
+        if not artist_tracks:
+            return []
+
+        import numpy as np
+
+        # Compute centroid of artist's sound
+        vectors = [t["bliss_vector"] for t in artist_tracks]
+        centroid = np.mean(vectors, axis=0).tolist()
+
+        # Find closest tracks from OTHER artists
+        cur.execute("""
+            SELECT path, title, artist, album, duration,
+                   SQRT(
+                       (SELECT SUM(POW(a - b, 2))
+                        FROM UNNEST(bliss_vector, %s::float8[]) AS t(a, b))
+                   ) AS distance
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE bliss_vector IS NOT NULL AND a.artist != %s
+            ORDER BY distance ASC
+            LIMIT %s
+        """, (centroid, artist_name, limit))
+        similar_tracks = [dict(r) for r in cur.fetchall()]
+
+    # Mix: artist tracks + similar
+    import random
+    artist_count = max(1, int(limit * mix_ratio))
+    similar_count = limit - artist_count
+
+    picked_artist = random.sample(artist_tracks, min(artist_count, len(artist_tracks)))
+    picked_similar = similar_tracks[:similar_count]
+
+    # Interleave: start with artist, sprinkle similar
+    playlist = []
+    a_idx, s_idx = 0, 0
+    for i in range(limit):
+        if a_idx < len(picked_artist) and (s_idx >= len(picked_similar) or i % 3 == 0):
+            t = picked_artist[a_idx]
+            a_idx += 1
+        elif s_idx < len(picked_similar):
+            t = picked_similar[s_idx]
+            s_idx += 1
+        else:
+            break
+        playlist.append({
+            "path": t["path"],
+            "title": t["title"],
+            "artist": t["artist"],
+            "album": t["album"],
+            "duration": t.get("duration", 0),
+            "distance": t.get("distance"),
+        })
+
+    return playlist
+
+
 def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
     """Find similar tracks using pre-computed vectors stored in DB."""
     with get_db_ctx() as cur:
