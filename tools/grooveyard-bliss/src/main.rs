@@ -1,6 +1,7 @@
+use bliss_audio::decoder::Decoder as DecoderTrait;
+use bliss_audio::decoder::symphonia::SymphoniaDecoder;
 use bliss_audio::Song;
 use clap::Parser;
-use rayon::prelude::*;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -15,16 +16,12 @@ struct Cli {
     #[arg(short, long)]
     dir: Option<PathBuf>,
 
-    /// Output distance matrix between all analyzed tracks
-    #[arg(long)]
-    distances: bool,
-
     /// Find N most similar tracks to the given file
     #[arg(long)]
     similar_to: Option<PathBuf>,
 
     /// Number of similar tracks to return
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value = "20")]
     limit: usize,
 
     /// Audio file extensions to include
@@ -81,7 +78,7 @@ fn collect_audio_files(dir: &Path, extensions: &[String]) -> Vec<PathBuf> {
 }
 
 fn analyze_file(path: &Path) -> TrackResult {
-    match Song::from_path(path) {
+    match SymphoniaDecoder::song_from_path(path) {
         Ok(song) => TrackResult {
             path: path.to_string_lossy().to_string(),
             features: song.analysis.as_vec(),
@@ -95,9 +92,24 @@ fn analyze_file(path: &Path) -> TrackResult {
     }
 }
 
+fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() {
+        return f32::MAX;
+    }
+    a.iter()
+        .zip(b.iter())
+        .map(|(x, y)| (x - y).powi(2))
+        .sum::<f32>()
+        .sqrt()
+}
+
 fn main() {
     let cli = Cli::parse();
-    let extensions: Vec<String> = cli.extensions.split(',').map(|s| s.trim().to_string()).collect();
+    let extensions: Vec<String> = cli
+        .extensions
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
 
     // Single file mode
     if let Some(file) = &cli.file {
@@ -110,80 +122,71 @@ fn main() {
     if let Some(dir) = &cli.dir {
         let files = collect_audio_files(dir, &extensions);
         let total = files.len();
+        eprintln!("Found {} files, analyzing...", total);
 
-        eprintln!("Analyzing {} files...", total);
-
-        let results: Vec<TrackResult> = files
-            .par_iter()
+        // Use bliss batch analyze (internally parallelized)
+        let paths: Vec<&Path> = files.iter().map(|p| p.as_path()).collect();
+        let results: Vec<TrackResult> = SymphoniaDecoder::analyze_paths(&paths)
             .enumerate()
-            .map(|(i, path)| {
-                if i % 10 == 0 {
+            .map(|(i, result)| {
+                let path = &files[i];
+                if i % 50 == 0 {
                     eprintln!("  [{}/{}] {}", i + 1, total, path.display());
                 }
-                analyze_file(path)
+                match result {
+                    Ok(song) => TrackResult {
+                        path: path.to_string_lossy().to_string(),
+                        features: song.analysis.as_vec(),
+                        error: None,
+                    },
+                    Err(e) => TrackResult {
+                        path: path.to_string_lossy().to_string(),
+                        features: Vec::new(),
+                        error: Some(format!("{}", e)),
+                    },
+                }
             })
             .collect();
 
         let analyzed = results.iter().filter(|r| r.error.is_none()).count();
-        let failed = results.iter().filter(|r| r.error.is_some()).count();
+        let failed = total - analyzed;
 
-        // Find similar tracks mode
+        // Similar tracks mode
         if let Some(source_path) = &cli.similar_to {
-            let source = match results.iter().find(|r| Path::new(&r.path) == source_path) {
-                Some(r) if r.error.is_none() => r,
-                _ => {
-                    // Analyze the source file if not in batch
-                    let r = analyze_file(source_path);
-                    if r.error.is_some() {
-                        eprintln!("Failed to analyze source: {:?}", r.error);
-                        std::process::exit(1);
-                    }
-                    // Can't borrow, just re-analyze
-                    let source_song = Song::from_path(source_path).unwrap();
-                    let source_features = source_song.analysis.as_vec();
+            let source_result = results
+                .iter()
+                .find(|r| Path::new(&r.path) == source_path && r.error.is_none());
 
-                    let mut distances: Vec<SimilarTrack> = results
-                        .iter()
-                        .filter(|r| r.error.is_none() && r.path != source_path.to_string_lossy().as_ref())
-                        .map(|r| {
-                            let dist = euclidean_distance(&source_features, &r.features);
-                            SimilarTrack {
-                                path: r.path.clone(),
-                                distance: dist,
-                            }
-                        })
-                        .collect();
-
-                    distances.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
-                    distances.truncate(cli.limit);
-
-                    let result = SimilarResult {
-                        source: source_path.to_string_lossy().to_string(),
-                        similar: distances,
-                    };
-                    println!("{}", serde_json::to_string_pretty(&result).unwrap());
-                    return;
+            let source_features = if let Some(sr) = source_result {
+                sr.features.clone()
+            } else {
+                // Analyze source separately if not in batch
+                let sr = analyze_file(source_path);
+                if sr.error.is_some() || sr.features.is_empty() {
+                    eprintln!("Failed to analyze source: {:?}", sr.error);
+                    std::process::exit(1);
                 }
+                sr.features
             };
 
-            let source_features = &source.features;
             let mut distances: Vec<SimilarTrack> = results
                 .iter()
-                .filter(|r| r.error.is_none() && r.path != source.path)
-                .map(|r| {
-                    let dist = euclidean_distance(source_features, &r.features);
-                    SimilarTrack {
-                        path: r.path.clone(),
-                        distance: dist,
-                    }
+                .filter(|r| {
+                    r.error.is_none()
+                        && !r.features.is_empty()
+                        && r.path != source_path.to_string_lossy().as_ref()
+                })
+                .map(|r| SimilarTrack {
+                    path: r.path.clone(),
+                    distance: euclidean_distance(&source_features, &r.features),
                 })
                 .collect();
 
-            distances.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap());
+            distances.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
             distances.truncate(cli.limit);
 
             let result = SimilarResult {
-                source: source.path.clone(),
+                source: source_path.to_string_lossy().to_string(),
                 similar: distances,
             };
             println!("{}", serde_json::to_string_pretty(&result).unwrap());
@@ -201,14 +204,5 @@ fn main() {
     }
 
     eprintln!("Usage: grooveyard-bliss --file <path> or --dir <path>");
-    eprintln!("  --similar-to <path> --dir <path>  Find similar tracks");
     std::process::exit(1);
-}
-
-fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| (x - y).powi(2))
-        .sum::<f32>()
-        .sqrt()
 }
