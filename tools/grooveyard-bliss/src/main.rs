@@ -129,11 +129,11 @@ fn main() {
         let results: Vec<TrackResult> = SymphoniaDecoder::analyze_paths(&paths)
             .enumerate()
             .map(|(i, result)| {
-                let path = &files[i];
                 if i % 50 == 0 {
-                    eprintln!("  [{}/{}] {}", i + 1, total, path.display());
+                    eprintln!("  [{}/{}]", i + 1, total);
                 }
-                match result {
+                let (path, song_result) = result;
+                match song_result {
                     Ok(song) => TrackResult {
                         path: path.to_string_lossy().to_string(),
                         features: song.analysis.as_vec(),
