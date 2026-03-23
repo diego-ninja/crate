@@ -41,6 +41,7 @@ interface AlbumHeaderProps {
   totalSizeMb: number;
   hasCover: boolean;
   navidromeData?: NavidromeAlbumData | null;
+  genres?: string[];
   hasAnalysis?: boolean;
   onAnalysisComplete?: () => void;
   children?: React.ReactNode;
@@ -55,6 +56,7 @@ export function AlbumHeader({
   totalSizeMb,
   hasCover,
   navidromeData,
+  genres,
   hasAnalysis,
   onAnalysisComplete,
   children,
@@ -192,7 +194,7 @@ export function AlbumHeader({
               <span className="flex items-center gap-1.5"><Disc3 size={14} />{trackCount} tracks</span>
               <span className="flex items-center gap-1.5"><Clock size={14} />{formatDuration(totalLengthSec)}</span>
               <span className="flex items-center gap-1.5"><HardDrive size={14} />{formatSize(totalSizeMb)}</span>
-              {albumTags.genre && albumTags.genre.split(",").map((g) => g.trim()).filter(Boolean).map((g) => (
+              {(genres ?? albumTags.genre?.split(",").map((g) => g.trim()).filter(Boolean) ?? []).map((g) => (
                 <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">
                   {g}
                 </span>

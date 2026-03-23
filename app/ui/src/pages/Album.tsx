@@ -53,6 +53,7 @@ interface AlbumData {
     genre?: string;
     musicbrainz_albumid?: string | null;
   };
+  genres?: string[];
 }
 
 interface NavidromeAlbumLink {
@@ -188,6 +189,7 @@ export function Album() {
           totalSizeMb={data.total_size_mb}
           hasCover={data.has_cover}
           navidromeData={navidromeData}
+          genres={data.genres}
           hasAnalysis={audiomuseData != null && Object.values(audiomuseData).some((t) => t.tempo != null)}
           onAnalysisComplete={() => data?.artist && fetchAudiomuseData(data.artist)}
         >

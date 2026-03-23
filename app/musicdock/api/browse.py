@@ -400,17 +400,14 @@ def api_artist(name: str):
 
     albums_data = get_library_albums(name)
 
-    # Get genres from tracks
-    genres: dict[str, int] = {}
+    # Get genres from normalized artist_genres table
     with get_db_ctx() as cur:
         cur.execute(
-            "SELECT genre, COUNT(*) as cnt FROM library_tracks WHERE artist = %s AND genre IS NOT NULL AND genre != '' GROUP BY genre ORDER BY cnt DESC LIMIT 5",
+            "SELECT g.name FROM artist_genres ag JOIN genres g ON ag.genre_id = g.id "
+            "WHERE ag.artist_name = %s ORDER BY ag.weight DESC",
             (name,),
         )
-        genre_rows = cur.fetchall()
-    for row in genre_rows:
-        genres[row["genre"]] = row["cnt"]
-    top_genres = list(genres.keys())
+        top_genres = [r["name"] for r in cur.fetchall()]
 
     albums = []
     for a in albums_data:
@@ -496,6 +493,19 @@ def api_album(artist: str, album: str):
     total_size = sum(t.get("size", 0) or 0 for t in tracks_data)
     total_length = sum(tr["length_sec"] for tr in track_list)
 
+    # Get normalized genres from album_genres table
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT g.name FROM album_genres ag JOIN genres g ON ag.genre_id = g.id "
+            "WHERE ag.album_id = %s ORDER BY ag.weight DESC",
+            (album_data["id"],),
+        )
+        album_genres = [r["name"] for r in cur.fetchall()]
+
+    # Override genre in album_tags with normalized genres
+    if album_genres:
+        album_tags["genre"] = ", ".join(album_genres)
+
     return {
         "artist": artist,
         "name": album,
@@ -507,6 +517,7 @@ def api_album(artist: str, album: str):
         "cover_file": cover_file,
         "tracks": track_list,
         "album_tags": album_tags,
+        "genres": album_genres,
     }
 
 
