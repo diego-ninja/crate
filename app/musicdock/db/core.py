@@ -96,6 +96,16 @@ def init_db():
             )
         """)
         cur.execute("""
+            CREATE TABLE IF NOT EXISTS task_events (
+                id SERIAL PRIMARY KEY,
+                task_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                data_json JSONB DEFAULT '{}',
+                created_at TEXT NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_task_events_task ON task_events(task_id, id)")
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
                 value TEXT

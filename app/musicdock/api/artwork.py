@@ -23,10 +23,27 @@ class ExtractRequest(BaseModel):
 
 @router.get("/api/artwork/missing")
 def api_artwork_missing():
-    lib = library_path()
-    exts = extensions()
-    missing = scan_missing_covers(lib, exts)
-    return missing
+    """Quick count of missing covers (from DB, not filesystem scan)."""
+    from musicdock.db import get_db_ctx
+    with get_db_ctx() as cur:
+        cur.execute("SELECT COUNT(*) AS cnt FROM library_albums WHERE has_cover = 0")
+        count = cur.fetchone()["cnt"]
+    return {"missing_count": count}
+
+
+@router.post("/api/artwork/scan")
+def api_artwork_scan(body: dict | None = None):
+    """Queue a full scan for missing covers with source search. Returns task_id for SSE streaming."""
+    auto_apply = body.get("auto_apply", False) if body else False
+    task_id = create_task("scan_missing_covers", {"auto_apply": auto_apply})
+    return {"task_id": task_id}
+
+
+@router.post("/api/artwork/apply")
+def api_artwork_apply(body: dict):
+    """Apply a specific cover to an album."""
+    task_id = create_task("apply_cover", body)
+    return {"task_id": task_id}
 
 
 @router.post("/api/artwork/fetch")

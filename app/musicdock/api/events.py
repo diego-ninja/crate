@@ -4,12 +4,14 @@ import json
 from fastapi import APIRouter
 from starlette.responses import StreamingResponse
 
-from musicdock.db import list_tasks, get_latest_scan
+from musicdock.db import list_tasks, get_latest_scan, get_task, get_task_events
 from musicdock.api._deps import get_config
 from musicdock.importer import ImportQueue
 
 router = APIRouter()
 
+
+# ── Global status stream ─────────────────────────────────────────
 
 async def _event_stream():
     while True:
@@ -18,8 +20,11 @@ async def _event_stream():
         recent_completed = list_tasks(status="completed", limit=5)
 
         config = get_config()
-        queue = ImportQueue(config)
-        pending_imports = len(queue.scan_pending())
+        try:
+            queue = ImportQueue(config)
+            pending_imports = len(queue.scan_pending())
+        except Exception:
+            pending_imports = 0
 
         def _parse_progress(raw):
             try:
@@ -52,6 +57,45 @@ async def _event_stream():
 async def api_events():
     return StreamingResponse(
         _event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Per-task event stream ────────────────────────────────────────
+
+async def _task_event_stream(task_id: str):
+    """SSE stream for a specific task. Emits events as they arrive, closes when task completes."""
+    last_event_id = 0
+
+    while True:
+        # Get new events since last seen
+        events = get_task_events(task_id, after_id=last_event_id)
+        for event in events:
+            payload = {
+                "id": event["id"],
+                "type": event["event_type"],
+                "data": event["data"],
+                "timestamp": event["created_at"],
+            }
+            yield f"event: {event['event_type']}\ndata: {json.dumps(payload)}\n\n"
+            last_event_id = event["id"]
+
+        # Check if task is done
+        task = get_task(task_id)
+        if task and task["status"] in ("completed", "failed", "cancelled"):
+            # Emit final status event
+            yield f"event: task_done\ndata: {json.dumps({'status': task['status'], 'result': task.get('result'), 'error': task.get('error')})}\n\n"
+            break
+
+        await asyncio.sleep(1)
+
+
+@router.get("/api/events/task/{task_id}")
+async def api_task_events(task_id: str):
+    """SSE stream for a specific task's events. Closes when task completes."""
+    return StreamingResponse(
+        _task_event_stream(task_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

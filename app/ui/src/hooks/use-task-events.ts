@@ -1,0 +1,83 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+
+interface TaskEvent {
+  id: number;
+  type: string;
+  data: Record<string, unknown>;
+  timestamp: string;
+}
+
+interface TaskDone {
+  status: string;
+  result?: Record<string, unknown>;
+  error?: string;
+}
+
+/**
+ * Hook that connects to a task's SSE stream and accumulates events.
+ * Returns events array + done status. Auto-closes when task completes.
+ */
+export function useTaskEvents(taskId: string | null) {
+  const [events, setEvents] = useState<TaskEvent[]>([]);
+  const [done, setDone] = useState<TaskDone | null>(null);
+  const [connected, setConnected] = useState(false);
+  const sourceRef = useRef<EventSource | null>(null);
+
+  const reset = useCallback(() => {
+    setEvents([]);
+    setDone(null);
+    setConnected(false);
+  }, []);
+
+  useEffect(() => {
+    if (!taskId) {
+      reset();
+      return;
+    }
+
+    reset();
+    const source = new EventSource(`/api/events/task/${taskId}`);
+    sourceRef.current = source;
+
+    source.onopen = () => setConnected(true);
+    source.onerror = () => setConnected(false);
+
+    // Listen to all named events
+    const handleEvent = (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        setEvents((prev) => [...prev, payload]);
+      } catch {
+        // Ignore parse errors
+      }
+    };
+
+    // Common event types tasks emit
+    const eventTypes = [
+      "progress", "cover_found", "cover_applied", "album_scanned",
+      "item_processed", "match_found", "error", "warning", "info",
+    ];
+    for (const type of eventTypes) {
+      source.addEventListener(type, handleEvent);
+    }
+
+    // Task completion
+    source.addEventListener("task_done", (e: MessageEvent) => {
+      try {
+        const payload = JSON.parse(e.data);
+        setDone(payload);
+      } catch {
+        setDone({ status: "completed" });
+      }
+      source.close();
+      setConnected(false);
+    });
+
+    return () => {
+      source.close();
+      sourceRef.current = null;
+    };
+  }, [taskId, reset]);
+
+  return { events, done, connected, reset };
+}

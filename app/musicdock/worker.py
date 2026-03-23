@@ -1464,6 +1464,161 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
     return result
 
 
+def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dict:
+    """Scan for missing covers, search sources, emit events for each find."""
+    from musicdock.db import emit_task_event
+    from musicdock.artwork import scan_missing_covers, fetch_cover_from_caa, save_cover, extract_embedded_cover
+    from musicdock.lastfm import download_artist_image
+
+    lib = Path(config["library_path"])
+    exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
+
+    # Phase 1: Scan for missing covers
+    update_task(task_id, progress=json.dumps({"phase": "scanning"}))
+    emit_task_event(task_id, "info", {"message": "Scanning library for missing covers..."})
+    missing = scan_missing_covers(lib, exts)
+
+    emit_task_event(task_id, "info", {"message": f"Found {len(missing)} albums without covers", "total": len(missing)})
+
+    # Phase 2: Search sources for each missing cover
+    found = 0
+    not_found = 0
+
+    for i, album in enumerate(missing):
+        if _shutdown or _is_cancelled(task_id):
+            break
+
+        artist = album["artist"]
+        album_name = album["album"]
+        mbid = album.get("mbid")
+        album_path = album["path"]
+
+        update_task(task_id, progress=json.dumps({
+            "phase": "searching", "artist": artist, "album": album_name,
+            "done": i, "total": len(missing), "found": found,
+        }))
+
+        # Try sources in order
+        cover_data = None
+        source = None
+
+        # 1. Cover Art Archive (if MBID available)
+        if mbid and mbid.strip():
+            cover_data = fetch_cover_from_caa(mbid)
+            if cover_data:
+                source = "coverartarchive"
+
+        # 2. Extract from embedded art in audio files
+        if not cover_data:
+            audio_files = list(Path(album_path).glob("*.flac")) + list(Path(album_path).glob("*.mp3"))
+            for af in audio_files[:1]:
+                embedded = extract_embedded_cover(af)
+                if embedded:
+                    cover_data = embedded
+                    source = "embedded"
+                    break
+
+        # 3. Tidal (search for album cover) — TODO: would need Tidal API
+
+        # 4. Deezer (search for album)
+        if not cover_data:
+            try:
+                import requests as _requests
+                resp = _requests.get(
+                    "https://api.deezer.com/search/album",
+                    params={"q": f"{artist} {album_name}", "limit": 1},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    data = resp.json().get("data", [])
+                    if data and data[0].get("cover_xl"):
+                        img_resp = _requests.get(data[0]["cover_xl"], timeout=10)
+                        if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                            cover_data = img_resp.content
+                            source = "deezer"
+            except Exception:
+                pass
+
+        if cover_data:
+            found += 1
+            emit_task_event(task_id, "cover_found", {
+                "artist": artist,
+                "album": album_name,
+                "path": album_path,
+                "source": source,
+                "size": len(cover_data),
+                "index": i,
+            })
+            # Store cover data in cache for later apply
+            set_cache(f"pending_cover:{task_id}:{i}", {
+                "artist": artist, "album": album_name, "path": album_path,
+                "source": source, "applied": False,
+            })
+            # Save cover to temp location (or directly if auto-apply)
+            if params.get("auto_apply"):
+                save_cover(Path(album_path), cover_data)
+                emit_task_event(task_id, "cover_applied", {
+                    "artist": artist, "album": album_name, "source": source,
+                })
+        else:
+            not_found += 1
+            emit_task_event(task_id, "info", {
+                "message": f"No cover found for {artist} / {album_name}",
+                "artist": artist, "album": album_name,
+            })
+
+        time.sleep(0.3)  # Rate limit
+
+    return {"total_missing": len(missing), "found": found, "not_found": not_found}
+
+
+def _handle_apply_cover(task_id: str, params: dict, config: dict) -> dict:
+    """Apply a found cover to an album."""
+    from musicdock.artwork import fetch_cover_from_caa, save_cover
+    from musicdock.db import emit_task_event
+
+    album_path = params.get("path", "")
+    source = params.get("source", "")
+    mbid = params.get("mbid", "")
+
+    if not album_path:
+        return {"error": "No album path"}
+
+    album_dir = Path(album_path)
+    if not album_dir.is_dir():
+        return {"error": "Album directory not found"}
+
+    cover_data = None
+
+    if source == "coverartarchive" and mbid:
+        cover_data = fetch_cover_from_caa(mbid)
+    elif source == "deezer":
+        artist = params.get("artist", "")
+        album = params.get("album", "")
+        try:
+            import requests as _requests
+            resp = _requests.get("https://api.deezer.com/search/album",
+                                 params={"q": f"{artist} {album}", "limit": 1}, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                if data and data[0].get("cover_xl"):
+                    img_resp = _requests.get(data[0]["cover_xl"], timeout=10)
+                    if img_resp.status_code == 200:
+                        cover_data = img_resp.content
+        except Exception:
+            pass
+
+    if not cover_data:
+        return {"error": "Failed to fetch cover"}
+
+    save_cover(album_dir, cover_data)
+    emit_task_event(task_id, "cover_applied", {
+        "artist": params.get("artist"), "album": params.get("album"),
+    })
+
+    return {"applied": True, "path": album_path}
+
+
 def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
     """Compute bliss feature vectors — processes per artist for incremental storage."""
     from musicdock.bliss import analyze_directory, store_vectors, is_available
@@ -1619,4 +1774,6 @@ TASK_HANDLERS = {
     "process_new_content": _handle_process_new_content,
     "tidal_download": _handle_tidal_download,
     "check_new_releases": _handle_check_new_releases,
+    "scan_missing_covers": _handle_scan_missing_covers,
+    "apply_cover": _handle_apply_cover,
 }
