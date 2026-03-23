@@ -339,6 +339,7 @@ services:
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
+      - ${MEDIA_DIR}/downloads/soulseek:/downloads/soulseek
       - ${DATA_DIR}/librarian:/data
     networks:
       - musicdock

@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import {
   Search, Download, Disc3, Music, Users, Loader2,
   CheckCircle2, Heart, Clock, XCircle,
-  Trash2, ArrowUp,
+  Trash2, ArrowUp, RotateCcw,
 } from "lucide-react";
 // encPath available if needed for navigation
 
@@ -104,8 +104,14 @@ export function DownloadPage() {
   const [searchingSlsk, setSearchingSlsk] = useState(false);
   const [, setSlskSearchId] = useState<string | null>(null);
   const slskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { data: queue, refetch: refetchQueue } = useApi<QueueItem[]>("/api/tidal/queue");
+  const { data: tidalQueue, refetch: refetchTidalQueue } = useApi<QueueItem[]>("/api/tidal/queue");
+  const { data: slskQueue, refetch: refetchSlskQueue } = useApi<{ source: string; artist: string; album: string; filename: string; fullPath?: string; status: string; progress: number; username: string; speed: number }[]>("/api/acquisition/queue");
   const { data: tidalStatus } = useApi<{ authenticated: boolean }>("/api/tidal/status");
+
+  // Merged queue
+  const queue = tidalQueue;
+  const slskDownloads = slskQueue?.filter((d) => d.source === "soulseek") ?? [];
+  function refetchQueue() { refetchTidalQueue(); refetchSlskQueue(); }
 
   // Auto-refresh queue
   useEffect(() => {
@@ -267,7 +273,7 @@ export function DownloadPage() {
       <Tabs defaultValue="search">
         <TabsList>
           <TabsTrigger value="search">Search Results</TabsTrigger>
-          <TabsTrigger value="queue">Queue {activeQueue.length > 0 && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{activeQueue.length}</Badge>}</TabsTrigger>
+          <TabsTrigger value="queue">Queue {(activeQueue.length + slskDownloads.length) > 0 && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{activeQueue.length + slskDownloads.length}</Badge>}</TabsTrigger>
           <TabsTrigger value="wishlist">Wishlist {wishlist.length > 0 && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{wishlist.length}</Badge>}</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
@@ -427,11 +433,55 @@ export function DownloadPage() {
         {/* Queue */}
         <TabsContent value="queue">
           <div className="mt-4 space-y-2">
-            {activeQueue.length === 0 ? (
+            {activeQueue.length === 0 && slskDownloads.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">No active downloads</div>
-            ) : activeQueue.map((item) => (
-              <QueueRow key={item.id} item={item} onRemove={removeQueueItem} />
-            ))}
+            ) : (
+              <>
+                {activeQueue.map((item) => (
+                  <QueueRow key={item.id} item={item} onRemove={removeQueueItem} />
+                ))}
+                {slskDownloads.map((d, i) => (
+                  <div key={`slsk-${i}`} className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+                    <div className="w-10 h-10 rounded bg-secondary flex items-center justify-center flex-shrink-0">
+                      <Music size={16} className="text-muted-foreground" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{d.filename || d.album}</div>
+                      <div className="text-xs text-muted-foreground flex items-center gap-2">
+                        <Badge className="bg-purple-500/10 text-purple-400 border-0 text-[10px] px-1 py-0">SLSK</Badge>
+                        <span>from {d.username}</span>
+                        {d.speed > 0 && <span>{Math.round(d.speed / 1024)} KB/s</span>}
+                        <span>{d.status}</span>
+                      </div>
+                      {d.progress > 0 && d.progress < 100 && (
+                        <div className="h-1 bg-secondary rounded-full mt-1 overflow-hidden">
+                          <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${d.progress}%` }} />
+                        </div>
+                      )}
+                    </div>
+                    {d.progress >= 100 && <CheckCircle2 size={16} className="text-green-500 flex-shrink-0" />}
+                    {d.status.includes("Errored") && (
+                      <Button size="sm" variant="outline" className="flex-shrink-0 text-xs"
+                        onClick={async () => {
+                          try {
+                            await api("/api/acquisition/download", "POST", {
+                              source: "soulseek",
+                              username: d.username,
+                              artist: d.artist || "",
+                              album: d.album || "",
+                              files: [{ filename: d.fullPath || d.filename, size: 0 }],
+                            });
+                            toast.success("Retrying download");
+                            refetchQueue();
+                          } catch { toast.error("Retry failed"); }
+                        }}>
+                        <RotateCcw size={12} className="mr-1" /> Retry
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </TabsContent>
 

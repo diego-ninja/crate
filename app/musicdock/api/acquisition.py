@@ -139,6 +139,7 @@ def acquisition_queue():
                 "artist": "",
                 "album": d.get("directory", "").replace("\\", "/").split("/")[-1] if d.get("directory") else "",
                 "filename": d.get("filename", ""),
+                "fullPath": d.get("fullPath", ""),
                 "status": d.get("state", ""),
                 "progress": d.get("percentComplete", 0),
                 "username": d.get("username", ""),

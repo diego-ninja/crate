@@ -39,9 +39,12 @@ services:
       - SLSKD_SLSK_USERNAME=${SLSKD_SLSK_USERNAME:-}
       - SLSKD_SLSK_PASSWORD=${SLSKD_SLSK_PASSWORD:-}
       - SLSKD_SHARED_DIR=/music
+      - SLSKD_DOWNLOADS_DIR=/downloads
+      - SLSKD_INCOMPLETE_DIR=/downloads/incomplete
     volumes:
       - ./test-music:/music:ro
       - dev_slskd:/app
+      - dev_slskd_downloads:/downloads
     ports:
       - "5030:5030"
     networks:
@@ -112,6 +115,7 @@ services:
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music
+      - dev_slskd_downloads:/downloads/soulseek
       - dev_data:/data
     networks:
       - musicdock-dev
@@ -125,3 +129,4 @@ volumes:
   dev_postgres:
   dev_data:
   dev_slskd:
+  dev_slskd_downloads:

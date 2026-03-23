@@ -2057,8 +2057,9 @@ def _handle_map_navidrome_ids(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
-    """Monitor a Soulseek download and process when complete."""
+    """Monitor a Soulseek download, move files to library, and trigger enrichment."""
     from musicdock import soulseek
+    import re
 
     artist = params.get("artist", "")
     album = params.get("album", "")
@@ -2070,6 +2071,7 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     # Poll slskd for download completion
     max_wait = 600  # 10 minutes max
     elapsed = 0
+    completed_files = []
     while elapsed < max_wait:
         if _shutdown or _is_cancelled(task_id):
             return {"status": "cancelled"}
@@ -2078,28 +2080,80 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         elapsed += 5
 
         downloads = soulseek.get_downloads()
-        # Find our downloads by username
         user_downloads = [d for d in downloads if d.get("username") == username]
 
         if not user_downloads:
-            break  # No downloads found, maybe already complete
+            break
 
         completed = sum(1 for d in user_downloads if "Completed" in d.get("state", ""))
+        errored = sum(1 for d in user_downloads if "Errored" in d.get("state", ""))
         total = len(user_downloads)
 
         update_task(task_id, progress=json.dumps({
-            "completed": completed, "total": total,
+            "completed": completed, "errored": errored, "total": total,
             "artist": artist, "album": album,
         }))
 
-        if completed >= file_count or completed >= total:
+        if completed + errored >= file_count or completed + errored >= total:
+            completed_files = [d for d in user_downloads if "Completed" in d.get("state", "")]
             break
 
-    # Trigger process_new_content for the artist
-    if artist:
-        create_task("process_new_content", {"artist": artist, "album": album})
+    # Move completed files from slskd download dir to library
+    lib = Path(config["library_path"])
+    slsk_download_dir = Path("/downloads/soulseek")
+    moved = 0
 
-    return {"artist": artist, "album": album, "source": "soulseek"}
+    if completed_files and artist:
+        # Determine year from tags or album name
+        year = ""
+        year_match = re.search(r"(\d{4})", album)
+        if year_match:
+            year = year_match.group(1)
+
+        # Clean album name
+        clean_album = re.sub(r"^\d{4}\s*[-–]\s*", "", album).strip()
+        clean_album = re.sub(r"\s*[\[\(](?:FLAC|flac|MP3|320).*?[\]\)]", "", clean_album).strip()
+        if not clean_album:
+            clean_album = album
+
+        # Target: /music/Artist/Year/Album/
+        if year:
+            target_dir = lib / artist / year / clean_album
+        else:
+            target_dir = lib / artist / clean_album
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # Find and move downloaded files
+        if slsk_download_dir.is_dir():
+            for dl in completed_files:
+                # slskd stores files under the download dir with the remote path structure
+                full_path = dl.get("fullPath", "")
+                local_name = full_path.replace("\\", "/").split("/")[-1] if full_path else dl.get("filename", "")
+
+                # Search for the file in slskd download directory
+                found = None
+                for f in slsk_download_dir.rglob(local_name):
+                    if f.is_file():
+                        found = f
+                        break
+
+                if found:
+                    dest = target_dir / found.name
+                    try:
+                        shutil.move(str(found), str(dest))
+                        moved += 1
+                        log.info("Moved %s → %s", found.name, dest)
+                    except Exception as e:
+                        log.warning("Failed to move %s: %s", found.name, e)
+
+        emit_task_event(task_id, "info", {"message": f"Moved {moved} files to {artist}/{year}/{clean_album}" if year else f"Moved {moved} files to {artist}/{clean_album}"})
+
+    # Trigger process_new_content for the artist
+    if artist and moved > 0:
+        create_task("process_new_content", {"artist": artist})
+        emit_task_event(task_id, "info", {"message": f"Processing new content for {artist}"})
+
+    return {"artist": artist, "album": album, "source": "soulseek", "moved": moved, "completed": len(completed_files)}
 
 
 TASK_HANDLERS = {
