@@ -621,7 +621,8 @@ def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
     )
     set_cache("health_report", report)
-    emit_task_event(task_id, "info", {"message": f"Health check complete: {len(report.get(\"issues\", []))} issues", "summary": report.get("summary", {})})
+    issue_count = len(report.get("issues", []))
+    emit_task_event(task_id, "info", {"message": f"Health check complete: {issue_count} issues", "summary": report.get("summary", {})})
     return {"issue_count": len(report.get("issues", [])), "summary": report.get("summary", {})}
 
 
@@ -649,7 +650,8 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d)),
     )
 
-    emit_task_event(task_id, "info", {"message": f"Repair complete: {len(result.get(\"actions\", []))} actions", "fs_changed": result.get("fs_changed"), "db_changed": result.get("db_changed")})
+    action_count = len(result.get("actions", []))
+    emit_task_event(task_id, "info", {"message": f"Repair complete: {action_count} actions", "fs_changed": result.get("fs_changed"), "db_changed": result.get("db_changed")})
     if not dry_run and result.get("fs_changed"):
         start_scan()
 
@@ -991,7 +993,8 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
 
     exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
     result = apply_match(album_dir, exts, release)
-    emit_task_event(task_id, "info", {"message": f"Applied MusicBrainz tags: {result.get(\"updated\", 0)} tracks"})
+    updated_count = result.get("updated", 0)
+    emit_task_event(task_id, "info", {"message": f"Applied MusicBrainz tags: {updated_count} tracks"})
     return result
 
 
@@ -1695,7 +1698,8 @@ def _handle_index_genres(task_id: str, params: dict, config: dict) -> dict:
     result = index_all_genres(
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
     )
-    emit_task_event(task_id, "info", {"message": f"Genres indexed: {result.get(\"total_genres\", 0)} genres"})
+    genre_count = result.get("total_genres", 0)
+    emit_task_event(task_id, "info", {"message": f"Genres indexed: {genre_count} genres"})
     return result
 
 
