@@ -1125,13 +1125,21 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
     """Download from Tidal and run full processing pipeline."""
     from musicdock.tidal import download, move_to_library
     from musicdock.library_sync import LibrarySync
+    from musicdock.db import update_tidal_download
 
     url = params.get("url", "")
     quality = params.get("quality", "max")
+    download_id = params.get("download_id")
     lib = Path(config["library_path"])
 
     if not url:
+        if download_id:
+            update_tidal_download(download_id, status="failed", error="No URL")
         return {"error": "No URL provided"}
+
+    # Update tidal_downloads status
+    if download_id:
+        update_tidal_download(download_id, status="downloading", task_id=task_id)
 
     # 1. Download via tiddl
     update_task(task_id, progress=json.dumps({"phase": "downloading", "url": url}))
@@ -1141,13 +1149,19 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
     )
 
     if not result.get("success"):
+        if download_id:
+            update_tidal_download(download_id, status="failed", error=result.get("error", "Download failed"))
         return {"error": result.get("error", "Download failed"), "phase": "download"}
 
     # 2. Move to library
+    if download_id:
+        update_tidal_download(download_id, status="processing")
     update_task(task_id, progress=json.dumps({"phase": "moving", "files": result.get("file_count", 0)}))
     modified_artists = move_to_library(result["path"], str(lib))
 
     if not modified_artists:
+        if download_id:
+            update_tidal_download(download_id, status="failed", error="No files moved")
         return {"error": "No files were moved", "phase": "move"}
 
     # 3. Sync modified artists
@@ -1175,6 +1189,11 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
     except Exception:
         pass
 
+    # 6. Mark download complete
+    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    if download_id:
+        update_tidal_download(download_id, status="completed", completed_at=now)
+
     return {
         "success": True,
         "url": url,
@@ -1182,6 +1201,62 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
         "files": result.get("file_count", 0),
         "artists": modified_artists,
     }
+
+
+def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict:
+    """Check Tidal for new releases from monitored artists."""
+    from musicdock.db import get_monitored_artists, add_tidal_download, get_db_ctx
+    from musicdock import tidal as tidal_mod
+
+    monitored = get_monitored_artists()
+    if not monitored:
+        return {"checked": 0, "new_releases": 0}
+
+    new_count = 0
+    for i, ma in enumerate(monitored):
+        if _shutdown or _is_cancelled(task_id):
+            break
+
+        update_task(task_id, progress=json.dumps({
+            "phase": "checking", "artist": ma["artist_name"],
+            "done": i, "total": len(monitored),
+        }))
+
+        try:
+            result = tidal_mod.search(ma["artist_name"], content_type="albums", limit=5)
+            albums = result.get("albums", [])
+            if not albums:
+                continue
+
+            latest = albums[0]
+            if latest["id"] != ma.get("last_release_id"):
+                # New release found
+                add_tidal_download(
+                    tidal_url=latest["url"],
+                    tidal_id=str(latest["id"]),
+                    content_type="album",
+                    title=latest["title"],
+                    artist=latest["artist"],
+                    cover_url=latest.get("cover"),
+                    status="queued",
+                    source="new_release",
+                    metadata={"year": latest.get("year"), "tracks": latest.get("tracks")},
+                )
+                new_count += 1
+
+                # Update last_release_id
+                now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+                with get_db_ctx() as cur:
+                    cur.execute(
+                        "UPDATE tidal_monitored_artists SET last_release_id = %s, last_checked = %s WHERE artist_name = %s",
+                        (str(latest["id"]), now, ma["artist_name"]),
+                    )
+
+            time.sleep(1)
+        except Exception:
+            log.debug("New release check failed for %s", ma["artist_name"])
+
+    return {"checked": len(monitored), "new_releases": new_count}
 
 
 def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dict:
@@ -1529,4 +1604,5 @@ TASK_HANDLERS = {
     "compute_bliss": _handle_compute_bliss,
     "process_new_content": _handle_process_new_content,
     "tidal_download": _handle_tidal_download,
+    "check_new_releases": _handle_check_new_releases,
 }

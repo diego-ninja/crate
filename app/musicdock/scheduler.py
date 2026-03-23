@@ -13,6 +13,7 @@ DEFAULT_SCHEDULES = {
     "enrich_artists": 86400,      # 24h — full enrichment of all artists
     "library_pipeline": 1800,     # 30min — health check + repair + sync
     "compute_analytics": 3600,    # 1h — recompute analytics from DB
+    "check_new_releases": 21600,  # 6h — check Tidal for new releases
 }
 
 

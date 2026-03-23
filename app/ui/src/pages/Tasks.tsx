@@ -95,6 +95,7 @@ const TYPE_LABELS: Record<string, string> = {
   process_new_content: "Process New Content",
   compute_bliss: "Compute Bliss Vectors",
   tidal_download: "Tidal Download",
+  check_new_releases: "Check New Releases",
 };
 
 function getTaskLabel(task: Task): string {
