@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from musicdock.config import load_config
-from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, set_cache, get_cache, list_tasks, get_task, get_setting, get_db_ctx
+from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, set_cache, get_cache, list_tasks, get_task, get_setting, get_db_ctx, emit_task_event
 from musicdock.importer import ImportQueue
 from musicdock.scanner import LibraryScanner
 from musicdock.report import save_report
@@ -230,6 +230,7 @@ def _handle_scan(task_id: str, params: dict, config: dict) -> dict:
                 issues_by_type[key] += 1
             total_issues += 1
 
+    emit_task_event(task_id, "info", {"message": "Starting library scan..."})
     scanner = LibraryScanner(
         config,
         progress_callback=_progress_callback,
@@ -421,14 +422,17 @@ def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
         result = enrich_artist(name, config)
         if result.get("skipped"):
             skipped += 1
+            emit_task_event(task_id, "artist_skipped", {"artist": name})
         else:
             enriched += 1
+            emit_task_event(task_id, "artist_enriched", {"artist": name, "sources": result})
 
     return {"enriched": enriched, "skipped": skipped, "total": total}
 
 
 def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
     sync = LibrarySync(config)
+    emit_task_event(task_id, "info", {"message": "Starting library sync..."})
     return sync.full_sync(
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
     )
@@ -459,6 +463,7 @@ def _handle_fix_issues(task_id: str, params: dict, config: dict) -> dict:
 
     update_task(task_id, progress=json.dumps({"phase": "fixing", "total": len(issue_objs)}))
     fixer = LibraryFixer(config)
+    emit_task_event(task_id, "info", {"message": f"Fixing {len(issue_objs)} issues..."})
     fixer.fix(issue_objs, dry_run=False)
 
     auto = sum(1 for i in issue_objs if i.confidence >= threshold)
@@ -533,7 +538,9 @@ def _handle_enrich_single(task_id: str, params: dict, config: dict) -> dict:
         return {"error": "No artist specified"}
 
     update_task(task_id, progress=json.dumps({"artist": name, "phase": "enriching"}))
-    return enrich_artist(name, config, force=True)
+    result = enrich_artist(name, config, force=True)
+    emit_task_event(task_id, "info", {"message": f"Enriched: {name}", "sources": result})
+    return result
 
 
 def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
@@ -614,6 +621,7 @@ def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
     )
     set_cache("health_report", report)
+    emit_task_event(task_id, "info", {"message": f"Health check complete: {len(report.get(\"issues\", []))} issues", "summary": report.get("summary", {})})
     return {"issue_count": len(report.get("issues", [])), "summary": report.get("summary", {})}
 
 
@@ -641,6 +649,7 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d)),
     )
 
+    emit_task_event(task_id, "info", {"message": f"Repair complete: {len(result.get(\"actions\", []))} actions", "fs_changed": result.get("fs_changed"), "db_changed": result.get("db_changed")})
     if not dry_run and result.get("fs_changed"):
         start_scan()
 
@@ -653,6 +662,7 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.navidrome import start_scan
     from musicdock.scheduler import mark_run
 
+    emit_task_event(task_id, "info", {"message": "Pipeline: running health check..."})
     update_task(task_id, progress=json.dumps({"phase": "health_check"}))
     checker = LibraryHealthCheck(config)
     report = checker.run(
@@ -660,6 +670,7 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     )
     set_cache("health_report", report)
 
+    emit_task_event(task_id, "info", {"message": "Pipeline: running repair..."})
     update_task(task_id, progress=json.dumps({"phase": "repair"}))
     repairer = LibraryRepair(config)
     repair_result = repairer.repair(
@@ -667,6 +678,7 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
         progress_callback=lambda d: update_task(task_id, progress=json.dumps({**d, "phase": "repair"})),
     )
 
+    emit_task_event(task_id, "info", {"message": "Pipeline: running sync..."})
     update_task(task_id, progress=json.dumps({"phase": "sync"}))
     sync = LibrarySync(config)
     sync_result = sync.full_sync(
@@ -710,6 +722,7 @@ def _handle_delete_artist(task_id: str, params: dict, config: dict) -> dict:
                     "fanart:all:", "nd:artist:", "spotify:artist:"):
         delete_cache(f"{prefix}{name.lower()}")
 
+    emit_task_event(task_id, "info", {"message": f"Deleted artist: {name}", "mode": mode})
     log_audit("delete_artist", "artist", name,
               details={"mode": mode, "folder": folder}, task_id=task_id)
 
@@ -751,6 +764,7 @@ def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
             "has_photo": artist_data.get("has_photo", 0),
         })
 
+    emit_task_event(task_id, "info", {"message": f"Deleted album: {artist_name}/{album_name}", "mode": mode})
     log_audit("delete_album", "album", f"{artist_name}/{album_name}",
               details={"mode": mode}, task_id=task_id)
 
@@ -814,6 +828,7 @@ def _handle_move_artist(task_id: str, params: dict, config: dict) -> dict:
     except Exception:
         log.warning("Retagging failed for %s", new_name, exc_info=True)
 
+    emit_task_event(task_id, "info", {"message": f"Moved artist: {name} → {new_name}"})
     log_audit("move_artist", "artist", name,
               details={"new_name": new_name}, task_id=task_id)
     start_scan()
@@ -825,6 +840,7 @@ def _handle_wipe_library(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.db import wipe_library_tables, log_audit
 
     wipe_library_tables()
+    emit_task_event(task_id, "info", {"message": "Library database wiped"})
     log_audit("wipe_library", "database", "library", task_id=task_id)
 
     if params.get("rebuild"):
@@ -838,6 +854,7 @@ def _handle_rebuild_library(task_id: str, params: dict, config: dict) -> dict:
 
     update_task(task_id, progress=json.dumps({"phase": "wipe"}))
     wipe_library_tables()
+    emit_task_event(task_id, "info", {"message": "Rebuild: database wiped, starting pipeline..."})
     log_audit("rebuild_library_wipe", "database", "library", task_id=task_id)
 
     # Run full pipeline
@@ -872,6 +889,7 @@ def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
             except OSError:
                 pass
 
+    emit_task_event(task_id, "info", {"message": f"Reset enrichment for: {name}"})
     log_audit("reset_enrichment", "artist", name, task_id=task_id)
 
     # Re-enrich
@@ -912,6 +930,7 @@ def _handle_update_album_tags(task_id: str, params: dict, config: dict) -> dict:
         except Exception as e:
             errors.append({"file": track.name, "error": str(e)})
 
+    emit_task_event(task_id, "info", {"message": f"Updated tags: {updated} tracks"})
     return {"updated": updated, "errors": errors}
 
 
@@ -954,6 +973,7 @@ def _handle_resolve_duplicates(task_id: str, params: dict, config: dict) -> dict
         shutil.move(str(album_dir), str(dest))
         removed.append(path_str)
 
+    emit_task_event(task_id, "info", {"message": f"Resolved duplicates: kept {keep}, removed {len(removed)}"})
     return {"kept": keep, "removed": removed}
 
 
@@ -971,6 +991,7 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
 
     exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
     result = apply_match(album_dir, exts, release)
+    emit_task_event(task_id, "info", {"message": f"Applied MusicBrainz tags: {result.get(\"updated\", 0)} tracks"})
     return result
 
 
@@ -1120,6 +1141,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
                     log.warning("Failed to write MBID tags to %s", track_path)
 
         enriched += 1
+        emit_task_event(task_id, "album_matched", {"artist": artist_name, "album": clean_album, "mbid": release_mbid, "score": best_score})
         log.info("Enriched %s / %s (score=%d, mbid=%s, files=%d)",
                  artist_name, clean_album, best_score, release_mbid, written_files)
         time.sleep(1)  # MB rate limit: 1 req/sec
@@ -1148,6 +1170,7 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
         update_tidal_download(download_id, status="downloading", task_id=task_id)
 
     # 1. Download via tiddl
+    emit_task_event(task_id, "info", {"message": f"Downloading from Tidal: {url}"})
     update_task(task_id, progress=json.dumps({"phase": "downloading", "url": url}))
     result = download(
         url, quality=quality, task_id=task_id,
@@ -1195,6 +1218,7 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
     except Exception:
         pass
 
+    emit_task_event(task_id, "info", {"message": f"Download complete: {len(modified_artists)} artists", "artists": modified_artists})
     # 6. Mark download complete
     now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
     if download_id:
@@ -1249,6 +1273,7 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
                     metadata={"year": latest.get("year"), "tracks": latest.get("tracks")},
                 )
                 new_count += 1
+                emit_task_event(task_id, "new_release_found", {"artist": ma["artist_name"], "album": latest["title"], "url": latest["url"]})
 
                 # Update last_release_id
                 now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
@@ -1293,6 +1318,7 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
     try:
         enrich_result = enrich_artist(artist_name, config)
         result["steps"]["enrich_artist"] = enrich_result.get("skipped", False)
+        emit_task_event(task_id, "step_done", {"step": "enrich_artist", "result": enrich_result})
     except Exception:
         log.warning("Enrich artist failed for %s", artist_name, exc_info=True)
         result["steps"]["enrich_artist"] = "failed"
@@ -1409,6 +1435,7 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
                             spectral_complexity=ar.get("spectral_complexity"),
                         )
                         analyzed += 1
+                        emit_task_event(task_id, "track_analyzed", {"title": t.get("title", ""), "bpm": ar.get("bpm"), "key": ar.get("key")})
                 except Exception:
                     log.debug("Analysis failed for %s", t["path"])
         result["steps"]["audio_analysis"] = analyzed
@@ -1466,7 +1493,6 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
 
 def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dict:
     """Scan for missing covers, search sources, emit events for each find."""
-    from musicdock.db import emit_task_event
     from musicdock.artwork import scan_missing_covers, fetch_cover_from_caa, save_cover, extract_embedded_cover
     from musicdock.lastfm import download_artist_image
 
@@ -1650,12 +1676,14 @@ def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
         if vectors:
             store_vectors(vectors)
             analyzed_total += len(vectors)
+            emit_task_event(task_id, "artist_analyzed", {"artist": artist["name"], "tracks": len(vectors)})
 
     return {"analyzed": analyzed_total, "artists": total}
 
 
 def _handle_compute_popularity(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.popularity import compute_popularity
+    emit_task_event(task_id, "info", {"message": "Computing popularity from Last.fm..."})
     return compute_popularity(
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
     )
@@ -1663,9 +1691,12 @@ def _handle_compute_popularity(task_id: str, params: dict, config: dict) -> dict
 
 def _handle_index_genres(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.genre_indexer import index_all_genres
-    return index_all_genres(
+    emit_task_event(task_id, "info", {"message": "Indexing genres..."})
+    result = index_all_genres(
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
     )
+    emit_task_event(task_id, "info", {"message": f"Genres indexed: {result.get(\"total_genres\", 0)} genres"})
+    return result
 
 
 def _handle_sync_playlist_navidrome(task_id: str, params: dict, config: dict) -> dict:
@@ -1732,6 +1763,7 @@ def _handle_sync_playlist_navidrome(task_id: str, params: dict, config: dict) ->
     except Exception as e:
         return {"error": f"Failed to create Navidrome playlist: {e}"}
 
+    emit_task_event(task_id, "info", {"message": f"Synced to Navidrome: {len(matched_ids)} tracks matched"})
     return {
         "navidrome_id": nd_id,
         "matched": len(matched_ids),

@@ -52,10 +52,14 @@ export function useTaskEvents(taskId: string | null) {
       }
     };
 
-    // Common event types tasks emit
+    // All event types tasks can emit
     const eventTypes = [
-      "progress", "cover_found", "cover_applied", "album_scanned",
-      "item_processed", "match_found", "error", "warning", "info",
+      "info", "progress", "warning", "error",
+      "cover_found", "cover_applied",
+      "artist_enriched", "artist_skipped", "artist_analyzed",
+      "track_analyzed", "album_matched",
+      "step_done", "new_release_found",
+      "item_processed", "match_found",
     ];
     for (const type of eventTypes) {
       source.addEventListener(type, handleEvent);
