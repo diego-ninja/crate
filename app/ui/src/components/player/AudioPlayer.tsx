@@ -69,7 +69,7 @@ function CoverArt({ src, size, className }: { src?: string; size: number; classN
 function BarVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
   if (frequencies.length === 0) return null;
   return (
-    <div className={`flex items-end overflow-hidden pointer-events-none ${className}`}>
+    <div role="img" aria-label="Audio frequency visualization" className={`flex items-end overflow-hidden pointer-events-none ${className}`}>
       {frequencies.map((f, i) => (
         <div
           key={i}
@@ -84,6 +84,7 @@ function BarVisualizer({ frequencies, className }: { frequencies: number[]; clas
 function WaveVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
   if (frequencies.length === 0) return null;
   const len = frequencies.length;
+  // aria handled by parent container
   // Mirror the frequencies for a symmetric wave
   const points: string[] = [];
   const h = 100;
@@ -104,8 +105,8 @@ function WaveVisualizer({ frequencies, className }: { frequencies: number[]; cla
   const bottomLine = bottomPoints.join(" ");
 
   return (
-    <div className={`overflow-hidden pointer-events-none ${className}`}>
-      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full h-full">
+    <div role="img" aria-label="Audio waveform visualization" className={`overflow-hidden pointer-events-none ${className}`}>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="w-full h-full" aria-hidden="true">
         <polyline
           points={topLine}
           fill="none"

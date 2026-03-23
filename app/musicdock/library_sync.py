@@ -12,6 +12,7 @@ from musicdock.db import (
     get_db_ctx,
     get_library_albums,
     get_library_artist,
+    get_library_artists,
     upsert_album,
     upsert_artist,
     upsert_track,
@@ -56,12 +57,16 @@ class LibrarySync:
 
         total_artists = len(canonical_map)
 
+        # Pre-fetch all existing artists to avoid N+1 queries
+        all_existing, _ = get_library_artists(per_page=100000)
+        existing_by_name = {a["name"].lower(): a for a in all_existing}
+        existing_by_folder = {(a.get("folder_name") or "").lower(): a for a in all_existing if a.get("folder_name")}
+
         for i, (artist_name, dirs) in enumerate(sorted(canonical_map.items())):
             try:
-                # Use first folder as primary for mtime/photo checks
                 primary_dir = dirs[0]
                 folder_names = [d.name for d in dirs]
-                existing = get_library_artist(artist_name) or get_library_artist(dirs[0].name)
+                existing = existing_by_name.get(artist_name.lower()) or existing_by_folder.get(dirs[0].name.lower())
 
                 # Check if any folder has changed
                 max_mtime = max(d.stat().st_mtime for d in dirs)

@@ -195,10 +195,13 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
         onFocus={() => (localResults || tidalResults) && setOpen(true)}
         onKeyDown={handleKeyDown}
         placeholder="Search library & Tidal..."
+        aria-label="Search library and Tidal"
+        aria-autocomplete="list"
+        aria-expanded={open}
         className="pl-9 bg-card border-border"
       />
       {open && items.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-50 max-h-[70vh] overflow-y-auto">
+        <div role="listbox" aria-label="Search results" className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-50 max-h-[70vh] overflow-y-auto">
           {/* Library results */}
           {libraryItems.length > 0 && (
             <>
