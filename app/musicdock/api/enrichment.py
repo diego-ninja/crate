@@ -35,7 +35,9 @@ def get_artist_enrichment(name: str):
     # Fetch inline (first visit)
     result = _fetch_enrichment(name)
     if result:
-        set_cache(cache_key, result)
+        # Only cache if we got meaningful data (at least lastfm or spotify)
+        if "lastfm" in result or "spotify" in result:
+            set_cache(cache_key, result)
     return result or {}
 
 
@@ -48,7 +50,7 @@ def _build_from_db(artist: dict) -> dict:
     tags = artist.get("tags_json")
     similar = artist.get("similar_json")
     listeners = artist.get("listeners")
-    if bio or tags or listeners:
+    if bio or tags or listeners or similar:
         lastfm: dict = {}
         if bio:
             lastfm["bio"] = bio

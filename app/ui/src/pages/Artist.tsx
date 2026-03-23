@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { useParams, Link } from "react-router";
+import { useParams, Link, useNavigate } from "react-router";
 import { useApi } from "@/hooks/use-api";
 import { ArtistStats } from "@/components/artist/ArtistStats";
 import { useNavidromeLink, useTopTracks, useArtistEnrichment } from "@/hooks/use-artist-data";
 import { api } from "@/lib/api";
 import { AlbumCard } from "@/components/album/AlbumCard";
+import { Network } from "@nivo/network";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { MissingAlbumCard } from "@/components/album/MissingAlbumCard";
 import { Button } from "@/components/ui/button";
@@ -151,6 +152,7 @@ export function Artist() {
     name ? `/api/artist/${encPath(decodedName)}` : null,
   );
   const player = usePlayer();
+  const navigate = useNavigate();
 
   const [sort, setSort] = useState("name");
   const [photoLoaded, setPhotoLoaded] = useState(false);
@@ -934,22 +936,47 @@ export function Artist() {
             {mergedSimilar.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">No similar artists available</div>
             ) : (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">
-                {mergedSimilar.map((s) => (
-                  <SimilarArtistCard
-                    key={s.name}
-                    name={s.name}
-                    genres={s.genres}
-                    popularity={s.popularity}
+              <>
+                {/* Network Graph */}
+                <div className="bg-card border border-border rounded-lg p-4 mb-6">
+                  <h4 className="text-sm font-semibold mb-3">Artist Network</h4>
+                  <ArtistNetworkGraph
+                    centerArtist={data.name}
+                    similar={mergedSimilar.map((s) => s.name)}
+                    onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
                   />
-                ))}
-              </div>
+                </div>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">
+                  {mergedSimilar.map((s) => (
+                    <SimilarArtistCard
+                      key={s.name}
+                      name={s.name}
+                      genres={s.genres}
+                      popularity={s.popularity}
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </div>
         )}
 
         {/* ── Stats Tab ── */}
-        {activeTab === "stats" && <ArtistStats name={data.name} />}
+        {activeTab === "stats" && (
+          <div className="space-y-6">
+            <ArtistStats name={data.name} />
+            {mergedSimilar.length > 0 && (
+              <div className="bg-card border border-border rounded-lg p-4">
+                <h4 className="text-sm font-semibold mb-3">Artist Network</h4>
+                <ArtistNetworkGraph
+                  centerArtist={data.name}
+                  similar={mergedSimilar.map((s) => s.name)}
+                  onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── About Tab ── */}
         {activeTab === "about" && (
@@ -1114,6 +1141,233 @@ function PopularityBar({ value }: { value: number }) {
         />
       </div>
       <span className="text-[10px] text-white/30">{value}</span>
+    </div>
+  );
+}
+
+// Global enrichment cache — survives navigation between artist pages
+interface NetworkNodeMeta { similar: string[]; popularity: number; listeners?: number; playcount?: number; genres?: string[] }
+const _networkEnrichCache = new Map<string, NetworkNodeMeta>();
+
+function NetworkNodeThumb({ name }: { name: string }) {
+  const [err, setErr] = useState(false);
+  if (err) {
+    return (
+      <div className="w-9 h-9 rounded-md bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center flex-shrink-0">
+        <span className="text-xs font-bold text-primary/60">{name.charAt(0).toUpperCase()}</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={`/api/artist/${encPath(name)}/photo`}
+      alt=""
+      className="w-9 h-9 rounded-md object-cover bg-secondary flex-shrink-0"
+      onError={() => setErr(true)}
+    />
+  );
+}
+
+function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArtist: string; similar: string[]; onNodeClick: (name: string) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(500);
+  const [nodes, setNodes] = useState<{ id: string; depth: number }[]>([]);
+  const [links, setLinks] = useState<{ source: string; target: string }[]>([]);
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  const [focusNode, setFocusNode] = useState(centerArtist);
+  const [nodeMeta, setNodeMeta] = useState<Map<string, { popularity: number; listeners?: number; playcount?: number; genres?: string[] }>>(new Map());
+  function calcPop(d: { lastfm?: { listeners?: number }; spotify?: { popularity?: number } }): number {
+    const listeners = d?.lastfm?.listeners ?? 0;
+    const spotPop = d?.spotify?.popularity ?? 0;
+    const pop = spotPop || (listeners > 0 ? Math.min(100, Math.round((Math.log(listeners) - Math.log(5000)) / (Math.log(50000000) - Math.log(5000)) * 100)) : 0);
+    return Math.max(0, Math.min(100, pop));
+  }
+
+  async function prefetchNode(name: string): Promise<NetworkNodeMeta | null> {
+    if (_networkEnrichCache.has(name)) {
+      const cached = _networkEnrichCache.get(name)!;
+      setNodeMeta((prev) => {
+        const n = new Map(prev);
+        if (!n.has(name)) n.set(name, { popularity: cached.popularity, listeners: cached.listeners, playcount: cached.playcount, genres: cached.genres });
+        return n;
+      });
+      return cached;
+    }
+    try {
+      const d = await api<{ lastfm?: { similar?: { name: string }[]; listeners?: number; playcount?: number; tags?: string[] }; spotify?: { popularity?: number; genres?: string[] } }>(`/api/artist/${encPath(name)}/enrichment`);
+      const genres = d?.lastfm?.tags?.slice(0, 3) ?? d?.spotify?.genres?.slice(0, 3) ?? [];
+      const result: NetworkNodeMeta = {
+        similar: d?.lastfm?.similar?.map((s) => s.name) ?? [],
+        popularity: calcPop(d),
+        listeners: d?.lastfm?.listeners,
+        playcount: d?.lastfm?.playcount,
+        genres,
+      };
+      _networkEnrichCache.set(name, result);
+      setNodeMeta((prev) => new Map(prev).set(name, { popularity: result.popularity, listeners: result.listeners, playcount: result.playcount, genres: result.genres }));
+      return result;
+    } catch { return null; }
+  }
+
+  // Initialize with center artist + level 1, prefetch level 2 in background
+  useEffect(() => {
+    const nodeMap = new Map<string, number>();
+    nodeMap.set(centerArtist, 0);
+    const newLinks: { source: string; target: string }[] = [];
+    for (const s of similar) {
+      if (!nodeMap.has(s)) nodeMap.set(s, 1);
+      newLinks.push({ source: centerArtist, target: s });
+    }
+    setNodes(Array.from(nodeMap.entries()).map(([id, depth]) => ({ id, depth })));
+    setLinks(newLinks);
+    setExpandedNodes(new Set([centerArtist]));
+    setFocusNode(centerArtist);
+
+    // Prefetch all level-1 nodes with stagger to avoid API rate limits
+    const allNames = [centerArtist, ...similar];
+    let cancelled = false;
+    (async () => {
+      for (const n of allNames) {
+        if (cancelled) break;
+        await prefetchNode(n);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [centerArtist, similar]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    setWidth(containerRef.current.clientWidth || 500);
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) setWidth(Math.floor(e.contentRect.width) || 500);
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  async function expandNode(name: string) {
+    if (expandedNodes.has(name)) {
+      onNodeClick(name);
+      return;
+    }
+
+    // Use cache (prefetched in background), falls back to fetch
+    const cached = await prefetchNode(name);
+    if (!cached || cached.similar.length === 0) {
+      onNodeClick(name);
+      return;
+    }
+
+    const nodeSimilar = cached.similar;
+    setNodes((prev) => {
+      const existing = new Set(prev.map((n) => n.id));
+      const toAdd = nodeSimilar.filter((s) => !existing.has(s)).slice(0, 8);
+      return [...prev, ...toAdd.map((id) => ({ id, depth: 2 }))];
+    });
+    setLinks((prev) => {
+      const existingSet = new Set(prev.map((l) => `${l.source}->${l.target}`));
+      const newLinks = nodeSimilar
+        .slice(0, 8)
+        .map((s) => ({ source: name, target: s }))
+        .filter((l) => !existingSet.has(`${l.source}->${l.target}`));
+      return [...prev, ...newLinks];
+    });
+    setExpandedNodes((prev) => new Set([...prev, name]));
+    setFocusNode(name);
+
+    // Prefetch next level in background (staggered)
+    (async () => {
+      for (const s of nodeSimilar.slice(0, 8)) {
+        if (_networkEnrichCache.has(s)) continue;
+        await prefetchNode(s);
+        await new Promise((r) => setTimeout(r, 200));
+      }
+    })();
+  }
+
+  return (
+    <div ref={containerRef} style={{ width: "100%", height: 400 }}>
+      <Network
+        data={{ nodes, links }}
+        width={width}
+        height={400}
+        margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
+        repulsivity={Math.max(60, width / 5)}
+        iterations={130}
+        linkDistance={50}
+        centeringStrength={0.3}
+        nodeSize={(n: { id: string }) => {
+          const meta = nodeMeta.get(n.id);
+          const pop = meta?.popularity ?? 0;
+          // Base size from popularity: 8px (0%) to 24px (100%)
+          const popSize = 8 + (pop / 100) * 16;
+          if (n.id === centerArtist) return Math.max(22, popSize);
+          if (n.id === focusNode) return Math.max(16, popSize);
+          return Math.max(8, popSize);
+        }}
+        nodeColor={(n: { id: string }) => {
+          if (n.id === centerArtist) return "#06b6d4";
+          if (n.id === focusNode && focusNode !== centerArtist) return "#8b5cf6";
+          if (expandedNodes.has(n.id)) return "#22c55e";
+          return "#6b7280";
+        }}
+        nodeBorderWidth={2}
+        nodeBorderColor={(n: { id: string }) => {
+          if (n.id === centerArtist) return "#0891b2";
+          if (expandedNodes.has(n.id)) return "#16a34a";
+          return "#4b5563";
+        }}
+        linkThickness={1}
+        linkColor="#6b7280"
+        linkBlendMode="normal"
+        animate={true}
+        motionConfig="gentle"
+        onClick={(node) => expandNode(String(node.id))}
+        nodeTooltip={({ node }) => {
+          const meta = nodeMeta.get(String(node.id));
+          const nodeName = String(node.id);
+          return (
+            <div className="bg-card text-foreground text-xs rounded-lg border border-border shadow-lg min-w-[200px] overflow-hidden">
+              <div className="flex items-start gap-2.5 p-2.5">
+                <NetworkNodeThumb name={nodeName} />
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium truncate">{nodeName}</div>
+                  {meta?.genres && meta.genres.length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {meta.genres.map((g) => (
+                        <span key={g} className="text-[9px] px-1.5 py-0 rounded-full bg-white/8 text-muted-foreground border border-white/10">
+                          {g.toLowerCase()}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {meta && meta.popularity > 0 && (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${meta.popularity}%`, background: "linear-gradient(90deg, #6b7280, #22c55e)" }} />
+                      </div>
+                      <span className="text-[9px] text-muted-foreground">{meta.popularity}%</span>
+                    </div>
+                  )}
+                  {(meta?.listeners || meta?.playcount) && (
+                    <div className="flex gap-3 mt-1 text-[9px] text-muted-foreground">
+                      {meta.listeners ? <span>{formatCompact(meta.listeners)} listeners</span> : null}
+                      {meta.playcount ? <span>{formatCompact(meta.playcount)} scrobbles</span> : null}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="text-[9px] text-muted-foreground/60 px-2.5 pb-2 -mt-0.5">
+                {node.id === centerArtist ? "Current artist" : expandedNodes.has(String(node.id)) ? "Click to visit" : "Click to expand"}
+              </div>
+            </div>
+          );
+        }}
+      />
+      <div className="text-[10px] text-muted-foreground mt-1 text-center">
+        Click a node to expand its connections. Click again to visit the artist page.
+      </div>
     </div>
   );
 }

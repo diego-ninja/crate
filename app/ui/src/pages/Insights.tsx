@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { useApi } from "@/hooks/use-api";
@@ -7,7 +7,6 @@ import { BarChart3, Globe, Music, Disc3, Users, Zap, CheckCircle2, Headphones, V
 import { ResponsiveBar } from "@nivo/bar";
 import { ResponsivePie } from "@nivo/pie";
 import { ResponsiveRadar } from "@nivo/radar";
-import { Network } from "@nivo/network";
 import { ResponsiveScatterPlot } from "@nivo/scatterplot";
 
 interface InsightsData {
@@ -489,63 +488,9 @@ export function Insights() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card">
-          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Users size={14} /> Artist Network</CardTitle></CardHeader>
-          <CardContent>
-            <div className="h-[400px]">
-              {data.network.nodes.length > 0 ? (
-                <NetworkGraph network={data.network} />
-              ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No similar artist data</div>}
-            </div>
-          </CardContent>
-        </Card>
+        <div />  {/* Network graph moved to Artist Stats page */}
       </div>
     </div>
   );
 }
 
-function NetworkGraph({ network }: { network: { nodes: { id: string }[]; links: { source: string; target: string }[] } }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(500);
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    setWidth(containerRef.current.clientWidth || 500);
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setWidth(Math.floor(entry.contentRect.width) || 500);
-      }
-    });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  return (
-    <div ref={containerRef} style={{ width: "100%", height: 400 }}>
-      <Network
-        data={network}
-        width={width}
-        height={400}
-        margin={{ top: 10, right: 10, bottom: 10, left: 10 }}
-        repulsivity={Math.max(100, width / 3)}
-        iterations={120}
-        linkDistance={40}
-        centeringStrength={0.3}
-        nodeSize={(n: { id: string }) => {
-          const c = network.links.filter((l) => l.source === n.id || l.target === n.id).length;
-          return Math.max(8, c * 3 + 6);
-        }}
-        nodeColor={(n: { id: string }) => {
-          const isOwn = network.links.some((l) => l.source === n.id);
-          return isOwn ? "#06b6d4" : "#6b7280";
-        }}
-        nodeBorderWidth={1.5}
-        nodeBorderColor={{ from: "color", modifiers: [["darker", 0.6]] }}
-        linkThickness={1}
-        linkColor="#374151"
-        animate={true}
-        motionConfig="gentle"
-      />
-    </div>
-  );
-}
