@@ -4,6 +4,8 @@ import { ResponsivePie } from "@nivo/pie";
 import { ResponsiveBar } from "@nivo/bar";
 import { ResponsiveRadar } from "@nivo/radar";
 import { useApi } from "@/hooks/use-api";
+import { useNavidromeLink, useTopTracks } from "@/hooks/use-artist-data";
+import { useArtistEnrichment } from "@/hooks/use-artist-data";
 import { api } from "@/lib/api";
 import { AlbumCard } from "@/components/album/AlbumCard";
 import { MissingAlbumCard } from "@/components/album/MissingAlbumCard";
@@ -69,12 +71,6 @@ interface ArtistData {
   total_tracks?: number;
   total_size_mb?: number;
   primary_format?: string;
-}
-
-interface NavidromeArtistLink {
-  id: string;
-  name: string;
-  navidrome_url: string;
 }
 
 interface TopTrack {
@@ -162,8 +158,9 @@ export function Artist() {
   const [photoLoaded, setPhotoLoaded] = useState(false);
   const [photoError, setPhotoError] = useState(false);
   const [bgLoaded, setBgLoaded] = useState(false);
-  const [navidromeLink, setNavidromeLink] = useState<NavidromeArtistLink | null>(null);
-  const [topTracks, setTopTracks] = useState<TopTrack[]>([]);
+  // Data fetching hooks (replace manual useEffect + useState)
+  const navidromeLink = useNavidromeLink(data?.name);
+  const topTracks = useTopTracks(data?.name);
   const [enriching, setEnriching] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
@@ -171,43 +168,16 @@ export function Artist() {
   const [missingAlbums, setMissingAlbums] = useState<{ title: string; first_release_date: string; type: string }[]>([]);
   const [missingLoaded, setMissingLoaded] = useState(false);
   const [bioExpanded, setBioExpanded] = useState(false);
+  const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.name);
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
-  const [enrichmentLoading, setEnrichmentLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { isAdmin } = useAuth();
   const bgRef = useRef<HTMLImageElement>(null);
 
-  // Fetch enrichment data
+  // Sync enrichment from hook (can be overridden by manual enrich)
   useEffect(() => {
-    if (!data?.name) return;
-    let cancelled = false;
-    setEnrichmentLoading(true);
-    api<EnrichmentData>(`/api/artist/${encPath(data.name)}/enrichment`)
-      .then((d) => { if (!cancelled) setEnrichment(d); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setEnrichmentLoading(false); });
-    return () => { cancelled = true; };
-  }, [data?.name]);
-
-  // Fetch Navidrome link
-  useEffect(() => {
-    if (!data?.name) return;
-    let cancelled = false;
-    api<NavidromeArtistLink>(`/api/navidrome/artist/${encPath(data.name)}/link`)
-      .then((d) => { if (!cancelled) setNavidromeLink(d); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [data?.name]);
-
-  // Fetch top tracks
-  useEffect(() => {
-    if (!data?.name) return;
-    let cancelled = false;
-    api<TopTrack[]>(`/api/navidrome/artist/${encPath(data.name)}/top-tracks?count=10`)
-      .then((d) => { if (!cancelled && Array.isArray(d)) setTopTracks(d); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [data?.name]);
+    if (fetchedEnrichment) setEnrichment(fetchedEnrichment as EnrichmentData);
+  }, [fetchedEnrichment]);
 
   // Fetch missing albums (lazy, on discography tab)
   useEffect(() => {
