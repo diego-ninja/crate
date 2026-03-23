@@ -5,6 +5,7 @@ import { AlbumHeader } from "@/components/album/AlbumHeader";
 import { TrackTable } from "@/components/album/TrackTable";
 import { AudioProfileCard } from "@/components/album/AudioProfileCard";
 import { TagEditor } from "@/components/album/TagEditor";
+import { RelatedAlbums } from "@/components/album/RelatedAlbums";
 import { MatchCard } from "@/components/scanner/MatchCard";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -267,6 +268,8 @@ export function Album() {
             audiomuseData={audiomuseData ?? undefined}
           />
         </div>
+
+        <RelatedAlbums artist={data.artist} album={data.name} />
 
         <ConfirmDialog
           open={pendingMatch !== null}

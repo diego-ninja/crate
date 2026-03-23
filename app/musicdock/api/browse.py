@@ -10,7 +10,7 @@ from musicdock.api._deps import library_path, extensions, safe_path, COVER_NAMES
 from musicdock.db import (
     get_library_artists, get_library_artist, get_library_albums,
     get_library_album, get_library_tracks, get_library_track_count,
-    get_db_ctx,
+    get_db_ctx, get_cache, set_cache,
 )
 from musicdock.lastfm import get_artist_info, get_best_artist_image
 
@@ -209,12 +209,58 @@ def _fs_search(q: str) -> dict:
 # ── API endpoints ────────────────────────────────────────────────
 
 
+@router.get("/api/browse/filters")
+def api_browse_filters():
+    """Available filter options for the browse page."""
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT g.name, COUNT(DISTINCT ag.artist_name) AS cnt
+            FROM genres g JOIN artist_genres ag ON g.id = ag.genre_id
+            GROUP BY g.name HAVING COUNT(DISTINCT ag.artist_name) >= 1
+            ORDER BY cnt DESC LIMIT 50
+        """)
+        genres = [{"name": r["name"], "count": r["cnt"]} for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT country, COUNT(*) AS cnt FROM library_artists
+            WHERE country IS NOT NULL AND country != ''
+            GROUP BY country ORDER BY cnt DESC
+        """)
+        countries = [{"name": r["country"], "count": r["cnt"]} for r in cur.fetchall()]
+
+        cur.execute("""
+            SELECT DISTINCT formed FROM library_artists
+            WHERE formed IS NOT NULL AND formed != '' AND length(formed) >= 4
+        """)
+        decades_set = set()
+        for r in cur.fetchall():
+            try:
+                decade = f"{int(r['formed'][:4]) // 10 * 10}s"
+                decades_set.add(decade)
+            except (ValueError, TypeError):
+                pass
+        decades = sorted(decades_set)
+
+        cur.execute("""
+            SELECT format, COUNT(*) AS cnt FROM library_tracks
+            WHERE format IS NOT NULL GROUP BY format ORDER BY cnt DESC
+        """)
+        formats = [{"name": r["format"], "count": r["cnt"]} for r in cur.fetchall()]
+
+    return {"genres": genres, "countries": countries, "decades": decades, "formats": formats}
+
+
 @router.get("/api/artists")
 def api_artists(
     q: str = "",
     page: int = 1,
     per_page: int = 60,
     sort: str = "name",
+    genre: str = "",
+    country: str = "",
+    decade: str = "",
+    format: str = "",
+    view: str = "grid",
 ):
     if not _has_library_data():
         # Fallback to filesystem
@@ -232,21 +278,87 @@ def api_artists(
         start = (page - 1) * per_page
         return {"items": artists[start:start + per_page], "total": total, "page": page, "per_page": per_page}
 
-    sort_map = {"name": "name", "albums": "albums", "size": "size", "recent": "updated", "tracks": "tracks"}
-    db_sort = sort_map.get(sort, "name")
-    rows, total = get_library_artists(q=q or None, sort=db_sort, page=page, per_page=per_page)
+    # Build filtered query with optional JOINs
+    select_cols = "la.*"
+    joins = ""
+    where_clauses = ["1=1"]
+    params: list = []
+
+    if genre:
+        joins += " JOIN artist_genres ag ON la.name = ag.artist_name JOIN genres g ON ag.genre_id = g.id"
+        where_clauses.append("g.name = %s")
+        params.append(genre)
+
+    if country:
+        where_clauses.append("la.country = %s")
+        params.append(country)
+
+    if decade:
+        # decade is like "2010s" -> formed between 2010 and 2019
+        try:
+            decade_start = int(decade.rstrip("s"))
+            where_clauses.append("la.formed IS NOT NULL AND length(la.formed) >= 4")
+            where_clauses.append("CAST(substring(la.formed, 1, 4) AS INTEGER) BETWEEN %s AND %s")
+            params.extend([decade_start, decade_start + 9])
+        except (ValueError, TypeError):
+            pass
+
+    if format:
+        where_clauses.append("la.primary_format = %s")
+        params.append(format)
+
+    if q:
+        where_clauses.append("la.name ILIKE %s")
+        params.append(f"%{q}%")
+
+    where_sql = " AND ".join(where_clauses)
+
+    sort_map = {
+        "name": "la.name ASC",
+        "popularity": "la.listeners DESC NULLS LAST",
+        "albums": "la.album_count DESC",
+        "recent": "la.dir_mtime DESC NULLS LAST",
+        "size": "la.total_size DESC",
+        "tracks": "la.track_count DESC",
+    }
+    order_sql = sort_map.get(sort, "la.name ASC")
+
+    with get_db_ctx() as cur:
+        count_sql = f"SELECT COUNT(DISTINCT la.name) AS cnt FROM library_artists la {joins} WHERE {where_sql}"
+        cur.execute(count_sql, params)
+        total = cur.fetchone()["cnt"]
+
+        query_sql = (
+            f"SELECT DISTINCT {select_cols} FROM library_artists la {joins} "
+            f"WHERE {where_sql} ORDER BY {order_sql} LIMIT %s OFFSET %s"
+        )
+        cur.execute(query_sql, params + [per_page, (page - 1) * per_page])
+        rows = cur.fetchall()
 
     items = []
     for r in rows:
-        items.append({
+        item = {
             "name": r["name"],
             "albums": r["album_count"],
             "tracks": r["track_count"],
             "total_size_mb": round(r["total_size"] / (1024 ** 2)) if r["total_size"] else 0,
-            "formats": r.get("formats", []),
+            "formats": r.get("formats_json") if isinstance(r.get("formats_json"), list) else [],
             "primary_format": r.get("primary_format"),
             "has_photo": bool(r.get("has_photo")),
-        })
+        }
+        if view == "list":
+            item["listeners"] = r.get("listeners") or 0
+            item["track_count"] = r["track_count"]
+            item["total_size_mb"] = round(r["total_size"] / (1024 ** 2)) if r["total_size"] else 0
+            # Fetch genres for list view
+            with get_db_ctx() as cur2:
+                cur2.execute(
+                    "SELECT g.name FROM artist_genres ag JOIN genres g ON ag.genre_id = g.id "
+                    "WHERE ag.artist_name = %s ORDER BY ag.weight DESC LIMIT 5",
+                    (r["name"],),
+                )
+                item["genres"] = [gr["name"] for gr in cur2.fetchall()]
+        items.append(item)
 
     return {"items": items, "total": total, "page": page, "per_page": per_page}
 
@@ -440,6 +552,92 @@ def api_artist(name: str):
     }
 
 
+@router.get("/api/album/{artist:path}/{album:path}/related")
+def api_related_albums(artist: str, album: str, limit: int = 15):
+    """Find related albums: same artist, same genre+decade, similar audio profile."""
+    related = []
+    seen = set()
+
+    with get_db_ctx() as cur:
+        # Get current album info
+        cur.execute(
+            "SELECT id, year, artist FROM library_albums WHERE artist = %s AND name = %s LIMIT 1",
+            (artist, album),
+        )
+        current = cur.fetchone()
+        if not current:
+            return []
+
+        album_id = current["id"]
+        year = current["year"][:4] if current.get("year") and len(current.get("year", "")) >= 4 else None
+        seen.add(album_id)
+
+        # Get current album genres
+        cur.execute(
+            "SELECT genre_id FROM album_genres WHERE album_id = %s", (album_id,)
+        )
+        genre_ids = [r["genre_id"] for r in cur.fetchall()]
+
+        # 1. Same artist, other albums
+        cur.execute(
+            "SELECT id, name, artist, year, track_count, has_cover FROM library_albums "
+            "WHERE artist = %s AND id != %s ORDER BY year",
+            (artist, album_id),
+        )
+        for r in cur.fetchall():
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                related.append({**dict(r), "reason": "same_artist"})
+
+        # 2. Same genre + similar decade
+        if genre_ids and year:
+            year_int = int(year)
+            placeholders = ",".join(["%s"] * len(genre_ids))
+            cur.execute(f"""
+                SELECT DISTINCT a.id, a.name, a.artist, a.year, a.track_count, a.has_cover
+                FROM library_albums a
+                JOIN album_genres ag ON a.id = ag.album_id
+                WHERE ag.genre_id IN ({placeholders})
+                AND a.artist != %s
+                AND a.year IS NOT NULL AND length(a.year) >= 4
+                AND CAST(substring(a.year, 1, 4) AS INTEGER) BETWEEN %s AND %s
+                ORDER BY RANDOM() LIMIT 10
+            """, (*genre_ids, artist, year_int - 5, year_int + 5))
+            for r in cur.fetchall():
+                if r["id"] not in seen:
+                    seen.add(r["id"])
+                    related.append({**dict(r), "reason": "genre_decade"})
+
+        # 3. Similar audio profile
+        cur.execute("""
+            SELECT AVG(energy) AS e, AVG(danceability) AS d, AVG(valence) AS v
+            FROM library_tracks WHERE album_id = %s AND energy IS NOT NULL
+        """, (album_id,))
+        audio = cur.fetchone()
+        if audio and audio["e"] is not None:
+            cur.execute("""
+                SELECT a.id, a.name, a.artist, a.year, a.track_count, a.has_cover,
+                    ABS(AVG(t.energy) - %s) + ABS(AVG(t.danceability) - %s) + ABS(AVG(t.valence) - %s) AS dist
+                FROM library_albums a
+                JOIN library_tracks t ON t.album_id = a.id
+                WHERE t.energy IS NOT NULL AND a.id != %s AND a.artist != %s
+                GROUP BY a.id, a.name, a.artist, a.year, a.track_count, a.has_cover
+                ORDER BY dist ASC LIMIT 8
+            """, (audio["e"], audio["d"], audio["v"], album_id, artist))
+            for r in cur.fetchall():
+                if r["id"] not in seen:
+                    seen.add(r["id"])
+                    related.append({**dict(r), "reason": "audio_similar"})
+
+    # Add display_name
+    import re
+    year_re = re.compile(r"^\d{4}\s*[-–]\s*")
+    for r in related:
+        r["display_name"] = year_re.sub("", r["name"])
+
+    return related[:limit]
+
+
 @router.get("/api/album/{artist:path}/{album:path}")
 def api_album(artist: str, album: str):
     if not _has_library_data():
@@ -620,6 +818,94 @@ def api_search(q: str = ""):
     tracks = [{"title": r["title"], "artist": r["artist"], "album": r["album"]} for r in track_rows]
 
     return {"artists": artists, "albums": albums, "tracks": tracks}
+
+
+@router.get("/api/track-info/{filepath:path}")
+def api_track_info(filepath: str):
+    """Get audio metadata for a single track (BPM, key, energy etc.)."""
+    # Strip /music/ prefix if present
+    if filepath.startswith("/music/"):
+        filepath = filepath[len("/music/"):]
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT title, artist, album, bpm, audio_key, audio_scale, energy, "
+            "danceability, valence, acousticness, instrumentalness, loudness, "
+            "dynamic_range, lastfm_listeners, lastfm_playcount, popularity "
+            "FROM library_tracks WHERE path LIKE %s LIMIT 1",
+            (f"%{filepath}",),
+        )
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return dict(row)
+
+
+@router.get("/api/discover/completeness")
+def api_discover_completeness():
+    """Per-artist discography completeness vs MusicBrainz."""
+    cache_key = "discover:completeness"
+    cached = get_cache(cache_key, max_age_seconds=3600)
+    if cached:
+        return cached
+
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT name, mbid, album_count, has_photo, listeners
+            FROM library_artists
+            WHERE mbid IS NOT NULL AND mbid != ''
+            ORDER BY name
+        """)
+        artists = [dict(r) for r in cur.fetchall()]
+
+    # For each artist with MBID, get MB album count from cache
+    import musicbrainzngs
+    musicbrainzngs.set_useragent("grooveyard", "0.1", "https://github.com/grooveyard")
+
+    results = []
+    for a in artists:
+        try:
+            mb_data = get_cache(f"mb:albums:{a['mbid']}", max_age_seconds=86400 * 7)
+            if not mb_data:
+                result = musicbrainzngs.browse_release_groups(artist=a["mbid"], release_type=["album"], limit=100)
+                mb_albums = result.get("release-group-list", [])
+                mb_data = {
+                    "count": result.get("release-group-count", len(mb_albums)),
+                    "albums": [{"title": rg.get("title", ""), "type": rg.get("primary-type", ""),
+                               "year": rg.get("first-release-date", "")[:4] if rg.get("first-release-date") else ""}
+                              for rg in mb_albums]
+                }
+                set_cache(f"mb:albums:{a['mbid']}", mb_data)
+
+            mb_count = mb_data["count"]
+            local_count = a["album_count"] or 0
+            pct = round(local_count / mb_count * 100) if mb_count > 0 else 100
+
+            # Find missing (titles in MB not in local)
+            with get_db_ctx() as cur:
+                cur.execute("SELECT name FROM library_albums WHERE artist = %s", (a["name"],))
+                local_names = {r["name"].lower() for r in cur.fetchall()}
+                # Also strip year prefix for comparison
+                year_re = _YEAR_PREFIX_RE
+                local_clean = {year_re.sub("", n).lower() for n in local_names}
+
+            missing = [alb for alb in mb_data["albums"]
+                       if alb["title"].lower() not in local_names and alb["title"].lower() not in local_clean]
+
+            results.append({
+                "artist": a["name"],
+                "has_photo": bool(a["has_photo"]),
+                "listeners": a.get("listeners", 0),
+                "local_count": local_count,
+                "mb_count": mb_count,
+                "pct": min(pct, 100),
+                "missing": missing[:10],
+            })
+        except Exception:
+            pass
+
+    results.sort(key=lambda x: x["pct"])
+    set_cache(cache_key, results)
+    return results
 
 
 @router.get("/api/stream/{filepath:path}")

@@ -22,6 +22,7 @@ import {
 import { formatDuration } from "@/lib/utils";
 import { QueuePanel } from "./QueuePanel";
 import { LyricsPanel } from "./Lyrics";
+import { NowPlaying } from "./NowPlaying";
 
 const MINI_KEY = "player-mini";
 const VIZ_KEY = "player-viz";
@@ -30,8 +31,8 @@ function getStoredMini(): boolean {
   try { return localStorage.getItem(MINI_KEY) === "1"; } catch { return false; }
 }
 
-type VizMode = "bars" | "wave" | "radial" | "glow";
-const VIZ_MODES: VizMode[] = ["bars", "wave", "radial", "glow"];
+export type VizMode = "bars" | "wave" | "radial" | "glow";
+export const VIZ_MODES: VizMode[] = ["bars", "wave", "radial", "glow"];
 
 function getStoredViz(): VizMode {
   try {
@@ -69,7 +70,7 @@ function CoverArt({ src, size, className }: { src?: string; size: number; classN
 
 // ── Visualizer renderers ────────────────────────────────────────
 
-function BarVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
+export function BarVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
   if (frequencies.length === 0) return null;
   return (
     <div role="img" aria-label="Audio frequency visualization" className={`flex items-end overflow-hidden pointer-events-none ${className}`}>
@@ -84,7 +85,7 @@ function BarVisualizer({ frequencies, className }: { frequencies: number[]; clas
   );
 }
 
-function WaveVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
+export function WaveVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
   if (frequencies.length === 0) return null;
   const len = frequencies.length;
   // aria handled by parent container
@@ -129,7 +130,7 @@ function WaveVisualizer({ frequencies, className }: { frequencies: number[]; cla
   );
 }
 
-function RadialVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
+export function RadialVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
   if (frequencies.length === 0) return null;
   const cx = 50, cy = 50, baseR = 15, maxR = 45;
   const len = frequencies.length;
@@ -163,7 +164,7 @@ function RadialVisualizer({ frequencies, className }: { frequencies: number[]; c
   );
 }
 
-function GlowVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
+export function GlowVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
   if (frequencies.length === 0) return null;
   // Spectrum with glow effect — fewer bars, wider, with gradients
   const step = 4;
@@ -231,11 +232,16 @@ export function AudioPlayer() {
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [mini, setMini] = useState(getStoredMini);
   const [vizMode, setVizMode] = useState<VizMode>(getStoredViz);
+  const [expanded, setExpanded] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
 
   const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
 
   if (!currentTrack) return null;
+
+  if (expanded) {
+    return <NowPlaying onCollapse={() => setExpanded(false)} />;
+  }
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -276,7 +282,7 @@ export function AudioPlayer() {
         onPlayPause={isPlaying ? pause : resume}
         onNext={next}
         onPrev={prev}
-        onExpand={toggleMini}
+        onExpand={() => setExpanded(true)}
         onClose={clearQueue}
       />
     );
@@ -410,6 +416,15 @@ export function AudioPlayer() {
             {volume > 0 ? <Volume2 size={14} /> : <VolumeX size={14} />}
           </Button>
           <VolumeSlider volume={volume} onChange={setVolume} />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground"
+            onClick={() => setExpanded(true)}
+            title="Now Playing"
+          >
+            <Maximize2 size={14} />
+          </Button>
           <Button
             variant="ghost"
             size="icon"

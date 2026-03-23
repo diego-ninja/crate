@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PlayerProvider } from "@/contexts/PlayerContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
 import { Shell } from "@/components/layout/Shell";
 import { Loader2 } from "lucide-react";
 
@@ -29,6 +30,7 @@ const Login = lazy(() => import("@/pages/Login").then(m => ({ default: m.Login }
 const Users = lazy(() => import("@/pages/Users").then(m => ({ default: m.Users })));
 const DownloadPage = lazy(() => import("@/pages/Download").then(m => ({ default: m.DownloadPage })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
+const Discover = lazy(() => import("@/pages/Discover").then(m => ({ default: m.Discover })));
 
 function PageSpinner() {
   return (
@@ -50,6 +52,7 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <PlayerProvider>
+          <NotificationProvider>
           <TooltipProvider>
             <Suspense fallback={<PageSpinner />}>
               <Routes>
@@ -82,11 +85,13 @@ export default function App() {
                   <Route path="genres/:slug" element={<Genres />} />
                   <Route path="timeline" element={<Timeline />} />
                   <Route path="users" element={<Users />} />
+                  <Route path="discover" element={<Discover />} />
                   <Route path="settings" element={<Settings />} />
                 </Route>
               </Routes>
             </Suspense>
           </TooltipProvider>
+          </NotificationProvider>
           <Toaster theme="dark" position="bottom-right" richColors />
         </PlayerProvider>
       </AuthProvider>

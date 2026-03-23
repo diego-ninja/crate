@@ -19,7 +19,7 @@ export function useKeyboard({ onFocusSearch, onBlurSearch, onShowHelp }: Keyboar
 
       if (isInput) return;
 
-      if (e.key === "/" || (e.key === "k" && (e.metaKey || e.ctrlKey))) {
+      if (e.key === "/") {
         e.preventDefault();
         onFocusSearch();
         return;

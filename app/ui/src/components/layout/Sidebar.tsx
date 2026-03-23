@@ -16,6 +16,7 @@ import {
   Search,
   Tag,
   Clock,
+  Compass,
   Server,
   User,
   Users,
@@ -45,6 +46,7 @@ interface NavidromeStatus {
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/browse", icon: Library, label: "Browse" },
+  { to: "/discover", icon: Compass, label: "Discover" },
   { section: "Tools" },
   { to: "/health", icon: HeartPulse, label: "Health Scan", badgeKey: "issue_count" as const },
   { to: "/duplicates", icon: Copy, label: "Duplicates" },

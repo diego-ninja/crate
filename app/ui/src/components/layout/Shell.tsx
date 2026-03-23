@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { Sidebar } from "./Sidebar";
 import { SearchBar } from "./SearchBar";
+import { CommandPalette } from "./CommandPalette";
+import { NotificationBell } from "./NotificationBell";
 import { AudioPlayer } from "@/components/player/AudioPlayer";
 import { useKeyboard } from "@/hooks/use-keyboard";
 import { usePlayer } from "@/contexts/PlayerContext";
@@ -81,7 +83,12 @@ export function Shell() {
 
       <main className={`flex-1 md:ml-[220px] overflow-x-hidden ${hasPlayer ? "pb-20" : ""}`}>
         <div className="p-4 pt-16 md:p-8 md:pt-8">
-          <SearchBar inputRef={searchInputRef} />
+          <div className="flex items-center gap-3 mb-6">
+            <div className="flex-1 max-w-lg">
+              <SearchBar inputRef={searchInputRef} />
+            </div>
+            <NotificationBell />
+          </div>
           <div key={location.pathname} className="animate-page-in max-w-[1100px]">
             <Outlet />
           </div>
@@ -89,6 +96,7 @@ export function Shell() {
       </main>
 
       <AudioPlayer />
+      <CommandPalette />
 
       {/* Keyboard shortcuts help */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
@@ -99,7 +107,7 @@ export function Shell() {
           </DialogHeader>
           <div className="grid gap-3 text-sm">
             <Shortcut keys={["/"]} label="Focus search" />
-            <Shortcut keys={["\u2318", "K"]} label="Focus search" />
+            <Shortcut keys={["\u2318", "K"]} label="Command palette" />
             <Shortcut keys={["Esc"]} label="Blur search / close modals" />
             <Shortcut keys={["?"]} label="Show this help" />
           </div>
