@@ -192,11 +192,11 @@ export function AlbumHeader({
               <span className="flex items-center gap-1.5"><Disc3 size={14} />{trackCount} tracks</span>
               <span className="flex items-center gap-1.5"><Clock size={14} />{formatDuration(totalLengthSec)}</span>
               <span className="flex items-center gap-1.5"><HardDrive size={14} />{formatSize(totalSizeMb)}</span>
-              {albumTags.genre && (
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">
-                  {albumTags.genre}
+              {albumTags.genre && albumTags.genre.split(",").map((g) => g.trim()).filter(Boolean).map((g) => (
+                <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">
+                  {g}
                 </span>
-              )}
+              ))}
               {hasCover ? (
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                   <Music size={10} className="mr-0.5" /> Cover

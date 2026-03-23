@@ -225,13 +225,19 @@ export function Artist() {
   const allTags = (() => {
     const seen = new Set<string>();
     const result: string[] = [];
-    for (const t of [
+    const raw = [
       ...(data.genres ?? []),
       ...(enrichment?.lastfm?.tags ?? []),
       ...(enrichment?.spotify?.genres ?? []),
-    ]) {
-      const lower = t.toLowerCase();
-      if (!seen.has(lower)) { seen.add(lower); result.push(t); }
+    ];
+    // Split comma-separated genres into individual tags
+    for (const t of raw) {
+      for (const part of t.split(",")) {
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+        const lower = trimmed.toLowerCase();
+        if (!seen.has(lower)) { seen.add(lower); result.push(trimmed); }
+      }
     }
     return result;
   })();
