@@ -27,7 +27,8 @@ def get_auth_token() -> str | None:
     try:
         data = json.loads(auth_file.read_text())
         return data.get("token")
-    except Exception:
+    except (json.JSONDecodeError, OSError) as e:
+        log.debug("Failed to read tiddl auth: %s", e)
         return None
 
 
@@ -44,8 +45,8 @@ def refresh_token() -> bool:
             env={**os.environ, "TIDDL_CONFIG_DIR": TIDDL_CONFIG_DIR},
         )
         return result.returncode == 0
-    except Exception:
-        log.warning("Failed to refresh Tidal token", exc_info=True)
+    except (subprocess.SubprocessError, OSError) as e:
+        log.warning("Failed to refresh Tidal token: %s", e)
         return False
 
 

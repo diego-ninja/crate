@@ -59,6 +59,12 @@ def _api_get(endpoint: str, params: dict | None = None) -> dict | None:
         else:
             log.debug("Spotify API call failed: %s %s", endpoint, e)
         return None
+    except requests.exceptions.Timeout:
+        log.debug("Spotify API timeout: %s", endpoint)
+        return None
+    except requests.exceptions.ConnectionError:
+        log.debug("Spotify API connection error: %s", endpoint)
+        return None
     except Exception as e:
         log.debug("Spotify API call failed: %s %s", endpoint, e)
         return None

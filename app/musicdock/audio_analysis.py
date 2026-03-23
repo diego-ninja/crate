@@ -69,7 +69,7 @@ def _analyze_essentia(filepath: str) -> dict:
             bpm = float(rhythm[0])
             result["bpm"] = round(bpm, 1) if bpm > 0 else None
         except Exception:
-            log.debug("BPM failed: %s", filepath)
+            log.debug("BPM failed: %s", filepath, exc_info=True)
 
         tempo_val = result["bpm"] or 120.0
 
@@ -79,7 +79,7 @@ def _analyze_essentia(filepath: str) -> dict:
             result["key"] = key
             result["scale"] = scale
         except Exception:
-            log.debug("Key failed: %s", filepath)
+            log.debug("Key failed: %s", filepath, exc_info=True)
 
         # Energy
         try:
@@ -87,7 +87,7 @@ def _analyze_essentia(filepath: str) -> dict:
             rms = (energy_val / len(audio)) ** 0.5
             result["energy"] = round(min(1.0, rms / 0.15), 3)
         except Exception:
-            pass
+            log.debug("Feature failed for %s", filepath, exc_info=True)
 
         energy_norm = result["energy"] or 0.5
 
@@ -96,21 +96,21 @@ def _analyze_essentia(filepath: str) -> dict:
             loudness = LoudnessEBUR128()(audio)
             result["loudness"] = round(float(loudness[0]), 1)
         except Exception:
-            pass
+            log.debug("Feature failed for %s", filepath, exc_info=True)
 
         # Dynamic Range
         try:
             dyn_complexity, _ = DynamicComplexity()(audio)
             result["dynamic_range"] = round(float(dyn_complexity), 3)
         except Exception:
-            pass
+            log.debug("Feature failed for %s", filepath, exc_info=True)
 
         # Danceability (Essentia native)
         try:
             danceability_val, _ = Danceability()(audio)
             result["danceability"] = round(float(danceability_val), 3)
         except Exception:
-            pass
+            log.debug("Feature failed for %s", filepath, exc_info=True)
 
         # Spectral features for mood/valence
         try:
@@ -165,7 +165,7 @@ def _analyze_essentia(filepath: str) -> dict:
             }
 
         except Exception:
-            log.debug("Spectral features failed: %s", filepath)
+            log.debug("Spectral features failed: %s", filepath, exc_info=True)
 
     except Exception:
         log.warning("Essentia analysis failed for %s", filepath, exc_info=True)
@@ -207,7 +207,7 @@ def _analyze_librosa(filepath: str) -> dict:
                 tempo = float(tempo[0])
             result["bpm"] = round(float(tempo), 1) if tempo and tempo > 0 else None
         except Exception:
-            pass
+            log.debug("Feature failed for %s", filepath, exc_info=True)
 
         tempo_val = result["bpm"] or 120.0
         tempo_norm = min(1.0, tempo_val / 200)
@@ -230,7 +230,7 @@ def _analyze_librosa(filepath: str) -> dict:
             result["key"] = best_key
             result["scale"] = best_scale
         except Exception:
-            pass
+            log.debug("Feature failed for %s", filepath, exc_info=True)
 
         result["energy"] = round(energy_norm, 3)
         if mean_rms > 0:
@@ -242,7 +242,7 @@ def _analyze_librosa(filepath: str) -> dict:
             if len(rms_nonzero) > 1:
                 result["dynamic_range"] = round(float(20 * np.log10(np.max(rms_nonzero) / np.min(rms_nonzero))), 3)
         except Exception:
-            pass
+            log.debug("Feature failed for %s", filepath, exc_info=True)
 
         # Danceability
         try:
@@ -252,7 +252,7 @@ def _analyze_librosa(filepath: str) -> dict:
             beat_strength = min(1.0, onset_mean / 10.0)
             result["danceability"] = round(min(1.0, regularity * 0.4 + beat_strength * 0.3 + tempo_score * 0.3), 3)
         except Exception:
-            pass
+            log.debug("Feature failed for %s", filepath, exc_info=True)
 
         # Valence
         mode_weight = 0.7 if result.get("scale") == "major" else 0.3
@@ -267,7 +267,7 @@ def _analyze_librosa(filepath: str) -> dict:
             entropy = -np.sum(chroma_norm_arr * np.log2(chroma_norm_arr + 1e-8), axis=0)
             result["spectral_complexity"] = round(min(1.0, float(np.mean(entropy)) / np.log2(12)), 3)
         except Exception:
-            pass
+            log.debug("Feature failed for %s", filepath, exc_info=True)
 
         # Mood
         result["mood"] = {

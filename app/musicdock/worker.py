@@ -35,6 +35,10 @@ def _is_cancelled(task_id: str) -> bool:
 
 
 MAX_WORKERS = 5
+CLAIM_RETRY_INTERVAL = 0.5  # seconds between task claim retries
+IDLE_POLL_INTERVAL = 1.0    # seconds between idle polls
+SCHEDULE_CHECK_INTERVAL = 60  # seconds between scheduler checks
+IMPORT_CHECK_INTERVAL = 60   # seconds between import queue checks
 
 _active_tasks: set[str] = set()
 
@@ -124,7 +128,7 @@ def run_worker(config: dict):
     try:
         while not _shutdown:
             # Periodic import queue check every 60s
-            if time.time() - _last_import_check > 60:
+            if time.time() - _last_import_check > IMPORT_CHECK_INTERVAL:
                 _last_import_check = time.time()
                 try:
                     queue = ImportQueue(load_config())
@@ -134,7 +138,7 @@ def run_worker(config: dict):
                     pass
 
             # Check scheduled tasks every 60s
-            if time.time() - _last_schedule_check > 60:
+            if time.time() - _last_schedule_check > SCHEDULE_CHECK_INTERVAL:
                 _last_schedule_check = time.time()
                 try:
                     check_and_create_scheduled_tasks()
@@ -146,12 +150,12 @@ def run_worker(config: dict):
 
             # Only claim if we have free slots
             if len(_active_tasks) >= current_max:
-                time.sleep(0.5)
+                time.sleep(CLAIM_RETRY_INTERVAL)
                 continue
 
             task = claim_next_task()
             if not task:
-                time.sleep(1)
+                time.sleep(IDLE_POLL_INTERVAL)
                 continue
 
             executor.submit(_run_task, task, config)

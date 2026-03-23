@@ -34,6 +34,7 @@ class LibrarySync:
         artists_updated = 0
         artists_removed = 0
         tracks_total = 0
+        failed_artists: list[str] = []
 
         artist_dirs = sorted([
             d for d in self.library_path.iterdir()
@@ -86,6 +87,7 @@ class LibrarySync:
 
             except Exception:
                 log.exception("Failed to sync artist %s", artist_name)
+                failed_artists.append(artist_name)
 
             if progress_callback and i % 10 == 0:
                 progress_callback({
@@ -102,6 +104,7 @@ class LibrarySync:
             "artists_removed": 0,
             "artists_merged": 0,
             "tracks_total": tracks_total,
+            "failed_artists": failed_artists,
         }
 
     def sync_artist(self, artist_dir: Path) -> int:
