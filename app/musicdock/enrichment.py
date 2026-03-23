@@ -7,7 +7,7 @@ from pathlib import Path
 
 from musicdock.db import (
     get_cache, set_cache, delete_cache, get_library_artist,
-    update_artist_enrichment, get_db_ctx,
+    update_artist_enrichment, get_db_ctx, get_setting,
 )
 
 log = logging.getLogger(__name__)
@@ -32,7 +32,8 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
         try:
             enriched = datetime.fromisoformat(db_artist["enriched_at"])
             age_hours = (datetime.now(timezone.utc) - enriched).total_seconds() / 3600
-            if age_hours < 24:
+            min_age = int(get_setting("enrichment_min_age_hours", "24"))
+            if age_hours < min_age:
                 return {"artist": name, "skipped": True, "reason": "recently_enriched"}
         except Exception:
             pass

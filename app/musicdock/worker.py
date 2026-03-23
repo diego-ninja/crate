@@ -1175,7 +1175,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
             continue
 
         # High-confidence match (>= 95): apply full tags (title, tracknumber, etc.)
-        AUTO_APPLY_THRESHOLD = 95
+        AUTO_APPLY_THRESHOLD = int(get_setting("mb_auto_apply_threshold", "95"))
         if best_score >= AUTO_APPLY_THRESHOLD and album_dir and album_dir.is_dir():
             try:
                 from musicdock.matcher import apply_match
@@ -1670,7 +1670,7 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
         # Track popularity (cap at 50 tracks to avoid long waits)
         track_pop = 0
         tracks_checked = 0
-        MAX_TRACK_POP = 50
+        MAX_TRACK_POP = int(get_setting("max_track_popularity", "50"))
         for album in albums:
             if tracks_checked >= MAX_TRACK_POP:
                 break

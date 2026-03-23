@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
+import { formatNumber } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -30,9 +31,15 @@ import {
   XCircle,
   RefreshCw,
   FolderOpen,
+  FolderTree,
   Database,
   Clock,
   Wifi,
+  Cpu,
+  Info,
+  Sliders,
+  X,
+  Plus,
 } from "lucide-react";
 
 interface SettingsData {
@@ -41,6 +48,26 @@ interface SettingsData {
   enrichment: Record<string, boolean>;
   navidrome: { connected: boolean; version: string | null };
   db_stats: Record<string, { size: number; rows: number }>;
+  library: {
+    path: string;
+    folder_pattern: string;
+    audio_extensions: string[];
+  };
+  processing: {
+    mb_auto_apply_threshold: number;
+    enrichment_min_age_hours: number;
+    max_track_popularity: number;
+  };
+  about: {
+    version: string;
+    git_commit: string;
+    python: string;
+    uptime_seconds: number;
+    artists: number;
+    albums: number;
+    tracks: number;
+    total_size_gb: number;
+  };
 }
 
 interface AuditEntry {
@@ -99,6 +126,24 @@ function formatTimestamp(ts: string): string {
   return d.toLocaleDateString();
 }
 
+function formatUptime(seconds: number): string {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+async function saveSetting(section: string, data: Record<string, unknown>) {
+  try {
+    await api(`/api/settings/${section}`, "PUT", data);
+    toast.success("Setting saved");
+  } catch {
+    toast.error("Failed to save setting");
+  }
+}
+
 export function Settings() {
   const { data: settings, loading, refetch } = useApi<SettingsData>("/api/settings");
 
@@ -126,8 +171,10 @@ export function Settings() {
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="schedules">Schedules</TabsTrigger>
           <TabsTrigger value="enrichment">Enrichment</TabsTrigger>
+          <TabsTrigger value="processing">Processing</TabsTrigger>
           <TabsTrigger value="cache">Cache</TabsTrigger>
           <TabsTrigger value="audit">Audit Log</TabsTrigger>
+          <TabsTrigger value="about">About</TabsTrigger>
         </TabsList>
         <TabsContent value="general">
           <GeneralTab settings={settings} refetch={refetch} />
@@ -138,11 +185,17 @@ export function Settings() {
         <TabsContent value="enrichment">
           <EnrichmentTab enrichment={settings.enrichment} refetch={refetch} />
         </TabsContent>
+        <TabsContent value="processing">
+          <ProcessingTab settings={settings} />
+        </TabsContent>
         <TabsContent value="cache">
           <CacheTab dbStats={settings.db_stats} />
         </TabsContent>
         <TabsContent value="audit">
           <AuditLogTab />
+        </TabsContent>
+        <TabsContent value="about">
+          <AboutTab about={settings.about} />
         </TabsContent>
       </Tabs>
     </div>
@@ -154,6 +207,7 @@ function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: ()
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [navStatus, setNavStatus] = useState(settings.navidrome);
+  const [folderPattern, setFolderPattern] = useState(settings.library?.folder_pattern ?? "artist/album");
 
   async function saveWorkers(value: number) {
     setSaving(true);
@@ -200,6 +254,32 @@ function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: ()
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">Path</span>
             <code className="text-sm bg-muted px-2 py-1 rounded">/music</code>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <FolderTree size={14} /> Folder Organization
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted-foreground w-32">Structure</span>
+            <Select value={folderPattern} onValueChange={(v) => { setFolderPattern(v); saveSetting("library", { folder_pattern: v }); }}>
+              <SelectTrigger className="w-[250px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="artist/album">Artist / Album</SelectItem>
+                <SelectItem value="artist/year/album">Artist / Year / Album</SelectItem>
+                <SelectItem value="artist/year-album">Artist / Year - Album</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Example: {folderPattern === "artist/year/album" ? "Quicksand/1993/Slip/" : folderPattern === "artist/year-album" ? "Quicksand/1993 - Slip/" : "Quicksand/Slip/"}
           </div>
         </CardContent>
       </Card>
@@ -556,6 +636,147 @@ function EnrichmentTab({
   );
 }
 
+function ProcessingTab({ settings }: { settings: SettingsData }) {
+  const proc = settings.processing ?? { mb_auto_apply_threshold: 85, enrichment_min_age_hours: 24, max_track_popularity: 50 };
+  const exts = settings.library?.audio_extensions ?? [".flac", ".mp3", ".ogg", ".opus", ".m4a"];
+
+  const [threshold, setThreshold] = useState(proc.mb_auto_apply_threshold);
+  const [minAge, setMinAge] = useState(proc.enrichment_min_age_hours);
+  const [maxPop, setMaxPop] = useState(proc.max_track_popularity);
+  const [audioExts, setAudioExts] = useState<string[]>(exts);
+  const [newExt, setNewExt] = useState("");
+
+  function removeExt(ext: string) {
+    const updated = audioExts.filter((e) => e !== ext);
+    setAudioExts(updated);
+    saveSetting("library", { audio_extensions: updated });
+  }
+
+  function addExt() {
+    const ext = newExt.trim().toLowerCase();
+    if (!ext) return;
+    const normalized = ext.startsWith(".") ? ext : `.${ext}`;
+    if (audioExts.includes(normalized)) return;
+    const updated = [...audioExts, normalized];
+    setAudioExts(updated);
+    setNewExt("");
+    saveSetting("library", { audio_extensions: updated });
+  }
+
+  return (
+    <div className="space-y-4 mt-4">
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Sliders size={14} /> MusicBrainz Auto-Apply Threshold
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Automatically apply MusicBrainz tags when match score exceeds this threshold
+          </p>
+          <div className="flex items-center gap-4">
+            <input
+              type="range"
+              min={50}
+              max={100}
+              value={threshold}
+              onChange={(e) => setThreshold(Number(e.target.value))}
+              onMouseUp={() => saveSetting("processing", { mb_auto_apply_threshold: threshold })}
+              onTouchEnd={() => saveSetting("processing", { mb_auto_apply_threshold: threshold })}
+              className="flex-1 accent-primary"
+            />
+            <span className="text-sm font-mono w-12 text-right">{threshold}%</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Clock size={14} /> Enrichment Min Age
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Minimum hours before re-enriching an artist
+          </p>
+          <div className="flex items-center gap-3">
+            <Input
+              type="number"
+              min={1}
+              max={168}
+              className="w-24 h-8 text-sm"
+              value={minAge}
+              onChange={(e) => setMinAge(Number(e.target.value))}
+              onBlur={() => saveSetting("processing", { enrichment_min_age_hours: minAge })}
+            />
+            <span className="text-xs text-muted-foreground">hours (1-168)</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Cpu size={14} /> Max Track Popularity
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Maximum tracks to fetch popularity data for per artist
+          </p>
+          <div className="flex items-center gap-3">
+            <Input
+              type="number"
+              min={10}
+              max={500}
+              className="w-24 h-8 text-sm"
+              value={maxPop}
+              onChange={(e) => setMaxPop(Number(e.target.value))}
+              onBlur={() => saveSetting("processing", { max_track_popularity: maxPop })}
+            />
+            <span className="text-xs text-muted-foreground">tracks (10-500)</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <FolderOpen size={14} /> Audio Extensions
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {audioExts.map((ext) => (
+              <Badge key={ext} variant="secondary" className="text-xs gap-1">
+                {ext}
+                <button onClick={() => removeExt(ext)} className="ml-1 hover:text-destructive">
+                  <X size={10} />
+                </button>
+              </Badge>
+            ))}
+          </div>
+          <div className="flex items-center gap-2">
+            <Input
+              className="w-32 h-8 text-sm"
+              placeholder=".wav"
+              value={newExt}
+              onChange={(e) => setNewExt(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") addExt(); }}
+            />
+            <Button variant="outline" size="sm" onClick={addExt}>
+              <Plus size={12} className="mr-1" />
+              Add
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function CacheTab({ dbStats }: { dbStats: Record<string, { size: number; rows: number }> }) {
   const [clearing, setClearing] = useState<string | null>(null);
 
@@ -770,6 +991,49 @@ function AuditLogTab() {
               )}
             </>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function InfoRow({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-border last:border-0">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className={`text-sm ${mono ? "font-mono" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+function AboutTab({ about }: { about: SettingsData["about"] }) {
+  if (!about) {
+    return (
+      <div className="mt-4 text-center py-8 text-sm text-muted-foreground">
+        About information unavailable
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4">
+      <Card className="bg-card">
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Info size={14} /> About MusicDock
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4">
+            <InfoRow label="Version" value={about.version} />
+            <InfoRow label="Git Commit" value={about.git_commit} mono />
+            <InfoRow label="Python" value={about.python} />
+            <InfoRow label="Uptime" value={formatUptime(about.uptime_seconds)} />
+            <InfoRow label="Artists" value={formatNumber(about.artists)} />
+            <InfoRow label="Albums" value={formatNumber(about.albums)} />
+            <InfoRow label="Tracks" value={formatNumber(about.tracks)} />
+            <InfoRow label="Library Size" value={`${about.total_size_gb} GB`} />
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -1,26 +1,32 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-// Table components removed — using expandable TaskRow instead
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useApi } from "@/hooks/use-api";
+import { useTaskEvents } from "@/hooks/use-task-events";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import {
-  Loader2,
-  CheckCircle2,
-  XCircle,
-  Clock,
-  Ban,
-  RefreshCw,
-  ChevronDown,
-  ChevronUp,
+  Loader2, CheckCircle2, XCircle, Clock, Ban, RefreshCw,
+  ChevronDown, ChevronUp, RotateCcw, Trash2, Activity,
+  Filter, Zap,
 } from "lucide-react";
+
+// ── Types ────────────────────────────────────────────────────────
 
 interface TaskProgress {
   artist?: string;
+  album?: string;
+  step?: string;
   done?: number;
   total?: number;
   enriched?: number;
@@ -32,8 +38,7 @@ interface TaskProgress {
   artists_total?: number;
   tracks_processed?: number;
   issues_found?: number;
-  scanners_done?: string[];
-  scanners_total?: number;
+  analyzed?: number;
   [key: string]: unknown;
 }
 
@@ -49,18 +54,18 @@ interface Task {
   updated_at: string;
 }
 
-const DEFAULT_STATUS = { icon: Clock, color: "text-muted-foreground", label: "Unknown" } as const;
+// ── Constants ────────────────────────────────────────────────────
 
-const STATUS_MAP = new Map([
-  ["running", { icon: Loader2, color: "text-blue-500", label: "Running" }],
-  ["pending", { icon: Clock, color: "text-yellow-500", label: "Pending" }],
-  ["completed", { icon: CheckCircle2, color: "text-green-500", label: "Completed" }],
-  ["failed", { icon: XCircle, color: "text-red-500", label: "Failed" }],
-  ["cancelled", { icon: Ban, color: "text-muted-foreground", label: "Cancelled" }],
-]);
+const STATUS_CONFIG = {
+  running: { icon: Loader2, color: "text-blue-500", label: "Running", bg: "bg-blue-500/10 border-blue-500/20" },
+  pending: { icon: Clock, color: "text-yellow-500", label: "Pending", bg: "bg-yellow-500/10 border-yellow-500/20" },
+  completed: { icon: CheckCircle2, color: "text-green-500", label: "Completed", bg: "" },
+  failed: { icon: XCircle, color: "text-red-500", label: "Failed", bg: "bg-red-500/5" },
+  cancelled: { icon: Ban, color: "text-muted-foreground", label: "Cancelled", bg: "" },
+} as const;
 
 function getStatus(status: string) {
-  return STATUS_MAP.get(status) ?? DEFAULT_STATUS;
+  return STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? { icon: Clock, color: "text-muted-foreground", label: status, bg: "" };
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -89,102 +94,209 @@ const TYPE_LABELS: Record<string, string> = {
   update_track_tags: "Update Track Tags",
   resolve_duplicates: "Resolve Duplicates",
   analyze_tracks: "Analyze Audio",
+  analyze_all: "Analyze All Audio",
   compute_popularity: "Compute Popularity",
   index_genres: "Index Genres",
-  sync_playlist_navidrome: "Sync Playlist to Navidrome",
+  sync_playlist_navidrome: "Sync Playlist",
   process_new_content: "Process New Content",
   compute_bliss: "Compute Bliss Vectors",
   tidal_download: "Tidal Download",
   check_new_releases: "Check New Releases",
+  scan_missing_covers: "Scan Missing Covers",
 };
 
 function getTaskLabel(task: Task): string {
   const base = TYPE_LABELS[task.type] ?? task.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-  const params = task.params;
-  if (!params) return base;
-
-  // Add context from params
-  if (params.artist) return `${base}: ${params.artist}`;
-  if (params.name) return `${base}: ${params.name}`;
-  if (params.artist_folder && params.album_folder) return `${base}: ${params.artist_folder} / ${params.album_folder}`;
+  const p = task.params;
+  if (!p) return base;
+  if (p.artist && p.album) return `${base}: ${p.artist} / ${p.album}`;
+  if (p.artist) return `${base}: ${p.artist}`;
+  if (p.name) return `${base}: ${p.name}`;
+  if (p.artist_folder && p.album_folder) return `${base}: ${p.artist_folder} / ${p.album_folder}`;
   return base;
 }
 
-function formatDuration(start: string, end: string): string {
+// ── Human-readable result summaries ──────────────────────────────
+
+function describeResult(task: Task): string {
+  if (task.error) return task.error.length > 100 ? task.error.slice(0, 100) + "..." : task.error;
+  const r = task.result;
+  if (!r) return task.status === "completed" ? "Completed" : "";
+
+  const type = task.type;
+
+  // Process new content
+  if (type === "process_new_content") {
+    const steps = r.steps as Record<string, unknown> | undefined;
+    if (steps) {
+      const done = Object.entries(steps).filter(([, v]) => v !== "failed" && v !== false).length;
+      const failed = Object.entries(steps).filter(([, v]) => v === "failed").length;
+      return `${done} steps done${failed ? `, ${failed} failed` : ""}`;
+    }
+  }
+
+  // Enrichment
+  if (type === "enrich_artist") {
+    if (r.skipped) return "Skipped (recently enriched)";
+    return "Artist enriched";
+  }
+  if (type === "enrich_artists" || type === "enrich_mbids") {
+    const parts: string[] = [];
+    if (r.enriched) parts.push(`${r.enriched} enriched`);
+    if (r.skipped) parts.push(`${r.skipped} skipped`);
+    if (r.failed) parts.push(`${r.failed} failed`);
+    return parts.join(", ") || "Done";
+  }
+
+  // Analysis
+  if (type === "analyze_tracks" || type === "analyze_all") {
+    return `${r.analyzed ?? 0} tracks analyzed${r.failed ? `, ${r.failed} failed` : ""} of ${r.total ?? "?"}`;
+  }
+  if (type === "compute_bliss") {
+    return `${r.analyzed ?? 0} tracks vectorized${r.failed ? `, ${r.failed} failed` : ""}`;
+  }
+
+  // Health & repair
+  if (type === "health_check") return `${r.issue_count ?? 0} issues found`;
+  if (type === "repair") {
+    const actions = (r.actions as unknown[])?.length ?? 0;
+    return `${actions} actions${r.fs_changed ? " (filesystem modified)" : ""}`;
+  }
+
+  // Sync
+  if (type === "library_sync" || type === "library_pipeline") {
+    const parts: string[] = [];
+    if (r.artists_added) parts.push(`+${r.artists_added} artists`);
+    if (r.tracks_total) parts.push(`${r.tracks_total} tracks`);
+    return parts.join(", ") || "Synced";
+  }
+
+  // Match apply
+  if (type === "match_apply") return `${r.updated ?? 0}/${r.total ?? "?"} tracks tagged`;
+
+  // Delete
+  if (type === "delete_artist" || type === "delete_album") return "Deleted";
+
+  // Popularity
+  if (type === "compute_popularity") {
+    const parts: string[] = [];
+    if (r.albums) parts.push(`${r.albums} albums`);
+    if (r.tracks) parts.push(`${r.tracks} tracks`);
+    return parts.join(", ") || "Done";
+  }
+
+  // Analytics
+  if (type === "compute_analytics") return "Analytics computed";
+
+  // Tidal
+  if (type === "tidal_download") return r.error ? String(r.error) : "Downloaded";
+
+  // Covers
+  if (type === "scan_missing_covers" || type === "fetch_artwork_all") {
+    return `${r.found ?? r.fetched ?? 0} covers`;
+  }
+
+  // Generic
+  const keys = Object.keys(r);
+  if (keys.length === 0) return "Done";
+  if (keys.length <= 3) return keys.map((k) => `${k}: ${JSON.stringify(r[k])}`).join(", ");
+  return `${keys.length} fields`;
+}
+
+// ── Formatters ───────────────────────────────────────────────────
+
+function fmtDuration(start: string, end: string): string {
   const ms = new Date(end).getTime() - new Date(start).getTime();
   const sec = Math.floor(ms / 1000);
   if (sec < 60) return `${sec}s`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m ${sec % 60}s`;
-  const hrs = Math.floor(min / 60);
-  return `${hrs}h ${min % 60}m`;
+  return `${Math.floor(min / 60)}h ${min % 60}m`;
 }
 
-function TaskProgressDisplay({ progress }: { progress: TaskProgress | string }) {
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const sec = Math.floor(diff / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
+}
+
+// ── Progress Display ─────────────────────────────────────────────
+
+function TaskProgressBar({ progress }: { progress: TaskProgress | string }) {
   if (typeof progress === "string") {
     return progress ? <span className="text-xs text-muted-foreground">{progress}</span> : null;
   }
 
-  // Enrichment progress
-  if (progress.done != null && progress.total != null) {
-    const pct = Math.round((progress.done / progress.total) * 100);
-    return (
-      <div className="space-y-1">
-        <Progress value={pct} className="h-1.5" />
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>
-            {progress.artist && <span className="text-foreground">{progress.artist}</span>}
-          </span>
-          <span>
-            {progress.done}/{progress.total} ({pct}%)
-            {progress.enriched != null && ` · ${progress.enriched} enriched`}
-          </span>
-        </div>
-      </div>
-    );
-  }
+  const done = progress.done ?? progress.artists_done;
+  const total = progress.total ?? progress.artists_total;
 
-  // Scan / analytics progress (has artists_done/artists_total)
-  if (progress.artists_done != null && progress.artists_total != null && progress.artists_total > 0) {
-    const pct = Math.round((progress.artists_done / progress.artists_total) * 100);
+  if (done != null && total != null && total > 0) {
+    const pct = Math.round((done / total) * 100);
     return (
       <div className="space-y-1">
         <Progress value={pct} className="h-1.5" />
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>
-            {progress.phase && (
-              <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">
-                {String(progress.phase)}
-              </Badge>
-            )}
-            {progress.scanner && (
-              <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">
-                {String(progress.scanner)}
-              </Badge>
-            )}
+            {progress.step && <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">{progress.step.replace(/_/g, " ")}</Badge>}
+            {progress.phase && <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">{String(progress.phase)}</Badge>}
             {progress.artist && <span className="text-foreground">{String(progress.artist)}</span>}
           </span>
-          <span>
-            {progress.artists_done}/{progress.artists_total} ({pct}%)
-            {progress.tracks_processed != null && ` · ${progress.tracks_processed} tracks`}
-            {progress.issues_found != null && ` · ${progress.issues_found} issues`}
-          </span>
+          <span>{done}/{total} ({pct}%)</span>
         </div>
       </div>
     );
   }
 
-  // Generic message progress
+  if (progress.step) {
+    return <span className="text-xs text-muted-foreground">Step: {progress.step.replace(/_/g, " ")}{progress.artist ? ` — ${progress.artist}` : ""}</span>;
+  }
   if (progress.message) {
     return <span className="text-xs text-muted-foreground">{String(progress.message)}</span>;
   }
-
   return null;
 }
 
+// ── Live Events for Running Task ─────────────────────────────────
+
+function LiveTaskEvents({ taskId }: { taskId: string }) {
+  const { events, connected } = useTaskEvents(taskId);
+
+  if (events.length === 0) {
+    return <div className="text-xs text-muted-foreground py-2">{connected ? "Waiting for events..." : "Connecting..."}</div>;
+  }
+
+  return (
+    <div className="max-h-[200px] overflow-y-auto space-y-1 py-2">
+      {events.map((e, i) => (
+        <div key={i} className="flex items-start gap-2 text-xs">
+          <span className="text-[10px] text-muted-foreground font-mono flex-shrink-0 w-16">
+            {new Date(e.timestamp || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+          </span>
+          <Badge variant="outline" className="text-[9px] px-1 py-0 flex-shrink-0">
+            {e.type}
+          </Badge>
+          <span className="text-muted-foreground truncate">
+            {String(e.data?.message || e.data?.step || "").replace(/_/g, " ") || JSON.stringify(e.data)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Main Component ───────────────────────────────────────────────
+
 export function Tasks() {
-  const { data: tasks, loading, refetch } = useApi<Task[]>("/api/tasks?limit=50");
+  const { data: tasks, loading, refetch } = useApi<Task[]>("/api/tasks?limit=100");
   const [cancelId, setCancelId] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Auto-refresh every 3s if there are running tasks
   useEffect(() => {
@@ -199,24 +311,112 @@ export function Tasks() {
       await api(`/api/tasks/${id}/cancel`, "POST");
       toast.success("Task cancelled");
       refetch();
-    } catch (e) {
-      toast.error(`Failed to cancel: ${e instanceof Error ? e.message : "Unknown error"}`);
-    }
+    } catch { toast.error("Failed to cancel"); }
     setCancelId(null);
+  };
+
+  const handleRetry = async (task: Task) => {
+    try {
+      await api("/api/tasks/retry", "POST", { task_id: task.id });
+      toast.success(`Retrying: ${getTaskLabel(task)}`);
+      refetch();
+    } catch {
+      // Fallback: create new task with same type/params
+      try {
+        const endpoint = task.type === "process_new_content" ? `/api/artist/${encodeURIComponent(task.params?.artist || "")}/enrich`
+          : `/api/manage/${task.type.replace(/_/g, "-")}`;
+        await api(endpoint, "POST", task.params || {});
+        toast.success(`Re-queued: ${getTaskLabel(task)}`);
+        refetch();
+      } catch { toast.error("Failed to retry"); }
+    }
+  };
+
+  const handleCleanup = async () => {
+    try {
+      const res = await api<{ deleted: number }>("/api/tasks/cleanup", "POST", { older_than_days: 7 });
+      toast.success(`Cleaned up ${res.deleted} old tasks`);
+      refetch();
+    } catch { toast.error("Cleanup failed"); }
   };
 
   const running = tasks?.filter((t) => t.status === "running") ?? [];
   const pending = tasks?.filter((t) => t.status === "pending") ?? [];
   const completed = tasks?.filter((t) => !["running", "pending"].includes(t.status)) ?? [];
 
+  // Available task types for filter
+  const taskTypes = useMemo(() => {
+    if (!tasks) return [];
+    const types = new Set(tasks.map((t) => t.type));
+    return Array.from(types).sort();
+  }, [tasks]);
+
+  // Filtered history
+  const filteredHistory = useMemo(() => {
+    let filtered = completed;
+    if (filterType !== "all") filtered = filtered.filter((t) => t.type === filterType);
+    if (filterStatus !== "all") filtered = filtered.filter((t) => t.status === filterStatus);
+    return filtered;
+  }, [completed, filterType, filterStatus]);
+
+  // Stats
+  const stats = useMemo(() => {
+    if (!tasks) return null;
+    const today = new Date().toDateString();
+    const todayTasks = tasks.filter((t) => new Date(t.created_at).toDateString() === today);
+    const completedToday = todayTasks.filter((t) => t.status === "completed").length;
+    const failedToday = todayTasks.filter((t) => t.status === "failed").length;
+    const avgDuration = tasks
+      .filter((t) => t.status === "completed")
+      .slice(0, 20)
+      .reduce((sum, t) => sum + (new Date(t.updated_at).getTime() - new Date(t.created_at).getTime()), 0);
+    const avgCount = Math.min(20, tasks.filter((t) => t.status === "completed").length);
+    return {
+      todayTotal: todayTasks.length,
+      todayCompleted: completedToday,
+      todayFailed: failedToday,
+      successRate: todayTasks.length > 0 ? Math.round((completedToday / (completedToday + failedToday || 1)) * 100) : 100,
+      avgDuration: avgCount > 0 ? Math.round(avgDuration / avgCount / 1000) : 0,
+    };
+  }, [tasks]);
+
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold flex items-center gap-3">
-        Tasks
-        <Button variant="ghost" size="sm" onClick={refetch}>
-          <RefreshCw size={14} />
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold flex items-center gap-3">
+          Tasks
+          <Button variant="ghost" size="sm" onClick={refetch}><RefreshCw size={14} /></Button>
+        </h1>
+        <Button variant="ghost" size="sm" onClick={handleCleanup} className="text-xs text-muted-foreground">
+          <Trash2 size={12} className="mr-1" /> Cleanup old tasks
         </Button>
-      </h1>
+      </div>
+
+      {/* Stats row */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="bg-card border border-border rounded-lg p-3">
+            <div className="text-lg font-bold">{stats.todayTotal}</div>
+            <div className="text-[11px] text-muted-foreground">Today</div>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-3">
+            <div className="text-lg font-bold text-green-500">{stats.todayCompleted}</div>
+            <div className="text-[11px] text-muted-foreground">Completed</div>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-3">
+            <div className="text-lg font-bold text-red-500">{stats.todayFailed}</div>
+            <div className="text-[11px] text-muted-foreground">Failed</div>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-3">
+            <div className="text-lg font-bold">{stats.successRate}%</div>
+            <div className="text-[11px] text-muted-foreground">Success Rate</div>
+          </div>
+          <div className="bg-card border border-border rounded-lg p-3">
+            <div className="text-lg font-bold">{stats.avgDuration}s</div>
+            <div className="text-[11px] text-muted-foreground">Avg Duration</div>
+          </div>
+        </div>
+      )}
 
       {/* Worker Status */}
       <WorkerStatus running={running.length} pending={pending.length} />
@@ -225,47 +425,49 @@ export function Tasks() {
       {(running.length > 0 || pending.length > 0) && (
         <Card className="bg-card">
           <CardHeader>
-            <CardTitle className="text-sm">Active Tasks ({running.length + pending.length})</CardTitle>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Activity size={14} className="text-blue-500" />
+              Active Tasks ({running.length + pending.length})
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             {[...running, ...pending].map((task) => {
               const cfg = getStatus(task.status);
               const Icon = cfg.icon;
+              const isExpanded = expandedId === task.id;
               return (
-                <div
-                  key={task.id}
-                  className="border border-border rounded-lg p-4 space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Icon
-                        size={16}
-                        className={`${cfg.color} ${task.status === "running" ? "animate-spin" : ""}`}
-                      />
-                      <div>
-                        <div className="font-medium text-sm">
-                          {getTaskLabel(task)}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {task.id} · Started{" "}
-                          {new Date(task.created_at).toLocaleString()}
-                          {task.status === "running" && (
-                            <> · Running for {formatDuration(task.created_at, task.updated_at)}</>
-                          )}
+                <div key={task.id} className={`border rounded-lg overflow-hidden ${cfg.bg}`}>
+                  <div className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <Icon size={16} className={`${cfg.color} ${task.status === "running" ? "animate-spin" : ""}`} />
+                        <div>
+                          <div className="font-medium text-sm">{getTaskLabel(task)}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Started {timeAgo(task.created_at)}
+                            {task.status === "running" && <> · Running for {fmtDuration(task.created_at, new Date().toISOString())}</>}
+                          </div>
                         </div>
                       </div>
+                      <div className="flex gap-1">
+                        {task.status === "running" && (
+                          <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setExpandedId(isExpanded ? null : task.id)}>
+                            <Zap size={11} className="mr-1" /> {isExpanded ? "Hide" : "Live"}
+                          </Button>
+                        )}
+                        <Button variant="outline" size="sm" className="text-red-500 border-red-500/30 hover:bg-red-500/10 h-7"
+                          onClick={() => setCancelId(task.id)}>
+                          <Ban size={11} className="mr-1" /> Cancel
+                        </Button>
+                      </div>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-red-500 border-red-500/30 hover:bg-red-500/10"
-                      onClick={() => setCancelId(task.id)}
-                    >
-                      <Ban size={12} className="mr-1" />
-                      Cancel
-                    </Button>
+                    <TaskProgressBar progress={task.progress} />
                   </div>
-                  <TaskProgressDisplay progress={task.progress} />
+                  {isExpanded && task.status === "running" && (
+                    <div className="border-t border-border px-4 bg-black/20">
+                      <LiveTaskEvents taskId={task.id} />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -273,24 +475,51 @@ export function Tasks() {
         </Card>
       )}
 
-      {/* History */}
+      {/* History with filters */}
       <Card className="bg-card">
         <CardHeader>
-          <CardTitle className="text-sm">Task History</CardTitle>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-sm">Task History ({filteredHistory.length})</CardTitle>
+            <div className="flex items-center gap-2">
+              <Filter size={13} className="text-muted-foreground" />
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger className="h-7 w-[180px] text-xs bg-input border-border">
+                  <SelectValue placeholder="All types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  {taskTypes.map((t) => (
+                    <SelectItem key={t} value={t}>{TYPE_LABELS[t] ?? t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="h-7 w-[130px] text-xs bg-input border-border">
+                  <SelectValue placeholder="All status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All status</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground">
               <Loader2 size={18} className="animate-spin" />
             </div>
-          ) : completed.length === 0 ? (
-            <div className="text-center py-8 text-sm text-muted-foreground">
-              No completed tasks
-            </div>
+          ) : filteredHistory.length === 0 ? (
+            <div className="text-center py-8 text-sm text-muted-foreground">No tasks match filters</div>
           ) : (
             <div className="space-y-1">
-              {completed.map((task) => (
-                <TaskRow key={task.id} task={task} />
+              {filteredHistory.map((task) => (
+                <TaskRow key={task.id} task={task} expanded={expandedId === task.id}
+                  onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)}
+                  onRetry={() => handleRetry(task)} />
               ))}
             </div>
           )}
@@ -301,7 +530,7 @@ export function Tasks() {
         open={cancelId !== null}
         onOpenChange={(open) => { if (!open) setCancelId(null); }}
         title="Cancel Task"
-        description="Are you sure you want to cancel this task? It will stop processing."
+        description="Are you sure you want to cancel this task?"
         confirmLabel="Cancel Task"
         variant="destructive"
         onConfirm={() => { if (cancelId) handleCancel(cancelId); }}
@@ -310,69 +539,86 @@ export function Tasks() {
   );
 }
 
-function TaskRow({ task }: { task: Task }) {
-  const [expanded, setExpanded] = useState(false);
+// ── Task Row ─────────────────────────────────────────────────────
+
+function TaskRow({ task, expanded, onToggle, onRetry }: {
+  task: Task; expanded: boolean; onToggle: () => void; onRetry: () => void;
+}) {
   const cfg = getStatus(task.status);
   const Icon = cfg.icon;
-
-  const resultSummary = (() => {
-    if (task.error) return task.error.length > 80 ? task.error.slice(0, 80) + "..." : task.error;
-    const r = task.result;
-    if (!r) return "";
-    if ("issue_count" in r) return `${r.issue_count} issues`;
-    if ("enriched" in r && "skipped" in r) return `${r.enriched} enriched, ${r.skipped} skipped`;
-    if ("matched" in r) return `${r.matched} matched`;
-    if ("analyzed" in r) return `${r.analyzed} analyzed`;
-    if ("deleted" in r) return `Deleted: ${r.deleted}`;
-    if ("moved" in r) return `${r.moved} → ${r.new_name}`;
-    if ("wiped" in r) return "Database wiped";
-    if ("albums_fetched" in r) return `${r.albums_fetched} albums, ${r.tracks_fetched} tracks`;
-    if ("artists_indexed" in r) return `${r.total_genres} genres indexed`;
-    if ("track_count" in r) return `${r.track_count} tracks`;
-    if ("updated" in r) return `${r.updated} tracks updated`;
-    if ("artists_added" in r) return `+${r.artists_added} artists, ${r.tracks_total} tracks`;
-    const keys = Object.keys(r);
-    if (keys.length <= 3) return keys.map((k) => `${k}: ${JSON.stringify(r[k])}`).join(", ");
-    return `${keys.length} fields`;
-  })();
-
-  const hasDetails = task.result || task.error;
+  const summary = describeResult(task);
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <div
-        className={`flex items-center gap-3 px-4 py-2.5 ${hasDetails ? "cursor-pointer hover:bg-secondary/30" : ""} transition-colors`}
-        onClick={() => hasDetails && setExpanded(!expanded)}
-      >
+    <div className={`border border-border rounded-lg overflow-hidden ${cfg.bg}`}>
+      <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-secondary/20 transition-colors" onClick={onToggle}>
         <Icon size={14} className={cfg.color} />
         <div className="flex-1 min-w-0">
           <span className="text-sm font-medium">{getTaskLabel(task)}</span>
-          {resultSummary && (
-            <span className="text-xs text-muted-foreground ml-2">{resultSummary}</span>
-          )}
+          <span className="text-xs text-muted-foreground ml-2">{summary}</span>
         </div>
         <span className="text-xs text-muted-foreground flex-shrink-0">
-          {formatDuration(task.created_at, task.updated_at)}
+          {fmtDuration(task.created_at, task.updated_at)}
         </span>
-        <span className="text-[11px] text-muted-foreground flex-shrink-0 w-[140px] text-right">
-          {new Date(task.updated_at).toLocaleString()}
+        <span className="text-[11px] text-muted-foreground flex-shrink-0 w-[80px] text-right hidden sm:block">
+          {timeAgo(task.updated_at)}
         </span>
-        {hasDetails && (
-          expanded ? <ChevronUp size={14} className="text-muted-foreground flex-shrink-0" /> : <ChevronDown size={14} className="text-muted-foreground flex-shrink-0" />
+        {task.status === "failed" && (
+          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground flex-shrink-0"
+            onClick={(e) => { e.stopPropagation(); onRetry(); }} title="Retry">
+            <RotateCcw size={12} />
+          </Button>
         )}
+        {expanded ? <ChevronUp size={14} className="text-muted-foreground flex-shrink-0" /> : <ChevronDown size={14} className="text-muted-foreground flex-shrink-0" />}
       </div>
       {expanded && (
-        <div className="px-4 py-3 border-t border-border bg-secondary/10">
-          {task.error && (
-            <div className="mb-2">
-              <span className="text-xs font-semibold text-red-500">Error:</span>
-              <pre className="text-xs text-red-400 mt-1 whitespace-pre-wrap break-all bg-red-500/5 p-2 rounded">{task.error}</pre>
+        <div className="px-4 py-3 border-t border-border bg-secondary/10 space-y-3">
+          {/* Task metadata */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div>
+              <span className="text-muted-foreground">ID:</span>{" "}
+              <span className="font-mono">{task.id}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Type:</span>{" "}
+              <span className="font-mono">{task.type}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Created:</span>{" "}
+              {new Date(task.created_at).toLocaleString()}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Duration:</span>{" "}
+              {fmtDuration(task.created_at, task.updated_at)}
+            </div>
+          </div>
+
+          {/* Params */}
+          {task.params && Object.keys(task.params).length > 0 && (
+            <div>
+              <span className="text-xs font-semibold text-muted-foreground">Params:</span>
+              <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-all bg-secondary/30 p-2 rounded font-mono">
+                {JSON.stringify(task.params, null, 2)}
+              </pre>
             </div>
           )}
+
+          {/* Error */}
+          {task.error && (
+            <div>
+              <span className="text-xs font-semibold text-red-500">Error:</span>
+              <pre className="text-xs text-red-400 mt-1 whitespace-pre-wrap break-all bg-red-500/5 p-2 rounded font-mono">
+                {task.error}
+              </pre>
+            </div>
+          )}
+
+          {/* Result */}
           {task.result && (
             <div>
               <span className="text-xs font-semibold text-muted-foreground">Result:</span>
-              <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-all bg-secondary/30 p-2 rounded max-h-[300px] overflow-y-auto">{JSON.stringify(task.result, null, 2)}</pre>
+              <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-all bg-secondary/30 p-2 rounded font-mono max-h-[300px] overflow-y-auto">
+                {JSON.stringify(task.result, null, 2)}
+              </pre>
             </div>
           )}
         </div>
@@ -380,6 +626,8 @@ function TaskRow({ task }: { task: Task }) {
     </div>
   );
 }
+
+// ── Worker Status ────────────────────────────────────────────────
 
 interface WorkerInfo {
   max_slots: number;
@@ -397,14 +645,8 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
   const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
-    api<WorkerInfo>("/api/worker/status")
-      .then(setWorkerInfo)
-      .catch(() => {});
-    const timer = setInterval(() => {
-      api<WorkerInfo>("/api/worker/status")
-        .then(setWorkerInfo)
-        .catch(() => {});
-    }, 5000);
+    api<WorkerInfo>("/api/worker/status").then(setWorkerInfo).catch(() => {});
+    const timer = setInterval(() => { api<WorkerInfo>("/api/worker/status").then(setWorkerInfo).catch(() => {}); }, 5000);
     return () => clearInterval(timer);
   }, []);
 
@@ -417,11 +659,8 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
     try {
       const d = await api<{ name: string; logs: string }>("/api/stack/container/musicdock-worker/logs?tail=40");
       setLogs(d.logs);
-    } catch {
-      setLogs("Failed to load logs");
-    } finally {
-      setLogsLoading(false);
-    }
+    } catch { setLogs("Failed to load logs"); }
+    finally { setLogsLoading(false); }
   }
 
   async function setSlots(n: number) {
@@ -429,85 +668,52 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
       await api("/api/worker/slots", "POST", { slots: n });
       setWorkerInfo((prev) => prev ? { ...prev, max_slots: n } : prev);
       toast.success(`Worker slots set to ${n}`);
-    } catch {
-      toast.error("Failed to set slots");
-    }
+    } catch { toast.error("Failed to set slots"); }
   }
 
   async function restartWorker() {
     setRestarting(true);
-    try {
-      await api("/api/worker/restart", "POST");
-      toast.success("Worker restarting...");
-    } catch {
-      toast.error("Restart failed");
-    } finally {
-      setTimeout(() => setRestarting(false), 5000);
-    }
+    try { await api("/api/worker/restart", "POST"); toast.success("Worker restarting..."); }
+    catch { toast.error("Restart failed"); }
+    finally { setTimeout(() => setRestarting(false), 5000); }
   }
 
   async function cancelAll() {
     try {
       const res = await api<{ cancelled: number }>("/api/worker/cancel-all", "POST");
       toast.success(`Cancelled ${res.cancelled} tasks`);
-    } catch {
-      toast.error("Failed to cancel tasks");
-    }
+    } catch { toast.error("Failed to cancel tasks"); }
   }
 
   return (
     <Card className="bg-card">
       <CardContent className="pt-6">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <div className="flex items-center gap-3">
             <div className="text-sm font-medium">Worker</div>
             <div className="flex gap-1">
               {Array.from({ length: maxSlots }, (_, i) => (
-                <div
-                  key={i}
-                  className={`w-3 h-3 rounded-full transition-colors ${
-                    i < running ? "bg-blue-500 animate-pulse" : "bg-border"
-                  }`}
-                  title={i < running ? "Active" : "Idle"}
-                />
+                <div key={i} className={`w-3 h-3 rounded-full transition-colors ${i < running ? "bg-blue-500 animate-pulse" : "bg-border"}`} />
               ))}
             </div>
             <span className="text-xs text-muted-foreground">
-              {running}/{maxSlots} active
-              {pending > 0 && ` · ${pending} queued`}
+              {running}/{maxSlots} active{pending > 0 && ` · ${pending} queued`}
             </span>
           </div>
           <div className="flex items-center gap-1">
-            {/* Slot controls */}
             <div className="flex items-center gap-0.5 mr-2 border border-border rounded-md">
               {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setSlots(n)}
-                  className={`px-2 py-1 text-[10px] font-mono transition-colors ${
-                    n === maxSlots
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary"
-                  } ${n === 1 ? "rounded-l-md" : ""} ${n === 5 ? "rounded-r-md" : ""}`}
-                  title={`Set to ${n} slots`}
-                >
+                <button key={n} onClick={() => setSlots(n)}
+                  className={`px-2 py-1 text-[10px] font-mono transition-colors ${n === maxSlots ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary"} ${n === 1 ? "rounded-l-md" : ""} ${n === 5 ? "rounded-r-md" : ""}`}>
                   {n}
                 </button>
               ))}
             </div>
-            <Button variant="ghost" size="sm" onClick={cancelAll} className="text-xs text-red-500 hover:text-red-400" title="Cancel all tasks">
+            <Button variant="ghost" size="sm" onClick={cancelAll} className="text-xs text-red-500 hover:text-red-400">
               <Ban size={12} className="mr-1" /> Cancel all
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={restartWorker}
-              disabled={restarting}
-              className="text-xs text-yellow-500 hover:text-yellow-400"
-              title="Restart worker"
-            >
-              {restarting ? <Loader2 size={12} className="animate-spin mr-1" /> : <RefreshCw size={12} className="mr-1" />}
-              Restart
+            <Button variant="ghost" size="sm" onClick={restartWorker} disabled={restarting} className="text-xs text-yellow-500 hover:text-yellow-400">
+              {restarting ? <Loader2 size={12} className="animate-spin mr-1" /> : <RefreshCw size={12} className="mr-1" />} Restart
             </Button>
             <Button variant="ghost" size="sm" onClick={toggleLogs} className="text-xs text-muted-foreground">
               {showLogs ? "Hide logs" : "Logs"}
@@ -517,13 +723,9 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
         {showLogs && (
           <div className="bg-[#060608] rounded-lg p-3 max-h-[250px] overflow-auto mt-2">
             {logsLoading ? (
-              <div className="text-xs text-muted-foreground flex items-center gap-2">
-                <Loader2 size={12} className="animate-spin" /> Loading...
-              </div>
+              <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Loading...</div>
             ) : (
-              <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                {logs || "No logs"}
-              </pre>
+              <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed">{logs || "No logs"}</pre>
             )}
           </div>
         )}

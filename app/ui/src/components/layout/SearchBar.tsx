@@ -309,7 +309,7 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
 
   return (
     <div ref={wrapperRef} className="relative z-20">
-      <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+      <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
       <Input
         ref={inputRef}
         value={query}
@@ -320,7 +320,7 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
         aria-label="Search library and Tidal"
         aria-autocomplete="list"
         aria-expanded={open}
-        className="pl-9 bg-card border-border"
+        className="pl-10 h-11 text-base bg-card border-border rounded-xl"
       />
 
       {/* Recent searches */}

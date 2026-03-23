@@ -34,6 +34,52 @@ def get_settings(request: Request):
             "version": navidrome.get_server_version(),
         },
         "db_stats": get_db_table_stats(),
+        "library": {
+            "path": "/music",
+            "folder_pattern": get_setting("folder_pattern", "artist/year/album"),
+            "audio_extensions": json.loads(get_setting("audio_extensions", '[".flac",".mp3",".m4a",".ogg",".opus"]')),
+        },
+        "processing": {
+            "mb_auto_apply_threshold": int(get_setting("mb_auto_apply_threshold", "95")),
+            "enrichment_min_age_hours": int(get_setting("enrichment_min_age_hours", "24")),
+            "max_track_popularity": int(get_setting("max_track_popularity", "50")),
+        },
+        "about": _get_about_info(),
+    }
+
+
+def _get_about_info() -> dict:
+    import os
+    import subprocess
+
+    git_commit = "unknown"
+    try:
+        result = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            git_commit = result.stdout.strip()
+    except Exception:
+        pass
+
+    from musicdock.db import get_library_stats, get_library_track_count
+    track_count = get_library_track_count()
+    stats = get_library_stats() if track_count > 0 else {}
+
+    import time
+    _start_time = getattr(_get_about_info, "_start", None)
+    if not _start_time:
+        _get_about_info._start = time.time()
+        _start_time = _get_about_info._start
+    uptime_sec = int(time.time() - _start_time)
+
+    return {
+        "version": "1.0.0",
+        "git_commit": git_commit,
+        "python": os.sys.version.split()[0],
+        "uptime_seconds": uptime_sec,
+        "artists": stats.get("artists", 0),
+        "albums": stats.get("albums", 0),
+        "tracks": stats.get("tracks", 0),
+        "total_size_gb": round(stats.get("total_size", 0) / (1024**3), 2) if stats.get("total_size") else 0,
     }
 
 
@@ -95,3 +141,39 @@ def clear_cache(request: Request, body: CacheClearRequest):
             cur.execute("DELETE FROM cache WHERE key IN ('analytics', 'stats')")
 
     return {"ok": True, "type": cache_type}
+
+
+@router.put("/library")
+def update_library(request: Request, body: dict):
+    _require_admin(request)
+    if "folder_pattern" in body:
+        valid_patterns = ["artist/album", "artist/year/album", "artist/year-album"]
+        if body["folder_pattern"] not in valid_patterns:
+            raise HTTPException(status_code=422, detail=f"Invalid pattern: must be one of {valid_patterns}")
+        set_setting("folder_pattern", body["folder_pattern"])
+    if "audio_extensions" in body:
+        if not isinstance(body["audio_extensions"], list):
+            raise HTTPException(status_code=422, detail="audio_extensions must be a list")
+        set_setting("audio_extensions", json.dumps(body["audio_extensions"]))
+    return {"ok": True}
+
+
+@router.put("/processing")
+def update_processing(request: Request, body: dict):
+    _require_admin(request)
+    if "mb_auto_apply_threshold" in body:
+        val = int(body["mb_auto_apply_threshold"])
+        if val < 50 or val > 100:
+            raise HTTPException(status_code=422, detail="Threshold must be 50-100")
+        set_setting("mb_auto_apply_threshold", str(val))
+    if "enrichment_min_age_hours" in body:
+        val = int(body["enrichment_min_age_hours"])
+        if val < 1 or val > 168:
+            raise HTTPException(status_code=422, detail="Must be 1-168 hours")
+        set_setting("enrichment_min_age_hours", str(val))
+    if "max_track_popularity" in body:
+        val = int(body["max_track_popularity"])
+        if val < 10 or val > 500:
+            raise HTTPException(status_code=422, detail="Must be 10-500")
+        set_setting("max_track_popularity", str(val))
+    return {"ok": True}

@@ -23,6 +23,12 @@ def api_tasks(status: str | None = None, limit: int = 50):
         except (_json.JSONDecodeError, TypeError):
             progress_parsed = progress
 
+        params_raw = t.get("params")
+        try:
+            params_parsed = _json.loads(params_raw) if isinstance(params_raw, str) and params_raw.startswith("{") else params_raw
+        except (_json.JSONDecodeError, TypeError):
+            params_parsed = params_raw
+
         result.append({
             "id": t["id"],
             "type": t["type"],
@@ -30,6 +36,7 @@ def api_tasks(status: str | None = None, limit: int = 50):
             "progress": progress_parsed,
             "error": t.get("error"),
             "result": t.get("result"),
+            "params": params_parsed,
             "created_at": t["created_at"],
             "updated_at": t["updated_at"],
         })
@@ -156,6 +163,41 @@ def _format_interval(seconds: int) -> str:
     if seconds < 86400:
         return f"{seconds // 3600}h"
     return f"{seconds // 86400}d"
+
+
+@router.post("/api/tasks/cleanup")
+def api_cleanup_tasks(body: dict | None = None):
+    """Delete completed/failed/cancelled tasks older than N days."""
+    from musicdock.db import get_db_ctx
+    days = (body or {}).get("older_than_days", 7)
+    with get_db_ctx() as cur:
+        cur.execute(
+            "DELETE FROM tasks WHERE status IN ('completed', 'failed', 'cancelled') "
+            "AND created_at < NOW() - INTERVAL '%s days'",
+            (days,),
+        )
+        deleted = cur.rowcount
+    return {"deleted": deleted}
+
+
+@router.post("/api/tasks/retry")
+def api_retry_task(body: dict):
+    """Retry a failed task by creating a new one with the same type and params."""
+    task_id = body.get("task_id")
+    if not task_id:
+        return JSONResponse({"error": "task_id required"}, status_code=400)
+    task = get_task(task_id)
+    if not task:
+        return JSONResponse({"error": "Task not found"}, status_code=404)
+
+    params_raw = task.get("params")
+    try:
+        params = _json.loads(params_raw) if isinstance(params_raw, str) else (params_raw or {})
+    except (_json.JSONDecodeError, TypeError):
+        params = {}
+
+    new_id = create_task(task["type"], params)
+    return {"task_id": new_id, "original_id": task_id}
 
 
 @router.post("/api/tasks/{task_id}/cancel")
