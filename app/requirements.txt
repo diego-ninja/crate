@@ -16,7 +16,7 @@ librosa>=0.10
 essentia>=2.1b5; platform_machine == "x86_64"
 Pillow>=10.0
 numpy>=1.26
-tiddl>=3.2
+tiddl>=2.8
 pytest>=8.0
 httpx>=0.27
 
