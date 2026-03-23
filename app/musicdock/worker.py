@@ -1121,6 +1121,69 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     return {"enriched": enriched, "skipped": skipped, "failed": failed, "total": total}
 
 
+def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
+    """Download from Tidal and run full processing pipeline."""
+    from musicdock.tidal import download, move_to_library
+    from musicdock.library_sync import LibrarySync
+
+    url = params.get("url", "")
+    quality = params.get("quality", "max")
+    lib = Path(config["library_path"])
+
+    if not url:
+        return {"error": "No URL provided"}
+
+    # 1. Download via tiddl
+    update_task(task_id, progress=json.dumps({"phase": "downloading", "url": url}))
+    result = download(
+        url, quality=quality, task_id=task_id,
+        progress_callback=lambda d: update_task(task_id, progress=json.dumps(d)),
+    )
+
+    if not result.get("success"):
+        return {"error": result.get("error", "Download failed"), "phase": "download"}
+
+    # 2. Move to library
+    update_task(task_id, progress=json.dumps({"phase": "moving", "files": result.get("file_count", 0)}))
+    modified_artists = move_to_library(result["path"], str(lib))
+
+    if not modified_artists:
+        return {"error": "No files were moved", "phase": "move"}
+
+    # 3. Sync modified artists
+    update_task(task_id, progress=json.dumps({"phase": "syncing", "artists": modified_artists}))
+    sync = LibrarySync(config)
+    for artist_name in modified_artists:
+        artist_dir = lib / artist_name
+        if artist_dir.is_dir():
+            try:
+                sync.sync_artist(artist_dir)
+            except Exception:
+                log.warning("Sync failed for %s", artist_name, exc_info=True)
+
+    # 4. Queue process_new_content for each artist
+    for artist_name in modified_artists:
+        try:
+            create_task("process_new_content", {"artist": artist_name})
+        except Exception:
+            pass
+
+    # 5. Trigger Navidrome scan
+    try:
+        from musicdock.navidrome import start_scan
+        start_scan()
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "url": url,
+        "quality": quality,
+        "files": result.get("file_count", 0),
+        "artists": modified_artists,
+    }
+
+
 def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dict:
     """Full pipeline for new content: enrich artist + index genres + analyze audio + bliss."""
     from musicdock.enrichment import enrich_artist
@@ -1465,4 +1528,5 @@ TASK_HANDLERS = {
     "compute_popularity": _handle_compute_popularity,
     "compute_bliss": _handle_compute_bliss,
     "process_new_content": _handle_process_new_content,
+    "tidal_download": _handle_tidal_download,
 }

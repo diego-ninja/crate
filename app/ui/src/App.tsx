@@ -27,6 +27,7 @@ const Genres = lazy(() => import("@/pages/Genres").then(m => ({ default: m.Genre
 const Timeline = lazy(() => import("@/pages/Timeline").then(m => ({ default: m.Timeline })));
 const Login = lazy(() => import("@/pages/Login").then(m => ({ default: m.Login })));
 const Users = lazy(() => import("@/pages/Users").then(m => ({ default: m.Users })));
+const DownloadPage = lazy(() => import("@/pages/Download").then(m => ({ default: m.DownloadPage })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 
 function PageSpinner() {
@@ -69,6 +70,7 @@ export default function App() {
                   <Route path="artwork" element={<Artwork />} />
                   <Route path="organizer" element={<Organizer />} />
                   <Route path="imports" element={<Imports />} />
+                  <Route path="download" element={<DownloadPage />} />
                   <Route path="analytics" element={<Analytics />} />
                   <Route path="insights" element={<Insights />} />
                   <Route path="missing-albums" element={<MissingAlbums />} />

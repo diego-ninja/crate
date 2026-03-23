@@ -14,7 +14,6 @@ import {
   ListTodo,
   ListMusic,
   Search,
-  ExternalLink,
   Tag,
   Clock,
   Server,
@@ -54,7 +53,7 @@ const navItems = [
   { to: "/imports", icon: Download, label: "Imports", badgeKey: "pending_imports" as const },
   { section: "Music" },
   { to: "/playlists", icon: ListMusic, label: "Playlists" },
-  { external: "https://search.lespedants.org", icon: Search, label: "Download" },
+  { to: "/download", icon: Search, label: "Tidal" },
   // AudioMuse AI — disabled (profile not active)
   // { external: "https://ai.lespedants.org", icon: BrainCircuit, label: "AudioMuse AI" },
   { section: "Insights" },
@@ -129,22 +128,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             >
               {item.section}
             </div>
-          );
-        }
-        if ("external" in item) {
-          const Icon = item.icon;
-          return (
-            <a
-              key={item.external}
-              href={item.external}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 px-5 py-2.5 text-sm transition-colors text-muted-foreground hover:text-foreground hover:bg-secondary"
-            >
-              <Icon size={16} />
-              <span className="flex-1">{item.label}</span>
-              <ExternalLink size={12} className="text-muted-foreground/50" />
-            </a>
           );
         }
         if ("adminOnly" in item && item.adminOnly && !isAdmin) {

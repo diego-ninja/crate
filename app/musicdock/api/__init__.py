@@ -51,6 +51,7 @@ def create_app() -> FastAPI:
     from musicdock.api.settings import router as settings_router
     from musicdock.api.playlists import router as playlists_router
     from musicdock.api.genres import router as genres_router
+    from musicdock.api.tidal import router as tidal_router
 
     # Auth + management + settings + enrichment + audiomuse BEFORE browse (browse has {name:path} catch-all)
     app.include_router(auth_router)
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router)
     app.include_router(playlists_router)
     app.include_router(genres_router)
+    app.include_router(tidal_router)
     app.include_router(enrichment_router)
     app.include_router(audiomuse_router)
     app.include_router(navidrome_router)

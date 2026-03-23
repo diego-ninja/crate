@@ -94,6 +94,7 @@ const TYPE_LABELS: Record<string, string> = {
   sync_playlist_navidrome: "Sync Playlist to Navidrome",
   process_new_content: "Process New Content",
   compute_bliss: "Compute Bliss Vectors",
+  tidal_download: "Tidal Download",
 };
 
 function getTaskLabel(task: Task): string {
