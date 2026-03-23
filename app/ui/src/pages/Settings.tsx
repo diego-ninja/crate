@@ -58,6 +58,13 @@ interface SettingsData {
     enrichment_min_age_hours: number;
     max_track_popularity: number;
   };
+  soulseek?: {
+    url: string;
+    quality: string;
+    min_bitrate: number;
+    username: string;
+    shares_music: boolean;
+  };
   about: {
     version: string;
     git_commit: string;
@@ -359,7 +366,60 @@ function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: ()
       </Card>
 
       <TidalAuthCard />
+      <SoulseekCard />
     </div>
+  );
+}
+
+function SoulseekCard() {
+  const [slskStatus, setSlskStatus] = useState<{ connected: boolean; state: string } | null>(null);
+  const [soulseekQuality, setSoulseekQuality] = useState("flac");
+  const [soulseekMinBitrate, setSoulseekMinBitrate] = useState("320");
+
+  useEffect(() => {
+    api<{ connected: boolean; state: string }>("/api/acquisition/status")
+      .then((s) => {
+        setSlskStatus(s);
+      })
+      .catch(() => setSlskStatus({ connected: false, state: "unknown" }));
+  }, []);
+
+  return (
+    <Card className="bg-card">
+      <CardHeader>
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Wifi size={14} /> Soulseek
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className={`w-2.5 h-2.5 rounded-full ${slskStatus?.connected ? "bg-green-500" : "bg-red-500"}`} />
+          <span className="text-sm">{slskStatus?.connected ? `Connected (${slskStatus.state})` : "Disconnected"}</span>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-muted-foreground w-32">Quality</span>
+          <Select value={soulseekQuality} onValueChange={(v) => { setSoulseekQuality(v); saveSetting("soulseek", { quality: v }); }}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="flac">FLAC only</SelectItem>
+              <SelectItem value="flac_320">FLAC + MP3 320k</SelectItem>
+              <SelectItem value="any">Any quality</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <span className="text-sm text-muted-foreground w-32">Min bitrate</span>
+          <Input type="number" className="w-24 h-8" value={soulseekMinBitrate}
+            onChange={(e) => setSoulseekMinBitrate(e.target.value)}
+            onBlur={() => saveSetting("soulseek", { min_bitrate: parseInt(soulseekMinBitrate) || 320 })} />
+          <span className="text-xs text-muted-foreground">kbps</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

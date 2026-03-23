@@ -1,4 +1,5 @@
 import json
+import os
 
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
@@ -44,6 +45,13 @@ def get_settings(request: Request):
             "mb_auto_apply_threshold": int(get_setting("mb_auto_apply_threshold", "95")),
             "enrichment_min_age_hours": int(get_setting("enrichment_min_age_hours", "24")),
             "max_track_popularity": int(get_setting("max_track_popularity", "50")),
+        },
+        "soulseek": {
+            "url": get_setting("slskd_url", os.environ.get("SLSKD_URL", "http://slskd:5030")),
+            "quality": get_setting("soulseek_quality", "flac"),
+            "min_bitrate": int(get_setting("soulseek_min_bitrate", "320")),
+            "username": get_setting("slskd_username", os.environ.get("SLSKD_SLSK_USERNAME", "")),
+            "shares_music": get_setting("slskd_shares_music", "true") == "true",
         },
         "about": _get_about_info(),
     }
@@ -196,4 +204,23 @@ def update_processing(request: Request, body: dict):
         if val < 10 or val > 500:
             raise HTTPException(status_code=422, detail="Must be 10-500")
         set_setting("max_track_popularity", str(val))
+    return {"ok": True}
+
+
+@router.put("/soulseek")
+def update_soulseek(request: Request, body: dict):
+    _require_admin(request)
+    if "url" in body:
+        set_setting("slskd_url", body["url"])
+    if "quality" in body:
+        valid = ("flac", "flac_320", "any")
+        if body["quality"] not in valid:
+            raise HTTPException(status_code=422, detail=f"quality must be one of {valid}")
+        set_setting("soulseek_quality", body["quality"])
+    if "min_bitrate" in body:
+        set_setting("soulseek_min_bitrate", str(int(body["min_bitrate"])))
+    if "username" in body:
+        set_setting("slskd_username", body["username"])
+    if "shares_music" in body:
+        set_setting("slskd_shares_music", "true" if body["shares_music"] else "false")
     return {"ok": True}

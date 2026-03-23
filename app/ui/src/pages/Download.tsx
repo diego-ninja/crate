@@ -54,6 +54,17 @@ interface SearchResult {
   tracks?: TidalTrack[];
 }
 
+interface SoulseekResult {
+  username: string;
+  speed: number;
+  freeSlot: boolean;
+  album: string;
+  artist: string;
+  files: { filename: string; size: number; length: number; extension: string; bitDepth?: number; sampleRate?: number }[];
+  quality: string;
+  totalSize: number;
+}
+
 interface QueueItem {
   id: number;
   tidal_url: string;
@@ -89,6 +100,8 @@ export function DownloadPage() {
   const [searching, setSearching] = useState(false);
   const [quality, setQuality] = useState("max");
   const [activeDownloads, setActiveDownloads] = useState<Set<string>>(new Set());
+  const [soulseekResults, setSoulseekResults] = useState<SoulseekResult[] | null>(null);
+  const [searchingSlsk, setSearchingSlsk] = useState(false);
   const { data: queue, refetch: refetchQueue } = useApi<QueueItem[]>("/api/tidal/queue");
   const { data: tidalStatus } = useApi<{ authenticated: boolean }>("/api/tidal/status");
 
@@ -111,6 +124,14 @@ export function DownloadPage() {
       toast.error("Search failed — check Tidal authentication");
     } finally {
       setSearching(false);
+    }
+    // Also search Soulseek
+    if (term.length >= 3) {
+      setSearchingSlsk(true);
+      api<{ soulseek: SoulseekResult[] }>("/api/acquisition/search", "POST", { query: term, type: "album" })
+        .then((d) => setSoulseekResults(d.soulseek || []))
+        .catch(() => setSoulseekResults([]))
+        .finally(() => setSearchingSlsk(false));
     }
   }, [query]);
 
@@ -153,6 +174,21 @@ export function DownloadPage() {
     refetchQueue();
   }
 
+  async function downloadFromSoulseek(result: SoulseekResult) {
+    try {
+      await api("/api/acquisition/download", "POST", {
+        source: "soulseek",
+        username: result.username,
+        artist: result.artist,
+        album: result.album,
+        files: result.files,
+      });
+      toast.success(`Downloading from Soulseek: ${result.artist} - ${result.album}`);
+    } catch {
+      toast.error("Failed to start download");
+    }
+  }
+
   const activeQueue = queue?.filter((q) => ["downloading", "queued", "processing"].includes(q.status)) ?? [];
   const wishlist = queue?.filter((q) => q.status === "wishlist") ?? [];
   const history = queue?.filter((q) => ["completed", "failed"].includes(q.status)) ?? [];
@@ -161,7 +197,7 @@ export function DownloadPage() {
     <div>
       <div className="flex items-center gap-3 mb-6">
         <Download size={24} className="text-primary" />
-        <h1 className="text-2xl font-bold">Tidal</h1>
+        <h1 className="text-2xl font-bold">Acquisition</h1>
         {tidalStatus && (
           <div className={`w-2 h-2 rounded-full ${tidalStatus.authenticated ? "bg-green-500" : "bg-red-500"}`} title={tidalStatus.authenticated ? "Connected" : "Not authenticated"} />
         )}
@@ -180,7 +216,7 @@ export function DownloadPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && doSearch()}
-            placeholder="Search Tidal..."
+            placeholder="Search Tidal + Soulseek..."
             className="pl-9"
           />
         </div>
@@ -316,7 +352,41 @@ export function DownloadPage() {
               )}
             </div>
           ) : (
-            <div className="text-center py-12 text-muted-foreground mt-4">Search Tidal to find music</div>
+            <div className="text-center py-12 text-muted-foreground mt-4">Search Tidal and Soulseek to find music</div>
+          )}
+
+          {/* Soulseek Results */}
+          {(soulseekResults !== null || searchingSlsk) && (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                Soulseek Results
+                {searchingSlsk && <Loader2 size={14} className="animate-spin" />}
+              </h3>
+              {soulseekResults && soulseekResults.length > 0 ? (
+                <div className="space-y-2">
+                  {soulseekResults.slice(0, 15).map((r, i) => (
+                    <div key={i} className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{r.artist} — {r.album}</div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                          <Badge variant="outline" className="text-[10px] px-1 py-0">{r.quality}</Badge>
+                          <span>{r.files.length} files</span>
+                          <span>{Math.round(r.totalSize / 1048576)} MB</span>
+                          <span>from {r.username}</span>
+                          <span>{Math.round(r.speed / 1024)} KB/s</span>
+                          {r.freeSlot && <Badge className="bg-green-500/10 text-green-500 text-[10px] px-1 py-0">Free slot</Badge>}
+                        </div>
+                      </div>
+                      <Button size="sm" onClick={() => downloadFromSoulseek(r)}>
+                        <Download size={13} className="mr-1" /> Download
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : soulseekResults && soulseekResults.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-4">No Soulseek results</div>
+              ) : null}
+            </div>
           )}
         </TabsContent>
 

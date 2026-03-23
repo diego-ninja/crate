@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   ListTodo,
   ListMusic,
-  Search,
+  Download,
   Tag,
   Clock,
   Compass,
@@ -51,7 +51,7 @@ const navItems = [
   { to: "/artwork", icon: Image, label: "Album Art" },
   { section: "Music" },
   { to: "/playlists", icon: ListMusic, label: "Playlists" },
-  { to: "/download", icon: Search, label: "Tidal" },
+  { to: "/download", icon: Download, label: "Acquisition" },
   // AudioMuse AI — disabled (profile not active)
   // { external: "https://ai.lespedants.org", icon: BrainCircuit, label: "AudioMuse AI" },
   { section: "Insights" },

@@ -2056,6 +2056,52 @@ def _handle_map_navidrome_ids(task_id: str, params: dict, config: dict) -> dict:
     return result
 
 
+def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
+    """Monitor a Soulseek download and process when complete."""
+    from musicdock import soulseek
+
+    artist = params.get("artist", "")
+    album = params.get("album", "")
+    file_count = params.get("file_count", 0)
+    username = params.get("username", "")
+
+    emit_task_event(task_id, "info", {"message": f"Downloading from {username}: {artist} - {album} ({file_count} files)"})
+
+    # Poll slskd for download completion
+    max_wait = 600  # 10 minutes max
+    elapsed = 0
+    while elapsed < max_wait:
+        if _shutdown or _is_cancelled(task_id):
+            return {"status": "cancelled"}
+
+        time.sleep(5)
+        elapsed += 5
+
+        downloads = soulseek.get_downloads()
+        # Find our downloads by username
+        user_downloads = [d for d in downloads if d.get("username") == username]
+
+        if not user_downloads:
+            break  # No downloads found, maybe already complete
+
+        completed = sum(1 for d in user_downloads if "Completed" in d.get("state", ""))
+        total = len(user_downloads)
+
+        update_task(task_id, progress=json.dumps({
+            "completed": completed, "total": total,
+            "artist": artist, "album": album,
+        }))
+
+        if completed >= file_count or completed >= total:
+            break
+
+    # Trigger process_new_content for the artist
+    if artist:
+        create_task("process_new_content", {"artist": artist, "album": album})
+
+    return {"artist": artist, "album": album, "source": "soulseek"}
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
@@ -2090,6 +2136,7 @@ TASK_HANDLERS = {
     "compute_bliss": _handle_compute_bliss,
     "process_new_content": _handle_process_new_content,
     "tidal_download": _handle_tidal_download,
+    "soulseek_download": _handle_soulseek_download,
     "check_new_releases": _handle_check_new_releases,
     "scan_missing_covers": _handle_scan_missing_covers,
     "apply_cover": _handle_apply_cover,
