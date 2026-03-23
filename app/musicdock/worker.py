@@ -1122,23 +1122,38 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
-    """Compute bliss feature vectors for all tracks."""
+    """Compute bliss feature vectors — processes per artist for incremental storage."""
     from musicdock.bliss import analyze_directory, store_vectors, is_available
+    from musicdock.db import get_library_artists
 
     if not is_available():
         return {"error": "grooveyard-bliss binary not found"}
 
     lib = Path(config["library_path"])
-    update_task(task_id, progress=json.dumps({"phase": "analyzing", "message": "Running bliss analysis..."}))
+    all_artists, total = get_library_artists(per_page=10000)
+    analyzed_total = 0
+    failed_total = 0
 
-    vectors = analyze_directory(str(lib))
-    if not vectors:
-        return {"error": "No tracks analyzed"}
+    for i, artist in enumerate(all_artists):
+        if _shutdown or _is_cancelled(task_id):
+            break
 
-    update_task(task_id, progress=json.dumps({"phase": "storing", "analyzed": len(vectors)}))
-    store_vectors(vectors)
+        folder = artist.get("folder_name") or artist["name"]
+        artist_dir = lib / folder
+        if not artist_dir.is_dir():
+            continue
 
-    return {"analyzed": len(vectors)}
+        update_task(task_id, progress=json.dumps({
+            "phase": "analyzing", "artist": artist["name"],
+            "done": i, "total": total, "analyzed": analyzed_total,
+        }))
+
+        vectors = analyze_directory(str(artist_dir))
+        if vectors:
+            store_vectors(vectors)
+            analyzed_total += len(vectors)
+
+    return {"analyzed": analyzed_total, "artists": total}
 
 
 def _handle_compute_popularity(task_id: str, params: dict, config: dict) -> dict:
