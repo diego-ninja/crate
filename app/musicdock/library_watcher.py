@@ -1,19 +1,37 @@
+"""Filesystem watcher — detects new content and triggers sync + enrichment.
+
+Uses a processing lock to prevent infinite loops: when process_new_content
+writes tags/photos back to /music, the watcher ignores those changes.
+"""
+
 import logging
 import threading
+import time
 from pathlib import Path
 
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileSystemEventHandler, EVENT_TYPE_CREATED
 from watchdog.observers import Observer
 
 log = logging.getLogger(__name__)
+
+# Files that enrichment/analysis writes — ignore changes to these
+IGNORE_PATTERNS = {"artist.jpg", "artist.png", "photo.jpg", "cover.jpg", "folder.jpg"}
+AUDIO_EXTENSIONS = {".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav"}
 
 
 class _EventHandler(FileSystemEventHandler):
     def __init__(self, callback):
         self.callback = callback
 
-    def on_any_event(self, event):
-        self.callback(event.src_path)
+    def on_created(self, event):
+        """Only react to NEW files, not modifications (avoids tag-write loops)."""
+        if not event.is_directory:
+            self.callback(event.src_path, is_new_file=True)
+
+    def on_moved(self, event):
+        """React to moved files (Tidarr moves from processing to library)."""
+        if not event.is_directory:
+            self.callback(event.dest_path, is_new_file=True)
 
 
 class LibraryWatcher:
@@ -24,6 +42,8 @@ class LibraryWatcher:
         self.debounce_seconds = 60
         self._lock = threading.Lock()
         self._observer = None
+        # Track albums currently being processed to avoid re-triggering
+        self._processing: set[str] = set()
 
     def start(self):
         handler = _EventHandler(self._on_change)
@@ -38,29 +58,51 @@ class LibraryWatcher:
             self._observer.stop()
             self._observer.join(timeout=5)
 
-    def _on_change(self, path: str):
+    def mark_processing(self, artist_name: str):
+        """Called by worker before writing to /music — suppresses watcher triggers."""
+        self._processing.add(artist_name.lower())
+
+    def unmark_processing(self, artist_name: str):
+        """Called by worker after writing to /music."""
+        self._processing.discard(artist_name.lower())
+
+    def _on_change(self, path: str, is_new_file: bool = False):
         try:
-            rel = Path(path).relative_to(self.library_path)
+            p = Path(path)
+            rel = p.relative_to(self.library_path)
         except ValueError:
             return
+
         parts = rel.parts
         if len(parts) < 2:
             return
-        album_dir = self.library_path / parts[0] / parts[1]
-        artist_name = parts[0]
-        key = str(album_dir)
 
+        # Ignore non-audio files (covers, photos written by enrichment)
+        if p.name.lower() in IGNORE_PATTERNS:
+            return
+        if p.suffix.lower() not in AUDIO_EXTENSIONS and not p.is_dir():
+            return
+
+        artist_name = parts[0]
+        album_dir = self.library_path / parts[0] / parts[1]
+
+        # Skip if this artist is currently being processed by worker
+        if artist_name.lower() in self._processing:
+            log.debug("Watcher: ignoring change during processing for %s", artist_name)
+            return
+
+        key = str(album_dir)
         with self._lock:
             if key in self.debounce_timers:
                 self.debounce_timers[key].cancel()
             timer = threading.Timer(
-                self.debounce_seconds, self._sync_album, args=(album_dir, artist_name)
+                self.debounce_seconds, self._sync_album, args=(album_dir, artist_name, is_new_file)
             )
             timer.daemon = True
             timer.start()
             self.debounce_timers[key] = timer
 
-    def _sync_album(self, album_dir: Path, artist_name: str):
+    def _sync_album(self, album_dir: Path, artist_name: str, is_new_file: bool):
         with self._lock:
             self.debounce_timers.pop(str(album_dir), None)
         try:
@@ -69,16 +111,25 @@ class LibraryWatcher:
 
             # Check if artist is new (not in DB yet)
             from musicdock.db import get_library_artist
-            is_new = get_library_artist(canonical) is None
+            is_new_artist = get_library_artist(canonical) is None
 
             if album_dir.is_dir():
                 log.info("Watcher: syncing album %s/%s", canonical, album_dir.name)
                 self.sync.sync_album(album_dir, canonical)
             self.sync.sync_artist(artist_dir)
 
-            # NOTE: Do NOT queue process_new_content from watcher.
-            # It creates an infinite loop: process_new_content writes to /music
-            # (tags, photos) → watcher detects change → queues again → infinite.
-            # Enrichment is triggered by: Tidal downloads, manual enrich, scheduled tasks.
+            # Queue enrichment only for genuinely new content
+            # (new audio files, not tag rewrites)
+            if is_new_file and is_new_artist:
+                try:
+                    from musicdock.db import create_task
+                    create_task("process_new_content", {
+                        "artist": canonical,
+                        "album": album_dir.name,
+                    })
+                    log.info("Watcher: queued process_new_content for new artist %s", canonical)
+                except Exception:
+                    log.debug("Watcher: failed to queue processing for %s", canonical)
+
         except Exception:
             log.exception("Watcher: failed to sync %s/%s", artist_name, album_dir.name)

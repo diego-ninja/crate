@@ -41,6 +41,7 @@ SCHEDULE_CHECK_INTERVAL = 60  # seconds between scheduler checks
 IMPORT_CHECK_INTERVAL = 60   # seconds between import queue checks
 
 _active_tasks: set[str] = set()
+_watcher = None  # LibraryWatcher ref for processing lock
 
 # Tasks that do heavy DB writes — only one at a time
 DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
@@ -108,9 +109,10 @@ def run_worker(config: dict):
 
     # Start filesystem watcher (non-blocking)
     try:
+        global _watcher
         sync = LibrarySync(config)
-        watcher = LibraryWatcher(config, sync)
-        watcher.start()
+        _watcher = LibraryWatcher(config, sync)
+        _watcher.start()
         log.info("Filesystem watcher started")
     except Exception:
         log.exception("Library watcher failed to start")
@@ -1278,6 +1280,10 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
 
     artist_name = params.get("artist", "")
     album_folder = params.get("album", "")
+
+    # Tell watcher to ignore changes while we write tags/photos
+    if _watcher:
+        _watcher.mark_processing(artist_name)
     lib = Path(config["library_path"])
 
     result = {"artist": artist_name, "album": album_folder, "steps": {}}
@@ -1450,6 +1456,10 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
     except Exception:
         log.warning("Popularity failed", exc_info=True)
         result["steps"]["popularity"] = "failed"
+
+    # Unmark processing so watcher can react to future changes
+    if _watcher:
+        _watcher.unmark_processing(artist_name)
 
     return result
 
