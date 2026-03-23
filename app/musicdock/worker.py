@@ -1121,6 +1121,197 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     return {"enriched": enriched, "skipped": skipped, "failed": failed, "total": total}
 
 
+def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dict:
+    """Full pipeline for new content: enrich artist + index genres + analyze audio + bliss."""
+    from musicdock.enrichment import enrich_artist
+    from musicdock.genre_indexer import index_all_genres
+    from musicdock.bliss import analyze_file as bliss_analyze, store_vectors, is_available as bliss_available
+    from musicdock.audio_analysis import analyze_track
+    from musicdock.db import (
+        get_library_artist, get_library_albums, get_library_tracks,
+        update_track_audiomuse, set_album_genres, get_or_create_genre, get_db_ctx,
+    )
+    from musicdock.popularity import _lastfm_get, _parse_int
+    import re as _re
+
+    artist_name = params.get("artist", "")
+    album_folder = params.get("album", "")
+    lib = Path(config["library_path"])
+
+    result = {"artist": artist_name, "album": album_folder, "steps": {}}
+
+    # ── 1. Artist enrichment (if not recently enriched) ──
+    update_task(task_id, progress=json.dumps({"step": "enrich_artist", "artist": artist_name}))
+    try:
+        enrich_result = enrich_artist(artist_name, config)
+        result["steps"]["enrich_artist"] = enrich_result.get("skipped", False)
+    except Exception:
+        log.warning("Enrich artist failed for %s", artist_name, exc_info=True)
+        result["steps"]["enrich_artist"] = "failed"
+
+    # ── 2. Album genre indexing ──
+    update_task(task_id, progress=json.dumps({"step": "album_genres", "artist": artist_name}))
+    try:
+        albums = get_library_albums(artist_name)
+        for album in albums:
+            if album_folder and album["name"] != album_folder:
+                continue
+            tracks = get_library_tracks(album["id"])
+            album_genres_raw = set()
+            if album.get("genre"):
+                for g in album["genre"].split(","):
+                    g = g.strip()
+                    if g:
+                        album_genres_raw.add(g)
+            for t in tracks:
+                if t.get("genre"):
+                    for g in t["genre"].split(","):
+                        g = g.strip()
+                        if g:
+                            album_genres_raw.add(g)
+            if album_genres_raw:
+                genres = [(g, 1.0, "tags") for g in album_genres_raw]
+                set_album_genres(album["id"], genres)
+        result["steps"]["album_genres"] = True
+    except Exception:
+        log.warning("Album genre indexing failed", exc_info=True)
+        result["steps"]["album_genres"] = "failed"
+
+    # ── 3. Album MBID lookup ──
+    update_task(task_id, progress=json.dumps({"step": "album_mbid", "artist": artist_name}))
+    try:
+        import musicbrainzngs
+        musicbrainzngs.set_useragent("grooveyard", "0.1", "https://github.com/grooveyard")
+        from musicdock.matcher import _search_musicbrainz, _get_release_detail, _score_match, _gather_local_info
+        from musicdock.audio import get_audio_files
+
+        exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
+        mbid_count = 0
+        for album in albums:
+            if album_folder and album["name"] != album_folder:
+                continue
+            existing_mbid = album.get("musicbrainz_albumid")
+            if existing_mbid and existing_mbid.strip():
+                continue
+
+            clean_name = _re.sub(r"^\d{4}\s*-\s*", "", album.get("tag_album") or album["name"])
+            track_count = album.get("track_count", 0)
+            candidates = _search_musicbrainz(artist_name, clean_name, track_count)
+            if not candidates:
+                time.sleep(1)
+                continue
+
+            album_dir = Path(album["path"]) if album.get("path") else None
+            if album_dir and album_dir.is_dir():
+                local_info = _gather_local_info(get_audio_files(album_dir, list(exts)))
+            else:
+                db_tracks = get_library_tracks(album["id"])
+                local_info = {
+                    "artist": artist_name, "album": clean_name, "track_count": track_count,
+                    "tracks": [{"title": t.get("title", ""), "length_sec": int(t.get("duration", 0)), "tracknumber": "", "filename": ""} for t in db_tracks],
+                    "total_length": sum(int(t.get("duration", 0)) for t in db_tracks),
+                }
+
+            best_release = None
+            best_score = 0
+            for c in candidates[:2]:
+                release = _get_release_detail(c["mbid"])
+                if not release:
+                    continue
+                score = _score_match(local_info, release)
+                if score > best_score:
+                    best_score = score
+                    best_release = release
+                time.sleep(0.5)
+
+            if best_release and best_score >= 70:
+                with get_db_ctx() as cur:
+                    cur.execute("UPDATE library_albums SET musicbrainz_albumid = %s WHERE id = %s",
+                                (best_release["mbid"], album["id"]))
+                mbid_count += 1
+            time.sleep(1)
+
+        result["steps"]["album_mbid"] = mbid_count
+    except Exception:
+        log.warning("Album MBID lookup failed", exc_info=True)
+        result["steps"]["album_mbid"] = "failed"
+
+    # ── 4. Audio analysis (Essentia/librosa) for new tracks ──
+    update_task(task_id, progress=json.dumps({"step": "audio_analysis", "artist": artist_name}))
+    try:
+        analyzed = 0
+        for album in albums:
+            if album_folder and album["name"] != album_folder:
+                continue
+            tracks = get_library_tracks(album["id"])
+            for t in tracks:
+                if t.get("bpm") is not None:
+                    continue  # already analyzed
+                if _shutdown or _is_cancelled(task_id):
+                    break
+                try:
+                    ar = analyze_track(t["path"])
+                    if ar.get("bpm") is not None:
+                        update_track_audiomuse(
+                            t["path"], bpm=ar["bpm"], key=ar["key"], scale=ar["scale"],
+                            energy=ar["energy"], mood=ar["mood"],
+                            danceability=ar.get("danceability"), valence=ar.get("valence"),
+                            acousticness=ar.get("acousticness"), instrumentalness=ar.get("instrumentalness"),
+                            loudness=ar.get("loudness"), dynamic_range=ar.get("dynamic_range"),
+                            spectral_complexity=ar.get("spectral_complexity"),
+                        )
+                        analyzed += 1
+                except Exception:
+                    log.debug("Analysis failed for %s", t["path"])
+        result["steps"]["audio_analysis"] = analyzed
+    except Exception:
+        log.warning("Audio analysis failed", exc_info=True)
+        result["steps"]["audio_analysis"] = "failed"
+
+    # ── 5. Bliss vectors ──
+    if bliss_available():
+        update_task(task_id, progress=json.dumps({"step": "bliss", "artist": artist_name}))
+        try:
+            from musicdock.bliss import analyze_directory
+            artist_data = get_library_artist(artist_name)
+            folder = (artist_data.get("folder_name") if artist_data else None) or artist_name
+            artist_dir = lib / folder
+            if artist_dir.is_dir():
+                vectors = analyze_directory(str(artist_dir))
+                if vectors:
+                    store_vectors(vectors)
+                result["steps"]["bliss"] = len(vectors) if vectors else 0
+        except Exception:
+            log.warning("Bliss failed for %s", artist_name, exc_info=True)
+            result["steps"]["bliss"] = "failed"
+
+    # ── 6. Popularity (Last.fm) ──
+    update_task(task_id, progress=json.dumps({"step": "popularity", "artist": artist_name}))
+    try:
+        pop_count = 0
+        for album in albums:
+            if album_folder and album["name"] != album_folder:
+                continue
+            album_name = _re.sub(r"^\d{4}\s*-\s*", "", album.get("tag_album") or album["name"])
+            data = _lastfm_get("album.getinfo", artist=artist_name, album=album_name, autocorrect="1")
+            if data and "album" in data:
+                info = data["album"]
+                listeners = _parse_int(info.get("listeners", 0))
+                playcount = _parse_int(info.get("playcount", 0))
+                if listeners > 0:
+                    with get_db_ctx() as cur:
+                        cur.execute("UPDATE library_albums SET lastfm_listeners = %s, lastfm_playcount = %s WHERE id = %s",
+                                    (listeners, playcount, album["id"]))
+                    pop_count += 1
+            time.sleep(0.25)
+        result["steps"]["popularity"] = pop_count
+    except Exception:
+        log.warning("Popularity failed", exc_info=True)
+        result["steps"]["popularity"] = "failed"
+
+    return result
+
+
 def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
     """Compute bliss feature vectors — processes per artist for incremental storage."""
     from musicdock.bliss import analyze_directory, store_vectors, is_available
@@ -1273,4 +1464,5 @@ TASK_HANDLERS = {
     "index_genres": _handle_index_genres,
     "compute_popularity": _handle_compute_popularity,
     "compute_bliss": _handle_compute_bliss,
+    "process_new_content": _handle_process_new_content,
 }

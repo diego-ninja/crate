@@ -53,8 +53,14 @@ def _api_get(endpoint: str, params: dict | None = None) -> dict | None:
         )
         resp.raise_for_status()
         return resp.json()
-    except Exception:
-        log.debug("Spotify API call failed: %s", endpoint)
+    except requests.exceptions.HTTPError as e:
+        if e.response is not None and e.response.status_code == 403:
+            log.warning("Spotify API 403: Premium subscription required")
+        else:
+            log.debug("Spotify API call failed: %s %s", endpoint, e)
+        return None
+    except Exception as e:
+        log.debug("Spotify API call failed: %s %s", endpoint, e)
         return None
 
 

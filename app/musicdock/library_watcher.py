@@ -76,13 +76,15 @@ class LibraryWatcher:
                 self.sync.sync_album(album_dir, canonical)
             self.sync.sync_artist(artist_dir)
 
-            # Trigger enrichment for new artists
-            if is_new:
-                try:
-                    from musicdock.db import create_task
-                    create_task("enrich_artist", {"artist": canonical})
-                    log.info("Watcher: queued enrichment for new artist %s", canonical)
-                except Exception:
-                    log.debug("Watcher: failed to queue enrichment for %s", canonical)
+            # Queue full processing pipeline for new content
+            try:
+                from musicdock.db import create_task
+                create_task("process_new_content", {
+                    "artist": canonical,
+                    "album": album_dir.name,
+                })
+                log.info("Watcher: queued process_new_content for %s / %s", canonical, album_dir.name)
+            except Exception:
+                log.debug("Watcher: failed to queue processing for %s", canonical)
         except Exception:
             log.exception("Watcher: failed to sync %s/%s", artist_name, album_dir.name)
