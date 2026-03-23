@@ -167,7 +167,8 @@ export function Settings() {
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Settings</h1>
       <Tabs defaultValue="general">
-        <TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+        <TabsList className="min-w-max">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="schedules">Schedules</TabsTrigger>
           <TabsTrigger value="enrichment">Enrichment</TabsTrigger>
@@ -176,6 +177,7 @@ export function Settings() {
           <TabsTrigger value="audit">Audit Log</TabsTrigger>
           <TabsTrigger value="about">About</TabsTrigger>
         </TabsList>
+        </div>
         <TabsContent value="general">
           <GeneralTab settings={settings} refetch={refetch} />
         </TabsContent>
@@ -265,10 +267,10 @@ function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: ()
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-muted-foreground w-32">Structure</span>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+            <span className="text-sm text-muted-foreground sm:w-32">Structure</span>
             <Select value={folderPattern} onValueChange={(v) => { setFolderPattern(v); saveSetting("library", { folder_pattern: v }); }}>
-              <SelectTrigger className="w-[250px]">
+              <SelectTrigger className="w-full sm:w-[250px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1024,7 +1026,7 @@ function AboutTab({ about }: { about: SettingsData["about"] }) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <InfoRow label="Version" value={about.version} />
             <InfoRow label="Git Commit" value={about.git_commit} mono />
             <InfoRow label="Python" value={about.python} />

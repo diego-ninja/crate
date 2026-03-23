@@ -93,7 +93,7 @@ export function Dashboard() {
   if (loadingStats) {
     return (
       <div>
-        <div className="grid grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
           {Array.from({ length: 4 }, (_, i) => (
             <div key={i} className="bg-card border border-border rounded-lg p-6">
               <GridSkeleton count={1} columns="grid-cols-1" />
@@ -162,7 +162,7 @@ export function Dashboard() {
 
       {/* Row 2: Live Activity Feed + System Status */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <Card className="bg-card col-span-2">
+        <Card className="bg-card col-span-1 md:col-span-2">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm flex items-center gap-2">

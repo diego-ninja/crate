@@ -10,9 +10,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api } from "@/lib/api";
 import { encPath, formatSize, formatCompact } from "@/lib/utils";
-import { LayoutGrid, List, ChevronLeft, ChevronRight, Users } from "lucide-react";
+import { toast } from "sonner";
+import {
+  LayoutGrid, List, ChevronLeft, ChevronRight, Users,
+  Check, SquareCheck, X, RefreshCw, BrainCircuit, Trash2,
+} from "lucide-react";
 
 interface ArtistItem {
   name: string;
@@ -70,6 +75,74 @@ export function Browse() {
   const [artists, setArtists] = useState<ArtistItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showBatchDelete, setShowBatchDelete] = useState(false);
+
+  function toggleSelect(name: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    setSelected(new Set(artists.map(a => a.name)));
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+    setSelectMode(false);
+  }
+
+  async function batchEnrich() {
+    for (const name of selected) {
+      try {
+        await api(`/api/artist/${encodeURIComponent(name)}/enrich`, "POST");
+      } catch { /* continue */ }
+    }
+    toast.success(`Enrichment started for ${selected.size} artists`);
+    clearSelection();
+  }
+
+  async function batchAnalyze() {
+    for (const name of selected) {
+      try {
+        await api(`/api/analyze/artist/${encodeURIComponent(name)}`, "POST");
+      } catch { /* continue */ }
+    }
+    toast.success(`Analysis started for ${selected.size} artists`);
+    clearSelection();
+  }
+
+  async function batchDelete() {
+    for (const name of selected) {
+      try {
+        await api(`/api/manage/artist/${encodeURIComponent(name)}/delete`, "POST", { mode: "full" });
+      } catch { /* continue */ }
+    }
+    toast.success(`Deleted ${selected.size} artists`);
+    clearSelection();
+    setShowBatchDelete(false);
+    // refetch
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (genre) params.set("genre", genre);
+    if (country) params.set("country", country);
+    if (decade) params.set("decade", decade);
+    if (format) params.set("format", format);
+    params.set("sort", sort);
+    params.set("page", String(page));
+    params.set("per_page", String(PER_PAGE));
+    params.set("view", view);
+    api<PaginatedResponse>(`/api/artists?${params.toString()}`)
+      .then((data) => { setArtists(data.items); setTotal(data.total); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }
 
   const setParam = useCallback(
     (key: string, value: string) => {
@@ -152,7 +225,7 @@ export function Browse() {
         />
 
         <Select value={sort} onValueChange={(v) => setParam("sort", v)}>
-          <SelectTrigger className="w-[150px] bg-card border-border h-9 text-xs">
+          <SelectTrigger className="w-[120px] sm:w-[150px] bg-card border-border h-9 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -163,6 +236,15 @@ export function Browse() {
             ))}
           </SelectContent>
         </Select>
+
+        <Button
+          size="sm"
+          variant={selectMode ? "default" : "outline"}
+          onClick={() => { setSelectMode(!selectMode); if (selectMode) clearSelection(); }}
+        >
+          {selectMode ? <Check size={13} className="mr-1" /> : <SquareCheck size={13} className="mr-1" />}
+          {selectMode ? "Done" : "Select"}
+        </Button>
 
         <div className="flex border border-border rounded-md overflow-hidden ml-auto">
           <Button
@@ -205,13 +287,25 @@ export function Browse() {
       ) : view === "grid" ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {artists.map((a) => (
-            <ArtistGridCard key={a.name} artist={a} onClick={() => navigate(`/artist/${encPath(a.name)}`)} />
+            <ArtistGridCard
+              key={a.name}
+              artist={a}
+              selectMode={selectMode}
+              isSelected={selected.has(a.name)}
+              onClick={() => selectMode ? toggleSelect(a.name) : navigate(`/artist/${encPath(a.name)}`)}
+            />
           ))}
         </div>
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {artists.map((a) => (
-            <ArtistListRow key={a.name} artist={a} onClick={() => navigate(`/artist/${encPath(a.name)}`)} />
+            <ArtistListRow
+              key={a.name}
+              artist={a}
+              selectMode={selectMode}
+              isSelected={selected.has(a.name)}
+              onClick={() => selectMode ? toggleSelect(a.name) : navigate(`/artist/${encPath(a.name)}`)}
+            />
           ))}
         </div>
       )}
@@ -242,6 +336,37 @@ export function Browse() {
           </Button>
         </div>
       )}
+
+      {selected.size > 0 && (
+        <div className="fixed bottom-14 left-0 right-0 md:left-[220px] z-40 bg-card/95 backdrop-blur-md border-t border-border px-4 py-3 flex items-center gap-3 animate-in slide-in-from-bottom">
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <div className="flex gap-2 flex-1">
+            <Button size="sm" variant="outline" onClick={batchEnrich}>
+              <RefreshCw size={13} className="mr-1" /> Enrich
+            </Button>
+            <Button size="sm" variant="outline" onClick={batchAnalyze}>
+              <BrainCircuit size={13} className="mr-1" /> Analyze
+            </Button>
+            <Button size="sm" variant="outline" className="text-red-500 border-red-500/30" onClick={() => setShowBatchDelete(true)}>
+              <Trash2 size={13} className="mr-1" /> Delete
+            </Button>
+          </div>
+          <Button size="sm" variant="ghost" onClick={selectAll}>Select All</Button>
+          <Button size="sm" variant="ghost" onClick={clearSelection}>
+            <X size={13} /> Cancel
+          </Button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={showBatchDelete}
+        onOpenChange={setShowBatchDelete}
+        title="Delete artists"
+        description={`This will permanently delete ${selected.size} artist(s) and all their files. This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={batchDelete}
+      />
     </div>
   );
 }
@@ -261,7 +386,7 @@ function FilterSelect({
 }) {
   return (
     <Select value={value || "__all__"} onValueChange={(v) => onChange(v === "__all__" ? "" : v)}>
-      <SelectTrigger className="w-[140px] bg-card border-border h-9 text-xs">
+      <SelectTrigger className="w-[120px] sm:w-[140px] bg-card border-border h-9 text-xs">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
@@ -287,7 +412,7 @@ function DecadeSelect({
 }) {
   return (
     <Select value={value || "__all__"} onValueChange={(v) => onChange(v === "__all__" ? "" : v)}>
-      <SelectTrigger className="w-[120px] bg-card border-border h-9 text-xs">
+      <SelectTrigger className="w-[100px] sm:w-[120px] bg-card border-border h-9 text-xs">
         <SelectValue placeholder="Decade" />
       </SelectTrigger>
       <SelectContent>
@@ -304,9 +429,13 @@ function DecadeSelect({
 
 function ArtistGridCard({
   artist,
+  selectMode,
+  isSelected,
   onClick,
 }: {
   artist: ArtistItem;
+  selectMode: boolean;
+  isSelected: boolean;
   onClick: () => void;
 }) {
   const [imgError, setImgError] = useState(false);
@@ -315,9 +444,20 @@ function ArtistGridCard({
   return (
     <div
       onClick={onClick}
-      className="bg-card border border-border rounded-lg p-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 hover:border-primary"
+      className={`bg-card border rounded-lg p-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 ${
+        isSelected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary"
+      }`}
     >
-      <div className="w-full aspect-square rounded-lg mb-2 overflow-hidden">
+      <div className="relative w-full aspect-square rounded-lg mb-2 overflow-hidden">
+        {selectMode && (
+          <div className="absolute top-2 left-2 z-10">
+            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+              isSelected ? "bg-primary border-primary" : "border-white/50 bg-black/30"
+            }`}>
+              {isSelected && <Check size={12} className="text-white" />}
+            </div>
+          </div>
+        )}
         {!imgError ? (
           <img
             src={`/api/artist/${encPath(artist.name)}/photo`}
@@ -349,9 +489,13 @@ function ArtistGridCard({
 
 function ArtistListRow({
   artist,
+  selectMode,
+  isSelected,
   onClick,
 }: {
   artist: ArtistItem;
+  selectMode: boolean;
+  isSelected: boolean;
   onClick: () => void;
 }) {
   const [imgError, setImgError] = useState(false);
@@ -360,8 +504,19 @@ function ArtistListRow({
   return (
     <div
       onClick={onClick}
-      className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+      className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors ${
+        isSelected ? "bg-primary/10" : ""
+      }`}
     >
+      {selectMode && (
+        <div className="flex-shrink-0">
+          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+            isSelected ? "bg-primary border-primary" : "border-muted-foreground/40 bg-transparent"
+          }`}>
+            {isSelected && <Check size={12} className="text-white" />}
+          </div>
+        </div>
+      )}
       <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
         {!imgError ? (
           <img
@@ -383,13 +538,13 @@ function ArtistListRow({
       <div className="text-xs text-muted-foreground whitespace-nowrap">
         {artist.albums} album{artist.albums !== 1 ? "s" : ""}
       </div>
-      <div className="text-xs text-muted-foreground whitespace-nowrap w-16 text-right">
+      <div className="hidden sm:block text-xs text-muted-foreground whitespace-nowrap w-16 text-right">
         {artist.tracks} tracks
       </div>
-      <div className="text-xs text-muted-foreground whitespace-nowrap w-16 text-right">
+      <div className="hidden sm:block text-xs text-muted-foreground whitespace-nowrap w-16 text-right">
         {formatSize(artist.total_size_mb)}
       </div>
-      <div className="flex gap-1 w-40 justify-end flex-shrink-0">
+      <div className="hidden md:flex gap-1 w-40 justify-end flex-shrink-0">
         {artist.genres?.slice(0, 3).map((g) => (
           <Badge key={g} variant="outline" className="text-[10px] px-1.5 py-0">
             {g}
@@ -397,7 +552,7 @@ function ArtistListRow({
         ))}
       </div>
       {artist.listeners != null && artist.listeners > 0 && (
-        <div className="text-xs text-muted-foreground whitespace-nowrap w-16 text-right flex items-center justify-end gap-1">
+        <div className="hidden md:flex text-xs text-muted-foreground whitespace-nowrap w-16 text-right items-center justify-end gap-1">
           <Users size={12} />
           {formatCompact(artist.listeners)}
         </div>

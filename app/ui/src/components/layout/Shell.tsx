@@ -17,6 +17,7 @@ import {
 import { Sidebar } from "./Sidebar";
 import { SearchBar } from "./SearchBar";
 import { CommandPalette } from "./CommandPalette";
+import { GlobalShortcuts } from "./GlobalShortcuts";
 import { NotificationBell } from "./NotificationBell";
 import { AudioPlayer } from "@/components/player/AudioPlayer";
 import { useKeyboard } from "@/hooks/use-keyboard";
@@ -97,6 +98,7 @@ export function Shell() {
 
       <AudioPlayer />
       <CommandPalette />
+      <GlobalShortcuts />
 
       {/* Keyboard shortcuts help */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
@@ -110,6 +112,15 @@ export function Shell() {
             <Shortcut keys={["\u2318", "K"]} label="Command palette" />
             <Shortcut keys={["Esc"]} label="Blur search / close modals" />
             <Shortcut keys={["?"]} label="Show this help" />
+            <div className="border-t border-border my-1" />
+            <Shortcut keys={["Space"]} label="Play / Pause" />
+            <Shortcut keys={["N"]} label="Next track" />
+            <Shortcut keys={["P"]} label="Previous track" />
+            <Shortcut keys={["M"]} label="Mute / Unmute" />
+            <Shortcut keys={["+", "-"]} label="Volume up / down" />
+            <Shortcut keys={["S"]} label="Toggle shuffle" />
+            <Shortcut keys={["R"]} label="Cycle repeat" />
+            <Shortcut keys={["[", "]"]} label="Playback speed" />
           </div>
         </DialogContent>
       </Dialog>

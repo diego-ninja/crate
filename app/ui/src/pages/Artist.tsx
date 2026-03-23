@@ -523,12 +523,13 @@ export function Artist() {
 
       {/* ═══ TABS ═══ */}
       <div className="border-b border-border sticky top-0 bg-[#2e3440]/95 backdrop-blur-sm z-10 px-4 md:px-8">
-        <div className="flex gap-1 -mb-px">
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+        <div className="flex gap-1 -mb-px min-w-max">
           {tabs.map((t) => (
             <button
               key={t.key}
               onClick={() => setActiveTab(t.key)}
-              className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
+              className={`px-3 md:px-4 py-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
                 activeTab === t.key
                   ? "border-cyan-500 text-white"
                   : "border-transparent text-white/40 hover:text-white/70"
@@ -537,6 +538,7 @@ export function Artist() {
               {t.label}
             </button>
           ))}
+        </div>
         </div>
       </div>
 

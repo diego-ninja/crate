@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, X,
   Shuffle, Repeat, Repeat1, PanelRightOpen, PanelRightClose,
-  Music, Timer, Gauge, Save, Trash2,
+  Music, Timer, Gauge, Save, Download, Trash2,
 } from "lucide-react";
 import { formatDuration, encPath } from "@/lib/utils";
 import { toast } from "sonner";
@@ -307,6 +307,25 @@ export function AudioPlayer() {
     }
   }
 
+  function exportM3U() {
+    if (queue.length === 0) return;
+    const lines = ["#EXTM3U"];
+    for (const track of queue) {
+      lines.push(`#EXTINF:-1,${track.artist} - ${track.title}`);
+      const url = track.id.includes("/")
+        ? `${window.location.origin}/api/stream/${encodeURIComponent(track.id).replace(/%2F/g, "/")}`
+        : `${window.location.origin}/api/navidrome/stream/${track.id}`;
+      lines.push(url);
+    }
+    const blob = new Blob([lines.join("\n")], { type: "audio/x-mpegurl" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `grooveyard-queue-${new Date().toISOString().slice(0, 10)}.m3u`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast.success("Queue exported as .m3u");
+  }
+
   async function saveAsPlaylist() {
     if (queue.length === 0) return;
     const name = `Queue — ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
@@ -325,7 +344,7 @@ export function AudioPlayer() {
     <>
       {/* ═══ SIDE PANEL ═══ */}
       {panelOpen && (
-        <div className="fixed right-0 top-0 bottom-12 w-[360px] z-50 bg-card/98 backdrop-blur-xl border-l border-border shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col overflow-hidden">
+        <div className="fixed right-0 top-0 bottom-12 w-full md:w-[360px] z-50 bg-card/98 backdrop-blur-xl border-l border-border shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col overflow-hidden">
           {currentTrack.albumCover && (
             <img src={currentTrack.albumCover} alt=""
               className="absolute inset-0 w-full h-full object-cover opacity-[0.06] blur-3xl scale-125 pointer-events-none" />
@@ -401,6 +420,9 @@ export function AudioPlayer() {
             <button onClick={saveAsPlaylist} className="p-1 text-muted-foreground hover:text-foreground" title="Save queue as playlist">
               <Save size={12} />
             </button>
+            <button onClick={exportM3U} className="p-1 text-muted-foreground hover:text-foreground" title="Export queue as .m3u">
+              <Download size={12} />
+            </button>
           </div>
 
           {/* Tabs */}
@@ -453,9 +475,9 @@ export function AudioPlayer() {
 
         {/* Progress */}
         <div className="flex items-center gap-2 flex-1 max-w-[300px] relative z-10">
-          <span className="text-[9px] text-muted-foreground font-mono w-8 text-right">{formatDuration(Math.floor(currentTime))}</span>
+          <span className="hidden sm:block text-[9px] text-muted-foreground font-mono w-8 text-right">{formatDuration(Math.floor(currentTime))}</span>
           <ProgressBar progress={progress} onSeek={(pct) => seek(pct * duration)} />
-          <span className="text-[9px] text-muted-foreground font-mono w-8">{formatDuration(Math.floor(duration))}</span>
+          <span className="hidden sm:block text-[9px] text-muted-foreground font-mono w-8">{formatDuration(Math.floor(duration))}</span>
         </div>
 
         {/* Controls */}
@@ -469,10 +491,12 @@ export function AudioPlayer() {
 
         {/* Right */}
         <div className="flex items-center gap-1 relative z-10">
-          <button onClick={() => setVolume(volume > 0 ? 0 : 0.8)} className="p-1">
-            {volume > 0 ? <Volume2 size={13} className="text-muted-foreground" /> : <VolumeX size={13} className="text-muted-foreground" />}
-          </button>
-          <VolumeSlider volume={volume} onChange={setVolume} />
+          <div className="hidden md:flex items-center gap-1">
+            <button onClick={() => setVolume(volume > 0 ? 0 : 0.8)} className="p-1">
+              {volume > 0 ? <Volume2 size={13} className="text-muted-foreground" /> : <VolumeX size={13} className="text-muted-foreground" />}
+            </button>
+            <VolumeSlider volume={volume} onChange={setVolume} />
+          </div>
           {sleepTimer && <span className="text-[9px] text-primary font-mono">{sleepTimer}m</span>}
           {playbackRate !== 1 && <span className="text-[9px] text-primary font-mono">{playbackRate}x</span>}
           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={togglePanel} title={panelOpen ? "Close panel" : "Open panel"}>

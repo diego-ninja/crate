@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
@@ -263,6 +264,31 @@ export function Album() {
                 />
               ))
             )}
+          </div>
+        )}
+
+        {data.album_tags.musicbrainz_albumid && (
+          <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="outline" className="text-[10px]">
+              MBID {data.album_tags.musicbrainz_albumid.slice(0, 8)}
+            </Badge>
+            <a
+              href={`https://musicbrainz.org/release/${data.album_tags.musicbrainz_albumid}`}
+              target="_blank" rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+            >
+              View on MusicBrainz ↗
+            </a>
+          </div>
+        )}
+
+        {data.genres && data.genres.length > 0 && (
+          <div className="mb-4 flex gap-1.5 flex-wrap">
+            {data.genres.map(g => (
+              <Badge key={g} variant="secondary" className="text-xs cursor-pointer hover:bg-primary/20">
+                {g}
+              </Badge>
+            ))}
           </div>
         )}
 
