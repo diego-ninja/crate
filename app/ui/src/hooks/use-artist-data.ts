@@ -47,6 +47,7 @@ interface TopTrack {
   album: string;
   duration: number;
   track: number;
+  listeners?: number;
 }
 
 export function useArtistEnrichment(name: string | undefined) {

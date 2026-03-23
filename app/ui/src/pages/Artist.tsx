@@ -77,6 +77,7 @@ interface TopTrack {
   album: string;
   duration: number;
   track: number;
+  listeners?: number;
 }
 
 interface EnrichmentData {
@@ -392,7 +393,15 @@ export function Artist() {
                 const pop = spotify?.popularity;
                 const listeners = lastfm?.listeners;
                 // Use Spotify if available, otherwise derive from listeners (log scale, cap at 100)
-                const score = pop && pop > 0 ? pop : listeners && listeners > 0 ? Math.min(100, Math.round(Math.log10(listeners) * 20)) : 0;
+                // Spotify: 0-100 already. Last.fm: natural log scale 5K=0% to 50M=100%
+                let score = 0;
+                if (pop && pop > 0) {
+                  score = pop;
+                } else if (listeners && listeners > 5000) {
+                  const minL = Math.log(5000);
+                  const maxL = Math.log(50000000);
+                  score = Math.min(100, Math.max(1, Math.round((Math.log(listeners) - minL) / (maxL - minL) * 100)));
+                }
                 return score > 0 ? (
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xs text-white/40">Popularity</span>
@@ -710,7 +719,11 @@ export function Artist() {
                         </div>
                         <div className="w-32 hidden sm:block text-xs text-white/40 truncate">{track.album}</div>
                         <div className="w-20 text-right text-xs text-white/30">{formatDuration(track.duration)}</div>
-                        <div className="w-20 hidden sm:block" />
+                        <div className="w-20 text-right hidden sm:block">
+                          {track.listeners ? (
+                            <span className="text-xs text-white/30">{formatCompact(track.listeners)}</span>
+                          ) : null}
+                        </div>
                         <div className="w-8" />
                       </button>
                     );
