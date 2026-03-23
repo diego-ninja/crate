@@ -90,21 +90,56 @@ def navidrome_artist_link(name: str):
 
 @router.get("/api/navidrome/artist/{name}/top-tracks")
 def navidrome_top_tracks(name: str, count: int = 20):
+    # Try Navidrome first
     try:
         songs = navidrome.get_top_songs(name, count)
-        return [
-            {
-                "id": s["id"],
-                "title": s.get("title", ""),
-                "artist": s.get("artist", name),
-                "album": s.get("album", ""),
-                "duration": s.get("duration", 0),
-                "track": s.get("track", 0),
-            }
-            for s in songs
-        ]
+        if songs:
+            return [
+                {
+                    "id": s["id"],
+                    "title": s.get("title", ""),
+                    "artist": s.get("artist", name),
+                    "album": s.get("album", ""),
+                    "duration": s.get("duration", 0),
+                    "track": s.get("track", 0),
+                }
+                for s in songs
+            ]
     except Exception as e:
-        log.warning("Top tracks failed for %s: %s", name, e)
+        log.debug("Navidrome top tracks failed for %s: %s", name, e)
+
+    # Fallback: Last.fm top tracks matched to local library
+    try:
+        from musicdock.lastfm import get_top_tracks as lastfm_top
+        from musicdock.db import get_db_ctx
+        lastfm_tracks = lastfm_top(name, limit=count)
+        if not lastfm_tracks:
+            return []
+
+        # Match Last.fm tracks to local library paths for playback
+        results = []
+        with get_db_ctx() as cur:
+            for lt in lastfm_tracks:
+                cur.execute(
+                    "SELECT t.path, t.title, t.artist, t.duration, a.name AS album "
+                    "FROM library_tracks t JOIN library_albums a ON t.album_id = a.id "
+                    "WHERE LOWER(t.title) = LOWER(%s) AND LOWER(t.artist) = LOWER(%s) LIMIT 1",
+                    (lt["title"], name),
+                )
+                row = cur.fetchone()
+                if row:
+                    results.append({
+                        "id": row["path"],  # path-based ID for direct streaming
+                        "title": row["title"],
+                        "artist": row["artist"],
+                        "album": row["album"],
+                        "duration": int(row["duration"] or 0),
+                        "track": 0,
+                        "listeners": lt.get("listeners", 0),
+                    })
+        return results
+    except Exception as e:
+        log.debug("Last.fm top tracks fallback failed for %s: %s", name, e)
         return []
 
 

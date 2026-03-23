@@ -1487,6 +1487,56 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
         log.warning("Popularity failed", exc_info=True)
         result["steps"]["popularity"] = "failed"
 
+    # ── 7. Fetch album covers ──
+    update_task(task_id, progress=json.dumps({"step": "covers", "artist": artist_name}))
+    try:
+        from musicdock.artwork import fetch_cover_from_caa, save_cover
+        import requests as _requests
+        covers_fetched = 0
+        for album in albums:
+            if album_folder and album["name"] != album_folder:
+                continue
+            album_dir = Path(album["path"]) if album.get("path") else None
+            if not album_dir or not album_dir.is_dir():
+                continue
+            # Skip if already has cover
+            if any((album_dir / c).exists() for c in ("cover.jpg", "cover.png", "folder.jpg")):
+                continue
+
+            cover_data = None
+            # Try CAA if MBID available
+            mbid = album.get("musicbrainz_albumid")
+            if mbid and mbid.strip():
+                cover_data = fetch_cover_from_caa(mbid)
+
+            # Try Deezer
+            if not cover_data:
+                try:
+                    album_name = _re.sub(r"^\d{4}\s*-\s*", "", album.get("tag_album") or album["name"])
+                    resp = _requests.get("https://api.deezer.com/search/album",
+                                         params={"q": f"{artist_name} {album_name}", "limit": 1}, timeout=10)
+                    if resp.status_code == 200:
+                        data = resp.json().get("data", [])
+                        if data and data[0].get("cover_xl"):
+                            img_resp = _requests.get(data[0]["cover_xl"], timeout=10)
+                            if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                                cover_data = img_resp.content
+                except Exception:
+                    pass
+
+            if cover_data:
+                save_cover(album_dir, cover_data)
+                covers_fetched += 1
+                # Update has_cover in DB
+                with get_db_ctx() as cur:
+                    cur.execute("UPDATE library_albums SET has_cover = 1 WHERE id = %s", (album["id"],))
+
+            time.sleep(0.3)
+        result["steps"]["covers"] = covers_fetched
+    except Exception:
+        log.warning("Cover fetching failed", exc_info=True)
+        result["steps"]["covers"] = "failed"
+
     # Unmark processing so watcher can react to future changes
     if _watcher:
         _watcher.unmark_processing(artist_name)

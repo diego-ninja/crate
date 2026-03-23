@@ -83,6 +83,45 @@ def get_artist_info(artist_name: str) -> dict | None:
     return result
 
 
+def get_top_tracks(artist_name: str, limit: int = 20) -> list[dict] | None:
+    """Get top tracks from Last.fm."""
+    cache_key = f"lastfm:toptracks:{artist_name.lower()}"
+    cached = get_cache(cache_key, max_age_seconds=86400)
+    if cached:
+        return cached.get("tracks")
+
+    api_key = _lastfm_key()
+    if not api_key:
+        return None
+
+    try:
+        resp = requests.get(LASTFM_BASE, params={
+            "method": "artist.gettoptracks",
+            "artist": artist_name,
+            "api_key": api_key,
+            "format": "json",
+            "limit": limit,
+        }, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+
+        raw_tracks = data.get("toptracks", {}).get("track", [])
+        tracks = []
+        for t in raw_tracks:
+            tracks.append({
+                "title": t.get("name", ""),
+                "playcount": int(t.get("playcount", 0)),
+                "listeners": int(t.get("listeners", 0)),
+                "url": t.get("url", ""),
+            })
+
+        set_cache(cache_key, {"tracks": tracks})
+        return tracks
+    except Exception:
+        log.debug("Last.fm top tracks failed for %s", artist_name)
+        return None
+
+
 def download_artist_image(image_url: str) -> bytes | None:
     """Download image from URL."""
     if not image_url or LASTFM_PLACEHOLDER_HASH in image_url:
