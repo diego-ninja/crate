@@ -1507,6 +1507,10 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
                         track_pop += 1
                 time.sleep(0.2)
 
+        # Normalize to 0-100 scale
+        from musicdock.popularity import _normalize_popularity
+        _normalize_popularity()
+
         result["steps"]["popularity"] = {"albums": pop_count, "tracks": track_pop}
     except Exception:
         log.warning("Popularity failed", exc_info=True)

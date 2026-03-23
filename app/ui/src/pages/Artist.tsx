@@ -387,22 +387,22 @@ export function Artist() {
                 )}
               </div>
 
-              {/* Spotify popularity bar */}
-              {spotify?.popularity != null && spotify.popularity > 0 && (
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs text-white/40">Popularity</span>
-                  <div className="w-[60px] h-1.5 bg-white/10 rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${spotify.popularity}%`,
-                        background: `linear-gradient(90deg, #6b7280, #22c55e)`,
-                      }}
-                    />
+              {/* Popularity bar — Spotify or derived from Last.fm listeners */}
+              {(() => {
+                const pop = spotify?.popularity;
+                const listeners = lastfm?.listeners;
+                // Use Spotify if available, otherwise derive from listeners (log scale, cap at 100)
+                const score = pop && pop > 0 ? pop : listeners && listeners > 0 ? Math.min(100, Math.round(Math.log10(listeners) * 20)) : 0;
+                return score > 0 ? (
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs text-white/40">Popularity</span>
+                    <div className="w-[60px] h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${score}%`, background: "linear-gradient(90deg, #6b7280, #22c55e)" }} />
+                    </div>
+                    <span className="text-xs text-white/40">{score}%</span>
                   </div>
-                  <span className="text-xs text-white/40">{spotify.popularity}%</span>
-                </div>
-              )}
+                ) : null;
+              })()}
 
               {/* Tags */}
               {allTags.length > 0 && (
