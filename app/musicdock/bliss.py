@@ -17,8 +17,8 @@ def _find_binary() -> str | None:
     """Find the grooveyard-bliss binary."""
     # Check common locations
     for path in [
-        "/usr/local/bin/grooveyard-bliss",
         "/app/bin/grooveyard-bliss",
+        "/usr/local/bin/grooveyard-bliss",
         shutil.which(BLISS_BIN),
     ]:
         if path and Path(path).is_file():
