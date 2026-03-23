@@ -1483,28 +1483,38 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
                     pop_count += 1
             time.sleep(0.25)
 
-        # Track popularity
+        # Track popularity (cap at 50 tracks to avoid long waits)
         track_pop = 0
+        tracks_checked = 0
+        MAX_TRACK_POP = 50
         for album in albums:
+            if tracks_checked >= MAX_TRACK_POP:
+                break
             if album_folder and album["name"] != album_folder:
                 continue
             tracks_db = get_library_tracks(album["id"])
             for t in tracks_db:
+                if tracks_checked >= MAX_TRACK_POP:
+                    break
                 title = t.get("title", "")
-                if not title:
-                    continue
-                data = _lastfm_get("track.getinfo", artist=artist_name, track=title, autocorrect="1")
-                if data and "track" in data:
-                    info = data["track"]
-                    listeners = _parse_int(info.get("listeners", 0))
-                    playcount = _parse_int(info.get("playcount", 0))
-                    if listeners > 0:
-                        with get_db_ctx() as cur:
-                            cur.execute(
-                                "UPDATE library_tracks SET lastfm_listeners = %s, lastfm_playcount = %s WHERE id = %s",
-                                (listeners, playcount, t["id"]),
-                            )
-                        track_pop += 1
+                if not title or t.get("lastfm_listeners"):
+                    continue  # skip empty titles and already-fetched
+                tracks_checked += 1
+                try:
+                    data = _lastfm_get("track.getinfo", artist=artist_name, track=title, autocorrect="1")
+                    if data and "track" in data:
+                        info = data["track"]
+                        listeners = _parse_int(info.get("listeners", 0))
+                        playcount = _parse_int(info.get("playcount", 0))
+                        if listeners > 0:
+                            with get_db_ctx() as cur:
+                                cur.execute(
+                                    "UPDATE library_tracks SET lastfm_listeners = %s, lastfm_playcount = %s WHERE id = %s",
+                                    (listeners, playcount, t["id"]),
+                                )
+                            track_pop += 1
+                except Exception:
+                    pass  # skip failed tracks
                 time.sleep(0.2)
 
         # Normalize to 0-100 scale
