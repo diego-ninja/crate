@@ -13,9 +13,11 @@ import {
   BrainCircuit,
   Loader2,
   Download,
+  Heart,
 } from "lucide-react";
 import { encPath, formatDuration, formatSize } from "@/lib/utils";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
+import { useFavorites } from "@/hooks/use-favorites";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -62,7 +64,9 @@ export function AlbumHeader({
   children,
 }: AlbumHeaderProps) {
   const { playAll } = usePlayer();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const coverUrl = `/api/cover/${encPath(artist)}/${encPath(album)}`;
+  const albumFavId = navidromeData?.id || `${artist}/${album}`;
   const [coverLoaded, setCoverLoaded] = useState(false);
   const [coverError, setCoverError] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -144,7 +148,7 @@ export function AlbumHeader({
         <div className="flex items-end gap-4 md:gap-6 w-full max-w-[1100px] px-4 md:px-8 pb-6 md:pb-8">
           {/* Cover art */}
           <ImageLightbox src={coverUrl} alt={`${displayName} cover art`}>
-            <div className="w-[120px] h-[120px] md:w-[200px] md:h-[200px] rounded-lg overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
+            <div className="w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-lg overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
               {!coverError ? (
                 <img
                   src={coverUrl}
@@ -262,6 +266,15 @@ export function AlbumHeader({
                 <a href={`/api/download/album/${encPath(artist)}/${encPath(album)}`} download>
                   <Download size={14} className="mr-1" /> Download
                 </a>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className={`border-white/20 hover:bg-white/10 ${isFavorite(albumFavId) ? "text-red-500 border-red-500/30" : "text-white/70 hover:text-white"}`}
+                onClick={() => toggleFavorite(albumFavId, "album")}
+              >
+                <Heart size={14} className={`mr-1 ${isFavorite(albumFavId) ? "fill-red-500" : ""}`} />
+                {isFavorite(albumFavId) ? "Favorited" : "Favorite"}
               </Button>
               {children}
             </div>

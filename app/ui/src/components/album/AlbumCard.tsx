@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { encPath } from "@/lib/utils";
-import { Music, Play } from "lucide-react";
+import { Music, Play, Heart, ListPlus } from "lucide-react";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
+import { useFavorites } from "@/hooks/use-favorites";
 import { api } from "@/lib/api";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 
@@ -50,7 +51,9 @@ export function AlbumCard({
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const player = usePlayer();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const coverUrl = `/api/cover/${encPath(artist)}/${encPath(name)}`;
+  const favId = `${artist}/${name}`;
 
   async function handlePlay(e: React.MouseEvent) {
     e.stopPropagation();
@@ -99,15 +102,37 @@ export function AlbumCard({
               <Music size={16} className="text-white/10 absolute bottom-2 right-2" />
             </div>
           )}
-          {/* Play overlay */}
-          <div
-            onClick={handlePlay}
-            className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-          >
-            <div className="w-12 h-12 rounded-full bg-cyan-600 flex items-center justify-center shadow-lg shadow-black/40 hover:bg-cyan-500 transition-colors hover:scale-110">
-              <Play size={22} className="text-white fill-white ml-0.5" />
-            </div>
+          {/* Hover overlay */}
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <button
+              onClick={handlePlay}
+              className="w-11 h-11 rounded-full bg-cyan-600 flex items-center justify-center shadow-lg shadow-black/40 hover:bg-cyan-500 transition-colors hover:scale-110"
+            >
+              <Play size={20} className="text-white fill-white ml-0.5" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleFavorite(favId, "album"); }}
+              className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+            >
+              <Heart size={15} className={isFavorite(favId) ? "fill-red-500 text-red-500" : "text-white"} />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePlay(e);
+              }}
+              className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+              title="Add to queue"
+            >
+              <ListPlus size={15} className="text-white" />
+            </button>
           </div>
+          {/* Favorite indicator (always visible if favorited) */}
+          {isFavorite(favId) && (
+            <div className="absolute top-2 right-2 z-10">
+              <Heart size={14} className="fill-red-500 text-red-500 drop-shadow-md" />
+            </div>
+          )}
         </div>
         <div className="font-semibold text-sm text-left truncate">{displayName || name}</div>
         <div className="text-xs text-muted-foreground text-left flex items-center gap-1 flex-wrap mt-0.5">

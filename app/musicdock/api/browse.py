@@ -845,6 +845,57 @@ def api_search(q: str = ""):
     return {"artists": artists, "albums": albums, "tracks": tracks}
 
 
+@router.get("/api/favorites")
+def api_favorites_list():
+    """Get all local favorites."""
+    with get_db_ctx() as cur:
+        cur.execute("SELECT item_type, item_id, navidrome_id, created_at FROM favorites ORDER BY created_at DESC")
+        items = [dict(r) for r in cur.fetchall()]
+    return {"items": items}
+
+
+@router.post("/api/favorites/add")
+def api_favorites_add(body: dict):
+    """Add to favorites (local + Navidrome if available)."""
+    from datetime import datetime, timezone
+    item_id = body.get("item_id", "")
+    item_type = body.get("type", "song")
+    if not item_id:
+        return Response(status_code=400)
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            "INSERT INTO favorites (item_type, item_id, created_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+            (item_type, item_id, now),
+        )
+    # Also star in Navidrome if it looks like a Navidrome ID (UUID format, no slashes)
+    if "/" not in item_id and len(item_id) < 40:
+        try:
+            from musicdock import navidrome
+            navidrome.star(item_id, item_type)
+        except Exception:
+            pass
+    return {"ok": True}
+
+
+@router.post("/api/favorites/remove")
+def api_favorites_remove(body: dict):
+    """Remove from favorites (local + Navidrome)."""
+    item_id = body.get("item_id", "")
+    item_type = body.get("type", "song")
+    if not item_id:
+        return Response(status_code=400)
+    with get_db_ctx() as cur:
+        cur.execute("DELETE FROM favorites WHERE item_id = %s AND item_type = %s", (item_id, item_type))
+    if "/" not in item_id and len(item_id) < 40:
+        try:
+            from musicdock import navidrome
+            navidrome.unstar(item_id, item_type)
+        except Exception:
+            pass
+    return {"ok": True}
+
+
 @router.get("/api/track-info/{filepath:path}")
 def api_track_info(filepath: str):
     """Get audio metadata for a single track (BPM, key, energy etc.)."""

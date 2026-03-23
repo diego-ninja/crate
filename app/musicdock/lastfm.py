@@ -66,7 +66,7 @@ def get_artist_info(artist_name: str) -> dict | None:
             break
 
     tags = [t["name"] for t in artist.get("tags", {}).get("tag", [])]
-    similar = [{"name": s["name"]} for s in artist.get("similar", {}).get("artist", [])[:5]]
+    similar = [{"name": s["name"]} for s in artist.get("similar", {}).get("artist", [])[:15]]
     stats = artist.get("stats", {})
 
     result = {

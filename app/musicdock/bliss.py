@@ -113,7 +113,7 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
     with get_db_ctx() as cur:
         # Get all bliss vectors for this artist
         cur.execute("""
-            SELECT path, title, artist, album, duration, bliss_vector
+            SELECT t.path, t.title, t.artist, a.name AS album, t.duration, t.bliss_vector
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
             WHERE a.artist = %s AND t.bliss_vector IS NOT NULL
@@ -131,14 +131,14 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
 
         # Find closest tracks from OTHER artists
         cur.execute("""
-            SELECT path, title, artist, album, duration,
+            SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
                    SQRT(
-                       (SELECT SUM(POW(a - b, 2))
-                        FROM UNNEST(bliss_vector, %s::float8[]) AS t(a, b))
+                       (SELECT SUM(POW(x - y, 2))
+                        FROM UNNEST(t.bliss_vector, %s::float8[]) AS v(x, y))
                    ) AS distance
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
-            WHERE bliss_vector IS NOT NULL AND a.artist != %s
+            WHERE t.bliss_vector IS NOT NULL AND a.artist != %s
             ORDER BY distance ASC
             LIMIT %s
         """, (centroid, artist_name, limit))
@@ -194,8 +194,8 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
         cur.execute("""
             SELECT path, title, artist, album, duration,
                    SQRT(
-                       (SELECT SUM(POW(a - b, 2))
-                        FROM UNNEST(bliss_vector, %s::float8[]) AS t(a, b))
+                       (SELECT SUM(POW(x - y, 2))
+                        FROM UNNEST(bliss_vector, %s::float8[]) AS v(x, y))
                    ) AS distance
             FROM library_tracks
             WHERE bliss_vector IS NOT NULL AND path != %s

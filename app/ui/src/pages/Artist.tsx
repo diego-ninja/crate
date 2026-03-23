@@ -339,7 +339,7 @@ export function Artist() {
         <div className="absolute inset-0 flex items-end">
           <div className="flex items-end gap-4 md:gap-6 w-full max-w-[1100px] px-4 md:px-8 pb-6 md:pb-8">
             {/* Artist photo */}
-            <div className="w-[100px] h-[100px] md:w-[180px] md:h-[180px] rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
+            <div className="w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
               {!photoError ? (
                 <img
                   src={`/api/artist/${encPath(data.name)}/photo?random=true`}
@@ -523,7 +523,7 @@ export function Artist() {
 
       {/* ═══ TABS ═══ */}
       <div className="border-b border-border sticky top-0 bg-[#2e3440]/95 backdrop-blur-sm z-10 px-4 md:px-8">
-        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 scrollbar-none" style={{ scrollbarWidth: "none" }}>
         <div className="flex gap-1 -mb-px min-w-max">
           {tabs.map((t) => (
             <button
@@ -818,20 +818,52 @@ export function Artist() {
                       )}
                     </p>
                   </div>
-                  <Button
-                    size="sm"
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white"
-                    onClick={async () => {
-                      try {
-                        await api(`/api/artist/${encPath(data.name)}/setlist-playlist`, "POST");
-                        toast.success("Setlist playlist created in Navidrome");
-                      } catch {
-                        toast.error("Failed to create playlist");
-                      }
-                    }}
-                  >
-                    <ListMusic size={14} className="mr-1" /> Create Playlist in Navidrome
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-cyan-600 hover:bg-cyan-500 text-white"
+                      onClick={() => {
+                        if (!setlistData?.probable_setlist) return;
+                        // Match setlist songs to local top tracks for playback
+                        const matched: PlayerTrack[] = [];
+                        for (const song of setlistData.probable_setlist) {
+                          const t = topTracks.find((tt) => tt.title.toLowerCase() === song.title.toLowerCase());
+                          if (t) {
+                            matched.push({
+                              id: t.id,
+                              title: t.title,
+                              artist: t.artist,
+                              album: t.album,
+                              albumCover: t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : undefined,
+                            });
+                          }
+                        }
+                        if (matched.length > 0) {
+                          player.playAll(matched);
+                          toast.success(`Playing setlist: ${matched.length} tracks`);
+                        } else {
+                          toast.error("No tracks matched from library");
+                        }
+                      }}
+                    >
+                      <Play size={14} className="mr-1 fill-current" /> Play Setlist
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                      onClick={async () => {
+                        try {
+                          await api(`/api/artist/${encPath(data.name)}/setlist-playlist`, "POST");
+                          toast.success("Setlist playlist created in Navidrome");
+                        } catch {
+                          toast.error("Failed to create playlist");
+                        }
+                      }}
+                    >
+                      <ListMusic size={14} className="mr-1" /> Save as Playlist
+                    </Button>
+                  </div>
                 </div>
 
                 {/* Header */}
@@ -844,9 +876,34 @@ export function Artist() {
                 </div>
 
                 <div className="space-y-0.5">
-                  {setlistData.probable_setlist.map((song, i) => (
-                    <div key={i} className="flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors">
-                      <span className="w-8 text-right text-sm text-white/30">{i + 1}</span>
+                  {setlistData.probable_setlist.map((song, i) => {
+                    const matchedTrack = topTracks.find((t) => t.title.toLowerCase() === song.title.toLowerCase());
+                    const isPlayable = !!matchedTrack;
+                    return (
+                    <button
+                      key={i}
+                      className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group ${!isPlayable ? "opacity-50" : ""}`}
+                      onClick={() => {
+                        if (matchedTrack) {
+                          player.play({
+                            id: matchedTrack.id,
+                            title: matchedTrack.title,
+                            artist: matchedTrack.artist,
+                            album: matchedTrack.album,
+                            albumCover: matchedTrack.album ? `/api/cover/${encPath(matchedTrack.artist)}/${encPath(matchedTrack.album)}` : undefined,
+                          });
+                        }
+                      }}
+                      disabled={!isPlayable}
+                    >
+                      {isPlayable ? (
+                        <>
+                          <span className="w-8 text-right text-sm text-white/30 group-hover:hidden">{i + 1}</span>
+                          <Play size={13} className="text-cyan-400 w-8 text-right fill-current hidden group-hover:block" />
+                        </>
+                      ) : (
+                        <span className="w-8 text-right text-sm text-white/20">{i + 1}</span>
+                      )}
                       <span className="flex-1 text-sm text-white/90 truncate">{song.title}</span>
                       <div className="w-28 flex items-center gap-2">
                         <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
@@ -862,8 +919,9 @@ export function Artist() {
                       </div>
                       <span className="w-16 text-right text-xs text-white/40">{song.play_count}</span>
                       <span className="w-24 text-right text-xs text-white/30 hidden sm:block">{song.last_played ?? "-"}</span>
-                    </div>
-                  ))}
+                    </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

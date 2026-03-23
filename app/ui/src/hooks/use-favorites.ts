@@ -1,43 +1,64 @@
 import { useState, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 
-interface StarredData {
-  songs: { id: string; title: string; artist: string; album: string }[];
-  albums: { id: string; name: string; artist: string }[];
-  artists: { id: string; name: string }[];
-}
-
-const favoriteSongIds = new Set<string>();
+// Global cache — shared across all hook instances
+const favoriteIds = new Set<string>();
 let loaded = false;
+// Subscribers for re-render
+const subscribers = new Set<() => void>();
+
+function notifyAll() {
+  for (const fn of subscribers) fn();
+}
 
 export function useFavorites() {
   const [, setTick] = useState(0);
+  const rerender = useCallback(() => setTick((t) => t + 1), []);
+
+  useEffect(() => {
+    subscribers.add(rerender);
+    return () => { subscribers.delete(rerender); };
+  }, [rerender]);
 
   useEffect(() => {
     if (loaded) return;
     loaded = true;
-    api<StarredData>("/api/navidrome/favorites")
+    // Load from local favorites DB
+    api<{ items: { item_id: string }[] }>("/api/favorites")
       .then((data) => {
-        for (const s of data.songs || []) favoriteSongIds.add(s.id);
-        setTick((t) => t + 1);
+        for (const f of data.items || []) favoriteIds.add(f.item_id);
+        notifyAll();
+      })
+      .catch(() => {});
+    // Also load from Navidrome if available
+    api<{ songs?: { id: string }[]; albums?: { id: string }[] }>("/api/navidrome/favorites")
+      .then((data) => {
+        for (const s of data.songs || []) favoriteIds.add(s.id);
+        for (const a of data.albums || []) favoriteIds.add(a.id);
+        notifyAll();
       })
       .catch(() => {});
   }, []);
 
-  const isFavorite = useCallback((navidromeId: string) => favoriteSongIds.has(navidromeId), []);
+  const isFavorite = useCallback((id: string) => favoriteIds.has(id), []);
 
-  const toggleFavorite = useCallback(async (navidromeId: string, type: string = "song") => {
-    const isFav = favoriteSongIds.has(navidromeId);
+  const toggleFavorite = useCallback(async (id: string, type: string = "song") => {
+    const wasFav = favoriteIds.has(id);
+    // Optimistic update
+    if (wasFav) favoriteIds.delete(id); else favoriteIds.add(id);
+    notifyAll();
+
     try {
-      if (isFav) {
-        await api("/api/navidrome/unstar", "POST", { navidrome_id: navidromeId, type });
-        favoriteSongIds.delete(navidromeId);
+      if (wasFav) {
+        await api("/api/favorites/remove", "POST", { item_id: id, type });
       } else {
-        await api("/api/navidrome/star", "POST", { navidrome_id: navidromeId, type });
-        favoriteSongIds.add(navidromeId);
+        await api("/api/favorites/add", "POST", { item_id: id, type });
       }
-      setTick((t) => t + 1);
-    } catch { /* ignore if navidrome offline */ }
+    } catch {
+      // Rollback
+      if (wasFav) favoriteIds.add(id); else favoriteIds.delete(id);
+      notifyAll();
+    }
   }, []);
 
   return { isFavorite, toggleFavorite };

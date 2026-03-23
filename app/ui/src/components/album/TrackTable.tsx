@@ -355,14 +355,12 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
                 )}
               </TableCell>
               <TableCell className="w-8">
-                {ndSong && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); toggleFavorite(ndSong.id, "song"); }}
-                    className="p-1 hover:text-red-400 transition-colors"
-                  >
-                    <Heart size={13} className={isFavorite(ndSong.id) ? "fill-red-500 text-red-500" : "text-muted-foreground"} />
-                  </button>
-                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleFavorite(ndSong?.id || trackId, "song"); }}
+                  className="p-1 hover:text-red-400 transition-colors"
+                >
+                  <Heart size={13} className={isFavorite(ndSong?.id || trackId) ? "fill-red-500 text-red-500" : "text-muted-foreground"} />
+                </button>
               </TableCell>
             </TableRow>
             </MusicContextMenu>

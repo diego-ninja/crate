@@ -517,7 +517,7 @@ def api_insights():
             if not similar:
                 continue
             artist_set.add(name)
-            for s in similar[:5]:
+            for s in similar[:10]:
                 s_name = s.get("name", "") if isinstance(s, dict) else str(s)
                 if s_name:
                     artist_set.add(s_name)
