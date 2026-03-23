@@ -97,6 +97,7 @@ export function DownloadPage() {
   const [quality, setQuality] = useState("max");
   const [activeDownloads, setActiveDownloads] = useState<Set<string>>(new Set());
   const { data: queue, refetch: refetchQueue } = useApi<QueueItem[]>("/api/tidal/queue");
+  const { data: tidalStatus } = useApi<{ authenticated: boolean }>("/api/tidal/status");
 
   // Auto-refresh queue
   useEffect(() => {
@@ -174,6 +175,9 @@ export function DownloadPage() {
       <div className="flex items-center gap-3 mb-6">
         <Download size={24} className="text-primary" />
         <h1 className="text-2xl font-bold">Tidal</h1>
+        {tidalStatus && (
+          <div className={`w-2 h-2 rounded-full ${tidalStatus.authenticated ? "bg-green-500" : "bg-red-500"}`} title={tidalStatus.authenticated ? "Connected" : "Not authenticated"} />
+        )}
         {activeQueue.length > 0 && (
           <Badge variant="outline" className="text-blue-500 border-blue-500/30">
             {activeQueue.length} in queue

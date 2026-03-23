@@ -275,7 +275,121 @@ function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: ()
           </div>
         </CardContent>
       </Card>
+
+      <TidalAuthCard />
     </div>
+  );
+}
+
+function TidalAuthCard() {
+  const [status, setStatus] = useState<{ authenticated: boolean } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [loginMessages, setLoginMessages] = useState<string[]>([]);
+
+  useEffect(() => {
+    api<{ authenticated: boolean }>("/api/tidal/status").then(setStatus).catch(() => {});
+  }, []);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      const r = await api<{ success: boolean }>("/api/tidal/auth/refresh", "POST");
+      if (r.success) {
+        toast.success("Tidal token refreshed");
+        setStatus({ authenticated: true });
+      } else {
+        toast.error("Refresh failed — try logging in again");
+      }
+    } catch {
+      toast.error("Refresh failed");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function handleLogin() {
+    setLoggingIn(true);
+    setLoginMessages([]);
+    try {
+      const source = new EventSource("/api/tidal/auth/login");
+      source.onmessage = (e) => {
+        const msg = e.data;
+        setLoginMessages((prev) => [...prev, msg]);
+        if (msg === "AUTH_SUCCESS") {
+          source.close();
+          setLoggingIn(false);
+          setStatus({ authenticated: true });
+          toast.success("Tidal authenticated!");
+        } else if (msg.startsWith("AUTH_FAILED") || msg.startsWith("AUTH_ERROR") || msg.startsWith("AUTH_TIMEOUT")) {
+          source.close();
+          setLoggingIn(false);
+          toast.error("Tidal login failed");
+        }
+      };
+      source.onerror = () => {
+        source.close();
+        setLoggingIn(false);
+      };
+    } catch {
+      setLoggingIn(false);
+      toast.error("Failed to start login");
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await api("/api/tidal/auth/logout", "POST");
+      setStatus({ authenticated: false });
+      toast.success("Tidal logged out");
+    } catch {
+      toast.error("Logout failed");
+    }
+  }
+
+  return (
+    <Card className="bg-card">
+      <CardHeader>
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Wifi size={14} /> Tidal
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-4 mb-3">
+          <div className="flex items-center gap-2">
+            <div className={`w-2.5 h-2.5 rounded-full ${status?.authenticated ? "bg-green-500" : "bg-red-500"}`} />
+            <span className="text-sm">{status?.authenticated ? "Authenticated" : "Not authenticated"}</span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          {status?.authenticated ? (
+            <>
+              <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+                {refreshing ? <Loader2 size={12} className="animate-spin mr-1" /> : <RefreshCw size={12} className="mr-1" />}
+                Refresh Token
+              </Button>
+              <Button variant="outline" size="sm" className="text-red-500 border-red-500/30" onClick={handleLogout}>
+                Logout
+              </Button>
+            </>
+          ) : (
+            <Button size="sm" onClick={handleLogin} disabled={loggingIn}>
+              {loggingIn ? <Loader2 size={12} className="animate-spin mr-1" /> : null}
+              {loggingIn ? "Waiting for auth..." : "Login to Tidal"}
+            </Button>
+          )}
+        </div>
+        {loginMessages.length > 0 && (
+          <div className="mt-3 p-3 bg-secondary/30 rounded text-xs font-mono max-h-[150px] overflow-y-auto">
+            {loginMessages.map((msg, i) => (
+              <div key={i} className={msg.includes("AUTH_SUCCESS") ? "text-green-500" : msg.includes("AUTH_") ? "text-red-500" : "text-muted-foreground"}>
+                {msg}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
