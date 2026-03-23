@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
+import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
@@ -16,9 +16,10 @@ import { useApi } from "@/hooks/use-api";
 import { toast } from "sonner";
 import {
   Search, Download, Disc3, Music, Users, Loader2,
-  CheckCircle2, ExternalLink, Heart, Clock, XCircle,
+  CheckCircle2, Heart, Clock, XCircle,
   Trash2, ArrowUp,
 } from "lucide-react";
+// encPath available if needed for navigation
 
 interface TidalAlbum {
   id: string;
@@ -29,7 +30,6 @@ interface TidalAlbum {
   cover: string | null;
   url: string;
   quality: string[];
-  status?: string;
 }
 
 interface TidalTrack {
@@ -73,25 +73,18 @@ function fmtDuration(secs: number): string {
 }
 
 const STATUS_ICONS: Record<string, typeof Loader2> = {
-  downloading: Loader2,
-  queued: Clock,
-  processing: Loader2,
-  wishlist: Heart,
-  completed: CheckCircle2,
-  failed: XCircle,
+  downloading: Loader2, queued: Clock, processing: Loader2,
+  wishlist: Heart, completed: CheckCircle2, failed: XCircle,
 };
-
 const STATUS_COLORS: Record<string, string> = {
-  downloading: "text-blue-500",
-  queued: "text-yellow-500",
-  processing: "text-blue-500",
-  wishlist: "text-pink-500",
-  completed: "text-green-500",
-  failed: "text-red-500",
+  downloading: "text-blue-500", queued: "text-yellow-500", processing: "text-blue-500",
+  wishlist: "text-pink-500", completed: "text-green-500", failed: "text-red-500",
 };
 
 export function DownloadPage() {
-  const [query, setQuery] = useState("");
+  const [searchParams] = useSearchParams();
+  const initialQ = searchParams.get("q") ?? "";
+  const [query, setQuery] = useState(initialQ);
   const [results, setResults] = useState<SearchResult | null>(null);
   const [searching, setSearching] = useState(false);
   const [quality, setQuality] = useState("max");
@@ -107,11 +100,12 @@ export function DownloadPage() {
     return () => clearInterval(timer);
   }, [queue, refetchQueue]);
 
-  const doSearch = useCallback(async () => {
-    if (query.trim().length < 2) return;
+  const doSearch = useCallback(async (q?: string) => {
+    const term = (q ?? query).trim();
+    if (term.length < 2) return;
     setSearching(true);
     try {
-      const data = await api<SearchResult>(`/api/tidal/search?q=${encodeURIComponent(query)}&limit=20`);
+      const data = await api<SearchResult>(`/api/tidal/search?q=${encodeURIComponent(term)}&limit=20`);
       setResults(data);
     } catch {
       toast.error("Search failed — check Tidal authentication");
@@ -119,6 +113,11 @@ export function DownloadPage() {
       setSearching(false);
     }
   }, [query]);
+
+  // Auto-search on mount if URL has ?q=
+  useEffect(() => {
+    if (initialQ) doSearch(initialQ);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function startDownload(url: string, title: string, source = "search") {
     setActiveDownloads((prev) => new Set(prev).add(url));
@@ -135,16 +134,8 @@ export function DownloadPage() {
 
   async function addToWishlist(item: { url: string; tidal_id: string; title: string; artist: string; cover_url?: string | null; content_type?: string }) {
     try {
-      await api("/api/tidal/wishlist", "POST", {
-        url: item.url,
-        tidal_id: item.tidal_id,
-        title: item.title,
-        artist: item.artist,
-        cover_url: item.cover_url,
-        content_type: item.content_type || "album",
-        quality,
-      });
-      toast.success(`Added to wishlist: ${item.title}`);
+      await api("/api/tidal/wishlist", "POST", { ...item, quality });
+      toast.success(`Wishlisted: ${item.title}`);
       refetchQueue();
     } catch {
       toast.error("Failed to add to wishlist");
@@ -152,18 +143,14 @@ export function DownloadPage() {
   }
 
   async function removeQueueItem(id: number) {
-    try {
-      await api(`/api/tidal/queue/${id}`, "DELETE");
-      refetchQueue();
-    } catch { toast.error("Failed to remove"); }
+    await api(`/api/tidal/queue/${id}`, "DELETE").catch(() => {});
+    refetchQueue();
   }
 
   async function promoteWishlist(id: number) {
-    try {
-      await api(`/api/tidal/queue/${id}`, "PUT", { status: "queued" });
-      toast.success("Moved to download queue");
-      refetchQueue();
-    } catch { toast.error("Failed to queue"); }
+    await api(`/api/tidal/queue/${id}`, "PUT", { status: "queued" }).catch(() => {});
+    toast.success("Moved to download queue");
+    refetchQueue();
   }
 
   const activeQueue = queue?.filter((q) => ["downloading", "queued", "processing"].includes(q.status)) ?? [];
@@ -205,7 +192,7 @@ export function DownloadPage() {
             <SelectItem value="normal">Normal</SelectItem>
           </SelectContent>
         </Select>
-        <Button onClick={doSearch} disabled={searching || query.trim().length < 2}>
+        <Button onClick={() => doSearch()} disabled={searching || query.trim().length < 2}>
           {searching ? <Loader2 size={14} className="animate-spin mr-1" /> : <Search size={14} className="mr-1" />}
           Search
         </Button>
@@ -214,33 +201,91 @@ export function DownloadPage() {
       <Tabs defaultValue="search">
         <TabsList>
           <TabsTrigger value="search">Search Results</TabsTrigger>
-          <TabsTrigger value="queue">
-            Queue {activeQueue.length > 0 && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{activeQueue.length}</Badge>}
-          </TabsTrigger>
-          <TabsTrigger value="wishlist">
-            Wishlist {wishlist.length > 0 && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{wishlist.length}</Badge>}
-          </TabsTrigger>
+          <TabsTrigger value="queue">Queue {activeQueue.length > 0 && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{activeQueue.length}</Badge>}</TabsTrigger>
+          <TabsTrigger value="wishlist">Wishlist {wishlist.length > 0 && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{wishlist.length}</Badge>}</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
 
         {/* Search Results */}
         <TabsContent value="search">
           {results ? (
-            <div className="space-y-6 mt-4">
+            <div className="space-y-8 mt-4">
+              {/* Artists */}
+              {(results.artists ?? []).length > 0 && (
+                <div>
+                  <h2 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                    <Users size={14} /> Artists
+                  </h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                    {results.artists!.map((artist) => (
+                      <div key={artist.id} className="bg-card border border-border rounded-lg p-4 text-center">
+                        <div className="w-full aspect-square rounded-lg mb-3 overflow-hidden bg-secondary mx-auto">
+                          {artist.picture ? (
+                            <img src={artist.picture} alt={artist.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Users size={32} className="text-muted-foreground" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="font-semibold text-sm truncate mb-2">{artist.name}</div>
+                        <div className="flex gap-1.5 justify-center">
+                          <Button size="sm" variant="outline" onClick={() => { setQuery(artist.name); doSearch(artist.name); }}>
+                            <Search size={12} className="mr-1" /> Albums
+                          </Button>
+                          <Button size="sm" onClick={() => startDownload(`https://tidal.com/artist/${artist.id}`, artist.name, "discography")}>
+                            <Download size={12} className="mr-1" /> All
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Albums */}
               {(results.albums ?? []).length > 0 && (
                 <div>
                   <h2 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
                     <Disc3 size={14} /> Albums
                   </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {results.albums!.map((album) => (
-                      <AlbumCard key={album.id} album={album}
-                        onDownload={startDownload} onWishlist={addToWishlist}
-                        isDownloading={activeDownloads.has(album.url)} />
+                      <div key={album.id} className="bg-card border border-border rounded-lg overflow-hidden hover:border-primary transition-colors group">
+                        <div className="w-full aspect-square bg-secondary relative">
+                          {album.cover ? (
+                            <img src={album.cover} alt={album.title} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Disc3 size={32} className="text-muted-foreground" />
+                            </div>
+                          )}
+                          {/* Hover overlay with actions */}
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                            <Button size="icon" className="h-9 w-9 rounded-full bg-foreground text-background" onClick={() => startDownload(album.url, `${album.artist} - ${album.title}`)}>
+                              {activeDownloads.has(album.url) ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-9 w-9 rounded-full text-white hover:text-pink-400" onClick={() => addToWishlist({ url: album.url, tidal_id: album.id, title: album.title, artist: album.artist, cover_url: album.cover })}>
+                              <Heart size={16} />
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="p-2.5">
+                          <div className="font-medium text-sm truncate">{album.title}</div>
+                          <div className="text-xs text-muted-foreground truncate">{album.artist}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            {album.year && <span className="text-[10px] text-muted-foreground">{album.year}</span>}
+                            <span className="text-[10px] text-muted-foreground">{album.tracks} tracks</span>
+                            {album.quality.map((q) => <Badge key={q} variant="outline" className="text-[9px] px-1 py-0">{q}</Badge>)}
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
               )}
+
+              {/* Tracks */}
               {(results.tracks ?? []).length > 0 && (
                 <div>
                   <h2 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
@@ -248,12 +293,15 @@ export function DownloadPage() {
                   </h2>
                   <div className="space-y-1">
                     {results.tracks!.map((track) => (
-                      <div key={track.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-secondary/30">
+                      <div key={track.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-secondary/30 transition-colors group">
                         <div className="flex-1 min-w-0">
                           <div className="text-sm truncate">{track.title}</div>
                           <div className="text-xs text-muted-foreground truncate">{track.artist} — {track.album}</div>
                         </div>
                         <span className="text-xs text-muted-foreground">{fmtDuration(track.duration)}</span>
+                        <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100" onClick={() => addToWishlist({ url: track.url, tidal_id: track.id, title: track.title, artist: track.artist, content_type: "track" })}>
+                          <Heart size={13} />
+                        </Button>
                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => startDownload(track.url, `${track.artist} - ${track.title}`)}>
                           <Download size={14} />
                         </Button>
@@ -262,23 +310,7 @@ export function DownloadPage() {
                   </div>
                 </div>
               )}
-              {(results.artists ?? []).length > 0 && (
-                <div>
-                  <h2 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
-                    <Users size={14} /> Artists
-                  </h2>
-                  <div className="flex flex-wrap gap-3">
-                    {results.artists!.map((artist) => (
-                      <a key={artist.id} href={`https://tidal.com/artist/${artist.id}`} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg bg-card border border-border hover:border-primary">
-                        {artist.picture ? <img src={artist.picture} alt="" className="w-10 h-10 rounded-full object-cover" /> : <div className="w-10 h-10 rounded-full bg-secondary" />}
-                        <span className="text-sm font-medium">{artist.name}</span>
-                        <ExternalLink size={12} className="text-muted-foreground" />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
+
               {!results.albums?.length && !results.tracks?.length && !results.artists?.length && (
                 <div className="text-center py-12 text-muted-foreground">No results found</div>
               )}
@@ -331,44 +363,6 @@ export function DownloadPage() {
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-function AlbumCard({ album, onDownload, onWishlist, isDownloading }: {
-  album: TidalAlbum;
-  onDownload: (url: string, title: string) => void;
-  onWishlist: (item: { url: string; tidal_id: string; title: string; artist: string; cover_url?: string | null }) => void;
-  isDownloading: boolean;
-}) {
-  return (
-    <Card className="flex items-center gap-4 p-3 bg-card">
-      {album.cover ? (
-        <img src={album.cover} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
-      ) : (
-        <div className="w-16 h-16 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
-          <Disc3 size={24} className="text-muted-foreground" />
-        </div>
-      )}
-      <div className="flex-1 min-w-0">
-        <div className="font-semibold text-sm truncate">{album.title}</div>
-        <div className="text-xs text-muted-foreground truncate">{album.artist} · {album.year}</div>
-        <div className="flex items-center gap-2 mt-1">
-          <span className="text-xs text-muted-foreground">{album.tracks} tracks</span>
-          {album.quality.map((q) => <Badge key={q} variant="outline" className="text-[9px] px-1 py-0">{q}</Badge>)}
-          {album.status === "local" && <Badge className="text-[9px] px-1 py-0 bg-green-500/20 text-green-500">In Library</Badge>}
-        </div>
-      </div>
-      <div className="flex gap-1 flex-shrink-0">
-        <Button variant="ghost" size="icon" className="h-8 w-8" title="Add to wishlist"
-          onClick={() => onWishlist({ url: album.url, tidal_id: album.id, title: album.title, artist: album.artist, cover_url: album.cover })}>
-          <Heart size={14} />
-        </Button>
-        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={isDownloading || album.status === "local"}
-          onClick={() => onDownload(album.url, `${album.artist} - ${album.title}`)}>
-          {isDownloading ? <Loader2 size={14} className="animate-spin" /> : album.status === "local" ? <CheckCircle2 size={14} className="text-green-500" /> : <Download size={14} />}
-        </Button>
-      </div>
-    </Card>
   );
 }
 
