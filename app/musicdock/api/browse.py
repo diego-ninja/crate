@@ -961,7 +961,7 @@ def api_discover_completeness():
                                "year": rg.get("first-release-date", "")[:4] if rg.get("first-release-date") else ""}
                               for rg in mb_albums]
                 }
-                set_cache(f"mb:albums:{a['mbid']}", mb_data)
+                set_cache(f"mb:albums:{a['mbid']}", mb_data, ttl=604800)
 
             mb_count = mb_data["count"]
             local_count = a["album_count"] or 0
@@ -991,7 +991,7 @@ def api_discover_completeness():
             pass
 
     results.sort(key=lambda x: x["pct"])
-    set_cache(cache_key, results)
+    set_cache(cache_key, results, ttl=3600)
     return results
 
 

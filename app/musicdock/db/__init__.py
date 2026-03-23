@@ -30,7 +30,7 @@ from musicdock.db.tasks import (
 from musicdock.db.cache import (
     get_setting, set_setting,
     get_mb_cache, set_mb_cache,
-    get_cache, set_cache, delete_cache,
+    get_cache, set_cache, delete_cache, delete_cache_prefix, get_cache_stats,
     get_dir_mtime, set_dir_mtime, get_all_dir_mtimes, delete_dir_mtime,
 )
 

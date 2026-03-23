@@ -68,7 +68,7 @@ def get_probable_setlist(artist_name: str, num_setlists: int = 30) -> list[dict]
     result = _predict_setlist(raw_setlists)
 
     if result:
-        set_cache(cache_key, {"songs": result})
+        set_cache(cache_key, {"songs": result}, ttl=604800)
     return result
 
 

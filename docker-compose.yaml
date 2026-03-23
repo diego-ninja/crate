@@ -232,6 +232,17 @@ services:
   #     traefik.http.routers.slskd.tls: true
   #     traefik.http.routers.slskd.tls.certresolver: letsencrypt
 
+  # MusicDock — Redis cache
+  musicdock-redis:
+    image: redis:7-alpine
+    container_name: musicdock-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - musicdock_redis:/data
+    networks:
+      - musicdock
+
   # MusicDock — PostgreSQL database
   musicdock-postgres:
     image: postgres:15-alpine
@@ -280,6 +291,7 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-admin123}
+      - REDIS_URL=redis://musicdock-redis:6379/0
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music:ro
@@ -289,6 +301,7 @@ services:
       - musicdock
     depends_on:
       - musicdock-postgres
+      - musicdock-redis
     command: ["api"]
 
   musicdock-worker:
@@ -318,6 +331,7 @@ services:
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD:-admin123}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - REDIS_URL=redis://musicdock-redis:6379/0
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
@@ -326,6 +340,7 @@ services:
       - musicdock
     depends_on:
       - musicdock-postgres
+      - musicdock-redis
     command: ["worker"]
 
   musicdock-ui:
@@ -450,6 +465,8 @@ services:
       - musicdock
 
 volumes:
+  musicdock_redis:
+    driver: local
   musicdock_postgres:
     driver: local
   audiomuse_redis:

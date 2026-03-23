@@ -21,6 +21,15 @@ services:
     networks:
       - musicdock-dev
 
+  redis:
+    image: redis:7-alpine
+    container_name: musicdock-dev-redis
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6380:6379"
+    networks:
+      - musicdock-dev
+
   api:
     build: ./app
     container_name: musicdock-dev-api
@@ -42,6 +51,7 @@ services:
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
       - NAVIDROME_URL=
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music:ro
@@ -52,6 +62,7 @@ services:
       - musicdock-dev
     depends_on:
       - postgres
+      - redis
     command: ["api"]
 
   worker:
@@ -75,6 +86,7 @@ services:
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
       - NAVIDROME_URL=
       - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music
@@ -83,6 +95,7 @@ services:
       - musicdock-dev
     depends_on:
       - postgres
+      - redis
     command: ["worker"]
 
 volumes:

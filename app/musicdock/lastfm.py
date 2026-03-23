@@ -173,13 +173,13 @@ def get_fanart_artist_image(artist_name: str) -> str | None:
 
     mbid = _get_artist_mbid(artist_name)
     if not mbid:
-        set_cache(cache_key, {"url": None})
+        set_cache(cache_key, {"url": None}, ttl=604800)
         return None
 
     try:
         resp = requests.get(f"{FANART_BASE}{mbid}", params={"api_key": api_key}, timeout=10)
         if resp.status_code == 404:
-            set_cache(cache_key, {"url": None})
+            set_cache(cache_key, {"url": None}, ttl=604800)
             return None
         resp.raise_for_status()
         data = resp.json()
@@ -193,10 +193,10 @@ def get_fanart_artist_image(artist_name: str) -> str | None:
         if images:
             url = images[0].get("url")
             if url:
-                set_cache(cache_key, {"url": url})
+                set_cache(cache_key, {"url": url}, ttl=604800)
                 return url
 
-    set_cache(cache_key, {"url": None})
+    set_cache(cache_key, {"url": None}, ttl=604800)
     return None
 
 
@@ -213,13 +213,13 @@ def get_fanart_background(artist_name: str) -> str | None:
 
     mbid = _get_artist_mbid(artist_name)
     if not mbid:
-        set_cache(cache_key, {"url": None})
+        set_cache(cache_key, {"url": None}, ttl=604800)
         return None
 
     try:
         resp = requests.get(f"{FANART_BASE}{mbid}", params={"api_key": api_key}, timeout=10)
         if resp.status_code == 404:
-            set_cache(cache_key, {"url": None})
+            set_cache(cache_key, {"url": None}, ttl=604800)
             return None
         resp.raise_for_status()
         data = resp.json()
@@ -229,10 +229,10 @@ def get_fanart_background(artist_name: str) -> str | None:
     backgrounds = data.get("artistbackground", [])
     if backgrounds:
         url = backgrounds[0].get("url")
-        set_cache(cache_key, {"url": url})
+        set_cache(cache_key, {"url": url}, ttl=604800)
         return url
 
-    set_cache(cache_key, {"url": None})
+    set_cache(cache_key, {"url": None}, ttl=604800)
     return None
 
 
@@ -268,7 +268,7 @@ def get_fanart_all_images(artist_name: str) -> dict | None:
         "banners": [img["url"] for img in data.get("musicbanner", []) if img.get("url")],
     }
 
-    set_cache(cache_key, result)
+    set_cache(cache_key, result, ttl=604800)
     return result
 
 
@@ -288,12 +288,12 @@ def _deezer_artist_image(artist_name: str) -> str | None:
             if a.get("name", "").lower() == artist_name.lower():
                 url = a.get("picture_xl") or a.get("picture_big")
                 if url:
-                    set_cache(cache_key, {"url": url})
+                    set_cache(cache_key, {"url": url}, ttl=604800)
                     return url
     except Exception:
         log.debug("Deezer lookup failed for %s", artist_name)
 
-    set_cache(cache_key, {"url": None})
+    set_cache(cache_key, {"url": None}, ttl=604800)
     return None
 
 
@@ -355,7 +355,7 @@ def get_lastfm_best_background(artist_name: str) -> bytes | None:
             "User-Agent": "Mozilla/5.0 (compatible; Grooveyard/1.0)",
         })
         if resp.status_code != 200:
-            set_cache(cache_key, {"url": None})
+            set_cache(cache_key, {"url": None}, ttl=604800)
             return None
 
         # Extract image hashes from 300x300 thumbnails
@@ -366,7 +366,7 @@ def get_lastfm_best_background(artist_name: str) -> bytes | None:
         hashes = list(dict.fromkeys(hashes))  # dedupe, preserve order
 
         if not hashes:
-            set_cache(cache_key, {"url": None})
+            set_cache(cache_key, {"url": None}, ttl=604800)
             return None
 
         # Score by aspect ratio — prefer landscape (ratio > 1.3)
@@ -407,7 +407,7 @@ def get_lastfm_best_background(artist_name: str) -> bytes | None:
             except Exception:
                 continue
 
-        set_cache(cache_key, {"url": best_url})
+        set_cache(cache_key, {"url": best_url}, ttl=604800)
         if best_url:
             return download_artist_image(best_url)
 

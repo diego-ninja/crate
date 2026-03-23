@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
 from musicdock.api.auth import _require_admin
-from musicdock.db import get_setting, set_setting, get_db_table_stats, get_db_ctx
+from musicdock.db import get_setting, set_setting, get_db_table_stats, get_db_ctx, get_cache_stats, delete_cache_prefix
 from musicdock.scheduler import get_schedules, set_schedules
 from musicdock import navidrome
 
@@ -33,6 +33,7 @@ def get_settings(request: Request):
             "connected": navidrome.ping(),
             "version": navidrome.get_server_version(),
         },
+        "cache_stats": get_cache_stats(),
         "db_stats": get_db_table_stats(),
         "library": {
             "path": "/music",
@@ -129,16 +130,35 @@ def clear_cache(request: Request, body: CacheClearRequest):
     if cache_type not in valid_types:
         raise HTTPException(status_code=422, detail=f"Invalid cache type: must be one of {', '.join(sorted(valid_types))}")
 
-    with get_db_ctx() as cur:
-        if cache_type == "all":
+    # Clear Redis + PostgreSQL
+    if cache_type == "all":
+        delete_cache_prefix("")  # all cache keys
+        # Also clear mb_cache in PostgreSQL
+        with get_db_ctx() as cur:
             cur.execute("DELETE FROM cache")
             cur.execute("DELETE FROM mb_cache")
-        elif cache_type == "enrichment":
-            cur.execute("DELETE FROM cache WHERE key LIKE 'enrichment:%%'")
-        elif cache_type == "lastfm":
-            cur.execute("DELETE FROM cache WHERE key LIKE 'lastfm:%%'")
-        elif cache_type == "analytics":
-            cur.execute("DELETE FROM cache WHERE key IN ('analytics', 'stats')")
+        # Clear all Redis mb: keys
+        from musicdock.db.cache import _get_redis
+        r = _get_redis()
+        if r:
+            try:
+                cursor = 0
+                while True:
+                    cursor, keys = r.scan(cursor, match="mb:*", count=100)
+                    if keys:
+                        r.delete(*keys)
+                    if cursor == 0:
+                        break
+            except Exception:
+                pass
+    elif cache_type == "enrichment":
+        delete_cache_prefix("enrichment:")
+    elif cache_type == "lastfm":
+        delete_cache_prefix("lastfm:")
+    elif cache_type == "analytics":
+        from musicdock.db import delete_cache
+        delete_cache("analytics")
+        delete_cache("stats")
 
     return {"ok": True, "type": cache_type}
 

@@ -371,7 +371,7 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
 
     update_task(task_id, progress=json.dumps({"phase": "analytics", "artists_done": 0, "artists_total": 0, "tracks_processed": 0, "cached": 0, "recomputed": 0}))
     data = compute_analytics(lib, exts, progress_callback=_progress, incremental=True)
-    set_cache("analytics", data)
+    set_cache("analytics", data, ttl=3600)
 
     update_task(task_id, progress=json.dumps({"phase": "stats", "message": "Computing stats..."}))
     artists = albums = tracks = total_size = 0
@@ -395,7 +395,7 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
         "artists": artists, "albums": albums, "tracks": tracks,
         "formats": formats, "total_size_gb": round(total_size / (1024**3), 2),
     }
-    set_cache("stats", stats)
+    set_cache("stats", stats, ttl=3600)
 
     return {"artists": artists, "albums": albums, "tracks": tracks}
 
@@ -623,7 +623,7 @@ def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
     report = checker.run(
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
     )
-    set_cache("health_report", report)
+    set_cache("health_report", report, ttl=3600)
     issue_count = len(report.get("issues", []))
     emit_task_event(task_id, "info", {"message": f"Health check complete: {issue_count} issues", "summary": report.get("summary", {})})
     return {"issue_count": len(report.get("issues", [])), "summary": report.get("summary", {})}
@@ -649,7 +649,7 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
             report = checker.run(
                 progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
             )
-            set_cache("health_report", report)
+            set_cache("health_report", report, ttl=3600)
 
     repairer = LibraryRepair(config)
     result = repairer.repair(
@@ -677,7 +677,7 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     report = checker.run(
         progress_callback=lambda d: update_task(task_id, progress=json.dumps({**d, "phase": "health_check"}))
     )
-    set_cache("health_report", report)
+    set_cache("health_report", report, ttl=3600)
 
     emit_task_event(task_id, "info", {"message": "Pipeline: running repair..."})
     update_task(task_id, progress=json.dumps({"phase": "repair"}))
