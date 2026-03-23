@@ -14,7 +14,10 @@ from musicdock.db import (
 )
 from musicdock.lastfm import get_artist_info, get_best_artist_image
 
+import logging
 import re as _re
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -519,14 +522,16 @@ def api_artist(name: str):
             return JSONResponse({"error": "Not found"}, status_code=404)
         return result
 
-    albums_data = get_library_albums(name)
+    # Use canonical name from DB for all subsequent queries
+    canonical = artist["name"]
+    albums_data = get_library_albums(canonical)
 
     # Get genres from normalized artist_genres table
     with get_db_ctx() as cur:
         cur.execute(
             "SELECT g.name FROM artist_genres ag JOIN genres g ON ag.genre_id = g.id "
             "WHERE ag.artist_name = %s ORDER BY ag.weight DESC",
-            (name,),
+            (canonical,),
         )
         top_genres = [r["name"] for r in cur.fetchall()]
 
@@ -543,7 +548,7 @@ def api_artist(name: str):
         })
 
     return {
-        "name": name,
+        "name": canonical,
         "albums": albums,
         "total_tracks": artist["track_count"],
         "total_size_mb": round(artist["total_size"] / (1024 ** 2)) if artist["total_size"] else 0,
@@ -558,17 +563,13 @@ def api_related_albums(artist: str, album: str, limit: int = 15):
     related = []
     seen = set()
 
-    with get_db_ctx() as cur:
-        # Get current album info
-        cur.execute(
-            "SELECT id, year, artist FROM library_albums WHERE artist = %s AND name = %s LIMIT 1",
-            (artist, album),
-        )
-        current = cur.fetchone()
-        if not current:
-            return []
+    current = _find_album_row(artist, album)
+    if not current:
+        return []
 
-        album_id = current["id"]
+    album_id = current["id"]
+
+    with get_db_ctx() as cur:
         year = current["year"][:4] if current.get("year") and len(current.get("year", "")) >= 4 else None
         seen.add(album_id)
 
@@ -646,7 +647,7 @@ def api_album(artist: str, album: str):
             return JSONResponse({"error": "Not found"}, status_code=404)
         return result
 
-    album_data = get_library_album(artist, album)
+    album_data = _find_album_row(artist, album)
     if not album_data:
         # Fallback to filesystem for albums not yet synced
         result = _fs_album_detail(artist, album)
@@ -728,6 +729,30 @@ def api_album(artist: str, album: str):
         "album_tags": album_tags,
         "genres": album_genres,
     }
+
+
+def _find_album_row(artist: str, album: str) -> dict | None:
+    """Find album in DB, handling year-prefixed names, clean names, and case differences."""
+    with get_db_ctx() as cur:
+        # Exact match (case-insensitive)
+        cur.execute("SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s) AND LOWER(name) = LOWER(%s) LIMIT 1", (artist, album))
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+        # Match by name ending (e.g. album="Slip" matches "1993 - Slip")
+        cur.execute(
+            "SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s) AND name ILIKE %s LIMIT 1",
+            (artist, f"% - {album}"),
+        )
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+        # Match by stripped year prefix
+        cur.execute("SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s)", (artist,))
+        for r in cur.fetchall():
+            if _display_name(r["name"]) == album:
+                return dict(r)
+    return None
 
 
 def _find_album_dir(lib: Path, artist: str, album: str) -> Path | None:
@@ -866,6 +891,17 @@ def api_discover_completeness():
         try:
             mb_data = get_cache(f"mb:albums:{a['mbid']}", max_age_seconds=86400 * 7)
             if not mb_data:
+                # Validate MBID points to the right artist
+                try:
+                    mb_artist = musicbrainzngs.get_artist_by_id(a["mbid"])["artist"]
+                    mb_name = mb_artist.get("name", "")
+                    from thefuzz import fuzz
+                    if fuzz.ratio(a["name"].lower(), mb_name.lower()) < 70:
+                        log.warning("MBID mismatch: %s -> %s (expected %s), skipping", a["mbid"], mb_name, a["name"])
+                        continue
+                except Exception:
+                    pass
+
                 result = musicbrainzngs.browse_release_groups(artist=a["mbid"], release_type=["album"], limit=100)
                 mb_albums = result.get("release-group-list", [])
                 mb_data = {

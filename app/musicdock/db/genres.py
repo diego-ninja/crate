@@ -14,7 +14,7 @@ def _slugify(name: str) -> str:
 
 
 def get_or_create_genre(name: str) -> int:
-    name = name.strip()
+    name = name.strip().lower()
     slug = _slugify(name)
     if not slug:
         return -1

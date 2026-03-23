@@ -54,6 +54,9 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
             persist_data["tags"] = info.get("tags", [])
             persist_data["similar"] = info.get("similar", [])
             persist_data["listeners"] = info.get("listeners")
+            persist_data["lastfm_playcount"] = info.get("playcount")
+            if info.get("url"):
+                persist_data.setdefault("urls", {})["lastfm"] = info["url"]
     except Exception:
         log.debug("Last.fm failed for %s", name)
     time.sleep(0.3)
@@ -70,6 +73,9 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
             }
             persist_data["spotify_id"] = sp.get("id")
             persist_data["spotify_popularity"] = sp.get("popularity")
+            persist_data["spotify_followers"] = sp.get("followers")
+            if sp.get("url"):
+                persist_data.setdefault("urls", {})["spotify"] = sp["url"]
 
             # Merge Spotify genres into tags
             sp_genres = sp.get("genres", [])
@@ -108,7 +114,10 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
             persist_data["ended"] = mb.get("end_date")
             persist_data["artist_type"] = mb.get("type")
             persist_data["members"] = mb.get("members", [])
-            persist_data["urls"] = mb.get("urls", {})
+            # Merge MB urls with any already collected (Last.fm, Spotify)
+            mb_urls = mb.get("urls", {})
+            existing_urls = persist_data.get("urls", {})
+            persist_data["urls"] = {**mb_urls, **existing_urls}
     except Exception:
         log.debug("MusicBrainz failed for %s", name)
     time.sleep(0.3)

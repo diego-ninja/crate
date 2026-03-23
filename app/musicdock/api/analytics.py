@@ -344,6 +344,11 @@ def api_missing_albums(artist: str):
 @router.get("/api/artist-stats/{name:path}")
 def api_artist_stats(name: str):
     """Stats for a single artist: format split, year timeline, audio features."""
+    # Resolve canonical name (case-insensitive)
+    from musicdock.db import get_library_artist
+    db_artist = get_library_artist(name)
+    canonical = db_artist["name"] if db_artist else name
+
     with get_db_ctx() as cur:
         # Format distribution
         cur.execute("""
@@ -351,14 +356,14 @@ def api_artist_stats(name: str):
             JOIN library_albums a ON t.album_id = a.id
             WHERE a.artist = %s AND t.format IS NOT NULL
             GROUP BY t.format ORDER BY cnt DESC
-        """, (name,))
+        """, (canonical,))
         formats = [{"id": r["format"], "value": r["cnt"]} for r in cur.fetchall()]
 
         # Albums timeline (year + track count + popularity)
         cur.execute("""
             SELECT name, year, track_count, total_duration, lastfm_listeners, popularity
             FROM library_albums WHERE artist = %s ORDER BY year
-        """, (name,))
+        """, (canonical,))
         albums_timeline = [dict(r) for r in cur.fetchall()]
 
         # Audio features average per album
@@ -374,11 +379,10 @@ def api_artist_stats(name: str):
             JOIN library_albums a ON t.album_id = a.id
             WHERE a.artist = %s AND t.bpm IS NOT NULL
             GROUP BY a.name, a.year ORDER BY a.year
-        """, (name,))
+        """, (canonical,))
         audio_by_album = []
         for r in cur.fetchall():
             d = dict(r)
-            # Round floats
             for k in ("avg_bpm", "avg_energy", "avg_danceability", "avg_valence", "avg_acousticness", "avg_loudness"):
                 if d.get(k) is not None:
                     d[k] = round(d[k], 2)
@@ -391,7 +395,7 @@ def api_artist_stats(name: str):
             JOIN library_albums a ON t.album_id = a.id
             WHERE a.artist = %s AND t.popularity IS NOT NULL
             ORDER BY t.popularity DESC LIMIT 10
-        """, (name,))
+        """, (canonical,))
         top_tracks = [dict(r) for r in cur.fetchall()]
 
         # Genre tags
@@ -399,7 +403,7 @@ def api_artist_stats(name: str):
             SELECT g.name, ag.weight FROM artist_genres ag
             JOIN genres g ON ag.genre_id = g.id
             WHERE ag.artist_name = %s ORDER BY ag.weight DESC
-        """, (name,))
+        """, (canonical,))
         genres = [{"name": r["name"], "weight": round(r["weight"], 2)} for r in cur.fetchall()]
 
     return {

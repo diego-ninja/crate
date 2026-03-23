@@ -568,7 +568,10 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
             tracks = get_library_tracks(a["id"])
             tracks_to_analyze.extend((t["path"], t) for t in tracks if not t.get("bpm"))
     else:
-        return {"error": "No artist specified"}
+        # All unanalyzed tracks in library
+        with get_db_ctx() as cur:
+            cur.execute("SELECT id, path, title FROM library_tracks WHERE bpm IS NULL")
+            tracks_to_analyze = [(r["path"], dict(r)) for r in cur.fetchall()]
 
     total = len(tracks_to_analyze)
     analyzed = 0
@@ -747,15 +750,27 @@ def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
     mode = params.get("mode", "db_only")
     lib = Path(config["library_path"])
 
-    # Find album path
-    artist_data = get_library_artist(artist_name)
-    folder = (artist_data.get("folder_name") if artist_data else None) or artist_name
-    album_dir = lib / folder / album_name
+    # Find album in DB (handles year-prefix names and 3-level structure)
+    from musicdock.db import get_db_ctx as _gdc
+    db_path = None
+    with _gdc() as cur:
+        # Exact match
+        cur.execute("SELECT path FROM library_albums WHERE artist = %s AND name = %s LIMIT 1", (artist_name, album_name))
+        row = cur.fetchone()
+        if not row:
+            # Try year-prefix match
+            cur.execute("SELECT path FROM library_albums WHERE artist = %s AND name LIKE %s LIMIT 1", (artist_name, f"% - {album_name}"))
+            row = cur.fetchone()
+        if row:
+            db_path = row["path"]
+
+    album_dir = Path(db_path) if db_path else lib / artist_name / album_name
 
     if mode == "full" and album_dir.is_dir():
         shutil.rmtree(str(album_dir))
 
-    db_delete_album(str(album_dir))
+    # Delete from DB using the actual DB path
+    db_delete_album(db_path or str(album_dir))
 
     # Update artist counters
     if artist_data:
@@ -985,16 +1000,28 @@ def _handle_resolve_duplicates(task_id: str, params: dict, config: dict) -> dict
 
 def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.matcher import apply_match
-    from musicdock.db import get_db_ctx
+    from musicdock.db import get_db_ctx, get_library_album
 
     lib = Path(config["library_path"])
     artist_folder = params.get("artist_folder", "")
     album_folder = params.get("album_folder", "")
     release = params.get("release", {})
 
-    album_dir = lib / artist_folder / album_folder
+    # Use resolved path from API if available, otherwise try to find it
+    album_path_str = params.get("album_path", "")
+    album_dir = Path(album_path_str) if album_path_str else lib / artist_folder / album_folder
     if not album_dir.is_dir():
-        return {"error": "Album not found"}
+        # Fallback: try year subdirs
+        artist_dir = lib / artist_folder
+        if artist_dir.is_dir():
+            for sub in artist_dir.iterdir():
+                if sub.is_dir() and sub.name.isdigit() and len(sub.name) == 4:
+                    candidate = sub / album_folder
+                    if candidate.is_dir():
+                        album_dir = candidate
+                        break
+    if not album_dir.is_dir():
+        return {"error": f"Album not found: {artist_folder}/{album_folder}"}
 
     exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
     result = apply_match(album_dir, exts, release)
@@ -1006,20 +1033,37 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
     rg_id = result.get("release_group_id")
     if mbid:
         try:
-            album_path = f"{artist_folder}/{album_folder}"
+            # Find the actual DB path for this album
+            album_db_path = str(album_dir)
+            if not db_album:
+                with get_db_ctx() as cur:
+                    cur.execute("SELECT path FROM library_albums WHERE path = %s", (album_db_path,))
+                    row = cur.fetchone()
+                    if not row:
+                        # Try other path formats
+                        cur.execute("SELECT path FROM library_albums WHERE artist = %s AND (name = %s OR name LIKE %s) LIMIT 1",
+                                    (artist_folder, album_folder, f"% - {album_folder}"))
+                        row = cur.fetchone()
+                    if row:
+                        album_db_path = row["path"]
+
             with get_db_ctx() as cur:
                 cur.execute(
                     "UPDATE library_albums SET musicbrainz_albumid = %s WHERE path = %s",
-                    (mbid, album_path),
+                    (mbid, album_db_path),
                 )
                 if rg_id:
                     cur.execute(
                         "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE path = %s",
-                        (rg_id, album_path),
+                        (rg_id, album_db_path),
                     )
-            emit_task_event(task_id, "info", {"message": f"Synced MBID {mbid[:8]}... to DB"})
+                updated = cur.rowcount
+            if updated:
+                emit_task_event(task_id, "info", {"message": f"Synced MBID {mbid[:8]}... to DB"})
+            else:
+                log.warning("MBID update matched 0 rows for path=%s", album_db_path)
         except Exception as e:
-            log.error("Failed to sync MBID to DB: %s", e)
+            log.error("Failed to sync MBID to DB: %s", e, exc_info=True)
 
     # Re-sync album from filesystem to update titles/tags in DB
     try:
@@ -1130,6 +1174,20 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
             time.sleep(0.5)
             continue
 
+        # High-confidence match (>= 95): apply full tags (title, tracknumber, etc.)
+        AUTO_APPLY_THRESHOLD = 95
+        if best_score >= AUTO_APPLY_THRESHOLD and album_dir and album_dir.is_dir():
+            try:
+                from musicdock.matcher import apply_match
+                apply_result = apply_match(album_dir, exts, best_release)
+                log.info("Auto-applied MB tags for %s/%s (score=%d, updated=%d)",
+                         artist_name, clean_album, best_score, apply_result.get("updated", 0))
+                emit_task_event(task_id, "info", {
+                    "message": f"Auto-applied tags: {artist_name}/{clean_album} (score {best_score}%)"
+                })
+            except Exception:
+                log.warning("Auto-apply failed for %s/%s", artist_name, clean_album, exc_info=True)
+
         # Write MBIDs to DB — single connection for album + all its tracks
         release_mbid = best_release["mbid"]
         release_group_id = best_release.get("release_group_id", "")
@@ -1140,6 +1198,11 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
                 "UPDATE library_albums SET musicbrainz_albumid = %s WHERE id = %s",
                 (release_mbid, album["id"]),
             )
+            if release_group_id:
+                cur.execute(
+                    "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE id = %s",
+                    (release_group_id, album["id"]),
+                )
             for j, db_track in enumerate(tracks_db):
                 if j >= len(mb_tracks):
                     break
@@ -1150,33 +1213,41 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
                         (release_mbid, track_mbid, db_track["id"]),
                     )
 
-        # Write to file tags
-        written_files = 0
-        for j, db_track in enumerate(tracks_db):
-            if j >= len(mb_tracks):
-                break
-            mb_track = mb_tracks[j]
-            track_mbid = mb_track.get("mbid", "")
-            track_path = db_track.get("path", "")
-            if track_path and Path(track_path).is_file():
-                try:
-                    audio = mutagen.File(track_path, easy=True)
-                    if audio is not None:
-                        changed = False
-                        if release_mbid:
-                            audio["musicbrainz_albumid"] = release_mbid
-                            changed = True
-                        if track_mbid:
-                            audio["musicbrainz_trackid"] = track_mbid
-                            changed = True
-                        if release_group_id:
-                            audio["musicbrainz_releasegroupid"] = release_group_id
-                            changed = True
-                        if changed:
-                            audio.save()
-                            written_files += 1
-                except Exception:
-                    log.warning("Failed to write MBID tags to %s", track_path)
+        # Write MBID tags to files (for lower scores that didn't get full auto-apply)
+        if best_score < AUTO_APPLY_THRESHOLD:
+            for j, db_track in enumerate(tracks_db):
+                if j >= len(mb_tracks):
+                    break
+                mb_track = mb_tracks[j]
+                track_mbid = mb_track.get("mbid", "")
+                track_path = db_track.get("path", "")
+                if track_path and Path(track_path).is_file():
+                    try:
+                        audio = mutagen.File(track_path, easy=True)
+                        if audio is not None:
+                            changed = False
+                            if release_mbid:
+                                audio["musicbrainz_albumid"] = release_mbid
+                                changed = True
+                            if track_mbid:
+                                audio["musicbrainz_trackid"] = track_mbid
+                                changed = True
+                            if release_group_id:
+                                audio["musicbrainz_releasegroupid"] = release_group_id
+                                changed = True
+                            if changed:
+                                audio.save()
+                    except Exception:
+                        log.warning("Failed to write MBID tags to %s", track_path)
+
+        # Re-sync album to DB if full tags were applied
+        if best_score >= AUTO_APPLY_THRESHOLD and album_dir and album_dir.is_dir():
+            try:
+                from musicdock.library_sync import LibrarySync
+                syncer = LibrarySync(config)
+                syncer.sync_album(album_dir, artist_name)
+            except Exception:
+                log.warning("Re-sync after auto-apply failed for %s", album_name, exc_info=True)
 
         enriched += 1
         emit_task_event(task_id, "album_matched", {"artist": artist_name, "album": clean_album, "mbid": release_mbid, "score": best_score})
@@ -1981,6 +2052,7 @@ def _handle_sync_playlist_navidrome(task_id: str, params: dict, config: dict) ->
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
+    "analyze_all": _handle_analyze_tracks,
     "enrich_artist": _handle_enrich_single,
     "fix_issues": _handle_fix_issues,
     "fetch_cover": _handle_fetch_cover,

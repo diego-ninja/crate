@@ -12,8 +12,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
-import { Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useNavigate } from "react-router";
+import { useAuth } from "@/contexts/AuthContext";
 
 export interface AudioMuseTrack {
   tempo: number | null;
@@ -94,6 +96,9 @@ export function Album() {
   const [pendingMatch, setPendingMatch] = useState<MatchResult | null>(null);
   const [navidromeData, setNavidromeData] = useState<NavidromeAlbumLink | null>(null);
   const [audiomuseData, setAudiomuseData] = useState<Record<string, AudioMuseTrack> | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const { isAdmin } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!artist || !album) return;
@@ -219,6 +224,16 @@ export function Album() {
               "Sync MusicBrainz"
             )}
           </Button>
+          {isAdmin && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-500/30 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              <Trash2 size={14} className="mr-1" /> Delete
+            </Button>
+          )}
         </AlbumHeader>
       </div>
 
@@ -279,6 +294,24 @@ export function Album() {
           confirmLabel="Apply Tags"
           variant="destructive"
           onConfirm={() => pendingMatch && applyMatch(pendingMatch)}
+        />
+
+        <ConfirmDialog
+          open={showDeleteConfirm}
+          onOpenChange={setShowDeleteConfirm}
+          title="Delete Album"
+          description={`This will permanently delete "${data.display_name || data.name}" by ${data.artist} from the database AND the filesystem. This action cannot be undone.`}
+          confirmLabel="Delete Album"
+          variant="destructive"
+          onConfirm={async () => {
+            try {
+              await api(`/api/manage/album/${encPath(data.artist)}/${encPath(data.name)}/delete`, "POST", { mode: "full" });
+              toast.success("Album deleted");
+              navigate(`/artist/${encPath(data.artist)}`);
+            } catch {
+              toast.error("Failed to delete album");
+            }
+          }}
         />
       </div>
     </div>

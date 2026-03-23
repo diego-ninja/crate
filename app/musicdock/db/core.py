@@ -282,7 +282,7 @@ def init_db():
 
         # Migration: popularity columns
         for table, cols in [
-            ("library_artists", [("lastfm_playcount", "BIGINT")]),
+            ("library_artists", [("lastfm_playcount", "BIGINT"), ("spotify_followers", "INTEGER")]),
             ("library_albums", [("lastfm_listeners", "INTEGER"), ("lastfm_playcount", "BIGINT"), ("popularity", "INTEGER")]),
             ("library_tracks", [("lastfm_listeners", "INTEGER"), ("lastfm_playcount", "BIGINT"), ("popularity", "INTEGER")]),
         ]:

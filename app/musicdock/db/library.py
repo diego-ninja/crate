@@ -50,7 +50,7 @@ def get_library_artist(name: str) -> dict | None:
 def get_library_albums(artist: str) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute(
-            "SELECT * FROM library_albums WHERE artist = %s ORDER BY year, name", (artist,)
+            "SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s) ORDER BY year, name", (artist,)
         )
         rows = cur.fetchall()
     return [_row_to_lib_album(r) for r in rows]
@@ -59,7 +59,7 @@ def get_library_albums(artist: str) -> list[dict]:
 def get_library_album(artist: str, album: str) -> dict | None:
     with get_db_ctx() as cur:
         cur.execute(
-            "SELECT * FROM library_albums WHERE artist = %s AND name = %s", (artist, album)
+            "SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s) AND LOWER(name) = LOWER(%s)", (artist, album)
         )
         row = cur.fetchone()
     return _row_to_lib_album(row) if row else None
@@ -219,21 +219,21 @@ def update_artist_enrichment(name: str, data: dict):
         cur.execute("""
             UPDATE library_artists SET
                 bio = %s, tags_json = %s, similar_json = %s,
-                spotify_id = %s, spotify_popularity = %s,
+                spotify_id = %s, spotify_popularity = %s, spotify_followers = %s,
                 mbid = %s, country = %s, area = %s,
                 formed = %s, ended = %s, artist_type = %s,
                 members_json = %s, urls_json = %s,
-                listeners = %s, enriched_at = %s
+                listeners = %s, lastfm_playcount = %s, enriched_at = %s
             WHERE name = %s
         """, (
             data.get("bio"), json.dumps(data.get("tags", [])),
             json.dumps(data.get("similar", [])),
-            data.get("spotify_id"), data.get("spotify_popularity"),
+            data.get("spotify_id"), data.get("spotify_popularity"), data.get("spotify_followers"),
             data.get("mbid"), data.get("country"), data.get("area"),
             data.get("formed"), data.get("ended"), data.get("artist_type"),
             json.dumps(data.get("members", [])),
             json.dumps(data.get("urls", {})),
-            data.get("listeners"), now, name,
+            data.get("listeners"), data.get("lastfm_playcount"), now, name,
         ))
 
 

@@ -18,6 +18,11 @@ import {
   User,
   Disc3,
   Search,
+  BrainCircuit,
+  Radio,
+  BarChart2,
+  Sparkles,
+  Compass,
 } from "lucide-react";
 
 interface SearchResults {
@@ -119,6 +124,7 @@ export function CommandPalette() {
                   { label: "Health", path: "/health", icon: HeartPulse },
                   { label: "Download", path: "/download", icon: Download },
                   { label: "Playlists", path: "/playlists", icon: ListMusic },
+                  { label: "Discover", path: "/discover", icon: Compass },
                   { label: "Settings", path: "/settings", icon: Settings },
                 ].map((item) => (
                   <Command.Item
@@ -161,6 +167,54 @@ export function CommandPalette() {
                 >
                   <Stethoscope size={14} className="text-muted-foreground" />
                   Run Health Check
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/analyze-all", "POST"),
+                      "Audio Analysis",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <BrainCircuit size={14} className="text-muted-foreground" />
+                  Analyze All Tracks (BPM, Key, Energy)
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/compute-bliss", "POST"),
+                      "Compute Bliss",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Radio size={14} className="text-muted-foreground" />
+                  Compute Bliss Vectors (Artist Radio)
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/compute-popularity", "POST"),
+                      "Compute Popularity",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <BarChart2 size={14} className="text-muted-foreground" />
+                  Compute Popularity (Last.fm)
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/manage/enrich-mbids", "POST"),
+                      "Enrich MBIDs",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Sparkles size={14} className="text-muted-foreground" />
+                  Enrich MusicBrainz IDs
                 </Command.Item>
               </Command.Group>
             )}

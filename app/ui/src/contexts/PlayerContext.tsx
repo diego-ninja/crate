@@ -12,6 +12,7 @@ export interface Track {
   id: string;
   title: string;
   artist: string;
+  album?: string;
   albumCover?: string;
 }
 
@@ -26,6 +27,8 @@ interface PlayerState {
   volume: number;
   shuffle: boolean;
   repeat: RepeatMode;
+  playbackRate: number;
+  sleepTimer: number | null;
   recentlyPlayed: Track[];
 }
 
@@ -42,6 +45,11 @@ interface PlayerContextValue extends PlayerState {
   toggleShuffle: () => void;
   cycleRepeat: () => void;
   jumpTo: (index: number) => void;
+  playNext: (track: Track) => void;
+  addToQueue: (track: Track) => void;
+  removeFromQueue: (index: number) => void;
+  setPlaybackRate: (rate: number) => void;
+  setSleepTimer: (minutes: number | null) => void;
   currentTrack: Track | undefined;
   audioElement: HTMLAudioElement | null;
 }
@@ -111,6 +119,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [volume, setVolumeState] = useState(getStoredVolume);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState<RepeatMode>("off");
+  const [playbackRate, setPlaybackRateState] = useState(1);
+  const [sleepTimer, setSleepTimerState] = useState<number | null>(null);
+  const sleepTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>(getStoredRecentlyPlayed);
   const restoredRef = useRef(stored.current.queue.length > 0);
 
@@ -338,6 +349,51 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [queue.length]);
 
+  const playNext = useCallback((track: Track) => {
+    setQueue((prev) => {
+      const next = [...prev];
+      next.splice(currentIndex + 1, 0, track);
+      return next;
+    });
+  }, [currentIndex]);
+
+  const addToQueue = useCallback((track: Track) => {
+    setQueue((prev) => [...prev, track]);
+  }, []);
+
+  const removeFromQueue = useCallback((index: number) => {
+    setQueue((prev) => {
+      if (index < 0 || index >= prev.length) return prev;
+      const next = prev.filter((_, i) => i !== index);
+      return next;
+    });
+    // Adjust currentIndex if needed
+    if (index < currentIndex) {
+      setCurrentIndex((i) => i - 1);
+    } else if (index === currentIndex && index >= queue.length - 1) {
+      setCurrentIndex((i) => Math.max(0, i - 1));
+    }
+  }, [currentIndex, queue.length]);
+
+  const setPlaybackRate = useCallback((rate: number) => {
+    audio.playbackRate = rate;
+    setPlaybackRateState(rate);
+  }, [audio]);
+
+  const setSleepTimer = useCallback((minutes: number | null) => {
+    if (sleepTimerRef.current) {
+      clearTimeout(sleepTimerRef.current);
+      sleepTimerRef.current = null;
+    }
+    if (minutes) {
+      sleepTimerRef.current = setTimeout(() => {
+        audio.pause();
+        setSleepTimerState(null);
+      }, minutes * 60 * 1000);
+    }
+    setSleepTimerState(minutes);
+  }, [audio]);
+
   return (
     <PlayerContext.Provider
       value={{
@@ -349,6 +405,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         volume,
         shuffle,
         repeat,
+        playbackRate,
+        sleepTimer,
         recentlyPlayed,
         play,
         playAll,
@@ -362,6 +420,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         toggleShuffle,
         cycleRepeat,
         jumpTo,
+        playNext,
+        addToQueue,
+        removeFromQueue,
+        setPlaybackRate,
+        setSleepTimer,
         currentTrack: queue[currentIndex],
         audioElement: audioRef.current,
       }}

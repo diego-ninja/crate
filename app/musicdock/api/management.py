@@ -120,6 +120,16 @@ def rebuild_library(request: Request):
     return {"task_id": task_id}
 
 
+# ── Audio Analysis ──────────────────────────────────────────────
+
+@router.post("/analyze-all")
+def analyze_all_tracks(request: Request):
+    """Analyze all unanalyzed tracks in the library (BPM, key, energy, mood)."""
+    _require_admin(request)
+    task_id = create_task("analyze_all")
+    return {"task_id": task_id}
+
+
 # ── Bliss (song similarity) ──────────────────────────────────────
 
 @router.post("/compute-bliss")

@@ -5,6 +5,7 @@ import { ArtistStats } from "@/components/artist/ArtistStats";
 import { useNavidromeLink, useTopTracks, useArtistEnrichment } from "@/hooks/use-artist-data";
 import { api } from "@/lib/api";
 import { AlbumCard } from "@/components/album/AlbumCard";
+import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { MissingAlbumCard } from "@/components/album/MissingAlbumCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -573,8 +574,9 @@ export function Artist() {
                     const isCurrent = player.queue[player.currentIndex]?.id === track.id;
                     const isCurrentPlaying = isCurrent && player.isPlaying;
                     return (
+                      <MusicContextMenu key={track.id} type="track" artist={track.artist} album={track.album || ""} trackId={track.id} trackTitle={track.title}
+                        albumCover={track.album ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}` : undefined}>
                       <button
-                        key={track.id}
                         onClick={() => {
                           if (isCurrentPlaying) player.pause();
                           else if (isCurrent) player.resume();
@@ -593,6 +595,7 @@ export function Artist() {
                         <span className={`flex-1 text-sm truncate ${isCurrent ? "text-cyan-400" : "text-white/80"}`}>{track.title}</span>
                         <span className="text-xs text-white/30">{formatDuration(track.duration)}</span>
                       </button>
+                      </MusicContextMenu>
                     );
                   })}
                 </div>
@@ -666,8 +669,9 @@ export function Artist() {
                     const isCurrent = player.queue[player.currentIndex]?.id === track.id;
                     const isCurrentPlaying = isCurrent && player.isPlaying;
                     return (
+                      <MusicContextMenu key={`nd-${track.id}`} type="track" artist={track.artist} album={track.album || ""} trackId={track.id} trackTitle={track.title}
+                        albumCover={track.album ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}` : undefined}>
                       <button
-                        key={`nd-${track.id}`}
                         onClick={() => {
                           if (isCurrentPlaying) player.pause();
                           else if (isCurrent) player.resume();
@@ -695,6 +699,7 @@ export function Artist() {
                         </div>
                         <div className="w-8" />
                       </button>
+                      </MusicContextMenu>
                     );
                   })}
                   {/* Spotify-only tracks (not in Navidrome) */}
@@ -1008,12 +1013,12 @@ export function Artist() {
         open={showDeleteConfirm}
         onOpenChange={setShowDeleteConfirm}
         title={`Delete ${data?.name ?? "artist"}?`}
-        description="This will remove the artist and all their albums/tracks from the database. Files on disk will remain."
-        confirmLabel="Delete from DB"
+        description={`This will permanently delete ${data?.name ?? "this artist"} and all their albums/tracks from the database AND the filesystem. This action cannot be undone.`}
+        confirmLabel="Delete Artist"
         variant="destructive"
         onConfirm={async () => {
           try {
-            await api(`/api/manage/artist/${encPath(data!.name)}/delete`, "POST", { mode: "db_only" });
+            await api(`/api/manage/artist/${encPath(data!.name)}/delete`, "POST", { mode: "full" });
             toast.success(`Artist ${data!.name} deleted`);
             window.location.href = "/browse";
           } catch {

@@ -320,20 +320,32 @@ def _score_match(local: dict, release: dict) -> int:
 
 
 def _build_tag_preview(local: dict, release: dict) -> list[dict]:
-    """Build a side-by-side preview of current vs proposed tags."""
+    """Build a side-by-side preview using best-match pairing (not positional)."""
+    from thefuzz import fuzz
     preview = []
     local_tracks = local["tracks"]
-    mb_tracks = release["tracks"]
+    mb_tracks = list(release["tracks"])
+    remaining = list(mb_tracks)
 
-    for i, lt in enumerate(local_tracks):
-        mb = mb_tracks[i] if i < len(mb_tracks) else {}
+    for lt in local_tracks:
+        best_score = 0
+        best_mb: dict = {}
+        for mb in remaining:
+            ratio = fuzz.ratio(lt["title"].lower(), mb["title"].lower())
+            if ratio > best_score:
+                best_score = ratio
+                best_mb = mb
+        if best_mb and best_score >= 50:
+            remaining.remove(best_mb)
+        else:
+            best_mb = {}
         preview.append({
             "filename": lt["filename"],
             "current_title": lt["title"],
-            "new_title": mb.get("title", ""),
+            "new_title": best_mb.get("title", ""),
             "current_track": lt["tracknumber"],
-            "new_track": mb.get("number", ""),
-            "duration_diff": abs(lt["length_sec"] - mb.get("length_sec", 0)) if mb else None,
+            "new_track": best_mb.get("number", ""),
+            "duration_diff": abs(lt["length_sec"] - best_mb.get("length_sec", 0)) if best_mb else None,
         })
 
     return preview

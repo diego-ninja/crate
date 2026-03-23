@@ -10,11 +10,15 @@ musicbrainzngs.set_useragent("musicdock-librarian", "0.1", "https://github.com/m
 
 
 def _search_mbid(name: str) -> str | None:
+    from thefuzz import fuzz
     try:
-        result = musicbrainzngs.search_artists(artist=name, limit=1)
+        result = musicbrainzngs.search_artists(artist=name, limit=5)
         artists = result.get("artist-list", [])
-        if artists:
-            return artists[0]["id"]
+        # Find best match by name similarity (avoid Black Curse -> Black Sabbath)
+        for a in artists:
+            mb_name = a.get("name", "")
+            if fuzz.ratio(name.lower(), mb_name.lower()) >= 80:
+                return a["id"]
     except Exception:
         log.debug("MB artist search failed for %s", name)
     return None

@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { Play, Pause, BarChart3, Download } from "lucide-react";
 import {
   Tooltip,
@@ -266,7 +267,8 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
           const ndSong = hasNavidrome ? findNavidromeSong(t, i) : undefined;
           const amTrack = audiomuseData ? (audiomuseData[trackTitle] ?? audiomuseData[ndSong?.id ?? ""]) : undefined;
           return (
-            <TableRow key={t.filename} className={cn(isCurrentTrack && "bg-primary/5")}>
+            <MusicContextMenu key={t.filename} type="track" artist={artist || t.tags.artist || ""} album={t.tags.album || ""} trackId={trackId} trackTitle={t.tags.title || t.filename} albumCover={albumCover}>
+            <TableRow className={cn(isCurrentTrack && "bg-primary/5")}>
               <TableCell>
                 <Button
                   variant="ghost"
@@ -350,6 +352,7 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
                 )}
               </TableCell>
             </TableRow>
+            </MusicContextMenu>
           );
         })}
       </TableBody>

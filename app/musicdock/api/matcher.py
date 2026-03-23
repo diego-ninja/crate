@@ -38,6 +38,7 @@ def api_match_apply(data: MatchApplyRequest):
     task_id = create_task("match_apply", {
         "artist_folder": data.artist_folder,
         "album_folder": data.album_folder,
+        "album_path": str(album_dir),
         "release": data.release,
     })
     return {"task_id": task_id}

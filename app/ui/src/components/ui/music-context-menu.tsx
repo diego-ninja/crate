@@ -45,11 +45,11 @@ export function MusicContextMenu({
   albumCover,
 }: MusicContextMenuProps) {
   const navigate = useNavigate();
-  const { play, playAll } = usePlayer();
+  const { play, playAll, playNext, addToQueue } = usePlayer();
 
   async function handlePlay() {
     if (type === "track" && trackId) {
-      play({ id: trackId, title: trackTitle || "", artist, albumCover });
+      play({ id: trackId, title: trackTitle || "", artist, album, albumCover });
       return;
     }
     if (type === "album" && album) {
@@ -60,10 +60,7 @@ export function MusicContextMenu({
         if (data?.songs?.length) {
           const coverUrl = `/api/cover/${encPath(artist)}/${encPath(album)}`;
           const tracks: Track[] = data.songs.map((s) => ({
-            id: s.id,
-            title: s.title,
-            artist,
-            albumCover: coverUrl,
+            id: s.id, title: s.title, artist, album, albumCover: coverUrl,
           }));
           playAll(tracks);
         }
@@ -73,9 +70,17 @@ export function MusicContextMenu({
     }
   }
 
-  async function handleAddToQueue() {
+  function handlePlayNext() {
     if (type === "track" && trackId) {
-      play({ id: trackId, title: trackTitle || "", artist, albumCover });
+      playNext({ id: trackId, title: trackTitle || "", artist, album, albumCover });
+      toast.success("Playing next");
+    }
+  }
+
+  function handleAddToQueue() {
+    if (type === "track" && trackId) {
+      addToQueue({ id: trackId, title: trackTitle || "", artist, album, albumCover });
+      toast.success("Added to queue");
     }
   }
 
@@ -87,6 +92,9 @@ export function MusicContextMenu({
           <>
             <ContextMenuItem onClick={handlePlay} className="text-sm">
               Play
+            </ContextMenuItem>
+            <ContextMenuItem onClick={handlePlayNext} className="text-sm">
+              Play Next
             </ContextMenuItem>
             <ContextMenuItem onClick={handleAddToQueue} className="text-sm">
               Add to Queue
