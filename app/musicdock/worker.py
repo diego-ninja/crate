@@ -1482,7 +1482,32 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
                                     (listeners, playcount, album["id"]))
                     pop_count += 1
             time.sleep(0.25)
-        result["steps"]["popularity"] = pop_count
+
+        # Track popularity
+        track_pop = 0
+        for album in albums:
+            if album_folder and album["name"] != album_folder:
+                continue
+            tracks_db = get_library_tracks(album["id"])
+            for t in tracks_db:
+                title = t.get("title", "")
+                if not title:
+                    continue
+                data = _lastfm_get("track.getinfo", artist=artist_name, track=title, autocorrect="1")
+                if data and "track" in data:
+                    info = data["track"]
+                    listeners = _parse_int(info.get("listeners", 0))
+                    playcount = _parse_int(info.get("playcount", 0))
+                    if listeners > 0:
+                        with get_db_ctx() as cur:
+                            cur.execute(
+                                "UPDATE library_tracks SET lastfm_listeners = %s, lastfm_playcount = %s WHERE id = %s",
+                                (listeners, playcount, t["id"]),
+                            )
+                        track_pop += 1
+                time.sleep(0.2)
+
+        result["steps"]["popularity"] = {"albums": pop_count, "tracks": track_pop}
     except Exception:
         log.warning("Popularity failed", exc_info=True)
         result["steps"]["popularity"] = "failed"
