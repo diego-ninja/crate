@@ -21,7 +21,7 @@ class LibraryWatcher:
         self.sync = sync
         self.library_path = Path(config["library_path"])
         self.debounce_timers: dict[str, threading.Timer] = {}
-        self.debounce_seconds = 30
+        self.debounce_seconds = 60
         self._lock = threading.Lock()
         self._observer = None
 
@@ -76,14 +76,38 @@ class LibraryWatcher:
                 self.sync.sync_album(album_dir, canonical)
             self.sync.sync_artist(artist_dir)
 
-            # Queue full processing pipeline for new content
+            # Only queue processing if no recent task for this artist
+            # (prevents infinite loop: worker writes → watcher triggers → worker writes → ...)
             try:
-                from musicdock.db import create_task
-                create_task("process_new_content", {
-                    "artist": canonical,
-                    "album": album_dir.name,
-                })
-                log.info("Watcher: queued process_new_content for %s / %s", canonical, album_dir.name)
+                from musicdock.db import create_task, get_db_ctx as _get_ctx
+                with _get_ctx() as cur:
+                    cur.execute(
+                        "SELECT COUNT(*) AS cnt FROM tasks WHERE type = 'process_new_content' "
+                        "AND status IN ('pending', 'running') "
+                        "AND params_json->>'artist' = %s",
+                        (canonical,),
+                    )
+                    active_count = cur.fetchone()["cnt"]
+
+                    # Also check if recently completed (within 5 min) to avoid re-triggering
+                    cur.execute(
+                        "SELECT COUNT(*) AS cnt FROM tasks WHERE type = 'process_new_content' "
+                        "AND status = 'completed' "
+                        "AND params_json->>'artist' = %s "
+                        "AND updated_at > (NOW() - INTERVAL '5 minutes')::text",
+                        (canonical,),
+                    )
+                    recent_count = cur.fetchone()["cnt"]
+
+                if active_count == 0 and recent_count == 0:
+                    create_task("process_new_content", {
+                        "artist": canonical,
+                        "album": album_dir.name,
+                    })
+                    log.info("Watcher: queued process_new_content for %s / %s", canonical, album_dir.name)
+                else:
+                    log.debug("Watcher: skipping process_new_content for %s (active=%d, recent=%d)",
+                              canonical, active_count, recent_count)
             except Exception:
                 log.debug("Watcher: failed to queue processing for %s", canonical)
         except Exception:
