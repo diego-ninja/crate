@@ -14,6 +14,8 @@ from musicdock.db import get_setting, set_setting
 log = logging.getLogger(__name__)
 
 TIDDL_CONFIG_DIR = os.environ.get("TIDDL_CONFIG_DIR", "/data/.tiddl")
+# tiddl 3.x uses ~/.tiddl — we set HOME to parent of .tiddl
+TIDDL_HOME = str(Path(TIDDL_CONFIG_DIR).parent)
 PROCESSING_DIR = "/tmp/tidal-processing"
 
 
@@ -42,11 +44,51 @@ def refresh_token() -> bool:
         result = subprocess.run(
             ["tiddl", "auth", "refresh"],
             capture_output=True, text=True, timeout=30,
-            env={**os.environ, "TIDDL_CONFIG_DIR": TIDDL_CONFIG_DIR},
+            env={**os.environ, "HOME": TIDDL_HOME},
         )
         return result.returncode == 0
     except (subprocess.SubprocessError, OSError) as e:
         log.warning("Failed to refresh Tidal token: %s", e)
+        return False
+
+
+def login_flow():
+    """Start tiddl auth login and yield stdout lines (for SSE streaming).
+    The user needs to visit tidal.com/activate and enter the device code."""
+    try:
+        proc = subprocess.Popen(
+            ["tiddl", "auth", "login"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env={**os.environ, "HOME": TIDDL_HOME},
+        )
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                yield line
+        proc.wait(timeout=300)
+        if proc.returncode == 0:
+            yield "AUTH_SUCCESS"
+        else:
+            yield "AUTH_FAILED"
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        yield "AUTH_TIMEOUT"
+    except Exception as e:
+        yield f"AUTH_ERROR: {e}"
+
+
+def logout() -> bool:
+    """Remove Tidal auth token."""
+    try:
+        result = subprocess.run(
+            ["tiddl", "auth", "logout"],
+            capture_output=True, text=True, timeout=10,
+            env={**os.environ, "HOME": TIDDL_HOME},
+        )
+        return result.returncode == 0
+    except (subprocess.SubprocessError, OSError):
         return False
 
 
@@ -95,46 +137,58 @@ def search(query: str, content_type: str = "all", limit: int = 20, offset: int =
 
         result: dict = {}
 
+        # v2 search returns {albums: {items: [...]}, artists: {items: [...]}, ...}
+        def _items(key: str) -> list:
+            val = data.get(key, {})
+            if isinstance(val, dict):
+                return val.get("items", [])
+            if isinstance(val, list):
+                return val
+            return []
+
         # Parse albums
-        if "albums" in data:
+        albums_raw = _items("albums")
+        if albums_raw:
             result["albums"] = [
                 {
-                    "id": a["resource"]["id"],
-                    "title": a["resource"].get("title", ""),
-                    "artist": a["resource"].get("artists", [{}])[0].get("name", "") if a["resource"].get("artists") else "",
-                    "year": (a["resource"].get("releaseDate") or "")[:4],
-                    "tracks": a["resource"].get("numberOfTracks", 0),
-                    "cover": _cover_url(a["resource"].get("imageCover", [])),
-                    "url": f"https://tidal.com/album/{a['resource']['id']}",
-                    "quality": a["resource"].get("mediaMetadata", {}).get("tags", []),
+                    "id": str(a.get("id", "")),
+                    "title": a.get("title", ""),
+                    "artist": a.get("artists", [{}])[0].get("name", "") if a.get("artists") else "",
+                    "year": (a.get("releaseDate") or "")[:4],
+                    "tracks": a.get("numberOfTracks", 0),
+                    "cover": _tidal_cover(a.get("cover")),
+                    "url": a.get("url") or f"https://tidal.com/album/{a.get('id', '')}",
+                    "quality": a.get("mediaMetadata", {}).get("tags", []),
                 }
-                for a in data["albums"]
+                for a in albums_raw
             ]
 
         # Parse artists
-        if "artists" in data:
+        artists_raw = _items("artists")
+        if artists_raw:
             result["artists"] = [
                 {
-                    "id": a["resource"]["id"],
-                    "name": a["resource"].get("name", ""),
-                    "picture": _cover_url(a["resource"].get("picture", [])),
+                    "id": str(a.get("id", "")),
+                    "name": a.get("name", ""),
+                    "picture": _tidal_cover(a.get("picture")),
                 }
-                for a in data["artists"]
+                for a in artists_raw
             ]
 
         # Parse tracks
-        if "tracks" in data:
+        tracks_raw = _items("tracks")
+        if tracks_raw:
             result["tracks"] = [
                 {
-                    "id": t["resource"]["id"],
-                    "title": t["resource"].get("title", ""),
-                    "artist": t["resource"].get("artists", [{}])[0].get("name", "") if t["resource"].get("artists") else "",
-                    "album": t["resource"].get("album", {}).get("title", ""),
-                    "duration": t["resource"].get("duration", 0),
-                    "url": f"https://tidal.com/track/{t['resource']['id']}",
-                    "quality": t["resource"].get("mediaMetadata", {}).get("tags", []),
+                    "id": str(t.get("id", "")),
+                    "title": t.get("title", ""),
+                    "artist": t.get("artists", [{}])[0].get("name", "") if t.get("artists") else "",
+                    "album": t.get("album", {}).get("title", "") if isinstance(t.get("album"), dict) else "",
+                    "duration": t.get("duration", 0),
+                    "url": t.get("url") or f"https://tidal.com/track/{t.get('id', '')}",
+                    "quality": t.get("mediaMetadata", {}).get("tags", []),
                 }
-                for t in data["tracks"]
+                for t in tracks_raw
             ]
 
         return result
@@ -147,15 +201,13 @@ def search(query: str, content_type: str = "all", limit: int = 20, offset: int =
         return {"error": str(e)}
 
 
-def _cover_url(images: list) -> str | None:
-    """Extract best cover URL from Tidal image array."""
-    if not images:
+def _tidal_cover(cover_id: str | None) -> str | None:
+    """Convert Tidal cover UUID to image URL."""
+    if not cover_id:
         return None
-    # Prefer larger images
-    for img in sorted(images, key=lambda x: x.get("width", 0), reverse=True):
-        if img.get("url"):
-            return img["url"]
-    return None
+    # Tidal image URL format: replace - with / in UUID
+    clean = cover_id.replace("-", "/")
+    return f"https://resources.tidal.com/images/{clean}/750x750.jpg"
 
 
 # ── Download ─────────────────────────────────────────────────────
@@ -188,7 +240,7 @@ def download(url: str, quality: str = "max", task_id: str = "",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            env={**os.environ, "TIDDL_CONFIG_DIR": TIDDL_CONFIG_DIR},
+            env={**os.environ, "HOME": TIDDL_HOME},
         )
 
         output_lines = []

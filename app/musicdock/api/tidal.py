@@ -35,6 +35,39 @@ def tidal_status(request: Request):
     return {"authenticated": tidal.is_authenticated()}
 
 
+@router.post("/auth/login")
+async def tidal_login(request: Request):
+    """Start Tidal device auth flow. Returns SSE stream with device code + result."""
+    _require_admin(request)
+    import asyncio
+    from starlette.responses import StreamingResponse
+
+    async def _stream():
+        for line in tidal.login_flow():
+            yield f"data: {line}\n\n"
+            await asyncio.sleep(0.1)
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/auth/refresh")
+def tidal_refresh(request: Request):
+    _require_admin(request)
+    success = tidal.refresh_token()
+    return {"success": success}
+
+
+@router.post("/auth/logout")
+def tidal_logout(request: Request):
+    _require_admin(request)
+    success = tidal.logout()
+    return {"success": success}
+
+
 # ── Search ───────────────────────────────────────────────────────
 
 @router.get("/search")
