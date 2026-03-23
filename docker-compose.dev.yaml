@@ -30,6 +30,23 @@ services:
     networks:
       - musicdock-dev
 
+  slskd:
+    image: slskd/slskd:latest
+    container_name: musicdock-dev-slskd
+    environment:
+      - SLSKD_REMOTE_CONFIGURATION=true
+      - SLSKD_NO_AUTH=true
+      - SLSKD_SLSK_USERNAME=${SLSKD_SLSK_USERNAME:-}
+      - SLSKD_SLSK_PASSWORD=${SLSKD_SLSK_PASSWORD:-}
+      - SLSKD_SHARED_DIR=/music
+    volumes:
+      - ./test-music:/music:ro
+      - dev_slskd:/app
+    ports:
+      - "5030:5030"
+    networks:
+      - musicdock-dev
+
   api:
     build: ./app
     container_name: musicdock-dev-api
@@ -65,6 +82,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - slskd
     command: ["api"]
 
   worker:
@@ -100,8 +118,10 @@ services:
     depends_on:
       - postgres
       - redis
+      - slskd
     command: ["worker"]
 
 volumes:
   dev_postgres:
   dev_data:
+  dev_slskd:
