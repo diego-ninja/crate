@@ -63,46 +63,30 @@ def get_status() -> dict:
     }
 
 
-def search(query: str, timeout_sec: int = 15) -> dict:
-    """Search Soulseek. Returns search ID + results after waiting."""
+def start_search(query: str) -> str | None:
+    """Start a Soulseek search. Returns search ID (non-blocking)."""
     result = _post("searches", {"searchText": query})
     if not result or "id" not in result:
-        return {"id": None, "responses": [], "fileCount": 0}
+        return None
+    return result["id"]
 
-    search_id = result["id"]
 
-    # Poll for completion
-    elapsed = 0
-    while elapsed < timeout_sec:
-        time.sleep(2)
-        elapsed += 2
-        status = _get(f"searches/{search_id}")
-        if status and "Completed" in status.get("state", ""):
-            break
-
-    # Get responses
-    responses = _get(f"searches/{search_id}/responses") or []
+def get_search_status(search_id: str) -> dict:
+    """Get search status and counts (without responses)."""
+    status = _get(f"searches/{search_id}")
+    if not status:
+        return {"state": "Unknown", "responseCount": 0, "fileCount": 0}
     return {
-        "id": search_id,
-        "responses": responses,
-        "responseCount": len(responses),
-        "fileCount": sum(len(r.get("files", [])) for r in responses),
+        "state": status.get("state", "Unknown"),
+        "responseCount": status.get("responseCount", 0),
+        "fileCount": status.get("fileCount", 0),
+        "isComplete": "Completed" in status.get("state", ""),
     }
 
 
-def search_album(artist: str, album: str, quality_filter: str = "flac") -> list[dict]:
-    """Search for a specific album. Returns grouped results by user, filtered by quality.
-
-    quality_filter: "flac", "flac_320", "any"
-    """
-    query = f"{artist} {album}"
-
-    # Add quality to query if filtering
-    if quality_filter == "flac":
-        query += " FLAC"
-
-    raw = search(query)
-    responses = raw.get("responses", [])
+def get_search_results(search_id: str, quality_filter: str = "flac") -> list[dict]:
+    """Get filtered and grouped results from a search."""
+    responses = _get(f"searches/{search_id}/responses") or []
 
     min_bitrate = int(get_setting("soulseek_min_bitrate", "320"))
 

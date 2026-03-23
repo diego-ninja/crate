@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,6 +102,8 @@ export function DownloadPage() {
   const [activeDownloads, setActiveDownloads] = useState<Set<string>>(new Set());
   const [soulseekResults, setSoulseekResults] = useState<SoulseekResult[] | null>(null);
   const [searchingSlsk, setSearchingSlsk] = useState(false);
+  const [, setSlskSearchId] = useState<string | null>(null);
+  const slskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { data: queue, refetch: refetchQueue } = useApi<QueueItem[]>("/api/tidal/queue");
   const { data: tidalStatus } = useApi<{ authenticated: boolean }>("/api/tidal/status");
 
@@ -125,19 +127,47 @@ export function DownloadPage() {
     } finally {
       setSearching(false);
     }
-    // Also search Soulseek
+    // Also search Soulseek (non-blocking: start search, then poll)
     if (term.length >= 3) {
+      // Clear previous poll
+      if (slskPollRef.current) clearInterval(slskPollRef.current);
+      setSoulseekResults(null);
       setSearchingSlsk(true);
-      api<{ soulseek: SoulseekResult[] }>("/api/acquisition/search", "POST", { query: term, type: "album" })
-        .then((d) => setSoulseekResults(d.soulseek || []))
-        .catch(() => setSoulseekResults([]))
-        .finally(() => setSearchingSlsk(false));
+      setSlskSearchId(null);
+
+      api<{ search_id: string }>("/api/acquisition/search/soulseek", "POST", { query: term })
+        .then((d) => {
+          if (d.search_id) {
+            setSlskSearchId(d.search_id);
+            // Poll every 3s for progressive results
+            const poll = setInterval(async () => {
+              try {
+                const r = await api<{ results: SoulseekResult[]; isComplete: boolean; responseCount: number }>(
+                  `/api/acquisition/search/soulseek/${d.search_id}`
+                );
+                setSoulseekResults(r.results);
+                if (r.isComplete) {
+                  clearInterval(poll);
+                  setSearchingSlsk(false);
+                }
+              } catch {
+                clearInterval(poll);
+                setSearchingSlsk(false);
+              }
+            }, 3000);
+            slskPollRef.current = poll;
+            // Auto-stop after 30s
+            setTimeout(() => { clearInterval(poll); setSearchingSlsk(false); }, 30000);
+          }
+        })
+        .catch(() => { setSoulseekResults([]); setSearchingSlsk(false); });
     }
   }, [query]);
 
   // Auto-search on mount if URL has ?q=
   useEffect(() => {
     if (initialQ) doSearch(initialQ);
+    return () => { if (slskPollRef.current) clearInterval(slskPollRef.current); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function startDownload(url: string, title: string, source = "search") {
@@ -360,7 +390,11 @@ export function DownloadPage() {
             <div className="mt-6">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
                 Soulseek Results
-                {searchingSlsk && <Loader2 size={14} className="animate-spin" />}
+                {soulseekResults && soulseekResults.length > 0 && (
+                  <span className="text-xs text-muted-foreground font-normal">({soulseekResults.length} albums)</span>
+                )}
+                {searchingSlsk && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
+                {searchingSlsk && <span className="text-xs text-muted-foreground font-normal">searching...</span>}
               </h3>
               {soulseekResults && soulseekResults.length > 0 ? (
                 <div className="space-y-2">

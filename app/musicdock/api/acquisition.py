@@ -2,7 +2,6 @@
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -17,7 +16,6 @@ router = APIRouter(prefix="/api/acquisition", tags=["acquisition"])
 @router.get("/status")
 def acquisition_status():
     """Get status of all acquisition sources."""
-    # Tidal
     tidal_status = {"authenticated": False}
     try:
         from musicdock.tidal import get_auth_status
@@ -25,69 +23,57 @@ def acquisition_status():
     except Exception:
         pass
 
-    # Soulseek
     slsk_status = soulseek.get_status()
-
-    return {
-        "tidal": tidal_status,
-        "soulseek": slsk_status,
-    }
+    return {"tidal": tidal_status, "soulseek": slsk_status}
 
 
-@router.post("/search")
-def acquisition_search(body: dict):
-    """Unified search across Tidal and Soulseek."""
+@router.post("/search/soulseek")
+def start_soulseek_search(body: dict):
+    """Start a Soulseek search (non-blocking). Returns search_id to poll."""
     query = body.get("query", "").strip()
     artist = body.get("artist", "").strip()
     album = body.get("album", "").strip()
 
-    if not query and not (artist and album):
-        return JSONResponse({"error": "query or artist+album required"}, status_code=400)
+    if not query and not artist:
+        return JSONResponse({"error": "query or artist required"}, status_code=400)
 
-    search_text = query or f"{artist} {album}"
-    results = {"tidal": [], "soulseek": [], "query": search_text}
-
+    search_text = query or f"{artist} {album}".strip()
     quality_filter = get_setting("soulseek_quality", "flac")
 
-    # Search in parallel
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        futures = {}
+    # Add FLAC to query if filtering by lossless
+    if quality_filter == "flac" and "flac" not in search_text.lower():
+        search_text += " FLAC"
 
-        # Tidal search
-        try:
-            from musicdock.tidal import search as tidal_search
-            futures["tidal"] = executor.submit(tidal_search, search_text)
-        except Exception:
-            pass
+    search_id = soulseek.start_search(search_text)
+    if not search_id:
+        return JSONResponse({"error": "Failed to start search"}, status_code=502)
 
-        # Soulseek search
-        if soulseek.get_status().get("loggedIn"):
-            futures["soulseek"] = executor.submit(
-                soulseek.search_album, artist or search_text, album or "", quality_filter
-            )
+    return {"search_id": search_id, "query": search_text}
 
-        for source, future in futures.items():
-            try:
-                data = future.result(timeout=20)
-                if source == "tidal":
-                    results["tidal"] = data if isinstance(data, dict) else {"results": data}
-                elif source == "soulseek":
-                    results["soulseek"] = data if isinstance(data, list) else []
-            except Exception as e:
-                log.debug("Search failed for %s: %s", source, e)
 
-    return results
+@router.get("/search/soulseek/{search_id}")
+def poll_soulseek_search(search_id: str):
+    """Poll Soulseek search results (progressive — call every 2-3s)."""
+    status = soulseek.get_search_status(search_id)
+    quality_filter = get_setting("soulseek_quality", "flac")
+    results = soulseek.get_search_results(search_id, quality_filter)
+    return {
+        "state": status.get("state", "Unknown"),
+        "isComplete": status.get("isComplete", False),
+        "responseCount": status.get("responseCount", 0),
+        "fileCount": status.get("fileCount", 0),
+        "results": results,
+    }
 
 
 @router.post("/download")
 def acquisition_download(body: dict):
-    """Download from the best or specified source."""
-    source = body.get("source", "")  # "tidal" or "soulseek"
+    """Download from the specified source."""
+    source = body.get("source", "")
     artist = body.get("artist", "")
     album = body.get("album", "")
 
     if source == "tidal":
-        # Use existing tidal download
         tidal_id = body.get("tidal_id", "")
         if not tidal_id:
             return JSONResponse({"error": "tidal_id required"}, status_code=400)
@@ -105,11 +91,9 @@ def acquisition_download(body: dict):
         if not username or not files:
             return JSONResponse({"error": "username and files required"}, status_code=400)
 
-        # Queue download via slskd
         result = soulseek.download_files(username, files)
         enqueued = result.get("enqueued", [])
 
-        # Create a task to monitor and process when complete
         if enqueued:
             task_id = create_task("soulseek_download", {
                 "username": username,
@@ -135,10 +119,8 @@ def acquisition_queue():
     for t in tidal_tasks:
         params = t.get("params", {})
         if isinstance(params, str):
-            try:
-                params = json.loads(params)
-            except Exception:
-                params = {}
+            try: params = json.loads(params)
+            except Exception: params = {}
         queue.append({
             "source": "tidal",
             "artist": params.get("artist", ""),
