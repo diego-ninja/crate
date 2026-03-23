@@ -120,16 +120,23 @@ def navidrome_top_tracks(name: str, count: int = 20):
         results = []
         with get_db_ctx() as cur:
             for lt in lastfm_tracks:
+                # Try exact match first, then prefix match (handles "Song (Album Version)" etc.)
                 cur.execute(
                     "SELECT t.path, t.title, t.artist, t.duration, a.name AS album "
                     "FROM library_tracks t JOIN library_albums a ON t.album_id = a.id "
-                    "WHERE LOWER(t.title) = LOWER(%s) AND LOWER(t.artist) = LOWER(%s) LIMIT 1",
-                    (lt["title"], name),
+                    "WHERE LOWER(t.artist) = LOWER(%s) AND ("
+                    "  LOWER(t.title) = LOWER(%s) OR LOWER(t.title) LIKE LOWER(%s) || '%%'"
+                    ") LIMIT 1",
+                    (name, lt["title"], lt["title"]),
                 )
                 row = cur.fetchone()
                 if row:
+                    # Make path relative to library root for /api/stream/
+                    track_path = row["path"]
+                    if track_path.startswith("/music/"):
+                        track_path = track_path[len("/music/"):]
                     results.append({
-                        "id": row["path"],  # path-based ID for direct streaming
+                        "id": track_path,
                         "title": row["title"],
                         "artist": row["artist"],
                         "album": row["album"],

@@ -41,9 +41,11 @@ def api_analytics():
         )
         genres = {r["genre"]: r["c"] for r in cur.fetchall()}
 
-        # Decades
+        # Decades (count albums, not tracks)
         cur.execute(
-            "SELECT (CAST(year AS INTEGER)/10)*10 || 's' as decade, COUNT(*) as c FROM library_tracks WHERE year IS NOT NULL AND year != '' AND length(year) >= 4 GROUP BY decade ORDER BY decade"
+            "SELECT (CAST(year AS INTEGER)/10)*10 || 's' as decade, COUNT(*) as c "
+            "FROM library_albums WHERE year IS NOT NULL AND year != '' AND length(year) >= 4 "
+            "GROUP BY decade ORDER BY decade"
         )
         decades = {r["decade"]: r["c"] for r in cur.fetchall()}
 
@@ -163,13 +165,21 @@ def api_stats():
                 "SELECT artist, name, year, dir_mtime FROM library_albums "
                 "ORDER BY dir_mtime DESC NULLS LAST LIMIT 10"
             )
+            import re as _re
+            _year_re = _re.compile(r"^\d{4}\s*[-–]\s*")
             recent_albums = [
-                {"artist": r["artist"], "name": r["name"], "year": r["year"]}
+                {"artist": r["artist"], "name": r["name"],
+                 "display_name": _year_re.sub("", r["name"]),
+                 "year": r["year"]}
                 for r in cur.fetchall()
             ]
 
             cur.execute("SELECT COUNT(*) AS c FROM library_tracks WHERE bpm IS NOT NULL")
             analyzed_tracks = cur.fetchone()["c"]
+
+            cur.execute("SELECT AVG(total_duration) AS val FROM library_albums WHERE total_duration IS NOT NULL AND total_duration > 0")
+            row2 = cur.fetchone()
+            avg_album_duration_min = round(row2["val"] / 60, 1) if row2 and row2["val"] else 0
 
         return {
             "artists": stats["artists"],
@@ -185,6 +195,8 @@ def api_stats():
             "top_genres": top_genres,
             "recent_albums": recent_albums,
             "analyzed_tracks": analyzed_tracks,
+            "avg_album_duration_min": avg_album_duration_min,
+            "avg_tracks_per_album": round(stats["tracks"] / stats["albums"], 1) if stats["albums"] else 0,
         }
 
     # Fallback to filesystem
@@ -554,6 +566,55 @@ def api_insights():
             "tracks_analyzed": analysis_row["analyzed"],
         }
 
+        # Mood distribution (aggregate mood tags across all tracks)
+        cur.execute("""
+            SELECT mood_json FROM library_tracks
+            WHERE mood_json IS NOT NULL AND mood_json::text != '{}'
+        """)
+        mood_counts: dict[str, float] = {}
+        for r in cur.fetchall():
+            moods = r["mood_json"]
+            if isinstance(moods, str):
+                moods = json.loads(moods) if moods else {}
+            if isinstance(moods, dict):
+                for mood, score in moods.items():
+                    mood_counts[mood] = mood_counts.get(mood, 0) + (score if isinstance(score, (int, float)) else 0)
+        # Normalize and take top 12
+        top_moods = sorted(mood_counts.items(), key=lambda x: x[1], reverse=True)[:12]
+        moods = [{"mood": m, "score": round(s, 1)} for m, s in top_moods]
+
+        # Loudness distribution
+        cur.execute("""
+            SELECT FLOOR(loudness / 3) * 3 AS bucket, COUNT(*) AS cnt
+            FROM library_tracks WHERE loudness IS NOT NULL
+            GROUP BY bucket ORDER BY bucket
+        """)
+        loudness_dist = [{"db": f"{int(r['bucket'])} dB", "count": r["cnt"]} for r in cur.fetchall()]
+
+        # Top albums by Last.fm listeners
+        cur.execute("""
+            SELECT name, artist, lastfm_listeners, popularity, year
+            FROM library_albums
+            WHERE lastfm_listeners IS NOT NULL AND lastfm_listeners > 0
+            ORDER BY lastfm_listeners DESC LIMIT 20
+        """)
+        import re as _re
+        def _strip_year_prefix(name: str) -> str:
+            return _re.sub(r"^\d{4}\s*[-–]\s*", "", name)
+        top_albums = [{"album": _strip_year_prefix(r["name"]), "artist": r["artist"],
+                       "listeners": r["lastfm_listeners"] or 0,
+                       "popularity": r["popularity"] or 0, "year": r["year"]} for r in cur.fetchall()]
+
+        # Acousticness vs Instrumentalness scatter
+        cur.execute("""
+            SELECT acousticness, instrumentalness, artist, title
+            FROM library_tracks
+            WHERE acousticness IS NOT NULL AND instrumentalness IS NOT NULL
+            LIMIT 500
+        """)
+        acoustic_instrumental = [{"x": round(r["acousticness"], 2), "y": round(r["instrumentalness"], 2),
+                                  "artist": r["artist"], "title": r["title"]} for r in cur.fetchall()]
+
     return {
         "countries": countries,
         "formation_decades": formation_decades,
@@ -567,4 +628,8 @@ def api_insights():
         "popularity": popularity,
         "albums_by_decade": albums_by_year,
         "completeness": completeness,
+        "moods": moods,
+        "loudness_distribution": loudness_dist,
+        "top_albums": top_albums,
+        "acoustic_instrumental": acoustic_instrumental,
     }

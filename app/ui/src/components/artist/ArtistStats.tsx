@@ -16,7 +16,7 @@ const NIVO_THEME = {
 interface ArtistStatsData {
   formats: { id: string; value: number }[];
   albums_timeline: { name: string; year: string; track_count: number; popularity: number | null; lastfm_listeners: number | null }[];
-  audio_by_album: { album: string; avg_bpm: number | null; avg_energy: number | null; avg_danceability: number | null; avg_valence: number | null }[];
+  audio_by_album: { album: string; avg_bpm: number | null; avg_energy: number | null; avg_danceability: number | null; avg_valence: number | null; avg_acousticness: number | null }[];
   top_tracks_by_popularity: { title: string; album: string; popularity: number; lastfm_listeners: number }[];
   genres: { name: string; weight: number }[];
 }
@@ -33,11 +33,45 @@ export function ArtistStats({ name }: { name: string }) {
         energy: a.avg_energy ?? 0,
         danceability: a.avg_danceability ?? 0,
         valence: a.avg_valence ?? 0,
+        acousticness: a.avg_acousticness ?? 0,
       }))
     : [];
 
   return (
     <div className="space-y-6">
+      {data.albums_timeline.length > 0 && (
+        <div className="bg-card border border-border rounded-lg p-4">
+          <h4 className="text-sm font-semibold mb-3">Discography Timeline</h4>
+          <div className="h-[200px]">
+            <ResponsiveBar
+              data={data.albums_timeline
+                .filter(a => a.year)
+                .map(a => ({
+                  album: a.name.length > 18 ? a.name.slice(0, 18) + "..." : a.name,
+                  tracks: a.track_count,
+                  year: a.year,
+                }))}
+              keys={["tracks"]}
+              indexBy="album"
+              margin={{ top: 10, right: 10, bottom: 50, left: 40 }}
+              padding={0.3}
+              colors={["#8b5cf6"]}
+              borderRadius={3}
+              enableLabel={true}
+              labelTextColor="#fff"
+              axisBottom={{ tickRotation: -35 }}
+              theme={NIVO_THEME}
+              animate={true}
+              motionConfig="gentle"
+              tooltip={({ data: d }) => (
+                <div style={{ background: "#1f2937", color: "#f3f4f6", padding: "6px 10px", borderRadius: "6px", fontSize: 11, border: "1px solid #374151" }}>
+                  <strong>{String(d.album)}</strong> ({String(d.year)})<br />{String(d.tracks)} tracks
+                </div>
+              )}
+            />
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {data.formats.length > 0 && (
           <div className="bg-card border border-border rounded-lg p-4">
@@ -98,7 +132,7 @@ export function ArtistStats({ name }: { name: string }) {
           <div className="h-[300px]">
             <ResponsiveRadar
               data={radarData}
-              keys={["energy", "danceability", "valence"]}
+              keys={["energy", "danceability", "valence", "acousticness"]}
               indexBy="album"
               maxValue={1}
               margin={{ top: 30, right: 60, bottom: 30, left: 60 }}
@@ -107,7 +141,7 @@ export function ArtistStats({ name }: { name: string }) {
               dotSize={8}
               dotColor={{ theme: "background" }}
               dotBorderWidth={2}
-              colors={["#ef4444", "#06b6d4", "#f59e0b"]}
+              colors={["#ef4444", "#06b6d4", "#f59e0b", "#22c55e"]}
               fillOpacity={0.2}
               theme={{ ...NIVO_THEME, labels: { text: { fill: "#9ca3af", fontSize: 11 } } }}
               animate={true} motionConfig="gentle"
@@ -116,6 +150,38 @@ export function ArtistStats({ name }: { name: string }) {
           </div>
         </div>
       )}
+      {(() => {
+        const albumPop = data.albums_timeline
+          .filter(a => (a.lastfm_listeners ?? 0) > 0 || (a.popularity ?? 0) > 0)
+          .sort((a, b) => (b.lastfm_listeners ?? b.popularity ?? 0) - (a.lastfm_listeners ?? a.popularity ?? 0))
+          .slice(0, 8);
+        if (!albumPop.length) return null;
+        return (
+          <div className="bg-card border border-border rounded-lg p-4">
+            <h4 className="text-sm font-semibold mb-3">Top Albums</h4>
+            <div className="h-[200px]">
+              <ResponsiveBar
+                data={albumPop.reverse().map(a => ({
+                  album: a.name.length > 20 ? a.name.slice(0, 20) + "..." : a.name,
+                  listeners: a.lastfm_listeners ?? a.popularity ?? 0,
+                }))}
+                keys={["listeners"]}
+                indexBy="album"
+                layout="horizontal"
+                margin={{ top: 5, right: 20, bottom: 5, left: 160 }}
+                padding={0.3}
+                colors={["#f59e0b"]}
+                borderRadius={3}
+                enableLabel={true}
+                labelTextColor="#fff"
+                theme={NIVO_THEME}
+                animate={true}
+                motionConfig="gentle"
+              />
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

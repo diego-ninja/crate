@@ -125,30 +125,46 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     saveQueue(queue, currentIndex);
   }, [queue, currentIndex]);
 
-  // Sync audio src when current track changes
-  useEffect(() => {
-    const track = queue[currentIndex];
-    if (!track) return;
-    // Use direct file streaming if id looks like a path, otherwise Navidrome
-    const streamUrl = track.id.includes("/")
-      ? `/api/stream/${track.id}`
+  // Flag: when true, the next effect should autoplay (used for next/prev/ended)
+  const shouldAutoplayRef = useRef(false);
+
+  function getStreamUrl(track: Track): string {
+    return track.id.includes("/")
+      ? `/api/stream/${encodeURIComponent(track.id).replace(/%2F/g, "/")}`
       : `/api/navidrome/stream/${track.id}`;
-    // If restoring from localStorage, load but don't autoplay
-    if (restoredRef.current) {
-      restoredRef.current = false;
-      audio.src = streamUrl;
-      return;
-    }
-    audio.src = streamUrl;
-    audio.play().catch(() => { /* autoplay blocked */ });
-    setIsPlaying(true);
-    // Add to recently played
+  }
+
+  function addToRecentlyPlayed(track: Track) {
     setRecentlyPlayed((prev) => {
       const filtered = prev.filter((t) => t.id !== track.id);
       const updated = [track, ...filtered].slice(0, MAX_RECENT);
       saveRecentlyPlayed(updated);
       return updated;
     });
+  }
+
+  // Load audio src when current track changes (for autoplay on next/prev/ended)
+  useEffect(() => {
+    const track = queue[currentIndex];
+    if (!track) return;
+    const streamUrl = getStreamUrl(track);
+
+    // Restore from localStorage — load but don't play
+    if (restoredRef.current) {
+      restoredRef.current = false;
+      audio.src = streamUrl;
+      return;
+    }
+
+    // Autoplay triggered by next/prev/ended/jumpTo
+    if (shouldAutoplayRef.current) {
+      shouldAutoplayRef.current = false;
+      audio.src = streamUrl;
+      audio.play().catch((e) => { console.warn("[player] autoplay failed:", e); });
+      setIsPlaying(true);
+      addToRecentlyPlayed(track);
+    }
+    // If not autoplay, src was already set by play()/playAll()
   }, [queue, currentIndex, audio]);
 
   // Audio event listeners
@@ -161,6 +177,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         audio.play().catch(() => {});
         return;
       }
+      shouldAutoplayRef.current = true;
       if (shuffle) {
         if (queue.length > 1) {
           let nextIdx: number;
@@ -176,17 +193,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       } else if (repeat === "all") {
         setCurrentIndex(0);
       } else {
+        shouldAutoplayRef.current = false;
         setIsPlaying(false);
       }
     };
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
 
+    const onError = () => {
+      const e = audio.error;
+      console.error("[player] audio error:", e?.code, e?.message, audio.src);
+      setIsPlaying(false);
+    };
+
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("durationchange", onDurationChange);
     audio.addEventListener("ended", onEnded);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
+    audio.addEventListener("error", onError);
 
     return () => {
       audio.removeEventListener("timeupdate", onTimeUpdate);
@@ -194,25 +219,38 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener("ended", onEnded);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("error", onError);
     };
   }, [audio, currentIndex, queue.length, repeat, shuffle, queue]);
 
   const play = useCallback((track: Track) => {
     restoredRef.current = false;
+    // Start playback synchronously within user gesture
+    audio.src = getStreamUrl(track);
+    audio.play().catch((e) => { console.warn("[player] play failed:", e); });
     setQueue([track]);
     setCurrentIndex(0);
     setCurrentTime(0);
     setDuration(0);
-  }, []);
+    setIsPlaying(true);
+    addToRecentlyPlayed(track);
+  }, [audio]);
 
   const playAll = useCallback((tracks: Track[], startIndex = 0) => {
     if (tracks.length === 0) return;
     restoredRef.current = false;
+    const track = tracks[startIndex];
+    if (!track) return;
+    // Start playback synchronously within user gesture
+    audio.src = getStreamUrl(track);
+    audio.play().catch((e) => { console.warn("[player] playAll failed:", e); });
     setQueue(tracks);
     setCurrentIndex(startIndex);
     setCurrentTime(0);
     setDuration(0);
-  }, []);
+    setIsPlaying(true);
+    addToRecentlyPlayed(track);
+  }, [audio]);
 
   const pause = useCallback(() => {
     audio.pause();
@@ -223,6 +261,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [audio]);
 
   const next = useCallback(() => {
+    shouldAutoplayRef.current = true;
     if (shuffle && queue.length > 1) {
       let nextIdx: number;
       do {
@@ -248,6 +287,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (audio.currentTime > 3) {
       audio.currentTime = 0;
     } else if (currentIndex > 0) {
+      shouldAutoplayRef.current = true;
       setCurrentIndex((i) => i - 1);
       setCurrentTime(0);
       setDuration(0);
@@ -291,6 +331,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const jumpTo = useCallback((index: number) => {
     if (index >= 0 && index < queue.length) {
       restoredRef.current = false;
+      shouldAutoplayRef.current = true;
       setCurrentIndex(index);
       setCurrentTime(0);
       setDuration(0);

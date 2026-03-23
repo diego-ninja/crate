@@ -632,17 +632,21 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
 
     dry_run = params.get("dry_run", True)
     auto_only = params.get("auto_only", True)
+    specific_issues = params.get("issues")
 
-    # Get latest health report
-    report = get_cache("health_report")
-    if not report:
-        # Run health check first
-        from musicdock.health_check import LibraryHealthCheck
-        checker = LibraryHealthCheck(config)
-        report = checker.run(
-            progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
-        )
-        set_cache("health_report", report)
+    if specific_issues:
+        # Repair specific issues passed directly
+        report = {"issues": specific_issues}
+    else:
+        # Get latest health report
+        report = get_cache("health_report")
+        if not report:
+            from musicdock.health_check import LibraryHealthCheck
+            checker = LibraryHealthCheck(config)
+            report = checker.run(
+                progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
+            )
+            set_cache("health_report", report)
 
     repairer = LibraryRepair(config)
     result = repairer.repair(
@@ -981,6 +985,7 @@ def _handle_resolve_duplicates(task_id: str, params: dict, config: dict) -> dict
 
 def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.matcher import apply_match
+    from musicdock.db import get_db_ctx
 
     lib = Path(config["library_path"])
     artist_folder = params.get("artist_folder", "")
@@ -995,6 +1000,36 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
     result = apply_match(album_dir, exts, release)
     updated_count = result.get("updated", 0)
     emit_task_event(task_id, "info", {"message": f"Applied MusicBrainz tags: {updated_count} tracks"})
+
+    # Sync MBID to database
+    mbid = result.get("mbid")
+    rg_id = result.get("release_group_id")
+    if mbid:
+        try:
+            album_path = f"{artist_folder}/{album_folder}"
+            with get_db_ctx() as cur:
+                cur.execute(
+                    "UPDATE library_albums SET musicbrainz_albumid = %s WHERE path = %s",
+                    (mbid, album_path),
+                )
+                if rg_id:
+                    cur.execute(
+                        "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE path = %s",
+                        (rg_id, album_path),
+                    )
+            emit_task_event(task_id, "info", {"message": f"Synced MBID {mbid[:8]}... to DB"})
+        except Exception as e:
+            log.error("Failed to sync MBID to DB: %s", e)
+
+    # Re-sync album from filesystem to update titles/tags in DB
+    try:
+        from musicdock.library_sync import LibrarySync
+        syncer = LibrarySync(config)
+        syncer.sync_album(album_dir, artist_folder)
+        emit_task_event(task_id, "info", {"message": "Re-synced album to DB"})
+    except Exception as e:
+        log.error("Failed to re-sync album after match apply: %s", e, exc_info=True)
+
     return result
 
 
@@ -1293,6 +1328,75 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
     return {"checked": len(monitored), "new_releases": new_count}
 
 
+def _reorganize_artist_folders(artist_name: str, lib: Path, config: dict, task_id: str | None = None):
+    """Move album folders to Artist/Year/Album structure if not already organized."""
+    import re as _re
+    from musicdock.audio import read_tags, get_audio_files
+
+    artist_dir = lib / artist_name
+    if not artist_dir.is_dir():
+        return
+
+    year_prefix_re = _re.compile(r"^(\d{4})\s*[-–]\s*(.+)$")
+    exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
+    moved = 0
+
+    for sub in list(artist_dir.iterdir()):
+        if not sub.is_dir() or sub.name.startswith("."):
+            continue
+        # Skip if already a year directory
+        if sub.name.isdigit() and len(sub.name) == 4:
+            continue
+
+        # Determine year: from folder name prefix or from audio tags
+        m = year_prefix_re.match(sub.name)
+        if m:
+            year = m.group(1)
+            clean_name = m.group(2).strip()
+        else:
+            # Read year from first audio file
+            audio_files = get_audio_files(sub, list(exts))
+            if not audio_files:
+                continue
+            tags = read_tags(audio_files[0])
+            year_tag = tags.get("date", "")[:4]
+            if not year_tag or not year_tag.isdigit():
+                continue
+            year = year_tag
+            clean_name = sub.name
+
+        target = artist_dir / year / clean_name
+        if target == sub:
+            continue
+        if target.exists():
+            log.warning("Cannot reorganize %s: target %s already exists", sub, target)
+            continue
+
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(sub), str(target))
+            # Update DB paths
+            old_path = str(sub)
+            new_path = str(target)
+            with get_db_ctx() as cur:
+                cur.execute(
+                    "UPDATE library_albums SET name = %s, path = %s WHERE path = %s",
+                    (clean_name, new_path, old_path),
+                )
+                cur.execute(
+                    "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
+                    (old_path, new_path, old_path + "%"),
+                )
+            moved += 1
+            log.info("Reorganized: %s -> %s", sub.name, f"{year}/{clean_name}")
+            emit_task_event(task_id, "info", {"message": f"Moved {sub.name} → {year}/{clean_name}"})
+        except Exception:
+            log.warning("Failed to reorganize %s", sub, exc_info=True)
+
+    if moved:
+        log.info("Reorganized %d album folders for %s", moved, artist_name)
+
+
 def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dict:
     """Full pipeline for new content: enrich artist + index genres + analyze audio + bliss."""
     from musicdock.enrichment import enrich_artist
@@ -1315,6 +1419,15 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
     lib = Path(config["library_path"])
 
     result = {"artist": artist_name, "album": album_folder, "steps": {}}
+
+    # ── 0. Reorganize folders to Artist/Year/Album structure ──
+    update_task(task_id, progress=json.dumps({"step": "organize_folders", "artist": artist_name}))
+    try:
+        _reorganize_artist_folders(artist_name, lib, config, task_id)
+        result["steps"]["organize_folders"] = True
+    except Exception:
+        log.warning("Folder reorganization failed for %s", artist_name, exc_info=True)
+        result["steps"]["organize_folders"] = "failed"
 
     # ── 1. Artist enrichment (if not recently enriched) ──
     update_task(task_id, progress=json.dumps({"step": "enrich_artist", "artist": artist_name}))

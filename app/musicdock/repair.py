@@ -39,6 +39,8 @@ class LibraryRepair:
             "has_photo_desync": self._fix_has_photo_desync,
             "canonical_mismatch": self._fix_canonical_mismatch,
             "unindexed_files": self._fix_unindexed_files,
+            "tag_mismatch": self._fix_tag_mismatch,
+            "folder_naming": self._fix_folder_naming,
         }
 
         by_check: dict[str, list[dict]] = {}
@@ -306,5 +308,98 @@ class LibraryRepair:
         if not dry_run:
             log_audit("flag_unindexed", "directory", dir_path,
                       details={"count": details.get("count", 0)}, task_id=task_id)
+
+        return result
+
+    def _fix_tag_mismatch(self, issue: dict, dry_run: bool, task_id: str | None = None) -> dict | None:
+        """Update DB track artist to match the albumartist tag (tag is source of truth)."""
+        details = issue.get("details", {})
+        track_path = details.get("track_path", "")
+        tag_artist = details.get("tag_artist", "")
+
+        if not tag_artist:
+            return None
+
+        result = {
+            "action": "fix_tag_mismatch",
+            "target": track_path,
+            "details": {"old_artist": details.get("db_artist"), "new_artist": tag_artist},
+            "applied": not dry_run,
+            "fs_write": False,
+        }
+
+        if not dry_run:
+            with get_db_ctx() as cur:
+                cur.execute(
+                    "UPDATE library_tracks SET artist = %s WHERE path = %s",
+                    (tag_artist, track_path),
+                )
+            log_audit("fix_tag_mismatch", "track", track_path,
+                      details={"old_artist": details.get("db_artist"), "new_artist": tag_artist},
+                      task_id=task_id)
+
+        return result
+
+    def _fix_folder_naming(self, issue: dict, dry_run: bool, task_id: str | None = None) -> dict | None:
+        """Move album folder to expected structure: Artist/Year/AlbumName."""
+        details = issue.get("details", {})
+        artist = details.get("artist", "")
+        clean_name = details.get("clean_name", "")
+        year = details.get("year", "")
+        current_path = details.get("current_path", "")
+        expected_path = details.get("expected_path", "")
+
+        if not current_path or not expected_path or current_path == expected_path:
+            return None
+
+        current_dir = Path(current_path)
+        expected_dir = Path(expected_path)
+
+        result = {
+            "action": "reorganize_album_folder",
+            "target": f"{artist}/{details.get('current_folder', '')}",
+            "details": {
+                "from": str(current_dir.relative_to(self.library_path)),
+                "to": str(expected_dir.relative_to(self.library_path)),
+                "reason": details.get("reason", ""),
+            },
+            "applied": not dry_run,
+            "fs_write": True,
+        }
+
+        if not dry_run:
+            if not current_dir.is_dir():
+                result["applied"] = False
+                result["details"]["error"] = "Source folder not found"
+                return result
+
+            if expected_dir.exists() and expected_dir != current_dir:
+                result["applied"] = False
+                result["details"]["error"] = f"Target already exists: {expected_dir.name}"
+                return result
+
+            try:
+                # Create year subdirectory if needed
+                expected_dir.parent.mkdir(parents=True, exist_ok=True)
+                # Move album folder
+                shutil.move(str(current_dir), str(expected_dir))
+                # Update DB
+                old_path_str = str(current_dir)
+                new_path_str = str(expected_dir)
+                with get_db_ctx() as cur:
+                    cur.execute(
+                        "UPDATE library_albums SET name = %s, path = %s WHERE path = %s",
+                        (clean_name, new_path_str, details.get("path", old_path_str)),
+                    )
+                    cur.execute(
+                        "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
+                        (old_path_str, new_path_str, old_path_str + "%"),
+                    )
+                log_audit("reorganize_album_folder", "album", f"{artist}/{year}/{clean_name}",
+                          details=result["details"], task_id=task_id)
+            except Exception as e:
+                log.error("Failed to reorganize folder %s -> %s: %s", current_dir, expected_dir, e)
+                result["applied"] = False
+                result["details"]["error"] = str(e)
 
         return result

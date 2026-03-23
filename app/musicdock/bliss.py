@@ -164,8 +164,11 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
             s_idx += 1
         else:
             break
+        track_path = t["path"]
+        if track_path.startswith("/music/"):
+            track_path = track_path[len("/music/"):]
         playlist.append({
-            "path": t["path"],
+            "path": track_path,
             "title": t["title"],
             "artist": t["artist"],
             "album": t["album"],

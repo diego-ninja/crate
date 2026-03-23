@@ -51,15 +51,28 @@ export function useAudioVisualizer(
   const rafRef = useRef<number>(0);
   const dataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
+  const [waveform, setWaveform] = useState<number[]>([]);
+  const waveRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+
   const tick = useCallback(() => {
     if (!analyserRef.current || !dataRef.current) return;
     analyserRef.current.getByteFrequencyData(dataRef.current);
-    // Normalize to 0-1
     const bars: number[] = [];
     for (let i = 0; i < dataRef.current.length; i++) {
       bars.push(dataRef.current[i]! / 255);
     }
     setFrequencies(bars);
+
+    // Time domain (waveform)
+    if (waveRef.current) {
+      analyserRef.current.getByteTimeDomainData(waveRef.current);
+      const wave: number[] = [];
+      for (let i = 0; i < waveRef.current.length; i++) {
+        wave.push((waveRef.current[i]! - 128) / 128); // -1 to 1
+      }
+      setWaveform(wave);
+    }
+
     rafRef.current = requestAnimationFrame(tick);
   }, []);
 
@@ -74,6 +87,7 @@ export function useAudioVisualizer(
 
     analyserRef.current = node;
     dataRef.current = new Uint8Array(node.frequencyBinCount);
+    waveRef.current = new Uint8Array(node.fftSize);
     rafRef.current = requestAnimationFrame(tick);
 
     return () => {
@@ -81,5 +95,5 @@ export function useAudioVisualizer(
     };
   }, [audioElement, enabled, tick]);
 
-  return { frequencies, barCount: BAR_COUNT };
+  return { frequencies, waveform, barCount: BAR_COUNT };
 }

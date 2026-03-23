@@ -133,12 +133,21 @@ class LibrarySync:
                            "total_size": 0, "formats": [], "dir_mtime": primary_dir.stat().st_mtime})
 
         # Collect album dirs from ALL folders for this artist
+        # Supports both 2-level (Artist/Album) and 3-level (Artist/Year/Album) structures
         album_dirs = []
         for artist_dir in artist_dirs:
-            album_dirs.extend(sorted([
-                d for d in artist_dir.iterdir()
-                if d.is_dir() and not d.name.startswith(".")
-            ]))
+            for sub in sorted(artist_dir.iterdir()):
+                if not sub.is_dir() or sub.name.startswith("."):
+                    continue
+                # Check if this is a year subdirectory (contains album dirs, not audio files)
+                if sub.name.isdigit() and len(sub.name) == 4:
+                    # Year directory — collect album dirs inside it
+                    album_dirs.extend(sorted([
+                        d for d in sub.iterdir()
+                        if d.is_dir() and not d.name.startswith(".")
+                    ]))
+                else:
+                    album_dirs.append(sub)
 
         # Get existing albums for this artist to detect deletions
         existing_albums = get_library_albums(artist_name)
@@ -377,20 +386,23 @@ class LibrarySync:
 
     def _canonical_artist_name(self, artist_dir: Path, fallback: str) -> str:
         """Return the canonical artist name from audio tags, falling back to folder name."""
-        for album_dir in artist_dir.iterdir():
-            if not album_dir.is_dir() or album_dir.name.startswith("."):
+        for sub in artist_dir.iterdir():
+            if not sub.is_dir() or sub.name.startswith("."):
                 continue
-            for f in album_dir.iterdir():
-                if f.is_file() and f.suffix.lower() in self.extensions:
-                    try:
-                        tags = read_tags(f)
-                        # Prefer albumartist, then artist tag
-                        name = tags.get("albumartist") or tags.get("artist")
-                        if name and name.strip():
-                            return name.strip()
-                    except Exception:
-                        pass
-                    return fallback
+            # Handle year subdirectories (Artist/Year/Album)
+            dirs_to_check = [sub]
+            if sub.name.isdigit() and len(sub.name) == 4:
+                dirs_to_check = [d for d in sub.iterdir() if d.is_dir()]
+            for album_dir in dirs_to_check:
+                for f in album_dir.iterdir():
+                    if f.is_file() and f.suffix.lower() in self.extensions:
+                        try:
+                            tags = read_tags(f)
+                            name = tags.get("albumartist") or tags.get("artist")
+                            if name and name.strip():
+                                return name.strip()
+                        except Exception:
+                            pass
         return fallback
 
     @staticmethod

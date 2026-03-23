@@ -14,9 +14,18 @@ from musicdock.db import (
 )
 from musicdock.lastfm import get_artist_info, get_best_artist_image
 
+import re as _re
+
 router = APIRouter()
 
 ARTIST_PHOTO_NAMES = ["artist.jpg", "artist.png", "photo.jpg"]
+
+_YEAR_PREFIX_RE = _re.compile(r"^\d{4}\s*[-–]\s*")
+
+
+def _display_name(folder_name: str) -> str:
+    """Strip year prefix from album folder name for display (e.g. '2024 - Album' -> 'Album')."""
+    return _YEAR_PREFIX_RE.sub("", folder_name)
 
 
 def _has_library_data() -> bool:
@@ -119,8 +128,8 @@ def _fs_artist_detail(name: str) -> dict | None:
 
 def _fs_album_detail(artist: str, album: str) -> dict | None:
     lib = library_path()
-    album_dir = safe_path(lib, f"{artist}/{album}")
-    if not album_dir or not album_dir.is_dir():
+    album_dir = _find_album_dir(lib, artist, album)
+    if not album_dir:
         return None
 
     exts = extensions()
@@ -378,7 +387,7 @@ def api_artist_info(name: str):
 def api_artist_enrich(name: str):
     """Queue a full enrichment task for an artist (async via worker)."""
     from musicdock.db import create_task as _create_task
-    task_id = _create_task("enrich_artist", {"artist": name})
+    task_id = _create_task("process_new_content", {"artist": name})
     return {"status": "queued", "task_id": task_id}
 
 
@@ -413,6 +422,7 @@ def api_artist(name: str):
     for a in albums_data:
         albums.append({
             "name": a["name"],
+            "display_name": _display_name(a["name"]),
             "tracks": a["track_count"],
             "formats": a.get("formats", []),
             "size_mb": round(a["total_size"] / (1024 ** 2)) if a["total_size"] else 0,
@@ -449,7 +459,7 @@ def api_album(artist: str, album: str):
     tracks_data = get_library_tracks(album_data["id"])
 
     lib = library_path()
-    album_dir = safe_path(lib, f"{artist}/{album}")
+    album_dir = _find_album_dir(lib, artist, album)
     has_cover = album_data.get("has_cover", False)
     cover_file = None
     if album_dir and album_dir.is_dir():
@@ -509,6 +519,7 @@ def api_album(artist: str, album: str):
     return {
         "artist": artist,
         "name": album,
+        "display_name": _display_name(album),
         "path": album_data.get("path", ""),
         "track_count": len(tracks_data),
         "total_size_mb": round(total_size / (1024**2)),
@@ -521,11 +532,34 @@ def api_album(artist: str, album: str):
     }
 
 
+def _find_album_dir(lib: Path, artist: str, album: str) -> Path | None:
+    """Find album directory, supporting both 2-level and 3-level (Artist/Year/Album) structures."""
+    # Direct path: Artist/Album
+    direct = safe_path(lib, f"{artist}/{album}")
+    if direct and direct.is_dir():
+        return direct
+    # 3-level: Artist/Year/Album — search year subdirs
+    artist_dir = safe_path(lib, artist)
+    if artist_dir and artist_dir.is_dir():
+        for sub in artist_dir.iterdir():
+            if sub.is_dir() and sub.name.isdigit() and len(sub.name) == 4:
+                candidate = sub / album
+                if candidate.is_dir():
+                    return candidate
+    # DB lookup as last resort
+    album_data = get_library_album(artist, album)
+    if album_data and album_data.get("path"):
+        p = Path(album_data["path"])
+        if p.is_dir():
+            return p
+    return None
+
+
 @router.get("/api/cover/{artist:path}/{album:path}")
 def api_cover(artist: str, album: str):
     lib = library_path()
-    album_dir = safe_path(lib, f"{artist}/{album}")
-    if not album_dir or not album_dir.is_dir():
+    album_dir = _find_album_dir(lib, artist, album)
+    if not album_dir:
         return Response(status_code=404)
 
     for c in COVER_NAMES:
@@ -593,6 +627,12 @@ def api_stream_file(filepath: str):
     """Stream an audio file directly from the library (fallback when Navidrome is unavailable)."""
     from fastapi.responses import FileResponse
     lib = library_path()
+    # Strip library prefix if path is absolute (DB stores /music/Artist/Album/file)
+    lib_str = str(lib)
+    if filepath.startswith(lib_str):
+        filepath = filepath[len(lib_str):].lstrip("/")
+    elif filepath.startswith("/music/"):
+        filepath = filepath[len("/music/"):].lstrip("/")
     file_path = safe_path(lib, filepath)
     if not file_path or not file_path.is_file():
         return Response(status_code=404)
@@ -659,8 +699,8 @@ def api_download_album(artist: str, album: str):
     from fastapi.responses import FileResponse
 
     lib = library_path()
-    album_dir = safe_path(lib, f"{artist}/{album}")
-    if not album_dir or not album_dir.is_dir():
+    album_dir = _find_album_dir(lib, artist, album)
+    if not album_dir:
         return Response(status_code=404)
 
     # Create zip in temp

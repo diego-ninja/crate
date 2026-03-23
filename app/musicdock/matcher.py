@@ -55,32 +55,61 @@ def match_album(album_dir: Path, extensions: set[str]) -> list[dict]:
 
 
 def apply_match(album_dir: Path, extensions: set[str], release: dict) -> dict:
-    """Apply MusicBrainz tags from a matched release to local files."""
+    """Apply MusicBrainz tags from a matched release to local files.
+
+    Pairs local tracks to MB tracks by tracknumber tag (not filename order).
+    """
+    from thefuzz import fuzz
+
     tracks = get_audio_files(album_dir, extensions)
     mb_tracks = release.get("tracks", [])
+
+    # Build ordered local tracks by reading tracknumber tag
+    local_with_path = []
+    for t in tracks:
+        tags = read_tags(t)
+        tn_raw = tags.get("tracknumber", "")
+        try:
+            tn = int(str(tn_raw).split("/")[0])
+        except (ValueError, TypeError):
+            tn = 9999
+        local_with_path.append({
+            "path": t,
+            "tracknumber": tn,
+            "title": tags.get("title", t.stem),
+        })
+    local_with_path.sort(key=lambda x: (x["tracknumber"], x["path"].name))
 
     updated = 0
     errors = []
 
-    for i, track_path in enumerate(tracks):
-        if i >= len(mb_tracks):
-            break
+    for local_track in local_with_path:
+        # Find best MB track match by title similarity
+        best_score = 0
+        best_mb = None
+        for mb in mb_tracks:
+            ratio = fuzz.ratio(local_track["title"].lower(), mb["title"].lower())
+            if ratio > best_score:
+                best_score = ratio
+                best_mb = mb
 
-        mb = mb_tracks[i]
+        if not best_mb or best_score < 50:
+            continue
+
         try:
-            audio = mutagen.File(track_path, easy=True)
+            audio = mutagen.File(local_track["path"], easy=True)
             if audio is None:
                 continue
 
-            audio["title"] = mb["title"]
-            audio["tracknumber"] = f"{mb.get('number', i + 1)}/{len(mb_tracks)}"
-            audio["discnumber"] = str(mb.get("disc", 1))
+            audio["title"] = best_mb["title"]
+            audio["tracknumber"] = f"{best_mb.get('number', 1)}/{len(mb_tracks)}"
+            audio["discnumber"] = str(best_mb.get("disc", 1))
             audio["album"] = release.get("title", "")
             audio["albumartist"] = release.get("artist", "")
             audio["date"] = release.get("date", "")
 
-            if mb.get("mbid"):
-                audio["musicbrainz_trackid"] = mb["mbid"]
+            if best_mb.get("mbid"):
+                audio["musicbrainz_trackid"] = best_mb["mbid"]
             if release.get("mbid"):
                 audio["musicbrainz_albumid"] = release["mbid"]
             if release.get("release_group_id"):
@@ -89,9 +118,15 @@ def apply_match(album_dir: Path, extensions: set[str], release: dict) -> dict:
             audio.save()
             updated += 1
         except Exception as e:
-            errors.append({"file": track_path.name, "error": str(e)})
+            errors.append({"file": local_track["path"].name, "error": str(e)})
 
-    return {"updated": updated, "total": len(tracks), "errors": errors}
+    return {
+        "updated": updated,
+        "total": len(tracks),
+        "errors": errors,
+        "mbid": release.get("mbid"),
+        "release_group_id": release.get("release_group_id"),
+    }
 
 
 def _gather_local_info(tracks: list[Path]) -> dict:
@@ -118,6 +153,16 @@ def _gather_local_info(tracks: list[Path]) -> dict:
     artist = max(set(artists), key=artists.count) if artists else ""
     album = max(set(albums), key=albums.count) if albums else ""
 
+    # Sort by track number tag (fall back to filename order)
+    def _track_sort_key(t: dict) -> tuple[int, str]:
+        tn = t["tracknumber"]
+        try:
+            return (int(tn.split("/")[0]), t["filename"])
+        except (ValueError, AttributeError, IndexError):
+            return (9999, t["filename"])
+
+    track_info.sort(key=_track_sort_key)
+
     return {
         "artist": artist,
         "album": album,
@@ -128,24 +173,38 @@ def _gather_local_info(tracks: list[Path]) -> dict:
 
 
 def _search_musicbrainz(artist: str, album: str, track_count: int) -> list[dict]:
-    """Search MB for release candidates."""
-    try:
-        results = musicbrainzngs.search_releases(
-            artist=artist, release=album, tracks=track_count, limit=10
-        )
-        candidates = []
-        for r in results.get("release-list", []):
-            candidates.append({
-                "mbid": r.get("id"),
-                "title": r.get("title"),
-                "artist": r.get("artist-credit-phrase", ""),
-                "date": r.get("date", ""),
-                "score": int(r.get("ext:score", 0)),
-            })
-        return candidates
-    except Exception as e:
-        log.error("MB search failed: %s", e)
-        return []
+    """Search MB for release candidates.
+
+    Runs two queries: one with track count filter and one without,
+    to avoid missing valid releases with bonus tracks or different editions.
+    """
+    seen_mbids: set[str] = set()
+    candidates: list[dict] = []
+
+    queries = [
+        {"artist": artist, "release": album, "limit": 10},
+        {"artist": artist, "release": album, "tracks": track_count, "limit": 10},
+    ]
+
+    for kwargs in queries:
+        try:
+            results = musicbrainzngs.search_releases(**kwargs)
+            for r in results.get("release-list", []):
+                mbid = r.get("id")
+                if mbid in seen_mbids:
+                    continue
+                seen_mbids.add(mbid)
+                candidates.append({
+                    "mbid": mbid,
+                    "title": r.get("title"),
+                    "artist": r.get("artist-credit-phrase", ""),
+                    "date": r.get("date", ""),
+                    "score": int(r.get("ext:score", 0)),
+                })
+        except Exception as e:
+            log.error("MB search failed: %s", e)
+
+    return candidates
 
 
 def _get_release_detail(mbid: str) -> dict | None:
@@ -186,54 +245,76 @@ def _get_release_detail(mbid: str) -> dict | None:
         return None
 
 
-def _score_match(local: dict, release: dict) -> int:
-    """Score how well a MB release matches local files. 0-100."""
-    score = 0
+def _best_title_match(title: str, candidates: list[dict]) -> tuple[int, dict | None]:
+    """Find the best matching MB track for a local title. Returns (score, track)."""
+    from thefuzz import fuzz
+    best_score = 0
+    best_track = None
+    title_lower = title.lower()
+    for c in candidates:
+        ratio = fuzz.ratio(title_lower, c["title"].lower())
+        if ratio > best_score:
+            best_score = ratio
+            best_track = c
+    return best_score, best_track
 
-    # Track count match (0-30)
+
+def _score_match(local: dict, release: dict) -> int:
+    """Score how well a MB release matches local files. 0-100.
+
+    Uses best-match pairing (not positional) so bonus tracks or
+    different track order don't tank the score.
+    """
+    from thefuzz import fuzz
+
+    score = 0
     local_count = local["track_count"]
     mb_count = release["track_count"]
-    if local_count == mb_count:
-        score += 30
-    elif abs(local_count - mb_count) <= 2:
-        score += 15
-
-    # Duration match (0-30)
     local_tracks = local["tracks"]
     mb_tracks = release["tracks"]
+
+    # Track count match (0-20)
+    if local_count == mb_count:
+        score += 20
+    elif abs(local_count - mb_count) <= 2:
+        score += 12
+    elif abs(local_count - mb_count) <= 4:
+        score += 5
+
+    # Best-match title + duration pairing (0-50)
+    title_scores = []
     duration_diffs = []
-    for i, lt in enumerate(local_tracks):
-        if i >= len(mb_tracks):
-            break
-        diff = abs(lt["length_sec"] - mb_tracks[i]["length_sec"])
-        duration_diffs.append(diff)
+    remaining_mb = list(mb_tracks)
+
+    for lt in local_tracks:
+        t_score, best = _best_title_match(lt["title"], remaining_mb)
+        title_scores.append(t_score)
+        if best:
+            duration_diffs.append(abs(lt["length_sec"] - best.get("length_sec", 0)))
+            remaining_mb.remove(best)
+
+    if title_scores:
+        avg_title = sum(title_scores) / len(title_scores)
+        score += int(avg_title * 0.35)  # 0-35
 
     if duration_diffs:
         avg_diff = sum(duration_diffs) / len(duration_diffs)
         if avg_diff <= 2:
-            score += 30
+            score += 15
         elif avg_diff <= 5:
-            score += 20
-        elif avg_diff <= 10:
             score += 10
+        elif avg_diff <= 10:
+            score += 5
 
-    # Title similarity (0-25)
-    from thefuzz import fuzz
-    title_scores = []
-    for i, lt in enumerate(local_tracks):
-        if i >= len(mb_tracks):
-            break
-        ratio = fuzz.ratio(lt["title"].lower(), mb_tracks[i]["title"].lower())
-        title_scores.append(ratio)
-
-    if title_scores:
-        avg_title = sum(title_scores) / len(title_scores)
-        score += int(avg_title * 0.25)
-
-    # Album name match (0-15)
+    # Album name match (0-20)
     if local["album"]:
         album_ratio = fuzz.ratio(local["album"].lower(), release["title"].lower())
-        score += int(album_ratio * 0.15)
+        score += int(album_ratio * 0.20)
+
+    # Artist name match (0-10)
+    if local["artist"] and release.get("artist"):
+        artist_ratio = fuzz.ratio(local["artist"].lower(), release["artist"].lower())
+        score += int(artist_ratio * 0.10)
 
     return min(score, 100)
 

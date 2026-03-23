@@ -32,6 +32,7 @@ export interface AudioMuseTrack {
 interface AlbumData {
   artist: string;
   name: string;
+  display_name?: string;
   path: string;
   track_count: number;
   total_size_mb: number;
@@ -182,7 +183,7 @@ export function Album() {
       <div className="px-8 pt-8">
         <AlbumHeader
           artist={data.artist}
-          album={data.name}
+          album={data.display_name || data.name}
           albumTags={data.album_tags}
           trackCount={data.track_count}
           totalLengthSec={data.total_length_sec}

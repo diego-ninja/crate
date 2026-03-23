@@ -86,6 +86,17 @@ def _build_from_db(artist: dict) -> dict:
             mb["urls"] = urls if isinstance(urls, dict) else json.loads(urls or "{}")
         result["musicbrainz"] = mb
 
+    # Setlist.fm (from its own cache, not stored in DB)
+    try:
+        setlist_data = setlistfm.get_probable_setlist(artist.get("name", ""))
+        if setlist_data:
+            result["setlist"] = {
+                "probable_setlist": setlist_data,
+                "total_shows": len(setlist_data),
+            }
+    except Exception:
+        pass
+
     return result
 
 

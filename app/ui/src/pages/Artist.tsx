@@ -43,8 +43,6 @@ import {
   MapPin,
   BarChart3,
   ListMusic,
-  BrainCircuit,
-  Loader2,
   Trash2,
   Radio,
 } from "lucide-react";
@@ -58,6 +56,7 @@ interface ArtistData {
   name: string;
   albums: {
     name: string;
+    display_name?: string;
     tracks: number;
     formats: string[];
     size_mb: number;
@@ -160,7 +159,6 @@ export function Artist() {
   const navidromeLink = useNavidromeLink(data?.name);
   const topTracks = useTopTracks(data?.name);
   const [enriching, setEnriching] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [showMissing, setShowMissing] = useState(true);
   const [missingAlbums, setMissingAlbums] = useState<{ title: string; first_release_date: string; type: string }[]>([]);
@@ -506,41 +504,6 @@ export function Artist() {
                 >
                   <RefreshCw size={14} className={`mr-1 ${enriching ? "animate-spin" : ""}`} /> {enriching ? "Enriching..." : "Enrich"}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
-                  disabled={analyzing}
-                  onClick={async () => {
-                    setAnalyzing(true);
-                    try {
-                      const res = await api<{ task_id: string }>(`/api/analyze/artist/${encPath(data.name)}`, "POST");
-                      toast.success("Analysis started", { description: "This may take a moment..." });
-                      const taskId = res.task_id;
-                      const poll = setInterval(async () => {
-                        try {
-                          const task = await api<{ status: string }>(`/api/tasks/${taskId}`);
-                          if (task.status === "completed") {
-                            clearInterval(poll);
-                            setAnalyzing(false);
-                            toast.success("Analysis complete");
-                          } else if (task.status === "failed") {
-                            clearInterval(poll);
-                            setAnalyzing(false);
-                            toast.error("Analysis failed");
-                          }
-                        } catch { /* keep polling */ }
-                      }, 3000);
-                      setTimeout(() => { clearInterval(poll); setAnalyzing(false); }, 120000);
-                    } catch { setAnalyzing(false); toast.error("Failed to start analysis"); }
-                  }}
-                >
-                  {analyzing ? (
-                    <><Loader2 size={14} className="animate-spin mr-1" /> Analyzing...</>
-                  ) : (
-                    <><BrainCircuit size={14} className="mr-1" /> Analyze All</>
-                  )}
-                </Button>
                 {isAdmin && (
                   <Button
                     size="sm"
@@ -809,6 +772,7 @@ export function Artist() {
                       key={`local-${item.album.name}`}
                       artist={data.name}
                       name={item.album.name}
+                      displayName={item.album.display_name}
                       year={item.album.year}
                       tracks={item.album.tracks}
                       formats={item.album.formats}

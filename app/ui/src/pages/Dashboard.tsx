@@ -31,8 +31,10 @@ interface Stats {
   total_duration_hours: number;
   avg_bitrate: number;
   top_genres: { name: string; count: number }[];
-  recent_albums: { artist: string; name: string; year: string | null; updated_at: string }[];
+  recent_albums: { artist: string; name: string; display_name?: string; year: string | null; updated_at: string }[];
   analyzed_tracks: number;
+  avg_album_duration_min?: number;
+  avg_tracks_per_album?: number;
 }
 
 interface AnalyticsData {
@@ -346,7 +348,7 @@ export function Dashboard() {
                       <Disc3 size={28} className="text-primary/40" />
                     </div>
                   </div>
-                  <div className="text-xs font-medium truncate">{album.name}</div>
+                  <div className="text-xs font-medium truncate">{album.display_name || album.name}</div>
                   <div className="text-[11px] text-muted-foreground truncate">{album.artist}</div>
                   {album.year && (
                     <div className="text-[10px] text-muted-foreground">{album.year}</div>
@@ -508,6 +510,14 @@ export function Dashboard() {
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Avg Bitrate</span>
                 <span className="font-medium">{stats?.avg_bitrate ? `${Math.round(stats.avg_bitrate / 1000)}k` : "-"}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Avg Album Duration</span>
+                <span className="font-medium">{stats?.avg_album_duration_min ? `${stats.avg_album_duration_min} min` : "-"}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Avg Tracks/Album</span>
+                <span className="font-medium">{stats?.avg_tracks_per_album ?? "-"}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Analyzed Tracks</span>

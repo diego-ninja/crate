@@ -9,6 +9,7 @@ import { api } from "@/lib/api";
 interface AlbumCardProps {
   artist: string;
   name: string;
+  displayName?: string;
   year?: string;
   tracks: number;
   formats: string[];
@@ -39,6 +40,7 @@ interface NavidromeAlbumLink {
 export function AlbumCard({
   artist,
   name,
+  displayName,
   year,
   tracks,
   formats,
@@ -105,7 +107,7 @@ export function AlbumCard({
           </div>
         </div>
       </div>
-      <div className="font-semibold text-sm text-left truncate">{name}</div>
+      <div className="font-semibold text-sm text-left truncate">{displayName || name}</div>
       <div className="text-xs text-muted-foreground text-left flex items-center gap-1 flex-wrap mt-0.5">
         <span>{year || "?"}</span>
         <span>&middot;</span>

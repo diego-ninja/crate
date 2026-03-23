@@ -38,6 +38,7 @@ class LibraryHealthCheck:
             ("duplicate_albums", self._check_duplicate_albums),
             ("unindexed_files", self._check_unindexed_files),
             ("tag_mismatch", self._check_tag_mismatch),
+            ("folder_naming", self._check_folder_naming),
         ]
 
         for i, (name, check_fn) in enumerate(checks):
@@ -337,11 +338,75 @@ class LibraryHealthCheck:
                 issues.append({
                     "check": "tag_mismatch",
                     "severity": "medium",
-                    "auto_fixable": False,
+                    "auto_fixable": True,
                     "details": {
                         "track_path": row["path"],
                         "db_artist": row["artist"],
                         "tag_artist": tag_artist,
                     },
                 })
+        return issues
+
+    def _check_folder_naming(self) -> list[dict]:
+        """Check album folders match expected structure: Artist/Year/AlbumName.
+
+        Expected: /music/Quicksand/1993/Slip/
+        Wrong:    /music/Quicksand/Slip/
+        Wrong:    /music/Quicksand/1993 - Slip/
+        """
+        if not self.library_path.is_dir():
+            return []
+
+        issues = []
+        year_prefix_re = re.compile(r"^(\d{4})\s*[-–]\s*(.+)$")
+
+        with get_db_ctx() as cur:
+            cur.execute(
+                "SELECT name, artist, year, path FROM library_albums "
+                "WHERE year IS NOT NULL AND year != '' AND length(year) >= 4"
+            )
+            albums = cur.fetchall()
+
+        for row in albums:
+            folder_name = row["name"]
+            artist = row["artist"]
+            year = row["year"][:4]
+            album_path = row["path"]
+
+            # Strip year prefix from folder name to get clean album name
+            m = year_prefix_re.match(folder_name)
+            clean_name = m.group(2).strip() if m else folder_name
+
+            # Expected structure: Artist/Year/CleanAlbumName
+            artist_dir = self.library_path / artist
+            expected_dir = artist_dir / year / clean_name
+            current_dir = Path(album_path) if album_path else artist_dir / folder_name
+
+            if current_dir == expected_dir:
+                continue  # Already correct
+
+            # Determine what's wrong
+            if m:
+                reason = f"Year prefix in folder name — should be under {year}/ subdirectory"
+            elif current_dir.parent == artist_dir:
+                reason = f"Album directly under artist — should be under {year}/ subdirectory"
+            else:
+                reason = f"Unexpected structure"
+
+            issues.append({
+                "check": "folder_naming",
+                "severity": "low",
+                "auto_fixable": True,
+                "details": {
+                    "artist": artist,
+                    "current_folder": folder_name,
+                    "clean_name": clean_name,
+                    "year": year,
+                    "current_path": str(current_dir),
+                    "expected_path": str(expected_dir),
+                    "reason": reason,
+                    "path": album_path,
+                },
+            })
+
         return issues

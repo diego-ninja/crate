@@ -3,11 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { useApi } from "@/hooks/use-api";
 import { formatNumber } from "@/lib/utils";
-import { BarChart3, Globe, Music, Disc3, Users, Zap, CheckCircle2 } from "lucide-react";
+import { BarChart3, Globe, Music, Disc3, Users, Zap, CheckCircle2, Headphones, Volume2, Sparkles, Trophy } from "lucide-react";
 import { ResponsiveBar } from "@nivo/bar";
 import { ResponsivePie } from "@nivo/pie";
 import { ResponsiveRadar } from "@nivo/radar";
 import { Network } from "@nivo/network";
+import { ResponsiveScatterPlot } from "@nivo/scatterplot";
 
 interface InsightsData {
   countries: Record<string, number>;
@@ -21,6 +22,10 @@ interface InsightsData {
   network: { nodes: { id: string }[]; links: { source: string; target: string }[] };
   popularity: { artist: string; popularity: number; listeners: number }[];
   albums_by_decade: Record<string, number>;
+  moods: { mood: string; score: number }[];
+  loudness_distribution: { db: string; count: number }[];
+  top_albums: { album: string; artist: string; listeners: number; popularity: number; year: string | null }[];
+  acoustic_instrumental: { x: number; y: number; artist: string; title: string }[];
   completeness: {
     artists_total: number; artists_with_photo: number; artists_enriched: number;
     albums_total: number; albums_with_cover: number;
@@ -334,7 +339,130 @@ export function Insights() {
         </Card>
       </div>
 
-      {/* Row 5: Keys + Artist Network */}
+      {/* Row 5: Moods + Loudness */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <Card className="bg-card">
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Headphones size={14} /> Mood Distribution</CardTitle></CardHeader>
+          <CardContent>
+            <div className="h-[280px]">
+              {data.moods.length > 0 ? (
+                <ResponsiveBar
+                  data={data.moods.map(m => ({ mood: m.mood, score: m.score }))}
+                  keys={["score"]} indexBy="mood" layout="horizontal"
+                  margin={{ top: 5, right: 20, bottom: 5, left: 100 }}
+                  padding={0.3} colors={["#ec4899"]} borderRadius={3}
+                  enableLabel={false}
+                  theme={NIVO_THEME} animate={true} motionConfig="gentle"
+                />
+              ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No mood data</div>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card">
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Volume2 size={14} /> Loudness Distribution</CardTitle></CardHeader>
+          <CardContent>
+            <div className="h-[280px]">
+              {data.loudness_distribution.length > 0 ? (
+                <ResponsiveBar
+                  data={data.loudness_distribution}
+                  keys={["count"]} indexBy="db"
+                  margin={{ top: 10, right: 10, bottom: 40, left: 40 }}
+                  padding={0.2} colors={["#f97316"]} borderRadius={3}
+                  enableLabel={false}
+                  axisBottom={{ tickRotation: -45 }}
+                  theme={NIVO_THEME} animate={true} motionConfig="gentle"
+                />
+              ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No loudness data</div>}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row 6: Energy vs Danceability + Acousticness vs Instrumentalness */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <Card className="bg-card">
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Sparkles size={14} /> Energy vs Danceability</CardTitle></CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              {data.energy_danceability.length > 0 ? (
+                <ResponsiveScatterPlot
+                  data={[{ id: "tracks", data: data.energy_danceability }]}
+                  xScale={{ type: "linear", min: 0, max: 1 }}
+                  yScale={{ type: "linear", min: 0, max: 1 }}
+                  margin={{ top: 10, right: 10, bottom: 40, left: 50 }}
+                  axisBottom={{ legend: "Energy", legendPosition: "middle", legendOffset: 32 }}
+                  axisLeft={{ legend: "Danceability", legendPosition: "middle", legendOffset: -40 }}
+                  nodeSize={6}
+                  colors={["#06b6d4"]}
+                  useMesh={true}
+                  theme={NIVO_THEME}
+                  animate={true}
+                  tooltip={({ node }) => (
+                    <div style={{ background: "#1f2937", color: "#f3f4f6", padding: "6px 10px", borderRadius: "6px", fontSize: 11, border: "1px solid #374151" }}>
+                      <strong>{String((node.data as Record<string, unknown>).title ?? "")}</strong><br />{String((node.data as Record<string, unknown>).artist ?? "")}
+                    </div>
+                  )}
+                />
+              ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No audio data</div>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-card">
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Sparkles size={14} /> Acousticness vs Instrumentalness</CardTitle></CardHeader>
+          <CardContent>
+            <div className="h-[300px]">
+              {data.acoustic_instrumental.length > 0 ? (
+                <ResponsiveScatterPlot
+                  data={[{ id: "tracks", data: data.acoustic_instrumental }]}
+                  xScale={{ type: "linear", min: 0, max: 1 }}
+                  yScale={{ type: "linear", min: 0, max: 1 }}
+                  margin={{ top: 10, right: 10, bottom: 40, left: 50 }}
+                  axisBottom={{ legend: "Acousticness", legendPosition: "middle", legendOffset: 32 }}
+                  axisLeft={{ legend: "Instrumentalness", legendPosition: "middle", legendOffset: -40 }}
+                  nodeSize={6}
+                  colors={["#a78bfa"]}
+                  useMesh={true}
+                  theme={NIVO_THEME}
+                  animate={true}
+                  tooltip={({ node }) => (
+                    <div style={{ background: "#1f2937", color: "#f3f4f6", padding: "6px 10px", borderRadius: "6px", fontSize: 11, border: "1px solid #374151" }}>
+                      <strong>{String((node.data as Record<string, unknown>).title ?? "")}</strong><br />{String((node.data as Record<string, unknown>).artist ?? "")}
+                    </div>
+                  )}
+                />
+              ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No audio data</div>}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row 7: Top Albums */}
+      <div className="grid grid-cols-1 gap-4 mb-6">
+        <Card className="bg-card">
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Trophy size={14} /> Top Albums by Listeners</CardTitle></CardHeader>
+          <CardContent>
+            <div className="h-[400px]">
+              {data.top_albums.length > 0 ? (
+                <ResponsiveBar
+                  data={data.top_albums.slice(0, 15).reverse().map(a => {
+                    const label = `${a.artist} - ${a.album}`;
+                    return { album: label.length > 40 ? label.slice(0, 40) + "..." : label, listeners: a.listeners };
+                  })}
+                  keys={["listeners"]} indexBy="album" layout="horizontal"
+                  margin={{ top: 5, right: 20, bottom: 5, left: 200 }}
+                  padding={0.3} colors={["#22c55e"]} borderRadius={3}
+                  enableLabel={false}
+                  theme={NIVO_THEME} animate={true} motionConfig="gentle"
+                />
+              ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No album popularity data</div>}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Row 8: Keys + Artist Network */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <Card className="bg-card">
           <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Music size={14} /> Key Distribution</CardTitle></CardHeader>

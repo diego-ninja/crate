@@ -30,10 +30,13 @@ function getStoredMini(): boolean {
   try { return localStorage.getItem(MINI_KEY) === "1"; } catch { return false; }
 }
 
-function getStoredViz(): "bars" | "wave" {
+type VizMode = "bars" | "wave" | "radial" | "glow";
+const VIZ_MODES: VizMode[] = ["bars", "wave", "radial", "glow"];
+
+function getStoredViz(): VizMode {
   try {
-    const v = localStorage.getItem(VIZ_KEY);
-    if (v === "wave") return "wave";
+    const v = localStorage.getItem(VIZ_KEY) as VizMode;
+    if (VIZ_MODES.includes(v)) return v;
   } catch { /* ignore */ }
   return "bars";
 }
@@ -126,6 +129,79 @@ function WaveVisualizer({ frequencies, className }: { frequencies: number[]; cla
   );
 }
 
+function RadialVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
+  if (frequencies.length === 0) return null;
+  const cx = 50, cy = 50, baseR = 15, maxR = 45;
+  const len = frequencies.length;
+  const points: string[] = [];
+  for (let i = 0; i < len; i++) {
+    const angle = (i / len) * Math.PI * 2 - Math.PI / 2;
+    const r = baseR + frequencies[i]! * (maxR - baseR);
+    points.push(`${cx + Math.cos(angle) * r},${cy + Math.sin(angle) * r}`);
+  }
+  return (
+    <div role="img" aria-label="Radial audio visualization" className={`overflow-hidden pointer-events-none ${className}`}>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" className="w-full h-full" aria-hidden="true">
+        <polygon
+          points={points.join(" ")}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1"
+          className="text-primary"
+          strokeLinejoin="round"
+        />
+        <polygon
+          points={points.join(" ")}
+          fill="currentColor"
+          className="text-primary"
+          opacity="0.3"
+        />
+        {/* Inner circle */}
+        <circle cx={cx} cy={cy} r={baseR} fill="none" stroke="currentColor" strokeWidth="0.3" className="text-primary/30" />
+      </svg>
+    </div>
+  );
+}
+
+function GlowVisualizer({ frequencies, className }: { frequencies: number[]; className?: string }) {
+  if (frequencies.length === 0) return null;
+  // Spectrum with glow effect — fewer bars, wider, with gradients
+  const step = 4;
+  const bars: { x: number; h: number; hue: number }[] = [];
+  for (let i = 0; i < frequencies.length; i += step) {
+    const avg = frequencies.slice(i, i + step).reduce((a, b) => a + b, 0) / step;
+    bars.push({ x: (i / frequencies.length) * 100, h: avg, hue: (i / frequencies.length) * 280 });
+  }
+  return (
+    <div role="img" aria-label="Spectrum glow visualization" className={`overflow-hidden pointer-events-none ${className}`}>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full" aria-hidden="true">
+        <defs>
+          {bars.map((b, i) => (
+            <linearGradient key={i} id={`glow-${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={`hsl(${b.hue}, 85%, 65%)`} stopOpacity="1" />
+              <stop offset="100%" stopColor={`hsl(${b.hue}, 80%, 45%)`} stopOpacity="0.6" />
+            </linearGradient>
+          ))}
+        </defs>
+        {bars.map((b, i) => {
+          const barW = 100 / bars.length - 0.5;
+          return (
+            <rect
+              key={i}
+              x={b.x}
+              y={100 - b.h * 100}
+              width={barW}
+              height={b.h * 100}
+              rx="1"
+              fill={`url(#glow-${i})`}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 // ── Main component ──────────────────────────────────────────────
 
 export function AudioPlayer() {
@@ -154,7 +230,7 @@ export function AudioPlayer() {
   const [queueOpen, setQueueOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
   const [mini, setMini] = useState(getStoredMini);
-  const [vizMode, setVizMode] = useState<"bars" | "wave">(getStoredViz);
+  const [vizMode, setVizMode] = useState<VizMode>(getStoredViz);
   const progressRef = useRef<HTMLDivElement>(null);
 
   const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
@@ -171,12 +247,19 @@ export function AudioPlayer() {
   }
 
   function cycleViz() {
-    const next = vizMode === "bars" ? "wave" : "bars";
+    const idx = VIZ_MODES.indexOf(vizMode);
+    const next = VIZ_MODES[(idx + 1) % VIZ_MODES.length]!;
     setVizMode(next);
     try { localStorage.setItem(VIZ_KEY, next); } catch { /* ignore */ }
   }
 
-  const Viz = vizMode === "wave" ? WaveVisualizer : BarVisualizer;
+  const VIZ_MAP: Record<VizMode, typeof BarVisualizer> = {
+    bars: BarVisualizer,
+    wave: WaveVisualizer,
+    radial: RadialVisualizer,
+    glow: GlowVisualizer,
+  };
+  const Viz = VIZ_MAP[vizMode];
 
   const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
 
@@ -203,7 +286,7 @@ export function AudioPlayer() {
     <>
       <div className="fixed bottom-0 left-0 right-0 z-50 bg-card/95 backdrop-blur-md border-t border-border h-20 flex items-center px-4 gap-4 animate-in slide-in-from-bottom duration-300">
         {/* Visualizer background */}
-        <Viz frequencies={frequencies} className="absolute inset-0 opacity-[0.07]" />
+        <Viz frequencies={frequencies} className="absolute inset-0 opacity-25" />
 
         {/* Left: cover + track info */}
         <div className="flex items-center gap-3 min-w-0 w-[260px] flex-shrink-0 relative z-10">
@@ -279,17 +362,26 @@ export function AudioPlayer() {
             title={`Visualizer: ${vizMode}`}
           >
             <svg viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
-              {vizMode === "bars" ? (
-                // Bars icon
+              {vizMode === "bars" && (
                 <>
                   <rect x="1" y="8" width="2" height="6" rx="0.5" />
                   <rect x="5" y="4" width="2" height="10" rx="0.5" />
                   <rect x="9" y="6" width="2" height="8" rx="0.5" />
                   <rect x="13" y="2" width="2" height="12" rx="0.5" />
                 </>
-              ) : (
-                // Wave icon
+              )}
+              {vizMode === "wave" && (
                 <path d="M0 8 Q4 2, 8 8 Q12 14, 16 8" fill="none" stroke="currentColor" strokeWidth="1.5" />
+              )}
+              {vizMode === "radial" && (
+                <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.2" strokeDasharray="2 1" />
+              )}
+              {vizMode === "glow" && (
+                <>
+                  <rect x="1" y="6" width="3" height="8" rx="1" opacity="0.5" />
+                  <rect x="6" y="2" width="3" height="12" rx="1" opacity="0.7" />
+                  <rect x="11" y="4" width="3" height="10" rx="1" opacity="0.9" />
+                </>
               )}
             </svg>
           </Button>
@@ -375,14 +467,17 @@ function MiniPlayer({
   currentTime: number;
   duration: number;
   frequencies: number[];
-  vizMode: "bars" | "wave";
+  vizMode: VizMode;
   onPlayPause: () => void;
   onNext: () => void;
   onPrev: () => void;
   onExpand: () => void;
   onClose: () => void;
 }) {
-  const Viz = vizMode === "wave" ? WaveVisualizer : BarVisualizer;
+  const VIZ_MAP_MINI: Record<VizMode, typeof BarVisualizer> = {
+    bars: BarVisualizer, wave: WaveVisualizer, radial: RadialVisualizer, glow: GlowVisualizer,
+  };
+  const Viz = VIZ_MAP_MINI[vizMode];
 
   return (
     <div className="fixed bottom-0 left-0 right-0 md:bottom-4 md:left-auto md:right-4 z-50 md:w-[360px] bg-card/95 backdrop-blur-md border-t md:border border-border md:rounded-2xl shadow-2xl animate-in slide-in-from-bottom-4 duration-300 overflow-hidden">
@@ -396,7 +491,7 @@ function MiniPlayer({
       )}
 
       {/* Visualizer background */}
-      <Viz frequencies={frequencies} className="absolute bottom-0 left-0 right-0 h-full opacity-[0.08]" />
+      <Viz frequencies={frequencies} className="absolute bottom-0 left-0 right-0 h-full opacity-20" />
 
       {/* Progress bar */}
       <div className="h-1 bg-white/5 overflow-hidden relative z-10">

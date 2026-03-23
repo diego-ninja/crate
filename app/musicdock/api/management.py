@@ -49,6 +49,23 @@ def run_repair(request: Request, body: RepairRequest):
     return {"task_id": task_id}
 
 
+class RepairIssuesRequest(BaseModel):
+    issues: list[dict]
+    dry_run: bool = False
+
+
+@router.post("/repair-issues")
+def repair_specific_issues(request: Request, body: RepairIssuesRequest):
+    """Repair specific issues (individual or batch)."""
+    _require_admin(request)
+    task_id = create_task("repair", {
+        "dry_run": body.dry_run,
+        "auto_only": False,
+        "issues": body.issues,
+    })
+    return {"task_id": task_id}
+
+
 # ── Artist Management ────────────────────────────────────────────
 
 @router.post("/artist/{name:path}/delete")

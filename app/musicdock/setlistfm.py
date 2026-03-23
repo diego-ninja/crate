@@ -64,10 +64,8 @@ def get_probable_setlist(artist_name: str, num_setlists: int = 30) -> list[dict]
     if not raw_setlists:
         return None
 
-    # Try tour-based prediction first, fall back to frequency-based
-    result = _predict_tour_setlist(raw_setlists)
-    if not result:
-        result = _frequency_setlist(raw_setlists)
+    # Predict setlist using position-weighted frequency from recent shows
+    result = _predict_setlist(raw_setlists)
 
     if result:
         set_cache(cache_key, {"songs": result})
@@ -107,101 +105,86 @@ def _fetch_raw_setlists(mbid: str, num_setlists: int) -> list[dict]:
     return setlists
 
 
-def _predict_tour_setlist(setlists: list[dict]) -> list[dict] | None:
-    """If there's an active tour (multiple recent shows with similar setlists),
-    predict the next show's setlist based on the current tour pattern."""
-    if len(setlists) < 3:
+def _predict_setlist(setlists: list[dict]) -> list[dict] | None:
+    """Predict a probable setlist using position-weighted frequency.
+
+    Uses the last N shows with data. For each position, picks the most
+    frequently played song at that slot. Songs already placed are skipped
+    so the result has no duplicates. Remaining frequent songs that didn't
+    win a position slot are appended at the end.
+    """
+    if not setlists:
         return None
 
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
-    # Check if recent shows are from the same tour or within 60 days
-    recent = setlists[:10]
-    tour_name = recent[0].get("tour", "")
-    latest_date = recent[0].get("date", "")
+    # Track global frequency and last played date
+    global_counts: Counter = Counter()
+    last_played: dict[str, str] = {}
+    for sl in setlists:
+        event_date = sl.get("date", "")
+        for title in sl.get("songs", []):
+            global_counts[title] += 1
+            if title not in last_played or event_date > last_played[title]:
+                last_played[title] = event_date
 
-    # Parse latest date (DD-MM-YYYY format from setlist.fm)
+    if not global_counts:
+        return None
+
+    total_shows = len(setlists)
+
+    # Build position-frequency map from all shows
+    max_len = max(len(s["songs"]) for s in setlists)
+    position_songs: dict[int, Counter] = {}
+    for show in setlists:
+        for pos, title in enumerate(show["songs"]):
+            if pos not in position_songs:
+                position_songs[pos] = Counter()
+            position_songs[pos][title] += 1
+
+    # Pass 1: pick the most common song per position
+    predicted: list[dict] = []
+    used_songs: set[str] = set()
+
+    for pos in range(max_len):
+        if pos not in position_songs:
+            break
+        for title, count in position_songs[pos].most_common():
+            if title not in used_songs:
+                predicted.append({
+                    "title": title,
+                    "frequency": round(global_counts[title] / total_shows, 3),
+                    "play_count": global_counts[title],
+                    "last_played": last_played.get(title, ""),
+                    "position": pos + 1,
+                })
+                used_songs.add(title)
+                break
+
+    # Pass 2: append remaining frequent songs that didn't win a position
+    for title, count in global_counts.most_common():
+        if title not in used_songs and count >= 2:
+            predicted.append({
+                "title": title,
+                "frequency": round(count / total_shows, 3),
+                "play_count": count,
+                "last_played": last_played.get(title, ""),
+            })
+            used_songs.add(title)
+
+    # Detect if there's an active tour
+    latest_date = setlists[0].get("date", "")
+    tour_name = setlists[0].get("tour", "")
     try:
         latest = datetime.strptime(latest_date, "%d-%m-%Y")
         days_ago = (datetime.now() - latest).days
     except (ValueError, TypeError):
         days_ago = 999
 
-    # Active tour: same tour name OR last show within 90 days
-    is_active = days_ago <= 90
-    if tour_name:
-        tour_shows = [s for s in recent if s.get("tour") == tour_name]
-        is_active = is_active and len(tour_shows) >= 2
-    else:
-        tour_shows = recent[:5]
+    # Add metadata about tour status
+    for song in predicted:
+        song["on_tour"] = days_ago <= 180
+        if tour_name:
+            song["tour_name"] = tour_name
 
-    if not is_active or len(tour_shows) < 2:
-        return None
-
-    # Build predicted setlist from tour shows
-    # Use position-weighted frequency: songs that appear at the same position
-    # across multiple shows are more likely to stay
-    max_len = max(len(s["songs"]) for s in tour_shows)
-    position_songs: dict[int, Counter] = {}
-
-    for show in tour_shows:
-        for pos, title in enumerate(show["songs"]):
-            if pos not in position_songs:
-                position_songs[pos] = Counter()
-            position_songs[pos][title] += 1
-
-    # Build predicted setlist: for each position, pick the most common song
-    predicted: list[dict] = []
-    used_songs: set[str] = set()
-    total_shows = len(tour_shows)
-
-    for pos in range(max_len):
-        if pos not in position_songs:
-            break
-        candidates = position_songs[pos].most_common()
-        for title, count in candidates:
-            if title not in used_songs:
-                predicted.append({
-                    "title": title,
-                    "frequency": round(count / total_shows, 3),
-                    "play_count": count,
-                    "last_played": tour_shows[0].get("date", ""),
-                    "position": pos + 1,
-                    "confidence": round(count / total_shows, 2),
-                })
-                used_songs.add(title)
-                break
-
-    if len(predicted) < 5:
-        return None
-
-    return predicted
-
-
-def _frequency_setlist(setlists: list[dict]) -> list[dict] | None:
-    """Fallback: frequency-based probable setlist (original algorithm)."""
-    all_songs: list[str] = []
-    last_played: dict[str, str] = {}
-
-    for sl in setlists:
-        event_date = sl.get("date", "")
-        for title in sl.get("songs", []):
-            all_songs.append(title)
-            if title not in last_played or event_date > last_played[title]:
-                last_played[title] = event_date
-
-    if not all_songs:
-        return None
-
-    counts = Counter(all_songs)
-    total = len(setlists) or 1
-    result = []
-    for title, play_count in counts.most_common():
-        result.append({
-            "title": title,
-            "frequency": round(play_count / total, 3),
-            "play_count": play_count,
-            "last_played": last_played.get(title, ""),
-        })
-
-    return result
+    return predicted if predicted else None
