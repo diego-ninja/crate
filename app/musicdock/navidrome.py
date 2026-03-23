@@ -215,6 +215,178 @@ def find_album(artist_name: str, album_name: str,
     return None
 
 
+def star(item_id: str, item_type: str = "song") -> bool:
+    """Star (favorite) an item. item_type: song, album, artist."""
+    params = {}
+    if item_type == "song":
+        params["id"] = item_id
+    elif item_type == "album":
+        params["albumId"] = item_id
+    elif item_type == "artist":
+        params["artistId"] = item_id
+    try:
+        _request("star", **params)
+        return True
+    except Exception:
+        log.warning("Failed to star %s %s", item_type, item_id, exc_info=True)
+        return False
+
+
+def unstar(item_id: str, item_type: str = "song") -> bool:
+    """Unstar an item."""
+    params = {}
+    if item_type == "song":
+        params["id"] = item_id
+    elif item_type == "album":
+        params["albumId"] = item_id
+    elif item_type == "artist":
+        params["artistId"] = item_id
+    try:
+        _request("unstar", **params)
+        return True
+    except Exception:
+        log.warning("Failed to unstar %s %s", item_type, item_id, exc_info=True)
+        return False
+
+
+def get_starred() -> dict:
+    """Get all starred items."""
+    try:
+        sr = _request("getStarred2")
+        starred = sr.get("starred2", {})
+        return {
+            "songs": starred.get("song", []),
+            "albums": starred.get("album", []),
+            "artists": starred.get("artist", []),
+        }
+    except Exception:
+        log.warning("Failed to get starred items", exc_info=True)
+        return {"songs": [], "albums": [], "artists": []}
+
+
+def scrobble(song_id: str) -> bool:
+    """Report a song as played (scrobble)."""
+    try:
+        _request("scrobble", id=song_id, submission="true")
+        return True
+    except Exception:
+        log.warning("Failed to scrobble %s", song_id, exc_info=True)
+        return False
+
+
+def get_album_list(list_type: str, size: int = 20, offset: int = 0) -> list[dict]:
+    """Get album list. Types: newest, highest, frequent, recent, starred, random."""
+    try:
+        sr = _request("getAlbumList2", type=list_type, size=size, offset=offset)
+        return sr.get("albumList2", {}).get("album", [])
+    except Exception:
+        log.warning("Failed to get album list %s", list_type, exc_info=True)
+        return []
+
+
+def update_playlist(playlist_id: str, name: str | None = None,
+                    song_ids_to_add: list[str] | None = None,
+                    song_indexes_to_remove: list[int] | None = None) -> bool:
+    """Update a playlist: rename, add songs, remove songs by index."""
+    url = f"{_base_url()}/rest/updatePlaylist"
+    params = {**_auth_params(), "playlistId": playlist_id}
+    if name:
+        params["name"] = name
+    # Build param list for repeated params (same pattern as create_playlist)
+    param_list = list(params.items())
+    if song_ids_to_add:
+        param_list.extend([("songIdToAdd", sid) for sid in song_ids_to_add])
+    if song_indexes_to_remove:
+        param_list.extend([("songIndexToRemove", idx) for idx in song_indexes_to_remove])
+    try:
+        resp = requests.get(url, params=param_list, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        sr = data.get("subsonic-response", {})
+        return sr.get("status") == "ok"
+    except Exception:
+        log.warning("Failed to update playlist %s", playlist_id, exc_info=True)
+        return False
+
+
+def get_playlist(playlist_id: str) -> dict | None:
+    """Get a single playlist with all its tracks."""
+    try:
+        sr = _request("getPlaylist", id=playlist_id)
+        return sr.get("playlist", None)
+    except Exception:
+        log.warning("Failed to get playlist %s", playlist_id, exc_info=True)
+        return None
+
+
+def map_library_ids() -> dict:
+    """Bulk-map local library to Navidrome IDs. Returns counts."""
+    import time as _time
+    from musicdock.db import get_db_ctx
+
+    mapped_artists = 0
+    mapped_albums = 0
+    mapped_tracks = 0
+
+    # Map artists
+    nd_artists = get_artists()
+    if nd_artists:
+        with get_db_ctx() as cur:
+            for a in nd_artists:
+                nd_id = a.get("id", "")
+                nd_name = a.get("name", "")
+                if nd_id and nd_name:
+                    cur.execute(
+                        "UPDATE library_artists SET navidrome_id = %s WHERE LOWER(name) = LOWER(%s) AND navidrome_id IS NULL",
+                        (nd_id, nd_name),
+                    )
+                    mapped_artists += cur.rowcount
+
+    # Map albums (for each artist with navidrome_id)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT name, navidrome_id FROM library_artists WHERE navidrome_id IS NOT NULL")
+        artists_with_id = cur.fetchall()
+
+    for artist_row in artists_with_id:
+        try:
+            nd_artist = get_artist(artist_row["navidrome_id"])
+            if not nd_artist:
+                continue
+            nd_albums = nd_artist.get("album", [])
+            for nd_album in nd_albums:
+                nd_album_id = nd_album.get("id", "")
+                nd_album_name = nd_album.get("name", "")
+                if nd_album_id and nd_album_name:
+                    with get_db_ctx() as cur:
+                        cur.execute(
+                            "UPDATE library_albums SET navidrome_id = %s WHERE LOWER(artist) = LOWER(%s) AND (LOWER(name) = LOWER(%s) OR name ILIKE %s) AND navidrome_id IS NULL",
+                            (nd_album_id, artist_row["name"], nd_album_name, f"% - {nd_album_name}"),
+                        )
+                        mapped_albums += cur.rowcount
+
+                # Map tracks within album
+                try:
+                    nd_album_detail = get_album(nd_album_id)
+                    if nd_album_detail:
+                        for nd_song in nd_album_detail.get("song", []):
+                            nd_song_id = nd_song.get("id", "")
+                            nd_song_title = nd_song.get("title", "")
+                            if nd_song_id and nd_song_title:
+                                with get_db_ctx() as cur:
+                                    cur.execute(
+                                        "UPDATE library_tracks SET navidrome_id = %s WHERE LOWER(title) = LOWER(%s) AND LOWER(artist) = LOWER(%s) AND navidrome_id IS NULL",
+                                        (nd_song_id, nd_song_title, artist_row["name"]),
+                                    )
+                                    mapped_tracks += cur.rowcount
+                except Exception:
+                    pass
+            _time.sleep(0.2)  # Rate limit
+        except Exception:
+            pass
+
+    return {"artists": mapped_artists, "albums": mapped_albums, "tracks": mapped_tracks}
+
+
 def stream_song(song_id: str) -> requests.Response:
     return _request_raw("stream", id=song_id)
 

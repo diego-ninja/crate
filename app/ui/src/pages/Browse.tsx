@@ -534,6 +534,15 @@ function ArtistListRow({
       </div>
       <div className="flex-1 min-w-0">
         <div className="font-medium text-sm truncate">{artist.name}</div>
+        {artist.genres && artist.genres.length > 0 && (
+          <div className="flex gap-1 mt-0.5 flex-wrap">
+            {artist.genres.slice(0, 4).map((g) => (
+              <Badge key={g} variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground">
+                {g.toLowerCase()}
+              </Badge>
+            ))}
+          </div>
+        )}
       </div>
       <div className="text-xs text-muted-foreground whitespace-nowrap">
         {artist.albums} album{artist.albums !== 1 ? "s" : ""}
@@ -543,13 +552,6 @@ function ArtistListRow({
       </div>
       <div className="hidden sm:block text-xs text-muted-foreground whitespace-nowrap w-16 text-right">
         {formatSize(artist.total_size_mb)}
-      </div>
-      <div className="hidden md:flex gap-1 w-40 justify-end flex-shrink-0">
-        {artist.genres?.slice(0, 3).map((g) => (
-          <Badge key={g} variant="outline" className="text-[10px] px-1.5 py-0">
-            {g}
-          </Badge>
-        ))}
       </div>
       {artist.listeners != null && artist.listeners > 0 && (
         <div className="hidden md:flex text-xs text-muted-foreground whitespace-nowrap w-16 text-right items-center justify-end gap-1">

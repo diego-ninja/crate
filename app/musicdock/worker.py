@@ -2049,6 +2049,13 @@ def _handle_sync_playlist_navidrome(task_id: str, params: dict, config: dict) ->
     }
 
 
+def _handle_map_navidrome_ids(task_id: str, params: dict, config: dict) -> dict:
+    from musicdock.navidrome import map_library_ids
+    result = map_library_ids()
+    emit_task_event(task_id, "info", {"message": f"Mapped {result['artists']} artists, {result['albums']} albums, {result['tracks']} tracks"})
+    return result
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
@@ -2086,4 +2093,5 @@ TASK_HANDLERS = {
     "check_new_releases": _handle_check_new_releases,
     "scan_missing_covers": _handle_scan_missing_covers,
     "apply_cover": _handle_apply_cover,
+    "map_navidrome_ids": _handle_map_navidrome_ids,
 }

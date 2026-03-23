@@ -196,7 +196,7 @@ export function AlbumHeader({
               <span className="flex items-center gap-1.5"><HardDrive size={14} />{formatSize(totalSizeMb)}</span>
               {(genres ?? albumTags.genre?.split(",").map((g) => g.trim()).filter(Boolean) ?? []).map((g) => (
                 <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">
-                  {g}
+                  {g.toLowerCase()}
                 </span>
               ))}
               {hasCover ? (

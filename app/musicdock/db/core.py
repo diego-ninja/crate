@@ -409,4 +409,30 @@ def init_db():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp DESC)")
 
+        # Migration: Navidrome IDs
+        for table, cols in [
+            ("library_tracks", [("navidrome_id", "TEXT")]),
+            ("library_albums", [("navidrome_id", "TEXT")]),
+            ("library_artists", [("navidrome_id", "TEXT")]),
+        ]:
+            for col, col_type in cols:
+                cur.execute(f"""
+                    DO $$ BEGIN
+                        ALTER TABLE {table} ADD COLUMN {col} {col_type};
+                    EXCEPTION WHEN duplicate_column THEN NULL;
+                    END $$
+                """)
+
+        # Migration: favorites table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS favorites (
+                id SERIAL PRIMARY KEY,
+                item_type TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                navidrome_id TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(item_type, item_id)
+            )
+        """)
+
 

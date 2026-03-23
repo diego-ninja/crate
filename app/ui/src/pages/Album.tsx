@@ -286,7 +286,7 @@ export function Album() {
           <div className="mb-4 flex gap-1.5 flex-wrap">
             {data.genres.map(g => (
               <Badge key={g} variant="secondary" className="text-xs cursor-pointer hover:bg-primary/20">
-                {g}
+                {g.toLowerCase()}
               </Badge>
             ))}
           </div>

@@ -218,6 +218,76 @@ def navidrome_delete_playlist(playlist_id: str):
         return JSONResponse({"error": "Failed to delete playlist"}, status_code=502)
 
 
+@router.post("/api/navidrome/map-ids")
+def api_map_navidrome_ids(request: Request):
+    """Bulk map local library to Navidrome IDs."""
+    from musicdock.db import create_task
+    task_id = create_task("map_navidrome_ids")
+    return {"task_id": task_id}
+
+
+@router.post("/api/navidrome/star")
+def api_star(body: dict):
+    """Star/favorite an item in Navidrome."""
+    item_id = body.get("navidrome_id", "")
+    item_type = body.get("type", "song")
+    if not item_id:
+        return JSONResponse({"error": "navidrome_id required"}, status_code=400)
+    ok = navidrome.star(item_id, item_type)
+    if ok:
+        from musicdock.db import get_db_ctx
+        from datetime import datetime, timezone
+        with get_db_ctx() as cur:
+            cur.execute(
+                "INSERT INTO favorites (item_type, item_id, navidrome_id, created_at) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                (item_type, body.get("local_id", item_id), item_id, datetime.now(timezone.utc).isoformat()),
+            )
+    return {"ok": ok}
+
+
+@router.post("/api/navidrome/unstar")
+def api_unstar(body: dict):
+    """Remove star from an item."""
+    item_id = body.get("navidrome_id", "")
+    item_type = body.get("type", "song")
+    if not item_id:
+        return JSONResponse({"error": "navidrome_id required"}, status_code=400)
+    ok = navidrome.unstar(item_id, item_type)
+    if ok:
+        from musicdock.db import get_db_ctx
+        with get_db_ctx() as cur:
+            cur.execute("DELETE FROM favorites WHERE navidrome_id = %s AND item_type = %s", (item_id, item_type))
+    return {"ok": ok}
+
+
+@router.get("/api/navidrome/favorites")
+def api_favorites():
+    """Get all favorites from Navidrome."""
+    return navidrome.get_starred()
+
+
+@router.post("/api/navidrome/scrobble")
+def api_scrobble(body: dict):
+    """Scrobble a track (report as played)."""
+    song_id = body.get("navidrome_id", "")
+    if not song_id:
+        return JSONResponse({"error": "navidrome_id required"}, status_code=400)
+    ok = navidrome.scrobble(song_id)
+    return {"ok": ok}
+
+
+@router.get("/api/navidrome/recently-played")
+def api_recently_played():
+    """Get recently played albums from Navidrome."""
+    return navidrome.get_album_list("recent", size=20)
+
+
+@router.get("/api/navidrome/most-played")
+def api_most_played():
+    """Get most played albums from Navidrome."""
+    return navidrome.get_album_list("frequent", size=20)
+
+
 @router.post("/api/navidrome/playlists/smart")
 def navidrome_smart_playlist(body: dict):
     strategy = body.get("strategy", "random")

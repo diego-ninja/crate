@@ -9,7 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
-import { Play, Pause, BarChart3, Download } from "lucide-react";
+import { Play, Pause, BarChart3, Download, Heart } from "lucide-react";
 import {
   Tooltip,
   TooltipTrigger,
@@ -25,6 +25,7 @@ import {
 } from "recharts";
 import { formatDuration, formatBitrate } from "@/lib/utils";
 import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
+import { useFavorites } from "@/hooks/use-favorites";
 import { cn } from "@/lib/utils";
 
 interface Track {
@@ -192,6 +193,7 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
 
 export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomuseData }: TrackTableProps) {
   const { play, playAll, pause, resume, isPlaying, queue, currentIndex } = usePlayer();
+  const { isFavorite, toggleFavorite } = useFavorites();
   const currentTrack = queue[currentIndex];
 
   const hasNavidrome = navidromeSongs && navidromeSongs.length > 0;
@@ -255,6 +257,7 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
           {hasAudiomuse && <TableHead className="text-muted-foreground text-xs">Key</TableHead>}
           {hasAudiomuse && <TableHead className="text-muted-foreground text-xs">Energy</TableHead>}
           {hasAudiomuse && <TableHead className="w-8" />}
+          <TableHead className="w-8" />
           <TableHead className="w-8" />
         </TableRow>
       </TableHeader>
@@ -349,6 +352,16 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
                   >
                     <Download size={13} />
                   </a>
+                )}
+              </TableCell>
+              <TableCell className="w-8">
+                {ndSong && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(ndSong.id, "song"); }}
+                    className="p-1 hover:text-red-400 transition-colors"
+                  >
+                    <Heart size={13} className={isFavorite(ndSong.id) ? "fill-red-500 text-red-500" : "text-muted-foreground"} />
+                  </button>
                 )}
               </TableCell>
             </TableRow>

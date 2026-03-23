@@ -423,7 +423,7 @@ export function Artist() {
                 <div className="hidden md:flex gap-1.5 flex-wrap mb-3">
                   {allTags.slice(0, 8).map((g) => (
                     <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">
-                      {g}
+                      {g.toLowerCase()}
                     </span>
                   ))}
                 </div>
