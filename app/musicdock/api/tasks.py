@@ -170,11 +170,13 @@ def api_cleanup_tasks(body: dict | None = None):
     """Delete completed/failed/cancelled tasks older than N days."""
     from musicdock.db import get_db_ctx
     days = (body or {}).get("older_than_days", 7)
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     with get_db_ctx() as cur:
         cur.execute(
             "DELETE FROM tasks WHERE status IN ('completed', 'failed', 'cancelled') "
-            "AND created_at < NOW() - INTERVAL '%s days'",
-            (days,),
+            "AND created_at < %s",
+            (cutoff,),
         )
         deleted = cur.rowcount
     return {"deleted": deleted}
