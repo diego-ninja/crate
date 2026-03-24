@@ -75,6 +75,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music:ro
@@ -113,6 +114,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music

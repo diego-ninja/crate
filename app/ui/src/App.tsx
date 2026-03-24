@@ -31,6 +31,7 @@ const Users = lazy(() => import("@/pages/Users").then(m => ({ default: m.Users }
 const DownloadPage = lazy(() => import("@/pages/Download").then(m => ({ default: m.DownloadPage })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Discover = lazy(() => import("@/pages/Discover").then(m => ({ default: m.Discover })));
+const Profile = lazy(() => import("@/pages/Profile").then(m => ({ default: m.Profile })));
 
 function PageSpinner() {
   return (
@@ -87,6 +88,7 @@ export default function App() {
                   <Route path="users" element={<Users />} />
                   <Route path="discover" element={<Discover />} />
                   <Route path="settings" element={<Settings />} />
+                  <Route path="profile" element={<Profile />} />
                 </Route>
               </Routes>
             </Suspense>

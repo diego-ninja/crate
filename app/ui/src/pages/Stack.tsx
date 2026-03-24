@@ -146,7 +146,7 @@ export function Stack() {
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <Server size={24} className="text-primary" />
-          <h1 className="text-2xl font-bold">Grooveyard Stack</h1>
+          <h1 className="text-2xl font-bold">Crate Stack</h1>
         </div>
         <Button variant="outline" size="sm" onClick={fetchStatus}>
           <RefreshCw size={14} className="mr-1" /> Refresh

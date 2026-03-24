@@ -433,6 +433,24 @@ export function DownloadPage() {
         {/* Queue */}
         <TabsContent value="queue">
           <div className="mt-4 space-y-2">
+            {(slskDownloads.length > 0 || activeQueue.length > 0) && (
+              <div className="flex gap-2 mb-3">
+                <Button size="sm" variant="outline" onClick={async () => {
+                  await api("/api/acquisition/queue/clear-completed", "POST");
+                  refetchSlskQueue();
+                  toast.success("Cleared completed downloads");
+                }}>Clear Completed</Button>
+                <Button size="sm" variant="outline" onClick={async () => {
+                  await api("/api/acquisition/queue/clear-errored", "POST");
+                  refetchSlskQueue();
+                  toast.success("Cleared errored downloads");
+                }}>Clear Errored</Button>
+                <Button size="sm" variant="destructive" onClick={async () => {
+                  await api("/api/acquisition/queue/cleanup-incomplete", "POST");
+                  toast.success("Cleanup task created");
+                }}>Clean Incomplete Albums</Button>
+              </div>
+            )}
             {activeQueue.length === 0 && slskDownloads.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">No active downloads</div>
             ) : (

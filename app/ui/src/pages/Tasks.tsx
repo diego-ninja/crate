@@ -39,6 +39,7 @@ interface TaskProgress {
   tracks_processed?: number;
   issues_found?: number;
   analyzed?: number;
+  track?: string;
   [key: string]: unknown;
 }
 
@@ -245,6 +246,8 @@ function TaskProgressBar({ progress }: { progress: TaskProgress | string }) {
             {progress.step && <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">{progress.step.replace(/_/g, " ")}</Badge>}
             {progress.phase && <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">{String(progress.phase)}</Badge>}
             {progress.artist && <span className="text-foreground">{String(progress.artist)}</span>}
+            {progress.album && <span className="text-foreground/70">{" / "}{String(progress.album)}</span>}
+            {progress.track && <span className="text-foreground/70">{" — "}{String(progress.track)}</span>}
           </span>
           <span>{done}/{total} ({pct}%)</span>
         </div>
@@ -263,6 +266,30 @@ function TaskProgressBar({ progress }: { progress: TaskProgress | string }) {
 
 // ── Live Events for Running Task ─────────────────────────────────
 
+const EVENT_BADGE_COLORS: Record<string, string> = {
+  info: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  warning: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
+  error: "bg-red-500/10 text-red-400 border-red-500/30",
+  artist_enriched: "bg-green-500/10 text-green-400 border-green-500/30",
+  artist_skipped: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30",
+  track_analyzed: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
+  album_matched: "bg-purple-500/10 text-purple-400 border-purple-500/30",
+  cover_found: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+  cover_applied: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+  new_release_found: "bg-orange-500/10 text-orange-400 border-orange-500/30",
+  step_done: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
+};
+
+function eventMessage(e: { type: string; data?: Record<string, unknown> }): string {
+  if (e.data?.message) return String(e.data.message);
+  if (e.data?.step) return String(e.data.step).replace(/_/g, " ");
+  if (e.data) {
+    const keys = Object.keys(e.data);
+    if (keys.length <= 3) return keys.map((k) => `${k}: ${e.data![k]}`).join(", ");
+  }
+  return e.type.replace(/_/g, " ");
+}
+
 function LiveTaskEvents({ taskId }: { taskId: string }) {
   const { events, connected } = useTaskEvents(taskId);
 
@@ -271,17 +298,17 @@ function LiveTaskEvents({ taskId }: { taskId: string }) {
   }
 
   return (
-    <div className="max-h-[200px] overflow-y-auto space-y-1 py-2">
+    <div className="max-h-[300px] overflow-y-auto space-y-0.5 py-2 font-mono">
       {events.map((e, i) => (
         <div key={i} className="flex items-start gap-2 text-xs">
-          <span className="text-[10px] text-muted-foreground font-mono flex-shrink-0 w-16">
+          <span className="text-[10px] text-muted-foreground flex-shrink-0 w-14">
             {new Date(e.timestamp || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </span>
-          <Badge variant="outline" className="text-[9px] px-1 py-0 flex-shrink-0">
-            {e.type}
+          <Badge className={`text-[9px] px-1 py-0 flex-shrink-0 border ${EVENT_BADGE_COLORS[e.type] || "bg-zinc-500/10 text-zinc-400 border-zinc-500/30"}`}>
+            {e.type.replace(/_/g, " ")}
           </Badge>
-          <span className="text-muted-foreground truncate">
-            {String(e.data?.message || e.data?.step || "").replace(/_/g, " ") || JSON.stringify(e.data)}
+          <span className="text-foreground/80">
+            {eventMessage(e)}
           </span>
         </div>
       ))}

@@ -14,6 +14,7 @@ DEFAULT_SCHEDULES = {
     "library_pipeline": 1800,     # 30min — health check + repair + sync
     "compute_analytics": 3600,    # 1h — recompute analytics from DB
     "check_new_releases": 21600,  # 6h — check Tidal for new releases
+    "cleanup_incomplete_downloads": 172800,  # 48h — remove incomplete soulseek downloads
 }
 
 

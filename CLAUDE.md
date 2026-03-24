@@ -1,4 +1,4 @@
-# Grooveyard (codebase: musicdock)
+# Crate (codebase: musicdock)
 
 ## Project Overview
 

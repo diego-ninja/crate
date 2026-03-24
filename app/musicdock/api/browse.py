@@ -368,9 +368,17 @@ def api_artists(
 
 @router.get("/api/artist/{name}/background")
 def api_artist_background(name: str, random_pick: bool = Query(False, alias="random")):
-    """Return artist background image. Tries: fanart.tv panoramic > Deezer > Spotify > artist photo on disk."""
+    """Return artist background image. Tries: manual upload > fanart.tv > Deezer > Spotify > artist photo."""
     import random as _random
     from musicdock.lastfm import get_fanart_all_images, get_fanart_background, download_artist_image, _deezer_artist_image
+
+    # 0. Manual upload on disk (highest priority)
+    lib = library_path()
+    artist_dir = safe_path(lib, name)
+    if artist_dir and artist_dir.is_dir():
+        bg_file = artist_dir / "background.jpg"
+        if bg_file.exists():
+            return Response(content=bg_file.read_bytes(), media_type="image/jpeg")
 
     # 1. Fanart.tv backgrounds (best: 1920x1080 panoramic)
     fanart = get_fanart_all_images(name)
@@ -431,7 +439,19 @@ def api_artist_photo(name: str, random_pick: bool = Query(False, alias="random")
     import random as _random
     from musicdock.lastfm import get_fanart_all_images, download_artist_image
 
-    # When random=true, pick from fanart.tv thumbs directly
+    lib = library_path()
+    artist_dir = safe_path(lib, name)
+    if not artist_dir or not artist_dir.is_dir():
+        return Response(status_code=404)
+
+    # 0. Photo on disk (highest priority — includes manual uploads)
+    for photo_name in ARTIST_PHOTO_NAMES:
+        photo = artist_dir / photo_name
+        if photo.exists():
+            media_type = "image/jpeg" if photo.suffix == ".jpg" else "image/png"
+            return Response(content=photo.read_bytes(), media_type=media_type)
+
+    # 1. Fanart.tv thumbs (random pick)
     if random_pick:
         fanart = get_fanart_all_images(name)
         thumbs = fanart.get("thumbs", []) if fanart else []
@@ -440,18 +460,6 @@ def api_artist_photo(name: str, random_pick: bool = Query(False, alias="random")
             image_data = download_artist_image(url)
             if image_data:
                 return Response(content=image_data, media_type="image/jpeg")
-
-    lib = library_path()
-    artist_dir = safe_path(lib, name)
-    if not artist_dir or not artist_dir.is_dir():
-        return Response(status_code=404)
-
-    # 1. Check for artist photo on disk
-    for photo_name in ARTIST_PHOTO_NAMES:
-        photo = artist_dir / photo_name
-        if photo.exists():
-            media_type = "image/jpeg" if photo.suffix == ".jpg" else "image/png"
-            return Response(content=photo.read_bytes(), media_type=media_type)
 
     # 2. Try fetching from fanart.tv / Deezer / Spotify / Last.fm
     from musicdock.lastfm import get_best_artist_image
@@ -498,12 +506,36 @@ def api_artist_info(name: str):
     return info
 
 
+@router.get("/api/artist/{name}/shows")
+def api_artist_shows(name: str, limit: int = Query(10), country: str = Query("")):
+    """Get upcoming shows for an artist from Ticketmaster."""
+    from musicdock.ticketmaster import get_upcoming_shows, is_configured
+    if not is_configured():
+        return {"events": [], "configured": False}
+    events = get_upcoming_shows(name, country_code=country, limit=limit)
+    return {"events": events, "configured": True}
+
+
 @router.post("/api/artist/{name}/enrich")
 def api_artist_enrich(name: str):
     """Queue a full enrichment task for an artist (async via worker)."""
     from musicdock.db import create_task as _create_task
     task_id = _create_task("process_new_content", {"artist": name})
     return {"status": "queued", "task_id": task_id}
+
+
+@router.get("/api/artist/{name}/track-titles")
+def api_artist_track_titles(name: str):
+    """Return all track titles for an artist (lightweight, for setlist matching)."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT t.title, t.path, a.name AS album "
+            "FROM library_tracks t JOIN library_albums a ON t.album_id = a.id "
+            "WHERE a.artist = %s ORDER BY t.title",
+            (name,),
+        )
+        rows = cur.fetchall()
+    return [{"title": r["title"], "album": r["album"], "path": r["path"]} for r in rows]
 
 
 @router.get("/api/artist/{name:path}")

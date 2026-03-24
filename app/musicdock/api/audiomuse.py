@@ -64,9 +64,9 @@ def analyze_artist(name: str):
 
 @router.post("/api/analyze/album/{artist}/{album}")
 def analyze_album(artist: str, album: str):
-    """Queue audio analysis for a single album."""
+    """Queue audio analysis + bliss vectors for a single album."""
     from musicdock.db import create_task
-    task_id = create_task("analyze_tracks", {"artist": artist, "album": album})
+    task_id = create_task("analyze_album_full", {"artist": artist, "album": album})
     return {"status": "queued", "task_id": task_id}
 
 

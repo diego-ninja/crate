@@ -66,6 +66,17 @@ def list_users() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def update_user(user_id: int, **fields) -> dict | None:
+    if not fields:
+        return get_user_by_id(user_id)
+    sets = ", ".join(f"{k} = %s" for k in fields)
+    vals = list(fields.values()) + [user_id]
+    with get_db_ctx() as cur:
+        cur.execute(f"UPDATE users SET {sets} WHERE id = %s RETURNING *", vals)
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
 def delete_user(user_id: int):
     with get_db_ctx() as cur:
         cur.execute("DELETE FROM users WHERE id = %s", (user_id,))

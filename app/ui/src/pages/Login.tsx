@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, useEffect, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,13 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [authConfig, setAuthConfig] = useState<{ google?: boolean; discogs?: boolean }>({});
+
+  useEffect(() => {
+    api<{ google: boolean; discogs: boolean }>("/api/auth/config")
+      .then(setAuthConfig)
+      .catch(() => {});
+  }, []);
 
   if (loading) {
     return (
@@ -53,13 +60,15 @@ export function Login() {
     }
   }
 
+  const hasOAuth = authConfig.google || authConfig.discogs;
+
   return (
     <div className="min-h-screen bg-[#2e3440] flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="bg-card border border-border rounded-lg p-8 shadow-xl">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-foreground">
-              <span className="text-primary">&#9835;</span> Grooveyard
+              <span className="text-primary">&#9835;</span> Crate
             </h1>
             <p className="text-sm text-muted-foreground mt-2">Sign in to your account</p>
           </div>
@@ -96,22 +105,39 @@ export function Login() {
             </Button>
           </form>
 
-          <div className="relative my-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border" />
-            </div>
-            <div className="relative flex justify-center text-xs">
-              <span className="bg-card px-2 text-muted-foreground">or</span>
-            </div>
-          </div>
+          {hasOAuth && (
+            <>
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="bg-card px-2 text-muted-foreground">or</span>
+                </div>
+              </div>
 
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => { window.location.href = "/api/auth/google"; }}
-          >
-            Sign in with Google
-          </Button>
+              <div className="space-y-2">
+                {authConfig.google && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => { window.location.href = "/api/auth/google"; }}
+                  >
+                    Sign in with Google
+                  </Button>
+                )}
+                {authConfig.discogs && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => { window.location.href = "/api/auth/discogs"; }}
+                  >
+                    Sign in with Discogs
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

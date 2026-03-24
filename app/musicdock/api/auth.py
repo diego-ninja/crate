@@ -14,7 +14,7 @@ from musicdock.auth import (
 )
 from musicdock.db import (
     create_user, get_user_by_email, get_user_by_google_id, get_user_by_id,
-    update_user_last_login, list_users, delete_user,
+    update_user_last_login, update_user, list_users, delete_user,
 )
 
 logger = logging.getLogger(__name__)
@@ -228,6 +228,79 @@ async def auth_verify_soft(request: Request):
         response.headers["Remote-Email"] = user.get("email") or ""
         response.headers["Remote-Role"] = user.get("role") or "user"
     return response
+
+
+# ── Auth config (public) ───────────────────────────────────────
+
+@router.get("/config")
+async def auth_config():
+    """Return available auth methods (no secrets exposed)."""
+    return {
+        "google": _google_configured(),
+        "discogs": bool(os.environ.get("DISCOGS_CONSUMER_KEY")),
+        "password": True,
+    }
+
+
+# ── Profile ────────────────────────────────────────────────────
+
+class UpdateProfileRequest(BaseModel):
+    name: Optional[str] = None
+    username: Optional[str] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.put("/profile")
+async def update_profile(request: Request, body: UpdateProfileRequest):
+    user = _require_auth(request)
+    fields = {}
+    if body.name is not None:
+        fields["name"] = body.name
+    if body.username is not None:
+        fields["username"] = body.username
+    if not fields:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    updated = update_user(user["id"], **fields)
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Re-issue JWT with updated name
+    token = create_jwt(updated["id"], updated["email"], updated["role"],
+                       username=updated.get("username"), name=updated.get("name"))
+    response = JSONResponse(content=_user_public(updated))
+    _set_auth_cookie(response, token)
+    return response
+
+
+@router.post("/change-password")
+async def change_password(request: Request, body: ChangePasswordRequest):
+    user = _require_auth(request)
+    db_user = get_user_by_id(user["id"])
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if db_user.get("password_hash"):
+        if not verify_password(body.current_password, db_user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    new_hash = hash_password(body.new_password)
+    update_user(user["id"], password_hash=new_hash)
+    return {"ok": True}
+
+
+@router.post("/unlink-google")
+async def unlink_google(request: Request):
+    user = _require_auth(request)
+    db_user = get_user_by_id(user["id"])
+    if not db_user or not db_user.get("google_id"):
+        raise HTTPException(status_code=400, detail="No Google account linked")
+    if not db_user.get("password_hash"):
+        raise HTTPException(status_code=400, detail="Set a password before unlinking Google (you would be locked out)")
+    update_user(user["id"], google_id=None)
+    return {"ok": True}
 
 
 # ── Google OAuth ────────────────────────────────────────────────

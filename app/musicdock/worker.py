@@ -45,7 +45,7 @@ _watcher = None  # LibraryWatcher ref for processing lock
 
 # Tasks that do heavy DB writes — only one at a time
 DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
-CHUNK_SIZE = 20  # artists per chunk for parallel processing
+CHUNK_SIZE = 10  # artists per chunk for parallel processing
 _db_heavy_running = False
 _db_heavy_lock = __import__("threading").Lock()
 
@@ -423,10 +423,10 @@ def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
         result = enrich_artist(name, config)
         if result.get("skipped"):
             skipped += 1
-            emit_task_event(task_id, "artist_skipped", {"artist": name})
+            emit_task_event(task_id, "artist_skipped", {"message": f"Skipped: {name}", "artist": name})
         else:
             enriched += 1
-            emit_task_event(task_id, "artist_enriched", {"artist": name, "sources": result})
+            emit_task_event(task_id, "artist_enriched", {"message": f"Enriched: {name}", "artist": name, "sources": result})
 
     return {"enriched": enriched, "skipped": skipped, "total": total}
 
@@ -544,9 +544,53 @@ def _handle_enrich_single(task_id: str, params: dict, config: dict) -> dict:
     return result
 
 
+def _handle_analyze_album_full(task_id: str, params: dict, config: dict) -> dict:
+    """Analyze audio (BPM, key, mood) + compute bliss vectors for a single album."""
+    from musicdock.audio_analysis import analyze_track, analyze_batch, PANNS_BATCH_SIZE
+    from musicdock.db import get_library_albums, get_library_tracks, update_track_audiomuse, get_library_album
+
+    artist = params.get("artist", "")
+    album_name = params.get("album", "")
+
+    # Phase 1: Audio analysis
+    update_task(task_id, progress=json.dumps({"phase": "audio_analysis", "done": 0, "total": 0}))
+    analysis_result = _handle_analyze_tracks(task_id, {"artist": artist, "album": album_name}, config)
+
+    # Phase 2: Bliss vectors
+    update_task(task_id, progress=json.dumps({"phase": "bliss", "done": 0, "total": 0}))
+    from musicdock.bliss import is_available, analyze_directory, store_vectors
+    bliss_count = 0
+    if is_available():
+        album_data = get_library_album(artist, album_name)
+        if album_data:
+            album_path = album_data.get("path", "")
+            if album_path and Path(album_path).is_dir():
+                vectors = analyze_directory(str(album_path))
+                if vectors:
+                    store_vectors(vectors)
+                    bliss_count = len(vectors)
+    else:
+        lib = Path(config["library_path"])
+        from musicdock.db import get_library_artist
+        artist_data = get_library_artist(artist)
+        folder = (artist_data.get("folder_name") if artist_data else None) or artist
+        artist_dir = lib / folder
+        if artist_dir.is_dir():
+            vectors = analyze_directory(str(artist_dir)) if is_available() else []
+            if vectors:
+                store_vectors(vectors)
+                bliss_count = len(vectors)
+
+    return {
+        "analyzed": analysis_result.get("analyzed", 0),
+        "failed": analysis_result.get("failed", 0),
+        "bliss": bliss_count,
+    }
+
+
 def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
-    """Analyze audio tracks for BPM, key, energy, mood."""
-    from musicdock.audio_analysis import analyze_track
+    """Analyze audio tracks for BPM, key, energy, mood. Uses batched PANNs inference."""
+    from musicdock.audio_analysis import analyze_track, analyze_batch, PANNS_BATCH_SIZE
     from musicdock.db import get_library_albums, get_library_tracks, update_track_audiomuse
 
     artist = params.get("artist")
@@ -606,42 +650,69 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
     total = len(tracks_to_analyze)
     analyzed = 0
     failed = 0
+    batch_size = PANNS_BATCH_SIZE
 
-    for i, (path, track) in enumerate(tracks_to_analyze):
+    # Process in batches for PANNs efficiency
+    for batch_start in range(0, total, batch_size):
         if _shutdown or _is_cancelled(task_id):
             break
 
-        if i % 5 == 0:
-            update_task(task_id, progress=json.dumps({
-                "track": track.get("title", Path(path).stem),
-                "done": i, "total": total,
-                "analyzed": analyzed,
-            }))
+        batch = tracks_to_analyze[batch_start:batch_start + batch_size]
+        batch_paths = [p for p, _ in batch]
+
+        update_task(task_id, progress=json.dumps({
+            "track": batch[0][1].get("title", Path(batch[0][0]).stem),
+            "done": batch_start, "total": total,
+            "analyzed": analyzed,
+        }))
 
         try:
-            result = analyze_track(path)
-            if result.get("bpm") is not None:
-                update_track_audiomuse(
-                    path,
-                    bpm=result["bpm"],
-                    key=result["key"],
-                    scale=result["scale"],
-                    energy=result["energy"],
-                    mood=result["mood"],
-                    danceability=result.get("danceability"),
-                    valence=result.get("valence"),
-                    acousticness=result.get("acousticness"),
-                    instrumentalness=result.get("instrumentalness"),
-                    loudness=result.get("loudness"),
-                    dynamic_range=result.get("dynamic_range"),
-                    spectral_complexity=result.get("spectral_complexity"),
-                )
-                analyzed += 1
-            else:
-                failed += 1
+            results = analyze_batch(batch_paths)
+            for (path, _track), result in zip(batch, results):
+                if result.get("bpm") is not None:
+                    update_track_audiomuse(
+                        path,
+                        bpm=result["bpm"],
+                        key=result["key"],
+                        scale=result["scale"],
+                        energy=result["energy"],
+                        mood=result["mood"],
+                        danceability=result.get("danceability"),
+                        valence=result.get("valence"),
+                        acousticness=result.get("acousticness"),
+                        instrumentalness=result.get("instrumentalness"),
+                        loudness=result.get("loudness"),
+                        dynamic_range=result.get("dynamic_range"),
+                        spectral_complexity=result.get("spectral_complexity"),
+                    )
+                    analyzed += 1
+                else:
+                    failed += 1
         except Exception:
-            log.warning("Failed to analyze %s", path, exc_info=True)
-            failed += 1
+            log.warning("Batch analysis failed for %d tracks", len(batch), exc_info=True)
+            # Fallback: try individually
+            for path, _track in batch:
+                try:
+                    result = analyze_track(path)
+                    if result.get("bpm") is not None:
+                        update_track_audiomuse(
+                            path, bpm=result["bpm"], key=result["key"],
+                            scale=result["scale"], energy=result["energy"],
+                            mood=result["mood"],
+                            danceability=result.get("danceability"),
+                            valence=result.get("valence"),
+                            acousticness=result.get("acousticness"),
+                            instrumentalness=result.get("instrumentalness"),
+                            loudness=result.get("loudness"),
+                            dynamic_range=result.get("dynamic_range"),
+                            spectral_complexity=result.get("spectral_complexity"),
+                        )
+                        analyzed += 1
+                    else:
+                        failed += 1
+                except Exception:
+                    log.warning("Failed to analyze %s", path, exc_info=True)
+                    failed += 1
 
     return {"analyzed": analyzed, "failed": failed, "total": total}
 
@@ -1067,17 +1138,15 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
         try:
             # Find the actual DB path for this album
             album_db_path = str(album_dir)
-            if not db_album:
-                with get_db_ctx() as cur:
-                    cur.execute("SELECT path FROM library_albums WHERE path = %s", (album_db_path,))
+            with get_db_ctx() as cur:
+                cur.execute("SELECT path FROM library_albums WHERE path = %s", (album_db_path,))
+                row = cur.fetchone()
+                if not row:
+                    cur.execute("SELECT path FROM library_albums WHERE artist = %s AND (name = %s OR name LIKE %s) LIMIT 1",
+                                (artist_folder, album_folder, f"% - {album_folder}"))
                     row = cur.fetchone()
-                    if not row:
-                        # Try other path formats
-                        cur.execute("SELECT path FROM library_albums WHERE artist = %s AND (name = %s OR name LIKE %s) LIMIT 1",
-                                    (artist_folder, album_folder, f"% - {album_folder}"))
-                        row = cur.fetchone()
-                    if row:
-                        album_db_path = row["path"]
+                if row:
+                    album_db_path = row["path"]
 
             with get_db_ctx() as cur:
                 cur.execute(
@@ -1282,7 +1351,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
                 log.warning("Re-sync after auto-apply failed for %s", album_name, exc_info=True)
 
         enriched += 1
-        emit_task_event(task_id, "album_matched", {"artist": artist_name, "album": clean_album, "mbid": release_mbid, "score": best_score})
+        emit_task_event(task_id, "album_matched", {"message": f"Matched: {artist_name} / {clean_album} (score {best_score}%)", "artist": artist_name, "album": clean_album, "mbid": release_mbid, "score": best_score})
         log.info("Enriched %s / %s (score=%d, mbid=%s, files=%d)",
                  artist_name, clean_album, best_score, release_mbid, written_files)
         time.sleep(1)  # MB rate limit: 1 req/sec
@@ -1311,8 +1380,11 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
         update_tidal_download(download_id, status="downloading", task_id=task_id)
 
     # 1. Download via tiddl
-    emit_task_event(task_id, "info", {"message": f"Downloading from Tidal: {url}"})
-    update_task(task_id, progress=json.dumps({"phase": "downloading", "url": url}))
+    artist_name = params.get("artist", "")
+    album_name = params.get("album", "")
+    desc = f"{artist_name} - {album_name}" if artist_name else url
+    emit_task_event(task_id, "info", {"message": f"Downloading from Tidal: {desc}"})
+    update_task(task_id, progress=json.dumps({"phase": "downloading", "artist": artist_name, "album": album_name, "url": url}))
     result = download(
         url, quality=quality, task_id=task_id,
         progress_callback=lambda d: update_task(task_id, progress=json.dumps(d)),
@@ -1326,6 +1398,7 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
     # 2. Move to library
     if download_id:
         update_tidal_download(download_id, status="processing")
+    emit_task_event(task_id, "info", {"message": f"Moving {result.get('file_count', 0)} files to library"})
     update_task(task_id, progress=json.dumps({"phase": "moving", "files": result.get("file_count", 0)}))
     modified_artists = move_to_library(result["path"], str(lib))
 
@@ -1335,6 +1408,7 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
         return {"error": "No files were moved", "phase": "move"}
 
     # 3. Sync modified artists
+    emit_task_event(task_id, "info", {"message": f"Syncing {', '.join(modified_artists)} to library"})
     update_task(task_id, progress=json.dumps({"phase": "syncing", "artists": modified_artists}))
     sync = LibrarySync(config)
     for artist_name in modified_artists:
@@ -1414,7 +1488,7 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
                     metadata={"year": latest.get("year"), "tracks": latest.get("tracks")},
                 )
                 new_count += 1
-                emit_task_event(task_id, "new_release_found", {"artist": ma["artist_name"], "album": latest["title"], "url": latest["url"]})
+                emit_task_event(task_id, "new_release_found", {"message": f"New release: {ma['artist_name']} - {latest['title']}", "artist": ma["artist_name"], "album": latest["title"], "url": latest["url"]})
 
                 # Update last_release_id
                 now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
@@ -1537,7 +1611,7 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
     try:
         enrich_result = enrich_artist(artist_name, config)
         result["steps"]["enrich_artist"] = enrich_result.get("skipped", False)
-        emit_task_event(task_id, "step_done", {"step": "enrich_artist", "result": enrich_result})
+        emit_task_event(task_id, "step_done", {"message": f"Enriched: {artist_name}", "step": "enrich_artist", "result": enrich_result})
     except Exception:
         log.warning("Enrich artist failed for %s", artist_name, exc_info=True)
         result["steps"]["enrich_artist"] = "failed"
@@ -1654,7 +1728,7 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
                             spectral_complexity=ar.get("spectral_complexity"),
                         )
                         analyzed += 1
-                        emit_task_event(task_id, "track_analyzed", {"title": t.get("title", ""), "bpm": ar.get("bpm"), "key": ar.get("key")})
+                        emit_task_event(task_id, "track_analyzed", {"message": f"Analyzed: {t.get('title', '')} — BPM {ar.get('bpm')}, key {ar.get('key')}", "title": t.get("title", ""), "bpm": ar.get("bpm"), "key": ar.get("key")})
                 except Exception:
                     log.debug("Analysis failed for %s", t["path"])
         result["steps"]["audio_analysis"] = analyzed
@@ -1928,6 +2002,7 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
         if cover_data:
             found += 1
             emit_task_event(task_id, "cover_found", {
+                "message": f"Cover found: {artist} / {album_name} ({source})",
                 "artist": artist,
                 "album": album_name,
                 "path": album_path,
@@ -1944,6 +2019,7 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
             if params.get("auto_apply"):
                 save_cover(Path(album_path), cover_data)
                 emit_task_event(task_id, "cover_applied", {
+                    "message": f"Cover applied: {artist} / {album_name}",
                     "artist": artist, "album": album_name, "source": source,
                 })
         else:
@@ -1999,6 +2075,7 @@ def _handle_apply_cover(task_id: str, params: dict, config: dict) -> dict:
 
     save_cover(album_dir, cover_data)
     emit_task_event(task_id, "cover_applied", {
+        "message": f"Cover applied: {params.get('artist')} / {params.get('album')}",
         "artist": params.get("artist"), "album": params.get("album"),
     })
 
@@ -2476,10 +2553,105 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     return {"artist": artist, "album": album, "source": "soulseek", "moved": moved, "completed": len(completed_files)}
 
 
+def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
+    """Save uploaded image to the correct location in the library."""
+    import base64
+    from PIL import Image
+    import io as _io
+
+    img_type = params.get("type")  # "cover", "artist_photo", "background"
+    artist = params.get("artist", "")
+    album = params.get("album", "")
+    data_b64 = params.get("data_b64", "")
+
+    if not data_b64:
+        return {"error": "No image data"}
+
+    raw = base64.b64decode(data_b64)
+    img = Image.open(_io.BytesIO(raw)).convert("RGB")
+    lib = Path(config["library_path"])
+
+    if img_type == "cover":
+        from musicdock.db import get_library_album
+        album_data = get_library_album(artist, album)
+        if not album_data:
+            return {"error": "Album not found"}
+        dest = Path(album_data["path"]) / "cover.jpg"
+        img.save(str(dest), "JPEG", quality=92)
+    elif img_type == "artist_photo":
+        dest = lib / artist / "artist.jpg"
+        img.save(str(dest), "JPEG", quality=92)
+        with get_db_ctx() as cur:
+            cur.execute("UPDATE library_artists SET has_photo = 1 WHERE name = %s", (artist,))
+    elif img_type == "background":
+        dest = lib / artist / "background.jpg"
+        img.save(str(dest), "JPEG", quality=90)
+    else:
+        return {"error": f"Unknown image type: {img_type}"}
+
+    log.info("Image uploaded: %s for %s (%dx%d)", img_type, artist, img.width, img.height)
+
+    # Trigger Navidrome rescan for cover changes
+    if img_type == "cover":
+        try:
+            from musicdock.navidrome import start_scan
+            start_scan()
+        except Exception:
+            pass
+
+    return {"type": img_type, "path": str(dest), "width": img.width, "height": img.height}
+
+
+def _handle_cleanup_incomplete_downloads(task_id: str, params: dict, config: dict) -> dict:
+    """Clean up incomplete Soulseek downloads: remove dirs with partial albums."""
+    import shutil
+
+    downloads_dir = Path(config.get("downloads_path", "/downloads/soulseek"))
+    if not downloads_dir.exists():
+        return {"cleaned": 0, "message": "Downloads dir not found"}
+
+    cleaned = 0
+    details = []
+
+    for user_dir in downloads_dir.iterdir():
+        if not user_dir.is_dir():
+            continue
+        for album_dir in user_dir.iterdir():
+            if not album_dir.is_dir():
+                continue
+            audio_files = [f for f in album_dir.iterdir()
+                           if f.suffix.lower() in (".flac", ".mp3", ".ogg", ".opus", ".m4a")]
+            # An album is "incomplete" if it has some files but fewer than expected
+            # Simple heuristic: fewer than 3 tracks and dir older than 48h
+            if 0 < len(audio_files) < 3:
+                import datetime
+                age = datetime.datetime.now() - datetime.datetime.fromtimestamp(album_dir.stat().st_mtime)
+                if age.total_seconds() > 48 * 3600:
+                    shutil.rmtree(album_dir, ignore_errors=True)
+                    details.append(str(album_dir))
+                    cleaned += 1
+            elif len(audio_files) == 0:
+                # Empty dir — remove
+                shutil.rmtree(album_dir, ignore_errors=True)
+                cleaned += 1
+
+        # Clean up empty user dirs
+        if user_dir.exists() and not any(user_dir.iterdir()):
+            user_dir.rmdir()
+
+    # Also clear completed/errored from slskd
+    from musicdock.soulseek import clear_completed_downloads, clear_errored_downloads
+    clear_completed_downloads()
+    clear_errored_downloads()
+
+    return {"cleaned": cleaned, "details": details}
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
     "analyze_all": _handle_analyze_tracks,
+    "analyze_album_full": _handle_analyze_album_full,
     "enrich_artist": _handle_enrich_single,
     "fix_issues": _handle_fix_issues,
     "fetch_cover": _handle_fetch_cover,
@@ -2515,4 +2687,6 @@ TASK_HANDLERS = {
     "scan_missing_covers": _handle_scan_missing_covers,
     "apply_cover": _handle_apply_cover,
     "map_navidrome_ids": _handle_map_navidrome_ids,
+    "cleanup_incomplete_downloads": _handle_cleanup_incomplete_downloads,
+    "upload_image": _handle_upload_image,
 }

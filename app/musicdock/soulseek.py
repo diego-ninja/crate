@@ -214,6 +214,32 @@ def download_files(username: str, files: list[dict]) -> dict:
     return result
 
 
+def _delete(endpoint: str) -> bool:
+    url = f"{_base_url()}/api/v0/{endpoint}"
+    headers = {}
+    key = _api_key()
+    if key:
+        headers["X-API-Key"] = key
+    try:
+        resp = requests.delete(url, headers=headers, timeout=10)
+        return resp.status_code in (200, 204)
+    except Exception as e:
+        log.debug("slskd DELETE %s failed: %s", endpoint, e)
+        return False
+
+
+def clear_completed_downloads() -> bool:
+    """Remove all completed downloads from slskd queue."""
+    return _delete("transfers/downloads/all/completed")
+
+
+def clear_errored_downloads() -> bool:
+    """Remove all errored/cancelled downloads from slskd queue."""
+    ok1 = _delete("transfers/downloads/all/errored")
+    ok2 = _delete("transfers/downloads/all/cancelled")
+    return ok1 or ok2
+
+
 def get_downloads() -> list[dict]:
     """Get all current downloads, deduplicated by filename (keeps latest state)."""
     data = _get("transfers/downloads") or []

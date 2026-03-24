@@ -244,6 +244,12 @@ export function Album() {
             artist={data.artist}
             album={data.name}
             tags={data.album_tags}
+            tracks={data.tracks?.map((t: { filename: string; tags: { title?: string; tracknumber?: string; artist?: string } }) => ({
+              filename: t.filename,
+              title: t.tags.title,
+              tracknumber: t.tags.tracknumber,
+              artist: t.tags.artist,
+            }))}
             onSaved={refetch}
           />
         )}
@@ -285,7 +291,8 @@ export function Album() {
         {data.genres && data.genres.length > 0 && (
           <div className="mb-4 flex gap-1.5 flex-wrap">
             {data.genres.map(g => (
-              <Badge key={g} variant="secondary" className="text-xs cursor-pointer hover:bg-primary/20">
+              <Badge key={g} variant="secondary" className="text-xs cursor-pointer hover:bg-primary/20"
+                onClick={() => navigate(`/browse?genre=${encodeURIComponent(g.toLowerCase())}`)}>
                 {g.toLowerCase()}
               </Badge>
             ))}

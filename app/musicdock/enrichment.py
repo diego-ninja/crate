@@ -143,6 +143,21 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
     except Exception:
         log.debug("Fanart.tv failed for %s", name)
 
+    # ── Discogs ──
+    try:
+        from musicdock.discogs import enrich_artist as discogs_enrich, is_configured as discogs_configured
+        if discogs_configured():
+            dc = discogs_enrich(name)
+            if dc:
+                enrichment_data["discogs"] = dc
+                if dc.get("discogs_id"):
+                    persist_data["discogs_id"] = str(dc["discogs_id"])
+                if dc.get("discogs_url"):
+                    persist_data.setdefault("urls", {})["discogs"] = dc["discogs_url"]
+    except Exception:
+        log.debug("Discogs failed for %s", name)
+    time.sleep(0.3)
+
     # ── Persist to cache ──
     if enrichment_data:
         set_cache(f"enrichment:{name.lower()}", enrichment_data)
@@ -193,4 +208,5 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
         "has_setlist": "setlist" in enrichment_data,
         "has_musicbrainz": "musicbrainz" in enrichment_data,
         "has_fanart": "fanart" in enrichment_data,
+        "has_discogs": "discogs" in enrichment_data,
     }

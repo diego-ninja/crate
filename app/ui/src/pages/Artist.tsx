@@ -9,6 +9,7 @@ import { Network } from "@nivo/network";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { MissingAlbumCard } from "@/components/album/MissingAlbumCard";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -52,6 +53,7 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ImageCropUpload } from "@/components/ImageCropUpload";
 
 // ── Types ──
 
@@ -142,7 +144,24 @@ interface EnrichmentData {
   };
 }
 
-type TabKey = "overview" | "top-tracks" | "discography" | "setlist" | "similar" | "stats" | "about";
+type TabKey = "overview" | "top-tracks" | "discography" | "setlist" | "shows" | "similar" | "stats" | "about";
+
+interface ShowEvent {
+  id: string;
+  name: string;
+  date: string;
+  local_date: string;
+  venue: string;
+  city: string;
+  region: string;
+  country: string;
+  country_code: string;
+  url: string;
+  image: string;
+  lineup: string[];
+  price_range?: { min: number; max: number; currency: string } | null;
+  status: string;
+}
 
 // ── Main Component ──
 
@@ -158,6 +177,8 @@ export function Artist() {
   const [sort, setSort] = useState("name");
   const [photoLoaded, setPhotoLoaded] = useState(false);
   const [photoError, setPhotoError] = useState(false);
+  const [photoCacheBust, setPhotoCacheBust] = useState("");
+  const [bgCacheBust, setBgCacheBust] = useState("");
   const [bgLoaded, setBgLoaded] = useState(false);
   // Data fetching hooks (replace manual useEffect + useState)
   const navidromeLink = useNavidromeLink(data?.name);
@@ -165,8 +186,11 @@ export function Artist() {
   const [enriching, setEnriching] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [showMissing, setShowMissing] = useState(true);
+  const [upcomingShows, setUpcomingShows] = useState<ShowEvent[]>([]);
+  const [showsLoaded, setShowsLoaded] = useState(false);
   const [missingAlbums, setMissingAlbums] = useState<{ title: string; first_release_date: string; type: string }[]>([]);
   const [missingLoaded, setMissingLoaded] = useState(false);
+  const [allTrackTitles, setAllTrackTitles] = useState<{ title: string; album: string; path: string }[]>([]);
   const [bioExpanded, setBioExpanded] = useState(false);
   const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.name);
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
@@ -178,6 +202,22 @@ export function Artist() {
   useEffect(() => {
     if (fetchedEnrichment) setEnrichment(fetchedEnrichment as EnrichmentData);
   }, [fetchedEnrichment]);
+
+  // Fetch upcoming shows
+  useEffect(() => {
+    if (!data?.name || showsLoaded) return;
+    api<{ events: ShowEvent[]; configured: boolean }>(`/api/artist/${encPath(data.name)}/shows`)
+      .then((d) => { setUpcomingShows(d.events || []); setShowsLoaded(true); })
+      .catch(() => setShowsLoaded(true));
+  }, [data?.name]);
+
+  // Fetch all track titles for setlist matching (lazy)
+  useEffect(() => {
+    if (!data?.name || activeTab !== "setlist" || allTrackTitles.length > 0) return;
+    api<{ title: string; album: string; path: string }[]>(`/api/artist/${encPath(data.name)}/track-titles`)
+      .then((d) => { if (Array.isArray(d)) setAllTrackTitles(d); })
+      .catch(() => {});
+  }, [data?.name, activeTab]);
 
   // Fetch missing albums (lazy, on discography tab)
   useEffect(() => {
@@ -304,6 +344,7 @@ export function Artist() {
     { key: "top-tracks", label: "Top Tracks" },
     { key: "discography", label: "Discography" },
     { key: "setlist", label: "Probable Setlist" },
+    ...(upcomingShows.length > 0 ? [{ key: "shows" as TabKey, label: `Shows (${upcomingShows.length})` }] : []),
     { key: "similar", label: "Similar Artists" },
     { key: "stats", label: "Stats" },
     { key: "about", label: "About" },
@@ -315,12 +356,13 @@ export function Artist() {
     <div className="-mt-16 md:-mt-[6.5rem]">
       {/* ═══ HERO BANNER — full viewport width ═══ */}
       <div
-        className="relative h-[420px] md:h-[560px] overflow-hidden -mx-4 md:-mx-8"
+        className="relative h-[420px] md:h-[560px] overflow-hidden -mx-4 md:-mx-8 group/hero"
         style={{ width: "calc(100vw - var(--sidebar-w, 0px))" }}
       >
         <img
+          key={bgCacheBust || "bg"}
           ref={bgRef}
-          src={`/api/artist/${encPath(data.name)}/background?random=true`}
+          src={`/api/artist/${encPath(data.name)}/background?random=true${bgCacheBust ? `&t=${bgCacheBust}` : ""}`}
           alt=""
           className={`absolute inset-0 w-full h-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
           onLoad={() => setBgLoaded(true)}
@@ -339,13 +381,22 @@ export function Artist() {
           background: "linear-gradient(to bottom, rgba(46,52,64,0.5) 0%, transparent 30%)",
         }} />
 
+        {/* Background upload overlay — above gradients */}
+        <ImageCropUpload
+          endpoint={`/api/artwork/upload-background/${encPath(data.name)}`}
+          aspect={21/9}
+          onUploaded={() => { setBgLoaded(false); setBgCacheBust(String(Date.now())); }}
+          className="absolute top-16 right-4 z-30 p-2 rounded-lg bg-black/50 text-white/60 hover:text-white hover:bg-black/70 opacity-0 group-hover/hero:opacity-100 transition-opacity cursor-pointer"
+        />
+
         <div className="absolute inset-0 flex items-end">
           <div className="flex items-end gap-4 md:gap-6 w-full max-w-[1100px] px-4 md:px-8 pb-6 md:pb-8">
             {/* Artist photo */}
-            <div className="w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
+            <div className="relative group/photo w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
               {!photoError ? (
                 <img
-                  src={`/api/artist/${encPath(data.name)}/photo?random=true`}
+                  key={photoCacheBust || "photo"}
+                  src={`/api/artist/${encPath(data.name)}/photo?random=true${photoCacheBust ? `&t=${photoCacheBust}` : ""}`}
                   alt={data.name}
                   className={`w-full h-full object-cover transition-opacity duration-500 ${photoLoaded ? "opacity-100" : "opacity-0"}`}
                   onLoad={() => setPhotoLoaded(true)}
@@ -357,6 +408,12 @@ export function Artist() {
                   <span className="text-5xl font-black text-white/40">{letter}</span>
                 </div>
               )}
+              <ImageCropUpload
+                endpoint={`/api/artwork/upload-artist-photo/${encPath(data.name)}`}
+                aspect={1}
+                onUploaded={() => { setPhotoError(false); setPhotoLoaded(false); setPhotoCacheBust(String(Date.now())); }}
+                className="absolute bottom-1 right-1 p-1.5 rounded-md bg-black/60 text-white/70 hover:text-white hover:bg-black/80 opacity-0 group-hover/photo:opacity-100 transition-opacity"
+              />
             </div>
 
             {/* Artist info */}
@@ -395,6 +452,20 @@ export function Artist() {
                   <span className="flex items-center gap-1.5"><Headphones size={14} />{formatCompact(lastfm.listeners!)} listeners</span>
                 )}
               </div>
+
+              {/* Next show badge */}
+              {upcomingShows[0] && (
+                <a
+                  href={upcomingShows[0].url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-300 hover:bg-orange-500/20 transition-colors text-xs mb-2"
+                >
+                  <Calendar size={13} />
+                  <span className="font-medium">Next show: {new Date(upcomingShows[0].date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</span>
+                  <span className="text-orange-300/70">{upcomingShows[0].venue}{upcomingShows[0].city ? ` — ${[upcomingShows[0].city, upcomingShows[0].country].filter(Boolean).join(", ")}` : ""}</span>
+                </a>
+              )}
 
               {/* Popularity bar — Spotify or derived from Last.fm listeners */}
               {(() => {
@@ -827,17 +898,17 @@ export function Artist() {
                       className="bg-cyan-600 hover:bg-cyan-500 text-white"
                       onClick={() => {
                         if (!setlistData?.probable_setlist) return;
-                        // Match setlist songs to local top tracks for playback
+                        // Match setlist songs to library tracks
                         const matched: PlayerTrack[] = [];
                         for (const song of setlistData.probable_setlist) {
-                          const t = topTracks.find((tt) => tt.title.toLowerCase() === song.title.toLowerCase());
+                          const t = allTrackTitles.find((tt) => tt.title.toLowerCase() === song.title.toLowerCase());
                           if (t) {
                             matched.push({
-                              id: t.id,
+                              id: t.path,
                               title: t.title,
-                              artist: t.artist,
+                              artist: data.name,
                               album: t.album,
-                              albumCover: t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : undefined,
+                              albumCover: `/api/cover/${encPath(data.name)}/${encPath(t.album)}`,
                             });
                           }
                         }
@@ -880,20 +951,21 @@ export function Artist() {
 
                 <div className="space-y-0.5">
                   {setlistData.probable_setlist.map((song, i) => {
-                    const matchedTrack = topTracks.find((t) => t.title.toLowerCase() === song.title.toLowerCase());
-                    const isPlayable = !!matchedTrack;
+                    const songLower = song.title.toLowerCase();
+                    const libraryMatch = allTrackTitles.find((t) => t.title.toLowerCase() === songLower);
+                    const isPlayable = !!libraryMatch;
                     return (
                     <button
                       key={i}
                       className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group ${!isPlayable ? "opacity-50" : ""}`}
                       onClick={() => {
-                        if (matchedTrack) {
+                        if (libraryMatch) {
                           player.play({
-                            id: matchedTrack.id,
-                            title: matchedTrack.title,
-                            artist: matchedTrack.artist,
-                            album: matchedTrack.album,
-                            albumCover: matchedTrack.album ? `/api/cover/${encPath(matchedTrack.artist)}/${encPath(matchedTrack.album)}` : undefined,
+                            id: libraryMatch.path,
+                            title: libraryMatch.title,
+                            artist: data.name,
+                            album: libraryMatch.album,
+                            albumCover: `/api/cover/${encPath(data.name)}/${encPath(libraryMatch.album)}`,
                           });
                         }
                       }}
@@ -928,6 +1000,55 @@ export function Artist() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Shows Tab ── */}
+        {activeTab === "shows" && (
+          <div className="space-y-2">
+            {upcomingShows.map((show, i) => {
+              const d = show.date ? new Date(show.date) : null;
+              const dateStr = d ? d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : show.local_date;
+              const location = [show.city, show.country].filter(Boolean).join(", ");
+              return (
+                <a
+                  key={show.id || i}
+                  href={show.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-4 p-4 bg-card border border-border rounded-lg hover:bg-white/5 transition-colors"
+                >
+                  {d ? (
+                    <div className="w-14 text-center flex-shrink-0">
+                      <div className="text-2xl font-bold text-primary">{d.getDate()}</div>
+                      <div className="text-[10px] uppercase text-muted-foreground">{d.toLocaleDateString(undefined, { month: "short" })}</div>
+                    </div>
+                  ) : (
+                    <div className="w-14 text-center flex-shrink-0 text-sm text-muted-foreground">{show.local_date}</div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium">{show.name || show.venue}</div>
+                    <div className="text-sm text-muted-foreground">{show.venue}{location ? ` — ${location}` : ""}</div>
+                    {show.lineup.length > 1 && (
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        with {show.lineup.filter(l => l.toLowerCase() !== data.name.toLowerCase()).join(", ")}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0 space-y-1">
+                    <div className="text-sm text-muted-foreground">{dateStr}</div>
+                    {show.price_range && (
+                      <div className="text-xs text-muted-foreground">
+                        {show.price_range.min}–{show.price_range.max} {show.price_range.currency}
+                      </div>
+                    )}
+                    {show.status === "onsale" && (
+                      <Badge variant="secondary" className="text-[10px]">On Sale</Badge>
+                    )}
+                  </div>
+                </a>
+              );
+            })}
           </div>
         )}
 
@@ -1427,3 +1548,5 @@ function SimilarArtistCard({ name, genres, popularity }: { name: string; genres?
     </Link>
   );
 }
+
+

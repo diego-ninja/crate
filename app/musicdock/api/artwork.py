@@ -1,6 +1,7 @@
+import logging
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, UploadFile, File
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -8,6 +9,8 @@ from musicdock.artwork import scan_missing_covers, extract_embedded_cover, save_
 from musicdock.audio import get_audio_files
 from musicdock.api._deps import library_path, extensions, safe_path
 from musicdock.db import create_task
+
+log = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -102,4 +105,40 @@ def api_artwork_fetch_artist(name: str):
 def api_artwork_fetch_all():
     """Queue a task to fetch all missing covers."""
     task_id = create_task("fetch_artwork_all")
+    return {"status": "queued", "task_id": task_id}
+
+
+@router.post("/api/artwork/upload-cover/{artist:path}/{album:path}")
+async def api_upload_cover(artist: str, album: str, file: UploadFile = File(...)):
+    """Upload a cover image for an album. Saved to staging, worker copies to album dir."""
+    import base64
+    data = await file.read()
+    task_id = create_task("upload_image", {
+        "type": "cover", "artist": artist, "album": album,
+        "data_b64": base64.b64encode(data).decode(),
+    })
+    return {"status": "queued", "task_id": task_id}
+
+
+@router.post("/api/artwork/upload-artist-photo/{name:path}")
+async def api_upload_artist_photo(name: str, file: UploadFile = File(...)):
+    """Upload artist photo. Worker saves to artist dir."""
+    import base64
+    data = await file.read()
+    task_id = create_task("upload_image", {
+        "type": "artist_photo", "artist": name,
+        "data_b64": base64.b64encode(data).decode(),
+    })
+    return {"status": "queued", "task_id": task_id}
+
+
+@router.post("/api/artwork/upload-background/{name:path}")
+async def api_upload_background(name: str, file: UploadFile = File(...)):
+    """Upload artist background. Worker saves to artist dir."""
+    import base64
+    data = await file.read()
+    task_id = create_task("upload_image", {
+        "type": "background", "artist": name,
+        "data_b64": base64.b64encode(data).decode(),
+    })
     return {"status": "queued", "task_id": task_id}

@@ -175,3 +175,25 @@ def acquisition_queue():
         pass
 
     return queue
+
+
+@router.post("/queue/clear-completed")
+def clear_completed():
+    """Clear completed Soulseek downloads from slskd queue."""
+    ok = soulseek.clear_completed_downloads()
+    return {"cleared": ok}
+
+
+@router.post("/queue/clear-errored")
+def clear_errored():
+    """Clear errored/cancelled Soulseek downloads from slskd queue."""
+    ok = soulseek.clear_errored_downloads()
+    return {"cleared": ok}
+
+
+@router.post("/queue/cleanup-incomplete")
+def cleanup_incomplete():
+    """Create task to clean up incomplete Soulseek album downloads."""
+    from musicdock.db import create_task
+    task_id = create_task("cleanup_incomplete_downloads", {})
+    return {"task_id": task_id}

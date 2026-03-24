@@ -47,7 +47,7 @@ from musicdock.db.library import (
 # Auth
 from musicdock.db.auth import (
     create_user, get_user_by_email, get_user_by_google_id,
-    get_user_by_id, update_user_last_login, list_users, delete_user,
+    get_user_by_id, update_user_last_login, update_user, list_users, delete_user,
     create_session, get_session, delete_session,
 )
 

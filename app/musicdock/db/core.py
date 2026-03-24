@@ -264,6 +264,8 @@ def init_db():
             ("formed", "TEXT"), ("ended", "TEXT"), ("artist_type", "TEXT"),
             ("members_json", "JSONB"), ("urls_json", "JSONB"),
             ("listeners", "INTEGER"), ("enriched_at", "TEXT"),
+            ("discogs_id", "TEXT"), ("spotify_followers", "INTEGER"),
+            ("lastfm_playcount", "INTEGER"),
         ]:
             cur.execute(f"""
                 DO $$ BEGIN

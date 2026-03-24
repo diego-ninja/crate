@@ -1,5 +1,5 @@
 #!/bin/bash
-# Download Essentia TensorFlow models for audio analysis
+# Download Essentia TensorFlow models + PANNs CNN14 for audio analysis
 MODEL_DIR="${1:-/app/models}"
 BASE_URL="https://essentia.upf.edu/models"
 
@@ -8,10 +8,11 @@ mkdir -p "$MODEL_DIR"
 download() {
     local url="$1"
     local dest="$2"
-    if [ ! -f "$dest" ] || [ $(stat -c%s "$dest" 2>/dev/null || echo 0) -lt 1000 ]; then
+    local min_size="${3:-1000}"
+    if [ ! -f "$dest" ] || [ $(stat -c%s "$dest" 2>/dev/null || echo 0) -lt "$min_size" ]; then
         echo "Downloading: $(basename $dest)"
         curl -sfL "$url" -o "$dest"
-        if [ $? -ne 0 ] || [ $(stat -c%s "$dest" 2>/dev/null || echo 0) -lt 1000 ]; then
+        if [ $? -ne 0 ] || [ $(stat -c%s "$dest" 2>/dev/null || echo 0) -lt "$min_size" ]; then
             echo "  WARNING: Failed to download $(basename $dest)"
             rm -f "$dest"
         fi
@@ -39,5 +40,22 @@ do
     download "$BASE_URL/$model.json" "$MODEL_DIR/$name.json"
 done
 
-echo "Models downloaded to $MODEL_DIR"
+echo "Essentia models downloaded to $MODEL_DIR"
+
+# PANNs CNN14 model (~300MB) + AudioSet labels
+PANNS_DIR="/app/panns_data"
+mkdir -p "$PANNS_DIR"
+
+download \
+    "https://zenodo.org/record/3987831/files/Cnn14_mAP%3D0.431.pth?download=1" \
+    "$PANNS_DIR/Cnn14_mAP=0.431.pth" \
+    100000000
+
+download \
+    "http://storage.googleapis.com/us_audioset/youtube_corpus/v1/csv/class_labels_indices.csv" \
+    "$PANNS_DIR/class_labels_indices.csv"
+
+echo "PANNs model downloaded to $PANNS_DIR"
+
 ls -la "$MODEL_DIR"
+ls -la "$PANNS_DIR"

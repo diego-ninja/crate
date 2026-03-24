@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { NavLink } from "react-router";
+import { NavLink, Link } from "react-router";
 import {
   LayoutDashboard,
   Library,
@@ -105,7 +105,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     <nav className="w-[220px] bg-card border-r border-border flex-shrink-0 fixed h-screen overflow-y-auto flex flex-col">
       <div className="px-5 pb-6 pt-6 border-b border-border mb-4">
         <span className="text-lg font-bold text-foreground">
-          <span className="text-primary">&#9835;</span> Grooveyard
+          <span className="text-primary">&#9835;</span> Crate
         </span>
         {navidrome && (
           <div className="flex items-center gap-1.5 mt-2" title={navidrome.connected ? `Navidrome ${navidrome.version}` : "Navidrome disconnected"}>
@@ -162,12 +162,14 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       {user && (
         <div className="border-t border-border px-4 py-3 mt-auto">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {user.avatar ? (
-              <img src={user.avatar} alt="" className="w-5 h-5 rounded-full" />
-            ) : (
-              <User size={14} />
-            )}
-            <span className="flex-1 truncate">{user.name}</span>
+            <Link to="/profile" className="flex items-center gap-2 flex-1 min-w-0 hover:text-foreground transition-colors" onClick={onNavigate}>
+              {user.avatar ? (
+                <img src={user.avatar} alt="" className="w-5 h-5 rounded-full" />
+              ) : (
+                <User size={14} />
+              )}
+              <span className="flex-1 truncate">{user.name}</span>
+            </Link>
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
               {user.role}
             </Badge>

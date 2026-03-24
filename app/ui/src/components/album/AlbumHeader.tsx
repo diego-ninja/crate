@@ -18,6 +18,7 @@ import {
 import { encPath, formatDuration, formatSize } from "@/lib/utils";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { useFavorites } from "@/hooks/use-favorites";
+import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -58,14 +59,15 @@ export function AlbumHeader({
   totalSizeMb,
   hasCover,
   navidromeData,
-  genres,
+  genres: _genres,
   hasAnalysis,
   onAnalysisComplete,
   children,
 }: AlbumHeaderProps) {
   const { playAll } = usePlayer();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const coverUrl = `/api/cover/${encPath(artist)}/${encPath(album)}`;
+  const [coverCacheBust, setCoverCacheBust] = useState("");
+  const coverUrl = `/api/cover/${encPath(artist)}/${encPath(album)}${coverCacheBust ? `?t=${coverCacheBust}` : ""}`;
   const albumFavId = navidromeData?.id || `${artist}/${album}`;
   const [coverLoaded, setCoverLoaded] = useState(false);
   const [coverError, setCoverError] = useState(false);
@@ -75,7 +77,7 @@ export function AlbumHeader({
     setAnalyzing(true);
     try {
       const res = await api<{ task_id: string }>(`/api/analyze/album/${encPath(artist)}/${encPath(album)}`, "POST");
-      toast.success("Analysis started...");
+      toast.success("Audio analysis + bliss started...");
       const taskId = res.task_id;
       const poll = setInterval(async () => {
         try {
@@ -85,7 +87,7 @@ export function AlbumHeader({
           if (task.status === "completed") {
             clearInterval(poll);
             setAnalyzing(false);
-            toast.success("Analysis complete");
+            toast.success("Audio + bliss analysis complete");
             onAnalysisComplete?.();
           } else if (task.status === "failed") {
             clearInterval(poll);
@@ -146,25 +148,32 @@ export function AlbumHeader({
       {/* Content */}
       <div className="absolute inset-0 flex items-end">
         <div className="flex items-end gap-4 md:gap-6 w-full max-w-[1100px] px-4 md:px-8 pb-6 md:pb-8">
-          {/* Cover art */}
-          <ImageLightbox src={coverUrl} alt={`${displayName} cover art`}>
-            <div className="w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-lg overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
-              {!coverError ? (
-                <img
-                  src={coverUrl}
-                  alt={displayName}
-                  className={`w-full h-full object-cover transition-opacity duration-500 ${coverLoaded ? "opacity-100" : "opacity-0"}`}
-                  onLoad={() => setCoverLoaded(true)}
-                  onError={() => setCoverError(true)}
-                />
-              ) : null}
-              {(coverError || !coverLoaded) && (
-                <div className={`absolute inset-0 bg-gradient-to-br from-cyan-600/40 to-cyan-900/20 flex items-center justify-center transition-opacity duration-500 ${coverLoaded && !coverError ? "opacity-0" : "opacity-100"}`}>
-                  <span className="text-5xl font-black text-white/40">{letter}</span>
-                </div>
-              )}
-            </div>
-          </ImageLightbox>
+          {/* Cover art with upload overlay */}
+          <div className="relative group/cover flex-shrink-0">
+            <ImageLightbox src={coverUrl} alt={`${displayName} cover art`}>
+              <div className="w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-lg overflow-hidden ring-2 ring-white/10 shadow-2xl shadow-black/50">
+                {!coverError ? (
+                  <img
+                    src={coverUrl}
+                    alt={displayName}
+                    className={`w-full h-full object-cover transition-opacity duration-500 ${coverLoaded ? "opacity-100" : "opacity-0"}`}
+                    onLoad={() => setCoverLoaded(true)}
+                    onError={() => setCoverError(true)}
+                  />
+                ) : null}
+                {(coverError || !coverLoaded) && (
+                  <div className={`absolute inset-0 bg-gradient-to-br from-cyan-600/40 to-cyan-900/20 flex items-center justify-center transition-opacity duration-500 ${coverLoaded && !coverError ? "opacity-0" : "opacity-100"}`}>
+                    <span className="text-5xl font-black text-white/40">{letter}</span>
+                  </div>
+                )}
+              </div>
+            </ImageLightbox>
+            <ImageCropUpload
+              endpoint={`/api/artwork/upload-cover/${encPath(artist)}/${encPath(album)}`}
+              aspect={1}
+              onUploaded={() => { setCoverError(false); setCoverLoaded(false); setCoverCacheBust(String(Date.now())); }}
+            />
+          </div>
 
           {/* Album info */}
           <div className="flex-1 min-w-0 pb-1">
@@ -198,11 +207,6 @@ export function AlbumHeader({
               <span className="flex items-center gap-1.5"><Disc3 size={14} />{trackCount} tracks</span>
               <span className="flex items-center gap-1.5"><Clock size={14} />{formatDuration(totalLengthSec)}</span>
               <span className="flex items-center gap-1.5"><HardDrive size={14} />{formatSize(totalSizeMb)}</span>
-              {(genres ?? albumTags.genre?.split(",").map((g) => g.trim()).filter(Boolean) ?? []).map((g) => (
-                <span key={g} className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">
-                  {g.toLowerCase()}
-                </span>
-              ))}
               {hasCover ? (
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                   <Music size={10} className="mr-0.5" /> Cover
@@ -284,3 +288,5 @@ export function AlbumHeader({
     </div>
   );
 }
+
+

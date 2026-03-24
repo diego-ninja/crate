@@ -320,7 +320,7 @@ export function AudioPlayer() {
     const blob = new Blob([lines.join("\n")], { type: "audio/x-mpegurl" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `grooveyard-queue-${new Date().toISOString().slice(0, 10)}.m3u`;
+    a.download = `crate-queue-${new Date().toISOString().slice(0, 10)}.m3u`;
     a.click();
     URL.revokeObjectURL(a.href);
     toast.success("Queue exported as .m3u");
