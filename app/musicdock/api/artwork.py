@@ -23,12 +23,27 @@ class ExtractRequest(BaseModel):
 
 @router.get("/api/artwork/missing")
 def api_artwork_missing():
-    """Quick count of missing covers (from DB, not filesystem scan)."""
+    """List albums missing cover art with details."""
+    import re
     from musicdock.db import get_db_ctx
+    year_re = re.compile(r"^\d{4}\s*[-–]\s*")
     with get_db_ctx() as cur:
-        cur.execute("SELECT COUNT(*) AS cnt FROM library_albums WHERE has_cover = 0")
-        count = cur.fetchone()["cnt"]
-    return {"missing_count": count}
+        cur.execute(
+            "SELECT name, artist, year, musicbrainz_albumid, path "
+            "FROM library_albums WHERE has_cover = 0 OR has_cover IS NULL "
+            "ORDER BY artist, year"
+        )
+        albums = []
+        for r in cur.fetchall():
+            albums.append({
+                "name": r["name"],
+                "display_name": year_re.sub("", r["name"]),
+                "artist": r["artist"],
+                "year": r.get("year", ""),
+                "mbid": r.get("musicbrainz_albumid"),
+                "path": r.get("path", ""),
+            })
+    return {"missing_count": len(albums), "albums": albums}
 
 
 @router.post("/api/artwork/scan")

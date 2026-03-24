@@ -1850,24 +1850,76 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
                     source = "embedded"
                     break
 
-        # 3. Tidal (search for album cover) — TODO: would need Tidal API
-
-        # 4. Deezer (search for album)
+        # 3. Deezer
         if not cover_data:
             try:
                 import requests as _requests
-                resp = _requests.get(
-                    "https://api.deezer.com/search/album",
-                    params={"q": f"{artist} {album_name}", "limit": 1},
-                    timeout=10,
-                )
+                resp = _requests.get("https://api.deezer.com/search/album",
+                    params={"q": f"{artist} {album_name}", "limit": 5}, timeout=10)
                 if resp.status_code == 200:
-                    data = resp.json().get("data", [])
-                    if data and data[0].get("cover_xl"):
-                        img_resp = _requests.get(data[0]["cover_xl"], timeout=10)
-                        if img_resp.status_code == 200 and len(img_resp.content) > 1000:
-                            cover_data = img_resp.content
-                            source = "deezer"
+                    for item in resp.json().get("data", []):
+                        if item.get("cover_xl"):
+                            img_resp = _requests.get(item["cover_xl"], timeout=10)
+                            if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                                cover_data = img_resp.content
+                                source = "deezer"
+                                break
+            except Exception:
+                pass
+
+        # 4. iTunes / Apple Music
+        if not cover_data:
+            try:
+                import requests as _requests
+                resp = _requests.get("https://itunes.apple.com/search",
+                    params={"term": f"{artist} {album_name}", "media": "music", "entity": "album", "limit": 5}, timeout=10)
+                if resp.status_code == 200:
+                    for item in resp.json().get("results", []):
+                        art_url = item.get("artworkUrl100", "").replace("100x100", "600x600")
+                        if art_url:
+                            img_resp = _requests.get(art_url, timeout=10)
+                            if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                                cover_data = img_resp.content
+                                source = "itunes"
+                                break
+            except Exception:
+                pass
+
+        # 5. Last.fm album art
+        if not cover_data:
+            try:
+                from musicdock.popularity import _lastfm_get
+                data = _lastfm_get("album.getinfo", artist=artist, album=album_name, autocorrect="1")
+                if data and "album" in data:
+                    images = data["album"].get("image", [])
+                    # Get largest image
+                    for img in reversed(images):
+                        url = img.get("#text", "")
+                        if url and "noimage" not in url:
+                            import requests as _requests
+                            img_resp = _requests.get(url, timeout=10)
+                            if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                                cover_data = img_resp.content
+                                source = "lastfm"
+                                break
+            except Exception:
+                pass
+
+        # 6. MusicBrainz search (if no MBID, search by name)
+        if not cover_data and not (mbid and mbid.strip()):
+            try:
+                import musicbrainzngs
+                musicbrainzngs.set_useragent("grooveyard", "0.1", "x")
+                results = musicbrainzngs.search_releases(artist=artist, release=album_name, limit=3)
+                for r in results.get("release-list", []):
+                    found_mbid = r.get("id")
+                    if found_mbid:
+                        caa_data = fetch_cover_from_caa(found_mbid)
+                        if caa_data:
+                            cover_data = caa_data
+                            source = "coverartarchive"
+                            break
+                    time.sleep(0.5)
             except Exception:
                 pass
 

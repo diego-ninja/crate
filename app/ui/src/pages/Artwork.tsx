@@ -26,6 +26,8 @@ const SOURCE_LABELS: Record<string, string> = {
   coverartarchive: "Cover Art Archive",
   embedded: "Embedded in Audio",
   deezer: "Deezer",
+  itunes: "iTunes",
+  lastfm: "Last.fm",
   tidal: "Tidal",
 };
 
@@ -33,12 +35,14 @@ const SOURCE_COLORS: Record<string, string> = {
   coverartarchive: "text-green-500 border-green-500/30",
   embedded: "text-blue-500 border-blue-500/30",
   deezer: "text-purple-500 border-purple-500/30",
+  itunes: "text-pink-500 border-pink-500/30",
+  lastfm: "text-red-500 border-red-500/30",
   tidal: "text-cyan-500 border-cyan-500/30",
 };
 
 export function Artwork() {
   const navigate = useNavigate();
-  const { data: missingData } = useApi<{ missing_count: number }>("/api/artwork/missing");
+  const { data: missingData } = useApi<{ missing_count: number; albums: { name: string; display_name: string; artist: string; year: string; mbid: string | null; path: string }[] }>("/api/artwork/missing");
   const [taskId, setTaskId] = useState<string | null>(null);
   const [applying, setApplying] = useState<Set<number>>(new Set());
   const [applied, setApplied] = useState<Set<number>>(new Set());
@@ -225,11 +229,43 @@ export function Artwork() {
         </div>
       )}
 
+      {/* Missing albums list (before scan) */}
+      {!taskId && !done && missingData && missingData.albums && missingData.albums.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-3">Missing Covers ({missingData.missing_count})</h3>
+          <div className="space-y-1">
+            {missingData.albums.map((a, i) => (
+              <div key={`${a.artist}-${a.name}-${i}`} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border hover:bg-muted/30 transition-colors">
+                <div className="w-10 h-10 rounded bg-secondary flex items-center justify-center flex-shrink-0">
+                  <Disc3 size={16} className="text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <button
+                    className="text-sm font-medium truncate hover:text-primary transition-colors block"
+                    onClick={() => navigate(`/album/${encPath(a.artist)}/${encPath(a.name)}`)}
+                  >
+                    {a.artist} — {a.display_name}
+                  </button>
+                  <div className="text-xs text-muted-foreground flex gap-2">
+                    {a.year && <span>{a.year}</span>}
+                    {a.mbid ? (
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 text-green-500 border-green-500/30">MBID</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 text-yellow-500 border-yellow-500/30">No MBID</Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Empty state */}
-      {!taskId && !done && (
+      {!taskId && !done && (!missingData || missingData.missing_count === 0) && (
         <div className="text-center py-12 text-muted-foreground">
           <Image size={48} className="mx-auto mb-3 opacity-30" />
-          <div className="text-sm">Click "Scan & Find Covers" to detect missing album art and find covers from online sources.</div>
+          <div className="text-sm">All albums have cover art!</div>
         </div>
       )}
     </div>
