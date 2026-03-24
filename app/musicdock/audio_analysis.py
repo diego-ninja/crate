@@ -50,7 +50,13 @@ def _empty_result() -> dict:
 # ── Essentia backend ─────────────────────────────────────────────
 
 def _has_ml_models() -> bool:
-    return (_MODEL_DIR / "discogs-effnet-bs64-1.pb").exists()
+    if not (_MODEL_DIR / "discogs-effnet-bs64-1.pb").exists():
+        return False
+    try:
+        from essentia.standard import TensorflowPredictEffnetDiscogs
+        return True
+    except ImportError:
+        return False
 
 
 def _analyze_essentia(filepath: str) -> dict:
@@ -103,9 +109,12 @@ def _analyze_essentia(filepath: str) -> dict:
 
         # ML predictions or heuristic fallback
         if _has_ml_models():
-            _analyze_essentia_ml(filepath, result)
+            try:
+                _analyze_essentia_ml(filepath, result)
+            except Exception:
+                log.warning("Essentia ML failed for %s, falling back to heuristics", filepath, exc_info=True)
+                _analyze_essentia_heuristic(filepath, audio_44k, result)
         else:
-            log.warning("Essentia ML models not found at %s, using heuristics", _MODEL_DIR)
             _analyze_essentia_heuristic(filepath, audio_44k, result)
 
     except Exception:

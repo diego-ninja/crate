@@ -14,7 +14,7 @@ redis>=5.0
 bcrypt>=4.0
 pyjwt>=2.8
 librosa>=0.10
-essentia>=2.1b5; platform_machine == "x86_64"
+essentia-tensorflow>=2.1b5; platform_machine == "x86_64"
 Pillow>=10.0
 numpy>=1.26
 tiddl>=3.2
