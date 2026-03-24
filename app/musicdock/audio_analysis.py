@@ -81,11 +81,13 @@ def _analyze_essentia(filepath: str) -> dict:
         except Exception:
             log.debug("Key failed: %s", filepath, exc_info=True)
 
-        # Energy
+        # Energy (use EBU R128 loudness for better normalization)
         try:
             energy_val = float(Energy()(audio))
             rms = (energy_val / len(audio)) ** 0.5
-            result["energy"] = round(min(1.0, rms / 0.15), 3)
+            # Normalize: -30dB = 0.0, -6dB = 1.0 (modern mastered music sits around -8 to -12 LUFS)
+            db = 20 * np.log10(rms + 1e-10)
+            result["energy"] = round(max(0.0, min(1.0, (db + 30) / 24)), 3)
         except Exception:
             log.debug("Feature failed for %s", filepath, exc_info=True)
 
@@ -105,10 +107,10 @@ def _analyze_essentia(filepath: str) -> dict:
         except Exception:
             log.debug("Feature failed for %s", filepath, exc_info=True)
 
-        # Danceability (Essentia native)
+        # Danceability (Essentia native — clamp to 0-1)
         try:
             danceability_val, _ = Danceability()(audio)
-            result["danceability"] = round(float(danceability_val), 3)
+            result["danceability"] = round(max(0.0, min(1.0, float(danceability_val))), 3)
         except Exception:
             log.debug("Feature failed for %s", filepath, exc_info=True)
 
@@ -118,16 +120,16 @@ def _analyze_essentia(filepath: str) -> dict:
             zcr_vals = [ZeroCrossingRate()(frame) for frame in FrameGenerator(audio, frameSize=2048, hopSize=1024)]
             zcr = float(np.mean(zcr_vals)) if zcr_vals else 0.0
 
-            centroid_norm = min(1.0, centroid / 5000)
-            zcr_norm = min(1.0, zcr / 0.15)
+            centroid_norm = min(1.0, centroid / 8000)  # metal/electronic can reach 6-8kHz
+            zcr_norm = min(1.0, zcr / 0.25)  # metal has high ZCR
             tempo_norm = min(1.0, tempo_val / 200)
 
-            # Valence
-            mode_weight = 0.7 if result.get("scale") == "major" else 0.3
-            result["valence"] = round(min(1.0, centroid_norm * 0.35 + tempo_norm * 0.3 + mode_weight * 0.35), 3)
+            # Valence (mode matters more — minor = darker)
+            mode_weight = 0.65 if result.get("scale") == "major" else 0.2
+            result["valence"] = round(max(0.0, min(1.0, mode_weight * 0.5 + tempo_norm * 0.25 + (1.0 - energy_norm) * 0.25)), 3)
 
-            # Acousticness
-            result["acousticness"] = round(max(0.0, min(1.0, 1.0 - centroid_norm * 0.6 - zcr_norm * 0.4)), 3)
+            # Acousticness (high centroid + high ZCR + high energy = NOT acoustic)
+            result["acousticness"] = round(max(0.0, min(1.0, 1.0 - centroid_norm * 0.4 - zcr_norm * 0.3 - energy_norm * 0.3)), 3)
 
             # Spectral Complexity
             try:
@@ -151,17 +153,21 @@ def _analyze_essentia(filepath: str) -> dict:
             except Exception:
                 pass
 
-            # Mood
+            # Mood — use opposing dimensions so not everything scores high
             dance = result.get("danceability") or 0.5
+            is_minor = result.get("scale") == "minor"
+            valence = result.get("valence") or 0.5
+            acoustic = result.get("acousticness") or 0.5
+
             result["mood"] = {
-                "happy": round(min(1.0, tempo_norm * 0.4 + centroid_norm * 0.3 + energy_norm * 0.3), 3),
-                "sad": round(min(1.0, (1 - tempo_norm) * 0.4 + (1 - energy_norm) * 0.3 + (1 - centroid_norm) * 0.3), 3),
-                "aggressive": round(min(1.0, energy_norm * 0.4 + zcr_norm * 0.3 + centroid_norm * 0.3), 3),
-                "relaxed": round(min(1.0, (1 - energy_norm) * 0.4 + (1 - zcr_norm) * 0.3 + (1 - tempo_norm) * 0.3), 3),
-                "electronic": round(min(1.0, centroid_norm * 0.4 + (1 - zcr_norm) * 0.3 + energy_norm * 0.3), 3),
-                "acoustic": round(min(1.0, (result.get("acousticness") or 0.5) * 0.5 + (1 - centroid_norm) * 0.3 + zcr_norm * 0.2), 3),
-                "party": round(min(1.0, dance * 0.4 + tempo_norm * 0.3 + energy_norm * 0.3), 3),
-                "dark": round(min(1.0, (1 - centroid_norm) * 0.4 + energy_norm * 0.3 + (1 - tempo_norm) * 0.3), 3),
+                "aggressive": round(max(0.0, min(1.0, energy_norm * 0.35 + zcr_norm * 0.25 + centroid_norm * 0.2 + (1 - valence) * 0.2)), 3),
+                "dark": round(max(0.0, min(1.0, (1 - valence) * 0.4 + energy_norm * 0.2 + (0.7 if is_minor else 0.2) * 0.4)), 3),
+                "happy": round(max(0.0, min(1.0, valence * 0.5 + tempo_norm * 0.25 + (1 - energy_norm) * 0.25)), 3),
+                "sad": round(max(0.0, min(1.0, (1 - valence) * 0.4 + (1 - energy_norm) * 0.3 + (0.7 if is_minor else 0.2) * 0.3)), 3),
+                "relaxed": round(max(0.0, min(1.0, (1 - energy_norm) * 0.4 + acoustic * 0.3 + (1 - tempo_norm) * 0.3)), 3),
+                "party": round(max(0.0, min(1.0, dance * 0.35 + tempo_norm * 0.25 + energy_norm * 0.2 + valence * 0.2)), 3),
+                "electronic": round(max(0.0, min(1.0, (1 - acoustic) * 0.4 + centroid_norm * 0.3 + (1 - zcr_norm) * 0.3)), 3),
+                "acoustic": round(max(0.0, min(1.0, acoustic * 0.5 + (1 - centroid_norm) * 0.25 + (1 - energy_norm) * 0.25)), 3),
             }
 
         except Exception:
@@ -195,10 +201,11 @@ def _analyze_librosa(filepath: str) -> dict:
         spectral_flatness = float(np.mean(librosa.feature.spectral_flatness(y=y)))
         onset_env = librosa.onset.onset_strength(y=y, sr=sr)
 
-        centroid_norm = min(1.0, spectral_centroid / 5000)
+        centroid_norm = min(1.0, spectral_centroid / 8000)
         rolloff_norm = min(1.0, spectral_rolloff / (sr / 2))
-        zcr_norm = min(1.0, zero_crossing / 0.15)
-        energy_norm = min(1.0, mean_rms / 0.2)
+        zcr_norm = min(1.0, zero_crossing / 0.25)
+        db = 20 * np.log10(mean_rms + 1e-10)
+        energy_norm = max(0.0, min(1.0, (db + 30) / 24))
 
         # BPM
         try:
@@ -255,10 +262,10 @@ def _analyze_librosa(filepath: str) -> dict:
             log.debug("Feature failed for %s", filepath, exc_info=True)
 
         # Valence
-        mode_weight = 0.7 if result.get("scale") == "major" else 0.3
-        result["valence"] = round(min(1.0, centroid_norm * 0.35 + tempo_norm * 0.3 + mode_weight * 0.35), 3)
+        mode_weight = 0.65 if result.get("scale") == "major" else 0.2
+        result["valence"] = round(max(0.0, min(1.0, mode_weight * 0.5 + tempo_norm * 0.25 + (1.0 - energy_norm) * 0.25)), 3)
 
-        result["acousticness"] = round(max(0.0, 1.0 - rolloff_norm), 3)
+        result["acousticness"] = round(max(0.0, min(1.0, 1.0 - rolloff_norm * 0.4 - zcr_norm * 0.3 - energy_norm * 0.3)), 3)
         result["instrumentalness"] = round(min(1.0, spectral_flatness * 10), 3)
 
         # Spectral complexity
@@ -270,15 +277,20 @@ def _analyze_librosa(filepath: str) -> dict:
             log.debug("Feature failed for %s", filepath, exc_info=True)
 
         # Mood
+        dance = result.get("danceability") or 0.5
+        is_minor = result.get("scale") == "minor"
+        valence = result.get("valence") or 0.5
+        acoustic = result.get("acousticness") or 0.5
+
         result["mood"] = {
-            "happy": round(min(1.0, tempo_norm * 0.4 + centroid_norm * 0.3 + energy_norm * 0.3), 3),
-            "sad": round(min(1.0, (1 - tempo_norm) * 0.4 + (1 - energy_norm) * 0.3 + (1 - centroid_norm) * 0.3), 3),
-            "aggressive": round(min(1.0, energy_norm * 0.4 + zcr_norm * 0.3 + centroid_norm * 0.3), 3),
-            "relaxed": round(min(1.0, (1 - energy_norm) * 0.4 + (1 - zcr_norm) * 0.3 + (1 - tempo_norm) * 0.3), 3),
-            "electronic": round(min(1.0, rolloff_norm * 0.4 + centroid_norm * 0.3 + (1 - zcr_norm) * 0.3), 3),
-            "acoustic": round(min(1.0, (1 - rolloff_norm) * 0.3 + (1 - centroid_norm) * 0.3 + zcr_norm * 0.4), 3),
-            "party": round(min(1.0, tempo_norm * 0.5 + energy_norm * 0.3 + centroid_norm * 0.2), 3),
-            "dark": round(min(1.0, (1 - centroid_norm) * 0.4 + energy_norm * 0.3 + (1 - tempo_norm) * 0.3), 3),
+            "aggressive": round(max(0.0, min(1.0, energy_norm * 0.35 + zcr_norm * 0.25 + centroid_norm * 0.2 + (1 - valence) * 0.2)), 3),
+            "dark": round(max(0.0, min(1.0, (1 - valence) * 0.4 + energy_norm * 0.2 + (0.7 if is_minor else 0.2) * 0.4)), 3),
+            "happy": round(max(0.0, min(1.0, valence * 0.5 + tempo_norm * 0.25 + (1 - energy_norm) * 0.25)), 3),
+            "sad": round(max(0.0, min(1.0, (1 - valence) * 0.4 + (1 - energy_norm) * 0.3 + (0.7 if is_minor else 0.2) * 0.3)), 3),
+            "relaxed": round(max(0.0, min(1.0, (1 - energy_norm) * 0.4 + acoustic * 0.3 + (1 - tempo_norm) * 0.3)), 3),
+            "party": round(max(0.0, min(1.0, dance * 0.35 + tempo_norm * 0.25 + energy_norm * 0.2 + valence * 0.2)), 3),
+            "electronic": round(max(0.0, min(1.0, (1 - acoustic) * 0.4 + centroid_norm * 0.3 + (1 - zcr_norm) * 0.3)), 3),
+            "acoustic": round(max(0.0, min(1.0, acoustic * 0.5 + (1 - centroid_norm) * 0.25 + (1 - energy_norm) * 0.25)), 3),
         }
 
     except Exception:
