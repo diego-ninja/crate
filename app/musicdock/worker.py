@@ -803,7 +803,9 @@ def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
     db_delete_album(db_path or str(album_dir))
 
     # Update artist counters
+    artist_data = get_library_artist(artist_name)
     if artist_data:
+        folder = artist_data.get("folder_name") or artist_name
         albums = get_library_albums(artist_name)
         upsert_artist({
             "name": artist_name,
