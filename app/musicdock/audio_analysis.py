@@ -180,38 +180,32 @@ def _analyze_essentia_ml(filepath: str, result: dict):
     instrumental = predict_classification("voice_instrumental-discogs-effnet-1")
     result["instrumentalness"] = round(instrumental, 3)
 
-    # Arousal → energy
-    try:
-        arousal = predict_regression("deam-arousal-discogs-effnet-1")
-        result["energy"] = round(max(0.0, min(1.0, arousal)), 3)
-    except Exception:
-        result["energy"] = round(aggressive * 0.5 + (1 - relaxed) * 0.5, 3)
+    # Additional mood classifiers
+    acoustic = predict_classification("mood_acoustic-discogs-effnet-1")
+    electronic = predict_classification("mood_electronic-discogs-effnet-1")
+    party = predict_classification("mood_party-discogs-effnet-1")
 
-    # Valence
-    try:
-        val = predict_regression("deam-valence-discogs-effnet-1")
-        result["valence"] = round(max(0.0, min(1.0, val)), 3)
-    except Exception:
-        result["valence"] = round(happy * 0.5 + (1 - sad) * 0.5, 3)
+    # Derive energy from mood classifiers (no deam-effnet model available)
+    result["energy"] = round(max(0.0, min(1.0, aggressive * 0.4 + (1 - relaxed) * 0.3 + party * 0.3)), 3)
 
-    # Acousticness (derived — no dedicated model)
-    energy = result.get("energy") or 0.5
-    result["acousticness"] = round(
-        max(0.0, 1.0 - aggressive * 0.3 - (1 - relaxed) * 0.3 - energy * 0.4), 3
-    )
+    # Derive valence from happy/sad balance
+    result["valence"] = round(max(0.0, min(1.0, happy * 0.5 + (1 - sad) * 0.3 + relaxed * 0.2)), 3)
 
-    # Mood dict
+    # Acousticness from dedicated model
+    result["acousticness"] = round(acoustic, 3)
+
+    # Mood dict — all ML-derived
     dance = result["danceability"]
-    acoustic = result["acousticness"]
+    energy = result["energy"]
     result["mood"] = {
         "aggressive": round(aggressive, 3),
         "happy": round(happy, 3),
         "sad": round(sad, 3),
         "relaxed": round(relaxed, 3),
-        "dark": round(max(0.0, min(1.0, aggressive * 0.4 + sad * 0.3 + (1 - happy) * 0.3)), 3),
-        "party": round(max(0.0, min(1.0, dance * 0.4 + happy * 0.3 + energy * 0.3)), 3),
-        "electronic": round(max(0.0, min(1.0, (1 - acoustic) * 0.6 + energy * 0.4)), 3),
+        "party": round(party, 3),
+        "electronic": round(electronic, 3),
         "acoustic": round(acoustic, 3),
+        "dark": round(max(0.0, min(1.0, aggressive * 0.4 + sad * 0.3 + (1 - happy) * 0.3)), 3),
     }
 
 

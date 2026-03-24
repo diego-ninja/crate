@@ -8,9 +8,13 @@ mkdir -p "$MODEL_DIR"
 download() {
     local url="$1"
     local dest="$2"
-    if [ ! -f "$dest" ]; then
-        echo "Downloading: $dest"
-        curl -sL "$url" -o "$dest"
+    if [ ! -f "$dest" ] || [ $(stat -c%s "$dest" 2>/dev/null || echo 0) -lt 1000 ]; then
+        echo "Downloading: $(basename $dest)"
+        curl -sfL "$url" -o "$dest"
+        if [ $? -ne 0 ] || [ $(stat -c%s "$dest" 2>/dev/null || echo 0) -lt 1000 ]; then
+            echo "  WARNING: Failed to download $(basename $dest)"
+            rm -f "$dest"
+        fi
     fi
 }
 
@@ -26,8 +30,9 @@ for model in \
     "classification-heads/mood_sad/mood_sad-discogs-effnet-1" \
     "classification-heads/mood_relaxed/mood_relaxed-discogs-effnet-1" \
     "classification-heads/voice_instrumental/voice_instrumental-discogs-effnet-1" \
-    "classification-heads/arousal/deam-arousal-discogs-effnet-1" \
-    "classification-heads/valence/deam-valence-discogs-effnet-1"
+    "classification-heads/mood_acoustic/mood_acoustic-discogs-effnet-1" \
+    "classification-heads/mood_electronic/mood_electronic-discogs-effnet-1" \
+    "classification-heads/mood_party/mood_party-discogs-effnet-1"
 do
     name=$(basename "$model")
     download "$BASE_URL/$model.pb" "$MODEL_DIR/$name.pb"
