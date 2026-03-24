@@ -107,15 +107,8 @@ def _analyze_essentia(filepath: str) -> dict:
         except Exception:
             log.debug("Dynamic range failed: %s", filepath, exc_info=True)
 
-        # ML predictions or heuristic fallback
-        if _has_ml_models():
-            try:
-                _analyze_essentia_ml(filepath, result)
-            except Exception:
-                log.warning("Essentia ML failed for %s, falling back to heuristics", filepath, exc_info=True)
-                _analyze_essentia_heuristic(filepath, audio_44k, result)
-        else:
-            _analyze_essentia_heuristic(filepath, audio_44k, result)
+        # Use improved heuristics (ML models give inconsistent results for extreme genres)
+        _analyze_essentia_heuristic(filepath, audio_44k, result)
 
     except Exception:
         log.warning("Essentia analysis failed for %s", filepath, exc_info=True)
