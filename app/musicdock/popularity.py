@@ -44,9 +44,9 @@ def compute_popularity(progress_callback=None) -> dict:
     albums_fetched = 0
     tracks_fetched = 0
 
-    # 1. Fetch album popularity from Last.fm
+    # 1. Fetch album popularity from Last.fm (only albums without data)
     with get_db_ctx() as cur:
-        cur.execute("SELECT id, artist, name, tag_album FROM library_albums")
+        cur.execute("SELECT id, artist, name, tag_album FROM library_albums WHERE lastfm_listeners IS NULL")
         albums = [dict(r) for r in cur.fetchall()]
 
     total_albums = len(albums)
@@ -81,7 +81,7 @@ def compute_popularity(progress_callback=None) -> dict:
         cur.execute("""
             SELECT t.id, t.artist, t.title, t.album
             FROM library_tracks t
-            WHERE t.title IS NOT NULL AND t.title != ''
+            WHERE t.title IS NOT NULL AND t.title != '' AND t.lastfm_listeners IS NULL
         """)
         tracks = [dict(r) for r in cur.fetchall()]
 

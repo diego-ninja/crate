@@ -88,9 +88,26 @@ def acquisition_download(body: dict):
     elif source == "soulseek":
         username = body.get("username", "")
         files = body.get("files", [])
-        if not username or not files:
-            return JSONResponse({"error": "username and files required"}, status_code=400)
+        find_alternate = body.get("find_alternate", False)
 
+        if not files:
+            return JSONResponse({"error": "files required"}, status_code=400)
+
+        file_names = [f.get("filename", "") if isinstance(f, dict) else f for f in files]
+
+        # If explicitly asked to find alternate, skip original peer entirely
+        if find_alternate or not username:
+            task_id = create_task("soulseek_download", {
+                "username": username or "unknown",
+                "artist": artist,
+                "album": album,
+                "files": file_names,
+                "file_count": len(files),
+                "find_alternate": True,
+            })
+            return {"task_id": task_id, "source": "soulseek", "finding_alternate": True}
+
+        # Try original peer
         result = soulseek.download_files(username, files)
         enqueued = result.get("enqueued", [])
 
@@ -104,7 +121,16 @@ def acquisition_download(body: dict):
             })
             return {"task_id": task_id, "source": "soulseek", "enqueued": len(enqueued)}
 
-        return JSONResponse({"error": "No files enqueued"}, status_code=400)
+        # Peer rejected — go straight to alternate search
+        task_id = create_task("soulseek_download", {
+            "username": username,
+            "artist": artist,
+            "album": album,
+            "files": file_names,
+            "file_count": len(files),
+            "find_alternate": True,
+        })
+        return {"task_id": task_id, "source": "soulseek", "finding_alternate": True}
 
     return JSONResponse({"error": "source must be 'tidal' or 'soulseek'"}, status_code=400)
 

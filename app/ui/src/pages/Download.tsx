@@ -460,22 +460,30 @@ export function DownloadPage() {
                       )}
                     </div>
                     {d.progress >= 100 && <CheckCircle2 size={16} className="text-green-500 flex-shrink-0" />}
-                    {d.status.includes("Errored") && (
+                    {(d.status.includes("Errored") || d.status.includes("Rejected") || d.status.includes("Aborted")) && (
                       <Button size="sm" variant="outline" className="flex-shrink-0 text-xs"
                         onClick={async () => {
+                          // Parse artist from directory path (e.g. "music/D/Dredg - 2002 - El Cielo/track.flac")
+                          const path = (d.fullPath || d.filename || "").replace(/\\/g, "/");
+                          const parts = path.split("/");
+                          const dirName = parts.length >= 2 ? parts[parts.length - 2] : "";
+                          // Try to extract artist from parent dir
+                          const artistGuess = parts.length >= 3 ? parts[parts.length - 3] : "";
+                          const trackName = parts[parts.length - 1]?.replace(/\.[^.]+$/, "").replace(/^\d+[\s._-]*/, "") || d.filename;
+
                           try {
                             await api("/api/acquisition/download", "POST", {
                               source: "soulseek",
-                              username: d.username,
-                              artist: d.artist || "",
-                              album: d.album || "",
+                              find_alternate: true,
+                              artist: d.artist || artistGuess,
+                              album: d.album || dirName,
                               files: [{ filename: d.fullPath || d.filename, size: 0 }],
                             });
-                            toast.success("Retrying download");
+                            toast.success(`Searching alternate peer for: ${trackName}`);
                             refetchQueue();
                           } catch { toast.error("Retry failed"); }
                         }}>
-                        <RotateCcw size={12} className="mr-1" /> Retry
+                        <RotateCcw size={12} className="mr-1" /> Find alternate
                       </Button>
                     )}
                   </div>
