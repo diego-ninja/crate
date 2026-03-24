@@ -2068,10 +2068,13 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
 
     emit_task_event(task_id, "info", {"message": f"Downloading from {username}: {artist} - {album} ({file_count} files)"})
 
-    # Poll slskd for download completion
-    max_wait = 600  # 10 minutes max
+    # Poll slskd for download completion, retry errored files
+    max_wait = 900  # 15 minutes max
+    max_retries = 3
     elapsed = 0
+    retries_done = 0
     completed_files = []
+
     while elapsed < max_wait:
         if _shutdown or _is_cancelled(task_id):
             return {"status": "cancelled"}
@@ -2085,23 +2088,118 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         if not user_downloads:
             break
 
-        completed = sum(1 for d in user_downloads if "Completed" in d.get("state", ""))
-        errored = sum(1 for d in user_downloads if "Errored" in d.get("state", ""))
-        total = len(user_downloads)
+        completed = sum(1 for d in user_downloads if "Completed" in d.get("state", "") and "Errored" not in d.get("state", "") and "Rejected" not in d.get("state", ""))
+        failed = [d for d in user_downloads if "Errored" in d.get("state", "") or "Rejected" in d.get("state", "")]
+        in_progress = sum(1 for d in user_downloads if "Completed" not in d.get("state", "") and "Errored" not in d.get("state", "") and "Rejected" not in d.get("state", ""))
+        errored = failed  # alias for backward compat
 
         update_task(task_id, progress=json.dumps({
-            "completed": completed, "errored": errored, "total": total,
-            "artist": artist, "album": album,
+            "completed": completed, "errored": len(errored), "in_progress": in_progress,
+            "total": file_count, "artist": artist, "album": album,
+            "retries": retries_done,
         }))
 
-        if completed + errored >= file_count or completed + errored >= total:
-            completed_files = [d for d in user_downloads if "Completed" in d.get("state", "")]
+        # All completed — done
+        if completed >= file_count:
+            completed_files = [d for d in user_downloads if "Completed" in d.get("state", "") and "Errored" not in d.get("state", "") and "Rejected" not in d.get("state", "")]
             break
 
-    # Move completed files from slskd download dir to library
+        # Some failed, nothing in progress — retry errored (not rejected) from same peer
+        if errored and in_progress == 0 and retries_done < max_retries:
+            # Split: errored can retry same peer, rejected must go to alternate peer
+            retryable = [d for d in errored if "Rejected" not in d.get("state", "")]
+            rejected = [d for d in errored if "Rejected" in d.get("state", "")]
+
+            if retryable:
+                retries_done += 1
+                emit_task_event(task_id, "info", {"message": f"Retrying {len(retryable)} errored files (attempt {retries_done}/{max_retries})"})
+                for d in retryable:
+                    full_path = d.get("fullPath", "")
+                    if full_path:
+                        try:
+                            soulseek.download_files(username, [{"filename": full_path, "size": d.get("size", 0)}])
+                        except Exception:
+                            pass
+                time.sleep(5)
+
+            # If only rejected remain (or retryable exhausted), skip to alternate peer search
+            if rejected and not retryable:
+                retries_done = max_retries  # Force alternate peer search
+            continue
+
+        # All done with original peer — try alternate peers for errored files
+        if errored and in_progress == 0 and retries_done >= max_retries:
+            completed_files = [d for d in user_downloads if "Completed" in d.get("state", "")]
+            emit_task_event(task_id, "info", {"message": f"{len(errored)} files failed from {username}. Searching alternate peers..."})
+
+            # Search for each failed file from other users
+            quality_filter = get_setting("soulseek_quality", "flac")
+            for d in errored:
+                fname = d.get("filename", "")
+                if not fname:
+                    continue
+                # Extract track name from filename for search
+                track_name = re.sub(r"^\d+[\s._-]*", "", fname)  # strip track number
+                track_name = re.sub(r"\.[^.]+$", "", track_name)  # strip extension
+                search_query = f"{artist} {track_name}"
+
+                emit_task_event(task_id, "info", {"message": f"Searching alternate peer for: {track_name}"})
+                alt_search_id = soulseek.start_search(search_query)
+                if not alt_search_id:
+                    continue
+
+                time.sleep(12)  # Wait for search results
+                alt_results = soulseek.get_search_results(alt_search_id, quality_filter)
+
+                # Find the best match from a different user
+                found = False
+                for result in alt_results:
+                    if result.get("username") == username:
+                        continue  # Skip same peer
+                    for f in result.get("files", []):
+                        f_name = f.get("filename", "").replace("\\", "/").split("/")[-1]
+                        # Fuzzy match on filename
+                        if fname.lower().replace(" ", "") in f_name.lower().replace(" ", "") or track_name.lower() in f_name.lower():
+                            try:
+                                dl_result = soulseek.download_files(result["username"], [f])
+                                if dl_result.get("enqueued"):
+                                    emit_task_event(task_id, "info", {"message": f"Downloading {track_name} from {result['username']}"})
+                                    found = True
+                                    break
+                            except Exception:
+                                pass
+                    if found:
+                        break
+
+                if not found:
+                    emit_task_event(task_id, "info", {"message": f"No alternate source for: {track_name}"})
+
+            # Wait for alternate downloads to complete
+            if any(True for d in errored):
+                alt_wait = 0
+                while alt_wait < 120:
+                    time.sleep(5)
+                    alt_wait += 5
+                    all_downloads = soulseek.get_downloads()
+                    still_active = [d for d in all_downloads if "Completed" not in d.get("state", "") and "Errored" not in d.get("state", "") and "Rejected" not in d.get("state", "")]
+                    if not still_active:
+                        break
+
+                # Re-check all downloads
+                all_downloads = soulseek.get_downloads()
+                completed_files = [d for d in all_downloads if "Completed" in d.get("state", "") and "Errored" not in d.get("state", "") and "Rejected" not in d.get("state", "")]
+
+            break
+
+    # Only move if ALL files completed (album is complete)
+    all_complete = len(completed_files) >= file_count
     lib = Path(config["library_path"])
     slsk_download_dir = Path("/downloads/soulseek")
     moved = 0
+
+    if not all_complete:
+        emit_task_event(task_id, "info", {"message": f"Album incomplete: {len(completed_files)}/{file_count} files. Not moving to library."})
+        return {"artist": artist, "album": album, "source": "soulseek", "moved": 0, "completed": len(completed_files), "incomplete": True}
 
     if completed_files and artist:
         # Determine year from tags or album name

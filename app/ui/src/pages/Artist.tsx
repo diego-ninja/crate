@@ -47,6 +47,7 @@ import {
   ListMusic,
   Trash2,
   Radio,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -944,6 +945,7 @@ export function Artist() {
                     centerArtist={data.name}
                     similar={mergedSimilar.map((s) => s.name)}
                     onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
+                    onDownload={(name) => navigate(`/download?q=${encodeURIComponent(name)}`)}
                   />
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">
@@ -972,6 +974,7 @@ export function Artist() {
                   centerArtist={data.name}
                   similar={mergedSimilar.map((s) => s.name)}
                   onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
+                  onDownload={(name) => navigate(`/download?q=${encodeURIComponent(name)}`)}
                 />
               </div>
             )}
@@ -1168,7 +1171,7 @@ function NetworkNodeThumb({ name }: { name: string }) {
   );
 }
 
-function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArtist: string; similar: string[]; onNodeClick: (name: string) => void }) {
+function ArtistNetworkGraph({ centerArtist, similar, onNodeClick, onDownload }: { centerArtist: string; similar: string[]; onNodeClick: (name: string) => void; onDownload?: (name: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(500);
   const [nodes, setNodes] = useState<{ id: string; depth: number }[]>([]);
@@ -1358,8 +1361,21 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
                   )}
                 </div>
               </div>
-              <div className="text-[9px] text-muted-foreground/60 px-2.5 pb-2 -mt-0.5">
-                {node.id === centerArtist ? "Current artist" : expandedNodes.has(String(node.id)) ? "Click to visit" : "Click to expand"}
+              <div className="flex items-center justify-between px-2.5 pb-2 -mt-0.5">
+                <span className="text-[9px] text-muted-foreground/60">
+                  {node.id === centerArtist ? "Current artist" : expandedNodes.has(String(node.id)) ? "Click to visit" : "Click to expand"}
+                </span>
+                {node.id !== centerArtist && (
+                  <button
+                    className="text-[9px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5"
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      onDownload?.(nodeName);
+                    }}
+                  >
+                    <Download size={9} /> Tidal
+                  </button>
+                )}
               </div>
             </div>
           );

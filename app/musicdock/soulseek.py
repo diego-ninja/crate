@@ -215,24 +215,48 @@ def download_files(username: str, files: list[dict]) -> dict:
 
 
 def get_downloads() -> list[dict]:
-    """Get all current downloads."""
+    """Get all current downloads, deduplicated by filename (keeps latest state)."""
     data = _get("transfers/downloads") or []
-    result = []
+    # Collect all, then dedupe by fullPath (retries create duplicates)
+    by_path: dict[str, dict] = {}
     for user_group in data:
         username = user_group.get("username", "")
         for directory in user_group.get("directories", []):
             dir_name = directory.get("directory", "")
             for f in directory.get("files", []):
-                result.append({
+                full_path = f.get("filename", "")
+                entry = {
                     "username": username,
                     "directory": dir_name,
-                    "filename": f.get("filename", "").replace("\\", "/").split("/")[-1],
-                    "fullPath": f.get("filename", ""),
+                    "filename": full_path.replace("\\", "/").split("/")[-1],
+                    "fullPath": full_path,
                     "size": f.get("size", 0),
                     "bytesTransferred": f.get("bytesTransferred", 0),
                     "percentComplete": f.get("percentComplete", 0),
                     "state": f.get("state", ""),
                     "averageSpeed": f.get("averageSpeed", 0),
                     "source": "soulseek",
-                })
+                }
+                existing = by_path.get(full_path)
+                if not existing:
+                    by_path[full_path] = entry
+                else:
+                    # Keep the one with better state. Rejected/Errored are failures even with "Completed" prefix
+                    def _state_score(state: str) -> int:
+                        if "Rejected" in state or "Errored" in state:
+                            return 0
+                        if "Completed" in state:
+                            return 4
+                        if "InProgress" in state:
+                            return 3
+                        if "Queued" in state:
+                            return 2
+                        return 1
+                    new_prio = _state_score(entry["state"])
+                    old_prio = _state_score(existing["state"])
+                    if new_prio >= old_prio:
+                        by_path[full_path] = entry
+
+    # Sort by speed desc
+    result = sorted(by_path.values(), key=lambda d: d.get("averageSpeed", 0), reverse=True)
     return result
