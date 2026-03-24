@@ -109,8 +109,8 @@ def search_events(artist_name: str, country_code: str = "", size: int = 10) -> l
             }
             events.append(event)
 
-        # Cache for 12 hours
-        set_cache(cache_key, events, ttl=43200)
+        # Cache for 7 days (shows don't change often)
+        set_cache(cache_key, events, ttl=604800)
         return events
 
     except Exception:
