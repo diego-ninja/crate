@@ -561,32 +561,32 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
         album_data = get_library_album(artist, album_name)
         if album_data:
             tracks = get_library_tracks(album_data["id"])
-            tracks_to_analyze = [(t["path"], t) for t in tracks if not t.get("bpm")]
+            tracks_to_analyze = [(t["path"], t) for t in tracks if not t.get("bpm") or t.get("energy") is None]
     elif artist:
         # All albums for artist
         albums = get_library_albums(artist)
         for a in albums:
             tracks = get_library_tracks(a["id"])
-            tracks_to_analyze.extend((t["path"], t) for t in tracks if not t.get("bpm"))
+            tracks_to_analyze.extend((t["path"], t) for t in tracks if not t.get("bpm") or t.get("energy") is None)
     elif params.get("artists"):
         # Chunk mode: specific artists
         for a_name in params["artists"]:
             albums = get_library_albums(a_name)
             for a in albums:
                 tracks = get_library_tracks(a["id"])
-                tracks_to_analyze.extend((t["path"], t) for t in tracks if not t.get("bpm"))
+                tracks_to_analyze.extend((t["path"], t) for t in tracks if not t.get("bpm") or t.get("energy") is None)
     else:
         # Coordinator mode: split into chunks
         from musicdock.db import get_library_artists
         all_artists, total = get_library_artists(per_page=10000)
 
-        # Filter to artists that have unanalyzed tracks
+        # Filter to artists that have unanalyzed tracks (no BPM or no ML fields)
         need_analysis = []
         for a in all_artists:
             with get_db_ctx() as cur:
                 cur.execute(
                     "SELECT COUNT(*) AS c FROM library_tracks t JOIN library_albums al ON t.album_id = al.id "
-                    "WHERE al.artist = %s AND t.bpm IS NULL", (a["name"],)
+                    "WHERE al.artist = %s AND (t.bpm IS NULL OR t.energy IS NULL)", (a["name"],)
                 )
                 if cur.fetchone()["c"] > 0:
                     need_analysis.append(a)
