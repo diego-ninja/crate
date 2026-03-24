@@ -12,6 +12,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Download Essentia ML models (only on x86_64 where essentia is available)
+RUN if [ "$(uname -m)" = "x86_64" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends curl && \
+        bash scripts/download_models.sh /app/models && \
+        rm -rf /var/lib/apt/lists/*; \
+    fi
+
 # Install grooveyard-bliss binary if available (x86_64 only)
 RUN if [ -f bin/grooveyard-bliss-linux-amd64 ] && [ "$(uname -m)" = "x86_64" ]; then \
         cp bin/grooveyard-bliss-linux-amd64 /usr/local/bin/grooveyard-bliss && \
