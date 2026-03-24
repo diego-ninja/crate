@@ -45,6 +45,7 @@ _watcher = None  # LibraryWatcher ref for processing lock
 
 # Tasks that do heavy DB writes — only one at a time
 DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
+CHUNK_SIZE = 20  # artists per chunk for parallel processing
 _db_heavy_running = False
 _db_heavy_lock = __import__("threading").Lock()
 
@@ -567,11 +568,40 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
         for a in albums:
             tracks = get_library_tracks(a["id"])
             tracks_to_analyze.extend((t["path"], t) for t in tracks if not t.get("bpm"))
+    elif params.get("artists"):
+        # Chunk mode: specific artists
+        for a_name in params["artists"]:
+            albums = get_library_albums(a_name)
+            for a in albums:
+                tracks = get_library_tracks(a["id"])
+                tracks_to_analyze.extend((t["path"], t) for t in tracks if not t.get("bpm"))
     else:
-        # All unanalyzed tracks in library
-        with get_db_ctx() as cur:
-            cur.execute("SELECT id, path, title FROM library_tracks WHERE bpm IS NULL")
-            tracks_to_analyze = [(r["path"], dict(r)) for r in cur.fetchall()]
+        # Coordinator mode: split into chunks
+        from musicdock.db import get_library_artists
+        all_artists, total = get_library_artists(per_page=10000)
+
+        # Filter to artists that have unanalyzed tracks
+        need_analysis = []
+        for a in all_artists:
+            with get_db_ctx() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS c FROM library_tracks t JOIN library_albums al ON t.album_id = al.id "
+                    "WHERE al.artist = %s AND t.bpm IS NULL", (a["name"],)
+                )
+                if cur.fetchone()["c"] > 0:
+                    need_analysis.append(a)
+
+        if len(need_analysis) > CHUNK_SIZE:
+            # Chunk and distribute
+            emit_task_event(task_id, "info", {"message": f"Splitting {len(need_analysis)} artists into chunks..."})
+            return _chunk_coordinator(task_id, params, config, "analyze_all")
+
+        # Small enough to run directly
+        for a in need_analysis:
+            albums = get_library_albums(a["name"])
+            for al in albums:
+                tracks = get_library_tracks(al["id"])
+                tracks_to_analyze.extend((t["path"], t) for t in tracks if not t.get("bpm"))
 
     total = len(tracks_to_analyze)
     analyzed = 0
@@ -1921,29 +1951,69 @@ def _handle_apply_cover(task_id: str, params: dict, config: dict) -> dict:
     return {"applied": True, "path": album_path}
 
 
-def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
-    """Compute bliss feature vectors — processes per artist for incremental storage."""
-    from musicdock.bliss import analyze_directory, store_vectors, is_available
+def _chunk_coordinator(task_id: str, params: dict, config: dict, chunk_task_type: str, filter_fn=None) -> dict:
+    """Generic coordinator: splits artists into chunks, creates sub-tasks, monitors progress."""
     from musicdock.db import get_library_artists
 
+    all_artists, total = get_library_artists(per_page=10000)
+
+    # Filter artists if needed (e.g. skip already-analyzed)
+    if filter_fn:
+        all_artists = [a for a in all_artists if filter_fn(a)]
+        total = len(all_artists)
+
+    if total == 0:
+        return {"chunks": 0, "artists": 0, "message": "Nothing to process"}
+
+    # Split into chunks
+    chunks = []
+    for i in range(0, total, CHUNK_SIZE):
+        chunk_artists = [a["name"] for a in all_artists[i:i + CHUNK_SIZE]]
+        chunks.append(chunk_artists)
+
+    emit_task_event(task_id, "info", {"message": f"Split {total} artists into {len(chunks)} chunks"})
+
+    # Create sub-tasks
+    chunk_task_ids = []
+    for i, chunk in enumerate(chunks):
+        sub_id = create_task(chunk_task_type, {"artists": chunk, "chunk_index": i, "total_chunks": len(chunks)})
+        chunk_task_ids.append(sub_id)
+
+    # Monitor sub-tasks
+    completed = 0
+    while completed < len(chunk_task_ids):
+        if _shutdown or _is_cancelled(task_id):
+            return {"status": "cancelled", "completed_chunks": completed}
+        time.sleep(5)
+        completed = 0
+        failed = 0
+        for sub_id in chunk_task_ids:
+            task = get_task(sub_id)
+            if task and task["status"] == "completed":
+                completed += 1
+            elif task and task["status"] == "failed":
+                failed += 1
+                completed += 1  # count as done
+        update_task(task_id, progress=json.dumps({
+            "chunks_done": completed, "chunks_total": len(chunks),
+            "chunks_failed": failed, "artists_total": total,
+        }))
+
+    return {"chunks": len(chunks), "artists": total, "completed": completed}
+
+
+def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
+    """Coordinator: splits into chunks for parallel bliss computation."""
+    from musicdock.bliss import is_available
     if not is_available():
         return {"error": "grooveyard-bliss binary not found"}
 
-    lib = Path(config["library_path"])
-    all_artists, total = get_library_artists(per_page=10000)
-    analyzed_total = 0
-    failed_total = 0
+    # If this is a chunk (has "artists" param), process directly
+    if params.get("artists"):
+        return _handle_bliss_chunk(task_id, params, config)
 
-    for i, artist in enumerate(all_artists):
-        if _shutdown or _is_cancelled(task_id):
-            break
-
-        folder = artist.get("folder_name") or artist["name"]
-        artist_dir = lib / folder
-        if not artist_dir.is_dir():
-            continue
-
-        # Skip artists that already have all tracks analyzed
+    # Coordinator: filter artists that need bliss, then chunk
+    def needs_bliss(artist: dict) -> bool:
         with get_db_ctx() as cur:
             cur.execute(
                 "SELECT COUNT(*) AS total, SUM(CASE WHEN bliss_vector IS NOT NULL THEN 1 ELSE 0 END) AS done "
@@ -1951,29 +2021,116 @@ def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
                 (artist["name"],),
             )
             row = cur.fetchone()
-            if row and row["total"] > 0 and row["done"] >= row["total"]:
-                continue
+            return not (row and row["total"] > 0 and row["done"] >= row["total"])
 
-        update_task(task_id, progress=json.dumps({
-            "phase": "analyzing", "artist": artist["name"],
-            "done": i, "total": total, "analyzed": analyzed_total,
-        }))
+    return _chunk_coordinator(task_id, params, config, "compute_bliss", filter_fn=needs_bliss)
 
+
+def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:
+    """Process a chunk of artists for bliss vectors."""
+    from musicdock.bliss import analyze_directory, store_vectors
+    lib = Path(config["library_path"])
+    artists = params.get("artists", [])
+    analyzed = 0
+
+    for i, name in enumerate(artists):
+        if _shutdown or _is_cancelled(task_id):
+            break
+        # Find artist dir (check year subdirs too)
+        from musicdock.db import get_library_artist
+        artist = get_library_artist(name)
+        folder = (artist.get("folder_name") if artist else None) or name
+        artist_dir = lib / folder
+        if not artist_dir.is_dir():
+            continue
+
+        update_task(task_id, progress=json.dumps({"artist": name, "done": i, "total": len(artists)}))
         vectors = analyze_directory(str(artist_dir))
         if vectors:
             store_vectors(vectors)
-            analyzed_total += len(vectors)
-            emit_task_event(task_id, "artist_analyzed", {"artist": artist["name"], "tracks": len(vectors)})
+            analyzed += len(vectors)
 
-    return {"analyzed": analyzed_total, "artists": total}
+    return {"analyzed": analyzed, "artists": len(artists)}
 
 
 def _handle_compute_popularity(task_id: str, params: dict, config: dict) -> dict:
-    from musicdock.popularity import compute_popularity
-    emit_task_event(task_id, "info", {"message": "Computing popularity from Last.fm..."})
-    return compute_popularity(
-        progress_callback=lambda d: update_task(task_id, progress=json.dumps(d))
-    )
+    """Coordinator: splits into chunks for parallel popularity fetching."""
+    # If this is a chunk, process directly
+    if params.get("artists"):
+        return _handle_popularity_chunk(task_id, params, config)
+
+    # Coordinator
+    return _chunk_coordinator(task_id, params, config, "compute_popularity")
+
+
+def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
+    """Process a chunk of artists for popularity data using threads."""
+    from musicdock.popularity import _lastfm_get, _parse_int, _normalize_popularity
+    from concurrent.futures import ThreadPoolExecutor
+    import re
+
+    artists = params.get("artists", [])
+    albums_fetched = 0
+    tracks_fetched = 0
+
+    for i, artist_name in enumerate(artists):
+        if _shutdown or _is_cancelled(task_id):
+            break
+        update_task(task_id, progress=json.dumps({"artist": artist_name, "done": i, "total": len(artists)}))
+
+        # Fetch album popularity
+        with get_db_ctx() as cur:
+            cur.execute("SELECT id, name, tag_album FROM library_albums WHERE artist = %s AND lastfm_listeners IS NULL", (artist_name,))
+            albums = [dict(r) for r in cur.fetchall()]
+
+        for album in albums:
+            album_name = album.get("tag_album") or album["name"]
+            album_name = re.sub(r"^\d{4}\s*-\s*", "", album_name)
+            data = _lastfm_get("album.getinfo", artist=artist_name, album=album_name, autocorrect="1")
+            if data and "album" in data:
+                info = data["album"]
+                listeners = _parse_int(info.get("listeners", 0))
+                playcount = _parse_int(info.get("playcount", 0))
+                if listeners > 0:
+                    with get_db_ctx() as cur:
+                        cur.execute("UPDATE library_albums SET lastfm_listeners = %s, lastfm_playcount = %s WHERE id = %s",
+                                    (listeners, playcount, album["id"]))
+                    albums_fetched += 1
+            time.sleep(0.25)
+
+        # Fetch track popularity (threaded, 3 concurrent)
+        with get_db_ctx() as cur:
+            cur.execute(
+                "SELECT t.id, t.title FROM library_tracks t JOIN library_albums a ON t.album_id = a.id "
+                "WHERE a.artist = %s AND t.lastfm_listeners IS NULL AND t.title IS NOT NULL AND t.title != '' LIMIT 50",
+                (artist_name,),
+            )
+            tracks = [dict(r) for r in cur.fetchall()]
+
+        def fetch_track_pop(track):
+            data = _lastfm_get("track.getinfo", artist=artist_name, track=track["title"], autocorrect="1")
+            if data and "track" in data:
+                info = data["track"]
+                listeners = _parse_int(info.get("listeners", 0))
+                playcount = _parse_int(info.get("playcount", 0))
+                if listeners > 0:
+                    with get_db_ctx() as cur:
+                        cur.execute("UPDATE library_tracks SET lastfm_listeners = %s, lastfm_playcount = %s WHERE id = %s",
+                                    (listeners, playcount, track["id"]))
+                    return True
+            return False
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            results = list(pool.map(fetch_track_pop, tracks))
+            tracks_fetched += sum(1 for r in results if r)
+
+    # Normalize after chunk
+    try:
+        _normalize_popularity()
+    except Exception:
+        pass
+
+    return {"albums_fetched": albums_fetched, "tracks_fetched": tracks_fetched, "artists": len(artists)}
 
 
 def _handle_index_genres(task_id: str, params: dict, config: dict) -> dict:
