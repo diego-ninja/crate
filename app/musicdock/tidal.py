@@ -304,16 +304,22 @@ def move_to_library(processing_path: str, library_path: str) -> list[str]:
         if item.is_dir():
             # item is likely "ArtistName" directory
             dest_dir = dst / item.name
-            if dest_dir.exists():
-                # Merge: move album subdirs
-                for album_dir in item.iterdir():
-                    if album_dir.is_dir():
-                        final = dest_dir / album_dir.name
-                        if final.exists():
-                            shutil.rmtree(str(final))
-                        shutil.move(str(album_dir), str(final))
-            else:
-                shutil.move(str(item), str(dest_dir))
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            for album_dir in item.iterdir():
+                if album_dir.is_dir():
+                    final = dest_dir / album_dir.name
+                    final.mkdir(parents=True, exist_ok=True)
+                    for f in album_dir.iterdir():
+                        dest_file = final / f.name
+                        if dest_file.exists():
+                            dest_file.unlink()
+                        shutil.move(str(f), str(dest_file))
+                    try: album_dir.rmdir()
+                    except OSError: pass
+                elif album_dir.is_file():
+                    shutil.move(str(album_dir), str(dest_dir / album_dir.name))
+            try: item.rmdir()
+            except OSError: pass
             modified_artists.add(item.name)
 
     # Clean up processing dir

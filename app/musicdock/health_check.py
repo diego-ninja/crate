@@ -212,7 +212,7 @@ class LibraryHealthCheck:
             else:
                 cur.execute(
                     "SELECT path, artist FROM library_tracks "
-                    "WHERE id %% 10 = 0"
+                    "WHERE MOD(id, 10) = 0"
                 )
             tracks = cur.fetchall()
         issues = []
@@ -324,7 +324,7 @@ class LibraryHealthCheck:
             else:
                 cur.execute(
                     "SELECT path, artist FROM library_tracks "
-                    "WHERE id %% 20 = 0"
+                    "WHERE MOD(id, 20) = 0"
                 )
             tracks = cur.fetchall()
         issues = []
