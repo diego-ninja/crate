@@ -25,7 +25,7 @@ export function Shows() {
   const [events, setEvents] = useState<ShowEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [country, setCountry] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("calendar");
+  const [viewMode, setViewMode] = useState<ViewMode>("map");
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -40,25 +40,20 @@ export function Shows() {
       .finally(() => setLoading(false));
   }, [country]);
 
-  // Group events by date
   const eventsByDate = useMemo(() => {
     const map: Record<string, ShowEvent[]> = {};
     for (const e of events) {
       const date = e.local_date || (e.date ? e.date.split("T")[0] : "");
-      if (date) {
-        (map[date] ??= []).push(e);
-      }
+      if (date) (map[date] ??= []).push(e);
     }
     return map;
   }, [events]);
 
-  // Events with coordinates for map
   const mappableEvents = useMemo(
     () => events.filter((e) => e.latitude && e.longitude),
     [events],
   );
 
-  // Calendar month events
   const monthEvents = useMemo(() => {
     const { year, month } = currentMonth;
     const prefix = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -66,118 +61,142 @@ export function Shows() {
   }, [events, currentMonth]);
 
   function prevMonth() {
-    setCurrentMonth((p) => {
-      const m = p.month - 1;
-      return m < 0 ? { year: p.year - 1, month: 11 } : { year: p.year, month: m };
-    });
+    setCurrentMonth((p) => p.month === 0 ? { year: p.year - 1, month: 11 } : { year: p.year, month: p.month - 1 });
   }
-
   function nextMonth() {
-    setCurrentMonth((p) => {
-      const m = p.month + 1;
-      return m > 11 ? { year: p.year + 1, month: 0 } : { year: p.year, month: m };
-    });
+    setCurrentMonth((p) => p.month === 11 ? { year: p.year + 1, month: 0 } : { year: p.year, month: p.month + 1 });
   }
 
   const monthName = new Date(currentMonth.year, currentMonth.month).toLocaleDateString(undefined, {
     month: "long", year: "numeric",
   });
 
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Upcoming Shows</h1>
-        <div className="flex items-center gap-2">
-          <Input
-            placeholder="Country (ES, US, GB...)"
-            value={country}
-            onChange={(e) => setCountry(e.target.value.toUpperCase().slice(0, 2))}
-            className="w-28 text-xs"
-          />
-          <div className="flex border border-border rounded-lg overflow-hidden">
-            {(["calendar", "map", "list"] as ViewMode[]).map((m) => (
-              <button
-                key={m}
-                className={`px-3 py-1.5 text-xs ${viewMode === m ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"}`}
-                onClick={() => setViewMode(m)}
-              >
-                {m === "calendar" ? <CalendarIcon size={14} /> : m === "map" ? <MapPin size={14} /> : <List size={14} />}
-              </button>
-            ))}
-          </div>
+  const isMap = viewMode === "map";
+
+  // Controls bar (shared across views)
+  const controls = (
+    <div className={`flex items-center gap-2 ${isMap ? "absolute top-4 right-4 z-[1000]" : "mb-6 justify-between"}`}>
+      {!isMap && <h1 className="text-2xl font-bold">Upcoming Shows</h1>}
+      <div className="flex items-center gap-2">
+        {isMap && events.length > 0 && (
+          <span className="text-xs bg-card/90 backdrop-blur px-2 py-1 rounded text-muted-foreground">
+            {mappableEvents.length} shows
+          </span>
+        )}
+        <Input
+          placeholder="Country"
+          value={country}
+          onChange={(e) => setCountry(e.target.value.toUpperCase().slice(0, 2))}
+          className={`w-20 text-xs ${isMap ? "bg-card/90 backdrop-blur border-border/50" : ""}`}
+        />
+        <div className={`flex border rounded-lg overflow-hidden ${isMap ? "border-border/50 bg-card/90 backdrop-blur" : "border-border"}`}>
+          {(["map", "calendar", "list"] as ViewMode[]).map((m) => (
+            <button
+              key={m}
+              className={`px-2.5 py-1.5 text-xs transition-colors ${viewMode === m ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setViewMode(m)}
+            >
+              {m === "calendar" ? <CalendarIcon size={14} /> : m === "map" ? <MapPin size={14} /> : <List size={14} />}
+            </button>
+          ))}
         </div>
       </div>
+    </div>
+  );
 
-      {loading ? (
+  if (loading) {
+    return (
+      <div>
+        {controls}
         <div className="flex items-center justify-center py-24">
           <Loader2 className="h-6 w-6 animate-spin text-primary" />
         </div>
-      ) : events.length === 0 ? (
+      </div>
+    );
+  }
+
+  if (events.length === 0) {
+    return (
+      <div>
+        {controls}
         <div className="text-center py-24 text-muted-foreground">
           {country ? `No upcoming shows found in ${country}` : "No upcoming shows found. Configure TICKETMASTER_API_KEY in settings."}
         </div>
-      ) : (
-        <>
-          {/* Calendar view */}
-          {viewMode === "calendar" && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <Button variant="ghost" size="sm" onClick={prevMonth}><ChevronLeft size={16} /></Button>
-                <span className="font-semibold capitalize">{monthName}</span>
-                <Button variant="ghost" size="sm" onClick={nextMonth}><ChevronRight size={16} /></Button>
-              </div>
-              <CalendarGrid
-                year={currentMonth.year}
-                month={currentMonth.month}
-                eventsByDate={eventsByDate}
-                onSelectShow={setSelectedShow}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Map view — full viewport */}
+      {isMap && (
+        <div
+          className="absolute inset-0 md:left-[220px]"
+          style={{ top: 0 }}
+        >
+          <div className="relative w-full h-full">
+            {controls}
+            <MapContainer
+              center={[40.4168, -3.7038]}
+              zoom={4}
+              style={{ height: "100%", width: "100%" }}
+              scrollWheelZoom
+              zoomControl={false}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
               />
-              <div className="text-xs text-muted-foreground mt-3">
-                {monthEvents.length} shows this month from your library artists
-              </div>
-            </div>
-          )}
-
-          {/* Map view */}
-          {viewMode === "map" && (
-            <div className="rounded-xl overflow-hidden border border-border" style={{ height: 500 }}>
-              <MapContainer
-                center={[40.4168, -3.7038]}
-                zoom={4}
-                style={{ height: "100%", width: "100%" }}
-                scrollWheelZoom
-              >
-                <TileLayer
-                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-                  url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                />
-                <MapAutoFit events={mappableEvents} />
-                {mappableEvents.map((e, i) => (
-                  <Marker
-                    key={e.id || i}
-                    position={[parseFloat(e.latitude!), parseFloat(e.longitude!)]}
-                  >
-                    <Popup>
-                      <ShowCard show={e} />
-                    </Popup>
-                  </Marker>
-                ))}
-              </MapContainer>
-            </div>
-          )}
-
-          {/* List view */}
-          {viewMode === "list" && (
-            <div className="space-y-2">
-              {events.map((e, i) => (
-                <ShowListItem key={e.id || i} show={e} onClick={() => setSelectedShow(e)} />
+              <MapAutoFit events={mappableEvents} />
+              {mappableEvents.map((e, i) => (
+                <Marker
+                  key={e.id || i}
+                  position={[parseFloat(e.latitude!), parseFloat(e.longitude!)]}
+                >
+                  <Popup maxWidth={360} minWidth={340}>
+                    <ShowCard show={e} />
+                  </Popup>
+                </Marker>
               ))}
-            </div>
-          )}
-        </>
+            </MapContainer>
+          </div>
+        </div>
       )}
 
-      {/* Show detail popup */}
+      {/* Calendar view */}
+      {viewMode === "calendar" && (
+        <div>
+          {controls}
+          <div className="flex items-center justify-between mb-4">
+            <Button variant="ghost" size="sm" onClick={prevMonth}><ChevronLeft size={16} /></Button>
+            <span className="font-semibold capitalize">{monthName}</span>
+            <Button variant="ghost" size="sm" onClick={nextMonth}><ChevronRight size={16} /></Button>
+          </div>
+          <CalendarGrid
+            year={currentMonth.year}
+            month={currentMonth.month}
+            eventsByDate={eventsByDate}
+            onSelectShow={setSelectedShow}
+          />
+          <div className="text-xs text-muted-foreground mt-3">
+            {monthEvents.length} shows this month from your library artists
+          </div>
+        </div>
+      )}
+
+      {/* List view */}
+      {viewMode === "list" && (
+        <div>
+          {controls}
+          <div className="space-y-2">
+            {events.map((e, i) => (
+              <ShowListItem key={e.id || i} show={e} onClick={() => setSelectedShow(e)} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Show detail overlay */}
       {selectedShow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setSelectedShow(null)}>
           <div onClick={(e) => e.stopPropagation()}>
@@ -185,7 +204,7 @@ export function Shows() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -206,7 +225,6 @@ function CalendarGrid({
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
   const cells: (number | null)[] = [];
-  // Monday-first: shift Sunday(0) to end
   const offset = (firstDay + 6) % 7;
   for (let i = 0; i < offset; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
@@ -240,11 +258,7 @@ function CalendarGrid({
                 </div>
                 <div className="space-y-0.5">
                   {dayEvents.slice(0, 3).map((e, j) => (
-                    <button
-                      key={j}
-                      className="w-full text-left"
-                      onClick={() => onSelectShow(e)}
-                    >
+                    <button key={j} className="w-full text-left" onClick={() => onSelectShow(e)}>
                       <ShowCard show={e} compact />
                     </button>
                   ))}
@@ -309,7 +323,6 @@ function ShowListItem({ show, onClick }: { show: ShowEvent; onClick: () => void 
 
 function MapAutoFit({ events }: { events: ShowEvent[] }) {
   const map = useMap();
-
   useEffect(() => {
     if (events.length === 0) return;
     const bounds = L.latLngBounds(
@@ -317,6 +330,5 @@ function MapAutoFit({ events }: { events: ShowEvent[] }) {
     );
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 10 });
   }, [events, map]);
-
   return null;
 }

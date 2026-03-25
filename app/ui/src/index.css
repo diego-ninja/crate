@@ -75,3 +75,21 @@ body {
   height: 3px;
   animation: equalize 0.6s ease-in-out infinite;
 }
+
+/* Leaflet popup — transparent, no chrome */
+.leaflet-popup-content-wrapper {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: normal !important;
+}
+.leaflet-popup-tip-container {
+  display: none !important;
+}
+.leaflet-popup-close-button {
+  display: none !important;
+}

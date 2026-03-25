@@ -1,7 +1,9 @@
+import { useState } from "react";
+import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { encPath, formatCompact } from "@/lib/utils";
 import {
-  MapPin, Calendar, Clock, Ticket, ExternalLink, Users,
+  MapPin, Calendar, Clock, Ticket, ExternalLink,
 } from "lucide-react";
 
 export interface ShowEvent {
@@ -22,13 +24,25 @@ export interface ShowEvent {
   status: string;
   latitude?: string;
   longitude?: string;
-  // Added by Shows page when fetching for multiple artists
   artist_name?: string;
   artist_listeners?: number;
 }
 
-/** Full show card — used in popups, dialogs, expanded views */
+/** Compact inline trigger for calendar cells */
+function CompactCard({ show }: { show: ShowEvent }) {
+  return (
+    <div className="flex items-center gap-2 text-xs py-1 px-1.5 rounded hover:bg-white/5 cursor-pointer min-w-0">
+      <ArtistAvatarStack names={show.lineup.length > 0 ? show.lineup.slice(0, 2) : (show.artist_name ? [show.artist_name] : [])} size={18} />
+      <span className="font-medium truncate">{show.artist_name || show.lineup[0] || show.name}</span>
+      <span className="text-muted-foreground truncate hidden sm:inline">{show.venue}</span>
+    </div>
+  );
+}
+
+/** Full show card */
 export function ShowCard({ show, compact }: { show: ShowEvent; compact?: boolean }) {
+  if (compact) return <CompactCard show={show} />;
+
   const d = show.date ? new Date(show.date) : null;
   const dateStr = d
     ? d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
@@ -37,36 +51,23 @@ export function ShowCard({ show, compact }: { show: ShowEvent; compact?: boolean
     ? show.local_time.slice(0, 5)
     : d ? d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "";
   const location = [show.city, show.country].filter(Boolean).join(", ");
-  const otherArtists = show.lineup.filter(
-    (l) => show.artist_name && l.toLowerCase() !== show.artist_name.toLowerCase()
-  );
 
-  if (compact) {
-    return (
-      <div className="flex items-center gap-2 text-xs py-1 px-1.5 rounded hover:bg-white/5 cursor-pointer min-w-0">
-        {show.artist_name && (
-          <img
-            src={`/api/artist/${encPath(show.artist_name)}/photo`}
-            alt=""
-            className="w-5 h-5 rounded-full object-cover flex-shrink-0"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-          />
-        )}
-        <span className="font-medium truncate">{show.artist_name || show.name}</span>
-        <span className="text-muted-foreground truncate">{show.venue}</span>
-      </div>
-    );
-  }
+  // Headliner = first in Ticketmaster lineup, support = rest
+  const allArtists = show.lineup.length > 0
+    ? show.lineup
+    : (show.artist_name ? [show.artist_name] : []);
+  const headliner = allArtists[0] || show.artist_name || "";
+  const support = allArtists.slice(1);
 
   return (
     <div className="bg-card border border-border rounded-xl overflow-hidden w-[340px] shadow-xl">
-      {/* Header with event image or artist photo */}
+      {/* Header image */}
       <div className="relative h-[100px] bg-secondary">
         {show.image ? (
           <img src={show.image} alt="" className="w-full h-full object-cover" />
-        ) : show.artist_name ? (
+        ) : headliner ? (
           <img
-            src={`/api/artist/${encPath(show.artist_name)}/background`}
+            src={`/api/artist/${encPath(headliner)}/background`}
             alt=""
             className="w-full h-full object-cover opacity-60"
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -74,19 +75,13 @@ export function ShowCard({ show, compact }: { show: ShowEvent; compact?: boolean
         ) : null}
         <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
 
-        {/* Artist photo circle */}
-        {show.artist_name && (
-          <div className="absolute -bottom-5 left-4">
-            <img
-              src={`/api/artist/${encPath(show.artist_name)}/photo`}
-              alt={show.artist_name}
-              className="w-10 h-10 rounded-full object-cover ring-2 ring-card"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
-          </div>
-        )}
+        {/* Lineup avatars — stacked, bottom-left */}
+        <div className="absolute -bottom-4 left-4 flex -space-x-2">
+          {allArtists.slice(0, 4).map((name) => (
+            <ArtistAvatar key={name} name={name} size={36} linked />
+          ))}
+        </div>
 
-        {/* Status badge */}
         {show.status === "onsale" && (
           <Badge className="absolute top-2 right-2 bg-green-500/90 text-white text-[10px] border-0">
             On Sale
@@ -95,19 +90,36 @@ export function ShowCard({ show, compact }: { show: ShowEvent; compact?: boolean
       </div>
 
       {/* Content */}
-      <div className="p-4 pt-7">
-        {/* Artist + popularity */}
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-semibold text-sm truncate">{show.artist_name || show.name}</span>
-          {show.artist_listeners && show.artist_listeners > 0 && (
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0 flex-shrink-0">
-              {formatCompact(show.artist_listeners)} listeners
-            </Badge>
-          )}
-        </div>
+      <div className="p-4 pt-6">
+        {/* Headliner */}
+        <Link
+          to={`/artist/${encPath(headliner)}`}
+          className="block font-bold text-lg text-foreground hover:text-primary transition-colors truncate mb-0.5"
+        >
+          {headliner}
+        </Link>
 
-        {/* Event name (if different from artist) */}
-        {show.name && show.artist_name && show.name.toLowerCase() !== show.artist_name.toLowerCase() && (
+        {/* Support acts */}
+        {support.length > 0 && (
+          <div className="text-xs text-muted-foreground mb-1 truncate">
+            {support.slice(0, 4).map((name, i) => (
+              <span key={name}>
+                {i > 0 && <span> &middot; </span>}
+                <Link to={`/artist/${encPath(name)}`} className="hover:text-foreground transition-colors">{name}</Link>
+              </span>
+            ))}
+            {support.length > 4 && <span> +{support.length - 4} more</span>}
+          </div>
+        )}
+
+        {show.artist_listeners && show.artist_listeners > 0 && (
+          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 mb-1.5">
+            {formatCompact(show.artist_listeners)} listeners
+          </Badge>
+        )}
+
+        {/* Event/tour name */}
+        {show.name && show.name.toLowerCase() !== headliner.toLowerCase() && (
           <div className="text-xs text-muted-foreground mb-2 truncate">{show.name}</div>
         )}
 
@@ -134,24 +146,78 @@ export function ShowCard({ show, compact }: { show: ShowEvent; compact?: boolean
           </div>
         )}
 
-        {/* Lineup */}
-        {otherArtists.length > 0 && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-            <Users size={12} className="flex-shrink-0" />
-            <span className="truncate">with {otherArtists.join(", ")}</span>
-          </div>
-        )}
-
-        {/* Action */}
+        {/* Ticketmaster link */}
         <a
           href={show.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors text-xs font-medium mt-1"
+          className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors text-xs font-medium mt-2"
         >
           <ExternalLink size={12} /> View on Ticketmaster
         </a>
       </div>
     </div>
+  );
+}
+
+
+// ── Artist avatar with fallback ──
+
+function ArtistAvatar({ name, size = 36, linked }: { name: string; size?: number; linked?: boolean }) {
+  const [failed, setFailed] = useState(false);
+  const letter = name.charAt(0).toUpperCase();
+
+  const img = !failed ? (
+    <img
+      src={`/api/artist/${encPath(name)}/photo`}
+      alt={name}
+      className="w-full h-full object-cover"
+      onError={() => setFailed(true)}
+    />
+  ) : (
+    <span className="text-[10px] font-bold text-foreground/60">{letter}</span>
+  );
+
+  const wrapper = (
+    <div
+      className="rounded-full ring-2 ring-card overflow-hidden bg-secondary flex items-center justify-center flex-shrink-0"
+      style={{ width: size, height: size }}
+      title={name}
+    >
+      {img}
+    </div>
+  );
+
+  if (linked) {
+    return (
+      <Link to={`/artist/${encPath(name)}`} className="hover:ring-primary/50 rounded-full transition-all">
+        {wrapper}
+      </Link>
+    );
+  }
+  return wrapper;
+}
+
+function ArtistAvatarStack({ names, size = 18 }: { names: string[]; size?: number }) {
+  return (
+    <div className="flex -space-x-1 flex-shrink-0">
+      {names.map((n) => (
+        <ArtistAvatar key={n} name={n} size={size} />
+      ))}
+    </div>
+  );
+}
+
+
+// ── Artist name link ──
+
+function ArtistLink({ name, isMain }: { name: string; isMain: boolean }) {
+  return (
+    <Link
+      to={`/artist/${encPath(name)}`}
+      className={`hover:text-primary transition-colors ${isMain ? "font-bold text-lg text-foreground" : "text-sm text-foreground/70"}`}
+    >
+      {name}
+    </Link>
   );
 }
