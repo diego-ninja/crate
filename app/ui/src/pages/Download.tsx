@@ -104,7 +104,11 @@ export function DownloadPage() {
   const [searchingSlsk, setSearchingSlsk] = useState(false);
   const [, setSlskSearchId] = useState<string | null>(null);
   const slskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [ytResults, setYtResults] = useState<{ id: string; title: string; url: string; channel: string; duration: number | null; thumbnail: string; source: string }[] | null>(null);
+  const [ytResults, setYtResults] = useState<{
+    id: string; title: string; url: string; channel: string; artist: string;
+    album: string; track: string; duration: number | null; thumbnail: string;
+    source: string; content_type: string; view_count: number | null; like_count: number | null;
+  }[] | null>(null);
   const [searchingYt, setSearchingYt] = useState(false);
   const [resultTab, setResultTab] = useState<"tidal" | "soulseek" | "youtube">("tidal");
   const { data: tidalQueue, refetch: refetchTidalQueue } = useApi<QueueItem[]>("/api/tidal/queue");
@@ -465,33 +469,44 @@ export function DownloadPage() {
             <div>
               {ytResults && ytResults.length > 0 ? (
                 <div className="space-y-2">
-                  {ytResults.map((r, i) => (
-                    <div key={r.id || i} className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
-                      {r.thumbnail && (
-                        <img src={r.thumbnail} alt="" className="w-16 h-16 rounded object-cover flex-shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{r.title}</div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-                          <Badge variant="outline" className={`text-[10px] px-1 py-0 ${
-                            r.source === "bandcamp" ? "text-cyan-500 border-cyan-500/30" :
-                            r.source === "soundcloud" ? "text-orange-500 border-orange-500/30" :
-                            "text-red-500 border-red-500/30"
-                          }`}>{r.source}</Badge>
-                          <span>{r.channel}</span>
-                          {r.duration && <span>{Math.floor(r.duration / 60)}:{String(Math.floor(r.duration % 60)).padStart(2, "0")}</span>}
+                  {ytResults.map((r, i) => {
+                    const dur = r.duration ? `${Math.floor(r.duration / 60)}:${String(Math.floor(r.duration % 60)).padStart(2, "0")}` : "";
+                    const displayArtist = r.artist || r.channel;
+                    const displayTitle = r.track || r.title;
+                    const sourceColor = r.source === "bandcamp" ? "text-cyan-500 border-cyan-500/30" :
+                      r.source === "soundcloud" ? "text-orange-500 border-orange-500/30" : "text-red-500 border-red-500/30";
+                    const typeColor = r.content_type === "album" ? "text-blue-500 border-blue-500/30" :
+                      r.content_type === "mix" ? "text-purple-500 border-purple-500/30" : "text-green-500 border-green-500/30";
+
+                    return (
+                      <div key={r.id || i} className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg hover:bg-white/5 transition-colors">
+                        {r.thumbnail && (
+                          <img src={r.thumbnail} alt="" className="w-14 h-14 rounded object-cover flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{displayTitle}</div>
+                          <div className="text-xs text-muted-foreground truncate">{displayArtist}{r.album ? ` — ${r.album}` : ""}</div>
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            <Badge variant="outline" className={`text-[10px] px-1 py-0 ${sourceColor}`}>{r.source}</Badge>
+                            <Badge variant="outline" className={`text-[10px] px-1 py-0 ${typeColor}`}>{r.content_type}</Badge>
+                            {dur && <span className="text-[10px] text-muted-foreground">{dur}</span>}
+                            {r.view_count && <span className="text-[10px] text-muted-foreground">{(r.view_count / 1000).toFixed(0)}K views</span>}
+                          </div>
                         </div>
+                        <Button size="sm" onClick={async () => {
+                          try {
+                            await api("/api/acquisition/download", "POST", {
+                              source: "youtube", url: r.url,
+                              artist: displayArtist, album: r.album || displayTitle,
+                            });
+                            toast.success(`Downloading: ${displayTitle}`);
+                          } catch { toast.error("Download failed"); }
+                        }}>
+                          <Download size={13} className="mr-1" /> Download
+                        </Button>
                       </div>
-                      <Button size="sm" onClick={async () => {
-                        try {
-                          await api("/api/acquisition/download", "POST", { source: "youtube", url: r.url, artist: r.channel, album: r.title });
-                          toast.success("Download started");
-                        } catch { toast.error("Download failed"); }
-                      }}>
-                        <Download size={13} className="mr-1" /> Download
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : ytResults && ytResults.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-4">No YouTube results</div>

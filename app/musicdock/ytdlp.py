@@ -26,11 +26,10 @@ def search(query: str, limit: int = 20) -> list[dict]:
             YTDLP_BIN,
             f"ytsearch{limit}:{query}",
             "--dump-json",
-            "--flat-playlist",
             "--no-download",
             "--no-warnings",
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
             log.debug("yt-dlp search failed: %s", r.stderr[:200])
             return []
@@ -41,15 +40,41 @@ def search(query: str, limit: int = 20) -> list[dict]:
                 continue
             try:
                 data = json.loads(line)
+                duration = data.get("duration")
+                # Classify content type by duration
+                content_type = "track"
+                if duration and duration > 1200:  # > 20 min
+                    content_type = "album"
+                elif duration and duration > 600:  # > 10 min
+                    content_type = "mix"
+
+                # Extract best thumbnail
+                thumbs = data.get("thumbnails") or []
+                thumb = ""
+                if thumbs:
+                    # Prefer medium quality (not too large)
+                    for t in thumbs:
+                        if t.get("width", 0) >= 320:
+                            thumb = t.get("url", "")
+                            break
+                    if not thumb:
+                        thumb = thumbs[-1].get("url", "")
+
                 results.append({
                     "id": data.get("id", ""),
                     "title": data.get("title", ""),
-                    "url": data.get("url") or data.get("webpage_url") or f"https://www.youtube.com/watch?v={data.get('id', '')}",
+                    "url": data.get("webpage_url") or data.get("url") or f"https://www.youtube.com/watch?v={data.get('id', '')}",
                     "channel": data.get("channel") or data.get("uploader", ""),
-                    "duration": data.get("duration"),
-                    "thumbnail": data.get("thumbnail") or data.get("thumbnails", [{}])[-1].get("url", "") if data.get("thumbnails") else "",
+                    "artist": data.get("artist") or data.get("creator", ""),
+                    "album": data.get("album", ""),
+                    "track": data.get("track", ""),
+                    "duration": duration,
+                    "thumbnail": thumb,
                     "view_count": data.get("view_count"),
+                    "like_count": data.get("like_count"),
                     "source": _detect_source(data),
+                    "content_type": content_type,
+                    "audio_ext": data.get("audio_ext") or data.get("ext", ""),
                 })
             except json.JSONDecodeError:
                 continue
