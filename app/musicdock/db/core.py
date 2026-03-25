@@ -340,6 +340,14 @@ def init_db():
             END $$
         """)
 
+        # Migration: musicbrainz_releasegroupid for album-level MB linking
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_albums ADD COLUMN musicbrainz_releasegroupid TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
         # Migration: discogs_master_id for album-level Discogs linking
         cur.execute("""
             DO $$ BEGIN
