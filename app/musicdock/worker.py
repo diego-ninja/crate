@@ -1505,20 +1505,30 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
             result = tidal_mod.search(name, content_type="albums", limit=10)
             albums = result.get("albums", [])
 
-            import datetime as _dt
-            current_year = _dt.datetime.now().year
-            min_year = current_year - 1  # Only current year and last year
+            # Find the most recent album year we have for this artist
+            # Year is extracted from path pattern: /music/Artist/YEAR/Album
+            with get_db_ctx() as cur:
+                cur.execute("""
+                    SELECT MAX(
+                        CASE WHEN path ~ '/\\d{4}/' THEN
+                            SUBSTRING(path FROM '/(\d{4})/')::int
+                        ELSE NULL END
+                    ) AS max_year
+                    FROM library_albums WHERE artist = %s
+                """, (name,))
+                row = cur.fetchone()
+                latest_year_in_lib = row["max_year"] if row and row["max_year"] else None
 
             for album in albums:
                 title = album.get("title", "")
                 if not title:
                     continue
-                # Only recent releases (current year or last year)
+                # Only releases AFTER the latest album we have
                 try:
                     album_year = int(album.get("year") or 0)
                 except (ValueError, TypeError):
                     album_year = 0
-                if album_year < min_year:
+                if latest_year_in_lib and album_year and album_year <= latest_year_in_lib:
                     continue
                 # Skip if already in library
                 if is_album_in_library(name, title):
