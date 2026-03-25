@@ -36,7 +36,7 @@ def search(query: str, limit: int = 20) -> list[dict]:
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         futures = {pool.submit(_search_source, sq, fs): fs for sq, fs in sources}
-        for future in as_completed(futures, timeout=45):
+        for future in as_completed(futures, timeout=90):
             try:
                 all_results.extend(future.result())
             except Exception:
@@ -61,7 +61,7 @@ def _run_search(search_query: str, fallback_source: str) -> list[dict]:
             "--no-warnings",
             "--playlist-end", "25",
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
             log.debug("yt-dlp search failed: %s", r.stderr[:200])
             return []
@@ -140,7 +140,7 @@ def search_bandcamp(query: str, limit: int = 10) -> list[dict]:
             "--no-download",
             "--no-warnings",
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         if r.returncode != 0:
             return []
 
