@@ -63,11 +63,14 @@ class LibraryHealthCheck:
             # Group by check type for stale resolution
             by_type: dict[str, set[str]] = defaultdict(set)
             for issue in issues:
-                by_type[issue["check"]].add(issue["description"])
+                # Build description from details if not present
+                desc = issue.get("description") or str(issue.get("details", {})
+                    ).replace("{", "").replace("}", "").replace("'", "")[:200]
+                by_type[issue["check"]].add(desc)
                 upsert_health_issue(
                     check_type=issue["check"],
                     severity=issue.get("severity", "medium"),
-                    description=issue["description"],
+                    description=desc,
                     details=issue.get("details"),
                     auto_fixable=issue.get("auto_fixable", False),
                 )
