@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from musicdock.db.core import get_db_ctx
 
 
@@ -38,10 +38,37 @@ def cleanup_task_events(task_id: str):
         cur.execute("DELETE FROM task_events WHERE task_id = %s", (task_id,))
 
 
-def cleanup_old_events(max_age_hours: int = 24):
+def cleanup_old_events(max_age_hours: int = 48):
     """Remove events older than max_age_hours."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
     with get_db_ctx() as cur:
-        cur.execute(
-            "DELETE FROM task_events WHERE created_at < (NOW() - INTERVAL '%s hours')::text",
-            (max_age_hours,),
-        )
+        cur.execute("DELETE FROM task_events WHERE created_at < %s", (cutoff,))
+
+
+def cleanup_orphan_events():
+    """Remove events whose task no longer exists."""
+    with get_db_ctx() as cur:
+        cur.execute("""
+            DELETE FROM task_events
+            WHERE task_id NOT IN (SELECT id FROM tasks)
+        """)
+
+
+def cleanup_old_tasks(max_age_days: int = 7):
+    """Remove completed/failed/cancelled tasks older than N days."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    with get_db_ctx() as cur:
+        # First clean their events
+        cur.execute("""
+            DELETE FROM task_events WHERE task_id IN (
+                SELECT id FROM tasks
+                WHERE status IN ('completed', 'failed', 'cancelled')
+                AND created_at < %s
+            )
+        """, (cutoff,))
+        # Then the tasks themselves
+        cur.execute("""
+            DELETE FROM tasks
+            WHERE status IN ('completed', 'failed', 'cancelled')
+            AND created_at < %s
+        """, (cutoff,))

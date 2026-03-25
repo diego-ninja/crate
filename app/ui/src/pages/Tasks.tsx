@@ -348,14 +348,7 @@ export function Tasks() {
       toast.success(`Retrying: ${getTaskLabel(task)}`);
       refetch();
     } catch {
-      // Fallback: create new task with same type/params
-      try {
-        const endpoint = task.type === "process_new_content" ? `/api/artist/${encodeURIComponent(task.params?.artist || "")}/enrich`
-          : `/api/manage/${task.type.replace(/_/g, "-")}`;
-        await api(endpoint, "POST", task.params || {});
-        toast.success(`Re-queued: ${getTaskLabel(task)}`);
-        refetch();
-      } catch { toast.error("Failed to retry"); }
+      toast.error("Failed to retry task");
     }
   };
 

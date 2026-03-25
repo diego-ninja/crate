@@ -60,8 +60,9 @@ def _run_task(task: dict, config: dict):
     if is_db_heavy:
         with _db_heavy_lock:
             if _db_heavy_running:
-                # Re-queue: another DB-heavy task is running
+                # Re-queue: another DB-heavy task is running — backoff to avoid busy loop
                 update_task(task_id, status="pending", progress="Waiting for DB-heavy task to finish")
+                time.sleep(10)
                 return
             _db_heavy_running = True
 
@@ -126,6 +127,7 @@ def run_worker(config: dict):
 
     _last_schedule_check = time.time()
     _last_import_check = 0
+    _last_cleanup = 0.0
     executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
 
     try:
@@ -147,6 +149,16 @@ def run_worker(config: dict):
                     check_and_create_scheduled_tasks()
                 except Exception:
                     log.debug("Schedule check failed")
+
+            # Auto-cleanup old tasks + events every hour
+            if time.time() - _last_cleanup > 3600:
+                _last_cleanup = time.time()
+                try:
+                    from musicdock.db.events import cleanup_old_events, cleanup_old_tasks
+                    cleanup_old_events(max_age_hours=48)
+                    cleanup_old_tasks(max_age_days=7)
+                except Exception:
+                    log.debug("Auto-cleanup failed")
 
             # Read dynamic slot count from settings
             current_max = int(get_setting("max_workers", str(MAX_WORKERS)) or MAX_WORKERS)
@@ -774,12 +786,14 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
 
     emit_task_event(task_id, "info", {"message": "Pipeline: running health check..."})
     update_task(task_id, progress=json.dumps({"phase": "health_check"}))
+    if _is_cancelled(task_id): return {"status": "cancelled"}
     checker = LibraryHealthCheck(config)
     report = checker.run(
         progress_callback=lambda d: update_task(task_id, progress=json.dumps({**d, "phase": "health_check"}))
     )
     set_cache("health_report", report, ttl=3600)
 
+    if _is_cancelled(task_id): return {"status": "cancelled"}
     emit_task_event(task_id, "info", {"message": "Pipeline: running repair..."})
     update_task(task_id, progress=json.dumps({"phase": "repair"}))
     repairer = LibraryRepair(config)
@@ -788,6 +802,7 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
         progress_callback=lambda d: update_task(task_id, progress=json.dumps({**d, "phase": "repair"})),
     )
 
+    if _is_cancelled(task_id): return {"status": "cancelled"}
     emit_task_event(task_id, "info", {"message": "Pipeline: running sync..."})
     update_task(task_id, progress=json.dumps({"phase": "sync"}))
     sync = LibrarySync(config)
@@ -2121,11 +2136,16 @@ def _chunk_coordinator(task_id: str, params: dict, config: dict, chunk_task_type
         sub_id = create_task(chunk_task_type, {"artists": chunk, "chunk_index": i, "total_chunks": len(chunks)})
         chunk_task_ids.append(sub_id)
 
-    # Monitor sub-tasks
+    # Monitor sub-tasks (with timeout)
     completed = 0
+    coordinator_start = time.time()
+    coordinator_timeout = 3600 * 6  # 6 hours max
     while completed < len(chunk_task_ids):
         if _shutdown or _is_cancelled(task_id):
             return {"status": "cancelled", "completed_chunks": completed}
+        if time.time() - coordinator_start > coordinator_timeout:
+            log.warning("Coordinator %s timed out after %ds", task_id, coordinator_timeout)
+            return {"status": "timeout", "completed_chunks": completed, "total_chunks": len(chunks)}
         time.sleep(5)
         completed = 0
         failed = 0

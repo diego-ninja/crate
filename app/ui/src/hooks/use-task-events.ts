@@ -46,7 +46,10 @@ export function useTaskEvents(taskId: string | null) {
     const handleEvent = (e: MessageEvent) => {
       try {
         const payload = JSON.parse(e.data);
-        setEvents((prev) => [...prev, payload]);
+        setEvents((prev) => {
+          const next = [...prev, payload];
+          return next.length > 200 ? next.slice(-200) : next;
+        });
       } catch {
         // Ignore parse errors
       }

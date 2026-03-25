@@ -330,6 +330,15 @@ def init_db():
             END $$
         """)
 
+        # Migration: add FK on task_events → tasks (cascade delete)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE task_events ADD CONSTRAINT fk_task_events_task
+                    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$
+        """)
+
         # Genres
         cur.execute("""
             CREATE TABLE IF NOT EXISTS genres (
