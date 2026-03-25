@@ -1505,14 +1505,24 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
             result = tidal_mod.search(name, content_type="albums", limit=10)
             albums = result.get("albums", [])
 
+            import datetime as _dt
+            current_year = _dt.datetime.now().year
+            min_year = current_year - 1  # Only current year and last year
+
             for album in albums:
                 title = album.get("title", "")
                 if not title:
                     continue
+                # Only recent releases (current year or last year)
+                try:
+                    album_year = int(album.get("year") or 0)
+                except (ValueError, TypeError):
+                    album_year = 0
+                if album_year < min_year:
+                    continue
                 # Skip if already in library
                 if is_album_in_library(name, title):
                     continue
-                # Skip if already detected
                 release_id = upsert_new_release(
                     artist_name=name,
                     album_title=title,
