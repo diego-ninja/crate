@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Button } from "@/components/ui/button";
@@ -41,35 +41,46 @@ export function Shows() {
     }
   }, []);
 
-  // Stream shows via SSE
+  // Stream shows via fetch + ReadableStream
   useEffect(() => {
     setLoading(true);
     setDone(false);
     setEvents([]);
-    const es = new EventSource("/api/shows?limit=5");
-    let count = 0;
+    let cancelled = false;
 
-    es.onmessage = (e) => {
+    async function streamShows() {
       try {
-        const show: ShowEvent = JSON.parse(e.data);
-        setEvents((prev) => [...prev, show]);
-      } catch { /* ignore */ }
-      count++;
-    };
+        const res = await fetch("/api/shows?limit=5", { credentials: "include" });
+        if (!res.ok || !res.body) { setLoading(false); setDone(true); return; }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-    es.addEventListener("done", () => {
-      es.close();
-      setLoading(false);
-      setDone(true);
-    });
+        while (true) {
+          const { done: readerDone, value } = await reader.read();
+          if (readerDone || cancelled) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (line.startsWith("event: done")) {
+              if (!cancelled) { setLoading(false); setDone(true); }
+              return;
+            }
+            if (line.startsWith("data: ")) {
+              try {
+                const show: ShowEvent = JSON.parse(line.slice(6));
+                if (!cancelled) setEvents((prev) => [...prev, show]);
+              } catch { /* skip */ }
+            }
+          }
+        }
+      } catch { /* network error */ }
+      if (!cancelled) { setLoading(false); setDone(true); }
+    }
 
-    es.onerror = () => {
-      es.close();
-      setLoading(false);
-      setDone(true);
-    };
-
-    return () => es.close();
+    streamShows();
+    return () => { cancelled = true; };
   }, []);
 
   const eventsByDate = useMemo(() => {
@@ -148,7 +159,7 @@ export function Shows() {
     <>
       {/* Map view — full viewport */}
       {isMap && (
-        <div className="absolute inset-0 md:left-[220px]" style={{ top: 0 }}>
+        <div className="fixed inset-0 md:left-[220px] z-10">
           <div className="relative w-full h-full">
             {controls}
             {userLocation && (
@@ -163,6 +174,7 @@ export function Shows() {
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
                   url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                 />
+                <InvalidateSize />
                 <LiveMarkers events={mappableEvents} />
               </MapContainer>
             )}
@@ -222,6 +234,22 @@ export function Shows() {
 
 
 // ── Live markers (re-renders as events stream in) ──
+
+function InvalidateSize() {
+  const map = useMap();
+  useEffect(() => {
+    // Repeatedly invalidate until tiles render properly
+    const timers = [200, 500, 1000, 2000].map((ms) =>
+      setTimeout(() => map.invalidateSize(), ms)
+    );
+    // Also observe container resize
+    const container = map.getContainer();
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(container);
+    return () => { timers.forEach(clearTimeout); observer.disconnect(); };
+  }, [map]);
+  return null;
+}
 
 function LiveMarkers({ events }: { events: ShowEvent[] }) {
   return (

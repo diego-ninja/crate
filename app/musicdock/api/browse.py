@@ -538,9 +538,10 @@ def api_cached_shows(limit: int = Query(5)):
 
 
 @router.get("/api/shows")
-def api_all_shows(country: str = Query(""), limit: int = Query(5)):
+async def api_all_shows(country: str = Query(""), limit: int = Query(5)):
     """SSE endpoint: streams shows for all library artists as they're fetched."""
     import json as _json
+    import asyncio
     from starlette.responses import StreamingResponse
     from musicdock.ticketmaster import get_upcoming_shows, is_configured
 
@@ -549,17 +550,23 @@ def api_all_shows(country: str = Query(""), limit: int = Query(5)):
 
     all_artists, _ = get_library_artists(per_page=10000)
 
-    def generate():
+    async def generate():
+        loop = asyncio.get_event_loop()
         for artist in all_artists:
             name = artist["name"]
             try:
-                events = get_upcoming_shows(name, country_code=country, limit=limit)
+                # Run blocking Ticketmaster call in thread pool
+                events = await loop.run_in_executor(
+                    None, lambda n=name: get_upcoming_shows(n, country_code=country, limit=limit)
+                )
                 for e in events:
                     e["artist_name"] = name
                     e["artist_listeners"] = artist.get("listeners") or 0
                     yield f"data: {_json.dumps(e)}\n\n"
             except Exception:
                 pass
+            # Yield control to event loop so other requests can be served
+            await asyncio.sleep(0)
         yield "event: done\ndata: {}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")

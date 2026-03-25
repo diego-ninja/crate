@@ -104,6 +104,9 @@ export function DownloadPage() {
   const [searchingSlsk, setSearchingSlsk] = useState(false);
   const [, setSlskSearchId] = useState<string | null>(null);
   const slskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [ytResults, setYtResults] = useState<{ id: string; title: string; url: string; channel: string; duration: number | null; thumbnail: string; source: string }[] | null>(null);
+  const [searchingYt, setSearchingYt] = useState(false);
+  const [resultTab, setResultTab] = useState<"tidal" | "soulseek" | "youtube">("tidal");
   const { data: tidalQueue, refetch: refetchTidalQueue } = useApi<QueueItem[]>("/api/tidal/queue");
   const { data: slskQueue, refetch: refetchSlskQueue } = useApi<{ source: string; artist: string; album: string; filename: string; fullPath?: string; status: string; progress: number; username: string; speed: number }[]>("/api/acquisition/queue");
   const { data: tidalStatus } = useApi<{ authenticated: boolean }>("/api/tidal/status");
@@ -167,6 +170,13 @@ export function DownloadPage() {
           }
         })
         .catch(() => { setSoulseekResults([]); setSearchingSlsk(false); });
+
+      // Also search YouTube/Bandcamp/SoundCloud
+      setSearchingYt(true);
+      setYtResults(null);
+      api<{ results: typeof ytResults }>("/api/acquisition/search/youtube", "POST", { query: term, limit: 20 })
+        .then((d) => { setYtResults(d.results ?? []); setSearchingYt(false); })
+        .catch(() => { setYtResults([]); setSearchingYt(false); });
     }
   }, [query]);
 
@@ -280,8 +290,33 @@ export function DownloadPage() {
 
         {/* Search Results */}
         <TabsContent value="search">
-          {results ? (
-            <div className="space-y-8 mt-4">
+          {/* Source sub-tabs */}
+          <div className="flex gap-2 mt-4 mb-4 border-b border-border pb-2">
+            <button
+              className={`px-3 py-1.5 text-sm rounded-t-lg transition-colors ${resultTab === "tidal" ? "text-primary border-b-2 border-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setResultTab("tidal")}
+            >
+              Tidal {results && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{(results.albums?.length || 0) + (results.tracks?.length || 0)}</Badge>}
+            </button>
+            <button
+              className={`px-3 py-1.5 text-sm rounded-t-lg transition-colors ${resultTab === "soulseek" ? "text-primary border-b-2 border-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setResultTab("soulseek")}
+            >
+              Soulseek {soulseekResults && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{soulseekResults.length}</Badge>}
+              {searchingSlsk && <Loader2 size={12} className="animate-spin ml-1 inline" />}
+            </button>
+            <button
+              className={`px-3 py-1.5 text-sm rounded-t-lg transition-colors ${resultTab === "youtube" ? "text-primary border-b-2 border-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setResultTab("youtube")}
+            >
+              YouTube {ytResults && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{ytResults.length}</Badge>}
+              {searchingYt && <Loader2 size={12} className="animate-spin ml-1 inline" />}
+            </button>
+          </div>
+
+          {/* Tidal results */}
+          {resultTab === "tidal" && results ? (
+            <div className="space-y-8">
               {/* Artists */}
               {(results.artists ?? []).length > 0 && (
                 <div>
@@ -387,24 +422,16 @@ export function DownloadPage() {
                 <div className="text-center py-12 text-muted-foreground">No results found</div>
               )}
             </div>
-          ) : (
-            <div className="text-center py-12 text-muted-foreground mt-4">Search Tidal and Soulseek to find music</div>
-          )}
+          ) : resultTab === "tidal" ? (
+            <div className="text-center py-12 text-muted-foreground">Search to find music on Tidal</div>
+          ) : null}
 
           {/* Soulseek Results */}
-          {(soulseekResults !== null || searchingSlsk) && (
-            <div className="mt-6">
-              <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                Soulseek Results
-                {soulseekResults && soulseekResults.length > 0 && (
-                  <span className="text-xs text-muted-foreground font-normal">({soulseekResults.length} albums)</span>
-                )}
-                {searchingSlsk && <Loader2 size={14} className="animate-spin text-muted-foreground" />}
-                {searchingSlsk && <span className="text-xs text-muted-foreground font-normal">searching...</span>}
-              </h3>
+          {resultTab === "soulseek" && (
+            <div>
               {soulseekResults && soulseekResults.length > 0 ? (
                 <div className="space-y-2">
-                  {soulseekResults.slice(0, 15).map((r, i) => (
+                  {soulseekResults.map((r, i) => (
                     <div key={i} className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">{r.artist} — {r.album}</div>
@@ -425,7 +452,54 @@ export function DownloadPage() {
                 </div>
               ) : soulseekResults && soulseekResults.length === 0 ? (
                 <div className="text-sm text-muted-foreground py-4">No Soulseek results</div>
-              ) : null}
+              ) : searchingSlsk ? (
+                <div className="text-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" /></div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Search to find music on Soulseek</div>
+              )}
+            </div>
+          )}
+
+          {/* YouTube/Bandcamp/SoundCloud Results */}
+          {resultTab === "youtube" && (
+            <div>
+              {ytResults && ytResults.length > 0 ? (
+                <div className="space-y-2">
+                  {ytResults.map((r, i) => (
+                    <div key={r.id || i} className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+                      {r.thumbnail && (
+                        <img src={r.thumbnail} alt="" className="w-16 h-16 rounded object-cover flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{r.title}</div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
+                          <Badge variant="outline" className={`text-[10px] px-1 py-0 ${
+                            r.source === "bandcamp" ? "text-cyan-500 border-cyan-500/30" :
+                            r.source === "soundcloud" ? "text-orange-500 border-orange-500/30" :
+                            "text-red-500 border-red-500/30"
+                          }`}>{r.source}</Badge>
+                          <span>{r.channel}</span>
+                          {r.duration && <span>{Math.floor(r.duration / 60)}:{String(Math.floor(r.duration % 60)).padStart(2, "0")}</span>}
+                        </div>
+                      </div>
+                      <Button size="sm" onClick={async () => {
+                        try {
+                          await api("/api/acquisition/download", "POST", { source: "youtube", url: r.url, artist: r.channel, album: r.title });
+                          toast.success("Download started");
+                        } catch { toast.error("Download failed"); }
+                      }}>
+                        <Download size={13} className="mr-1" /> Download
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : ytResults && ytResults.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-4">No YouTube results</div>
+              ) : searchingYt ? (
+                <div className="text-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" /></div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">Search to find music on YouTube, Bandcamp and SoundCloud</div>
+              )}
             </div>
           )}
         </TabsContent>

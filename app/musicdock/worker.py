@@ -2678,6 +2678,65 @@ def _handle_cleanup_incomplete_downloads(task_id: str, params: dict, config: dic
     return {"cleaned": cleaned, "details": details}
 
 
+def _handle_ytdlp_download(task_id: str, params: dict, config: dict) -> dict:
+    """Download from YouTube/Bandcamp/SoundCloud via yt-dlp, then process."""
+    from musicdock.ytdlp import download as ytdlp_download
+    from musicdock.library_sync import LibrarySync
+
+    url = params.get("url", "")
+    quality = params.get("quality", "best")
+    artist = params.get("artist", "")
+    album = params.get("album", "")
+    lib = Path(config["library_path"])
+    tmp_dir = str(Path(config.get("downloads_path", "/downloads")) / "ytdlp" / task_id[:8])
+
+    desc = f"{artist} - {album}" if artist else url
+    emit_task_event(task_id, "info", {"message": f"Downloading from yt-dlp: {desc}"})
+    update_task(task_id, progress=json.dumps({"phase": "downloading", "url": url}))
+
+    result = ytdlp_download(
+        url, tmp_dir, quality=quality,
+        progress_callback=lambda d: update_task(task_id, progress=json.dumps(d)),
+    )
+
+    if not result.get("success"):
+        return {"error": result.get("error", "Download failed")}
+
+    # Move to library
+    emit_task_event(task_id, "info", {"message": f"Moving {result.get('file_count', 0)} files to library"})
+    update_task(task_id, progress=json.dumps({"phase": "moving", "files": result.get("file_count", 0)}))
+
+    from musicdock.tidal import move_to_library
+    modified_artists = move_to_library(tmp_dir, str(lib))
+
+    if not modified_artists:
+        return {"error": "No files moved to library"}
+
+    # Sync + process
+    emit_task_event(task_id, "info", {"message": f"Processing: {', '.join(modified_artists)}"})
+    sync = LibrarySync(config)
+    for artist_name in modified_artists:
+        artist_dir = lib / artist_name
+        if artist_dir.is_dir():
+            try:
+                sync.sync_artist(artist_dir)
+            except Exception:
+                log.warning("Sync failed for %s", artist_name)
+        try:
+            create_task("process_new_content", {"artist": artist_name})
+        except Exception:
+            pass
+
+    try:
+        from musicdock.navidrome import start_scan
+        start_scan()
+    except Exception:
+        pass
+
+    emit_task_event(task_id, "info", {"message": f"Download complete: {result.get('file_count', 0)} files"})
+    return {"success": True, "url": url, "files": result.get("file_count", 0), "artists": modified_artists}
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
@@ -2714,6 +2773,7 @@ TASK_HANDLERS = {
     "process_new_content": _handle_process_new_content,
     "tidal_download": _handle_tidal_download,
     "soulseek_download": _handle_soulseek_download,
+    "ytdlp_download": _handle_ytdlp_download,
     "check_new_releases": _handle_check_new_releases,
     "scan_missing_covers": _handle_scan_missing_covers,
     "apply_cover": _handle_apply_cover,
