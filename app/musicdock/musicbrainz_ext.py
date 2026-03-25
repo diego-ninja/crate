@@ -89,3 +89,46 @@ def get_artist_details(name: str) -> dict | None:
 
     set_cache(cache_key, result)
     return result
+
+
+def get_artist_releases(mbid: str) -> list[dict]:
+    """Get all release groups (albums, EPs, singles) for an artist by MBID.
+    Returns list sorted by date descending."""
+    cache_key = f"mb:releases:{mbid}"
+    cached = get_cache(cache_key)
+    if cached:
+        return cached
+
+    try:
+        all_releases = []
+        offset = 0
+        while True:
+            result = musicbrainzngs.browse_release_groups(
+                artist=mbid, release_type=["album", "ep"],
+                limit=100, offset=offset,
+            )
+            groups = result.get("release-group-list", [])
+            if not groups:
+                break
+            for rg in groups:
+                title = rg.get("title", "")
+                rg_type = rg.get("primary-type", "Album")
+                first_release = rg.get("first-release-date", "")
+                year = first_release[:4] if first_release else ""
+                all_releases.append({
+                    "title": title,
+                    "year": year,
+                    "type": rg_type,
+                    "mbid": rg.get("id", ""),
+                    "first_release_date": first_release,
+                })
+            offset += len(groups)
+            if offset >= int(result.get("release-group-count", 0)):
+                break
+
+        all_releases.sort(key=lambda r: r.get("first_release_date", ""), reverse=True)
+        set_cache(cache_key, all_releases, ttl=86400)  # 24h
+        return all_releases
+    except Exception:
+        log.debug("MB releases failed for %s", mbid, exc_info=True)
+        return []
