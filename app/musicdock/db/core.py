@@ -113,6 +113,24 @@ def init_db():
             ON health_issues (check_type, md5(description)) WHERE status = 'open'
         """)
         cur.execute("""
+            CREATE TABLE IF NOT EXISTS new_releases (
+                id SERIAL PRIMARY KEY,
+                artist_name TEXT NOT NULL,
+                album_title TEXT NOT NULL,
+                tidal_id TEXT,
+                tidal_url TEXT,
+                cover_url TEXT,
+                year TEXT,
+                tracks INTEGER,
+                quality TEXT,
+                status TEXT NOT NULL DEFAULT 'detected',
+                detected_at TEXT NOT NULL,
+                downloaded_at TEXT,
+                UNIQUE(artist_name, album_title)
+            )
+        """)
+
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS task_events (
                 id SERIAL PRIMARY KEY,
                 task_id TEXT NOT NULL,

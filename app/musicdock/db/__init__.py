@@ -83,6 +83,12 @@ from musicdock.db.health import (
     resolve_stale_issues, cleanup_old_resolved,
 )
 
+# New Releases
+from musicdock.db.releases import (
+    upsert_new_release, get_new_releases, mark_release_downloading,
+    mark_release_downloaded, mark_release_dismissed, is_album_in_library,
+)
+
 # Task Events (SSE)
 from musicdock.db.events import (
     emit_task_event, get_task_events, cleanup_task_events, cleanup_old_events,

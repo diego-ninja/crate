@@ -1454,6 +1454,15 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
     if download_id:
         update_tidal_download(download_id, status="completed", completed_at=now)
 
+    # Mark new release as downloaded if applicable
+    new_release_id = params.get("new_release_id")
+    if new_release_id:
+        try:
+            from musicdock.db import mark_release_downloaded
+            mark_release_downloaded(new_release_id)
+        except Exception:
+            pass
+
     return {
         "success": True,
         "url": url,
@@ -1464,60 +1473,79 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict:
-    """Check Tidal for new releases from monitored artists."""
-    from musicdock.db import get_monitored_artists, add_tidal_download, get_db_ctx
+    """Check Tidal for new releases from ALL library artists. Auto-download if enabled."""
+    from musicdock.db import (
+        get_library_artists, add_tidal_download, get_db_ctx,
+        upsert_new_release, is_album_in_library, mark_release_downloading,
+    )
     from musicdock import tidal as tidal_mod
 
-    monitored = get_monitored_artists()
-    if not monitored:
+    auto_download = get_setting("auto_download_new_releases", "false").lower() == "true"
+
+    all_artists, total = get_library_artists(per_page=10000)
+    if not all_artists:
         return {"checked": 0, "new_releases": 0}
 
     new_count = 0
-    for i, ma in enumerate(monitored):
+    checked = 0
+
+    for i, artist in enumerate(all_artists):
         if _shutdown or _is_cancelled(task_id):
             break
 
-        update_task(task_id, progress=json.dumps({
-            "phase": "checking", "artist": ma["artist_name"],
-            "done": i, "total": len(monitored),
-        }))
+        name = artist["name"]
+        if i % 5 == 0:
+            update_task(task_id, progress=json.dumps({
+                "phase": "checking", "artist": name,
+                "done": i, "total": total,
+                "new_releases": new_count,
+            }))
 
         try:
-            result = tidal_mod.search(ma["artist_name"], content_type="albums", limit=5)
+            result = tidal_mod.search(name, content_type="albums", limit=10)
             albums = result.get("albums", [])
-            if not albums:
-                continue
 
-            latest = albums[0]
-            if latest["id"] != ma.get("last_release_id"):
-                # New release found
-                add_tidal_download(
-                    tidal_url=latest["url"],
-                    tidal_id=str(latest["id"]),
-                    content_type="album",
-                    title=latest["title"],
-                    artist=latest["artist"],
-                    cover_url=latest.get("cover"),
-                    status="queued",
-                    source="new_release",
-                    metadata={"year": latest.get("year"), "tracks": latest.get("tracks")},
+            for album in albums:
+                title = album.get("title", "")
+                if not title:
+                    continue
+                # Skip if already in library
+                if is_album_in_library(name, title):
+                    continue
+                # Skip if already detected
+                release_id = upsert_new_release(
+                    artist_name=name,
+                    album_title=title,
+                    tidal_id=str(album.get("id", "")),
+                    tidal_url=album.get("url", ""),
+                    cover_url=album.get("cover", ""),
+                    year=str(album.get("year", "")),
+                    tracks=album.get("tracks", 0),
+                    quality=album.get("quality", ""),
                 )
                 new_count += 1
-                emit_task_event(task_id, "new_release_found", {"message": f"New release: {ma['artist_name']} - {latest['title']}", "artist": ma["artist_name"], "album": latest["title"], "url": latest["url"]})
+                emit_task_event(task_id, "new_release_found", {
+                    "message": f"New: {name} - {title}",
+                    "artist": name, "album": title,
+                })
 
-                # Update last_release_id
-                now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE tidal_monitored_artists SET last_release_id = %s, last_checked = %s WHERE artist_name = %s",
-                        (str(latest["id"]), now, ma["artist_name"]),
-                    )
+                # Auto-download if enabled
+                if auto_download and album.get("url"):
+                    mark_release_downloading(release_id)
+                    create_task("tidal_download", {
+                        "url": album["url"],
+                        "artist": name,
+                        "album": title,
+                        "quality": get_setting("tidal_quality", "max"),
+                        "new_release_id": release_id,
+                    })
 
-            time.sleep(1)
+            checked += 1
+            time.sleep(0.5)  # Rate limit
         except Exception:
-            log.debug("New release check failed for %s", ma["artist_name"])
+            log.debug("New release check failed for %s", name)
 
-    return {"checked": len(monitored), "new_releases": new_count}
+    return {"checked": checked, "new_releases": new_count}
 
 
 def _reorganize_artist_folders(artist_name: str, lib: Path, config: dict, task_id: str | None = None):

@@ -136,6 +136,50 @@ def acquisition_download(body: dict):
     return JSONResponse({"error": "source must be 'tidal' or 'soulseek'"}, status_code=400)
 
 
+# ── New Releases ──────────────────────────────────────────────────
+
+@router.get("/new-releases")
+def api_new_releases(status: str = ""):
+    """Get detected new releases."""
+    from musicdock.db import get_new_releases
+    releases = get_new_releases(status=status)
+    return {"releases": releases}
+
+
+@router.post("/new-releases/{release_id}/download")
+def api_download_release(release_id: int):
+    """Download a detected new release via Tidal."""
+    from musicdock.db import get_new_releases, mark_release_downloading
+    releases = get_new_releases()
+    release = next((r for r in releases if r["id"] == release_id), None)
+    if not release or not release.get("tidal_url"):
+        return JSONResponse({"error": "Release not found or no Tidal URL"}, status_code=404)
+    mark_release_downloading(release_id)
+    task_id = create_task("tidal_download", {
+        "url": release["tidal_url"],
+        "artist": release["artist_name"],
+        "album": release["album_title"],
+        "quality": get_setting("tidal_quality", "max"),
+        "new_release_id": release_id,
+    })
+    return {"task_id": task_id}
+
+
+@router.post("/new-releases/{release_id}/dismiss")
+def api_dismiss_release(release_id: int):
+    """Dismiss a new release (won't be shown again)."""
+    from musicdock.db import mark_release_dismissed
+    mark_release_dismissed(release_id)
+    return {"ok": True}
+
+
+@router.post("/new-releases/check")
+def api_check_new_releases():
+    """Trigger a new release check for all library artists."""
+    task_id = create_task("check_new_releases", {})
+    return {"task_id": task_id}
+
+
 @router.get("/queue")
 def acquisition_queue():
     """Get unified download queue from all sources."""

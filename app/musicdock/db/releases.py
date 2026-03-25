@@ -1,0 +1,68 @@
+"""New releases — detection and tracking of new albums from library artists."""
+
+import json
+from datetime import datetime, timezone
+from musicdock.db.core import get_db_ctx
+
+
+def upsert_new_release(artist_name: str, album_title: str, tidal_id: str = "",
+                       tidal_url: str = "", cover_url: str = "", year: str = "",
+                       tracks: int = 0, quality: str = "") -> int:
+    """Insert or update a detected new release. Returns release ID."""
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute("""
+            INSERT INTO new_releases (artist_name, album_title, tidal_id, tidal_url,
+                cover_url, year, tracks, quality, status, detected_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'detected', %s)
+            ON CONFLICT (artist_name, album_title) DO UPDATE SET
+                tidal_id = EXCLUDED.tidal_id, tidal_url = EXCLUDED.tidal_url,
+                cover_url = EXCLUDED.cover_url, year = EXCLUDED.year,
+                tracks = EXCLUDED.tracks, quality = EXCLUDED.quality
+            RETURNING id
+        """, (artist_name, album_title, tidal_id, tidal_url, cover_url, year, tracks, quality, now))
+        return cur.fetchone()["id"]
+
+
+def get_new_releases(status: str = "", limit: int = 100) -> list[dict]:
+    """Get new releases, optionally filtered by status."""
+    with get_db_ctx() as cur:
+        if status:
+            cur.execute("SELECT * FROM new_releases WHERE status = %s ORDER BY detected_at DESC LIMIT %s", (status, limit))
+        else:
+            cur.execute("SELECT * FROM new_releases ORDER BY detected_at DESC LIMIT %s", (limit,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def mark_release_downloading(release_id: int):
+    with get_db_ctx() as cur:
+        cur.execute("UPDATE new_releases SET status = 'downloading' WHERE id = %s", (release_id,))
+
+
+def mark_release_downloaded(release_id: int):
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute("UPDATE new_releases SET status = 'downloaded', downloaded_at = %s WHERE id = %s", (now, release_id))
+
+
+def mark_release_dismissed(release_id: int):
+    with get_db_ctx() as cur:
+        cur.execute("UPDATE new_releases SET status = 'dismissed' WHERE id = %s", (release_id,))
+
+
+def is_album_in_library(artist_name: str, album_title: str) -> bool:
+    """Check if an album already exists in the library (fuzzy: case-insensitive)."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT 1 FROM library_albums WHERE LOWER(artist) = LOWER(%s) AND LOWER(name) = LOWER(%s) LIMIT 1",
+            (artist_name, album_title),
+        )
+        return cur.fetchone() is not None
+
+
+def cleanup_old_releases(days: int = 90):
+    """Remove dismissed/downloaded releases older than N days."""
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute("DELETE FROM new_releases WHERE status IN ('downloaded', 'dismissed') AND detected_at < %s", (cutoff,))
