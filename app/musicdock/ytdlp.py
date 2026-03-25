@@ -51,13 +51,15 @@ def search(query: str, limit: int = 20) -> list[dict]:
 def _run_search(search_query: str, fallback_source: str) -> list[dict]:
     """Run a single yt-dlp search command and parse results."""
     try:
+        is_url = search_query.startswith("http")
         cmd = [
             YTDLP_BIN,
             search_query,
             "--dump-json",
+            *(["--flat-playlist"] if is_url else []),
             "--no-download",
             "--no-warnings",
-            "--playlist-end", "20",
+            "--playlist-end", "25",
         ]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
@@ -70,7 +72,17 @@ def _run_search(search_query: str, fallback_source: str) -> list[dict]:
                 continue
             try:
                 data = json.loads(line)
+                # Skip non-playable entries (channels, browse pages)
+                url = data.get("webpage_url") or data.get("url") or ""
+                if "/browse/" in url or data.get("_type") == "playlist":
+                    continue
+                if not data.get("title") or data.get("title") == "?":
+                    continue
+
                 duration = data.get("duration")
+                if isinstance(duration, str):
+                    try: duration = float(duration)
+                    except: duration = None
                 # Classify content type by duration
                 content_type = "track"
                 if duration and duration > 1200:  # > 20 min
