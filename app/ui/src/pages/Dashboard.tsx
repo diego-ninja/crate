@@ -77,7 +77,7 @@ export function Dashboard() {
 
   useEffect(() => {
     api<{ counts: Record<string, number> }>("/api/manage/health-issues").then((d) => setHealthCounts(d.counts || {})).catch(() => {});
-    api<{ events: typeof upcomingShows }>("/api/shows?limit=3").then((d) => setUpcomingShows((d.events || []).slice(0, 5))).catch(() => {});
+    api<{ events: typeof upcomingShows }>("/api/shows/cached?limit=5").then((d) => setUpcomingShows(d.events || [])).catch(() => {});
   }, []);
   const { isAdmin } = useAuth();
   const navigate = useNavigate();

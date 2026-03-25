@@ -1,15 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ShowCard, type ShowEvent } from "@/components/shows/ShowCard";
-import {
-  ChevronLeft, ChevronRight, Loader2, MapPin, Calendar as CalendarIcon, List,
-} from "lucide-react";
+import { Loader2, MapPin, Calendar as CalendarIcon, List, ChevronLeft, ChevronRight } from "lucide-react";
 
 // Fix Leaflet default marker icon
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -19,26 +14,63 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-type ViewMode = "calendar" | "map" | "list";
+type ViewMode = "map" | "calendar" | "list";
 
 export function Shows() {
   const [events, setEvents] = useState<ShowEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [country, setCountry] = useState("");
+  const [done, setDone] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("map");
+  const [selectedShow, setSelectedShow] = useState<ShowEvent | null>(null);
+  const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
   });
-  const [selectedShow, setSelectedShow] = useState<ShowEvent | null>(null);
 
+  // Geolocate user on mount
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setUserLocation([pos.coords.latitude, pos.coords.longitude]),
+        () => setUserLocation([48.8566, 2.3522]), // Paris fallback
+        { timeout: 5000 },
+      );
+    } else {
+      setUserLocation([48.8566, 2.3522]);
+    }
+  }, []);
+
+  // Stream shows via SSE
   useEffect(() => {
     setLoading(true);
-    api<{ events: ShowEvent[] }>(`/api/shows?country=${country}&limit=5`)
-      .then((d) => setEvents(d.events || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [country]);
+    setDone(false);
+    setEvents([]);
+    const es = new EventSource("/api/shows?limit=5");
+    let count = 0;
+
+    es.onmessage = (e) => {
+      try {
+        const show: ShowEvent = JSON.parse(e.data);
+        setEvents((prev) => [...prev, show]);
+      } catch { /* ignore */ }
+      count++;
+    };
+
+    es.addEventListener("done", () => {
+      es.close();
+      setLoading(false);
+      setDone(true);
+    });
+
+    es.onerror = () => {
+      es.close();
+      setLoading(false);
+      setDone(true);
+    };
+
+    return () => es.close();
+  }, []);
 
   const eventsByDate = useMemo(() => {
     const map: Record<string, ShowEvent[]> = {};
@@ -60,12 +92,12 @@ export function Shows() {
     return events.filter((e) => (e.local_date || "").startsWith(prefix));
   }, [events, currentMonth]);
 
-  function prevMonth() {
+  const prevMonth = useCallback(() => {
     setCurrentMonth((p) => p.month === 0 ? { year: p.year - 1, month: 11 } : { year: p.year, month: p.month - 1 });
-  }
-  function nextMonth() {
+  }, []);
+  const nextMonth = useCallback(() => {
     setCurrentMonth((p) => p.month === 11 ? { year: p.year + 1, month: 0 } : { year: p.year, month: p.month + 1 });
-  }
+  }, []);
 
   const monthName = new Date(currentMonth.year, currentMonth.month).toLocaleDateString(undefined, {
     month: "long", year: "numeric",
@@ -73,22 +105,21 @@ export function Shows() {
 
   const isMap = viewMode === "map";
 
-  // Controls bar (shared across views)
   const controls = (
     <div className={`flex items-center gap-2 ${isMap ? "absolute top-4 right-4 z-[1000]" : "mb-6 justify-between"}`}>
       {!isMap && <h1 className="text-2xl font-bold">Upcoming Shows</h1>}
       <div className="flex items-center gap-2">
-        {isMap && events.length > 0 && (
-          <span className="text-xs bg-card/90 backdrop-blur px-2 py-1 rounded text-muted-foreground">
-            {mappableEvents.length} shows
+        {loading && (
+          <span className={`text-xs flex items-center gap-1.5 px-2 py-1 rounded ${isMap ? "bg-card/90 backdrop-blur" : ""} text-muted-foreground`}>
+            <Loader2 size={12} className="animate-spin" />
+            Scanning... {events.length} shows
           </span>
         )}
-        <Input
-          placeholder="Country"
-          value={country}
-          onChange={(e) => setCountry(e.target.value.toUpperCase().slice(0, 2))}
-          className={`w-20 text-xs ${isMap ? "bg-card/90 backdrop-blur border-border/50" : ""}`}
-        />
+        {done && events.length > 0 && (
+          <span className={`text-xs px-2 py-1 rounded ${isMap ? "bg-card/90 backdrop-blur" : ""} text-muted-foreground`}>
+            {events.length} shows
+          </span>
+        )}
         <div className={`flex border rounded-lg overflow-hidden ${isMap ? "border-border/50 bg-card/90 backdrop-blur" : "border-border"}`}>
           {(["map", "calendar", "list"] as ViewMode[]).map((m) => (
             <button
@@ -104,24 +135,11 @@ export function Shows() {
     </div>
   );
 
-  if (loading) {
+  if (!isMap && events.length === 0 && done) {
     return (
       <div>
         {controls}
-        <div className="flex items-center justify-center py-24">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
-        </div>
-      </div>
-    );
-  }
-
-  if (events.length === 0) {
-    return (
-      <div>
-        {controls}
-        <div className="text-center py-24 text-muted-foreground">
-          {country ? `No upcoming shows found in ${country}` : "No upcoming shows found. Configure TICKETMASTER_API_KEY in settings."}
-        </div>
+        <div className="text-center py-24 text-muted-foreground">No upcoming shows found for your library artists</div>
       </div>
     );
   }
@@ -130,35 +148,29 @@ export function Shows() {
     <>
       {/* Map view — full viewport */}
       {isMap && (
-        <div
-          className="absolute inset-0 md:left-[220px]"
-          style={{ top: 0 }}
-        >
+        <div className="absolute inset-0 md:left-[220px]" style={{ top: 0 }}>
           <div className="relative w-full h-full">
             {controls}
-            <MapContainer
-              center={[40.4168, -3.7038]}
-              zoom={4}
-              style={{ height: "100%", width: "100%" }}
-              scrollWheelZoom
-              zoomControl={false}
-            >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              />
-              <MapAutoFit events={mappableEvents} />
-              {mappableEvents.map((e, i) => (
-                <Marker
-                  key={e.id || i}
-                  position={[parseFloat(e.latitude!), parseFloat(e.longitude!)]}
-                >
-                  <Popup maxWidth={360} minWidth={340}>
-                    <ShowCard show={e} />
-                  </Popup>
-                </Marker>
-              ))}
-            </MapContainer>
+            {userLocation && (
+              <MapContainer
+                center={userLocation}
+                zoom={6}
+                style={{ height: "100%", width: "100%" }}
+                scrollWheelZoom
+                zoomControl={false}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+                  url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                />
+                <LiveMarkers events={mappableEvents} />
+              </MapContainer>
+            )}
+            {!userLocation && (
+              <div className="flex items-center justify-center h-full bg-background">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -179,7 +191,7 @@ export function Shows() {
             onSelectShow={setSelectedShow}
           />
           <div className="text-xs text-muted-foreground mt-3">
-            {monthEvents.length} shows this month from your library artists
+            {monthEvents.length} shows this month
           </div>
         </div>
       )}
@@ -196,7 +208,7 @@ export function Shows() {
         </div>
       )}
 
-      {/* Show detail overlay */}
+      {/* Detail overlay */}
       {selectedShow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick={() => setSelectedShow(null)}>
           <div onClick={(e) => e.stopPropagation()}>
@@ -204,6 +216,23 @@ export function Shows() {
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+
+// ── Live markers (re-renders as events stream in) ──
+
+function LiveMarkers({ events }: { events: ShowEvent[] }) {
+  return (
+    <>
+      {events.map((e, i) => (
+        <Marker key={e.id || i} position={[parseFloat(e.latitude!), parseFloat(e.longitude!)]}>
+          <Popup maxWidth={360} minWidth={340}>
+            <ShowCard show={e} />
+          </Popup>
+        </Marker>
+      ))}
     </>
   );
 }
@@ -230,41 +259,27 @@ function CalendarGrid({
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
   return (
     <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden">
-      {dayNames.map((d) => (
-        <div key={d} className="bg-card px-2 py-1.5 text-[10px] text-center text-muted-foreground uppercase">
-          {d}
-        </div>
+      {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
+        <div key={d} className="bg-card px-2 py-1.5 text-[10px] text-center text-muted-foreground uppercase">{d}</div>
       ))}
       {cells.map((day, i) => {
-        const dateStr = day
-          ? `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
-          : "";
+        const dateStr = day ? `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}` : "";
         const dayEvents = dateStr ? eventsByDate[dateStr] || [] : [];
         const isToday = dateStr === todayStr;
-
         return (
-          <div
-            key={i}
-            className={`bg-card min-h-[80px] p-1.5 ${!day ? "opacity-30" : ""} ${isToday ? "ring-1 ring-primary/40" : ""}`}
-          >
+          <div key={i} className={`bg-card min-h-[80px] p-1.5 ${!day ? "opacity-30" : ""} ${isToday ? "ring-1 ring-primary/40" : ""}`}>
             {day && (
               <>
-                <div className={`text-xs mb-1 ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>
-                  {day}
-                </div>
+                <div className={`text-xs mb-1 ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>{day}</div>
                 <div className="space-y-0.5">
                   {dayEvents.slice(0, 3).map((e, j) => (
                     <button key={j} className="w-full text-left" onClick={() => onSelectShow(e)}>
                       <ShowCard show={e} compact />
                     </button>
                   ))}
-                  {dayEvents.length > 3 && (
-                    <div className="text-[10px] text-muted-foreground px-1">+{dayEvents.length - 3} more</div>
-                  )}
+                  {dayEvents.length > 3 && <div className="text-[10px] text-muted-foreground px-1">+{dayEvents.length - 3} more</div>}
                 </div>
               </>
             )}
@@ -280,24 +295,11 @@ function CalendarGrid({
 
 function ShowListItem({ show, onClick }: { show: ShowEvent; onClick: () => void }) {
   const d = show.date ? new Date(show.date) : null;
-  const dateStr = d
-    ? d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
-    : show.local_date;
+  const dateStr = d ? d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) : show.local_date;
   const location = [show.city, show.country].filter(Boolean).join(", ");
 
   return (
-    <button
-      className="flex items-center gap-4 p-3 bg-card border border-border rounded-lg hover:bg-white/5 transition-colors w-full text-left"
-      onClick={onClick}
-    >
-      {show.artist_name && (
-        <img
-          src={`/api/artist/${encPath(show.artist_name)}/photo`}
-          alt=""
-          className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-        />
-      )}
+    <button className="flex items-center gap-4 p-3 bg-card border border-border rounded-lg hover:bg-white/5 transition-colors w-full text-left" onClick={onClick}>
       {d && (
         <div className="w-10 text-center flex-shrink-0">
           <div className="text-lg font-bold text-primary leading-none">{d.getDate()}</div>
@@ -310,25 +312,8 @@ function ShowListItem({ show, onClick }: { show: ShowEvent; onClick: () => void 
       </div>
       <div className="text-xs text-muted-foreground text-right flex-shrink-0">
         <div>{dateStr}</div>
-        {show.price_range && (
-          <div>{show.price_range.min}–{show.price_range.max} {show.price_range.currency}</div>
-        )}
+        {show.price_range && <div>{show.price_range.min}–{show.price_range.max} {show.price_range.currency}</div>}
       </div>
     </button>
   );
-}
-
-
-// ── Map auto-fit ──
-
-function MapAutoFit({ events }: { events: ShowEvent[] }) {
-  const map = useMap();
-  useEffect(() => {
-    if (events.length === 0) return;
-    const bounds = L.latLngBounds(
-      events.map((e) => [parseFloat(e.latitude!), parseFloat(e.longitude!)] as L.LatLngTuple),
-    );
-    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 10 });
-  }, [events, map]);
-  return null;
 }

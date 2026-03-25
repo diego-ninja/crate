@@ -516,27 +516,53 @@ def api_artist_shows(name: str, limit: int = Query(10), country: str = Query("")
     return {"events": events, "configured": True}
 
 
+@router.get("/api/shows/cached")
+def api_cached_shows(limit: int = Query(5)):
+    """Get already-cached shows (fast, no Ticketmaster calls). For dashboard widgets."""
+    from musicdock.ticketmaster import is_configured
+    if not is_configured():
+        return {"events": []}
+
+    all_artists, _ = get_library_artists(per_page=10000)
+    all_events = []
+    for artist in all_artists:
+        cache_key = f"ticketmaster:events:{artist['name'].lower()}:"
+        cached = get_cache(cache_key)
+        if cached:
+            for e in cached:
+                e["artist_name"] = artist["name"]
+                e["artist_listeners"] = artist.get("listeners") or 0
+            all_events.extend(cached)
+    all_events.sort(key=lambda e: e.get("date", ""))
+    return {"events": all_events[:limit]}
+
+
 @router.get("/api/shows")
 def api_all_shows(country: str = Query(""), limit: int = Query(5)):
-    """Get upcoming shows for all library artists. Fetches from Ticketmaster with caching."""
+    """SSE endpoint: streams shows for all library artists as they're fetched."""
+    import json as _json
+    from starlette.responses import StreamingResponse
     from musicdock.ticketmaster import get_upcoming_shows, is_configured
+
     if not is_configured():
         return {"events": [], "configured": False}
 
     all_artists, _ = get_library_artists(per_page=10000)
-    all_events = []
 
-    for artist in all_artists:
-        name = artist["name"]
-        events = get_upcoming_shows(name, country_code=country, limit=limit)
-        for e in events:
-            e["artist_name"] = name
-            e["artist_listeners"] = artist.get("listeners") or 0
-        all_events.extend(events)
+    def generate():
+        for artist in all_artists:
+            name = artist["name"]
+            try:
+                events = get_upcoming_shows(name, country_code=country, limit=limit)
+                for e in events:
+                    e["artist_name"] = name
+                    e["artist_listeners"] = artist.get("listeners") or 0
+                    yield f"data: {_json.dumps(e)}\n\n"
+            except Exception:
+                pass
+        yield "event: done\ndata: {}\n\n"
 
-    # Sort by date
-    all_events.sort(key=lambda e: e.get("date", ""))
-    return {"events": all_events, "configured": True}
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/api/artist/{name}/enrich")
