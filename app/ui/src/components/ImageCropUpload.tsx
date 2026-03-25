@@ -85,7 +85,7 @@ export function ImageCropUpload({ endpoint, aspect, onUploaded, className }: Ima
 
       {/* Crop modal */}
       {imageSrc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={cancel}>
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80" onClick={cancel}>
           <div className="bg-card rounded-xl shadow-2xl w-[90vw] max-w-[600px] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <span className="text-sm font-medium">Crop Image</span>
@@ -129,22 +129,22 @@ export function ImageCropUpload({ endpoint, aspect, onUploaded, className }: Ima
 }
 
 
-async function waitForTask(taskId: string, timeout = 30000): Promise<void> {
+async function waitForTask(taskId: string, timeout = 15000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     await new Promise((r) => setTimeout(r, 1000));
     try {
       const res = await fetch(`/api/tasks/${taskId}`, { credentials: "include" });
-      if (res.ok) {
-        const task = await res.json();
-        if (task.status === "completed") return;
-        if (task.status === "failed") throw new Error(task.error || "Task failed");
-      }
+      if (!res.ok) continue;
+      const task = await res.json();
+      if (task.status === "completed") return;
+      if (task.status === "failed") throw new Error(task.error || "Task failed");
     } catch (e) {
-      if (e instanceof Error && e.message !== "Task failed") continue;
-      throw e;
+      if (e instanceof Error && e.message === "Task failed") throw e;
+      // network error — keep polling
     }
   }
+  // Timeout is OK — task is probably still processing, but close the modal anyway
 }
 
 
