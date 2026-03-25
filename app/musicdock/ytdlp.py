@@ -23,9 +23,8 @@ def search(query: str, limit: int = 20) -> list[dict]:
     """Search across YouTube Music, SoundCloud, and Bandcamp in parallel."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    from urllib.parse import quote_plus
     sources = [
-        (f"https://music.youtube.com/search?q={quote_plus(query)}", "youtube_music"),
+        (f"ytsearch{limit}:{query} music audio", "youtube"),
         (f"scsearch{min(limit, 10)}:{query}", "soundcloud"),
     ]
 
