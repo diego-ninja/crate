@@ -20,16 +20,44 @@ def is_available() -> bool:
 
 
 def search(query: str, limit: int = 20) -> list[dict]:
-    """Search YouTube Music for tracks/videos matching query."""
+    """Search across YouTube Music, SoundCloud, and Bandcamp in parallel."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    sources = [
+        (f"ytmsearch{limit}:{query}", "youtube_music"),
+        (f"scsearch{min(limit, 10)}:{query}", "soundcloud"),
+    ]
+
+    all_results: list[dict] = []
+
+    def _search_source(search_query: str, fallback_source: str) -> list[dict]:
+        return _run_search(search_query, fallback_source)
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = {pool.submit(_search_source, sq, fs): fs for sq, fs in sources}
+        for future in as_completed(futures, timeout=45):
+            try:
+                all_results.extend(future.result())
+            except Exception:
+                pass
+
+    # Sort: albums first, then by view count
+    type_order = {"album": 0, "mix": 1, "track": 2}
+    all_results.sort(key=lambda r: (type_order.get(r.get("content_type", "track"), 2), -(r.get("view_count") or 0)))
+    return all_results[:limit]
+
+
+def _run_search(search_query: str, fallback_source: str) -> list[dict]:
+    """Run a single yt-dlp search command and parse results."""
     try:
         cmd = [
             YTDLP_BIN,
-            f"ytsearch{limit}:{query}",
+            search_query,
             "--dump-json",
             "--no-download",
             "--no-warnings",
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
             log.debug("yt-dlp search failed: %s", r.stderr[:200])
             return []
@@ -72,7 +100,7 @@ def search(query: str, limit: int = 20) -> list[dict]:
                     "thumbnail": thumb,
                     "view_count": data.get("view_count"),
                     "like_count": data.get("like_count"),
-                    "source": _detect_source(data),
+                    "source": _detect_source(data) or fallback_source,
                     "content_type": content_type,
                     "audio_ext": data.get("audio_ext") or data.get("ext", ""),
                 })
@@ -234,11 +262,13 @@ def _detect_source(data: dict) -> str:
         return "bandcamp"
     if "soundcloud.com" in url:
         return "soundcloud"
+    if "music.youtube.com" in url:
+        return "youtube_music"
     if "youtube.com" in url or "youtu.be" in url:
-        return "youtube"
+        return "youtube_music"
     extractor = data.get("extractor_key", "").lower()
     if "bandcamp" in extractor:
         return "bandcamp"
     if "soundcloud" in extractor:
         return "soundcloud"
-    return "youtube"
+    return ""

@@ -474,7 +474,8 @@ export function DownloadPage() {
                     const displayArtist = r.artist || r.channel;
                     const displayTitle = r.track || r.title;
                     const sourceColor = r.source === "bandcamp" ? "text-cyan-500 border-cyan-500/30" :
-                      r.source === "soundcloud" ? "text-orange-500 border-orange-500/30" : "text-red-500 border-red-500/30";
+                      r.source === "soundcloud" ? "text-orange-500 border-orange-500/30" :
+                      r.source === "youtube_music" ? "text-red-500 border-red-500/30" : "text-red-500 border-red-500/30";
                     const typeColor = r.content_type === "album" ? "text-blue-500 border-blue-500/30" :
                       r.content_type === "mix" ? "text-purple-500 border-purple-500/30" : "text-green-500 border-green-500/30";
 
