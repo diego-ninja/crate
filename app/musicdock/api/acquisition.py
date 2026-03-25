@@ -149,9 +149,11 @@ def api_new_releases(status: str = ""):
 @router.post("/new-releases/{release_id}/download")
 def api_download_release(release_id: int):
     """Download a detected new release via Tidal."""
-    from musicdock.db import get_new_releases, mark_release_downloading
-    releases = get_new_releases()
-    release = next((r for r in releases if r["id"] == release_id), None)
+    from musicdock.db import mark_release_downloading, get_db_ctx
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM new_releases WHERE id = %s", (release_id,))
+        row = cur.fetchone()
+    release = dict(row) if row else None
     if not release or not release.get("tidal_url"):
         return JSONResponse({"error": "Release not found or no Tidal URL"}, status_code=404)
     mark_release_downloading(release_id)
