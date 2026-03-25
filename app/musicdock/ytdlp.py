@@ -51,15 +51,13 @@ def search(query: str, limit: int = 20) -> list[dict]:
 def _run_search(search_query: str, fallback_source: str) -> list[dict]:
     """Run a single yt-dlp search command and parse results."""
     try:
-        is_url = search_query.startswith("http")
         cmd = [
             YTDLP_BIN,
             search_query,
             "--dump-json",
-            *(["--flat-playlist"] if is_url else []),
             "--no-download",
             "--no-warnings",
-            "--playlist-end", "25",
+            "--playlist-end", "20",
         ]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
