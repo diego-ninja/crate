@@ -96,6 +96,23 @@ def init_db():
             )
         """)
         cur.execute("""
+            CREATE TABLE IF NOT EXISTS health_issues (
+                id SERIAL PRIMARY KEY,
+                check_type TEXT NOT NULL,
+                severity TEXT NOT NULL DEFAULT 'medium',
+                description TEXT NOT NULL,
+                details_json JSONB DEFAULT '{}',
+                auto_fixable BOOLEAN DEFAULT FALSE,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                resolved_at TEXT
+            )
+        """)
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_health_issues_dedup
+            ON health_issues (check_type, md5(description)) WHERE status = 'open'
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS task_events (
                 id SERIAL PRIMARY KEY,
                 task_id TEXT NOT NULL,

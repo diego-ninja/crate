@@ -8,6 +8,7 @@ from pathlib import Path
 
 from musicdock.audio import read_tags
 from musicdock.db import get_db_ctx
+from musicdock.db.health import upsert_health_issue, resolve_stale_issues
 
 log = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class LibraryHealthCheck:
             config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"])
         )
 
-    def run(self, progress_callback=None) -> dict:
+    def run(self, progress_callback=None, persist: bool = True) -> dict:
         start = time.monotonic()
         issues = []
 
@@ -39,6 +40,7 @@ class LibraryHealthCheck:
             ("unindexed_files", self._check_unindexed_files),
             ("tag_mismatch", self._check_tag_mismatch),
             ("folder_naming", self._check_folder_naming),
+            ("missing_cover", self._check_missing_covers),
         ]
 
         for i, (name, check_fn) in enumerate(checks):
@@ -55,6 +57,24 @@ class LibraryHealthCheck:
         for issue in issues:
             key = issue["check"]
             summary[key] = summary.get(key, 0) + 1
+
+        # Persist to health_issues table
+        if persist:
+            # Group by check type for stale resolution
+            by_type: dict[str, set[str]] = defaultdict(set)
+            for issue in issues:
+                by_type[issue["check"]].add(issue["description"])
+                upsert_health_issue(
+                    check_type=issue["check"],
+                    severity=issue.get("severity", "medium"),
+                    description=issue["description"],
+                    details=issue.get("details"),
+                    auto_fixable=issue.get("auto_fixable", False),
+                )
+            # Auto-resolve issues that no longer exist in this scan
+            for check_name, _ in checks:
+                descriptions = by_type.get(check_name, set())
+                resolve_stale_issues(descriptions, check_name)
 
         return {
             "issues": issues,
@@ -409,4 +429,25 @@ class LibraryHealthCheck:
                 },
             })
 
+        return issues
+
+    def _check_missing_covers(self) -> list[dict]:
+        """Albums without cover art."""
+        cover_names = {"cover.jpg", "cover.png", "folder.jpg", "folder.png"}
+        issues = []
+        with get_db_ctx() as cur:
+            cur.execute("SELECT artist, name, path FROM library_albums")
+            for row in cur.fetchall():
+                album_dir = Path(row["path"])
+                if not album_dir.is_dir():
+                    continue
+                has_cover = any((album_dir / c).exists() for c in cover_names)
+                if not has_cover:
+                    issues.append({
+                        "check": "missing_cover",
+                        "severity": "low",
+                        "auto_fixable": True,
+                        "description": f"Missing cover: {row['artist']} / {row['name']}",
+                        "details": {"artist": row["artist"], "album": row["name"], "path": str(album_dir)},
+                    })
         return issues

@@ -76,6 +76,13 @@ from musicdock.db.audit import (
     log_audit, get_audit_log, wipe_library_tables, get_db_table_stats,
 )
 
+# Health Issues
+from musicdock.db.health import (
+    upsert_health_issue, get_open_issues, get_issue_counts,
+    resolve_issue, resolve_issues_by_type, dismiss_issue,
+    resolve_stale_issues, cleanup_old_resolved,
+)
+
 # Task Events (SSE)
 from musicdock.db.events import (
     emit_task_event, get_task_events, cleanup_task_events, cleanup_old_events,

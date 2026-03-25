@@ -2,7 +2,10 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
 from musicdock.api.auth import _require_admin
-from musicdock.db import create_task, get_cache, get_audit_log
+from musicdock.db import (
+    create_task, get_cache, get_audit_log,
+    get_open_issues, get_issue_counts, resolve_issue, dismiss_issue,
+)
 
 router = APIRouter(prefix="/api/manage", tags=["management"])
 
@@ -35,11 +38,34 @@ def run_health_check(request: Request):
 
 @router.get("/health-report")
 def get_health_report(request: Request):
+    """Get persisted health issues from DB (survives restarts)."""
     _require_admin(request)
-    report = get_cache("health_report")
-    if not report:
-        return {"issues": [], "summary": {}, "scanned_at": None}
-    return report
+    issues = get_open_issues()
+    counts = get_issue_counts()
+    return {"issues": issues, "summary": counts, "total": len(issues)}
+
+
+@router.get("/health-issues")
+def list_health_issues(request: Request, check_type: str = ""):
+    """Get open health issues, optionally filtered by type."""
+    _require_admin(request)
+    issues = get_open_issues(check_type=check_type or None)
+    counts = get_issue_counts()
+    return {"issues": issues, "counts": counts, "total": len(issues)}
+
+
+@router.post("/health-issues/{issue_id}/resolve")
+def api_resolve_issue(request: Request, issue_id: int):
+    _require_admin(request)
+    resolve_issue(issue_id)
+    return {"ok": True}
+
+
+@router.post("/health-issues/{issue_id}/dismiss")
+def api_dismiss_issue(request: Request, issue_id: int):
+    _require_admin(request)
+    dismiss_issue(issue_id)
+    return {"ok": True}
 
 
 @router.post("/repair")
