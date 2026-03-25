@@ -24,7 +24,7 @@ def search(query: str, limit: int = 20) -> list[dict]:
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     sources = [
-        (f"ytmsearch{limit}:{query}", "youtube_music"),
+        (f"ytsearch{limit}:{query}", "youtube"),
         (f"scsearch{min(limit, 10)}:{query}", "soundcloud"),
     ]
 
@@ -262,10 +262,8 @@ def _detect_source(data: dict) -> str:
         return "bandcamp"
     if "soundcloud.com" in url:
         return "soundcloud"
-    if "music.youtube.com" in url:
-        return "youtube_music"
     if "youtube.com" in url or "youtu.be" in url:
-        return "youtube_music"
+        return "youtube"
     extractor = data.get("extractor_key", "").lower()
     if "bandcamp" in extractor:
         return "bandcamp"
