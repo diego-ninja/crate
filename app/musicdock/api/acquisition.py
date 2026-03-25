@@ -1,4 +1,4 @@
-"""Unified music acquisition API — Tidal + Soulseek + yt-dlp."""
+"""Unified music acquisition API — Tidal + Soulseek."""
 
 import json
 import logging
@@ -133,52 +133,7 @@ def acquisition_download(body: dict):
         })
         return {"task_id": task_id, "source": "soulseek", "finding_alternate": True}
 
-    elif source == "youtube":
-        url = body.get("url", "")
-        if not url:
-            return JSONResponse({"error": "url required"}, status_code=400)
-        quality = body.get("quality", "best")
-        task_id = create_task("ytdlp_download", {
-            "url": url,
-            "artist": artist,
-            "album": album,
-            "quality": quality,
-        })
-        return {"task_id": task_id, "source": "youtube"}
-
-    return JSONResponse({"error": "source must be 'tidal', 'soulseek', or 'youtube'"}, status_code=400)
-
-
-@router.post("/search/youtube")
-def search_youtube(body: dict):
-    """Search YouTube/Bandcamp/SoundCloud via yt-dlp."""
-    from musicdock.ytdlp import search, is_available
-    if not is_available():
-        return {"results": [], "available": False}
-    query = body.get("query", "")
-    if len(query) < 2:
-        return {"results": []}
-    limit = body.get("limit", 20)
-    results = search(query, limit=limit)
-    return {"results": results, "available": True}
-
-
-@router.get("/sources")
-def acquisition_sources():
-    """Return available acquisition sources."""
-    from musicdock.ytdlp import is_available as ytdlp_available
-    tidal_status = False
-    try:
-        from musicdock.tidal import is_authenticated
-        tidal_status = is_authenticated()
-    except Exception:
-        pass
-    slsk_status = soulseek.get_status()
-    return {
-        "tidal": tidal_status,
-        "soulseek": slsk_status.get("connected", False),
-        "youtube": ytdlp_available(),
-    }
+    return JSONResponse({"error": "source must be 'tidal' or 'soulseek'"}, status_code=400)
 
 
 @router.get("/queue")

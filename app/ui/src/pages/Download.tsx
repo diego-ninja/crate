@@ -104,13 +104,7 @@ export function DownloadPage() {
   const [searchingSlsk, setSearchingSlsk] = useState(false);
   const [, setSlskSearchId] = useState<string | null>(null);
   const slskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [ytResults, setYtResults] = useState<{
-    id: string; title: string; url: string; channel: string; artist: string;
-    album: string; track: string; duration: number | null; thumbnail: string;
-    source: string; content_type: string; view_count: number | null; like_count: number | null;
-  }[] | null>(null);
-  const [searchingYt, setSearchingYt] = useState(false);
-  const [resultTab, setResultTab] = useState<"tidal" | "soulseek" | "youtube">("tidal");
+  const [resultTab, setResultTab] = useState<"tidal" | "soulseek">("tidal");
   const { data: tidalQueue, refetch: refetchTidalQueue } = useApi<QueueItem[]>("/api/tidal/queue");
   const { data: slskQueue, refetch: refetchSlskQueue } = useApi<{ source: string; artist: string; album: string; filename: string; fullPath?: string; status: string; progress: number; username: string; speed: number }[]>("/api/acquisition/queue");
   const { data: tidalStatus } = useApi<{ authenticated: boolean }>("/api/tidal/status");
@@ -175,12 +169,6 @@ export function DownloadPage() {
         })
         .catch(() => { setSoulseekResults([]); setSearchingSlsk(false); });
 
-      // Also search YouTube/Bandcamp/SoundCloud
-      setSearchingYt(true);
-      setYtResults(null);
-      api<{ results: typeof ytResults }>("/api/acquisition/search/youtube", "POST", { query: term, limit: 20 })
-        .then((d) => { setYtResults(d.results ?? []); setSearchingYt(false); })
-        .catch(() => { setYtResults([]); setSearchingYt(false); });
     }
   }, [query]);
 
@@ -308,13 +296,6 @@ export function DownloadPage() {
             >
               Soulseek {soulseekResults && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{soulseekResults.length}</Badge>}
               {searchingSlsk && <Loader2 size={12} className="animate-spin ml-1 inline" />}
-            </button>
-            <button
-              className={`px-3 py-1.5 text-sm rounded-t-lg transition-colors ${resultTab === "youtube" ? "text-primary border-b-2 border-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
-              onClick={() => setResultTab("youtube")}
-            >
-              YouTube {ytResults && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{ytResults.length}</Badge>}
-              {searchingYt && <Loader2 size={12} className="animate-spin ml-1 inline" />}
             </button>
           </div>
 
@@ -464,59 +445,6 @@ export function DownloadPage() {
             </div>
           )}
 
-          {/* YouTube/Bandcamp/SoundCloud Results */}
-          {resultTab === "youtube" && (
-            <div>
-              {ytResults && ytResults.length > 0 ? (
-                <div className="space-y-2">
-                  {ytResults.map((r, i) => {
-                    const dur = r.duration ? `${Math.floor(r.duration / 60)}:${String(Math.floor(r.duration % 60)).padStart(2, "0")}` : "";
-                    const displayArtist = r.artist || r.channel;
-                    const displayTitle = r.track || r.title;
-                    const sourceColor = r.source === "bandcamp" ? "text-cyan-500 border-cyan-500/30" :
-                      r.source === "soundcloud" ? "text-orange-500 border-orange-500/30" : "text-red-500 border-red-500/30";
-                    const typeColor = r.content_type === "album" ? "text-blue-500 border-blue-500/30" :
-                      r.content_type === "mix" ? "text-purple-500 border-purple-500/30" : "text-green-500 border-green-500/30";
-
-                    return (
-                      <div key={r.id || i} className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg hover:bg-white/5 transition-colors">
-                        {r.thumbnail && (
-                          <img src={r.thumbnail} alt="" className="w-14 h-14 rounded object-cover flex-shrink-0" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="text-sm font-medium truncate">{displayTitle}</div>
-                          <div className="text-xs text-muted-foreground truncate">{displayArtist}{r.album ? ` — ${r.album}` : ""}</div>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            <Badge variant="outline" className={`text-[10px] px-1 py-0 ${sourceColor}`}>{r.source}</Badge>
-                            <Badge variant="outline" className={`text-[10px] px-1 py-0 ${typeColor}`}>{r.content_type}</Badge>
-                            {dur && <span className="text-[10px] text-muted-foreground">{dur}</span>}
-                            {r.view_count && <span className="text-[10px] text-muted-foreground">{(r.view_count / 1000).toFixed(0)}K views</span>}
-                          </div>
-                        </div>
-                        <Button size="sm" onClick={async () => {
-                          try {
-                            await api("/api/acquisition/download", "POST", {
-                              source: "youtube", url: r.url,
-                              artist: displayArtist, album: r.album || displayTitle,
-                            });
-                            toast.success(`Downloading: ${displayTitle}`);
-                          } catch { toast.error("Download failed"); }
-                        }}>
-                          <Download size={13} className="mr-1" /> Download
-                        </Button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : ytResults && ytResults.length === 0 ? (
-                <div className="text-sm text-muted-foreground py-4">No YouTube results</div>
-              ) : searchingYt ? (
-                <div className="text-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" /></div>
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">Search to find music on YouTube, Bandcamp and SoundCloud</div>
-              )}
-            </div>
-          )}
         </TabsContent>
 
         {/* Queue */}
