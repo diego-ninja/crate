@@ -1703,21 +1703,29 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
         log.warning("Album MBID lookup failed", exc_info=True)
         result["steps"]["album_mbid"] = "failed"
 
-    # ── 4. Audio analysis (Essentia/librosa) for new tracks ──
+    # ── 4. Audio analysis (batched PANNs + Essentia) for new tracks ──
     update_task(task_id, progress=json.dumps({"step": "audio_analysis", "artist": artist_name}))
     try:
+        from musicdock.audio_analysis import analyze_batch, PANNS_BATCH_SIZE
         analyzed = 0
+        pending = []
         for album in albums:
             if album_folder and album["name"] != album_folder:
                 continue
             tracks = get_library_tracks(album["id"])
             for t in tracks:
-                if t.get("bpm") is not None:
-                    continue  # already analyzed
-                if _shutdown or _is_cancelled(task_id):
-                    break
-                try:
-                    ar = analyze_track(t["path"])
+                if t.get("bpm") is not None and t.get("energy") is not None:
+                    continue
+                pending.append(t)
+
+        # Process in batches
+        for batch_start in range(0, len(pending), PANNS_BATCH_SIZE):
+            if _shutdown or _is_cancelled(task_id):
+                break
+            batch = pending[batch_start:batch_start + PANNS_BATCH_SIZE]
+            try:
+                results_batch = analyze_batch([t["path"] for t in batch])
+                for t, ar in zip(batch, results_batch):
                     if ar.get("bpm") is not None:
                         update_track_audiomuse(
                             t["path"], bpm=ar["bpm"], key=ar["key"], scale=ar["scale"],
@@ -1728,9 +1736,12 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
                             spectral_complexity=ar.get("spectral_complexity"),
                         )
                         analyzed += 1
-                        emit_task_event(task_id, "track_analyzed", {"message": f"Analyzed: {t.get('title', '')} — BPM {ar.get('bpm')}, key {ar.get('key')}", "title": t.get("title", ""), "bpm": ar.get("bpm"), "key": ar.get("key")})
-                except Exception:
-                    log.debug("Analysis failed for %s", t["path"])
+                        emit_task_event(task_id, "track_analyzed", {
+                            "message": f"Analyzed: {t.get('title', '')} — BPM {ar.get('bpm')}, key {ar.get('key')}",
+                            "title": t.get("title", ""), "bpm": ar.get("bpm"), "key": ar.get("key"),
+                        })
+            except Exception:
+                log.debug("Batch analysis failed for %d tracks", len(batch), exc_info=True)
         result["steps"]["audio_analysis"] = analyzed
     except Exception:
         log.warning("Audio analysis failed", exc_info=True)

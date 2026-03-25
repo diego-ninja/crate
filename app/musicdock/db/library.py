@@ -214,27 +214,45 @@ def update_track_audiomuse(path: str, bpm: float | None, key: str | None,
 
 
 def update_artist_enrichment(name: str, data: dict):
+    """Update artist enrichment data. Only updates fields that have non-None values
+    to avoid overwriting existing data when a source fails."""
     now = datetime.now(timezone.utc).isoformat()
+
+    # Build SET clause dynamically — only include fields with actual values
+    field_map = {
+        "bio": data.get("bio"),
+        "tags_json": json.dumps(data["tags"]) if "tags" in data else None,
+        "similar_json": json.dumps(data["similar"]) if "similar" in data else None,
+        "spotify_id": data.get("spotify_id"),
+        "spotify_popularity": data.get("spotify_popularity"),
+        "spotify_followers": data.get("spotify_followers"),
+        "mbid": data.get("mbid"),
+        "country": data.get("country"),
+        "area": data.get("area"),
+        "formed": data.get("formed"),
+        "ended": data.get("ended"),
+        "artist_type": data.get("artist_type"),
+        "members_json": json.dumps(data["members"]) if "members" in data else None,
+        "urls_json": json.dumps(data["urls"]) if "urls" in data else None,
+        "listeners": data.get("listeners"),
+        "lastfm_playcount": data.get("lastfm_playcount"),
+        "discogs_id": data.get("discogs_id"),
+        "discogs_profile": data.get("discogs_profile"),
+        "discogs_members_json": json.dumps(data["discogs_members"]) if "discogs_members" in data else None,
+    }
+
+    # Filter out None values — keep existing DB data intact
+    updates = {k: v for k, v in field_map.items() if v is not None}
+    updates["enriched_at"] = now  # always update timestamp
+
+    if not updates:
+        return
+
+    set_clause = ", ".join(f"{k} = %s" for k in updates)
+    values = list(updates.values()) + [name]
+
     with get_db_ctx() as cur:
-        cur.execute("""
-            UPDATE library_artists SET
-                bio = %s, tags_json = %s, similar_json = %s,
-                spotify_id = %s, spotify_popularity = %s, spotify_followers = %s,
-                mbid = %s, country = %s, area = %s,
-                formed = %s, ended = %s, artist_type = %s,
-                members_json = %s, urls_json = %s,
-                listeners = %s, lastfm_playcount = %s, enriched_at = %s
-            WHERE name = %s
-        """, (
-            data.get("bio"), json.dumps(data.get("tags", [])),
-            json.dumps(data.get("similar", [])),
-            data.get("spotify_id"), data.get("spotify_popularity"), data.get("spotify_followers"),
-            data.get("mbid"), data.get("country"), data.get("area"),
-            data.get("formed"), data.get("ended"), data.get("artist_type"),
-            json.dumps(data.get("members", [])),
-            json.dumps(data.get("urls", {})),
-            data.get("listeners"), data.get("lastfm_playcount"), now, name,
-        ))
+        cur.execute(f"UPDATE library_artists SET {set_clause} WHERE name = %s", values)
 
 
 def delete_artist(name: str):

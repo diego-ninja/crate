@@ -266,6 +266,7 @@ def init_db():
             ("listeners", "INTEGER"), ("enriched_at", "TEXT"),
             ("discogs_id", "TEXT"), ("spotify_followers", "INTEGER"),
             ("lastfm_playcount", "INTEGER"),
+            ("discogs_profile", "TEXT"), ("discogs_members_json", "JSONB"),
         ]:
             cur.execute(f"""
                 DO $$ BEGIN
@@ -300,6 +301,14 @@ def init_db():
         cur.execute("""
             DO $$ BEGIN
                 ALTER TABLE library_albums ADD COLUMN tag_album TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
+        # Migration: discogs_master_id for album-level Discogs linking
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_albums ADD COLUMN discogs_master_id TEXT;
             EXCEPTION WHEN duplicate_column THEN NULL;
             END $$
         """)

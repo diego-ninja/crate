@@ -158,7 +158,7 @@ _create-dirs:
 # ===========================================================================
 
 .PHONY: deploy
-deploy: _confirm-deploy ## Deploy completo al servidor: sync + build + restart
+deploy: ## Deploy completo al servidor: sync + build + restart
 	@echo "$(YELLOW)Sincronizando ficheros...$(NC)"
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \

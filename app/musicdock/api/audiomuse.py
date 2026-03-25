@@ -70,6 +70,17 @@ def analyze_album(artist: str, album: str):
     return {"status": "queued", "task_id": task_id}
 
 
+@router.post("/api/enrich/album/{artist}/{album}")
+def enrich_album(artist: str, album: str):
+    """Full album re-enrichment: MBID lookup + cover art + popularity + audio analysis + bliss."""
+    from musicdock.db import create_task
+    task_id = create_task("process_new_content", {
+        "artist": artist,
+        "album_folder": album,
+    })
+    return {"status": "queued", "task_id": task_id}
+
+
 @router.get("/api/analyze/artist/{name}/data")
 def get_analysis_data(name: str):
     """Get BPM/key/energy/mood data from our library_tracks table."""

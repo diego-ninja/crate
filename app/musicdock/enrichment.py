@@ -152,6 +152,10 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
                 enrichment_data["discogs"] = dc
                 if dc.get("discogs_id"):
                     persist_data["discogs_id"] = str(dc["discogs_id"])
+                if dc.get("discogs_profile"):
+                    persist_data["discogs_profile"] = dc["discogs_profile"][:2000]
+                if dc.get("discogs_members"):
+                    persist_data["discogs_members"] = dc["discogs_members"]
                 if dc.get("discogs_url"):
                     persist_data.setdefault("urls", {})["discogs"] = dc["discogs_url"]
     except Exception:
