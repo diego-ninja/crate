@@ -516,6 +516,29 @@ def api_artist_shows(name: str, limit: int = Query(10), country: str = Query("")
     return {"events": events, "configured": True}
 
 
+@router.get("/api/shows")
+def api_all_shows(country: str = Query(""), limit: int = Query(5)):
+    """Get upcoming shows for all library artists. Fetches from Ticketmaster with caching."""
+    from musicdock.ticketmaster import get_upcoming_shows, is_configured
+    if not is_configured():
+        return {"events": [], "configured": False}
+
+    all_artists, _ = get_library_artists(per_page=10000)
+    all_events = []
+
+    for artist in all_artists:
+        name = artist["name"]
+        events = get_upcoming_shows(name, country_code=country, limit=limit)
+        for e in events:
+            e["artist_name"] = name
+            e["artist_listeners"] = artist.get("listeners") or 0
+        all_events.extend(events)
+
+    # Sort by date
+    all_events.sort(key=lambda e: e.get("date", ""))
+    return {"events": all_events, "configured": True}
+
+
 @router.post("/api/artist/{name}/enrich")
 def api_artist_enrich(name: str):
     """Queue a full enrichment task for an artist (async via worker)."""

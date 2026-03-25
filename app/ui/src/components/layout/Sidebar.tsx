@@ -20,6 +20,7 @@ import {
   Users,
   LogOut,
   Settings,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -51,6 +52,7 @@ const navItems = [
   { to: "/artwork", icon: Image, label: "Album Art" },
   { section: "Music" },
   { to: "/playlists", icon: ListMusic, label: "Playlists" },
+  { to: "/shows", icon: CalendarDays, label: "Shows" },
   { to: "/download", icon: Download, label: "Acquisition" },
   // AudioMuse AI — disabled (profile not active)
   // { external: "https://ai.lespedants.org", icon: BrainCircuit, label: "AudioMuse AI" },

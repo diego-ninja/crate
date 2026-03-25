@@ -60,7 +60,7 @@ export function AlbumHeader({
   hasCover,
   navidromeData,
   genres: _genres,
-  hasAnalysis,
+  hasAnalysis: _hasAnalysis,
   onAnalysisComplete,
   children,
 }: AlbumHeaderProps) {
@@ -73,33 +73,32 @@ export function AlbumHeader({
   const [coverError, setCoverError] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
 
-  async function handleAnalyze() {
+  async function handleEnrich() {
     setAnalyzing(true);
     try {
-      const res = await api<{ task_id: string }>(`/api/analyze/album/${encPath(artist)}/${encPath(album)}`, "POST");
-      toast.success("Audio analysis + bliss started...");
+      const res = await api<{ task_id: string }>(`/api/enrich/album/${encPath(artist)}/${encPath(album)}`, "POST");
+      toast.success("Enriching album (MBID, covers, analysis, bliss)...");
       const taskId = res.task_id;
       const poll = setInterval(async () => {
         try {
-          // Refresh audio data on every poll (shows results as they come in)
           onAnalysisComplete?.();
           const task = await api<{ status: string }>(`/api/tasks/${taskId}`);
           if (task.status === "completed") {
             clearInterval(poll);
             setAnalyzing(false);
-            toast.success("Audio + bliss analysis complete");
+            toast.success("Album enrichment complete");
             onAnalysisComplete?.();
           } else if (task.status === "failed") {
             clearInterval(poll);
             setAnalyzing(false);
-            toast.error("Analysis failed");
+            toast.error("Enrichment failed");
           }
         } catch { /* keep polling */ }
       }, 4000);
       setTimeout(() => { clearInterval(poll); setAnalyzing(false); }, 120000);
     } catch {
       setAnalyzing(false);
-      toast.error("Failed to start analysis");
+      toast.error("Failed to start enrichment");
     }
   }
   const displayName = albumTags.album || album;
@@ -252,13 +251,13 @@ export function AlbumHeader({
                 size="sm"
                 variant="outline"
                 className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
-                onClick={handleAnalyze}
+                onClick={handleEnrich}
                 disabled={analyzing}
               >
                 {analyzing ? (
-                  <><Loader2 size={14} className="animate-spin mr-1" /> Analyzing...</>
+                  <><Loader2 size={14} className="animate-spin mr-1" /> Enriching...</>
                 ) : (
-                  <><BrainCircuit size={14} className="mr-1" /> {hasAnalysis ? "Re-analyze" : "Analyze Audio"}</>
+                  <><BrainCircuit size={14} className="mr-1" /> Enrich</>
                 )}
               </Button>
               <Button
