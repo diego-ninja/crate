@@ -8,6 +8,7 @@ import { ResponsiveBar } from "@nivo/bar";
 import { ResponsivePie } from "@nivo/pie";
 import { ResponsiveRadar } from "@nivo/radar";
 import { ResponsiveScatterPlot } from "@nivo/scatterplot";
+import { ErrorState } from "@/components/ui/error-state";
 
 interface InsightsData {
   countries: Record<string, number>;
@@ -59,7 +60,7 @@ function ProgressStat({ label, value, total }: { label: string; value: number; t
 }
 
 export function Insights() {
-  const { data, loading } = useApi<InsightsData>("/api/insights");
+  const { data, loading, error, refetch } = useApi<InsightsData>("/api/insights");
 
   const decadeData = useMemo(() => {
     if (!data?.albums_by_decade) return [];
@@ -103,6 +104,9 @@ export function Insights() {
     );
   }
 
+  if (error) {
+    return <ErrorState message="Failed to load insights" onRetry={refetch} />;
+  }
   if (!data) {
     return <div className="text-center py-12 text-muted-foreground">No data available</div>;
   }

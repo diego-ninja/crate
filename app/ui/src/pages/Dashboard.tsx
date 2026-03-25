@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { ErrorState } from "@/components/ui/error-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface Stats {
@@ -67,7 +68,7 @@ function timeAgo(iso: string): string {
 }
 
 export function Dashboard() {
-  const { data: stats, loading: loadingStats } = useApi<Stats>("/api/stats");
+  const { data: stats, loading: loadingStats, error: statsError, refetch: refetchStats } = useApi<Stats>("/api/stats");
   const { data: analytics, refetch: refetchAnalytics } = useApi<AnalyticsData>("/api/analytics");
   const { data: live, refetch: refetchLive } = useApi<LiveActivity>("/api/activity/live");
   const { recentlyPlayed, play: playTrack } = usePlayer();
@@ -103,6 +104,10 @@ export function Dashboard() {
         <GridSkeleton count={2} columns="grid-cols-2" />
       </div>
     );
+  }
+
+  if (statsError) {
+    return <ErrorState message="Failed to load dashboard" onRetry={refetchStats} />;
   }
 
   const heroStats = [

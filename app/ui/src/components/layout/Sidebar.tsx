@@ -22,9 +22,10 @@ import {
   Settings,
   CalendarDays,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, encPath } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePlayer } from "@/contexts/PlayerContext";
 import { Badge } from "@/components/ui/badge";
 
 interface SidebarProps {
@@ -161,6 +162,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         );
       })}
       </div>
+      <NowPlaying />
       {user && (
         <div className="border-t border-border px-4 py-3 mt-auto">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -186,5 +188,36 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         </div>
       )}
     </nav>
+  );
+}
+
+function NowPlaying() {
+  const { currentTrack, isPlaying } = usePlayer();
+  if (!currentTrack) return null;
+
+  return (
+    <Link
+      to={currentTrack.artist ? `/artist/${encPath(currentTrack.artist)}` : "#"}
+      className="border-t border-border px-4 py-2 flex items-center gap-2.5 hover:bg-white/5 transition-colors"
+    >
+      {currentTrack.albumCover ? (
+        <img src={currentTrack.albumCover} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+      ) : (
+        <div className="w-8 h-8 rounded bg-secondary flex items-center justify-center flex-shrink-0">
+          <Disc3 size={14} className={`text-muted-foreground ${isPlaying ? "animate-spin" : ""}`} style={{ animationDuration: "3s" }} />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-medium truncate">{currentTrack.title}</div>
+        <div className="text-[10px] text-muted-foreground truncate">{currentTrack.artist}</div>
+      </div>
+      {isPlaying && (
+        <div className="flex items-end gap-[2px] h-3 flex-shrink-0">
+          <span className="w-[3px] bg-primary rounded-full equalizer-bar" style={{ animationDelay: "0s" }} />
+          <span className="w-[3px] bg-primary rounded-full equalizer-bar" style={{ animationDelay: "0.2s" }} />
+          <span className="w-[3px] bg-primary rounded-full equalizer-bar" style={{ animationDelay: "0.4s" }} />
+        </div>
+      )}
+    </Link>
   );
 }

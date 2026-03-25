@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { Search, Music } from "lucide-react";
 
@@ -5,6 +6,7 @@ interface MissingAlbumCardProps {
   title: string;
   year: string;
   type: string;
+  artist?: string;
 }
 
 function hashColor(str: string): string {
@@ -21,7 +23,9 @@ const typeBadgeClass: Record<string, string> = {
   Compilation: "border-orange-500/30 text-orange-500",
 };
 
-export function MissingAlbumCard({ title, year, type }: MissingAlbumCardProps) {
+export function MissingAlbumCard({ title, year, type, artist }: MissingAlbumCardProps) {
+  const searchQuery = encodeURIComponent(`${artist || ""} ${title}`.trim());
+
   return (
     <div className="border border-dashed border-border rounded-lg p-3 text-center grayscale opacity-60 hover:opacity-80 transition-opacity">
       <div
@@ -38,15 +42,13 @@ export function MissingAlbumCard({ title, year, type }: MissingAlbumCardProps) {
           {type}
         </Badge>
       </div>
-      <a
-        href="https://search.lespedants.org"
-        target="_blank"
-        rel="noopener noreferrer"
+      <Link
+        to={`/download?q=${searchQuery}`}
         onClick={(e) => e.stopPropagation()}
         className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
       >
         <Search size={12} /> Search
-      </a>
+      </Link>
     </div>
   );
 }

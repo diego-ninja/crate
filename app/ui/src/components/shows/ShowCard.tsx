@@ -207,17 +207,3 @@ function ArtistAvatarStack({ names, size = 18 }: { names: string[]; size?: numbe
     </div>
   );
 }
-
-
-// ── Artist name link ──
-
-function ArtistLink({ name, isMain }: { name: string; isMain: boolean }) {
-  return (
-    <Link
-      to={`/artist/${encPath(name)}`}
-      className={`hover:text-primary transition-colors ${isMain ? "font-bold text-lg text-foreground" : "text-sm text-foreground/70"}`}
-    >
-      {name}
-    </Link>
-  );
-}

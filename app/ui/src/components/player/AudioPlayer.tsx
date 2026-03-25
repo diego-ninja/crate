@@ -374,7 +374,7 @@ export function AudioPlayer() {
               <div className="flex gap-2 mt-2">
                 {trackMeta.bpm ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">{Math.round(trackMeta.bpm)} BPM</span> : null}
                 {trackMeta.audio_key ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">{trackMeta.audio_key} {trackMeta.audio_scale || ""}</span> : null}
-                {trackMeta.energy != null ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">⚡ {Math.round(trackMeta.energy * 100)}</span> : null}
+                {trackMeta.energy != null ? <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">E {Math.round(trackMeta.energy * 100)}</span> : null}
               </div>
             )}
           </div>

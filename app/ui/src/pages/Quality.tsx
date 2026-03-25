@@ -75,7 +75,7 @@ export function Quality() {
 
       {data && (
         <>
-          <div className="grid grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <Card className="bg-card">
               <CardContent className="pt-6 text-center">
                 <div
