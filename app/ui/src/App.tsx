@@ -13,9 +13,6 @@ const Browse = lazy(() => import("@/pages/Browse").then(m => ({ default: m.Brows
 const Artist = lazy(() => import("@/pages/Artist").then(m => ({ default: m.Artist })));
 const Album = lazy(() => import("@/pages/Album").then(m => ({ default: m.Album })));
 const Health = lazy(() => import("@/pages/Health").then(m => ({ default: m.Health })));
-const Duplicates = lazy(() => import("@/pages/Duplicates").then(m => ({ default: m.Duplicates })));
-const Artwork = lazy(() => import("@/pages/Artwork").then(m => ({ default: m.Artwork })));
-const Organizer = lazy(() => import("@/pages/Organizer").then(m => ({ default: m.Organizer })));
 const Insights = lazy(() => import("@/pages/Insights").then(m => ({ default: m.Insights })));
 const MissingAlbums = lazy(() => import("@/pages/MissingAlbums").then(m => ({ default: m.MissingAlbums })));
 const Quality = lazy(() => import("@/pages/Quality").then(m => ({ default: m.Quality })));
@@ -69,9 +66,6 @@ export default function App() {
                   <Route path="artist/:name" element={<Artist />} />
                   <Route path="album/:artist/:album" element={<Album />} />
                   <Route path="health" element={<Health />} />
-                  <Route path="duplicates" element={<Duplicates />} />
-                  <Route path="artwork" element={<Artwork />} />
-                  <Route path="organizer" element={<Organizer />} />
                   <Route path="download" element={<DownloadPage />} />
                   <Route path="insights" element={<Insights />} />
                   <Route path="missing-albums" element={<MissingAlbums />} />
