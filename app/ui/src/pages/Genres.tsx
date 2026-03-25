@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { encPath, formatNumber } from "@/lib/utils";
 import { Search, Sparkles, Tag, Disc3, Users, ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { ErrorState } from "@/components/ui/error-state";
 
 interface Genre {
   id: number;
@@ -76,7 +77,7 @@ export function Genres() {
 }
 
 function GenreList() {
-  const { data: genres, loading } = useApi<Genre[]>("/api/genres");
+  const { data: genres, loading, error, refetch } = useApi<Genre[]>("/api/genres");
   const [filter, setFilter] = useState("");
   const [indexing, setIndexing] = useState(false);
   const navigate = useNavigate();
@@ -110,6 +111,7 @@ function GenreList() {
     } catch { setIndexing(false); toast.error("Failed to start indexing"); }
   }
 
+  if (error) return <ErrorState message="Failed to load genres" onRetry={refetch} />;
   if (loading) {
     return (
       <div>

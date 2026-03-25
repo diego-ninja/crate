@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, Link } from "react-router";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
@@ -12,7 +12,7 @@ import { formatNumber, encPath } from "@/lib/utils";
 import {
   Users, Disc3, Music, HardDrive, Loader2, ArrowRight,
   Play, RefreshCw, CheckCircle2, XCircle, Clock,
-  Activity, Database, Radio, Eye, Cpu, RotateCcw, Trash2,
+  Activity, Database, Radio, Eye, Cpu, RotateCcw, Trash2, Stethoscope, CalendarDays,
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePlayer } from "@/contexts/PlayerContext";
@@ -72,6 +72,13 @@ export function Dashboard() {
   const { data: analytics, refetch: refetchAnalytics } = useApi<AnalyticsData>("/api/analytics");
   const { data: live, refetch: refetchLive } = useApi<LiveActivity>("/api/activity/live");
   const { recentlyPlayed, play: playTrack } = usePlayer();
+  const [healthCounts, setHealthCounts] = useState<Record<string, number>>({});
+  const [upcomingShows, setUpcomingShows] = useState<{ artist_name?: string; venue: string; city: string; country: string; date: string; url: string }[]>([]);
+
+  useEffect(() => {
+    api<{ counts: Record<string, number> }>("/api/manage/health-issues").then((d) => setHealthCounts(d.counts || {})).catch(() => {});
+    api<{ events: typeof upcomingShows }>("/api/shows?limit=3").then((d) => setUpcomingShows((d.events || []).slice(0, 5))).catch(() => {});
+  }, []);
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
@@ -325,6 +332,65 @@ export function Dashboard() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Health + Shows summary row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        {/* Health summary */}
+        {Object.keys(healthCounts).length > 0 && (
+          <Link to="/health" className="block">
+            <Card className="bg-card hover:bg-white/5 transition-colors h-full">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Stethoscope size={14} className="text-yellow-500" />
+                  Library Health
+                  <Badge variant="outline" className="text-yellow-500 border-yellow-500/30 ml-auto">
+                    {Object.values(healthCounts).reduce((a, b) => a + b, 0)} issues
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2 flex-wrap">
+                  {Object.entries(healthCounts).sort(([, a], [, b]) => b - a).slice(0, 5).map(([type, count]) => (
+                    <Badge key={type} variant="secondary" className="text-[10px]">
+                      {type.replace(/_/g, " ")} ({count})
+                    </Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        )}
+
+        {/* Upcoming shows */}
+        {upcomingShows.length > 0 && (
+          <Link to="/shows" className="block">
+            <Card className="bg-card hover:bg-white/5 transition-colors h-full">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <CalendarDays size={14} className="text-orange-500" />
+                  Upcoming Shows
+                  <Badge variant="outline" className="text-orange-500 border-orange-500/30 ml-auto">
+                    {upcomingShows.length}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1.5">
+                  {upcomingShows.slice(0, 3).map((s, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <span className="font-medium truncate">{s.artist_name}</span>
+                      <span className="text-muted-foreground truncate">{s.venue}, {s.city}</span>
+                      <span className="text-muted-foreground ml-auto flex-shrink-0">
+                        {new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        )}
       </div>
 
       {/* Row 3: Recent Albums */}

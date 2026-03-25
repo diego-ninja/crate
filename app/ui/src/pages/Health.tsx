@@ -185,6 +185,9 @@ export function Health() {
   }
 
   const totalOpen = Object.values(counts).reduce((a, b) => a + b, 0);
+  const lastScan = issues.length > 0
+    ? issues.reduce((latest, i) => i.created_at > latest ? i.created_at : latest, "")
+    : null;
 
   // Group issues
   const grouped: { check: string; severity: string; items: HealthIssue[] }[] = [];
@@ -212,6 +215,9 @@ export function Health() {
           )}
           {totalOpen === 0 && !loading && (
             <Badge variant="outline" className="text-green-500 border-green-500/30">Healthy</Badge>
+          )}
+          {lastScan && (
+            <span className="text-xs text-muted-foreground">Last scan: {formatAge(lastScan)}</span>
           )}
         </div>
         {isAdmin && (

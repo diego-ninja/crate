@@ -4,6 +4,7 @@ import { useApi } from "@/hooks/use-api";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { encPath } from "@/lib/utils";
 import { Calendar, Disc3, Trophy, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { ErrorState } from "@/components/ui/error-state";
 
 interface TimelineAlbum {
   artist: string;
@@ -30,7 +31,7 @@ function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label
 }
 
 export function Timeline() {
-  const { data, loading } = useApi<TimelineData>("/api/timeline");
+  const { data, loading, error, refetch } = useApi<TimelineData>("/api/timeline");
   const navigate = useNavigate();
   const [expandedYear, setExpandedYear] = useState<string | null>(null);
 
@@ -56,6 +57,7 @@ export function Timeline() {
     };
   }, [data]);
 
+  if (error) return <ErrorState message="Failed to load timeline" onRetry={refetch} />;
   if (loading) {
     return (
       <div>

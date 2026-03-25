@@ -5,6 +5,7 @@ import { encPath, cn, formatCompact } from "@/lib/utils";
 import { Compass, ChevronDown, ChevronRight, ExternalLink, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/error-state";
 
 interface MissingAlbum {
   title: string;
@@ -121,7 +122,7 @@ function ArtistRow({ artist }: { artist: ArtistCompleteness }) {
 }
 
 export function Discover() {
-  const { data, loading } = useApi<ArtistCompleteness[]>("/api/discover/completeness");
+  const { data, loading, error, refetch } = useApi<ArtistCompleteness[]>("/api/discover/completeness");
   const [showComplete, setShowComplete] = useState(true);
   const [sortBy, setSortBy] = useState<SortKey>("pct");
 
@@ -138,6 +139,7 @@ export function Discover() {
 
   const completeCount = data?.filter((a) => a.pct >= 100).length ?? 0;
 
+  if (error) return <ErrorState message="Failed to load completeness data" onRetry={refetch} />;
   if (loading) {
     return (
       <div className="space-y-4">

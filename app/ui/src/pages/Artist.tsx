@@ -901,7 +901,7 @@ export function Artist() {
                         // Match setlist songs to library tracks
                         const matched: PlayerTrack[] = [];
                         for (const song of setlistData.probable_setlist) {
-                          const t = allTrackTitles.find((tt) => tt.title.toLowerCase() === song.title.toLowerCase());
+                          const t = fuzzyMatchTrack(song.title, allTrackTitles);
                           if (t) {
                             matched.push({
                               id: t.path,
@@ -951,8 +951,7 @@ export function Artist() {
 
                 <div className="space-y-0.5">
                   {setlistData.probable_setlist.map((song, i) => {
-                    const songLower = song.title.toLowerCase();
-                    const libraryMatch = allTrackTitles.find((t) => t.title.toLowerCase() === songLower);
+                    const libraryMatch = fuzzyMatchTrack(song.title, allTrackTitles);
                     const isPlayable = !!libraryMatch;
                     return (
                     <button
@@ -1547,6 +1546,40 @@ function SimilarArtistCard({ name, genres, popularity }: { name: string; genres?
       )}
     </Link>
   );
+}
+
+
+function fuzzyMatchTrack(
+  songTitle: string,
+  tracks: { title: string; album: string; path: string }[],
+): { title: string; album: string; path: string } | undefined {
+  const normalize = (s: string) =>
+    s.toLowerCase()
+      .replace(/\s*\(.*?\)\s*/g, "")  // remove parenthetical (live, remaster, etc.)
+      .replace(/\s*\[.*?\]\s*/g, "")  // remove brackets
+      .replace(/[''`]/g, "'")
+      .replace(/[^\w\s']/g, "")
+      .trim();
+
+  const norm = normalize(songTitle);
+
+  // Exact match first
+  const exact = tracks.find((t) => t.title.toLowerCase() === songTitle.toLowerCase());
+  if (exact) return exact;
+
+  // Normalized match
+  const normalized = tracks.find((t) => normalize(t.title) === norm);
+  if (normalized) return normalized;
+
+  // Contains match (song title is substring of track title or vice versa)
+  const contains = tracks.find((t) => {
+    const tn = normalize(t.title);
+    return tn.includes(norm) || norm.includes(tn);
+  });
+  if (contains) return contains;
+
+  // Starts-with match
+  return tracks.find((t) => normalize(t.title).startsWith(norm) || norm.startsWith(normalize(t.title)));
 }
 
 
