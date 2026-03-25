@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   Stethoscope, Loader2, CheckCircle2, AlertTriangle,
   XCircle, Info, Wrench, ChevronDown, ChevronUp,
-  X,
+  EyeOff,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ErrorState } from "@/components/ui/error-state";
@@ -26,11 +26,11 @@ interface HealthIssue {
 const SEVERITY_ICONS: Record<string, typeof AlertTriangle> = {
   critical: XCircle, high: AlertTriangle, medium: Info, low: Info,
 };
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: "text-red-500 border-red-500/30 bg-red-500/5",
-  high: "text-orange-500 border-orange-500/30 bg-orange-500/5",
-  medium: "text-yellow-500 border-yellow-500/30 bg-yellow-500/5",
-  low: "text-muted-foreground border-border bg-card",
+const SEVERITY_COLORS: Record<string, { text: string; border: string; bg: string }> = {
+  critical: { text: "text-red-500", border: "border-red-500/30", bg: "bg-red-500/5" },
+  high: { text: "text-orange-500", border: "border-orange-500/30", bg: "bg-orange-500/5" },
+  medium: { text: "text-yellow-500", border: "border-yellow-500/30", bg: "bg-yellow-500/5" },
+  low: { text: "text-muted-foreground", border: "border-border", bg: "bg-card" },
 };
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
@@ -51,6 +51,23 @@ const CHECK_LABELS: Record<string, string> = {
   missing_cover: "Missing Covers",
 };
 
+const CHECK_DESCRIPTIONS: Record<string, string> = {
+  duplicate_folders: "Multiple folders that normalize to the same artist name",
+  canonical_mismatch: "Folder name doesn't match the canonical artist name from tags",
+  fk_orphan_albums: "Albums in DB with no matching artist record",
+  fk_orphan_tracks: "Tracks in DB with no matching album record",
+  stale_artists: "Artists in DB with no folder on disk",
+  stale_albums: "Albums in DB with no folder on disk",
+  stale_tracks: "Tracks in DB with no file on disk",
+  zombie_artists: "Artists with 0 albums and 0 tracks",
+  has_photo_desync: "Artist photo flag in DB doesn't match filesystem",
+  duplicate_albums: "Same album name appears multiple times for an artist",
+  unindexed_files: "Audio files on disk not indexed in DB",
+  tag_mismatch: "Album artist tag doesn't match folder artist name",
+  folder_naming: "Folder structure doesn't match the configured naming pattern",
+  missing_cover: "Albums without cover art (cover.jpg/cover.png)",
+};
+
 export function Health() {
   const { isAdmin } = useAuth();
   const [issues, setIssues] = useState<HealthIssue[]>([]);
@@ -60,6 +77,7 @@ export function Health() {
   const [scanning, setScanning] = useState(false);
   const [filter, setFilter] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [fixing, setFixing] = useState<string | null>(null);
 
   async function fetchIssues() {
     try {
@@ -68,7 +86,7 @@ export function Health() {
       setIssues(data.issues);
       setCounts(data.counts);
       setError(null);
-    } catch (e) {
+    } catch {
       setError("Failed to load health issues");
     } finally {
       setLoading(false);
@@ -91,9 +109,7 @@ export function Health() {
             if (task.status === "completed") {
               toast.success("Scan complete");
               fetchIssues();
-            } else {
-              toast.error("Scan failed");
-            }
+            } else toast.error("Scan failed");
           }
         } catch { /* poll */ }
       }, 3000);
@@ -103,21 +119,61 @@ export function Health() {
 
   async function handleResolve(id: number) {
     await api(`/api/manage/health-issues/${id}/resolve`, "POST");
-    setIssues((prev) => prev.filter((i) => i.id !== id));
-    setCounts((prev) => {
-      const issue = issues.find((i) => i.id === id);
-      if (!issue) return prev;
-      const n = { ...prev };
-      const val = (n[issue.check_type] || 1) - 1;
-      if (val <= 0) delete n[issue.check_type];
-      else n[issue.check_type] = val;
-      return n;
-    });
+    removeIssue(id);
+    toast.success("Issue resolved");
   }
 
   async function handleDismiss(id: number) {
     await api(`/api/manage/health-issues/${id}/dismiss`, "POST");
+    removeIssue(id);
+  }
+
+  function removeIssue(id: number) {
+    const issue = issues.find((i) => i.id === id);
     setIssues((prev) => prev.filter((i) => i.id !== id));
+    if (issue) {
+      setCounts((prev) => {
+        const n = { ...prev };
+        const val = (n[issue.check_type] || 1) - 1;
+        if (val <= 0) delete n[issue.check_type];
+        else n[issue.check_type] = val;
+        return n;
+      });
+    }
+  }
+
+  async function handleFixType(checkType: string) {
+    setFixing(checkType);
+    try {
+      const res = await api<{ task_id: string | null; fixable: number }>(`/api/manage/health-issues/fix-type/${checkType}`, "POST");
+      if (!res.task_id) {
+        toast.error("No auto-fixable issues");
+        setFixing(null);
+        return;
+      }
+      toast.success(`Fixing ${res.fixable} issues...`);
+      const poll = setInterval(async () => {
+        try {
+          const task = await api<{ status: string }>(`/api/tasks/${res.task_id}`);
+          if (task.status === "completed" || task.status === "failed") {
+            clearInterval(poll);
+            setFixing(null);
+            if (task.status === "completed") {
+              toast.success("Repair complete");
+              fetchIssues();
+            } else toast.error("Repair failed");
+          }
+        } catch { /* poll */ }
+      }, 3000);
+      setTimeout(() => { clearInterval(poll); setFixing(null); }, 300000);
+    } catch { setFixing(null); toast.error("Failed to start repair"); }
+  }
+
+  async function handleDismissType(checkType: string) {
+    await api(`/api/manage/health-issues/resolve-type/${checkType}`, "POST");
+    setIssues((prev) => prev.filter((i) => i.check_type !== checkType));
+    setCounts((prev) => { const n = { ...prev }; delete n[checkType]; return n; });
+    toast.success("All issues dismissed");
   }
 
   function toggleGroup(check: string) {
@@ -130,7 +186,7 @@ export function Health() {
 
   const totalOpen = Object.values(counts).reduce((a, b) => a + b, 0);
 
-  // Group issues by check_type
+  // Group issues
   const grouped: { check: string; severity: string; items: HealthIssue[] }[] = [];
   const byCheck: Record<string, HealthIssue[]> = {};
   for (const issue of issues) {
@@ -152,14 +208,10 @@ export function Health() {
           <Stethoscope size={24} className="text-primary" />
           <h1 className="text-2xl font-bold">Library Health</h1>
           {totalOpen > 0 && (
-            <Badge variant="outline" className="text-yellow-500 border-yellow-500/30">
-              {totalOpen} open
-            </Badge>
+            <Badge variant="outline" className="text-yellow-500 border-yellow-500/30">{totalOpen} open</Badge>
           )}
           {totalOpen === 0 && !loading && (
-            <Badge variant="outline" className="text-green-500 border-green-500/30">
-              Healthy
-            </Badge>
+            <Badge variant="outline" className="text-green-500 border-green-500/30">Healthy</Badge>
           )}
         </div>
         {isAdmin && (
@@ -199,9 +251,7 @@ export function Health() {
           <CheckCircle2 size={48} className="text-green-500 mx-auto mb-3 opacity-50" />
           <div className="text-lg font-semibold text-green-500">Library is healthy</div>
           <div className="text-sm text-muted-foreground mt-1">
-            {totalOpen === 0 && Object.keys(counts).length === 0
-              ? "Run a scan to check for issues"
-              : "No issues found for this filter"}
+            {totalOpen === 0 && Object.keys(counts).length === 0 ? "Run a scan to check for issues" : "No issues found for this filter"}
           </div>
         </div>
       )}
@@ -209,52 +259,74 @@ export function Health() {
       {/* Issue groups */}
       {!loading && grouped.map(({ check, severity, items }) => {
         const Icon = SEVERITY_ICONS[severity] || Info;
-        const colorStr = SEVERITY_COLORS[severity] ?? SEVERITY_COLORS.low ?? "";
-        const borderClass = colorStr.split(" ").find(c => c.startsWith("border-")) || "border-border";
-        const textClass = colorStr.split(" ")[0] || "text-muted-foreground";
+        const colors = SEVERITY_COLORS[severity] ?? SEVERITY_COLORS.low!;
         const isExpanded = expandedGroups.has(check);
         const label = CHECK_LABELS[check] || check.replace(/_/g, " ");
+        const description = CHECK_DESCRIPTIONS[check] || "";
+        const fixableCount = items.filter((i) => i.auto_fixable).length;
+        const isFixing = fixing === check;
 
         return (
-          <Card key={check} className={`mb-3 border ${borderClass}`}>
+          <Card key={check} className={`mb-3 border ${colors.border}`}>
+            {/* Group header */}
             <button
               className="w-full flex items-center gap-3 p-4 text-left hover:bg-white/5 transition-colors"
               onClick={() => toggleGroup(check)}
             >
-              <Icon size={16} className={textClass} />
-              <span className="font-medium flex-1">{label}</span>
-              <Badge variant="outline" className="text-xs">{items.length}</Badge>
-              {items.some(i => i.auto_fixable) && (
-                <Badge variant="secondary" className="text-[10px]"><Wrench size={10} className="mr-0.5" /> fixable</Badge>
-              )}
+              <Icon size={16} className={colors.text} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{label}</span>
+                  <Badge variant="outline" className="text-xs">{items.length}</Badge>
+                  <Badge variant="secondary" className={`text-[10px] ${colors.text}`}>{severity}</Badge>
+                </div>
+                {description && !isExpanded && (
+                  <div className="text-xs text-muted-foreground mt-0.5 truncate">{description}</div>
+                )}
+              </div>
+              {/* Group action buttons */}
+              <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                {fixableCount > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs border-green-500/30 text-green-500 hover:bg-green-500/10"
+                    onClick={() => handleFixType(check)}
+                    disabled={isFixing}
+                  >
+                    {isFixing ? <Loader2 size={12} className="animate-spin mr-1" /> : <Wrench size={12} className="mr-1" />}
+                    Fix All ({fixableCount})
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => handleDismissType(check)}
+                  title="Dismiss all issues of this type"
+                >
+                  <EyeOff size={12} />
+                </Button>
+              </div>
               {isExpanded ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
             </button>
 
+            {/* Expanded issue list */}
             {isExpanded && (
-              <div className="px-4 pb-3 space-y-1 border-t border-border/50 pt-2">
-                {items.map((issue) => (
-                  <div key={issue.id} className="flex items-center gap-2 text-xs py-1.5 group">
-                    <span className="flex-1 text-muted-foreground">{issue.description}</span>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {issue.auto_fixable && (
-                        <button
-                          onClick={() => handleResolve(issue.id)}
-                          className="text-green-500 hover:text-green-400 p-1"
-                          title="Mark as fixed"
-                        >
-                          <CheckCircle2 size={14} />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDismiss(issue.id)}
-                        className="text-muted-foreground hover:text-foreground p-1"
-                        title="Dismiss"
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+              <div className="border-t border-border/50">
+                {description && (
+                  <div className="px-4 pt-3 pb-1 text-xs text-muted-foreground">{description}</div>
+                )}
+                <div className="px-2 pb-2">
+                  {items.map((issue) => (
+                    <IssueRow
+                      key={issue.id}
+                      issue={issue}
+                      onResolve={() => handleResolve(issue.id)}
+                      onDismiss={() => handleDismiss(issue.id)}
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </Card>
@@ -262,4 +334,80 @@ export function Health() {
       })}
     </div>
   );
+}
+
+
+function IssueRow({ issue, onResolve, onDismiss }: {
+  issue: HealthIssue;
+  onResolve: () => void;
+  onDismiss: () => void;
+}) {
+  const details = issue.details_json || {};
+  const path = details.path as string | undefined;
+
+  return (
+    <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/5 group transition-colors">
+      {/* Severity dot */}
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+        issue.severity === "critical" ? "bg-red-500" :
+        issue.severity === "high" ? "bg-orange-500" :
+        issue.severity === "medium" ? "bg-yellow-500" : "bg-muted-foreground/50"
+      }`} />
+
+      {/* Description */}
+      <div className="flex-1 min-w-0">
+        <div className="text-xs truncate">{issue.description}</div>
+        {path && (
+          <div className="text-[10px] text-muted-foreground truncate font-mono mt-0.5">{path}</div>
+        )}
+      </div>
+
+      {/* Age */}
+      <span className="text-[10px] text-muted-foreground flex-shrink-0 hidden sm:block">
+        {formatAge(issue.created_at)}
+      </span>
+
+      {/* Actions — always visible */}
+      <div className="flex gap-0.5 flex-shrink-0">
+        {issue.auto_fixable && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onResolve(); }}
+            className="p-1.5 rounded-md text-green-500 hover:bg-green-500/10 transition-colors"
+            title="Auto-fix this issue"
+          >
+            <Wrench size={13} />
+          </button>
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onResolve(); }}
+          className="p-1.5 rounded-md text-muted-foreground hover:text-green-500 hover:bg-green-500/10 transition-colors"
+          title="Mark as resolved"
+        >
+          <CheckCircle2 size={13} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDismiss(); }}
+          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+          title="Dismiss (won't show again until next scan finds it)"
+        >
+          <EyeOff size={13} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+function formatAge(isoDate: string): string {
+  try {
+    const ms = Date.now() - new Date(isoDate).getTime();
+    const mins = Math.floor(ms / 60000);
+    if (mins < 60) return `${mins}m`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
+  } catch {
+    return "";
+  }
 }

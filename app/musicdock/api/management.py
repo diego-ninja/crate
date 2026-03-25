@@ -92,6 +92,31 @@ def repair_specific_issues(request: Request, body: RepairIssuesRequest):
     return {"task_id": task_id}
 
 
+@router.post("/health-issues/resolve-type/{check_type}")
+def api_resolve_type(request: Request, check_type: str):
+    """Resolve all open issues of a given check type."""
+    _require_admin(request)
+    from musicdock.db import resolve_issues_by_type
+    resolve_issues_by_type(check_type)
+    return {"ok": True, "check_type": check_type}
+
+
+@router.post("/health-issues/fix-type/{check_type}")
+def api_fix_type(request: Request, check_type: str):
+    """Auto-fix all fixable issues of a given check type via repair task."""
+    _require_admin(request)
+    issues = get_open_issues(check_type=check_type)
+    fixable = [i for i in issues if i.get("auto_fixable")]
+    if not fixable:
+        return {"task_id": None, "fixable": 0}
+    task_id = create_task("repair", {
+        "dry_run": False,
+        "auto_only": False,
+        "issues": fixable,
+    })
+    return {"task_id": task_id, "fixable": len(fixable)}
+
+
 # ── Artist Management ────────────────────────────────────────────
 
 @router.post("/artist/{name:path}/delete")
