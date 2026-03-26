@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { encPath } from "@/lib/utils";
@@ -39,7 +39,7 @@ interface NavidromeAlbumLink {
   navidrome_url: string;
 }
 
-export function AlbumCard({
+export const AlbumCard = React.memo(function AlbumCard({
   artist,
   name,
   displayName,
@@ -152,7 +152,7 @@ export function AlbumCard({
       </div>
     </MusicContextMenu>
   );
-}
+});
 
 function formatClass(f: string): string {
   const clean = f.replace(".", "").toLowerCase();

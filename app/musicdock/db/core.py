@@ -365,6 +365,22 @@ def init_db():
             END $$
         """)
 
+        # Performance indexes
+        cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        for idx_sql in [
+            "CREATE INDEX IF NOT EXISTS idx_artists_name_trgm ON library_artists USING gin(name gin_trgm_ops)",
+            "CREATE INDEX IF NOT EXISTS idx_albums_name_trgm ON library_albums USING gin(name gin_trgm_ops)",
+            "CREATE INDEX IF NOT EXISTS idx_tracks_title_trgm ON library_tracks USING gin(title gin_trgm_ops)",
+            "CREATE INDEX IF NOT EXISTS idx_albums_artist_name ON library_albums(artist, name)",
+            "CREATE INDEX IF NOT EXISTS idx_tracks_album_id ON library_tracks(album_id)",
+            "CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON library_tracks(bpm) WHERE bpm IS NOT NULL",
+            "CREATE INDEX IF NOT EXISTS idx_tracks_energy ON library_tracks(energy) WHERE energy IS NOT NULL",
+        ]:
+            try:
+                cur.execute(idx_sql)
+            except Exception:
+                pass
+
         # Genres
         cur.execute("""
             CREATE TABLE IF NOT EXISTS genres (

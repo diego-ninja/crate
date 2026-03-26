@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import {
   Select,
@@ -15,7 +15,7 @@ import { api } from "@/lib/api";
 import { encPath, formatSize, formatCompact } from "@/lib/utils";
 import { toast } from "sonner";
 import {
-  LayoutGrid, List, ChevronLeft, ChevronRight, Users,
+  LayoutGrid, List, Users, Loader2,
   Check, SquareCheck, X, RefreshCw, BrainCircuit, Trash2,
 } from "lucide-react";
 
@@ -69,10 +69,11 @@ export function Browse() {
   const format = searchParams.get("format") ?? "";
   const sort = searchParams.get("sort") ?? "name";
   const view = (searchParams.get("view") ?? "grid") as "grid" | "list";
-  const page = parseInt(searchParams.get("page") ?? "1", 10);
-
   const [filters, setFilters] = useState<BrowseFilters | null>(null);
   const [artists, setArtists] = useState<ArtistItem[]>([]);
+  const pageRef = useRef(1);
+  const hasMoreRef = useRef(true);
+  const sentinelRef = useRef<HTMLDivElement>(null);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
@@ -127,21 +128,10 @@ export function Browse() {
     toast.success(`Deleted ${selected.size} artists`);
     clearSelection();
     setShowBatchDelete(false);
-    // refetch
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (genre) params.set("genre", genre);
-    if (country) params.set("country", country);
-    if (decade) params.set("decade", decade);
-    if (format) params.set("format", format);
-    params.set("sort", sort);
-    params.set("page", String(page));
-    params.set("per_page", String(PER_PAGE));
-    params.set("view", view);
-    api<PaginatedResponse>(`/api/artists?${params.toString()}`)
-      .then((data) => { setArtists(data.items); setTotal(data.total); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    // refetch from page 1
+    pageRef.current = 1;
+    hasMoreRef.current = true;
+    fetchPage(1, true);
   }
 
   const setParam = useCallback(
@@ -158,16 +148,21 @@ export function Browse() {
   );
 
   const setView = (v: "grid" | "list") => setParam("view", v === "grid" ? "" : v);
-  const setPage = (p: number) => setParam("page", p > 1 ? String(p) : "");
 
   useEffect(() => {
     api<BrowseFilters>("/api/browse/filters").then(setFilters).catch(() => {});
   }, []);
 
+  // Reset and fetch page 1 when filters change
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
+    pageRef.current = 1;
+    hasMoreRef.current = true;
+    setArtists([]);
+    fetchPage(1, true);
+  }, [genre, country, decade, format, sort, view]);
 
+  const fetchPage = useCallback((page: number, reset = false) => {
+    setLoading(true);
     const params = new URLSearchParams();
     if (genre) params.set("genre", genre);
     if (country) params.set("country", country);
@@ -180,21 +175,31 @@ export function Browse() {
 
     api<PaginatedResponse>(`/api/artists?${params.toString()}`)
       .then((data) => {
-        if (cancelled) return;
-        setArtists(data.items);
+        setArtists((prev) => reset ? data.items : [...prev, ...data.items]);
         setTotal(data.total);
+        hasMoreRef.current = data.items.length >= PER_PAGE;
       })
       .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .finally(() => setLoading(false));
+  }, [genre, country, decade, format, sort, view]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [genre, country, decade, format, sort, page, view]);
+  // Infinite scroll: observe sentinel element
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
 
-  const totalPages = Math.ceil(total / PER_PAGE);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !loading && hasMoreRef.current) {
+          pageRef.current += 1;
+          fetchPage(pageRef.current);
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loading, fetchPage]);
 
   return (
     <div>
@@ -310,32 +315,13 @@ export function Browse() {
         </div>
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 mt-6 pb-4">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage(page - 1)}
-          >
-            <ChevronLeft size={16} />
-            Prev
-          </Button>
-          <span className="text-sm text-muted-foreground px-3">
-            Page {page} of {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage(page + 1)}
-          >
-            Next
-            <ChevronRight size={16} />
-          </Button>
-        </div>
-      )}
+      {/* Infinite scroll sentinel */}
+      <div ref={sentinelRef} className="h-10 flex items-center justify-center">
+        {loading && artists.length > 0 && <Loader2 className="h-5 w-5 animate-spin text-primary" />}
+        {!hasMoreRef.current && artists.length > 0 && (
+          <span className="text-xs text-muted-foreground">{total} artists</span>
+        )}
+      </div>
 
       {selected.size > 0 && (
         <div className="fixed bottom-14 left-0 right-0 md:left-[220px] z-40 bg-card/95 backdrop-blur-md border-t border-border px-4 py-3 flex items-center gap-3 animate-in slide-in-from-bottom">

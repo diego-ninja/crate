@@ -11,8 +11,8 @@ log = logging.getLogger(__name__)
 # ── L1: In-memory cache with TTL ──────────────────────────────────
 
 _mem_cache: dict[str, tuple[float, Any]] = {}  # key -> (expires_at, value)
-_MEM_TTL = 60  # seconds for L1
-_MEM_MAX_SIZE = 2000  # evict oldest when exceeded
+_MEM_TTL = 300  # seconds for L1
+_MEM_MAX_SIZE = 10000  # evict oldest when exceeded
 
 
 def _mem_get(key: str) -> Any | None:
