@@ -8,8 +8,8 @@ import { ResponsiveRadar } from "@nivo/radar";
 
 const NIVO_THEME = {
   axis: { ticks: { text: { fill: "#6b7280", fontSize: 11 } } },
-  grid: { line: { stroke: "#374151" } },
-  tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } },
+  grid: { line: { stroke: "var(--color-border)" } },
+  tooltip: { container: { background: "var(--color-card)", color: "var(--color-foreground)", borderRadius: "8px", fontSize: 12, border: "1px solid var(--color-border)" } },
   labels: { text: { fill: "#9ca3af", fontSize: 10 } },
 };
 
@@ -64,7 +64,7 @@ export function ArtistStats({ name }: { name: string }) {
               animate={true}
               motionConfig="gentle"
               tooltip={({ data: d }) => (
-                <div style={{ background: "#1f2937", color: "#f3f4f6", padding: "6px 10px", borderRadius: "6px", fontSize: 11, border: "1px solid #374151" }}>
+                <div style={{ background: "var(--color-card)", color: "var(--color-foreground)", padding: "6px 10px", borderRadius: "6px", fontSize: 11, border: "1px solid var(--color-border)" }}>
                   <strong>{String(d.album)}</strong> ({String(d.year)})<br />{String(d.tracks)} tracks
                 </div>
               )}

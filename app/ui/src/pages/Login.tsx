@@ -24,7 +24,7 @@ export function Login() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#2e3440] flex items-center justify-center">
+      <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
       </div>
     );
@@ -63,7 +63,7 @@ export function Login() {
   const hasOAuth = authConfig.google || authConfig.discogs;
 
   return (
-    <div className="min-h-screen bg-[#2e3440] flex items-center justify-center px-4">
+    <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="bg-card border border-border rounded-lg p-8 shadow-xl">
           <div className="text-center mb-8">

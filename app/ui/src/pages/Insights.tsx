@@ -36,8 +36,8 @@ interface InsightsData {
 const NIVO_THEME = {
   text: { fill: "#9ca3af" },
   axis: { ticks: { text: { fill: "#6b7280", fontSize: 11 } }, legend: { text: { fill: "#9ca3af" } } },
-  grid: { line: { stroke: "#374151", strokeWidth: 1 } },
-  tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } },
+  grid: { line: { stroke: "var(--color-border)", strokeWidth: 1 } },
+  tooltip: { container: { background: "var(--color-card)", color: "var(--color-foreground)", borderRadius: "8px", fontSize: 12, border: "1px solid var(--color-border)" } },
   labels: { text: { fill: "#f3f4f6", fontSize: 11 } },
   legends: { text: { fill: "#9ca3af", fontSize: 11 } },
 };
@@ -402,7 +402,7 @@ export function Insights() {
                   theme={NIVO_THEME}
                   animate={true}
                   tooltip={({ node }) => (
-                    <div style={{ background: "#1f2937", color: "#f3f4f6", padding: "6px 10px", borderRadius: "6px", fontSize: 11, border: "1px solid #374151" }}>
+                    <div style={{ background: "var(--color-card)", color: "var(--color-foreground)", padding: "6px 10px", borderRadius: "6px", fontSize: 11, border: "1px solid var(--color-border)" }}>
                       <strong>{String((node.data as Record<string, unknown>).title ?? "")}</strong><br />{String((node.data as Record<string, unknown>).artist ?? "")}
                     </div>
                   )}
@@ -430,7 +430,7 @@ export function Insights() {
                   theme={NIVO_THEME}
                   animate={true}
                   tooltip={({ node }) => (
-                    <div style={{ background: "#1f2937", color: "#f3f4f6", padding: "6px 10px", borderRadius: "6px", fontSize: 11, border: "1px solid #374151" }}>
+                    <div style={{ background: "var(--color-card)", color: "var(--color-foreground)", padding: "6px 10px", borderRadius: "6px", fontSize: 11, border: "1px solid var(--color-border)" }}>
                       <strong>{String((node.data as Record<string, unknown>).title ?? "")}</strong><br />{String((node.data as Record<string, unknown>).artist ?? "")}
                     </div>
                   )}

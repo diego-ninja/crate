@@ -135,13 +135,13 @@ export function AlbumHeader({
 
       {/* Gradient overlays */}
       <div className="absolute inset-0" style={{
-        background: "linear-gradient(to right, #2e3440 0%, rgba(46,52,64,0.85) 25%, rgba(46,52,64,0.4) 50%, transparent 75%)",
+        background: "linear-gradient(to right, var(--gradient-bg) 0%, var(--gradient-bg-85) 25%, var(--gradient-bg-40) 50%, transparent 75%)",
       }} />
       <div className="absolute inset-0" style={{
-        background: "linear-gradient(to top, #2e3440 0%, rgba(46,52,64,0.9) 15%, rgba(46,52,64,0.4) 40%, transparent 70%)",
+        background: "linear-gradient(to top, var(--gradient-bg) 0%, var(--gradient-bg-90) 15%, var(--gradient-bg-40) 40%, transparent 70%)",
       }} />
       <div className="absolute inset-0" style={{
-        background: "linear-gradient(to bottom, rgba(46,52,64,0.5) 0%, transparent 30%)",
+        background: "linear-gradient(to bottom, var(--gradient-bg-50) 0%, transparent 30%)",
       }} />
 
       {/* Content */}

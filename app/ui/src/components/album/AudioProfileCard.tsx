@@ -27,8 +27,8 @@ function dominantKey(tracks: AudioMuseTrack[]): string | null {
 
 const NIVO_THEME = {
   axis: { ticks: { text: { fill: "#6b7280", fontSize: 11 } } },
-  grid: { line: { stroke: "#374151" } },
-  tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } },
+  grid: { line: { stroke: "var(--color-border)" } },
+  tooltip: { container: { background: "var(--color-card)", color: "var(--color-foreground)", borderRadius: "8px", fontSize: 12, border: "1px solid var(--color-border)" } },
   labels: { text: { fill: "#9ca3af", fontSize: 10 } },
 };
 

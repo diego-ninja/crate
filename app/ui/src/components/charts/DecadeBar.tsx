@@ -25,7 +25,7 @@ export function DecadeBar({ data }: DecadeBarProps) {
         <XAxis dataKey="name" tick={{ fill: "#7b88a1", fontSize: 12 }} />
         <YAxis tick={{ fill: "#7b88a1", fontSize: 12 }} />
         <Tooltip
-          contentStyle={{ background: "#3b4252", border: "1px solid #4c566a", borderRadius: 8 }}
+          contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8 }}
         />
         <Bar dataKey="value" fill="#22c55e" radius={[4, 4, 0, 0]} />
       </BarChart>

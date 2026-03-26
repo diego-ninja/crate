@@ -133,7 +133,7 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
         </TooltipTrigger>
         <TooltipContent
           side="left"
-          className="bg-[#3b4252] border border-white/10 p-4 w-[280px] text-foreground"
+          className="bg-card border border-white/10 p-4 w-[280px] text-foreground"
         >
           <div className="text-[11px] font-semibold text-white/70 mb-2">Audio Profile</div>
           {hasRadar && (

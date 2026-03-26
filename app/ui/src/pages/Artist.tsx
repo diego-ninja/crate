@@ -370,15 +370,15 @@ export function Artist() {
         />
         {/* Left gradient — solid to transparent for text readability */}
         <div className="absolute inset-0" style={{
-          background: "linear-gradient(to right, #2e3440 0%, rgba(46,52,64,0.85) 25%, rgba(46,52,64,0.4) 50%, transparent 75%)",
+          background: "linear-gradient(to right, var(--gradient-bg) 0%, var(--gradient-bg-85) 25%, var(--gradient-bg-40) 50%, transparent 75%)",
         }} />
         {/* Bottom gradient — long smooth fade into page background */}
         <div className="absolute inset-0" style={{
-          background: "linear-gradient(to top, #2e3440 0%, rgba(46,52,64,0.9) 15%, rgba(46,52,64,0.4) 40%, transparent 70%)",
+          background: "linear-gradient(to top, var(--gradient-bg) 0%, var(--gradient-bg-90) 15%, var(--gradient-bg-40) 40%, transparent 70%)",
         }} />
         {/* Top vignette — subtle darkening */}
         <div className="absolute inset-0" style={{
-          background: "linear-gradient(to bottom, rgba(46,52,64,0.5) 0%, transparent 30%)",
+          background: "linear-gradient(to bottom, var(--gradient-bg-50) 0%, transparent 30%)",
         }} />
 
         {/* Background upload overlay — above gradients */}
@@ -596,7 +596,7 @@ export function Artist() {
       </div>
 
       {/* ═══ TABS ═══ */}
-      <div className="border-b border-border sticky top-0 bg-[#2e3440]/95 backdrop-blur-sm z-10 px-4 md:px-8">
+      <div className="border-b border-border sticky top-0 bg-background/95 backdrop-blur-sm z-10 px-4 md:px-8">
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 scrollbar-none" style={{ scrollbarWidth: "none" }}>
         <div className="flex gap-1 -mb-px min-w-max">
           {tabs.map((t) => (

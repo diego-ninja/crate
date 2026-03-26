@@ -42,7 +42,7 @@ export function FormatDonut({ data }: FormatDonutProps) {
           ))}
         </Pie>
         <Tooltip
-          contentStyle={{ background: "#3b4252", border: "1px solid #4c566a", borderRadius: 8 }}
+          contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 8 }}
           labelStyle={{ color: "#eceff4" }}
         />
       </PieChart>

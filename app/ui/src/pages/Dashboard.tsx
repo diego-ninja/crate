@@ -492,7 +492,7 @@ export function Dashboard() {
                   arcLinkLabelsTextColor="#9ca3af"
                   arcLinkLabelsThickness={2}
                   arcLabelsTextColor="#fff"
-                  theme={{ tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } } }}
+                  theme={{ tooltip: { container: { background: "var(--color-card)", color: "var(--color-foreground)", borderRadius: "8px", fontSize: 12, border: "1px solid var(--color-border)" } } }}
                 />
               ) : (
                 <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No data</div>
@@ -519,8 +519,8 @@ export function Dashboard() {
                   axisBottom={{ tickRotation: -45 }}
                   theme={{
                     axis: { ticks: { text: { fill: "#6b7280", fontSize: 11 } } },
-                    grid: { line: { stroke: "#374151" } },
-                    tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } },
+                    grid: { line: { stroke: "var(--color-border)" } },
+                    tooltip: { container: { background: "var(--color-card)", color: "var(--color-foreground)", borderRadius: "8px", fontSize: 12, border: "1px solid var(--color-border)" } },
                   }}
                   animate={true}
                   motionConfig="gentle"
@@ -555,8 +555,8 @@ export function Dashboard() {
                   labelTextColor="#fff"
                   theme={{
                     axis: { ticks: { text: { fill: "#9ca3af", fontSize: 11 } } },
-                    grid: { line: { stroke: "#374151" } },
-                    tooltip: { container: { background: "#1f2937", color: "#f3f4f6", borderRadius: "8px", fontSize: 12, border: "1px solid #374151" } },
+                    grid: { line: { stroke: "var(--color-border)" } },
+                    tooltip: { container: { background: "var(--color-card)", color: "var(--color-foreground)", borderRadius: "8px", fontSize: 12, border: "1px solid var(--color-border)" } },
                   }}
                   animate={true}
                   motionConfig="gentle"
