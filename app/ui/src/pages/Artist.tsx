@@ -1437,6 +1437,25 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
     })();
   }
 
+  // Strip tooltip default inline styles (d3 applies background/padding inline)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const observer = new MutationObserver(() => {
+      const tooltips = container.querySelectorAll<HTMLElement>("div[style*='background: rgba']");
+      tooltips.forEach((el) => {
+        el.style.background = "transparent";
+        el.style.padding = "0";
+        el.style.border = "none";
+        el.style.borderRadius = "0";
+        el.style.font = "inherit";
+        el.style.color = "inherit";
+      });
+    });
+    observer.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
+    return () => observer.disconnect();
+  }, []);
+
   // Configure d3 forces for better spacing
   useEffect(() => {
     const fg = fgRef.current;

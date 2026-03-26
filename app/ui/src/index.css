@@ -71,13 +71,19 @@ body {
 .equalizer-bar { height: 3px; animation: equalize 0.6s ease-in-out infinite; }
 
 /* Force graph tooltip — remove default black background */
-.force-graph-container .graph-tooltip,
-.tooltip-kap {
+.force-graph-container > div:last-child {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
   padding: 0 !important;
   border-radius: 0 !important;
+  color: inherit !important;
+  font: inherit !important;
+}
+.scene-tooltip {
+  background: transparent !important;
+  padding: 0 !important;
+  border: none !important;
 }
 
 /* Leaflet popup — transparent, no chrome */
