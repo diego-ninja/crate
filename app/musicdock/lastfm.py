@@ -66,7 +66,8 @@ def get_artist_info(artist_name: str) -> dict | None:
             break
 
     tags = [t["name"] for t in artist.get("tags", {}).get("tag", [])]
-    similar = [{"name": s["name"]} for s in artist.get("similar", {}).get("artist", [])[:15]]
+    # Get similar artists from dedicated endpoint (more results than artist.getinfo)
+    similar = _get_similar_artists(artist_name, limit=30)
     stats = artist.get("stats", {})
 
     result = {
@@ -81,6 +82,29 @@ def get_artist_info(artist_name: str) -> dict | None:
 
     set_cache(cache_key, result)
     return result
+
+
+def _get_similar_artists(artist_name: str, limit: int = 30) -> list[dict]:
+    """Get similar artists from Last.fm artist.getsimilar endpoint."""
+    key = _lastfm_key()
+    if not key:
+        return []
+    try:
+        resp = requests.get(LASTFM_BASE, params={
+            "method": "artist.getsimilar",
+            "artist": artist_name,
+            "api_key": key,
+            "format": "json",
+            "limit": limit,
+        }, timeout=10)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        artists = data.get("similarartists", {}).get("artist", [])
+        return [{"name": a["name"], "match": float(a.get("match", 0))} for a in artists[:limit]]
+    except Exception:
+        log.debug("Last.fm getsimilar failed for %s", artist_name)
+        return []
 
 
 def get_top_tracks(artist_name: str, limit: int = 20) -> list[dict] | None:

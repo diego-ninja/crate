@@ -5,7 +5,7 @@ import { ArtistStats } from "@/components/artist/ArtistStats";
 import { useNavidromeLink, useTopTracks, useArtistEnrichment } from "@/hooks/use-artist-data";
 import { api } from "@/lib/api";
 import { AlbumCard } from "@/components/album/AlbumCard";
-import { Network } from "@nivo/network";
+import ForceGraph2D from "react-force-graph-2d";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { MissingAlbumCard } from "@/components/album/MissingAlbumCard";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,6 @@ import {
   ListMusic,
   Trash2,
   Radio,
-  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -1065,7 +1064,6 @@ export function Artist() {
                     centerArtist={data.name}
                     similar={mergedSimilar.map((s) => s.name)}
                     onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
-                    onDownload={(name) => navigate(`/download?q=${encodeURIComponent(name)}`)}
                   />
                 </div>
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">
@@ -1094,7 +1092,6 @@ export function Artist() {
                   centerArtist={data.name}
                   similar={mergedSimilar.map((s) => s.name)}
                   onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
-                  onDownload={(name) => navigate(`/download?q=${encodeURIComponent(name)}`)}
                 />
               </div>
             )}
@@ -1272,27 +1269,9 @@ function PopularityBar({ value }: { value: number }) {
 interface NetworkNodeMeta { similar: string[]; popularity: number; listeners?: number; playcount?: number; genres?: string[] }
 const _networkEnrichCache = new Map<string, NetworkNodeMeta>();
 
-function NetworkNodeThumb({ name }: { name: string }) {
-  const [err, setErr] = useState(false);
-  if (err) {
-    return (
-      <div className="w-9 h-9 rounded-md bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center flex-shrink-0">
-        <span className="text-xs font-bold text-primary/60">{name.charAt(0).toUpperCase()}</span>
-      </div>
-    );
-  }
-  return (
-    <img
-      src={`/api/artist/${encPath(name)}/photo`}
-      alt=""
-      className="w-9 h-9 rounded-md object-cover bg-secondary flex-shrink-0"
-      onError={() => setErr(true)}
-    />
-  );
-}
-
-function ArtistNetworkGraph({ centerArtist, similar, onNodeClick, onDownload }: { centerArtist: string; similar: string[]; onNodeClick: (name: string) => void; onDownload?: (name: string) => void }) {
+function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArtist: string; similar: string[]; onNodeClick: (name: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fgRef = useRef<any>(undefined);
   const [width, setWidth] = useState(500);
   const [nodes, setNodes] = useState<{ id: string; depth: number }[]>([]);
   const [links, setLinks] = useState<{ source: string; target: string }[]>([]);
@@ -1346,14 +1325,36 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick, onDownload }: 
     setExpandedNodes(new Set([centerArtist]));
     setFocusNode(centerArtist);
 
-    // Prefetch all level-1 nodes with stagger to avoid API rate limits
+    // Prefetch all level-1 nodes, then build cross-links
     const allNames = [centerArtist, ...similar];
+    const nodeSet = new Set(similar.map((s) => s.toLowerCase()));
     let cancelled = false;
     (async () => {
       for (const n of allNames) {
         if (cancelled) break;
         await prefetchNode(n);
         await new Promise((r) => setTimeout(r, 200));
+      }
+      if (cancelled) return;
+
+      // Build cross-links: if artist A lists artist B as similar, and both are in the graph
+      const crossLinks: { source: string; target: string }[] = [];
+      const seen = new Set<string>();
+      for (const n of similar) {
+        const cached = _networkEnrichCache.get(n);
+        if (!cached?.similar) continue;
+        for (const s of cached.similar) {
+          if (nodeSet.has(s.toLowerCase()) && s.toLowerCase() !== n.toLowerCase()) {
+            const key = [n, s].sort().join("|");
+            if (!seen.has(key)) {
+              seen.add(key);
+              crossLinks.push({ source: n, target: s });
+            }
+          }
+        }
+      }
+      if (crossLinks.length > 0) {
+        setLinks((prev) => [...prev, ...crossLinks]);
       }
     })();
     return () => { cancelled = true; };
@@ -1409,101 +1410,68 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick, onDownload }: 
     })();
   }
 
+  // Configure d3 forces for better spacing
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3Force("charge")?.strength(-200).distanceMax(400);
+    fg.d3Force("link")?.distance(100);
+    fg.d3Force("center")?.strength(0.05);
+    fg.d3ReheatSimulation();
+  }, [nodes.length]);
+
   return (
-    <div ref={containerRef} style={{ width: "100%", height: 400 }}>
-      <Network
-        data={{ nodes, links }}
+    <div ref={containerRef} style={{ width: "100%", height: 500 }}>
+      <ForceGraph2D
+        ref={fgRef}
         width={width}
-        height={400}
-        margin={{ top: 20, right: 20, bottom: 20, left: 20 }}
-        repulsivity={Math.max(60, width / 5)}
-        iterations={130}
-        linkDistance={50}
-        centeringStrength={0.3}
-        nodeSize={(n: { id: string }) => {
-          const meta = nodeMeta.get(n.id);
+        height={500}
+        graphData={{ nodes, links }}
+        backgroundColor="transparent"
+        nodeRelSize={6}
+        nodeVal={(node: any) => {
+          const meta = nodeMeta.get(node.id);
           const pop = meta?.popularity ?? 0;
-          // Base size from popularity: 8px (0%) to 24px (100%)
-          const popSize = 8 + (pop / 100) * 16;
-          if (n.id === centerArtist) return Math.max(22, popSize);
-          if (n.id === focusNode) return Math.max(16, popSize);
-          return Math.max(8, popSize);
+          if (node.id === centerArtist) return Math.max(4, pop / 10);
+          return Math.max(1.5, pop / 15);
         }}
-        nodeColor={(n: { id: string }) => {
-          if (n.id === centerArtist) return "#06b6d4";
-          if (n.id === focusNode && focusNode !== centerArtist) return "#8b5cf6";
-          if (expandedNodes.has(n.id)) return "#22c55e";
-          return "#6b7280";
+        nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+          const meta = nodeMeta.get(node.id);
+          const pop = meta?.popularity ?? 0;
+          const size = node.id === centerArtist ? Math.max(8, pop / 8) : Math.max(4, pop / 12);
+          const x = node.x ?? 0;
+          const y = node.y ?? 0;
+
+          ctx.beginPath();
+          ctx.arc(x, y, size, 0, 2 * Math.PI);
+          ctx.fillStyle = node.id === centerArtist ? "#06b6d4"
+            : node.id === focusNode ? "#8b5cf6"
+            : expandedNodes.has(node.id) ? "#22c55e" : "#4b5563";
+          ctx.fill();
+          ctx.strokeStyle = "rgba(255,255,255,0.3)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+
+          const label = node.id;
+          const fontSize = Math.max(10, 12 / globalScale);
+          ctx.font = `${node.id === centerArtist ? "bold " : ""}${fontSize}px sans-serif`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "top";
+          ctx.fillStyle = "rgba(241,245,249,0.9)";
+          ctx.fillText(label, x, y + size + 2);
         }}
-        nodeBorderWidth={2}
-        nodeBorderColor={(n: { id: string }) => {
-          if (n.id === centerArtist) return "#0891b2";
-          if (expandedNodes.has(n.id)) return "#16a34a";
-          return "#4b5563";
-        }}
-        linkThickness={1}
-        linkColor="#6b7280"
-        linkBlendMode="normal"
-        animate={true}
-        motionConfig="gentle"
-        onClick={(node) => expandNode(String(node.id))}
-        nodeTooltip={({ node }) => {
-          const meta = nodeMeta.get(String(node.id));
-          const nodeName = String(node.id);
-          return (
-            <div className="bg-card text-foreground text-xs rounded-lg border border-border shadow-lg min-w-[200px] overflow-hidden">
-              <div className="flex items-start gap-2.5 p-2.5">
-                <NetworkNodeThumb name={nodeName} />
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium truncate">{nodeName}</div>
-                  {meta?.genres && meta.genres.length > 0 && (
-                    <div className="flex gap-1 mt-1 flex-wrap">
-                      {meta.genres.map((g) => (
-                        <span key={g} className="text-[9px] px-1.5 py-0 rounded-full bg-white/8 text-muted-foreground border border-white/10">
-                          {g.toLowerCase()}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {meta && meta.popularity > 0 && (
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${meta.popularity}%`, background: "linear-gradient(90deg, #6b7280, #22c55e)" }} />
-                      </div>
-                      <span className="text-[9px] text-muted-foreground">{meta.popularity}%</span>
-                    </div>
-                  )}
-                  {(meta?.listeners || meta?.playcount) && (
-                    <div className="flex gap-3 mt-1 text-[9px] text-muted-foreground">
-                      {meta.listeners ? <span>{formatCompact(meta.listeners)} listeners</span> : null}
-                      {meta.playcount ? <span>{formatCompact(meta.playcount)} scrobbles</span> : null}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center justify-between px-2.5 pb-2 -mt-0.5">
-                <span className="text-[9px] text-muted-foreground/60">
-                  {node.id === centerArtist ? "Current artist" : expandedNodes.has(String(node.id)) ? "Click to visit" : "Click to expand"}
-                </span>
-                {node.id !== centerArtist && (
-                  <button
-                    className="text-[9px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5"
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                      onDownload?.(nodeName);
-                    }}
-                  >
-                    <Download size={9} /> Tidal
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        }}
+        linkColor={() => "rgba(100,116,139,0.3)"}
+        linkWidth={1}
+        onNodeClick={(node: any) => expandNode(node.id)}
+        cooldownTicks={200}
+        d3AlphaDecay={0.01}
+        d3VelocityDecay={0.2}
+        warmupTicks={50}
+        enableZoomInteraction={true}
+        enablePanInteraction={true}
+        enableNodeDrag={true}
+        onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
       />
-      <div className="text-[10px] text-muted-foreground mt-1 text-center">
-        Click a node to expand its connections. Click again to visit the artist page.
-      </div>
     </div>
   );
 }
