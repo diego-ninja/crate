@@ -1276,6 +1276,7 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
   const [width, setWidth] = useState(500);
   const [nodes, setNodes] = useState<{ id: string; depth: number }[]>([]);
   const [libraryArtists, setLibraryArtists] = useState<Set<string>>(new Set());
+  const [artistsWithShows, setArtistsWithShows] = useState<Set<string>>(new Set());
   const [links, setLinks] = useState<{ source: string; target: string }[]>([]);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [focusNode, setFocusNode] = useState(centerArtist);
@@ -1315,9 +1316,12 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
 
   // Initialize with center artist + level 1, prefetch level 2 in background
   useEffect(() => {
-    // Fetch library artists for coloring
+    // Fetch library artists + artists with shows for graph coloring
     api<{ items: { name: string }[] }>("/api/artists?per_page=10000")
       .then((d) => setLibraryArtists(new Set(d.items.map((a) => a.name.toLowerCase()))))
+      .catch(() => {});
+    api<{ artists: string[] }>("/api/shows/artists-with-shows")
+      .then((d) => setArtistsWithShows(new Set(d.artists.map((a) => a.toLowerCase()))))
       .catch(() => {});
 
     const nodeMap = new Map<string, number>();
@@ -1485,6 +1489,7 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
           const meta = nodeMeta.get(node.id);
           const pop = meta?.popularity ?? 0;
           const inLibrary = libraryArtists.has(node.id.toLowerCase());
+          const hasShows = artistsWithShows.has(node.id.toLowerCase());
           const isCenter = node.id === centerArtist;
           const isFocus = node.id === focusNode;
 
@@ -1495,6 +1500,17 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
 
           const x = node.x ?? 0;
           const y = node.y ?? 0;
+
+          // Orange ring for artists with upcoming shows
+          if (hasShows) {
+            ctx.beginPath();
+            ctx.arc(x, y, size + 4, 0, 2 * Math.PI);
+            ctx.strokeStyle = "rgba(249,115,22,0.6)";
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([3, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
 
           // Glow for center node
           if (isCenter) {
@@ -1564,6 +1580,7 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
             </div>` : ""}
             <div style="padding:6px 12px;border-top:1px solid var(--color-border);font-size:10px;display:flex;justify-content:space-between;align-items:center">
               <span style="color:${inLib ? "#22c55e" : "var(--color-muted-foreground)"}">${inLib ? "✓ In library" : "Not in library"}</span>
+              ${artistsWithShows.has(node.id.toLowerCase()) ? `<span style="color:#f97316">● Shows</span>` : ""}
               <span style="color:var(--color-primary)">Click to expand</span>
             </div>
           </div>`;

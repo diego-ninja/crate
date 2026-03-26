@@ -516,6 +516,22 @@ def api_artist_shows(name: str, limit: int = Query(10), country: str = Query("")
     return {"events": events, "configured": True}
 
 
+@router.get("/api/shows/artists-with-shows")
+def api_artists_with_shows():
+    """Return names of artists that have cached upcoming shows (fast, no API calls)."""
+    from musicdock.ticketmaster import is_configured
+    if not is_configured():
+        return {"artists": []}
+    all_artists, _ = get_library_artists(per_page=10000)
+    with_shows = []
+    for artist in all_artists:
+        cache_key = f"ticketmaster:events:{artist['name'].lower()}:"
+        cached = get_cache(cache_key)
+        if cached and len(cached) > 0:
+            with_shows.append(artist["name"])
+    return {"artists": with_shows}
+
+
 @router.get("/api/shows/cached")
 def api_cached_shows(limit: int = Query(5)):
     """Get already-cached shows (fast, no Ticketmaster calls). For dashboard widgets."""
