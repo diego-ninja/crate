@@ -1386,7 +1386,8 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
     const nodeSimilar = cached.similar;
     setNodes((prev) => {
       const existing = new Set(prev.map((n) => n.id));
-      const toAdd = nodeSimilar.filter((s) => !existing.has(s)).slice(0, 8);
+      // Only add nodes that connect to at least one existing node (prevents islands)
+      const toAdd = nodeSimilar.filter((s) => !existing.has(s)).slice(0, 6);
       return [...prev, ...toAdd.map((id) => ({ id, depth: 2 }))];
     });
     setLinks((prev) => {
@@ -1414,9 +1415,9 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
   useEffect(() => {
     const fg = fgRef.current;
     if (!fg) return;
-    fg.d3Force("charge")?.strength(-200).distanceMax(400);
-    fg.d3Force("link")?.distance(100);
-    fg.d3Force("center")?.strength(0.05);
+    fg.d3Force("charge")?.strength(-150).distanceMax(250);
+    fg.d3Force("link")?.distance(80);
+    fg.d3Force("center")?.strength(0.1);
     fg.d3ReheatSimulation();
   }, [nodes.length]);
 
@@ -1470,7 +1471,10 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
         enableZoomInteraction={true}
         enablePanInteraction={true}
         enableNodeDrag={true}
-        onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
+        onEngineStop={() => {
+          // Only auto-fit on first render, not on every expansion
+          if (nodes.length <= similar.length + 1) fgRef.current?.zoomToFit(400, 60);
+        }}
       />
     </div>
   );
