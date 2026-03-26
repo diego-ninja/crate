@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from musicdock.config import load_config
-from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, set_cache, get_cache, list_tasks, get_task, get_setting, get_db_ctx, emit_task_event
+from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, create_task_dedup, set_cache, get_cache, list_tasks, get_task, get_setting, get_db_ctx, emit_task_event
 from musicdock.importer import ImportQueue
 from musicdock.scanner import LibraryScanner
 from musicdock.report import save_report
@@ -1454,7 +1454,7 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # 4. Queue process_new_content for each artist
     for artist_name in modified_artists:
         try:
-            create_task("process_new_content", {"artist": artist_name})
+            create_task_dedup("process_new_content", {"artist": artist_name})
         except Exception:
             pass
 
@@ -2669,7 +2669,7 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
 
     # Trigger process_new_content for the artist
     if artist and moved > 0:
-        create_task("process_new_content", {"artist": artist})
+        create_task_dedup("process_new_content", {"artist": artist})
         emit_task_event(task_id, "info", {"message": f"Processing new content for {artist}"})
 
     return {"artist": artist, "album": album, "source": "soulseek", "moved": moved, "completed": len(completed_files)}

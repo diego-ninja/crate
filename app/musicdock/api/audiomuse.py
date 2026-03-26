@@ -73,8 +73,8 @@ def analyze_album(artist: str, album: str):
 @router.post("/api/enrich/album/{artist}/{album}")
 def enrich_album(artist: str, album: str):
     """Full album re-enrichment: MBID lookup + cover art + popularity + audio analysis + bliss."""
-    from musicdock.db import create_task
-    task_id = create_task("process_new_content", {
+    from musicdock.db import create_task_dedup
+    task_id = create_task_dedup("process_new_content", {
         "artist": artist,
         "album_folder": album,
     })

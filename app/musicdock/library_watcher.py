@@ -121,8 +121,8 @@ class LibraryWatcher:
             # Queue enrichment for new content (new artist or new album)
             if is_new_file:
                 try:
-                    from musicdock.db import create_task
-                    create_task("process_new_content", {
+                    from musicdock.db import create_task_dedup
+                    create_task_dedup("process_new_content", {
                         "artist": canonical,
                         "album_folder": album_dir.name,
                     })

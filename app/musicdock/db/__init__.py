@@ -22,7 +22,7 @@ from musicdock.db.core import (
 
 # Tasks
 from musicdock.db.tasks import (
-    create_task, update_task, get_task, list_tasks, claim_next_task,
+    create_task, create_task_dedup, update_task, get_task, list_tasks, claim_next_task,
     save_scan_result, get_latest_scan,
 )
 

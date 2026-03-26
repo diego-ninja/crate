@@ -614,8 +614,8 @@ async def api_all_shows(country: str = Query(""), limit: int = Query(5)):
 @router.post("/api/artist/{name}/enrich")
 def api_artist_enrich(name: str):
     """Queue a full enrichment task for an artist (async via worker)."""
-    from musicdock.db import create_task as _create_task
-    task_id = _create_task("process_new_content", {"artist": name})
+    from musicdock.db import create_task_dedup
+    task_id = create_task_dedup("process_new_content", {"artist": name})
     return {"status": "queued", "task_id": task_id}
 
 

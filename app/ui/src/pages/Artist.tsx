@@ -1505,9 +1505,9 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
           if (hasShows) {
             ctx.beginPath();
             ctx.arc(x, y, size + 4, 0, 2 * Math.PI);
-            ctx.strokeStyle = "rgba(249,115,22,0.6)";
-            ctx.lineWidth = 2.5;
-            ctx.setLineDash([3, 3]);
+            ctx.strokeStyle = "rgba(249,115,22,0.5)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([2, 2]);
             ctx.stroke();
             ctx.setLineDash([]);
           }

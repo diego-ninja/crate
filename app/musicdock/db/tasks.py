@@ -16,6 +16,22 @@ def create_task(task_type: str, params: dict | None = None) -> str:
     return task_id
 
 
+def create_task_dedup(task_type: str, params: dict | None = None, dedup_key: str = "") -> str | None:
+    """Create a task only if no pending/running task of the same type+key exists.
+    Returns task_id if created, None if duplicate."""
+    p = params or {}
+    key = dedup_key or json.dumps(p, sort_keys=True)
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT id FROM tasks WHERE type = %s AND status IN ('pending', 'running') "
+            "AND params_json::text = %s LIMIT 1",
+            (task_type, json.dumps(p, sort_keys=True)),
+        )
+        if cur.fetchone():
+            return None  # duplicate
+    return create_task(task_type, p)
+
+
 def update_task(task_id: str, *, status: str | None = None, progress: str | None = None,
                 result: dict | None = None, error: str | None = None):
     now = datetime.now(timezone.utc).isoformat()
