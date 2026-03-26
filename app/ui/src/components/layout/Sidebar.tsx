@@ -20,14 +20,11 @@ import {
   Settings,
   CalendarDays,
   Sparkles,
-  Sun,
-  Moon,
 } from "lucide-react";
 import { cn, encPath } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
-import { useTheme } from "@/hooks/use-theme";
 import { Badge } from "@/components/ui/badge";
 
 interface SidebarProps {
@@ -75,7 +72,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const [stats, setStats] = useState<SidebarStats>({});
   const [navidrome, setNavidrome] = useState<NavidromeStatus | null>(null);
   const { user, isAdmin, logout } = useAuth();
-  const { theme, toggle: toggleTheme } = useTheme();
 
   const fetchStats = useCallback(async () => {
     try {
@@ -179,13 +175,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
               {user.role}
             </Badge>
-            <button
-              onClick={toggleTheme}
-              title={theme === "dark" ? "Light mode" : "Dark mode"}
-              className="hover:text-foreground transition-colors"
-            >
-              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-            </button>
             <button
               onClick={logout}
               title="Logout"

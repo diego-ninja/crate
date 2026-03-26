@@ -42,35 +42,6 @@
   color-scheme: dark;
 }
 
-/* ── Light theme override ── */
-.light {
-  --color-background: #fafafa;
-  --color-foreground: #0f172a;
-  --color-card: #ffffff;
-  --color-card-foreground: #0f172a;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #0f172a;
-  --color-primary: #0891b2;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #f1f5f9;
-  --color-secondary-foreground: #0f172a;
-  --color-muted: #f1f5f9;
-  --color-muted-foreground: #64748b;
-  --color-accent: #f1f5f9;
-  --color-accent-foreground: #0f172a;
-  --color-destructive: #ef4444;
-  --color-border: #e2e8f0;
-  --color-input: #f1f5f9;
-  --color-ring: #0891b2;
-  --gradient-bg: #fafafa;
-  --gradient-bg-85: rgba(250, 250, 250, 0.85);
-  --gradient-bg-90: rgba(250, 250, 250, 0.9);
-  --gradient-bg-40: rgba(250, 250, 250, 0.4);
-  --gradient-bg-50: rgba(250, 250, 250, 0.5);
-  --scrollbar-thumb: #cbd5e1;
-  --scrollbar-hover: #94a3b8;
-  color-scheme: light;
-}
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
