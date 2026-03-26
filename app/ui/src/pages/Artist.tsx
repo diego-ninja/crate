@@ -1272,8 +1272,10 @@ const _networkEnrichCache = new Map<string, NetworkNodeMeta>();
 function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArtist: string; similar: string[]; onNodeClick: (name: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(undefined);
+  const navigate = useNavigate();
   const [width, setWidth] = useState(500);
   const [nodes, setNodes] = useState<{ id: string; depth: number }[]>([]);
+  const [libraryArtists, setLibraryArtists] = useState<Set<string>>(new Set());
   const [links, setLinks] = useState<{ source: string; target: string }[]>([]);
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [focusNode, setFocusNode] = useState(centerArtist);
@@ -1313,6 +1315,11 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
 
   // Initialize with center artist + level 1, prefetch level 2 in background
   useEffect(() => {
+    // Fetch library artists for coloring
+    api<{ items: { name: string }[] }>("/api/artists?per_page=10000")
+      .then((d) => setLibraryArtists(new Set(d.items.map((a) => a.name.toLowerCase()))))
+      .catch(() => {});
+
     const nodeMap = new Map<string, number>();
     nodeMap.set(centerArtist, 0);
     const newLinks: { source: string; target: string }[] = [];
@@ -1384,18 +1391,37 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
     }
 
     const nodeSimilar = cached.similar;
-    setNodes((prev) => {
-      const existing = new Set(prev.map((n) => n.id));
-      // Only add nodes that connect to at least one existing node (prevents islands)
-      const toAdd = nodeSimilar.filter((s) => !existing.has(s)).slice(0, 6);
-      return [...prev, ...toAdd.map((id) => ({ id, depth: 2 }))];
+    // Only add nodes that will have at least 2 connections (source node + at least one cross-link)
+    // This prevents disconnected islands
+    const existingNames = new Set(nodes.map((n) => n.id));
+    const candidates = nodeSimilar.filter((s) => !existingNames.has(s));
+
+    // Score candidates by how many existing nodes they connect to
+    const scored = candidates.map((s) => {
+      const connectionsToExisting = nodeSimilar.includes(s) ? 1 : 0; // connected to expanded node
+      const crossConnections = [...existingNames].filter((existing) => {
+        const ec = _networkEnrichCache.get(existing);
+        return ec?.similar?.includes(s);
+      }).length;
+      return { id: s, score: connectionsToExisting + crossConnections };
     });
+
+    // Only add well-connected nodes (score >= 1), limit to 6
+    const toAdd = scored.filter((s) => s.score >= 1).sort((a, b) => b.score - a.score).slice(0, 6);
+
+    if (toAdd.length > 0) {
+      setNodes((prev) => [...prev, ...toAdd.map(({ id }) => ({ id, depth: 2 }))]);
+    }
+
+    // Add links from expanded node + cross-links
     setLinks((prev) => {
       const existingSet = new Set(prev.map((l) => `${l.source}->${l.target}`));
+      const addedSet = new Set(toAdd.map((t) => t.id));
+      const allRelevant = new Set([...existingNames, ...addedSet]);
       const newLinks = nodeSimilar
-        .slice(0, 8)
+        .filter((s) => allRelevant.has(s))
         .map((s) => ({ source: name, target: s }))
-        .filter((l) => !existingSet.has(`${l.source}->${l.target}`));
+        .filter((l) => !existingSet.has(`${l.source}->${l.target}`) && !existingSet.has(`${l.target}->${l.source}`));
       return [...prev, ...newLinks];
     });
     setExpandedNodes((prev) => new Set([...prev, name]));
@@ -1439,31 +1465,79 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
         nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const meta = nodeMeta.get(node.id);
           const pop = meta?.popularity ?? 0;
-          const size = node.id === centerArtist ? Math.max(8, pop / 8) : Math.max(4, pop / 12);
+          const inLibrary = libraryArtists.has(node.id.toLowerCase());
+          const isCenter = node.id === centerArtist;
+          const isFocus = node.id === focusNode;
+
+          // Size by popularity (bigger = more popular)
+          const baseSize = isCenter ? 10 : 4;
+          const popBonus = pop / 8;
+          const size = Math.max(baseSize, baseSize + popBonus);
+
           const x = node.x ?? 0;
           const y = node.y ?? 0;
 
+          // Glow for center node
+          if (isCenter) {
+            ctx.beginPath();
+            ctx.arc(x, y, size + 4, 0, 2 * Math.PI);
+            ctx.fillStyle = "rgba(6,182,212,0.15)";
+            ctx.fill();
+          }
+
+          // Main circle
           ctx.beginPath();
           ctx.arc(x, y, size, 0, 2 * Math.PI);
-          ctx.fillStyle = node.id === centerArtist ? "#06b6d4"
-            : node.id === focusNode ? "#8b5cf6"
-            : expandedNodes.has(node.id) ? "#22c55e" : "#4b5563";
+          ctx.fillStyle = isCenter ? "#06b6d4"
+            : isFocus ? "#8b5cf6"
+            : inLibrary ? "#22c55e"
+            : "#3f3f50";
           ctx.fill();
-          ctx.strokeStyle = "rgba(255,255,255,0.3)";
-          ctx.lineWidth = 1;
+
+          // Border
+          ctx.strokeStyle = isCenter ? "#0891b2"
+            : inLibrary ? "rgba(34,197,94,0.5)"
+            : "rgba(255,255,255,0.15)";
+          ctx.lineWidth = isCenter ? 2 : 1;
           ctx.stroke();
 
-          const label = node.id;
-          const fontSize = Math.max(10, 12 / globalScale);
-          ctx.font = `${node.id === centerArtist ? "bold " : ""}${fontSize}px sans-serif`;
+          // Label
+          const fontSize = Math.max(9, 11 / globalScale);
+          ctx.font = `${isCenter ? "bold " : ""}${fontSize}px -apple-system, sans-serif`;
           ctx.textAlign = "center";
           ctx.textBaseline = "top";
-          ctx.fillStyle = "rgba(241,245,249,0.9)";
-          ctx.fillText(label, x, y + size + 2);
+          ctx.fillStyle = inLibrary ? "rgba(241,245,249,0.95)" : "rgba(241,245,249,0.5)";
+          ctx.fillText(node.id, x, y + size + 3);
+
+          // "In library" dot indicator
+          if (inLibrary && !isCenter) {
+            ctx.beginPath();
+            ctx.arc(x + size - 1, y - size + 1, 2.5, 0, 2 * Math.PI);
+            ctx.fillStyle = "#22c55e";
+            ctx.fill();
+          }
         }}
         linkColor={() => "rgba(100,116,139,0.3)"}
         linkWidth={1}
+        nodeLabel={(node: any) => {
+          const meta = nodeMeta.get(node.id);
+          const inLib = libraryArtists.has(node.id.toLowerCase());
+          const genres = meta?.genres?.join(", ") || "";
+          const listeners = meta?.listeners ? `${Math.round(meta.listeners / 1000)}K listeners` : "";
+          return `<div style="background:#16161e;border:1px solid #252535;border-radius:8px;padding:8px 12px;font-size:12px;max-width:220px">
+            <div style="font-weight:600;margin-bottom:2px">${node.id}</div>
+            ${genres ? `<div style="color:#64748b;font-size:10px">${genres}</div>` : ""}
+            ${listeners ? `<div style="color:#64748b;font-size:10px;margin-top:2px">${listeners}</div>` : ""}
+            <div style="margin-top:4px;font-size:10px;color:${inLib ? "#22c55e" : "#64748b"}">${inLib ? "In your library" : "Not in library"}</div>
+            ${!inLib ? `<div style="font-size:10px;color:#06b6d4;margin-top:2px">Double-click to search</div>` : ""}
+          </div>`;
+        }}
         onNodeClick={(node: any) => expandNode(node.id)}
+        onNodeRightClick={(node: any) => {
+          const inLib = libraryArtists.has(node.id.toLowerCase());
+          if (inLib) navigate(`/artist/${encPath(node.id)}`);
+          else navigate(`/download?q=${encodeURIComponent(node.id)}`);
+        }}
         cooldownTicks={200}
         d3AlphaDecay={0.01}
         d3VelocityDecay={0.2}
