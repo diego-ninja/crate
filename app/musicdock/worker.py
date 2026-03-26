@@ -1367,8 +1367,8 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
 
         enriched += 1
         emit_task_event(task_id, "album_matched", {"message": f"Matched: {artist_name} / {clean_album} (score {best_score}%)", "artist": artist_name, "album": clean_album, "mbid": release_mbid, "score": best_score})
-        log.info("Enriched %s / %s (score=%d, mbid=%s, files=%d)",
-                 artist_name, clean_album, best_score, release_mbid, written_files)
+        log.info("Enriched %s / %s (score=%d, mbid=%s)",
+                 artist_name, clean_album, best_score, release_mbid)
         time.sleep(1)  # MB rate limit: 1 req/sec
 
     return {"enriched": enriched, "skipped": skipped, "failed": failed, "total": total}
