@@ -270,9 +270,14 @@ export function Insights() {
           <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Users size={14} /> Artist Popularity</CardTitle></CardHeader>
           <CardContent>
             <div className="h-[300px]">
-              {data.popularity.length > 0 ? (
-                <ResponsiveBar
-                  data={data.popularity}
+              {data.popularity.length > 0 ? (() => {
+                const maxPop = Math.max(...data.popularity.map(p => p.popularity || p.listeners || 0));
+                const normalized = data.popularity.map(p => ({
+                  ...p,
+                  popularity: maxPop > 0 ? Math.round(((p.popularity || p.listeners || 0) / maxPop) * 100) : 0,
+                }));
+                return <ResponsiveBar
+                  data={normalized}
                   keys={["popularity"]}
                   indexBy="artist"
                   layout="horizontal"
@@ -286,7 +291,7 @@ export function Insights() {
                   animate={true}
                   motionConfig="gentle"
                 />
-              ) : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No Spotify data</div>}
+              })() : <div className="flex items-center justify-center h-full text-muted-foreground text-sm">No popularity data</div>}
             </div>
           </CardContent>
         </Card>
