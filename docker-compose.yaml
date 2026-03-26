@@ -19,7 +19,7 @@ services:
       - "${TRAEFIK_HTTPS_PORT}:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ${DATA_DIR}/traefik/traefik.yml:/traefik.yml:ro
+      - ${DATA_DIR}/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ${DATA_DIR}/traefik/acme.json:/acme.json
       - ${DATA_DIR}/traefik/conf:/conf
       - ${DATA_DIR}/traefik/logs:/var/log/traefik
