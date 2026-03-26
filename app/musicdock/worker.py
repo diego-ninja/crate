@@ -1473,10 +1473,10 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict:
-    """Check MusicBrainz for new releases from library artists. Use Tidal for download URLs."""
+    """Check MusicBrainz for new releases. Compares against latest_release_date per artist."""
     from musicdock.db import (
         get_library_artists, get_db_ctx,
-        upsert_new_release, is_album_in_library, mark_release_downloading,
+        upsert_new_release, mark_release_downloading,
     )
     from musicdock.musicbrainz_ext import get_artist_releases as mb_get_releases
     from musicdock import tidal as tidal_mod
@@ -1504,108 +1504,92 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
                 "new_releases": new_count,
             }))
 
-        # Skip artists without MBID (can't reliably identify them)
         if not mbid:
             continue
 
         try:
-            # Get releases from MusicBrainz (by MBID — no ambiguity)
             mb_releases = mb_get_releases(mbid)
             if not mb_releases:
                 checked += 1
                 continue
 
-            # Find the most recent album year in our library
-            with get_db_ctx() as cur:
-                cur.execute("""
-                    SELECT MAX(
-                        CASE WHEN path ~ '/\\d{4}/' THEN
-                            SUBSTRING(path FROM '/(\\d{4})/')::int
-                        ELSE NULL END
-                    ) AS max_year
-                    FROM library_albums WHERE artist = %s
-                """, (name,))
-                row = cur.fetchone()
-                latest_year_in_lib = row["max_year"] if row and row["max_year"] else None
+            # The most recent release from MB (sorted desc by date)
+            latest_mb = mb_releases[0]
+            latest_mb_date = latest_mb.get("first_release_date", "")
+            if not latest_mb_date:
+                checked += 1
+                continue
 
-            for release in mb_releases:
-                title = release.get("title", "")
-                year_str = release.get("year", "")
-                if not title or not year_str:
-                    continue
+            # Compare against what we knew before
+            known_date = artist.get("latest_release_date") or ""
 
-                try:
-                    release_year = int(year_str)
-                except (ValueError, TypeError):
-                    continue
+            if not known_date:
+                # First run: just save the latest date, don't flag as new
+                with get_db_ctx() as cur:
+                    cur.execute("UPDATE library_artists SET latest_release_date = %s WHERE name = %s",
+                                (latest_mb_date, name))
+                checked += 1
+                continue
 
-                # Only releases AFTER the latest we have
-                if latest_year_in_lib and release_year <= latest_year_in_lib:
-                    continue
+            # Check if MB has anything newer than what we knew
+            if latest_mb_date > known_date:
+                # New release(s) detected — only the ones newer than known_date
+                for release in mb_releases:
+                    rd = release.get("first_release_date", "")
+                    if not rd or rd <= known_date:
+                        break  # sorted desc, so stop at first old one
+                    title = release.get("title", "")
+                    year = release.get("year", "")
+                    if not title:
+                        continue
 
-                # Skip if already in library
-                if is_album_in_library(name, title):
-                    continue
+                    # Find Tidal URL
+                    tidal_url = tidal_id = cover_url = quality = ""
+                    tracks = 0
+                    try:
+                        tr = tidal_mod.search(f"{name} {title}", content_type="albums", limit=3)
+                        for ta in tr.get("albums", []):
+                            if title.lower() in ta.get("title", "").lower() or ta.get("title", "").lower() in title.lower():
+                                tidal_url = ta.get("url", "")
+                                tidal_id = str(ta.get("id", ""))
+                                cover_url = ta.get("cover", "")
+                                tracks = ta.get("tracks", 0)
+                                quality = ta.get("quality", "")
+                                break
+                    except Exception:
+                        pass
 
-                # Try to find a Tidal URL for download
-                tidal_url = ""
-                tidal_id = ""
-                cover_url = ""
-                tracks = 0
-                quality = ""
-                try:
-                    tidal_result = tidal_mod.search(f"{name} {title}", content_type="albums", limit=3)
-                    for ta in tidal_result.get("albums", []):
-                        if ta.get("title", "").lower() == title.lower() or title.lower() in ta.get("title", "").lower():
-                            tidal_url = ta.get("url", "")
-                            tidal_id = str(ta.get("id", ""))
-                            cover_url = ta.get("cover", "")
-                            tracks = ta.get("tracks", 0)
-                            quality = ta.get("quality", "")
-                            break
-                except Exception:
-                    pass
+                    release_id = upsert_new_release(
+                        artist_name=name, album_title=title,
+                        tidal_id=tidal_id, tidal_url=tidal_url,
+                        cover_url=cover_url, year=year,
+                        tracks=tracks, quality=quality,
+                    )
+                    new_count += 1
+                    emit_task_event(task_id, "new_release_found", {
+                        "message": f"New: {name} - {title} ({year})",
+                        "artist": name, "album": title,
+                    })
 
-                release_id = upsert_new_release(
-                    artist_name=name,
-                    album_title=title,
-                    tidal_id=tidal_id,
-                    tidal_url=tidal_url,
-                    cover_url=cover_url,
-                    year=year_str,
-                    tracks=tracks,
-                    quality=quality,
-                )
-                new_count += 1
-                emit_task_event(task_id, "new_release_found", {
-                    "message": f"New: {name} - {title} ({year_str})",
-                    "artist": name, "album": title,
-                })
+                    # Auto-download (max 1 per artist per scan)
+                    if auto_download and tidal_url:
+                        mark_release_downloading(release_id)
+                        create_task("tidal_download", {
+                            "url": tidal_url, "artist": name, "album": title,
+                            "quality": get_setting("tidal_quality", "max"),
+                            "new_release_id": release_id,
+                        })
+                        break  # only auto-download the newest one
 
-                # Note: auto-download is handled separately after detection completes
-                # to avoid creating thousands of tasks during a full library scan
+                # Update known date
+                with get_db_ctx() as cur:
+                    cur.execute("UPDATE library_artists SET latest_release_date = %s WHERE name = %s",
+                                (latest_mb_date, name))
 
             checked += 1
-            time.sleep(1)  # MB rate limit: 1 req/sec
+            time.sleep(1)  # MB rate limit
         except Exception:
             log.debug("New release check failed for %s", name)
-
-    # Auto-download phase: queue up to 10 most recent detected releases
-    if auto_download and new_count > 0:
-        from musicdock.db import get_new_releases
-        detected = get_new_releases(status="detected", limit=10)
-        auto_queued = 0
-        for rel in detected:
-            if rel.get("tidal_url") and auto_queued < 10:
-                mark_release_downloading(rel["id"])
-                create_task("tidal_download", {
-                    "url": rel["tidal_url"],
-                    "artist": rel["artist_name"],
-                    "album": rel["album_title"],
-                    "quality": get_setting("tidal_quality", "max"),
-                    "new_release_id": rel["id"],
-                })
-                auto_queued += 1
 
     return {"checked": checked, "new_releases": new_count}
 

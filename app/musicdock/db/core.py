@@ -302,6 +302,7 @@ def init_db():
             ("discogs_id", "TEXT"), ("spotify_followers", "INTEGER"),
             ("lastfm_playcount", "INTEGER"),
             ("discogs_profile", "TEXT"), ("discogs_members_json", "JSONB"),
+            ("latest_release_date", "TEXT"),
         ]:
             cur.execute(f"""
                 DO $$ BEGIN
