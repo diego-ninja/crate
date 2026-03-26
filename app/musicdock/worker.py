@@ -1582,21 +1582,30 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
                     "artist": name, "album": title,
                 })
 
-                # Auto-download if enabled and Tidal URL available
-                if auto_download and tidal_url:
-                    mark_release_downloading(release_id)
-                    create_task("tidal_download", {
-                        "url": tidal_url,
-                        "artist": name,
-                        "album": title,
-                        "quality": get_setting("tidal_quality", "max"),
-                        "new_release_id": release_id,
-                    })
+                # Note: auto-download is handled separately after detection completes
+                # to avoid creating thousands of tasks during a full library scan
 
             checked += 1
             time.sleep(1)  # MB rate limit: 1 req/sec
         except Exception:
             log.debug("New release check failed for %s", name)
+
+    # Auto-download phase: queue up to 10 most recent detected releases
+    if auto_download and new_count > 0:
+        from musicdock.db import get_new_releases
+        detected = get_new_releases(status="detected", limit=10)
+        auto_queued = 0
+        for rel in detected:
+            if rel.get("tidal_url") and auto_queued < 10:
+                mark_release_downloading(rel["id"])
+                create_task("tidal_download", {
+                    "url": rel["tidal_url"],
+                    "artist": rel["artist_name"],
+                    "album": rel["album_title"],
+                    "quality": get_setting("tidal_quality", "max"),
+                    "new_release_id": rel["id"],
+                })
+                auto_queued += 1
 
     return {"checked": checked, "new_releases": new_count}
 
