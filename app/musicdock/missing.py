@@ -15,20 +15,33 @@ musicbrainzngs.set_useragent("musicdock-librarian", "0.1", "https://github.com/m
 def find_missing_albums(artist_dir: Path, extensions: set[str]) -> dict:
     """Compare local albums with MusicBrainz discography for an artist."""
     local_albums = []
-    for album_dir in sorted(artist_dir.iterdir()):
-        if not album_dir.is_dir() or album_dir.name.startswith("."):
+    for sub in sorted(artist_dir.iterdir()):
+        if not sub.is_dir() or sub.name.startswith("."):
             continue
-        tracks = get_audio_files(album_dir, extensions)
-        if not tracks:
-            continue
-
-        tags = read_tags(tracks[0])
-        local_albums.append({
-            "name": album_dir.name,
-            "album_tag": tags.get("album", ""),
-            "mbid": tags.get("musicbrainz_albumid"),
-            "track_count": len(tracks),
-        })
+        # Check if this is an album dir (has audio) or a year dir (has subdirs)
+        tracks = get_audio_files(sub, extensions)
+        if tracks:
+            tags = read_tags(tracks[0])
+            local_albums.append({
+                "name": sub.name,
+                "album_tag": tags.get("album", ""),
+                "mbid": tags.get("musicbrainz_albumid"),
+                "track_count": len(tracks),
+            })
+        else:
+            # Year subdirectory — check album dirs inside
+            for album_dir in sorted(sub.iterdir()):
+                if not album_dir.is_dir() or album_dir.name.startswith("."):
+                    continue
+                tracks = get_audio_files(album_dir, extensions)
+                if tracks:
+                    tags = read_tags(tracks[0])
+                    local_albums.append({
+                        "name": album_dir.name,
+                        "album_tag": tags.get("album", ""),
+                        "mbid": tags.get("musicbrainz_albumid"),
+                        "track_count": len(tracks),
+                    })
 
     if not local_albums:
         return {"artist": artist_dir.name, "local": [], "missing": [], "error": "No local albums"}

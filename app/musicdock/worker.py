@@ -1394,6 +1394,23 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
     if download_id:
         update_tidal_download(download_id, status="downloading", task_id=task_id)
 
+    try:
+        return _tidal_download_inner(task_id, params, config, url, quality, download_id, lib)
+    except Exception as e:
+        # Ensure tidal_downloads never stays stuck in processing/downloading
+        if download_id:
+            try:
+                update_tidal_download(download_id, status="failed", error=str(e)[:200])
+            except Exception:
+                pass
+        raise
+
+
+def _tidal_download_inner(task_id, params, config, url, quality, download_id, lib):
+    from musicdock.tidal import download, move_to_library
+    from musicdock.library_sync import LibrarySync
+    from musicdock.db import update_tidal_download
+
     # 1. Download via tiddl
     artist_name = params.get("artist", "")
     album_name = params.get("album", "")

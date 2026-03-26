@@ -16,6 +16,7 @@ class DownloadRequest(BaseModel):
     url: str
     quality: str = "max"
     source: str = "search"
+    title: str = ""
 
 
 class BatchDownloadRequest(BaseModel):
@@ -94,11 +95,13 @@ def tidal_download(request: Request, body: DownloadRequest):
     # Extract tidal_id from URL
     tidal_id = body.url.strip().rstrip("/").split("/")[-1]
 
+    display_title = body.title or body.url.strip()
+
     dl_id = add_tidal_download(
         tidal_url=body.url.strip(),
         tidal_id=tidal_id,
         content_type="album",
-        title=body.url,
+        title=display_title,
         quality=body.quality,
         status="queued",
         source=body.source,
@@ -108,6 +111,8 @@ def tidal_download(request: Request, body: DownloadRequest):
         "url": body.url.strip(),
         "quality": body.quality,
         "download_id": dl_id,
+        "artist": display_title.split(" - ")[0] if " - " in display_title else "",
+        "album": display_title.split(" - ", 1)[1] if " - " in display_title else display_title,
     })
     update_tidal_download(dl_id, task_id=task_id)
     return {"task_id": task_id, "download_id": dl_id}

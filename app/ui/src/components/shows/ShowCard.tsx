@@ -26,6 +26,49 @@ export interface ShowEvent {
   longitude?: string;
   artist_name?: string;
   artist_listeners?: number;
+  artist_genres?: string[];
+}
+
+const GENRE_COLORS: Record<string, string> = {
+  "metal": "#1f2937",
+  "heavy metal": "#1f2937",
+  "death metal": "#1f2937",
+  "black metal": "#1f2937",
+  "doom metal": "#374151",
+  "punk": "#dc2626",
+  "hardcore": "#dc2626",
+  "hardcore punk": "#dc2626",
+  "post-hardcore": "#ea580c",
+  "grindcore": "#991b1b",
+  "rock": "#2563eb",
+  "alternative rock": "#3b82f6",
+  "indie rock": "#6366f1",
+  "grunge": "#4b5563",
+  "post-punk": "#7c3aed",
+  "shoegaze": "#a78bfa",
+  "electronic": "#06b6d4",
+  "ambient": "#0e7490",
+  "noise": "#78716c",
+  "experimental": "#a855f7",
+  "math rock": "#14b8a6",
+  "emo": "#f43f5e",
+  "screamo": "#e11d48",
+  "hip hop": "#eab308",
+  "jazz": "#f59e0b",
+  "folk": "#65a30d",
+};
+
+export function getGenreColor(genres?: string[]): string {
+  if (!genres || genres.length === 0) return "#06b6d4"; // default cyan
+  for (const g of genres) {
+    const lower = g.toLowerCase();
+    if (GENRE_COLORS[lower]) return GENRE_COLORS[lower];
+    // partial match
+    for (const [key, color] of Object.entries(GENRE_COLORS)) {
+      if (lower.includes(key) || key.includes(lower)) return color;
+    }
+  }
+  return "#06b6d4";
 }
 
 /** Compact inline trigger for calendar cells */

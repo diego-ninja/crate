@@ -181,7 +181,7 @@ export function DownloadPage() {
   async function startDownload(url: string, title: string, source = "search") {
     setActiveDownloads((prev) => new Set(prev).add(url));
     try {
-      await api("/api/tidal/download", "POST", { url, quality, source });
+      await api("/api/tidal/download", "POST", { url, quality, source, title });
       toast.success(`Queued: ${title}`);
       refetchQueue();
     } catch {

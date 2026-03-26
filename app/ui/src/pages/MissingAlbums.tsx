@@ -51,8 +51,8 @@ export function MissingAlbums() {
     }
     debounceRef.current = setTimeout(async () => {
       try {
-        const results = await api<ArtistSuggestion[]>(`/api/artists?q=${encPath(q)}`);
-        if (Array.isArray(results)) setSuggestions(results.slice(0, 8));
+        const results = await api<{ items: ArtistSuggestion[] }>(`/api/artists?q=${encPath(q)}&per_page=8`);
+        if (results.items) setSuggestions(results.items.slice(0, 8));
       } catch {
         setSuggestions([]);
       }

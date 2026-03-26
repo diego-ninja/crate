@@ -102,11 +102,19 @@ def get_artist_releases(mbid: str) -> list[dict]:
     try:
         all_releases = []
         offset = 0
-        while True:
-            result = musicbrainzngs.browse_release_groups(
-                artist=mbid, release_type=["album", "ep"],
-                limit=100, offset=offset,
-            )
+        max_pages = 5  # safety limit
+        page = 0
+        while page < max_pages:
+            page += 1
+            try:
+                result = musicbrainzngs.browse_release_groups(
+                    artist=mbid, release_type=["album", "ep"],
+                    limit=100, offset=offset,
+                )
+            except musicbrainzngs.ResponseError:
+                log.debug("MB 404/error for MBID %s, skipping", mbid)
+                set_cache(cache_key, [], ttl=86400)  # cache empty for 24h
+                return []
             groups = result.get("release-group-list", [])
             if not groups:
                 break

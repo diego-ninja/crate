@@ -67,26 +67,33 @@ def search_events(artist_name: str, country_code: str = "", size: int = 10) -> l
 
         events = []
         for e in raw_events:
-            # Filter: only include events where this artist is in the attractions
+            # Strict filter: artist must be explicitly listed in attractions
             attractions = e.get("_embedded", {}).get("attractions", [])
+            if not attractions:
+                continue  # skip events without listed artists (tributes, DJ sets, etc.)
             artist_match = any(
                 a.get("name", "").lower() == artist_name.lower()
                 for a in attractions
             )
-            if not artist_match and attractions:
-                # Fuzzy: check if artist name is contained
-                artist_match = any(
-                    artist_name.lower() in a.get("name", "").lower()
-                    or a.get("name", "").lower() in artist_name.lower()
-                    for a in attractions
-                )
-
-            if not artist_match and attractions:
+            if not artist_match:
                 continue
 
             venue_data = (e.get("_embedded", {}).get("venues") or [{}])[0]
             dates = e.get("dates", {})
             start = dates.get("start", {})
+
+            # Validate coordinates
+            lat = venue_data.get("location", {}).get("latitude")
+            lon = venue_data.get("location", {}).get("longitude")
+            try:
+                lat_f = float(lat) if lat else None
+                lon_f = float(lon) if lon else None
+                if lat_f is not None and (lat_f < -90 or lat_f > 90):
+                    lat = lon = None
+                if lon_f is not None and (lon_f < -180 or lon_f > 180):
+                    lat = lon = None
+            except (ValueError, TypeError):
+                lat = lon = None
 
             event = {
                 "id": e.get("id", ""),
@@ -99,8 +106,8 @@ def search_events(artist_name: str, country_code: str = "", size: int = 10) -> l
                 "region": venue_data.get("state", {}).get("name", ""),
                 "country": venue_data.get("country", {}).get("name", ""),
                 "country_code": venue_data.get("country", {}).get("countryCode", ""),
-                "latitude": venue_data.get("location", {}).get("latitude"),
-                "longitude": venue_data.get("location", {}).get("longitude"),
+                "latitude": lat,
+                "longitude": lon,
                 "url": e.get("url", ""),
                 "image": _best_image(e.get("images", [])),
                 "price_range": _price_range(e.get("priceRanges", [])),

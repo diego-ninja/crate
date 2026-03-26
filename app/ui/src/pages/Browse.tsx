@@ -161,8 +161,11 @@ export function Browse() {
     fetchPage(1, true);
   }, [genre, country, decade, format, sort, view]);
 
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const fetchPage = useCallback((page: number, reset = false) => {
-    setLoading(true);
+    if (reset) setLoading(true);
+    else setLoadingMore(true);
     const params = new URLSearchParams();
     if (genre) params.set("genre", genre);
     if (country) params.set("country", country);
@@ -180,7 +183,7 @@ export function Browse() {
         hasMoreRef.current = data.items.length >= PER_PAGE;
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setLoadingMore(false); });
   }, [genre, country, decade, format, sort, view]);
 
   // Infinite scroll: observe sentinel element
@@ -190,7 +193,7 @@ export function Browse() {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting && !loading && hasMoreRef.current) {
+        if (entries[0]?.isIntersecting && !loading && !loadingMore && hasMoreRef.current) {
           pageRef.current += 1;
           fetchPage(pageRef.current);
         }
@@ -199,7 +202,7 @@ export function Browse() {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [loading, fetchPage]);
+  }, [loading, loadingMore, fetchPage]);
 
   return (
     <div>
@@ -317,7 +320,7 @@ export function Browse() {
 
       {/* Infinite scroll sentinel */}
       <div ref={sentinelRef} className="h-10 flex items-center justify-center">
-        {loading && artists.length > 0 && <Loader2 className="h-5 w-5 animate-spin text-primary" />}
+        {loadingMore && <Loader2 className="h-5 w-5 animate-spin text-primary" />}
         {!hasMoreRef.current && artists.length > 0 && (
           <span className="text-xs text-muted-foreground">{total} artists</span>
         )}

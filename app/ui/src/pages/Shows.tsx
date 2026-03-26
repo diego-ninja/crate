@@ -3,8 +3,8 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Button } from "@/components/ui/button";
-import { ShowCard, type ShowEvent } from "@/components/shows/ShowCard";
-import { Loader2, MapPin, Calendar as CalendarIcon, List, ChevronLeft, ChevronRight } from "lucide-react";
+import { ShowCard, type ShowEvent, getGenreColor } from "@/components/shows/ShowCard";
+import { Loader2, MapPin, Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 
 // Fix Leaflet default marker icon
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -23,6 +23,8 @@ export function Shows() {
   const [viewMode, setViewMode] = useState<ViewMode>("map");
   const [selectedShow, setSelectedShow] = useState<ShowEvent | null>(null);
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
+  const [genreFilter, setGenreFilter] = useState<string>("");
+  const [showFilters, setShowFilters] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return { year: now.getFullYear(), month: now.getMonth() };
@@ -92,10 +94,29 @@ export function Shows() {
     return map;
   }, [events]);
 
+  // Apply genre filter
+  const filteredEvents = useMemo(() => {
+    if (!genreFilter) return events;
+    return events.filter((e) =>
+      e.artist_genres?.some((g) => g.toLowerCase().includes(genreFilter.toLowerCase()))
+    );
+  }, [events, genreFilter]);
+
   const mappableEvents = useMemo(
-    () => events.filter((e) => e.latitude && e.longitude),
-    [events],
+    () => filteredEvents.filter((e) => e.latitude && e.longitude),
+    [filteredEvents],
   );
+
+  // Available genres from events
+  const availableGenres = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const e of events) {
+      for (const g of e.artist_genres || []) {
+        counts[g] = (counts[g] || 0) + 1;
+      }
+    }
+    return Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 20);
+  }, [events]);
 
   const monthEvents = useMemo(() => {
     const { year, month } = currentMonth;
@@ -123,13 +144,21 @@ export function Shows() {
         {loading && (
           <span className={`text-xs flex items-center gap-1.5 px-2 py-1 rounded ${isMap ? "bg-card/90 backdrop-blur" : ""} text-muted-foreground`}>
             <Loader2 size={12} className="animate-spin" />
-            Scanning... {events.length} shows
+            {filteredEvents.length} shows
           </span>
         )}
-        {done && events.length > 0 && (
+        {done && filteredEvents.length > 0 && (
           <span className={`text-xs px-2 py-1 rounded ${isMap ? "bg-card/90 backdrop-blur" : ""} text-muted-foreground`}>
-            {events.length} shows
+            {filteredEvents.length} shows
           </span>
+        )}
+        {isMap && (
+          <button
+            className={`p-1.5 rounded ${isMap ? "bg-card/90 backdrop-blur" : ""} ${showFilters ? "text-primary" : "text-muted-foreground"} hover:text-foreground`}
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter size={14} />
+          </button>
         )}
         <div className={`flex border rounded-lg overflow-hidden ${isMap ? "border-border/50 bg-card/90 backdrop-blur" : "border-border"}`}>
           {(["map", "calendar", "list"] as ViewMode[]).map((m) => (
@@ -162,6 +191,27 @@ export function Shows() {
         <div className="fixed inset-0 md:left-[220px] z-10">
           <div className="relative w-full h-full">
             {controls}
+            {/* Genre filter panel */}
+            {showFilters && availableGenres.length > 0 && (
+              <div className="absolute top-14 right-4 z-[1000] bg-card/95 backdrop-blur rounded-lg border border-border p-3 w-[200px] max-h-[300px] overflow-y-auto">
+                <div className="text-xs font-medium mb-2">Filter by genre</div>
+                <button
+                  className={`block w-full text-left text-xs px-2 py-1 rounded mb-1 ${!genreFilter ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                  onClick={() => setGenreFilter("")}
+                >All genres</button>
+                {availableGenres.map(([genre, count]) => (
+                  <button
+                    key={genre}
+                    className={`flex items-center gap-2 w-full text-left text-xs px-2 py-1 rounded ${genreFilter === genre ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => setGenreFilter(genreFilter === genre ? "" : genre)}
+                  >
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getGenreColor([genre]) }} />
+                    <span className="flex-1 truncate">{genre}</span>
+                    <span className="text-[10px]">{count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {userLocation && (
               <MapContainer
                 center={userLocation}
@@ -213,7 +263,7 @@ export function Shows() {
         <div>
           {controls}
           <div className="space-y-2">
-            {events.map((e, i) => (
+            {filteredEvents.map((e, i) => (
               <ShowListItem key={e.id || i} show={e} onClick={() => setSelectedShow(e)} />
             ))}
           </div>
@@ -251,16 +301,32 @@ function InvalidateSize() {
   return null;
 }
 
+function coloredIcon(color: string) {
+  return L.divIcon({
+    className: "",
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid rgba(255,255,255,0.8);box-shadow:0 1px 4px rgba(0,0,0,0.4)"></div>`,
+  });
+}
+
 function LiveMarkers({ events }: { events: ShowEvent[] }) {
   return (
     <>
-      {events.map((e, i) => (
-        <Marker key={e.id || i} position={[parseFloat(e.latitude!), parseFloat(e.longitude!)]}>
-          <Popup maxWidth={360} minWidth={340}>
-            <ShowCard show={e} />
-          </Popup>
-        </Marker>
-      ))}
+      {events.map((e, i) => {
+        const color = getGenreColor(e.artist_genres);
+        return (
+          <Marker
+            key={e.id || i}
+            position={[parseFloat(e.latitude!), parseFloat(e.longitude!)]}
+            icon={coloredIcon(color)}
+          >
+            <Popup maxWidth={360} minWidth={340}>
+              <ShowCard show={e} />
+            </Popup>
+          </Marker>
+        );
+      })}
     </>
   );
 }

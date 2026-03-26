@@ -529,9 +529,20 @@ def api_cached_shows(limit: int = Query(5)):
         cache_key = f"ticketmaster:events:{artist['name'].lower()}:"
         cached = get_cache(cache_key)
         if cached:
+            tags = artist.get("tags_json")
+            genres = []
+            if isinstance(tags, list):
+                genres = [t.lower() for t in tags[:3]]
+            elif isinstance(tags, str):
+                try:
+                    import json as _j
+                    genres = [t.lower() for t in _j.loads(tags)[:3]]
+                except Exception:
+                    pass
             for e in cached:
                 e["artist_name"] = artist["name"]
                 e["artist_listeners"] = artist.get("listeners") or 0
+                e["artist_genres"] = genres
             all_events.extend(cached)
     all_events.sort(key=lambda e: e.get("date", ""))
     return {"events": all_events[:limit]}
@@ -559,9 +570,21 @@ async def api_all_shows(country: str = Query(""), limit: int = Query(5)):
                 events = await loop.run_in_executor(
                     None, lambda n=name: get_upcoming_shows(n, country_code=country, limit=limit)
                 )
+                # Parse artist genres from tags_json
+                tags = artist.get("tags_json")
+                genres = []
+                if isinstance(tags, list):
+                    genres = [t.lower() for t in tags[:3]]
+                elif isinstance(tags, str):
+                    try:
+                        genres = [t.lower() for t in _json.loads(tags)[:3]]
+                    except Exception:
+                        pass
+
                 for e in events:
                     e["artist_name"] = name
                     e["artist_listeners"] = artist.get("listeners") or 0
+                    e["artist_genres"] = genres
                     yield f"data: {_json.dumps(e)}\n\n"
             except Exception:
                 pass
