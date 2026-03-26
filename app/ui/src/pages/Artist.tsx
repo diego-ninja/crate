@@ -1522,14 +1522,31 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
         nodeLabel={(node: any) => {
           const meta = nodeMeta.get(node.id);
           const inLib = libraryArtists.has(node.id.toLowerCase());
-          const genres = meta?.genres?.join(", ") || "";
-          const listeners = meta?.listeners ? `${Math.round(meta.listeners / 1000)}K listeners` : "";
-          return `<div style="background:#16161e;border:1px solid #252535;border-radius:8px;padding:8px 12px;font-size:12px;max-width:220px">
-            <div style="font-weight:600;margin-bottom:2px">${node.id}</div>
-            ${genres ? `<div style="color:#64748b;font-size:10px">${genres}</div>` : ""}
-            ${listeners ? `<div style="color:#64748b;font-size:10px;margin-top:2px">${listeners}</div>` : ""}
-            <div style="margin-top:4px;font-size:10px;color:${inLib ? "#22c55e" : "#64748b"}">${inLib ? "In your library" : "Not in library"}</div>
-            ${!inLib ? `<div style="font-size:10px;color:#06b6d4;margin-top:2px">Double-click to search</div>` : ""}
+          const genres = meta?.genres?.join(" · ") || "";
+          const pop = meta?.popularity ?? 0;
+          const listeners = meta?.listeners ? `${Math.round(meta.listeners / 1000)}K` : "";
+          const photoUrl = `/api/artist/${encodeURIComponent(node.id)}/photo`;
+          return `<div style="background:var(--color-card);border:1px solid var(--color-border);border-radius:10px;padding:0;font-size:12px;min-width:200px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
+            <div style="display:flex;align-items:center;gap:8px;padding:10px 12px">
+              <img src="${photoUrl}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;background:#1c1c28" onerror="this.style.display='none'" />
+              <div style="min-width:0;flex:1">
+                <div style="font-weight:600;color:var(--color-foreground)">${node.id}</div>
+                ${genres ? `<div style="color:var(--color-muted-foreground);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${genres}</div>` : ""}
+              </div>
+            </div>
+            ${pop > 0 ? `<div style="padding:0 12px 8px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;height:5px;background:#1c1c28;border-radius:3px;overflow:hidden">
+                  <div style="height:100%;width:${pop}%;border-radius:3px;background:linear-gradient(90deg,#4b5563,#22c55e)"></div>
+                </div>
+                <span style="font-size:9px;color:var(--color-muted-foreground)">${pop}%</span>
+                ${listeners ? `<span style="font-size:9px;color:var(--color-muted-foreground)">· ${listeners}</span>` : ""}
+              </div>
+            </div>` : ""}
+            <div style="padding:6px 12px;border-top:1px solid var(--color-border);font-size:10px;display:flex;justify-content:space-between;align-items:center">
+              <span style="color:${inLib ? "#22c55e" : "var(--color-muted-foreground)"}">${inLib ? "✓ In library" : "Not in library"}</span>
+              <span style="color:var(--color-primary)">Click to expand</span>
+            </div>
           </div>`;
         }}
         onNodeClick={(node: any) => expandNode(node.id)}
