@@ -435,7 +435,8 @@ class LibraryHealthCheck:
         return issues
 
     def _check_missing_covers(self) -> list[dict]:
-        """Albums without cover art."""
+        """Albums without cover art (file on disk or embedded in audio)."""
+        import mutagen
         cover_names = {"cover.jpg", "cover.png", "folder.jpg", "folder.png"}
         issues = []
         with get_db_ctx() as cur:
@@ -444,7 +445,21 @@ class LibraryHealthCheck:
                 album_dir = Path(row["path"])
                 if not album_dir.is_dir():
                     continue
+                # Check for cover file on disk
                 has_cover = any((album_dir / c).exists() for c in cover_names)
+                # Check for embedded art in first audio file
+                if not has_cover:
+                    for f in album_dir.iterdir():
+                        if f.suffix.lower() in self.extensions:
+                            try:
+                                audio = mutagen.File(f)
+                                if audio and hasattr(audio, "pictures") and audio.pictures:
+                                    has_cover = True
+                                elif audio and hasattr(audio, "tags") and audio.tags:
+                                    has_cover = any(k.startswith("APIC") for k in audio.tags)
+                            except Exception:
+                                pass
+                            break  # only check first file
                 if not has_cover:
                     issues.append({
                         "check": "missing_cover",
