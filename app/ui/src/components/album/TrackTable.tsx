@@ -109,11 +109,11 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
         </TooltipTrigger>
         <TooltipContent
           side="left"
-          className="bg-card border border-white/10 p-4 w-[280px] text-foreground"
+          className="bg-card border border-border p-4 w-[320px] text-foreground shadow-xl z-[200]"
         >
           <div className="text-[11px] font-semibold text-white/70 mb-2">Audio Profile</div>
           {hasRadar && (
-            <div className="w-[120px] h-[120px] mx-auto mb-2">
+            <div className="w-[200px] h-[200px] mx-auto mb-3">
               <ResponsiveRadar
                 data={radarData}
                 keys={["value"]}
@@ -131,8 +131,9 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
                 borderColor="#16161e"
                 gridLabelOffset={12}
                 theme={{
-                  text: { fill: "#9ca3af", fontSize: 10 },
+                  text: { fill: "#9ca3af", fontSize: 9 },
                   grid: { line: { stroke: "#ffffff15" } },
+                  tooltip: { container: { background: "#16161e", color: "#f1f5f9", borderRadius: "8px", fontSize: 11, border: "1px solid #ffffff15", padding: "6px 10px" } },
                 }}
               />
             </div>
