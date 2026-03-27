@@ -738,12 +738,24 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     if repair_result.get("fs_changed"):
         start_scan()
 
+    # Queue process_new_content for artists that haven't been processed yet
+    from crate.db import get_library_artists
+    all_artists, _ = get_library_artists(per_page=10000)
+    queued = 0
+    for a in all_artists:
+        if not a.get("content_hash"):
+            create_task_dedup("process_new_content", {"artist": a["name"]})
+            queued += 1
+    if queued:
+        emit_task_event(task_id, "info", {"message": f"Queued {queued} artists for enrichment + analysis"})
+
     mark_run("library_pipeline")
 
     return {
         "health": {"issue_count": len(report.get("issues", []))},
         "repair": {"actions": len(repair_result.get("actions", []))},
         "sync": sync_result,
+        "enrichment_queued": queued,
     }
 
 
