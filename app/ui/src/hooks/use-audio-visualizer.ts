@@ -9,34 +9,57 @@ let analyser: AnalyserNode | null = null;
 let sourceNode: MediaElementAudioSourceNode | null = null;
 let connectedElement: HTMLAudioElement | null = null;
 
+function ensureAudioContext(audio: HTMLAudioElement) {
+  if (!audioCtx) {
+    audioCtx = new AudioContext();
+  }
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume();
+  }
+  if (connectedElement !== audio) {
+    if (sourceNode) {
+      try { sourceNode.disconnect(); } catch { /* ok */ }
+    }
+    sourceNode = audioCtx.createMediaElementSource(audio);
+    connectedElement = audio;
+  }
+}
+
 function connectAudio(audio: HTMLAudioElement): AnalyserNode | null {
   if (connectedElement === audio && analyser) return analyser;
 
   try {
-    if (!audioCtx) {
-      audioCtx = new AudioContext();
-    }
-    if (audioCtx.state === "suspended") {
-      audioCtx.resume();
-    }
+    ensureAudioContext(audio);
 
-    analyser = audioCtx.createAnalyser();
+    analyser = audioCtx!.createAnalyser();
     analyser.fftSize = FFT_SIZE;
     analyser.smoothingTimeConstant = 0.8;
 
-    // Only create source once per audio element
-    if (connectedElement !== audio) {
-      if (sourceNode) {
-        try { sourceNode.disconnect(); } catch { /* ok */ }
-      }
-      sourceNode = audioCtx.createMediaElementSource(audio);
-      connectedElement = audio;
-    }
-
     sourceNode!.connect(analyser);
-    analyser.connect(audioCtx.destination);
+    analyser.connect(audioCtx!.destination);
 
     return analyser;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Create an additional AnalyserNode connected to the shared audio source.
+ * Used by the WebGL visualizer which needs its own AnalyserNode (higher fftSize).
+ * Safe to call multiple times — reuses the same MediaElementSource.
+ */
+export function createAnalyserNode(audio: HTMLAudioElement, fftSize = 2048): AnalyserNode | null {
+  try {
+    ensureAudioContext(audio);
+
+    const node = audioCtx!.createAnalyser();
+    node.fftSize = fftSize;
+    node.smoothingTimeConstant = 0.8;
+
+    sourceNode!.connect(node);
+    // Don't connect to destination — the main analyser already does that
+    return node;
   } catch {
     return null;
   }
