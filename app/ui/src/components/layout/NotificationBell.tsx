@@ -3,16 +3,7 @@ import { useNotificationCenter } from "@/contexts/NotificationContext";
 import { Bell, CheckCircle2, XCircle, Check, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router";
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  return `${hr}h ago`;
-}
+import { timeAgo } from "@/lib/utils";
 
 export function NotificationBell() {
   const { notifications, unreadCount, markAsRead, markAllRead, clearAll } = useNotificationCenter();

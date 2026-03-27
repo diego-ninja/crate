@@ -673,15 +673,15 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
         all_artists, total = get_library_artists(per_page=10000)
 
         # Filter to artists that have unanalyzed tracks (no BPM or no ML fields)
-        need_analysis = []
-        for a in all_artists:
-            with get_db_ctx() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) AS c FROM library_tracks t JOIN library_albums al ON t.album_id = al.id "
-                    "WHERE al.artist = %s AND (t.bpm IS NULL OR t.energy IS NULL)", (a["name"],)
-                )
-                if cur.fetchone()["c"] > 0:
-                    need_analysis.append(a)
+        with get_db_ctx() as cur:
+            cur.execute(
+                "SELECT al.artist FROM library_tracks t "
+                "JOIN library_albums al ON t.album_id = al.id "
+                "WHERE t.bpm IS NULL OR t.energy IS NULL "
+                "GROUP BY al.artist"
+            )
+            need_names = {r["artist"] for r in cur.fetchall()}
+        need_analysis = [a for a in all_artists if a["name"] in need_names]
 
         if len(need_analysis) > CHUNK_SIZE:
             # Chunk and distribute
@@ -2367,18 +2367,18 @@ def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
     if params.get("artists"):
         return _handle_bliss_chunk(task_id, params, config)
 
-    # Coordinator: filter artists that need bliss, then chunk
-    def needs_bliss(artist: dict) -> bool:
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT COUNT(*) AS total, SUM(CASE WHEN bliss_vector IS NOT NULL THEN 1 ELSE 0 END) AS done "
-                "FROM library_tracks t JOIN library_albums a ON t.album_id = a.id WHERE a.artist = %s",
-                (artist["name"],),
-            )
-            row = cur.fetchone()
-            return not (row and row["total"] > 0 and row["done"] >= row["total"])
+    # Coordinator: pre-compute which artists need bliss, then chunk
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT al.artist FROM library_tracks t "
+            "JOIN library_albums al ON t.album_id = al.id "
+            "WHERE t.bliss_vector IS NULL "
+            "GROUP BY al.artist"
+        )
+        need_bliss_names = {r["artist"] for r in cur.fetchall()}
 
-    return _chunk_coordinator(task_id, params, config, "compute_bliss", filter_fn=needs_bliss)
+    return _chunk_coordinator(task_id, params, config, "compute_bliss",
+                              filter_fn=lambda a: a["name"] in need_bliss_names)
 
 
 def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:

@@ -54,23 +54,30 @@ export function useAudioVisualizer(
   const [waveform, setWaveform] = useState<number[]>([]);
   const waveRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
+  const frameCountRef = useRef(0);
+
   const tick = useCallback(() => {
     if (!analyserRef.current || !dataRef.current) return;
-    analyserRef.current.getByteFrequencyData(dataRef.current);
-    const bars: number[] = [];
-    for (let i = 0; i < dataRef.current.length; i++) {
-      bars.push(dataRef.current[i]! / 255);
-    }
-    setFrequencies(bars);
+    frameCountRef.current++;
+    // Throttle state updates to ~20fps (every 3rd frame at 60fps)
+    const shouldUpdate = frameCountRef.current % 3 === 0;
 
-    // Time domain (waveform)
-    if (waveRef.current) {
-      analyserRef.current.getByteTimeDomainData(waveRef.current);
-      const wave: number[] = [];
-      for (let i = 0; i < waveRef.current.length; i++) {
-        wave.push((waveRef.current[i]! - 128) / 128); // -1 to 1
+    analyserRef.current.getByteFrequencyData(dataRef.current);
+    if (shouldUpdate) {
+      const bars: number[] = [];
+      for (let i = 0; i < dataRef.current.length; i++) {
+        bars.push(dataRef.current[i]! / 255);
       }
-      setWaveform(wave);
+      setFrequencies(bars);
+
+      if (waveRef.current) {
+        analyserRef.current.getByteTimeDomainData(waveRef.current);
+        const wave: number[] = [];
+        for (let i = 0; i < waveRef.current.length; i++) {
+          wave.push((waveRef.current[i]! - 128) / 128);
+        }
+        setWaveform(wave);
+      }
     }
 
     rafRef.current = requestAnimationFrame(tick);

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { timeAgo } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -217,7 +218,7 @@ export function Health() {
             <Badge variant="outline" className="text-green-500 border-green-500/30">Healthy</Badge>
           )}
           {lastScan && (
-            <span className="text-xs text-muted-foreground">Last scan: {formatAge(lastScan)}</span>
+            <span className="text-xs text-muted-foreground">Last scan: {timeAgo(lastScan)}</span>
           )}
         </div>
         {isAdmin && (
@@ -370,7 +371,7 @@ function IssueRow({ issue, onResolve, onDismiss }: {
 
       {/* Age */}
       <span className="text-[10px] text-muted-foreground flex-shrink-0 hidden sm:block">
-        {formatAge(issue.created_at)}
+        {timeAgo(issue.created_at)}
       </span>
 
       {/* Actions — always visible */}
@@ -404,16 +405,3 @@ function IssueRow({ issue, onResolve, onDismiss }: {
 }
 
 
-function formatAge(isoDate: string): string {
-  try {
-    const ms = Date.now() - new Date(isoDate).getTime();
-    const mins = Math.floor(ms / 60000);
-    if (mins < 60) return `${mins}m`;
-    const hours = Math.floor(mins / 60);
-    if (hours < 24) return `${hours}h`;
-    const days = Math.floor(hours / 24);
-    return `${days}d`;
-  } catch {
-    return "";
-  }
-}

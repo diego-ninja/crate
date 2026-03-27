@@ -8,7 +8,7 @@ import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { ResponsivePie } from "@nivo/pie";
 import { ResponsiveBar } from "@nivo/bar";
-import { formatNumber, encPath } from "@/lib/utils";
+import { formatNumber, encPath, timeAgo } from "@/lib/utils";
 import {
   Users, Disc3, Music, HardDrive, Loader2, ArrowRight,
   Play, RefreshCw, CheckCircle2, XCircle, Clock,
@@ -56,16 +56,6 @@ interface LiveActivity {
   };
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `${sec}s ago`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  return `${Math.floor(hr / 24)}d ago`;
-}
 
 export function Dashboard() {
   const { data: stats, loading: loadingStats, error: statsError, refetch: refetchStats } = useApi<Stats>("/api/stats");

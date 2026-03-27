@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useMemo,
   type ReactNode,
 } from "react";
 
@@ -18,21 +19,25 @@ export interface Track {
 
 type RepeatMode = "off" | "one" | "all";
 
-interface PlayerState {
-  queue: Track[];
-  currentIndex: number;
-  isPlaying: boolean;
+// Frequently-changing values (~4x/sec via timeupdate)
+interface PlayerStateValue {
   currentTime: number;
   duration: number;
+  isPlaying: boolean;
   volume: number;
+}
+
+// Stable references: actions + infrequently-changing data
+interface PlayerActionsValue {
+  queue: Track[];
+  currentIndex: number;
   shuffle: boolean;
   repeat: RepeatMode;
   playbackRate: number;
   sleepTimer: number | null;
   recentlyPlayed: Track[];
-}
-
-interface PlayerContextValue extends PlayerState {
+  currentTrack: Track | undefined;
+  audioElement: HTMLAudioElement | null;
   play: (track: Track) => void;
   playAll: (tracks: Track[], startIndex?: number) => void;
   pause: () => void;
@@ -50,16 +55,30 @@ interface PlayerContextValue extends PlayerState {
   removeFromQueue: (index: number) => void;
   setPlaybackRate: (rate: number) => void;
   setSleepTimer: (minutes: number | null) => void;
-  currentTrack: Track | undefined;
-  audioElement: HTMLAudioElement | null;
 }
 
-const PlayerContext = createContext<PlayerContextValue | null>(null);
+// Combined type for backwards-compatible usePlayer()
+type PlayerContextValue = PlayerStateValue & PlayerActionsValue;
 
-export function usePlayer() {
-  const ctx = useContext(PlayerContext);
-  if (!ctx) throw new Error("usePlayer must be used within PlayerProvider");
+const PlayerStateContext = createContext<PlayerStateValue | null>(null);
+const PlayerActionsContext = createContext<PlayerActionsValue | null>(null);
+
+export function usePlayerState(): PlayerStateValue {
+  const ctx = useContext(PlayerStateContext);
+  if (!ctx) throw new Error("usePlayerState must be used within PlayerProvider");
   return ctx;
+}
+
+export function usePlayerActions(): PlayerActionsValue {
+  const ctx = useContext(PlayerActionsContext);
+  if (!ctx) throw new Error("usePlayerActions must be used within PlayerProvider");
+  return ctx;
+}
+
+export function usePlayer(): PlayerContextValue {
+  const state = usePlayerState();
+  const actions = usePlayerActions();
+  return { ...state, ...actions };
 }
 
 const STORAGE_KEY = "player-state";
@@ -408,42 +427,74 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setSleepTimerState(minutes);
   }, [audio]);
 
+  const stateValue = useMemo<PlayerStateValue>(
+    () => ({ currentTime, duration, isPlaying, volume }),
+    [currentTime, duration, isPlaying, volume],
+  );
+
+  const actionsValue = useMemo<PlayerActionsValue>(
+    () => ({
+      queue,
+      currentIndex,
+      shuffle,
+      repeat,
+      playbackRate,
+      sleepTimer,
+      recentlyPlayed,
+      currentTrack: queue[currentIndex],
+      audioElement: audioRef.current,
+      play,
+      playAll,
+      pause,
+      resume,
+      next,
+      prev,
+      seek,
+      setVolume,
+      clearQueue,
+      toggleShuffle,
+      cycleRepeat,
+      jumpTo,
+      playNext,
+      addToQueue,
+      removeFromQueue,
+      setPlaybackRate,
+      setSleepTimer,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      queue,
+      currentIndex,
+      shuffle,
+      repeat,
+      playbackRate,
+      sleepTimer,
+      recentlyPlayed,
+      play,
+      playAll,
+      pause,
+      resume,
+      next,
+      prev,
+      seek,
+      setVolume,
+      clearQueue,
+      toggleShuffle,
+      cycleRepeat,
+      jumpTo,
+      playNext,
+      addToQueue,
+      removeFromQueue,
+      setPlaybackRate,
+      setSleepTimer,
+    ],
+  );
+
   return (
-    <PlayerContext.Provider
-      value={{
-        queue,
-        currentIndex,
-        isPlaying,
-        currentTime,
-        duration,
-        volume,
-        shuffle,
-        repeat,
-        playbackRate,
-        sleepTimer,
-        recentlyPlayed,
-        play,
-        playAll,
-        pause,
-        resume,
-        next,
-        prev,
-        seek,
-        setVolume,
-        clearQueue,
-        toggleShuffle,
-        cycleRepeat,
-        jumpTo,
-        playNext,
-        addToQueue,
-        removeFromQueue,
-        setPlaybackRate,
-        setSleepTimer,
-        currentTrack: queue[currentIndex],
-        audioElement: audioRef.current,
-      }}
-    >
-      {children}
-    </PlayerContext.Provider>
+    <PlayerActionsContext.Provider value={actionsValue}>
+      <PlayerStateContext.Provider value={stateValue}>
+        {children}
+      </PlayerStateContext.Provider>
+    </PlayerActionsContext.Provider>
   );
 }
