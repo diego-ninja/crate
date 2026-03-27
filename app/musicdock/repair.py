@@ -317,8 +317,33 @@ class LibraryRepair:
         }
 
         if not dry_run:
-            dir_parts = Path(dir_path).relative_to(self.library_path).parts
+            import re
+            unindexed_dir = Path(dir_path)
+            dir_parts = unindexed_dir.relative_to(self.library_path).parts
             artist_name = dir_parts[0] if dir_parts else ""
+
+            # Check if this is a "YYYY - AlbumName" residue with a correct "YYYY/AlbumName" already indexed
+            folder_name = unindexed_dir.name
+            year_prefix = re.match(r"^(\d{4})\s*[-–]\s*(.+)$", folder_name)
+            if year_prefix and artist_name:
+                year, clean_name = year_prefix.group(1), year_prefix.group(2).strip()
+                correct_dir = self.library_path / artist_name / year / clean_name
+                if correct_dir.is_dir():
+                    # Duplicate residue — merge into correct dir and remove
+                    src_files = {f.name for f in unindexed_dir.iterdir() if f.is_file()}
+                    dst_files = {f.name for f in correct_dir.iterdir() if f.is_file()}
+                    for name in src_files - dst_files:
+                        shutil.move(str(unindexed_dir / name), str(correct_dir / name))
+                    shutil.rmtree(str(unindexed_dir))
+                    result["action"] = "remove_duplicate_folder"
+                    result["details"]["removed"] = str(unindexed_dir)
+                    result["details"]["merged_into"] = str(correct_dir)
+                    result["fs_write"] = True
+                    log_audit("remove_duplicate_folder", "album", f"{artist_name}/{folder_name}",
+                              details=result["details"], task_id=task_id)
+                    return result
+
+            # Not a residue — trigger reindex
             if artist_name:
                 create_task_dedup("process_new_content", {"artist": artist_name})
             log_audit("flag_unindexed", "directory", dir_path,
