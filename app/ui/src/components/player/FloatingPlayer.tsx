@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { cn, encPath, formatDuration } from "@/lib/utils";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
-  X, Music, ListMusic, Mic2, Save, Download,
+  X, Music, ListMusic, Mic2, Save, Download, Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -31,8 +31,9 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
     y: 80,
   });
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  useMusicVisualizer(canvasRef, audioElement, open && isPlaying);
+  const vizRef = useMusicVisualizer(canvasRef, audioElement, open && isPlaying);
   const [trackMeta, setTrackMeta] = useState<TrackMeta | null>(null);
+  const [showVizSettings, setShowVizSettings] = useState(false);
   const [activeTab, setActiveTab] = useState<"queue" | "lyrics">("queue");
 
   // Lyrics state
@@ -125,8 +126,48 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
       </div>
 
       {/* WebGL Visualizer */}
-      <div className="h-[250px] relative bg-black rounded-t-2xl overflow-hidden">
+      <div className="h-[250px] relative bg-black overflow-hidden">
         <canvas ref={canvasRef} className="w-full h-full" />
+        {/* Settings toggle */}
+        <button
+          onClick={() => setShowVizSettings(s => !s)}
+          className={cn(
+            "absolute top-2 right-2 p-1.5 rounded-md transition-colors z-10",
+            showVizSettings ? "bg-white/20 text-white" : "text-white/30 hover:text-white/60"
+          )}
+        >
+          <Settings2 size={14} />
+        </button>
+        {/* Settings panel */}
+        {showVizSettings && (
+          <div className="absolute bottom-0 left-0 right-0 bg-black/80 backdrop-blur-sm p-3 z-10 space-y-2">
+            {[
+              { label: "Separation", key: "separation" as const, min: 0, max: 1, step: 0.01 },
+              { label: "Glow", key: "glow" as const, min: 0, max: 10, step: 0.1 },
+              { label: "Scale", key: "scale" as const, min: 0, max: 5, step: 0.1 },
+              { label: "Persistence", key: "persistence" as const, min: 0, max: 1, step: 0.01 },
+              { label: "Octaves", key: "octaves" as const, min: 0, max: 5, step: 1 },
+            ].map(({ label, key, min, max, step }) => (
+              <div key={key} className="flex items-center gap-2">
+                <span className="text-[9px] text-white/50 w-16 text-right">{label}</span>
+                <input
+                  type="range"
+                  min={min}
+                  max={max}
+                  step={step}
+                  defaultValue={vizRef.current?.[key] ?? (key === "glow" ? 4.5 : key === "octaves" ? 1 : key === "scale" ? 1 : 0)}
+                  onChange={e => {
+                    if (vizRef.current) vizRef.current[key] = Number(e.target.value);
+                  }}
+                  className="flex-1 h-1 accent-primary"
+                />
+                <span className="text-[9px] text-white/40 w-6 font-mono">
+                  {vizRef.current?.[key]?.toFixed(key === "octaves" ? 0 : 1) ?? ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Cover + Track info */}

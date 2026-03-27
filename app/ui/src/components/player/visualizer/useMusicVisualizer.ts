@@ -52,4 +52,6 @@ export function useMusicVisualizer(
       }
     };
   }, [canvasRef, audioElement, active]);
+
+  return vizRef;
 }
