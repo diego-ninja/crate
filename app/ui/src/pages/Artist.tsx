@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { usePlayerActions, usePlayerState, type Track as PlayerTrack } from "@/contexts/PlayerContext";
+import { usePlayerActions, type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import {
   encPath,
   formatSize,
@@ -175,7 +175,8 @@ export function Artist() {
     name ? `/api/artist/${encPath(decodedName)}` : null,
   );
   const player = usePlayerActions();
-  const { isPlaying: playerIsPlaying } = usePlayerState();
+  // Use audioElement.paused directly to avoid re-rendering the whole page (and the graph) on play/pause
+  const isTrackPlaying = () => player.audioElement ? !player.audioElement.paused : false;
   const navigate = useNavigate();
 
   const [sort, setSort] = useState("name");
@@ -678,7 +679,7 @@ export function Artist() {
                 <div className="space-y-0.5">
                   {topTracks.slice(0, 5).map((track, i) => {
                     const isCurrent = player.queue[player.currentIndex]?.id === track.id;
-                    const isCurrentPlaying = isCurrent && playerIsPlaying;
+                    const isCurrentPlaying = isCurrent && isTrackPlaying();
                     return (
                       <MusicContextMenu key={track.id} type="track" artist={track.artist} album={track.album || ""} trackId={track.id} trackTitle={track.title}
                         albumCover={track.album ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}` : undefined}>
@@ -773,7 +774,7 @@ export function Artist() {
                   {/* Navidrome top tracks first */}
                   {topTracks.map((track, i) => {
                     const isCurrent = player.queue[player.currentIndex]?.id === track.id;
-                    const isCurrentPlaying = isCurrent && playerIsPlaying;
+                    const isCurrentPlaying = isCurrent && isTrackPlaying();
                     return (
                       <MusicContextMenu key={`nd-${track.id}`} type="track" artist={track.artist} album={track.album || ""} trackId={track.id} trackTitle={track.title}
                         albumCover={track.album ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}` : undefined}>
