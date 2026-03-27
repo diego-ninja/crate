@@ -972,12 +972,24 @@ export function Artist() {
                     <Button
                       size="sm"
                       className="bg-cyan-600 hover:bg-cyan-500 text-white"
-                      onClick={() => {
+                      onClick={async () => {
                         if (!setlistData?.probable_setlist) return;
+                        // Ensure track titles are loaded
+                        let titles = allTrackTitles;
+                        if (titles.length === 0 && data?.name) {
+                          try {
+                            const d = await api<{ title: string; album: string; path: string }[]>(`/api/artist/${encPath(data.name)}/track-titles`);
+                            if (Array.isArray(d)) { titles = d; setAllTrackTitles(d); }
+                          } catch { /* */ }
+                        }
+                        if (titles.length === 0) {
+                          toast.error("No library tracks found for matching");
+                          return;
+                        }
                         // Match setlist songs to library tracks
                         const matched: PlayerTrack[] = [];
                         for (const song of setlistData.probable_setlist) {
-                          const t = fuzzyMatchTrack(song.title, allTrackTitles);
+                          const t = fuzzyMatchTrack(song.title, titles);
                           if (t) {
                             matched.push({
                               id: t.path,
