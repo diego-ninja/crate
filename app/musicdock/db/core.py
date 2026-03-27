@@ -523,4 +523,24 @@ def init_db():
             )
         """)
 
+        # Migration: add release_date, release_type, mb_release_group_id to new_releases
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE new_releases ADD COLUMN release_date TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE new_releases ADD COLUMN release_type TEXT DEFAULT 'Album';
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE new_releases ADD COLUMN mb_release_group_id TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
 

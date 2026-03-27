@@ -143,11 +143,11 @@ def acquisition_download(request: Request, body: dict):
 # ── New Releases ──────────────────────────────────────────────────
 
 @router.get("/new-releases")
-def api_new_releases(request: Request, status: str = ""):
+def api_new_releases(request: Request, status: str = "", upcoming: bool = False):
     """Get detected new releases."""
     _require_auth(request)
     from musicdock.db import get_new_releases
-    releases = get_new_releases(status=status)
+    releases = get_new_releases(status=status, upcoming=upcoming)
     return {"releases": releases}
 
 

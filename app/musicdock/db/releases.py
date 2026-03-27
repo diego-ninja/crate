@@ -7,30 +7,43 @@ from musicdock.db.core import get_db_ctx
 
 def upsert_new_release(artist_name: str, album_title: str, tidal_id: str = "",
                        tidal_url: str = "", cover_url: str = "", year: str = "",
-                       tracks: int = 0, quality: str = "") -> int:
+                       tracks: int = 0, quality: str = "", release_date: str = "",
+                       release_type: str = "", mb_release_group_id: str = "") -> int:
     """Insert or update a detected new release. Returns release ID."""
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
         cur.execute("""
             INSERT INTO new_releases (artist_name, album_title, tidal_id, tidal_url,
-                cover_url, year, tracks, quality, status, detected_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'detected', %s)
+                cover_url, year, tracks, quality, status, detected_at,
+                release_date, release_type, mb_release_group_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'detected', %s, %s, %s, %s)
             ON CONFLICT (artist_name, album_title) DO UPDATE SET
                 tidal_id = EXCLUDED.tidal_id, tidal_url = EXCLUDED.tidal_url,
                 cover_url = EXCLUDED.cover_url, year = EXCLUDED.year,
-                tracks = EXCLUDED.tracks, quality = EXCLUDED.quality
+                tracks = EXCLUDED.tracks, quality = EXCLUDED.quality,
+                release_date = EXCLUDED.release_date,
+                release_type = EXCLUDED.release_type,
+                mb_release_group_id = EXCLUDED.mb_release_group_id
             RETURNING id
-        """, (artist_name, album_title, tidal_id, tidal_url, cover_url, year, tracks, quality, now))
+        """, (artist_name, album_title, tidal_id, tidal_url, cover_url, year, tracks, quality, now,
+              release_date or None, release_type or None, mb_release_group_id or None))
         return cur.fetchone()["id"]
 
 
-def get_new_releases(status: str = "", limit: int = 100) -> list[dict]:
-    """Get new releases, optionally filtered by status."""
+def get_new_releases(status: str = "", upcoming: bool = False, limit: int = 200) -> list[dict]:
+    """Get new releases. If upcoming=True, only future releases ordered by release_date."""
     with get_db_ctx() as cur:
-        if status:
-            cur.execute("SELECT * FROM new_releases WHERE status = %s ORDER BY detected_at DESC LIMIT %s", (status, limit))
+        if upcoming:
+            cur.execute(
+                "SELECT * FROM new_releases WHERE status NOT IN ('dismissed') "
+                "AND release_date IS NOT NULL AND release_date >= %s "
+                "ORDER BY release_date ASC LIMIT %s",
+                (datetime.now(timezone.utc).strftime("%Y-%m-%d"), limit),
+            )
+        elif status:
+            cur.execute("SELECT * FROM new_releases WHERE status = %s ORDER BY release_date DESC NULLS LAST, detected_at DESC LIMIT %s", (status, limit))
         else:
-            cur.execute("SELECT * FROM new_releases ORDER BY detected_at DESC LIMIT %s", (limit,))
+            cur.execute("SELECT * FROM new_releases WHERE status NOT IN ('dismissed') ORDER BY release_date DESC NULLS LAST, detected_at DESC LIMIT %s", (limit,))
         return [dict(r) for r in cur.fetchall()]
 
 

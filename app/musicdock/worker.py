@@ -1517,6 +1517,9 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
                         tidal_id=tidal_id, tidal_url=tidal_url,
                         cover_url=cover_url, year=year,
                         tracks=tracks, quality=quality,
+                        release_date=rd,
+                        release_type=release.get("type", "Album"),
+                        mb_release_group_id=release.get("mbid", ""),
                     )
                     new_count += 1
                     emit_task_event(task_id, "new_release_found", {
