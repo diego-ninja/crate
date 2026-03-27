@@ -1516,6 +1516,10 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
                 year = release.get("year", "")
                 if not title:
                     continue
+                # Skip Various Artists compilations
+                artist_credit = release.get("artist-credit", "")
+                if isinstance(artist_credit, str) and "various" in artist_credit.lower():
+                    continue
 
                 # Find Tidal URL
                 tidal_url = tidal_id = cover_url = quality = ""

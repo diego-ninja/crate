@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import {
   Loader2, Download, X, RefreshCw, Disc3, MapPin, Calendar,
   Ticket, ExternalLink, Sparkles, List, CalendarDays,
-  ChevronLeft, ChevronRight, ChevronDown, Clock, Search, Trash2,
+  ChevronLeft, ChevronRight, ChevronDown, Clock, Search, Trash2, Check,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import L from "leaflet";
@@ -452,14 +452,15 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
   return (
     <div
       className={cn(
-        "flex items-center gap-4 p-3 rounded-xl border transition-colors hover:bg-card/80 group",
-        isShow ? "border-amber-500/10 hover:border-amber-500/20" : "border-cyan-500/10 hover:border-cyan-500/20",
+        "flex items-center gap-4 p-3 rounded-xl border transition-all hover:bg-card/80 group",
+        isShow ? "border-amber-500/10 hover:border-amber-500/20" :
+          item.tidal_url ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.15)] animate-pulse-subtle" : "border-cyan-500/10 hover:border-cyan-500/20",
         isShow && "cursor-pointer"
       )}
       onClick={onClick}
     >
       {/* Thumbnail */}
-      <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-secondary">
+      <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-secondary relative group/thumb">
         {isShow ? (
           <img src={`/api/artist/${encPath(item.artist)}/photo`} alt=""
             className="w-full h-full object-cover"
@@ -467,8 +468,27 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
         ) : item.cover_url ? (
           <img src={item.cover_url} alt="" className="w-full h-full object-cover" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Disc3 size={16} className="text-muted-foreground/30" />
+          <img src={`/api/artist/${encPath(item.artist)}/photo`} alt=""
+            className="w-full h-full object-cover opacity-60"
+            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        )}
+        {/* Download overlay on thumbnail for releases */}
+        {isRelease && item.status === "detected" && item.tidal_url && onDownload && item.release_id && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDownload(item.release_id!); }}
+            className="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center"
+          >
+            <Download size={16} className="text-cyan-400" />
+          </button>
+        )}
+        {isRelease && item.status === "downloading" && (
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <Loader2 size={16} className="text-cyan-400 animate-spin" />
+          </div>
+        )}
+        {isRelease && item.status === "downloaded" && (
+          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+            <Check size={16} className="text-green-400" />
           </div>
         )}
       </div>
@@ -510,7 +530,7 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
         {timeStr && <div className="text-[10px] text-muted-foreground">{timeStr}</div>}
       </div>
 
-      {/* Actions */}
+      {/* Actions — shows only (release actions are on thumbnail) */}
       <div className="flex items-center gap-1 flex-shrink-0">
         {isShow && item.url && (
           <a href={item.url} target="_blank" rel="noopener noreferrer"
@@ -519,27 +539,11 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
             <ExternalLink size={14} className="text-amber-400" />
           </a>
         )}
-        {isRelease && item.status === "detected" && item.release_id && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {item.tidal_url && onDownload && (
-              <button onClick={() => onDownload(item.release_id!)}
-                className="p-1.5 rounded-md hover:bg-cyan-500/10">
-                <Download size={14} className="text-cyan-400" />
-              </button>
-            )}
-            {onDismiss && (
-              <button onClick={() => onDismiss(item.release_id!)}
-                className="p-1.5 rounded-md hover:bg-white/5">
-                <X size={14} className="text-muted-foreground" />
-              </button>
-            )}
-          </div>
-        )}
-        {isRelease && item.status === "downloaded" && (
-          <Badge className="bg-green-500/15 text-green-400 border-green-500/30 text-[10px]">Done</Badge>
-        )}
-        {isRelease && item.status === "downloading" && (
-          <Loader2 size={14} className="animate-spin text-cyan-400" />
+        {isRelease && onDismiss && item.release_id && item.status === "detected" && (
+          <button onClick={() => onDismiss(item.release_id!)}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-white/5">
+            <X size={12} className="text-muted-foreground/50" />
+          </button>
         )}
       </div>
     </div>

@@ -616,6 +616,8 @@ def api_upcoming(request: Request):
     for r in releases:
         if r.get("status") == "dismissed":
             continue
+        if r.get("artist_name", "").lower() in ("various artists", "v/a"):
+            continue
         items.append({
             "type": "release",
             "date": r.get("release_date") or (r.get("detected_at") or "")[:10],
