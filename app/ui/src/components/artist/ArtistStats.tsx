@@ -55,7 +55,7 @@ export function ArtistStats({ name }: { name: string }) {
               indexBy="album"
               margin={{ top: 10, right: 10, bottom: 50, left: 40 }}
               padding={0.3}
-              colors={["#8b5cf6"]}
+              colors={["#06b6d4"]}
               borderRadius={3}
               enableLabel={true}
               labelTextColor="#fff"
@@ -81,7 +81,7 @@ export function ArtistStats({ name }: { name: string }) {
                 data={data.formats}
                 margin={{ top: 10, right: 10, bottom: 10, left: 10 }}
                 innerRadius={0.6} padAngle={2} cornerRadius={4}
-                colors={["#06b6d4", "#8b5cf6", "#f59e0b", "#ef4444"]}
+                colors={["#06b6d4", "#06b6d4cc", "#06b6d499", "#06b6d466"]}
                 borderWidth={0} enableArcLinkLabels={true}
                 arcLinkLabelsColor={{ from: "color" }} arcLinkLabelsTextColor="#9ca3af"
                 arcLinkLabelsThickness={2} arcLabelsTextColor="#fff"
@@ -118,7 +118,7 @@ export function ArtistStats({ name }: { name: string }) {
               }))}
               keys={["listeners"]} indexBy="track" layout="horizontal"
               margin={{ top: 5, right: 20, bottom: 5, left: 160 }}
-              padding={0.3} colors={["#22c55e"]} borderRadius={3}
+              padding={0.3} colors={["#06b6d4"]} borderRadius={3}
               enableLabel={true} labelTextColor="#fff"
               theme={NIVO_THEME} animate={true} motionConfig="gentle"
             />
@@ -141,7 +141,7 @@ export function ArtistStats({ name }: { name: string }) {
               dotSize={8}
               dotColor={{ theme: "background" }}
               dotBorderWidth={2}
-              colors={["#ef4444", "#06b6d4", "#f59e0b", "#22c55e"]}
+              colors={["#06b6d4", "#06b6d4cc", "#06b6d499", "#06b6d466"]}
               fillOpacity={0.2}
               theme={{ ...NIVO_THEME, labels: { text: { fill: "#9ca3af", fontSize: 11 } } }}
               animate={true} motionConfig="gentle"
@@ -170,7 +170,7 @@ export function ArtistStats({ name }: { name: string }) {
                 layout="horizontal"
                 margin={{ top: 5, right: 20, bottom: 5, left: 160 }}
                 padding={0.3}
-                colors={["#f59e0b"]}
+                colors={["#06b6d4"]}
                 borderRadius={3}
                 enableLabel={true}
                 labelTextColor="#fff"

@@ -499,7 +499,7 @@ export function Artist() {
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xs text-white/40">Popularity</span>
                     <div className="w-[60px] h-1.5 bg-white/10 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full" style={{ width: `${score}%`, background: "linear-gradient(90deg, #6b7280, #22c55e)" }} />
+                      <div className="h-full rounded-full" style={{ width: `${score}%`, background: "linear-gradient(90deg, #06b6d433, #06b6d4)" }} />
                     </div>
                     <span className="text-xs text-white/40">{score}%</span>
                   </div>
@@ -1346,7 +1346,7 @@ function PopularityBar({ value }: { value: number }) {
           className="h-full rounded-full"
           style={{
             width: `${value}%`,
-            background: "linear-gradient(90deg, #6b7280, #22c55e)",
+            background: "linear-gradient(90deg, #06b6d433, #06b6d4)",
           }}
         />
       </div>
@@ -1614,8 +1614,8 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
           ctx.beginPath();
           ctx.arc(x, y, size, 0, 2 * Math.PI);
           ctx.fillStyle = isCenter ? "#06b6d4"
-            : isFocus ? "#8b5cf6"
-            : inLibrary ? "#22c55e"
+            : isFocus ? "#06b6d4cc"
+            : inLibrary ? "#06b6d4"
             : "#3f3f50";
           ctx.fill();
 
@@ -1638,7 +1638,7 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
           if (inLibrary && !isCenter) {
             ctx.beginPath();
             ctx.arc(x + size - 1, y - size + 1, 2.5, 0, 2 * Math.PI);
-            ctx.fillStyle = "#22c55e";
+            ctx.fillStyle = "#06b6d4";
             ctx.fill();
           }
         }}
@@ -1662,14 +1662,14 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
             ${pop > 0 ? `<div style="padding:0 12px 8px">
               <div style="display:flex;align-items:center;gap:6px">
                 <div style="flex:1;height:5px;background:#1c1c28;border-radius:3px;overflow:hidden">
-                  <div style="height:100%;width:${pop}%;border-radius:3px;background:linear-gradient(90deg,#4b5563,#22c55e)"></div>
+                  <div style="height:100%;width:${pop}%;border-radius:3px;background:linear-gradient(90deg,#06b6d433,#06b6d4)"></div>
                 </div>
                 <span style="font-size:9px;color:var(--color-muted-foreground)">${pop}%</span>
                 ${listeners ? `<span style="font-size:9px;color:var(--color-muted-foreground)">· ${listeners}</span>` : ""}
               </div>
             </div>` : ""}
             <div style="padding:6px 12px;border-top:1px solid var(--color-border);font-size:10px;display:flex;justify-content:space-between;align-items:center">
-              <span style="color:${inLib ? "#22c55e" : "var(--color-muted-foreground)"}">${inLib ? "✓ In library" : "Not in library"}</span>
+              <span style="color:${inLib ? "#06b6d4" : "var(--color-muted-foreground)"}">${inLib ? "✓ In library" : "Not in library"}</span>
               ${artistsWithShows.has(node.id.toLowerCase()) ? `<span style="color:#f97316">● Shows</span>` : ""}
               <span style="color:var(--color-primary)">Click to expand</span>
             </div>

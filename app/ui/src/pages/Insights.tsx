@@ -430,7 +430,7 @@ export function Insights() {
                   axisBottom={{ legend: "Acousticness", legendPosition: "middle", legendOffset: 32 }}
                   axisLeft={{ legend: "Instrumentalness", legendPosition: "middle", legendOffset: -40 }}
                   nodeSize={6}
-                  colors={["#a78bfa"]}
+                  colors={["#06b6d4"]}
                   useMesh={true}
                   theme={NIVO_THEME}
                   animate={true}
