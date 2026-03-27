@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
+import { useShaderVisualizer } from "./useShaderVisualizer";
+import { PRESET_NAMES, PRESET_LABELS, type PresetName } from "./ShaderEngine";
 import { useDraggable } from "./useDraggable";
 import { QueueList } from "./QueueList";
 import { api } from "@/lib/api";
@@ -11,6 +13,12 @@ import {
   X, Music, ListMusic, Mic2, Save, Download,
 } from "lucide-react";
 import { toast } from "sonner";
+
+type VizMode = "bars" | "waveform" | PresetName;
+const VIZ_MODES: VizMode[] = ["bars", "waveform", ...PRESET_NAMES];
+const VIZ_LABELS: Record<VizMode, string> = {
+  bars: "Bars", waveform: "Waveform", ...PRESET_LABELS,
+};
 
 interface TrackMeta { bpm?: number; energy?: number; audio_key?: string; audio_scale?: string; album?: string }
 
@@ -30,9 +38,28 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
     x: Math.max(0, window.innerWidth / 2 - 210),
     y: 80,
   });
-  const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
+  const { frequencies, waveform } = useAudioVisualizer(audioElement, isPlaying);
   const [trackMeta, setTrackMeta] = useState<TrackMeta | null>(null);
   const [activeTab, setActiveTab] = useState<"queue" | "lyrics">("queue");
+
+  // Visualization mode
+  const [vizMode, setVizMode] = useState<VizMode>(() => {
+    try { const s = localStorage.getItem("viz-mode"); return (s && VIZ_MODES.includes(s as VizMode)) ? s as VizMode : "bars"; }
+    catch { return "bars"; }
+  });
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const isShaderMode = PRESET_NAMES.includes(vizMode as PresetName);
+  const audioMeta = trackMeta ? { bpm: trackMeta.bpm, energy: trackMeta.energy } : null;
+  useShaderVisualizer(canvasRef, frequencies, audioMeta, open && isShaderMode, isShaderMode ? vizMode as PresetName : "nebula");
+
+  const cycleViz = useCallback(() => {
+    setVizMode(prev => {
+      const idx = VIZ_MODES.indexOf(prev);
+      const next = VIZ_MODES[(idx + 1) % VIZ_MODES.length] ?? "bars";
+      try { localStorage.setItem("viz-mode", next); } catch {}
+      return next;
+    });
+  }, []);
 
   // Lyrics state
   const [lyrics, setLyrics] = useState<{ synced: { time: number; text: string }[] | null; plain: string | null }>({ synced: null, plain: null });
@@ -123,12 +150,51 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
         </button>
       </div>
 
-      {/* Visualizer bars */}
-      <div className="h-12 flex items-end gap-[2px] px-4 py-1 bg-card">
-        {frequencies.slice(0, 48).map((f, i) => (
-          <div key={i} className="flex-1 bg-primary/80 rounded-t-sm transition-all duration-75"
-            style={{ height: `${Math.max(2, f * 100)}%` }} />
-        ))}
+      {/* Visualizer — click to cycle modes */}
+      <div className="h-16 relative cursor-pointer overflow-hidden" onClick={cycleViz} title={`Visualizer: ${VIZ_LABELS[vizMode]} (click to change)`}>
+        {/* Shader canvas (hidden when not in shader mode) */}
+        <canvas ref={canvasRef} className={cn("absolute inset-0 w-full h-full opacity-40", !isShaderMode && "hidden")} />
+
+        {/* Bars mode */}
+        {vizMode === "bars" && (
+          <div className="h-full flex items-end gap-[2px] px-4 py-1">
+            {frequencies.slice(0, 48).map((f, i) => (
+              <div key={i} className="flex-1 bg-primary/70 rounded-t-sm transition-all duration-75"
+                style={{ height: `${Math.max(2, f * 100)}%` }} />
+            ))}
+          </div>
+        )}
+
+        {/* Waveform mode */}
+        {vizMode === "waveform" && (
+          <svg className="w-full h-full" viewBox="0 0 200 60" preserveAspectRatio="none">
+            <polyline
+              fill="none"
+              stroke="var(--color-primary)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity="0.7"
+              points={waveform.length > 0
+                ? waveform.map((v, i) => `${(i / waveform.length) * 200},${30 + v * 25}`).join(" ")
+                : "0,30 200,30"}
+            />
+            <polyline
+              fill="none"
+              stroke="var(--color-primary)"
+              strokeWidth="0.8"
+              opacity="0.25"
+              points={waveform.length > 0
+                ? waveform.map((v, i) => `${(i / waveform.length) * 200},${30 - v * 20}`).join(" ")
+                : "0,30 200,30"}
+            />
+          </svg>
+        )}
+
+        {/* Mode label */}
+        <div className="absolute bottom-1 right-2 text-[8px] text-muted-foreground/30 uppercase tracking-widest">
+          {VIZ_LABELS[vizMode]}
+        </div>
       </div>
 
       {/* Cover + Track info */}

@@ -13,6 +13,7 @@ export function useShaderVisualizer(
   frequencies: number[],
   audioMeta: { bpm?: number; energy?: number } | null,
   active: boolean,
+  preset: PresetName = 'nebula',
 ) {
   const engineRef = useRef<ShaderEngine | null>(null);
   const beatRef = useRef(0);
@@ -22,14 +23,14 @@ export function useShaderVisualizer(
   useEffect(() => {
     if (!canvasRef.current || !active) return;
     const engine = new ShaderEngine(canvasRef.current);
-    engine.loadPreset('nebula');
+    engine.loadPreset(preset);
     engine.start();
     engineRef.current = engine;
     return () => {
       engine.destroy();
       engineRef.current = null;
     };
-  }, [canvasRef, active]);
+  }, [canvasRef, active, preset]);
 
   useEffect(() => {
     if (!engineRef.current || !active || frequencies.length === 0) return;
