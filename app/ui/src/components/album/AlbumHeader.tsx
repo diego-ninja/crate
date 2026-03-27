@@ -48,6 +48,7 @@ interface AlbumHeaderProps {
   hasAnalysis?: boolean;
   onAnalysisComplete?: () => void;
   children?: React.ReactNode;
+  tracks?: { filename: string; path?: string; title?: string }[];
 }
 
 export function AlbumHeader({
@@ -63,6 +64,7 @@ export function AlbumHeader({
   hasAnalysis: _hasAnalysis,
   onAnalysisComplete,
   children,
+  tracks: trackList,
 }: AlbumHeaderProps) {
   const { playAll } = usePlayer();
   const { isFavorite, toggleFavorite } = useFavorites();
@@ -106,14 +108,24 @@ export function AlbumHeader({
   const letter = displayName.charAt(0).toUpperCase();
 
   function handlePlayAll() {
-    if (!navidromeData?.songs.length) return;
-    const tracks: Track[] = navidromeData.songs.map((s) => ({
-      id: s.id,
-      title: s.title,
-      artist: displayArtist,
-      albumCover: coverUrl,
-    }));
-    playAll(tracks);
+    // Prefer Navidrome streaming, fallback to direct file streaming
+    if (navidromeData?.songs.length) {
+      const tracks: Track[] = navidromeData.songs.map((s) => ({
+        id: s.id,
+        title: s.title,
+        artist: displayArtist,
+        albumCover: coverUrl,
+      }));
+      playAll(tracks);
+    } else if (trackList?.length) {
+      const tracks: Track[] = trackList.map((t) => ({
+        id: (t.path || "").replace(/^\/music\//, ""),
+        title: t.title || t.filename.replace(/\.\w+$/, ""),
+        artist: displayArtist,
+        albumCover: coverUrl,
+      }));
+      playAll(tracks);
+    }
   }
 
   const [bgLoaded, setBgLoaded] = useState(false);
@@ -228,24 +240,21 @@ export function AlbumHeader({
 
             {/* Action buttons */}
             <div className="flex gap-2 flex-wrap">
-              {navidromeData && (
-                <>
-                  <Button
-                    size="sm"
-                    className="bg-primary hover:bg-primary/80 text-primary-foreground"
-                    onClick={handlePlayAll}
-                    disabled={!navidromeData.songs.length}
-                  >
-                    <Play size={14} className="mr-1 fill-current" /> Play All
-                  </Button>
-                  {navidromeData.navidrome_url && (
-                    <Button size="sm" variant="outline" className="border-white/20 text-white/70 hover:text-white hover:bg-white/10" asChild>
-                      <a href={navidromeData.navidrome_url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink size={14} className="mr-1" /> Navidrome
-                      </a>
-                    </Button>
-                  )}
-                </>
+              {(navidromeData?.songs.length || trackList?.length) ? (
+                <Button
+                  size="sm"
+                  className="bg-primary hover:bg-primary/80 text-primary-foreground"
+                  onClick={handlePlayAll}
+                >
+                  <Play size={14} className="mr-1 fill-current" /> Play All
+                </Button>
+              ) : null}
+              {navidromeData?.navidrome_url && (
+                <Button size="sm" variant="outline" className="border-white/20 text-white/70 hover:text-white hover:bg-white/10" asChild>
+                  <a href={navidromeData.navidrome_url} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink size={14} className="mr-1" /> Navidrome
+                  </a>
+                </Button>
               )}
               <Button
                 size="sm"
