@@ -425,36 +425,66 @@ class LibraryHealthCheck:
 
     def _check_missing_covers(self) -> list[dict]:
         """Albums without cover art (file on disk or embedded in audio)."""
+        # Try Rust CLI scan for fast cover detection
+        try:
+            from musicdock.crate_cli import run_scan, is_available, has_subcommands
+            if is_available() and has_subcommands():
+                return self._check_missing_covers_rust()
+        except Exception:
+            pass
+        return self._check_missing_covers_python()
+
+    def _check_missing_covers_rust(self) -> list[dict]:
+        """Fast cover check via crate-cli scan."""
+        from musicdock.crate_cli import run_scan
+        data = run_scan(str(self.library_path), hash=False, covers=True)
+        if not data:
+            return self._check_missing_covers_python()
+        issues = []
+        for artist in data.get("artists", []):
+            artist_name = artist["name"]
+            for album in artist.get("albums", []):
+                if not album.get("has_cover") and not album.get("has_embedded_art"):
+                    issues.append({
+                        "check": "missing_cover",
+                        "severity": "low",
+                        "auto_fixable": True,
+                        "description": f"Missing cover: {artist_name} / {album['name']}",
+                        "details": {"artist": artist_name, "album": album["name"], "path": album["path"]},
+                    })
+        return issues
+
+    def _check_missing_covers_python(self) -> list[dict]:
+        """Fallback cover check via Python mutagen."""
         import mutagen
         cover_names = {"cover.jpg", "cover.png", "folder.jpg", "folder.png"}
         issues = []
         with get_db_ctx() as cur:
             cur.execute("SELECT artist, name, path FROM library_albums")
-            for row in cur.fetchall():
-                album_dir = Path(row["path"])
-                if not album_dir.is_dir():
-                    continue
-                # Check for cover file on disk
-                has_cover = any((album_dir / c).exists() for c in cover_names)
-                # Check for embedded art in first audio file
-                if not has_cover:
-                    for f in album_dir.iterdir():
-                        if f.suffix.lower() in self.extensions:
-                            try:
-                                audio = mutagen.File(f)
-                                if audio and hasattr(audio, "pictures") and audio.pictures:
-                                    has_cover = True
-                                elif audio and hasattr(audio, "tags") and audio.tags:
-                                    has_cover = any(k.startswith("APIC") for k in audio.tags)
-                            except Exception:
-                                pass
-                            break  # only check first file
-                if not has_cover:
-                    issues.append({
-                        "check": "missing_cover",
-                        "severity": "low",
-                        "auto_fixable": True,
-                        "description": f"Missing cover: {row['artist']} / {row['name']}",
-                        "details": {"artist": row["artist"], "album": row["name"], "path": str(album_dir)},
-                    })
+            albums = [dict(r) for r in cur.fetchall()]
+        for row in albums:
+            album_dir = Path(row["path"])
+            if not album_dir.is_dir():
+                continue
+            has_cover = any((album_dir / c).exists() for c in cover_names)
+            if not has_cover:
+                for f in album_dir.iterdir():
+                    if f.suffix.lower() in self.extensions:
+                        try:
+                            audio = mutagen.File(f)
+                            if audio and hasattr(audio, "pictures") and audio.pictures:
+                                has_cover = True
+                            elif audio and hasattr(audio, "tags") and audio.tags:
+                                has_cover = any(k.startswith("APIC") for k in audio.tags)
+                        except Exception:
+                            pass
+                        break
+            if not has_cover:
+                issues.append({
+                    "check": "missing_cover",
+                    "severity": "low",
+                    "auto_fixable": True,
+                    "description": f"Missing cover: {row['artist']} / {row['name']}",
+                    "details": {"artist": row["artist"], "album": row["name"], "path": str(album_dir)},
+                })
         return issues

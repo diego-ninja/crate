@@ -181,7 +181,10 @@ def _weighted_sum(probs: np.ndarray, group: dict, lb_to_ix: dict) -> float:
 # ── Main entry points ─────────────────────────────────────────────
 
 def analyze_track(filepath: Union[str, Path]) -> dict:
-    """Analyze a single audio track."""
+    """Analyze a single audio track. Tries Rust CLI first, falls back to Python."""
+    rust = _analyze_rust(str(filepath))
+    if rust:
+        return rust
     if _BACKEND == "essentia":
         return _analyze_essentia(str(filepath))
     elif _BACKEND == "librosa":
@@ -190,13 +193,79 @@ def analyze_track(filepath: Union[str, Path]) -> dict:
 
 
 def analyze_batch(filepaths: list) -> list:
-    """Analyze multiple tracks with batched PANNs inference.
-
-    ~2-3x faster per track than sequential analyze_track() when PANNs is available.
-    """
+    """Analyze multiple tracks. Tries Rust CLI batch first, falls back to Python."""
+    rust = _analyze_rust_batch(filepaths)
+    if rust:
+        return rust
     if _BACKEND == "essentia":
         return _analyze_batch_essentia(filepaths)
     return [analyze_track(fp) for fp in filepaths]
+
+
+def _analyze_rust(filepath: str) -> dict | None:
+    """Try analyzing with crate-cli. Returns result dict or None to fall back."""
+    try:
+        from musicdock.crate_cli import run_analyze, is_available, has_subcommands
+        if not is_available() or not has_subcommands():
+            return None
+        data = run_analyze(file=filepath)
+        if not data or data.get("error"):
+            return None
+        return {
+            "bpm": data.get("bpm"),
+            "key": data.get("key"),
+            "scale": data.get("scale"),
+            "energy": data.get("energy"),
+            "loudness": data.get("loudness"),
+            "dynamic_range": data.get("dynamic_range"),
+            "spectral_complexity": data.get("spectral_centroid"),
+            "mood": None,  # Rust CLI doesn't do mood (needs ML model)
+            "danceability": None,
+            "valence": None,
+            "acousticness": None,
+            "instrumentalness": None,
+        }
+    except Exception:
+        return None
+
+
+def _analyze_rust_batch(filepaths: list) -> list | None:
+    """Try batch analysis with crate-cli. Returns list of results or None."""
+    if not filepaths:
+        return []
+    try:
+        from musicdock.crate_cli import run_analyze, is_available, has_subcommands
+        if not is_available() or not has_subcommands():
+            return None
+        # crate-cli analyze --dir needs a common directory
+        # For batch, analyze the parent directory and filter results
+        from pathlib import Path as P
+        dirs = {str(P(fp).parent) for fp in filepaths}
+        if len(dirs) == 1:
+            dirpath = dirs.pop()
+            data = run_analyze(directory=dirpath)
+            if not data or not data.get("tracks"):
+                return None
+            path_map = {t["path"]: t for t in data["tracks"] if not t.get("error")}
+            results = []
+            for fp in filepaths:
+                t = path_map.get(str(fp))
+                if t:
+                    results.append({
+                        "bpm": t.get("bpm"), "key": t.get("key"), "scale": t.get("scale"),
+                        "energy": t.get("energy"), "loudness": t.get("loudness"),
+                        "dynamic_range": t.get("dynamic_range"),
+                        "spectral_complexity": t.get("spectral_centroid"),
+                        "mood": None, "danceability": None, "valence": None,
+                        "acousticness": None, "instrumentalness": None,
+                    })
+                else:
+                    results.append(_empty_result())
+            return results
+        # Multiple directories — fall back to per-file
+        return [_analyze_rust(str(fp)) or _empty_result() for fp in filepaths]
+    except Exception:
+        return None
 
 
 def _empty_result() -> dict:

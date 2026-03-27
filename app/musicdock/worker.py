@@ -100,7 +100,19 @@ def _run_task(task: dict, config: dict):
 
 
 def _compute_dir_hash(directory: Path) -> str:
-    """Fast hash of directory contents: sorted file paths + sizes."""
+    """Fast hash of directory contents. Uses Rust CLI if available, falls back to Python."""
+    try:
+        from musicdock.crate_cli import run_scan, is_available, has_subcommands
+        if is_available() and has_subcommands():
+            data = run_scan(str(directory), hash=True, covers=False)
+            if data and data.get("artists"):
+                # scan returns per-artist hash; for a single artist dir, use the first
+                h = data["artists"][0].get("content_hash")
+                if h:
+                    return h
+    except Exception:
+        pass
+    # Python fallback
     import hashlib
     h = hashlib.md5(usedforsecurity=False)
     for f in sorted(directory.rglob("*")):
