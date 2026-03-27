@@ -96,11 +96,11 @@ def find_similar(source_path: str, library_path: str, limit: int = 20) -> list[d
 
 
 def store_vectors(vectors: dict[str, list[float]]):
-    """Store bliss feature vectors in the database."""
+    """Store bliss feature vectors in the database (only for tracks missing them)."""
     with get_db_ctx() as cur:
         for path, features in vectors.items():
             cur.execute(
-                "UPDATE library_tracks SET bliss_vector = %s WHERE path = %s",
+                "UPDATE library_tracks SET bliss_vector = %s WHERE path = %s AND bliss_vector IS NULL",
                 (features, path),
             )
 
