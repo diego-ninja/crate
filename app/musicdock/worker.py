@@ -1492,69 +1492,74 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
 
             # Compare against what we knew before
             known_date = artist.get("latest_release_date") or ""
+            today = time.strftime("%Y-%m-%d")
 
             if not known_date:
-                # First run: just save the latest date, don't flag as new
+                # First run: save the latest date
                 with get_db_ctx() as cur:
                     cur.execute("UPDATE library_artists SET latest_release_date = %s WHERE name = %s",
                                 (latest_mb_date, name))
-                checked += 1
-                continue
+                # But still create entries for future releases
+                known_date = today  # treat today as the baseline
 
-            # Check if MB has anything newer than what we knew
-            if latest_mb_date > known_date:
-                # New release(s) detected — only the ones newer than known_date
-                for release in mb_releases:
-                    rd = release.get("first_release_date", "")
-                    if not rd or rd <= known_date:
-                        break  # sorted desc, so stop at first old one
-                    title = release.get("title", "")
-                    year = release.get("year", "")
-                    if not title:
-                        continue
+            # Create releases that are either newer than known_date OR have a future date
+            has_new = False
+            for release in mb_releases:
+                rd = release.get("first_release_date", "")
+                if not rd:
+                    continue
+                is_future = rd >= today
+                is_new = rd > known_date
+                if not is_future and not is_new:
+                    break  # sorted desc, past ones we already know about
+                title = release.get("title", "")
+                year = release.get("year", "")
+                if not title:
+                    continue
 
-                    # Find Tidal URL
-                    tidal_url = tidal_id = cover_url = quality = ""
-                    tracks = 0
-                    try:
-                        tr = tidal_mod.search(f"{name} {title}", content_type="albums", limit=3)
-                        for ta in tr.get("albums", []):
-                            if title.lower() in ta.get("title", "").lower() or ta.get("title", "").lower() in title.lower():
-                                tidal_url = ta.get("url", "")
-                                tidal_id = str(ta.get("id", ""))
-                                cover_url = ta.get("cover", "")
-                                tracks = ta.get("tracks", 0)
-                                quality = ta.get("quality", "")
-                                break
-                    except Exception:
-                        pass
+                # Find Tidal URL
+                tidal_url = tidal_id = cover_url = quality = ""
+                tracks = 0
+                try:
+                    tr = tidal_mod.search(f"{name} {title}", content_type="albums", limit=3)
+                    for ta in tr.get("albums", []):
+                        if title.lower() in ta.get("title", "").lower() or ta.get("title", "").lower() in title.lower():
+                            tidal_url = ta.get("url", "")
+                            tidal_id = str(ta.get("id", ""))
+                            cover_url = ta.get("cover", "")
+                            tracks = ta.get("tracks", 0)
+                            quality = ta.get("quality", "")
+                            break
+                except Exception:
+                    pass
 
-                    release_id = upsert_new_release(
-                        artist_name=name, album_title=title,
-                        tidal_id=tidal_id, tidal_url=tidal_url,
-                        cover_url=cover_url, year=year,
-                        tracks=tracks, quality=quality,
-                        release_date=rd,
-                        release_type=release.get("type", "Album"),
-                        mb_release_group_id=release.get("mbid", ""),
-                    )
-                    new_count += 1
-                    emit_task_event(task_id, "new_release_found", {
-                        "message": f"New: {name} - {title} ({year})",
-                        "artist": name, "album": title,
+                release_id = upsert_new_release(
+                    artist_name=name, album_title=title,
+                    tidal_id=tidal_id, tidal_url=tidal_url,
+                    cover_url=cover_url, year=year,
+                    tracks=tracks, quality=quality,
+                    release_date=rd,
+                    release_type=release.get("type", "Album"),
+                    mb_release_group_id=release.get("mbid", ""),
+                )
+                new_count += 1
+                has_new = True
+                emit_task_event(task_id, "new_release_found", {
+                    "message": f"New: {name} - {title} ({year})",
+                    "artist": name, "album": title,
+                })
+
+                # Auto-download (max 1 per artist per scan)
+                if auto_download and tidal_url and not is_future:
+                    mark_release_downloading(release_id)
+                    create_task("tidal_download", {
+                        "url": tidal_url, "artist": name, "album": title,
+                        "quality": get_setting("tidal_quality", "max"),
+                        "new_release_id": release_id,
                     })
 
-                    # Auto-download (max 1 per artist per scan)
-                    if auto_download and tidal_url:
-                        mark_release_downloading(release_id)
-                        create_task("tidal_download", {
-                            "url": tidal_url, "artist": name, "album": title,
-                            "quality": get_setting("tidal_quality", "max"),
-                            "new_release_id": release_id,
-                        })
-                        break  # only auto-download the newest one
-
-                # Update known date
+            # Update known date
+            if has_new or latest_mb_date > known_date:
                 with get_db_ctx() as cur:
                     cur.execute("UPDATE library_artists SET latest_release_date = %s WHERE name = %s",
                                 (latest_mb_date, name))
