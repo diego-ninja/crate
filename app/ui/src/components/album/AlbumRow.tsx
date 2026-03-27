@@ -85,9 +85,9 @@ export function AlbumRow({
 
       {/* Format */}
       {format && (
-        <Badge variant="outline" className={formatBadgeClass(format)}>
+        <span className={formatBadgeClass(format)}>
           {format.replace(".", "").toUpperCase()}
-        </Badge>
+        </span>
       )}
 
       {/* Size */}

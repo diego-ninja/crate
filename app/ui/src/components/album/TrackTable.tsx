@@ -294,9 +294,9 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
               </TableCell>
               <TableCell className={cn(isCurrentTrack && "text-primary font-medium")}>{t.tags.title || t.filename}</TableCell>
               <TableCell>
-                <Badge className={formatBadgeClass(t.format)}>
+                <span className={formatBadgeClass(t.format)}>
                   {t.format.replace(".", "").toUpperCase()}
-                </Badge>
+                </span>
               </TableCell>
               <TableCell className="text-muted-foreground font-mono text-sm">
                 {formatBitrate(t.bitrate)}
