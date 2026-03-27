@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import {
   Loader2, Download, X, RefreshCw, Disc3, MapPin, Calendar,
   Ticket, ExternalLink, Sparkles, List, CalendarDays,
-  ChevronLeft, ChevronRight, Clock, Search,
+  ChevronLeft, ChevronRight, ChevronDown, Clock, Search, Trash2,
 } from "lucide-react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
@@ -50,7 +50,85 @@ type ViewMode = "list" | "calendar";
 type TypeFilter = "all" | "releases" | "shows";
 
 function itemKey(item: UpcomingItem, index: number): string {
-  return `${item.type}-${item.release_id ?? item.venue ?? index}-${item.date}`;
+  return `${item.type}-${item.artist}-${item.release_id ?? item.venue ?? index}-${item.date}`;
+}
+
+// ── Searchable dropdown ──
+
+function SearchableSelect({ value, onChange, options, placeholder }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: [string, number][];
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const filtered = search
+    ? options.filter(([name]) => name.toLowerCase().includes(search.toLowerCase()))
+    : options;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "h-8 rounded-md border border-border bg-background px-2.5 text-xs flex items-center gap-1.5 min-w-[120px] max-w-[200px]",
+          value ? "text-foreground" : "text-muted-foreground"
+        )}
+      >
+        <span className="truncate">{value || placeholder}</span>
+        <ChevronDown size={12} className="flex-shrink-0 text-muted-foreground/50" />
+      </button>
+      {open && (
+        <div className="absolute top-full mt-1 left-0 z-50 w-[220px] bg-card border border-border rounded-lg shadow-xl overflow-hidden">
+          <div className="p-1.5 border-b border-border">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search..."
+              autoFocus
+              className="w-full h-7 px-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:border-primary/50"
+            />
+          </div>
+          <div className="max-h-[200px] overflow-y-auto p-1">
+            <button
+              onClick={() => { onChange(""); setOpen(false); setSearch(""); }}
+              className={cn("w-full text-left px-2 py-1.5 text-xs rounded-md hover:bg-primary/10", !value && "text-primary")}
+            >
+              {placeholder}
+            </button>
+            {filtered.map(([name, count]) => (
+              <button
+                key={name}
+                onClick={() => { onChange(name); setOpen(false); setSearch(""); }}
+                className={cn(
+                  "w-full text-left px-2 py-1.5 text-xs rounded-md hover:bg-primary/10 flex items-center justify-between",
+                  value === name && "text-primary bg-primary/5"
+                )}
+              >
+                <span className="truncate">{name}</span>
+                <span className="text-muted-foreground/40 text-[10px] ml-2">{count}</span>
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <div className="px-2 py-3 text-xs text-muted-foreground/40 text-center">No matches</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function Upcoming() {
@@ -159,6 +237,14 @@ export function Upcoming() {
     } catch { setSyncing(false); toast.error("Failed to sync shows"); }
   }
 
+  async function clearCaches() {
+    try {
+      await api("/api/tasks/clean/completed", "POST");
+      toast.success("Caches cleared");
+      fetchItems();
+    } catch { toast.error("Failed to clear"); }
+  }
+
   const releaseCount = items.filter((i) => i.type === "release" && i.is_upcoming).length;
   const showCount = items.filter((i) => i.type === "show").length;
 
@@ -193,7 +279,10 @@ export function Upcoming() {
           </div>
           <Button size="sm" onClick={syncShows} disabled={syncing}>
             <RefreshCw size={14} className={cn("mr-1", syncing && "animate-spin")} />
-            Sync Shows
+            Sync
+          </Button>
+          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={clearCaches}>
+            <Trash2 size={14} />
           </Button>
         </div>
       </div>
@@ -221,29 +310,21 @@ export function Upcoming() {
         ))}
 
         {availableGenres.length > 0 && (
-          <select
+          <SearchableSelect
             value={genreFilter}
-            onChange={(e) => setGenreFilter(e.target.value)}
-            className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-          >
-            <option value="">All genres</option>
-            {availableGenres.map(([g, c]) => (
-              <option key={g} value={g}>{g} ({c})</option>
-            ))}
-          </select>
+            onChange={setGenreFilter}
+            options={availableGenres}
+            placeholder="All genres"
+          />
         )}
 
         {availableCities.length > 0 && (
-          <select
+          <SearchableSelect
             value={cityFilter}
-            onChange={(e) => setCityFilter(e.target.value)}
-            className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-          >
-            <option value="">All cities</option>
-            {availableCities.map(([c, n]) => (
-              <option key={c} value={c}>{c} ({n})</option>
-            ))}
-          </select>
+            onChange={setCityFilter}
+            options={availableCities}
+            placeholder="All cities"
+          />
         )}
       </div>
 
@@ -334,16 +415,26 @@ function MonthGroup({ month, items, onDownload, onDismiss, expandedId, onToggleE
           const key = itemKey(item, i);
           const isExpanded = expandedId === key;
           return (
-            <div key={key}>
+            <div key={key} className={cn(
+              "rounded-xl border overflow-hidden transition-all duration-300 ease-out",
+              isExpanded
+                ? "border-amber-500/30 bg-card/50"
+                : "border-transparent"
+            )}>
               <EventCard
                 item={item}
                 onDownload={onDownload}
                 onDismiss={onDismiss}
                 onClick={item.type === "show" ? () => onToggleExpand(isExpanded ? null : key) : undefined}
               />
-              {isExpanded && item.type === "show" && (
-                <ShowDetailPanel item={item} onClose={() => onToggleExpand(null)} />
-              )}
+              <div className={cn(
+                "transition-all duration-300 ease-out overflow-hidden",
+                isExpanded ? "max-h-[340px] opacity-100" : "max-h-0 opacity-0"
+              )}>
+                {item.type === "show" && (
+                  <ShowDetailPanel item={item} onClose={() => onToggleExpand(null)} />
+                )}
+              </div>
             </div>
           );
         })}
@@ -475,7 +566,7 @@ function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () =>
   const location = [item.city, item.country].filter(Boolean).join(", ");
 
   return (
-    <div className="border border-amber-500/20 rounded-xl overflow-hidden mb-2 relative h-[320px]">
+    <div className="relative h-[320px]">
       {/* Full-bleed map background */}
       {hasCoords ? (
         <div className="absolute inset-0">

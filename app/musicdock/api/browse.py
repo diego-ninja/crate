@@ -630,7 +630,7 @@ def api_upcoming(request: Request):
         })
 
     # 2. Shows from DB (not cache)
-    shows = db_get_shows()
+    shows = db_get_shows(limit=1000)
     # Get artist genres for enrichment
     genre_map = {}
     with get_db_ctx() as cur:
