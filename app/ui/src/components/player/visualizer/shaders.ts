@@ -243,12 +243,10 @@ void main() {
   vec3 result = vec3(1.0) - exp(-color * exposure);
   result = pow(result, vec3(1.0 / gamma));
 
-  // Blend dark areas with card background so visualizer matches the player
-  vec3 cardBg = vec3(0.086, 0.086, 0.118);
-  float lum = dot(color, vec3(0.299, 0.587, 0.114));
-  result = mix(cardBg, result, smoothstep(0.0, 0.06, lum));
-
-  out_Col = vec4(result, 1.0);
+  // Alpha = brightness — dark pixels become transparent, spheres stay opaque
+  float lum = dot(result, vec3(0.299, 0.587, 0.114));
+  float alpha = smoothstep(0.01, 0.15, lum);
+  out_Col = vec4(result * alpha, alpha);
 }
 `;
 
