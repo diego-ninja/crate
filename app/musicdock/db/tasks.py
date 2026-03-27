@@ -18,18 +18,24 @@ def create_task(task_type: str, params: dict | None = None) -> str:
 
 def create_task_dedup(task_type: str, params: dict | None = None, dedup_key: str = "") -> str | None:
     """Create a task only if no pending/running task of the same type+key exists.
-    Returns task_id if created, None if duplicate."""
+    Atomic check+insert to prevent TOCTOU race. Returns task_id or None."""
     p = params or {}
-    key = dedup_key or json.dumps(p, sort_keys=True)
+    params_text = json.dumps(p, sort_keys=True)
+    task_id = uuid.uuid4().hex[:12]
+    now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
         cur.execute(
-            "SELECT id FROM tasks WHERE type = %s AND status IN ('pending', 'running') "
-            "AND params_json::text = %s LIMIT 1",
-            (task_type, json.dumps(p, sort_keys=True)),
+            "INSERT INTO tasks (id, type, status, params_json, created_at, updated_at) "
+            "SELECT %s, %s, 'pending', %s, %s, %s "
+            "WHERE NOT EXISTS ("
+            "  SELECT 1 FROM tasks WHERE type = %s AND status IN ('pending', 'running') "
+            "  AND params_json::text = %s"
+            ")",
+            (task_id, task_type, params_text, now, now, task_type, params_text),
         )
-        if cur.fetchone():
+        if cur.rowcount == 0:
             return None  # duplicate
-    return create_task(task_type, p)
+    return task_id
 
 
 def update_task(task_id: str, *, status: str | None = None, progress: str | None = None,

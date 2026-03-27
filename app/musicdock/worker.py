@@ -790,18 +790,34 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
             )
             set_cache("health_report", report, ttl=3600)
 
-    repairer = LibraryRepair(config)
-    result = repairer.repair(
-        report, dry_run=dry_run, auto_only=auto_only, task_id=task_id,
-        progress_callback=lambda d: update_task(task_id, progress=json.dumps(d)),
-    )
+    # Mark affected artists so watcher ignores FS changes during repair
+    affected_artists = set()
+    for issue in report.get("issues", []):
+        d = issue.get("details") or issue.get("details_json") or {}
+        artist = d.get("artist") or d.get("db_artist") or ""
+        if artist:
+            affected_artists.add(artist)
+    if _watcher and not dry_run:
+        for a in affected_artists:
+            _watcher.mark_processing(a)
 
-    action_count = len(result.get("actions", []))
-    emit_task_event(task_id, "info", {"message": f"Repair complete: {action_count} actions", "fs_changed": result.get("fs_changed"), "db_changed": result.get("db_changed")})
-    if not dry_run and result.get("fs_changed"):
-        start_scan()
+    try:
+        repairer = LibraryRepair(config)
+        result = repairer.repair(
+            report, dry_run=dry_run, auto_only=auto_only, task_id=task_id,
+            progress_callback=lambda d: update_task(task_id, progress=json.dumps(d)),
+        )
 
-    return result
+        action_count = len(result.get("actions", []))
+        emit_task_event(task_id, "info", {"message": f"Repair complete: {action_count} actions", "fs_changed": result.get("fs_changed"), "db_changed": result.get("db_changed")})
+        if not dry_run and result.get("fs_changed"):
+            start_scan()
+
+        return result
+    finally:
+        if _watcher and not dry_run:
+            for a in affected_artists:
+                _watcher.unmark_processing(a)
 
 
 def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
@@ -1736,25 +1752,33 @@ def _reorganize_artist_folders(artist_name: str, lib: Path, config: dict, task_i
 
 def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dict:
     """Full pipeline for new content: enrich artist + index genres + analyze audio + bliss."""
-    from musicdock.enrichment import enrich_artist
-    from musicdock.genre_indexer import index_all_genres
-    from musicdock.bliss import analyze_file as bliss_analyze, store_vectors, is_available as bliss_available
-    from musicdock.audio_analysis import analyze_track
-    from musicdock.db import (
-        get_library_artist, get_library_albums, get_library_tracks,
-        update_track_audiomuse, set_album_genres, get_or_create_genre, get_db_ctx,
-    )
-    from musicdock.popularity import _lastfm_get, _parse_int
-    import re as _re
-
     artist_name = params.get("artist", "")
     album_folder = params.get("album", "")
 
     # Tell watcher to ignore changes while we write tags/photos
     if _watcher:
         _watcher.mark_processing(artist_name)
-    lib = Path(config["library_path"])
+    try:
+        return _process_new_content_inner(task_id, params, config, artist_name, album_folder)
+    finally:
+        if _watcher:
+            _watcher.unmark_processing(artist_name)
 
+
+def _process_new_content_inner(task_id, params, config, artist_name, album_folder):
+    from musicdock.enrichment import enrich_artist
+    from musicdock.genre_indexer import index_all_genres
+    from musicdock.bliss import analyze_file as bliss_analyze, store_vectors, is_available as bliss_available
+    from musicdock.audio_analysis import analyze_track
+    from musicdock.db import (
+        get_library_artist, get_library_albums, get_library_tracks,
+        update_track_audiomuse, set_cache, get_cache,
+        set_album_genres, get_or_create_genre, get_db_ctx,
+    )
+    from musicdock.popularity import _lastfm_get, _parse_int
+    import re as _re
+
+    lib = Path(config["library_path"])
     result = {"artist": artist_name, "album": album_folder, "steps": {}}
 
     # ── 0. Reorganize folders to Artist/Year/Album structure ──
@@ -2036,10 +2060,6 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
     except Exception:
         log.warning("Cover fetching failed", exc_info=True)
         result["steps"]["covers"] = "failed"
-
-    # Unmark processing so watcher can react to future changes
-    if _watcher:
-        _watcher.unmark_processing(artist_name)
 
     return result
 
