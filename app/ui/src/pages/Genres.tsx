@@ -43,7 +43,7 @@ interface GenreDetail extends Genre {
 }
 
 const GENRE_COLORS = [
-  "from-cyan-600/30 to-cyan-900/10",
+  "from-primary/30 to-primary/10",
   "from-blue-600/30 to-blue-900/10",
   "from-emerald-600/30 to-emerald-900/10",
   "from-green-600/30 to-green-900/10",

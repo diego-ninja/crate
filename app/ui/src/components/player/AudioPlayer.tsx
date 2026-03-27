@@ -184,9 +184,9 @@ function Equalizer({ small }: { small?: boolean }) {
   const h = small ? "h-2" : "h-2.5", w = small ? "w-[2px]" : "w-[2.5px]";
   return (
     <div className={`flex items-end gap-[1.5px] ${h} flex-shrink-0`}>
-      <span className={`equalizer-bar ${w} bg-primary-foreground rounded-sm`} style={{ animationDelay: "0ms" }} />
-      <span className={`equalizer-bar ${w} bg-primary-foreground rounded-sm`} style={{ animationDelay: "150ms" }} />
-      <span className={`equalizer-bar ${w} bg-primary-foreground rounded-sm`} style={{ animationDelay: "300ms" }} />
+      <span className={`equalizer-bar ${w} bg-primary rounded-sm`} style={{ animationDelay: "0ms" }} />
+      <span className={`equalizer-bar ${w} bg-primary rounded-sm`} style={{ animationDelay: "150ms" }} />
+      <span className={`equalizer-bar ${w} bg-primary rounded-sm`} style={{ animationDelay: "300ms" }} />
     </div>
   );
 }

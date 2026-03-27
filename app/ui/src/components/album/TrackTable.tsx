@@ -17,10 +17,9 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { ResponsiveRadar } from "@nivo/radar";
-import { formatDuration, formatBitrate } from "@/lib/utils";
+import { formatDuration, formatBitrate, formatBadgeClass, cn } from "@/lib/utils";
 import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { useFavorites } from "@/hooks/use-favorites";
-import { cn } from "@/lib/utils";
 
 interface Track {
   filename: string;
@@ -62,13 +61,6 @@ interface TrackTableProps {
   audiomuseData?: Record<string, AudioMuseTrack>;
 }
 
-function formatBadgeClass(format: string): string {
-  const f = format.replace(".", "").toLowerCase();
-  if (f === "flac") return "bg-green-500/15 text-green-500 border-0";
-  if (f === "mp3") return "bg-blue-500/15 text-blue-500 border-0";
-  if (f === "m4a") return "bg-orange-500/15 text-orange-500 border-0";
-  return "";
-}
 
 function EnergyBar({ value }: { value: number }) {
   // 0-1: blue (low) → green (mid) → red (high)

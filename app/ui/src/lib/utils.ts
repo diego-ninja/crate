@@ -44,6 +44,15 @@ export function encPath(s: string): string {
   return encodeURIComponent(s);
 }
 
+export function formatBadgeClass(format: string): string {
+  const f = format.replace(".", "").toLowerCase();
+  if (f === "flac") return "border-green-500/30 text-green-500 text-[10px] px-1 py-0";
+  if (f === "mp3") return "border-blue-500/30 text-blue-500 text-[10px] px-1 py-0";
+  if (f === "m4a" || f === "aac") return "border-orange-500/30 text-orange-500 text-[10px] px-1 py-0";
+  if (f === "ogg" || f === "opus") return "border-purple-500/30 text-purple-500 text-[10px] px-1 py-0";
+  return "text-[10px] px-1 py-0";
+}
+
 export function timeAgo(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
   if (diff < 60) return "just now";

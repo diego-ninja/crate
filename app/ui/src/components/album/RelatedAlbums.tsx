@@ -2,7 +2,7 @@ import { useApi } from "@/hooks/use-api";
 import { encPath } from "@/lib/utils";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
-import { Disc3 } from "lucide-react";
+import { Disc3, Play } from "lucide-react";
 
 interface RelatedAlbum {
   name: string;
@@ -46,6 +46,9 @@ export function RelatedAlbums({ artist, album }: { artist: string; album: string
               />
               <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center -z-10">
                 <Disc3 size={28} className="text-primary/40" />
+              </div>
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <Play size={20} className="text-white fill-white" />
               </div>
             </div>
             <div className="text-xs font-medium truncate">{a.display_name}</div>

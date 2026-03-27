@@ -27,14 +27,14 @@ type SortKey = "pct" | "name" | "listeners";
 
 function pctColor(pct: number): string {
   if (pct >= 100) return "bg-green-500";
-  if (pct > 75) return "bg-cyan-500";
+  if (pct > 75) return "bg-primary";
   if (pct > 50) return "bg-yellow-500";
   return "bg-red-500";
 }
 
 function pctTextColor(pct: number): string {
   if (pct >= 100) return "text-green-500";
-  if (pct > 75) return "text-cyan-500";
+  if (pct > 75) return "text-primary";
   if (pct > 50) return "text-yellow-500";
   return "text-red-500";
 }

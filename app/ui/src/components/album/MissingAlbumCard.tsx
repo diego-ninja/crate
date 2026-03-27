@@ -18,7 +18,7 @@ function hashColor(str: string): string {
 
 const typeBadgeClass: Record<string, string> = {
   Album: "border-blue-500/30 text-blue-500",
-  EP: "border-cyan-500/30 text-cyan-500",
+  EP: "border-primary/30 text-primary",
   Single: "border-yellow-500/30 text-yellow-500",
   Compilation: "border-orange-500/30 text-orange-500",
 };
@@ -29,7 +29,7 @@ export function MissingAlbumCard({ title, year, type, artist }: MissingAlbumCard
   return (
     <div className="border border-dashed border-border rounded-lg p-3 text-center grayscale opacity-60 hover:opacity-80 transition-opacity">
       <div
-        className="w-full aspect-square rounded-md overflow-hidden mb-2 relative flex items-center justify-center"
+        className="w-full aspect-square rounded-lg overflow-hidden mb-2 relative flex items-center justify-center"
         style={{ background: `linear-gradient(135deg, ${hashColor(title)}, ${hashColor(title + title)})` }}
       >
         <span className="text-3xl font-bold text-white/20">{title.charAt(0).toUpperCase()}</span>

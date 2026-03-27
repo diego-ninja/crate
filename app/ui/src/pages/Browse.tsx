@@ -8,16 +8,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api } from "@/lib/api";
-import { encPath, formatSize, formatCompact } from "@/lib/utils";
+import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import {
-  LayoutGrid, List, Users, Loader2,
-  Check, SquareCheck, X, RefreshCw, BrainCircuit, Trash2, Wrench,
+  LayoutGrid, List, Loader2,
+  Check, SquareCheck, X, RefreshCw, BrainCircuit, Trash2,
 } from "lucide-react";
+import { ArtistCard } from "@/components/artist/ArtistCard";
+import { ArtistRow } from "@/components/artist/ArtistRow";
 
 interface ArtistItem {
   name: string;
@@ -296,9 +297,14 @@ export function Browse() {
       ) : view === "grid" ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
           {artists.map((a) => (
-            <ArtistGridCard
+            <ArtistCard
               key={a.name}
-              artist={a}
+              name={a.name}
+              albums={a.albums}
+              tracks={a.tracks}
+              size_mb={a.total_size_mb}
+              primary_format={a.primary_format ?? ""}
+              hasIssues={a.has_issues}
               selectMode={selectMode}
               isSelected={selected.has(a.name)}
               onClick={() => selectMode ? toggleSelect(a.name) : navigate(`/artist/${encPath(a.name)}`)}
@@ -308,9 +314,15 @@ export function Browse() {
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {artists.map((a) => (
-            <ArtistListRow
+            <ArtistRow
               key={a.name}
-              artist={a}
+              name={a.name}
+              albums={a.albums}
+              tracks={a.tracks}
+              total_size_mb={a.total_size_mb}
+              listeners={a.listeners}
+              genres={a.genres}
+              hasIssues={a.has_issues}
               selectMode={selectMode}
               isSelected={selected.has(a.name)}
               onClick={() => selectMode ? toggleSelect(a.name) : navigate(`/artist/${encPath(a.name)}`)}
@@ -417,146 +429,6 @@ function DecadeSelect({
   );
 }
 
-function ArtistGridCard({
-  artist,
-  selectMode,
-  isSelected,
-  onClick,
-}: {
-  artist: ArtistItem;
-  selectMode: boolean;
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  const [imgError, setImgError] = useState(false);
-  const letter = artist.name.charAt(0).toUpperCase();
-
-  return (
-    <div
-      onClick={onClick}
-      className={`bg-card border rounded-lg p-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 ${
-        isSelected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary"
-      }`}
-    >
-      <div className="relative w-full aspect-square rounded-lg mb-2 overflow-hidden">
-        {selectMode && (
-          <div className="absolute top-2 left-2 z-10">
-            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-              isSelected ? "bg-primary border-primary" : "border-white/50 bg-black/30"
-            }`}>
-              {isSelected && <Check size={12} className="text-white" />}
-            </div>
-          </div>
-        )}
-        {artist.has_issues && (
-          <div className="absolute top-2 right-2 z-10">
-            <Wrench size={14} className="text-amber-400/70" />
-          </div>
-        )}
-        {!imgError ? (
-          <img
-            src={`/api/artist/${encPath(artist.name)}/photo`}
-            alt={artist.name}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center">
-            <span className="text-4xl font-bold text-primary/70">{letter}</span>
-          </div>
-        )}
-      </div>
-      <div className="font-semibold text-sm truncate">{artist.name}</div>
-      <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-        <span>
-          {artist.albums} album{artist.albums !== 1 ? "s" : ""}
-        </span>
-        {artist.primary_format && (
-          <Badge variant="outline" className="text-[10px] px-1 py-0 ml-1">
-            {artist.primary_format.replace(".", "").toUpperCase()}
-          </Badge>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ArtistListRow({
-  artist,
-  selectMode,
-  isSelected,
-  onClick,
-}: {
-  artist: ArtistItem;
-  selectMode: boolean;
-  isSelected: boolean;
-  onClick: () => void;
-}) {
-  const [imgError, setImgError] = useState(false);
-  const letter = artist.name.charAt(0).toUpperCase();
-
-  return (
-    <div
-      onClick={onClick}
-      className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors ${
-        isSelected ? "bg-primary/10" : ""
-      }`}
-    >
-      {selectMode && (
-        <div className="flex-shrink-0">
-          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-            isSelected ? "bg-primary border-primary" : "border-muted-foreground/40 bg-transparent"
-          }`}>
-            {isSelected && <Check size={12} className="text-white" />}
-          </div>
-        </div>
-      )}
-      <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-        {!imgError ? (
-          <img
-            src={`/api/artist/${encPath(artist.name)}/photo`}
-            alt={artist.name}
-            loading="lazy"
-            className="w-full h-full object-cover"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center">
-            <span className="text-sm font-bold text-primary/70">{letter}</span>
-          </div>
-        )}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-sm truncate">{artist.name}</div>
-        {artist.genres && artist.genres.length > 0 && (
-          <div className="flex gap-1 mt-0.5 flex-wrap">
-            {artist.genres.slice(0, 4).map((g) => (
-              <Badge key={g} variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground">
-                {g.toLowerCase()}
-              </Badge>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="text-xs text-muted-foreground whitespace-nowrap">
-        {artist.albums} album{artist.albums !== 1 ? "s" : ""}
-      </div>
-      <div className="hidden sm:block text-xs text-muted-foreground whitespace-nowrap w-16 text-right">
-        {artist.tracks} tracks
-      </div>
-      <div className="hidden sm:block text-xs text-muted-foreground whitespace-nowrap w-16 text-right">
-        {formatSize(artist.total_size_mb)}
-      </div>
-      {artist.listeners != null && artist.listeners > 0 && (
-        <div className="hidden md:flex text-xs text-muted-foreground whitespace-nowrap w-16 text-right items-center justify-end gap-1">
-          <Users size={12} />
-          {formatCompact(artist.listeners)}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function GridSkeletonBlock() {
   return (

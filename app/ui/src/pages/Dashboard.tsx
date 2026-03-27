@@ -112,7 +112,7 @@ export function Dashboard() {
       label: "Artists",
       value: formatNumber(stats?.artists ?? 0),
       icon: Users,
-      color: "border-l-cyan-500",
+      color: "border-l-primary",
     },
     {
       label: "Albums",
@@ -408,6 +408,9 @@ export function Dashboard() {
                     <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center -z-10">
                       <Disc3 size={28} className="text-primary/40" />
                     </div>
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Play size={20} className="text-white fill-white" />
+                    </div>
                   </div>
                   <div className="text-xs font-medium truncate">{album.display_name || album.name}</div>
                   <div className="text-[11px] text-muted-foreground truncate">{album.artist}</div>
@@ -447,8 +450,8 @@ export function Dashboard() {
                         <Music size={24} className="text-primary/50" />
                       </div>
                     )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                      <Play size={24} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="white" />
+                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Play size={20} className="text-white fill-white" />
                     </div>
                   </div>
                   <div className="text-xs font-medium truncate">{track.title}</div>

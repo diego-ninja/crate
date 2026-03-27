@@ -522,7 +522,7 @@ export function Artist() {
                 {topTracks.length > 0 && (
                   <Button
                     size="sm"
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white"
+                    className="bg-primary hover:bg-primary/80 text-primary-foreground"
                     onClick={() => topTracks[0] && playTopTrack(topTracks[0], 0)}
                   >
                     <Play size={14} className="mr-1 fill-current" /> Play Top Tracks
@@ -634,7 +634,7 @@ export function Artist() {
               onClick={() => setActiveTab(t.key)}
               className={`px-3 md:px-4 py-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
                 activeTab === t.key
-                  ? "border-cyan-500 text-white"
+                  ? "border-primary text-white"
                   : "border-transparent text-white/40 hover:text-white/70"
               }`}
             >
@@ -662,7 +662,7 @@ export function Artist() {
                 {bioText.length > 400 && (
                   <button
                     onClick={() => setBioExpanded(!bioExpanded)}
-                    className="text-xs text-cyan-400 hover:text-cyan-300 mt-2 flex items-center gap-1"
+                    className="text-xs text-primary hover:text-primary/80 mt-2 flex items-center gap-1"
                   >
                     {bioExpanded ? <><ChevronUp size={12} /> Less</> : <><ChevronDown size={12} /> More</>}
                   </button>
@@ -1202,7 +1202,7 @@ export function Artist() {
                 {bioText.length > 600 && (
                   <button
                     onClick={() => setBioExpanded(!bioExpanded)}
-                    className="text-xs text-cyan-400 hover:text-cyan-300 mt-2 flex items-center gap-1"
+                    className="text-xs text-primary hover:text-primary/80 mt-2 flex items-center gap-1"
                   >
                     {bioExpanded ? <><ChevronUp size={12} /> Less</> : <><ChevronDown size={12} /> More</>}
                   </button>

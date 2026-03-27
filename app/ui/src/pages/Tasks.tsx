@@ -269,7 +269,7 @@ const EVENT_BADGE_COLORS: Record<string, string> = {
   error: "bg-red-500/10 text-red-400 border-red-500/30",
   artist_enriched: "bg-green-500/10 text-green-400 border-green-500/30",
   artist_skipped: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30",
-  track_analyzed: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
+  track_analyzed: "bg-primary/10 text-primary border-primary/30",
   album_matched: "bg-purple-500/10 text-purple-400 border-purple-500/30",
   cover_found: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
   cover_applied: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
@@ -786,7 +786,7 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
                 className={cn(
                   "h-8 flex-1 rounded-md flex items-center justify-center text-[10px] truncate px-1 transition-colors",
                   task
-                    ? "bg-cyan-500/20 border border-cyan-500/30 text-cyan-400"
+                    ? "bg-primary/20 border border-primary/30 text-primary"
                     : "bg-muted/30 border border-border text-muted-foreground/40"
                 )}
                 title={task ? `${task.type}: ${task.params?.artist || task.id}` : "Idle"}

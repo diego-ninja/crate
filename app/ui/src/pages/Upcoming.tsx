@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/lib/api";
 import { cn, encPath } from "@/lib/utils";
+import { ArtistAvatar } from "@/components/artist/ArtistAvatar";
 import { toast } from "sonner";
 import {
   Loader2, Download, X, RefreshCw, Disc3, MapPin, Calendar,
@@ -256,7 +257,7 @@ export function Upcoming() {
           <Calendar size={24} className="text-primary" />
           <h1 className="text-2xl font-bold">Upcoming</h1>
           {releaseCount > 0 && (
-            <Badge variant="outline" className="border-cyan-500/30 text-cyan-400">
+            <Badge variant="outline" className="border-primary/30 text-primary">
               {releaseCount} releases
             </Badge>
           )}
@@ -349,7 +350,7 @@ export function Upcoming() {
         <div className="space-y-8">
           {upcoming.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-cyan-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Sparkles size={14} /> Coming Up
               </h2>
               {groupByMonth(upcoming).map(([month, monthItems]) => (
@@ -454,7 +455,7 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
       className={cn(
         "flex items-center gap-4 p-3 rounded-xl border transition-all hover:bg-card/80 group",
         isShow ? "border-amber-500/10 hover:border-amber-500/20" :
-          item.tidal_url ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.15)] animate-pulse-subtle" : "border-cyan-500/10 hover:border-cyan-500/20",
+          item.tidal_url ? "border-primary/30 shadow-[0_0_12px_rgba(6,182,212,0.15)] animate-pulse-subtle" : "border-primary/10 hover:border-primary/20",
         isShow && "cursor-pointer"
       )}
       onClick={onClick}
@@ -478,12 +479,12 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
             onClick={(e) => { e.stopPropagation(); onDownload(item.release_id!); }}
             className="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center"
           >
-            <Download size={16} className="text-cyan-400" />
+            <Download size={16} className="text-primary" />
           </button>
         )}
         {isRelease && item.status === "downloading" && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-            <Loader2 size={16} className="text-cyan-400 animate-spin" />
+            <Loader2 size={16} className="text-primary animate-spin" />
           </div>
         )}
         {isRelease && item.status === "downloaded" && (
@@ -525,7 +526,7 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
       </div>
 
       {/* Date */}
-      <div className={cn("text-right flex-shrink-0", isShow ? "text-amber-400" : "text-cyan-400")}>
+      <div className={cn("text-right flex-shrink-0", isShow ? "text-amber-400" : "text-primary")}>
         <div className="text-xs font-semibold">{dateStr}</div>
         {timeStr && <div className="text-[10px] text-muted-foreground">{timeStr}</div>}
       </div>
@@ -764,7 +765,7 @@ function CalendarPill({ item, onDownload, onDismiss, onShowClick }: {
           "w-full text-left text-[9px] px-1 py-0.5 rounded truncate",
           isShow
             ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
-            : "bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25"
+            : "bg-primary/15 text-primary hover:bg-primary/25"
         )}>
           {item.artist}
         </button>
@@ -816,9 +817,7 @@ function ShowPopoverContent({ item }: { item: UpcomingItem }) {
         <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
         <div className="absolute -bottom-3 left-3 flex -space-x-2">
           {allArtists.slice(0, 3).map((name) => (
-            <Link key={name} to={`/artist/${encPath(name)}`}>
-              <ArtistThumb name={name} size={28} />
-            </Link>
+            <ArtistAvatar key={name} name={name} size={28} linked />
           ))}
         </div>
       </div>
@@ -909,7 +908,7 @@ function ReleasePopoverContent({ item, onDownload, onDismiss }: {
               <Badge variant="outline" className="text-[9px] px-1 py-0">{item.subtitle}</Badge>
             )}
             {item.tidal_url && (
-              <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/30 text-[9px] px-1 py-0">LOSSLESS</Badge>
+              <Badge className="bg-primary/15 text-primary border-primary/30 text-[9px] px-1 py-0">LOSSLESS</Badge>
             )}
           </div>
         </div>
@@ -924,7 +923,7 @@ function ReleasePopoverContent({ item, onDownload, onDismiss }: {
           <div className="flex gap-2">
             {item.tidal_url && (
               <button onClick={() => onDownload(item.release_id!)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 transition-colors text-xs font-medium">
+                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors text-xs font-medium">
                 <Download size={12} /> Download
               </button>
             )}
@@ -938,7 +937,7 @@ function ReleasePopoverContent({ item, onDownload, onDismiss }: {
           <Badge className="bg-green-500/15 text-green-400 border-green-500/30 text-[10px]">Downloaded</Badge>
         )}
         {item.status === "downloading" && (
-          <div className="flex items-center gap-1.5 text-xs text-cyan-400">
+          <div className="flex items-center gap-1.5 text-xs text-primary">
             <Loader2 size={12} className="animate-spin" /> Downloading...
           </div>
         )}
@@ -947,22 +946,3 @@ function ReleasePopoverContent({ item, onDownload, onDismiss }: {
   );
 }
 
-// ── Artist thumbnail (simple, self-contained) ──
-
-function ArtistThumb({ name, size = 28 }: { name: string; size?: number }) {
-  const [failed, setFailed] = useState(false);
-  const letter = name.charAt(0).toUpperCase();
-
-  return (
-    <div className="rounded-full ring-2 ring-card overflow-hidden bg-secondary flex items-center justify-center flex-shrink-0"
-      style={{ width: size, height: size }} title={name}>
-      {!failed ? (
-        <img src={`/api/artist/${encPath(name)}/photo`} alt={name}
-          className="w-full h-full object-cover"
-          onError={() => setFailed(true)} />
-      ) : (
-        <span className="text-[9px] font-bold text-foreground/60">{letter}</span>
-      )}
-    </div>
-  );
-}

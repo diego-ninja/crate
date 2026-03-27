@@ -161,7 +161,7 @@ export function AlbumHeader({
                   />
                 ) : null}
                 {(coverError || !coverLoaded) && (
-                  <div className={`absolute inset-0 bg-gradient-to-br from-cyan-600/40 to-cyan-900/20 flex items-center justify-center transition-opacity duration-500 ${coverLoaded && !coverError ? "opacity-0" : "opacity-100"}`}>
+                  <div className={`absolute inset-0 bg-gradient-to-br from-primary/40 to-primary/20 flex items-center justify-center transition-opacity duration-500 ${coverLoaded && !coverError ? "opacity-0" : "opacity-100"}`}>
                     <span className="text-5xl font-black text-white/40">{letter}</span>
                   </div>
                 )}
@@ -232,7 +232,7 @@ export function AlbumHeader({
                 <>
                   <Button
                     size="sm"
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white"
+                    className="bg-primary hover:bg-primary/80 text-primary-foreground"
                     onClick={handlePlayAll}
                     disabled={!navidromeData.songs.length}
                   >

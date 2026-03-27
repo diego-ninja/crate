@@ -89,7 +89,7 @@ function ReleaseRow({ release: r, onDownload, onDismiss }: {
         {r.status === "detected" && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {r.tidal_url && (
-              <Button size="sm" variant="outline" className="h-7 text-xs border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+              <Button size="sm" variant="outline" className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10"
                 onClick={() => onDownload(r.id)}>
                 <Download size={12} className="mr-1" /> Download
               </Button>
@@ -156,7 +156,7 @@ function TimelineView({ releases, onDownload, onDismiss }: {
     <div className="space-y-8">
       {upcoming.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-cyan-400 uppercase tracking-wider mb-4">
+          <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">
             Upcoming
           </h2>
           {[...upcomingGroups.entries()].map(([month, items]) => (

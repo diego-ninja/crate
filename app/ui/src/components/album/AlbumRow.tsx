@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { Badge } from "@/components/ui/badge";
-import { encPath } from "@/lib/utils";
+import { encPath, formatBadgeClass } from "@/lib/utils";
 import { Music } from "lucide-react";
 import { useState } from "react";
 
@@ -49,8 +49,8 @@ export function AlbumRow({
           />
         ) : null}
         {(placeholder || imgError || !imgLoaded) && (
-          <div className={`absolute inset-0 bg-gradient-to-br from-cyan-600/20 to-cyan-900/10 flex items-center justify-center ${imgLoaded && !imgError && !placeholder ? "opacity-0" : "opacity-100"}`}>
-            <Music size={18} className="text-muted-foreground" />
+          <div className={`absolute inset-0 bg-secondary flex items-center justify-center ${imgLoaded && !imgError && !placeholder ? "opacity-0" : "opacity-100"}`}>
+            <Music size={18} className="text-muted-foreground/30" />
           </div>
         )}
       </div>
@@ -103,10 +103,3 @@ export function AlbumRow({
   );
 }
 
-function formatBadgeClass(f: string): string {
-  const clean = f.replace(".", "").toLowerCase();
-  if (clean === "flac") return "border-green-500/30 text-green-500 text-[10px] px-1.5 py-0";
-  if (clean === "mp3") return "border-blue-500/30 text-blue-500 text-[10px] px-1.5 py-0";
-  if (clean === "m4a") return "border-orange-500/30 text-orange-500 text-[10px] px-1.5 py-0";
-  return "text-[10px] px-1.5 py-0";
-}

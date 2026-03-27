@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
-import { encPath } from "@/lib/utils";
+import { encPath, formatBadgeClass } from "@/lib/utils";
 import { Music, Play, Heart, ListPlus } from "lucide-react";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { useFavorites } from "@/hooks/use-favorites";
@@ -16,6 +16,8 @@ interface AlbumCardProps {
   tracks: number;
   formats: string[];
   hasCover?: boolean;
+  showHeart?: boolean;
+  showQueue?: boolean;
 }
 
 function hashColor(str: string): string {
@@ -46,6 +48,8 @@ export const AlbumCard = React.memo(function AlbumCard({
   year,
   tracks,
   formats,
+  showHeart = true,
+  showQueue = true,
 }: AlbumCardProps) {
   const navigate = useNavigate();
   const [imgLoaded, setImgLoaded] = useState(false);
@@ -82,7 +86,7 @@ export const AlbumCard = React.memo(function AlbumCard({
         onClick={() => navigate(`/album/${encPath(artist)}/${encPath(name)}`)}
         className="bg-card border border-border rounded-lg p-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 hover:border-primary text-center group"
       >
-        <div className="w-full aspect-square rounded-md bg-secondary overflow-hidden mb-2 relative">
+        <div className="w-full aspect-square rounded-lg bg-secondary overflow-hidden mb-2 relative">
           {!imgError ? (
             <img
               src={coverUrl}
@@ -106,26 +110,30 @@ export const AlbumCard = React.memo(function AlbumCard({
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <button
               onClick={handlePlay}
-              className="w-11 h-11 rounded-full bg-cyan-600 flex items-center justify-center shadow-lg shadow-black/40 hover:bg-cyan-500 transition-colors hover:scale-110"
+              className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-black/40 hover:bg-primary/80 transition-colors hover:scale-110"
             >
               <Play size={20} className="text-white fill-white ml-0.5" />
             </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); toggleFavorite(favId, "album"); }}
-              className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
-            >
-              <Heart size={15} className={isFavorite(favId) ? "fill-red-500 text-red-500" : "text-white"} />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handlePlay(e);
-              }}
-              className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
-              title="Add to queue"
-            >
-              <ListPlus size={15} className="text-white" />
-            </button>
+            {showHeart && (
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleFavorite(favId, "album"); }}
+                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+              >
+                <Heart size={15} className={isFavorite(favId) ? "fill-red-500 text-red-500" : "text-white"} />
+              </button>
+            )}
+            {showQueue && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePlay(e);
+                }}
+                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
+                title="Add to queue"
+              >
+                <ListPlus size={15} className="text-white" />
+              </button>
+            )}
           </div>
           {/* Favorite indicator (always visible if favorited) */}
           {isFavorite(favId) && (
@@ -143,7 +151,7 @@ export const AlbumCard = React.memo(function AlbumCard({
             <Badge
               key={f}
               variant="outline"
-              className={formatClass(f)}
+              className={formatBadgeClass(f)}
             >
               {f.replace(".", "").toUpperCase()}
             </Badge>
@@ -154,10 +162,3 @@ export const AlbumCard = React.memo(function AlbumCard({
   );
 });
 
-function formatClass(f: string): string {
-  const clean = f.replace(".", "").toLowerCase();
-  if (clean === "flac") return "border-green-500/30 text-green-500 text-[10px] px-1 py-0";
-  if (clean === "mp3") return "border-blue-500/30 text-blue-500 text-[10px] px-1 py-0";
-  if (clean === "m4a") return "border-orange-500/30 text-orange-500 text-[10px] px-1 py-0";
-  return "text-[10px] px-1 py-0";
-}
