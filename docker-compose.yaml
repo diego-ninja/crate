@@ -498,9 +498,11 @@ services:
 
 volumes:
   crate_redis:
-    driver: local
+    name: musicdock_musicdock_redis
+    external: true
   crate_postgres:
-    driver: local
+    name: musicdock_musicdock_postgres
+    external: true
   audiomuse_redis:
     driver: local
   audiomuse_postgres:
