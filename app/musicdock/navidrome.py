@@ -16,7 +16,7 @@ def _base_url() -> str:
 def _auth_params() -> dict:
     return {
         "u": os.environ.get("NAVIDROME_USER", "admin"),
-        "p": os.environ.get("NAVIDROME_PASSWORD", "0n053nd41"),
+        "p": os.environ.get("NAVIDROME_PASSWORD", ""),
         "v": "1.16.1",
         "c": "librarian",
         "f": "json",

@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from musicdock.api.auth import _require_admin
 from musicdock.importer import ImportQueue
 from musicdock.api._deps import get_config
 
@@ -19,7 +20,8 @@ class RemoveRequest(BaseModel):
 
 
 @router.get("/api/imports/pending")
-def api_imports_pending():
+def api_imports_pending(request: Request):
+    _require_admin(request)
     config = get_config()
     queue = ImportQueue(config)
     pending = queue.scan_pending()
@@ -27,7 +29,8 @@ def api_imports_pending():
 
 
 @router.post("/api/imports/import")
-def api_imports_import(data: ImportItemRequest):
+def api_imports_import(request: Request, data: ImportItemRequest):
+    _require_admin(request)
     config = get_config()
     queue = ImportQueue(config)
     result = queue.import_item(data.source_path, data.artist, data.album)
@@ -35,7 +38,8 @@ def api_imports_import(data: ImportItemRequest):
 
 
 @router.post("/api/imports/import-all")
-def api_imports_import_all():
+def api_imports_import_all(request: Request):
+    _require_admin(request)
     config = get_config()
     queue = ImportQueue(config)
     results = queue.import_all()
@@ -43,7 +47,8 @@ def api_imports_import_all():
 
 
 @router.post("/api/imports/remove")
-def api_imports_remove(data: RemoveRequest):
+def api_imports_remove(request: Request, data: RemoveRequest):
+    _require_admin(request)
     config = get_config()
     queue = ImportQueue(config)
     ok = queue.remove_source(data.source_path)

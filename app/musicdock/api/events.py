@@ -1,9 +1,10 @@
 import asyncio
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from starlette.responses import StreamingResponse
 
+from musicdock.api.auth import _require_auth
 from musicdock.db import list_tasks, get_latest_scan, get_task, get_task_events
 from musicdock.api._deps import get_config
 from musicdock.importer import ImportQueue
@@ -54,7 +55,8 @@ async def _event_stream():
 
 
 @router.get("/api/events")
-async def api_events():
+async def api_events(request: Request):
+    _require_auth(request)
     return StreamingResponse(
         _event_stream(),
         media_type="text/event-stream",
@@ -92,8 +94,9 @@ async def _task_event_stream(task_id: str):
 
 
 @router.get("/api/events/task/{task_id}")
-async def api_task_events(task_id: str):
+async def api_task_events(request: Request, task_id: str):
     """SSE stream for a specific task's events. Closes when task completes."""
+    _require_auth(request)
     return StreamingResponse(
         _task_event_stream(task_id),
         media_type="text/event-stream",

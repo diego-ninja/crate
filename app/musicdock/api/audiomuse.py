@@ -3,9 +3,10 @@
 import logging
 import os
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from musicdock.api.auth import _require_auth, _require_admin
 from musicdock import audiomuse
 
 log = logging.getLogger(__name__)
@@ -15,7 +16,8 @@ AUDIOMUSE_DOMAIN = f"https://ai.{os.environ.get('DOMAIN', 'lespedants.org')}"
 
 
 @router.get("/api/audiomuse/status")
-def audiomuse_status():
+def audiomuse_status(request: Request):
+    _require_auth(request)
     config = audiomuse.ping()
     if not config:
         return {"available": False, "analyzed_tracks": 0, "url": AUDIOMUSE_DOMAIN}
@@ -27,9 +29,10 @@ def audiomuse_status():
 
 
 @router.get("/api/audiomuse/tracks")
-def audiomuse_track_data(ids: str = ""):
+def audiomuse_track_data(request: Request, ids: str = ""):
     """Get analysis data for tracks by Navidrome song IDs (comma-separated).
     Returns {item_id: {tempo, key, scale, energy, mood}} for analyzed tracks."""
+    _require_auth(request)
     if not ids:
         return {}
     item_ids = [i.strip() for i in ids.split(",") if i.strip()]
@@ -39,13 +42,15 @@ def audiomuse_track_data(ids: str = ""):
 
 
 @router.get("/api/audiomuse/artist/{artist_name}/tracks")
-def audiomuse_artist_tracks(artist_name: str):
+def audiomuse_artist_tracks(request: Request, artist_name: str):
     """Get analysis data for all tracks by an artist. Returns {title_lower: {tempo, key, scale, energy}}."""
+    _require_auth(request)
     return audiomuse.get_track_data_by_titles(artist_name, [])
 
 
 @router.get("/api/audiomuse/tasks")
-def audiomuse_tasks():
+def audiomuse_tasks(request: Request):
+    _require_auth(request)
     result = audiomuse.get_active_tasks()
     if result is None:
         return JSONResponse({"error": "AudioMuse unavailable"}, status_code=502)
@@ -55,24 +60,27 @@ def audiomuse_tasks():
 # ── Internal audio analysis (lightweight, no AudioMuse needed) ──
 
 @router.post("/api/analyze/artist/{name}")
-def analyze_artist(name: str):
+def analyze_artist(request: Request, name: str):
     """Queue audio analysis for all tracks by an artist."""
+    _require_admin(request)
     from musicdock.db import create_task
     task_id = create_task("analyze_tracks", {"artist": name})
     return {"status": "queued", "task_id": task_id}
 
 
 @router.post("/api/analyze/album/{artist}/{album}")
-def analyze_album(artist: str, album: str):
+def analyze_album(request: Request, artist: str, album: str):
     """Queue audio analysis + bliss vectors for a single album."""
+    _require_admin(request)
     from musicdock.db import create_task
     task_id = create_task("analyze_album_full", {"artist": artist, "album": album})
     return {"status": "queued", "task_id": task_id}
 
 
 @router.post("/api/enrich/album/{artist}/{album}")
-def enrich_album(artist: str, album: str):
+def enrich_album(request: Request, artist: str, album: str):
     """Full album re-enrichment: MBID lookup + cover art + popularity + audio analysis + bliss."""
+    _require_admin(request)
     from musicdock.db import create_task_dedup
     task_id = create_task_dedup("process_new_content", {
         "artist": artist,
@@ -82,8 +90,9 @@ def enrich_album(artist: str, album: str):
 
 
 @router.get("/api/analyze/artist/{name}/data")
-def get_analysis_data(name: str):
+def get_analysis_data(request: Request, name: str):
     """Get BPM/key/energy/mood data from our library_tracks table."""
+    _require_auth(request)
     from musicdock.db import get_db_ctx
     with get_db_ctx() as cur:
         cur.execute(

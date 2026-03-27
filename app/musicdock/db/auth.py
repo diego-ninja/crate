@@ -1,7 +1,10 @@
+import logging
 import os
 import json
 from datetime import datetime, timezone
 from musicdock.db.core import get_db_ctx
+
+log = logging.getLogger(__name__)
 
 # ── Users ─────────────────────────────────────────────────────────
 
@@ -10,7 +13,11 @@ def _seed_admin(cur):
     if cur.fetchone()["cnt"] == 0:
         from musicdock.auth import hash_password
         now = datetime.now(timezone.utc).isoformat()
-        password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "admin123")
+        password = os.environ.get("DEFAULT_ADMIN_PASSWORD", "")
+        if not password:
+            import secrets
+            password = secrets.token_urlsafe(16)
+            log.warning("No DEFAULT_ADMIN_PASSWORD set — generated: %s", password)
         cur.execute(
             "INSERT INTO users (email, username, name, password_hash, role, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
             ("yosoy@diego.ninja", "admin", "Diego", hash_password(password), "admin", now),

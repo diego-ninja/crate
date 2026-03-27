@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from musicdock import soulseek
-from musicdock.api.auth import _require_auth
+from musicdock.api.auth import _require_auth, _require_admin
 from musicdock.db import get_setting, create_task, list_tasks
 
 log = logging.getLogger(__name__)
@@ -15,8 +15,9 @@ router = APIRouter(prefix="/api/acquisition", tags=["acquisition"])
 
 
 @router.get("/status")
-def acquisition_status():
+def acquisition_status(request: Request):
     """Get status of all acquisition sources."""
+    _require_auth(request)
     tidal_status = {"authenticated": False}
     try:
         from musicdock.tidal import get_auth_status
@@ -29,8 +30,9 @@ def acquisition_status():
 
 
 @router.post("/search/soulseek")
-def start_soulseek_search(body: dict):
+def start_soulseek_search(request: Request, body: dict):
     """Start a Soulseek search (non-blocking). Returns search_id to poll."""
+    _require_admin(request)
     query = body.get("query", "").strip()
     artist = body.get("artist", "").strip()
     album = body.get("album", "").strip()
@@ -53,8 +55,9 @@ def start_soulseek_search(body: dict):
 
 
 @router.get("/search/soulseek/{search_id}")
-def poll_soulseek_search(search_id: str):
+def poll_soulseek_search(request: Request, search_id: str):
     """Poll Soulseek search results (progressive — call every 2-3s)."""
+    _require_auth(request)
     status = soulseek.get_search_status(search_id)
     quality_filter = get_setting("soulseek_quality", "flac")
     results = soulseek.get_search_results(search_id, quality_filter)
@@ -68,8 +71,9 @@ def poll_soulseek_search(search_id: str):
 
 
 @router.post("/download")
-def acquisition_download(body: dict):
+def acquisition_download(request: Request, body: dict):
     """Download from the specified source."""
+    _require_admin(request)
     source = body.get("source", "")
     artist = body.get("artist", "")
     album = body.get("album", "")
@@ -139,16 +143,18 @@ def acquisition_download(body: dict):
 # ── New Releases ──────────────────────────────────────────────────
 
 @router.get("/new-releases")
-def api_new_releases(status: str = ""):
+def api_new_releases(request: Request, status: str = ""):
     """Get detected new releases."""
+    _require_auth(request)
     from musicdock.db import get_new_releases
     releases = get_new_releases(status=status)
     return {"releases": releases}
 
 
 @router.post("/new-releases/{release_id}/download")
-def api_download_release(release_id: int):
+def api_download_release(request: Request, release_id: int):
     """Download a detected new release via Tidal."""
+    _require_admin(request)
     from musicdock.db import mark_release_downloading, get_db_ctx
     with get_db_ctx() as cur:
         cur.execute("SELECT * FROM new_releases WHERE id = %s", (release_id,))
@@ -168,23 +174,26 @@ def api_download_release(release_id: int):
 
 
 @router.post("/new-releases/{release_id}/dismiss")
-def api_dismiss_release(release_id: int):
+def api_dismiss_release(request: Request, release_id: int):
     """Dismiss a new release (won't be shown again)."""
+    _require_auth(request)
     from musicdock.db import mark_release_dismissed
     mark_release_dismissed(release_id)
     return {"ok": True}
 
 
 @router.post("/new-releases/check")
-def api_check_new_releases():
+def api_check_new_releases(request: Request):
     """Trigger a new release check for all library artists."""
+    _require_admin(request)
     task_id = create_task("check_new_releases", {})
     return {"task_id": task_id}
 
 
 @router.get("/queue")
-def acquisition_queue():
+def acquisition_queue(request: Request):
     """Get unified download queue from all sources."""
+    _require_auth(request)
     queue = []
 
     # Tidal downloads from tasks
@@ -225,22 +234,25 @@ def acquisition_queue():
 
 
 @router.post("/queue/clear-completed")
-def clear_completed():
+def clear_completed(request: Request):
     """Clear completed Soulseek downloads from slskd queue."""
+    _require_admin(request)
     ok = soulseek.clear_completed_downloads()
     return {"cleared": ok}
 
 
 @router.post("/queue/clear-errored")
-def clear_errored():
+def clear_errored(request: Request):
     """Clear errored/cancelled Soulseek downloads from slskd queue."""
+    _require_admin(request)
     ok = soulseek.clear_errored_downloads()
     return {"cleared": ok}
 
 
 @router.post("/queue/cleanup-incomplete")
-def cleanup_incomplete():
+def cleanup_incomplete(request: Request):
     """Create task to clean up incomplete Soulseek album downloads."""
+    _require_admin(request)
     from musicdock.db import create_task
     task_id = create_task("cleanup_incomplete_downloads", {})
     return {"task_id": task_id}

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from musicdock.api.auth import _require_admin
 from musicdock.organizer import preview_organize, organize_album, suggest_folder_name, PRESETS
 from musicdock.api._deps import library_path, extensions, safe_path
 
@@ -14,12 +15,14 @@ class OrganizeApplyRequest(BaseModel):
 
 
 @router.get("/api/organize/presets")
-def api_organize_presets():
+def api_organize_presets(request: Request):
+    _require_admin(request)
     return PRESETS
 
 
 @router.get("/api/organize/preview/{artist:path}/{album:path}")
-def api_organize_preview(artist: str, album: str, pattern: str | None = None):
+def api_organize_preview(request: Request, artist: str, album: str, pattern: str | None = None):
+    _require_admin(request)
     lib = library_path()
     album_dir = safe_path(lib, f"{artist}/{album}")
     if not album_dir or not album_dir.is_dir():
@@ -38,7 +41,8 @@ def api_organize_preview(artist: str, album: str, pattern: str | None = None):
 
 
 @router.post("/api/organize/apply/{artist:path}/{album:path}")
-def api_organize_apply(artist: str, album: str, data: OrganizeApplyRequest | None = None):
+def api_organize_apply(request: Request, artist: str, album: str, data: OrganizeApplyRequest | None = None):
+    _require_admin(request)
     lib = library_path()
     album_dir = safe_path(lib, f"{artist}/{album}")
     if not album_dir or not album_dir.is_dir():

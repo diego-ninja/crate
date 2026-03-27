@@ -1,8 +1,9 @@
 import json as _json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from musicdock.api.auth import _require_auth, _require_admin
 from musicdock.db import list_tasks, get_task, update_task, create_task, get_setting, set_setting
 from musicdock.docker_ctl import restart_container
 from musicdock.scheduler import get_schedules, set_schedules
@@ -13,7 +14,8 @@ DEFAULT_MAX_WORKERS = 3
 
 
 @router.get("/api/tasks")
-def api_tasks(status: str | None = None, limit: int = 50):
+def api_tasks(request: Request, status: str | None = None, limit: int = 50):
+    _require_auth(request)
     tasks = list_tasks(status=status, limit=limit)
     result = []
     for t in tasks:
@@ -44,7 +46,8 @@ def api_tasks(status: str | None = None, limit: int = 50):
 
 
 @router.get("/api/tasks/{task_id}")
-def api_task_detail(task_id: str):
+def api_task_detail(request: Request, task_id: str):
+    _require_auth(request)
     task = get_task(task_id)
     if not task:
         return JSONResponse({"error": "Task not found"}, status_code=404)
@@ -68,8 +71,9 @@ def api_task_detail(task_id: str):
 
 
 @router.post("/api/tasks/sync-library")
-def api_sync_library():
+def api_sync_library(request: Request):
     """Create a library_sync task to re-sync the filesystem to DB."""
+    _require_admin(request)
     running = list_tasks(status="running", task_type="library_sync", limit=1)
     pending = list_tasks(status="pending", task_type="library_sync", limit=1)
     if running or pending:
@@ -79,8 +83,9 @@ def api_sync_library():
 
 
 @router.get("/api/worker/status")
-def api_worker_status():
+def api_worker_status(request: Request):
     """Get worker status: slots, running/pending tasks."""
+    _require_auth(request)
     running = list_tasks(status="running")
     pending = list_tasks(status="pending")
     max_workers = int(get_setting("max_workers", str(DEFAULT_MAX_WORKERS)) or DEFAULT_MAX_WORKERS)
@@ -94,8 +99,9 @@ def api_worker_status():
 
 
 @router.post("/api/worker/slots")
-def api_set_worker_slots(body: dict):
+def api_set_worker_slots(request: Request, body: dict):
     """Set max worker slots (1-5). Worker reads this on next poll."""
+    _require_admin(request)
     slots = body.get("slots", DEFAULT_MAX_WORKERS)
     if not isinstance(slots, int) or slots < 1 or slots > 5:
         return JSONResponse({"error": "Slots must be 1-5"}, status_code=400)
@@ -104,8 +110,9 @@ def api_set_worker_slots(body: dict):
 
 
 @router.post("/api/worker/restart")
-def api_restart_worker():
+def api_restart_worker(request: Request):
     """Restart the worker container."""
+    _require_admin(request)
     ok = restart_container("musicdock-worker")
     if ok:
         return {"status": "restarting"}
@@ -113,8 +120,9 @@ def api_restart_worker():
 
 
 @router.post("/api/worker/cancel-all")
-def api_cancel_all_tasks():
+def api_cancel_all_tasks(request: Request):
     """Cancel all running and pending tasks."""
+    _require_admin(request)
     running = list_tasks(status="running")
     pending = list_tasks(status="pending")
     cancelled = 0
@@ -125,8 +133,9 @@ def api_cancel_all_tasks():
 
 
 @router.get("/api/worker/schedules")
-def api_get_schedules():
+def api_get_schedules(request: Request):
     """Get configured task schedules."""
+    _require_auth(request)
     schedules = get_schedules()
     # Add last run times
     result = {}
@@ -143,8 +152,9 @@ def api_get_schedules():
 
 
 @router.post("/api/worker/schedules")
-def api_set_schedules(body: dict):
+def api_set_schedules(request: Request, body: dict):
     """Update task schedules. Body: {task_type: interval_seconds, ...}. Set to 0 to disable."""
+    _require_admin(request)
     current = get_schedules()
     for k, v in body.items():
         if isinstance(v, (int, float)) and v >= 0:
@@ -166,8 +176,9 @@ def _format_interval(seconds: int) -> str:
 
 
 @router.post("/api/tasks/cleanup")
-def api_cleanup_tasks(body: dict | None = None):
+def api_cleanup_tasks(request: Request, body: dict | None = None):
     """Delete completed/failed/cancelled tasks older than N days."""
+    _require_admin(request)
     from musicdock.db import get_db_ctx
     days = (body or {}).get("older_than_days", 7)
     from datetime import datetime, timezone, timedelta
@@ -183,8 +194,9 @@ def api_cleanup_tasks(body: dict | None = None):
 
 
 @router.post("/api/tasks/retry")
-def api_retry_task(body: dict):
+def api_retry_task(request: Request, body: dict):
     """Retry a failed task by creating a new one with the same type and params."""
+    _require_admin(request)
     task_id = body.get("task_id")
     if not task_id:
         return JSONResponse({"error": "task_id required"}, status_code=400)
@@ -203,7 +215,8 @@ def api_retry_task(body: dict):
 
 
 @router.post("/api/tasks/{task_id}/cancel")
-def api_cancel_task(task_id: str):
+def api_cancel_task(request: Request, task_id: str):
+    _require_admin(request)
     task = get_task(task_id)
     if not task:
         return JSONResponse({"error": "Task not found"}, status_code=404)

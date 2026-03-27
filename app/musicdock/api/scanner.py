@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from musicdock.api.auth import _require_admin
 from musicdock.api._deps import get_config
 from musicdock.db import create_task, get_task, list_tasks, get_latest_scan
 
@@ -17,7 +18,8 @@ class FixRequest(BaseModel):
 
 
 @router.post("/api/scan")
-def start_scan(body: ScanRequest | None = None):
+def start_scan(request: Request, body: ScanRequest | None = None):
+    _require_admin(request)
     running = list_tasks(status="running", task_type="scan", limit=1)
     if running:
         return JSONResponse({"error": "Scan already in progress"}, status_code=409)
@@ -31,7 +33,8 @@ def start_scan(body: ScanRequest | None = None):
 
 
 @router.get("/api/status")
-def api_status():
+def api_status(request: Request):
+    _require_admin(request)
     import json as _json
 
     running = list_tasks(status="running", task_type="scan", limit=1)
@@ -56,7 +59,8 @@ def api_status():
 
 
 @router.get("/api/issues")
-def api_issues(type: str | None = None):
+def api_issues(request: Request, type: str | None = None):
+    _require_admin(request)
     latest = get_latest_scan()
     if not latest:
         return []
@@ -68,7 +72,8 @@ def api_issues(type: str | None = None):
 
 
 @router.post("/api/fix")
-def fix_issues(body: FixRequest | None = None):
+def fix_issues(request: Request, body: FixRequest | None = None):
+    _require_admin(request)
     dry_run = body.dry_run if body else True
 
     running = list_tasks(status="running", task_type="scan", limit=1)

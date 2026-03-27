@@ -2,9 +2,10 @@ from io import BytesIO
 from pathlib import Path
 
 import mutagen
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 
+from musicdock.api.auth import _require_auth
 from musicdock.audio import read_tags, get_audio_files
 from musicdock.api._deps import library_path, extensions, safe_path, COVER_NAMES, exclude_dirs
 from musicdock.db import (
@@ -214,8 +215,9 @@ def _fs_search(q: str) -> dict:
 
 
 @router.get("/api/browse/filters")
-def api_browse_filters():
+def api_browse_filters(request: Request):
     """Available filter options for the browse page."""
+    _require_auth(request)
     with get_db_ctx() as cur:
         cur.execute("""
             SELECT g.name, COUNT(DISTINCT ag.artist_name) AS cnt
@@ -256,6 +258,7 @@ def api_browse_filters():
 
 @router.get("/api/artists")
 def api_artists(
+    request: Request,
     q: str = "",
     page: int = 1,
     per_page: int = 60,
@@ -266,6 +269,7 @@ def api_artists(
     format: str = "",
     view: str = "grid",
 ):
+    _require_auth(request)
     if not _has_library_data():
         # Fallback to filesystem
         artists = _fs_build_artists_list()
@@ -370,8 +374,9 @@ def api_artists(
 
 
 @router.get("/api/artist/{name}/background")
-def api_artist_background(name: str, random_pick: bool = Query(False, alias="random")):
+def api_artist_background(request: Request, name: str, random_pick: bool = Query(False, alias="random")):
     """Return artist background image. Tries: manual upload > fanart.tv > Deezer > Spotify > artist photo."""
+    _require_auth(request)
     import random as _random
     from musicdock.lastfm import get_fanart_all_images, get_fanart_background, download_artist_image, _deezer_artist_image
 
@@ -438,7 +443,8 @@ def api_artist_background(name: str, random_pick: bool = Query(False, alias="ran
 
 
 @router.get("/api/artist/{name}/photo")
-def api_artist_photo(name: str, random_pick: bool = Query(False, alias="random")):
+def api_artist_photo(request: Request, name: str, random_pick: bool = Query(False, alias="random")):
+    _require_auth(request)
     import random as _random
     from musicdock.lastfm import get_fanart_all_images, download_artist_image
 
@@ -502,7 +508,8 @@ def api_artist_photo(name: str, random_pick: bool = Query(False, alias="random")
 
 
 @router.get("/api/artist/{name}/info")
-def api_artist_info(name: str):
+def api_artist_info(request: Request, name: str):
+    _require_auth(request)
     info = get_artist_info(name)
     if not info:
         return JSONResponse({"error": "Not found on Last.fm"}, status_code=404)
@@ -510,8 +517,9 @@ def api_artist_info(name: str):
 
 
 @router.get("/api/artist/{name}/shows")
-def api_artist_shows(name: str, limit: int = Query(10), country: str = Query("")):
+def api_artist_shows(request: Request, name: str, limit: int = Query(10), country: str = Query("")):
     """Get upcoming shows for an artist from Ticketmaster."""
+    _require_auth(request)
     from musicdock.ticketmaster import get_upcoming_shows, is_configured
     if not is_configured():
         return {"events": [], "configured": False}
@@ -520,8 +528,9 @@ def api_artist_shows(name: str, limit: int = Query(10), country: str = Query("")
 
 
 @router.get("/api/shows/artists-with-shows")
-def api_artists_with_shows():
+def api_artists_with_shows(request: Request):
     """Return names of artists that have cached upcoming shows (fast, no API calls)."""
+    _require_auth(request)
     from musicdock.ticketmaster import is_configured
     if not is_configured():
         return {"artists": []}
@@ -536,8 +545,9 @@ def api_artists_with_shows():
 
 
 @router.get("/api/shows/cached")
-def api_cached_shows(limit: int = Query(5)):
+def api_cached_shows(request: Request, limit: int = Query(5)):
     """Get already-cached shows (fast, no Ticketmaster calls). For dashboard widgets."""
+    _require_auth(request)
     from musicdock.ticketmaster import is_configured
     if not is_configured():
         return {"events": []}
@@ -568,8 +578,9 @@ def api_cached_shows(limit: int = Query(5)):
 
 
 @router.get("/api/shows")
-async def api_all_shows(country: str = Query(""), limit: int = Query(5)):
+async def api_all_shows(request: Request, country: str = Query(""), limit: int = Query(5)):
     """SSE endpoint: streams shows for all library artists as they're fetched."""
+    _require_auth(request)
     import json as _json
     import asyncio
     from starlette.responses import StreamingResponse
@@ -615,16 +626,18 @@ async def api_all_shows(country: str = Query(""), limit: int = Query(5)):
 
 
 @router.post("/api/artist/{name}/enrich")
-def api_artist_enrich(name: str):
+def api_artist_enrich(request: Request, name: str):
     """Queue a full enrichment task for an artist (async via worker)."""
+    _require_auth(request)
     from musicdock.db import create_task_dedup
     task_id = create_task_dedup("process_new_content", {"artist": name})
     return {"status": "queued", "task_id": task_id}
 
 
 @router.get("/api/artist/{name}/track-titles")
-def api_artist_track_titles(name: str):
+def api_artist_track_titles(request: Request, name: str):
     """Return all track titles for an artist (lightweight, for setlist matching)."""
+    _require_auth(request)
     with get_db_ctx() as cur:
         cur.execute(
             "SELECT t.title, t.path, a.name AS album "
@@ -637,7 +650,8 @@ def api_artist_track_titles(name: str):
 
 
 @router.get("/api/artist/{name:path}")
-def api_artist(name: str):
+def api_artist(request: Request, name: str):
+    _require_auth(request)
     if not _has_library_data():
         result = _fs_artist_detail(name)
         if result is None:
@@ -689,8 +703,9 @@ def api_artist(name: str):
 
 
 @router.get("/api/album/{artist:path}/{album:path}/related")
-def api_related_albums(artist: str, album: str, limit: int = 15):
+def api_related_albums(request: Request, artist: str, album: str, limit: int = 15):
     """Find related albums: same artist, same genre+decade, similar audio profile."""
+    _require_auth(request)
     related = []
     seen = set()
 
@@ -771,7 +786,8 @@ def api_related_albums(artist: str, album: str, limit: int = 15):
 
 
 @router.get("/api/album/{artist:path}/{album:path}")
-def api_album(artist: str, album: str):
+def api_album(request: Request, artist: str, album: str):
+    _require_auth(request)
     if not _has_library_data():
         result = _fs_album_detail(artist, album)
         if result is None:
@@ -939,7 +955,8 @@ def api_cover(artist: str, album: str):
 
 
 @router.get("/api/search")
-def api_search(q: str = ""):
+def api_search(request: Request, q: str = ""):
+    _require_auth(request)
     q_stripped = q.strip()
     if len(q_stripped) < 2:
         return {"artists": [], "albums": []}
@@ -977,8 +994,9 @@ def api_search(q: str = ""):
 
 
 @router.get("/api/favorites")
-def api_favorites_list():
+def api_favorites_list(request: Request):
     """Get all local favorites."""
+    _require_auth(request)
     with get_db_ctx() as cur:
         cur.execute("SELECT item_type, item_id, navidrome_id, created_at FROM favorites ORDER BY created_at DESC")
         items = [dict(r) for r in cur.fetchall()]
@@ -986,8 +1004,9 @@ def api_favorites_list():
 
 
 @router.post("/api/favorites/add")
-def api_favorites_add(body: dict):
+def api_favorites_add(request: Request, body: dict):
     """Add to favorites (local + Navidrome if available)."""
+    _require_auth(request)
     from datetime import datetime, timezone
     item_id = body.get("item_id", "")
     item_type = body.get("type", "song")
@@ -1010,8 +1029,9 @@ def api_favorites_add(body: dict):
 
 
 @router.post("/api/favorites/remove")
-def api_favorites_remove(body: dict):
+def api_favorites_remove(request: Request, body: dict):
     """Remove from favorites (local + Navidrome)."""
+    _require_auth(request)
     item_id = body.get("item_id", "")
     item_type = body.get("type", "song")
     if not item_id:
@@ -1028,8 +1048,9 @@ def api_favorites_remove(body: dict):
 
 
 @router.get("/api/track-info/{filepath:path}")
-def api_track_info(filepath: str):
+def api_track_info(request: Request, filepath: str):
     """Get audio metadata for a single track (BPM, key, energy etc.)."""
+    _require_auth(request)
     # Strip /music/ prefix if present
     if filepath.startswith("/music/"):
         filepath = filepath[len("/music/"):]
@@ -1048,8 +1069,9 @@ def api_track_info(filepath: str):
 
 
 @router.get("/api/discover/completeness")
-def api_discover_completeness():
+def api_discover_completeness(request: Request):
     """Per-artist discography completeness vs MusicBrainz."""
+    _require_auth(request)
     cache_key = "discover:completeness"
     cached = get_cache(cache_key, max_age_seconds=3600)
     if cached:
@@ -1127,8 +1149,9 @@ def api_discover_completeness():
 
 
 @router.get("/api/stream/{filepath:path}")
-def api_stream_file(filepath: str):
+def api_stream_file(request: Request, filepath: str):
     """Stream an audio file directly from the library (fallback when Navidrome is unavailable)."""
+    _require_auth(request)
     from fastapi.responses import FileResponse
     lib = library_path()
     # Strip library prefix if path is absolute (DB stores /music/Artist/Album/file)
@@ -1158,8 +1181,9 @@ def api_stream_file(filepath: str):
 
 
 @router.get("/api/artist-radio/{name:path}")
-def api_artist_radio(name: str, limit: int = 50):
+def api_artist_radio(request: Request, name: str, limit: int = 50):
     """Generate an Artist Radio playlist using bliss song similarity."""
+    _require_auth(request)
     from musicdock.bliss import generate_artist_radio
     tracks = generate_artist_radio(name, limit=limit)
     if not tracks:
@@ -1168,8 +1192,9 @@ def api_artist_radio(name: str, limit: int = 50):
 
 
 @router.get("/api/similar-tracks/{filepath:path}")
-def api_similar_tracks(filepath: str, limit: int = 20):
+def api_similar_tracks(request: Request, filepath: str, limit: int = 20):
     """Find tracks similar to the given track using bliss vectors."""
+    _require_auth(request)
     from musicdock.bliss import get_similar_from_db
     lib = library_path()
     full_path = safe_path(lib, filepath)
@@ -1180,8 +1205,9 @@ def api_similar_tracks(filepath: str, limit: int = 20):
 
 
 @router.get("/api/download/track/{filepath:path}")
-def api_download_track(filepath: str):
+def api_download_track(request: Request, filepath: str):
     """Download a single audio file."""
+    _require_auth(request)
     from fastapi.responses import FileResponse
     lib = library_path()
     file_path = safe_path(lib, filepath)
@@ -1196,8 +1222,9 @@ def api_download_track(filepath: str):
 
 
 @router.get("/api/download/album/{artist:path}/{album:path}")
-def api_download_album(artist: str, album: str):
+def api_download_album(request: Request, artist: str, album: str):
     """Download an entire album as a ZIP file."""
+    _require_auth(request)
     import zipfile
     import tempfile
     from fastapi.responses import FileResponse

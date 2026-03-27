@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -19,9 +20,18 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="MusicDock", lifespan=lifespan)
 
+    domain = os.environ.get("DOMAIN", "localhost")
+    allowed_origins = [
+        f"https://admin.{domain}",
+        f"https://{domain}",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:8585",
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allowed_origins,
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )

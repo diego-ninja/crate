@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from musicdock.api.auth import _require_auth
 from musicdock.missing import find_missing_albums
 from musicdock.quality import quality_report
 from musicdock.audio import read_tags, get_audio_files
@@ -20,7 +21,8 @@ def _has_library_data() -> bool:
 
 
 @router.get("/api/analytics")
-def api_analytics():
+def api_analytics(request: Request):
+    _require_auth(request)
     if not _has_library_data():
         return {
             "computing": True,
@@ -109,7 +111,8 @@ def api_analytics():
 
 
 @router.get("/api/activity/recent")
-def api_activity_recent():
+def api_activity_recent(request: Request):
+    _require_auth(request)
     tasks = list_tasks(limit=10)
     recent = [
         {
@@ -137,7 +140,8 @@ def api_activity_recent():
 
 
 @router.get("/api/stats")
-def api_stats():
+def api_stats(request: Request):
+    _require_auth(request)
     if _has_library_data():
         stats = get_library_stats()
         scan = get_latest_scan()
@@ -240,7 +244,8 @@ DEFAULT_MAX_WORKERS = 3
 
 
 @router.get("/api/activity/live")
-def api_activity_live():
+def api_activity_live(request: Request):
+    _require_auth(request)
     running = list_tasks(status="running")
     running_tasks = []
     for t in running:
@@ -277,7 +282,8 @@ def api_activity_live():
 
 
 @router.get("/api/timeline")
-def api_timeline():
+def api_timeline(request: Request):
+    _require_auth(request)
     if _has_library_data():
         with get_db_ctx() as cur:
             cur.execute(
@@ -322,7 +328,8 @@ def api_timeline():
 
 
 @router.get("/api/quality")
-def api_quality():
+def api_quality(request: Request):
+    _require_auth(request)
     lib = library_path()
     exts = extensions()
     report = quality_report(lib, exts)
@@ -330,7 +337,8 @@ def api_quality():
 
 
 @router.get("/api/missing/{artist:path}")
-def api_missing_albums(artist: str):
+def api_missing_albums(request: Request, artist: str):
+    _require_auth(request)
     lib = library_path()
     artist_dir = safe_path(lib, artist)
     if not artist_dir or not artist_dir.is_dir():
@@ -342,8 +350,9 @@ def api_missing_albums(artist: str):
 
 
 @router.get("/api/artist-stats/{name:path}")
-def api_artist_stats(name: str):
+def api_artist_stats(request: Request, name: str):
     """Stats for a single artist: format split, year timeline, audio features."""
+    _require_auth(request)
     # Resolve canonical name (case-insensitive)
     from musicdock.db import get_library_artist
     db_artist = get_library_artist(name)
@@ -416,8 +425,9 @@ def api_artist_stats(name: str):
 
 
 @router.get("/api/insights")
-def api_insights():
+def api_insights(request: Request):
     """Advanced analytics for the Insights page — all data for Nivo charts."""
+    _require_auth(request)
     import json
 
     with get_db_ctx() as cur:

@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from musicdock.api.auth import _require_admin
 from musicdock.db import create_task
 from musicdock.api._deps import library_path, safe_path
 
@@ -22,7 +23,8 @@ class TrackTagsUpdate(BaseModel):
 
 
 @router.put("/api/tags/{artist:path}/{album:path}")
-def api_update_tags(artist: str, album: str, data: AlbumTagsUpdate):
+def api_update_tags(request: Request, artist: str, album: str, data: AlbumTagsUpdate):
+    _require_admin(request)
     lib = library_path()
     album_dir = safe_path(lib, f"{artist}/{album}")
     if not album_dir or not album_dir.is_dir():
@@ -44,7 +46,8 @@ def api_update_tags(artist: str, album: str, data: AlbumTagsUpdate):
 
 
 @router.put("/api/tags/track/{filepath:path}")
-def api_update_track_tags(filepath: str, data: TrackTagsUpdate):
+def api_update_track_tags(request: Request, filepath: str, data: TrackTagsUpdate):
+    _require_admin(request)
     lib = library_path()
     track_path = safe_path(lib, filepath)
     if not track_path or not track_path.is_file():

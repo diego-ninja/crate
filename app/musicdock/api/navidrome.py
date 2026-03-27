@@ -4,6 +4,7 @@ import logging
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from musicdock.api.auth import _require_auth
 from musicdock import navidrome
 from musicdock import playlists
 
@@ -16,14 +17,16 @@ def _domain() -> str:
 
 
 @router.get("/api/navidrome/status")
-def navidrome_status():
+def navidrome_status(request: Request):
+    _require_auth(request)
     connected = navidrome.ping()
     version = navidrome.get_server_version() if connected else None
     return {"connected": connected, "version": version}
 
 
 @router.get("/api/navidrome/search")
-def navidrome_search(q: str = Query("")):
+def navidrome_search(request: Request, q: str = Query("")):
+    _require_auth(request)
     if len(q.strip()) < 2:
         return {"artist": [], "album": [], "song": []}
     try:
@@ -35,6 +38,7 @@ def navidrome_search(q: str = Query("")):
 
 @router.get("/api/navidrome/stream/{song_id}")
 def navidrome_stream(song_id: str, request: Request):
+    _require_auth(request)
     try:
         # Forward Range header to Navidrome for seeking support
         extra_headers = {}
@@ -72,7 +76,8 @@ def navidrome_stream(song_id: str, request: Request):
 
 
 @router.get("/api/navidrome/artist/{name}/link")
-def navidrome_artist_link(name: str):
+def navidrome_artist_link(request: Request, name: str):
+    _require_auth(request)
     try:
         artist = navidrome.find_artist_by_name(name)
         if not artist:
@@ -89,7 +94,8 @@ def navidrome_artist_link(name: str):
 
 
 @router.get("/api/navidrome/artist/{name}/top-tracks")
-def navidrome_top_tracks(name: str, count: int = 20):
+def navidrome_top_tracks(request: Request, name: str, count: int = 20):
+    _require_auth(request)
     # Try Navidrome first
     try:
         songs = navidrome.get_top_songs(name, count)
@@ -151,7 +157,8 @@ def navidrome_top_tracks(name: str, count: int = 20):
 
 
 @router.get("/api/navidrome/album/{artist}/{album}/link")
-def navidrome_album_link(artist: str, album: str):
+def navidrome_album_link(request: Request, artist: str, album: str):
+    _require_auth(request)
     try:
         # Get tag_album and MBID from our DB for better matching
         from musicdock.db import get_library_album
@@ -184,7 +191,8 @@ def navidrome_album_link(artist: str, album: str):
 
 
 @router.get("/api/navidrome/playlists")
-def navidrome_playlists():
+def navidrome_playlists(request: Request):
+    _require_auth(request)
     try:
         return {"playlists": navidrome.get_playlists()}
     except Exception as e:
@@ -193,7 +201,8 @@ def navidrome_playlists():
 
 
 @router.post("/api/navidrome/playlists")
-def navidrome_create_playlist(body: dict):
+def navidrome_create_playlist(request: Request, body: dict):
+    _require_auth(request)
     name = body.get("name", "").strip()
     song_ids = body.get("song_ids", [])
     if not name:
@@ -209,7 +218,8 @@ def navidrome_create_playlist(body: dict):
 
 
 @router.delete("/api/navidrome/playlists/{playlist_id}")
-def navidrome_delete_playlist(playlist_id: str):
+def navidrome_delete_playlist(request: Request, playlist_id: str):
+    _require_auth(request)
     try:
         navidrome.delete_playlist(playlist_id)
         return {"ok": True}
@@ -221,14 +231,16 @@ def navidrome_delete_playlist(playlist_id: str):
 @router.post("/api/navidrome/map-ids")
 def api_map_navidrome_ids(request: Request):
     """Bulk map local library to Navidrome IDs."""
+    _require_auth(request)
     from musicdock.db import create_task
     task_id = create_task("map_navidrome_ids")
     return {"task_id": task_id}
 
 
 @router.post("/api/navidrome/star")
-def api_star(body: dict):
+def api_star(request: Request, body: dict):
     """Star/favorite an item in Navidrome."""
+    _require_auth(request)
     item_id = body.get("navidrome_id", "")
     item_type = body.get("type", "song")
     if not item_id:
@@ -246,8 +258,9 @@ def api_star(body: dict):
 
 
 @router.post("/api/navidrome/unstar")
-def api_unstar(body: dict):
+def api_unstar(request: Request, body: dict):
     """Remove star from an item."""
+    _require_auth(request)
     item_id = body.get("navidrome_id", "")
     item_type = body.get("type", "song")
     if not item_id:
@@ -261,14 +274,16 @@ def api_unstar(body: dict):
 
 
 @router.get("/api/navidrome/favorites")
-def api_favorites():
+def api_favorites(request: Request):
     """Get all favorites from Navidrome."""
+    _require_auth(request)
     return navidrome.get_starred()
 
 
 @router.post("/api/navidrome/scrobble")
-def api_scrobble(body: dict):
+def api_scrobble(request: Request, body: dict):
     """Scrobble a track (report as played)."""
+    _require_auth(request)
     song_id = body.get("navidrome_id", "")
     if not song_id:
         return JSONResponse({"error": "navidrome_id required"}, status_code=400)
@@ -277,19 +292,22 @@ def api_scrobble(body: dict):
 
 
 @router.get("/api/navidrome/recently-played")
-def api_recently_played():
+def api_recently_played(request: Request):
     """Get recently played albums from Navidrome."""
+    _require_auth(request)
     return navidrome.get_album_list("recent", size=20)
 
 
 @router.get("/api/navidrome/most-played")
-def api_most_played():
+def api_most_played(request: Request):
     """Get most played albums from Navidrome."""
+    _require_auth(request)
     return navidrome.get_album_list("frequent", size=20)
 
 
 @router.post("/api/navidrome/playlists/smart")
-def navidrome_smart_playlist(body: dict):
+def navidrome_smart_playlist(request: Request, body: dict):
+    _require_auth(request)
     strategy = body.get("strategy", "random")
     name = body.get("name", "").strip()
     limit = body.get("limit", 50)

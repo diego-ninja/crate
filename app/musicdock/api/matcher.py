@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from musicdock.api.auth import _require_admin
 from musicdock.matcher import match_album
 from musicdock.db import create_task
 from musicdock.api._deps import library_path, extensions, safe_path
@@ -17,7 +18,8 @@ class MatchApplyRequest(BaseModel):
 
 
 @router.get("/api/match/{artist:path}/{album:path}")
-def api_match_album(artist: str, album: str):
+def api_match_album(request: Request, artist: str, album: str):
+    _require_admin(request)
     lib = library_path()
     album_dir = _find_album_dir(lib, artist, album)
     if not album_dir:
@@ -29,7 +31,8 @@ def api_match_album(artist: str, album: str):
 
 
 @router.post("/api/match/apply")
-def api_match_apply(data: MatchApplyRequest):
+def api_match_apply(request: Request, data: MatchApplyRequest):
+    _require_admin(request)
     lib = library_path()
     album_dir = _find_album_dir(lib, data.artist_folder, data.album_folder)
     if not album_dir:

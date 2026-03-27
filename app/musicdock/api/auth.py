@@ -14,7 +14,7 @@ from musicdock.auth import (
 )
 from musicdock.db import (
     create_user, get_user_by_email, get_user_by_google_id, get_user_by_id,
-    update_user_last_login, update_user, list_users, delete_user,
+    update_user_last_login, update_user, list_users, delete_user, get_db_ctx,
 )
 
 logger = logging.getLogger(__name__)
@@ -158,7 +158,12 @@ async def login(body: LoginRequest):
 
 
 @router.post("/register")
-async def register(body: RegisterRequest):
+async def register(request: Request, body: RegisterRequest):
+    with get_db_ctx() as cur:
+        cur.execute("SELECT COUNT(*) AS cnt FROM users")
+        user_count = cur.fetchone()["cnt"]
+    if user_count > 0:
+        _require_admin(request)
     existing = get_user_by_email(body.email)
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")

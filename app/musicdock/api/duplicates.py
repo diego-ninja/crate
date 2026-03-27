@@ -1,8 +1,9 @@
 import mutagen
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from musicdock.api.auth import _require_admin
 from musicdock.audio import read_tags, get_audio_files
 from musicdock.db import create_task
 from musicdock.api._deps import library_path, extensions, safe_path, COVER_NAMES
@@ -16,7 +17,8 @@ class ResolveRequest(BaseModel):
 
 
 @router.get("/api/duplicates/compare")
-def api_duplicates_compare(path: list[str] = Query()):
+def api_duplicates_compare(request: Request, path: list[str] = Query()):
+    _require_admin(request)
     if len(path) < 2:
         return JSONResponse({"error": "Need at least 2 paths"}, status_code=400)
 
@@ -65,7 +67,8 @@ def api_duplicates_compare(path: list[str] = Query()):
 
 
 @router.post("/api/duplicates/resolve")
-def api_duplicates_resolve(data: ResolveRequest):
+def api_duplicates_resolve(request: Request, data: ResolveRequest):
+    _require_admin(request)
     if not data.keep or not data.remove:
         return JSONResponse({"error": "Need 'keep' and 'remove' paths"}, status_code=400)
 

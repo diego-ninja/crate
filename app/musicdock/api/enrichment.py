@@ -1,9 +1,10 @@
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from thefuzz import fuzz
 
+from musicdock.api.auth import _require_admin
 from musicdock import spotify, setlistfm, musicbrainz_ext, navidrome
 from musicdock.lastfm import get_artist_info, get_fanart_all_images
 
@@ -13,9 +14,10 @@ router = APIRouter()
 
 
 @router.get("/api/artist/{name}/enrichment")
-def get_artist_enrichment(name: str):
+def get_artist_enrichment(request: Request, name: str):
     """Get consolidated enrichment data. Returns cached if available, otherwise fetches inline.
     For background enrichment, use POST /api/artist/{name}/enrich which queues a worker task."""
+    _require_admin(request)
     from musicdock.db import get_cache, set_cache, get_library_artist
 
     # Try cache first
@@ -168,7 +170,8 @@ def _fetch_enrichment(name: str) -> dict:
 
 
 @router.post("/api/artist/{name}/setlist-playlist")
-def create_setlist_playlist(name: str):
+def create_setlist_playlist(request: Request, name: str):
+    _require_admin(request)
     setlist = setlistfm.get_probable_setlist(name)
     if not setlist:
         return JSONResponse({"error": "No setlist data found"}, status_code=404)
