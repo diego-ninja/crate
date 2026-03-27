@@ -361,6 +361,7 @@ services:
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - DISCOGS_CONSUMER_KEY=${DISCOGS_CONSUMER_KEY:-}
       - DISCOGS_CONSUMER_SECRET=${DISCOGS_CONSUMER_SECRET:-}
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
