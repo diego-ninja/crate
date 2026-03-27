@@ -414,10 +414,10 @@ class LibraryRepair:
                         if dst_match and src_rank > QUALITY_RANK.get(dst_match.suffix.lower(), 0):
                             # Source is higher quality — replace
                             dst_match.unlink()
-                            shutil.copy2(str(src_file), str(expected_dir / src_file.name))
+                            shutil.move(str(src_file), str(expected_dir / src_file.name))
                             upgraded.append(f"{dst_match.name} → {src_file.name}")
                         elif not dst_match:
-                            shutil.copy2(str(src_file), str(expected_dir / name))
+                            shutil.move(str(src_file), str(expected_dir / name))
                             copied.append(name)
                 shutil.rmtree(str(current_dir))
                 log.info("Merged %s → %s (%d copied, %d upgraded, folder removed)",
