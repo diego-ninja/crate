@@ -123,16 +123,16 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
                 gridShape="circular"
                 gridLevels={3}
                 dotSize={4}
-                dotColor={{ theme: "background" }}
+                dotColor="#16161e"
                 dotBorderWidth={1}
-                colors={["var(--primary)"]}
+                colors={["#06b6d4"]}
                 fillOpacity={0.2}
                 borderWidth={1}
-                borderColor={{ theme: "background" }}
+                borderColor="#16161e"
                 gridLabelOffset={12}
                 theme={{
-                  text: { fill: "var(--muted-foreground)", fontSize: 10 },
-                  grid: { line: { stroke: "var(--border)", strokeOpacity: 0.3 } },
+                  text: { fill: "#9ca3af", fontSize: 10 },
+                  grid: { line: { stroke: "#ffffff15" } },
                 }}
               />
             </div>

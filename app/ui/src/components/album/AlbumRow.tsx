@@ -1,5 +1,4 @@
 import { Link } from "react-router";
-import { Badge } from "@/components/ui/badge";
 import { encPath, formatBadgeClass } from "@/lib/utils";
 import { Music } from "lucide-react";
 import { useState } from "react";
