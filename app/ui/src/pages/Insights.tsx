@@ -42,7 +42,7 @@ const NIVO_THEME = {
   legends: { text: { fill: "#9ca3af", fontSize: 11 } },
 };
 
-const COLORS = ["#06b6d4", "#8b5cf6", "#f59e0b", "#ef4444", "#22c55e", "#ec4899", "#3b82f6", "#14b8a6", "#f97316", "#a78bfa"];
+const COLORS = ["#06b6d4", "#06b6d4cc", "#06b6d499", "#06b6d466", "#06b6d44d", "#06b6d433", "#06b6d426", "#06b6d41a", "#06b6d413", "#06b6d40d"];
 
 function ProgressStat({ label, value, total }: { label: string; value: number; total: number }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
@@ -220,7 +220,7 @@ export function Insights() {
                   layout="horizontal"
                   margin={{ top: 10, right: 20, bottom: 10, left: 60 }}
                   padding={0.3}
-                  colors={["#8b5cf6"]}
+                  colors={["#06b6d4"]}
                   borderRadius={4}
                   enableLabel={true}
                   labelTextColor="#fff"
@@ -253,7 +253,7 @@ export function Insights() {
                   dotSize={8}
                   dotColor={{ theme: "background" }}
                   dotBorderWidth={2}
-                  colors={["#06b6d4", "#8b5cf6"]}
+                  colors={["#06b6d4", "#06b6d466"]}
                   fillOpacity={0.25}
                   blendMode="normal"
                   theme={NIVO_THEME}
@@ -283,7 +283,7 @@ export function Insights() {
                   layout="horizontal"
                   margin={{ top: 10, right: 20, bottom: 10, left: 120 }}
                   padding={0.3}
-                  colors={["#22c55e"]}
+                  colors={["#06b6d4"]}
                   borderRadius={4}
                   enableLabel={true}
                   labelTextColor="#fff"
@@ -310,7 +310,7 @@ export function Insights() {
                   indexBy="decade"
                   margin={{ top: 10, right: 10, bottom: 40, left: 40 }}
                   padding={0.3}
-                  colors={["#f59e0b"]}
+                  colors={["#06b6d4"]}
                   borderRadius={4}
                   enableLabel={false}
                   theme={NIVO_THEME}
@@ -333,7 +333,7 @@ export function Insights() {
                   indexBy="bpm"
                   margin={{ top: 10, right: 10, bottom: 40, left: 40 }}
                   padding={0.2}
-                  colors={["#ef4444"]}
+                  colors={["#06b6d4"]}
                   borderRadius={3}
                   enableLabel={false}
                   axisBottom={{ tickRotation: -45 }}
@@ -358,7 +358,7 @@ export function Insights() {
                   data={data.moods.map(m => ({ mood: m.mood, score: m.score }))}
                   keys={["score"]} indexBy="mood" layout="horizontal"
                   margin={{ top: 5, right: 20, bottom: 5, left: 100 }}
-                  padding={0.3} colors={["#ec4899"]} borderRadius={3}
+                  padding={0.3} colors={["#06b6d4"]} borderRadius={3}
                   enableLabel={false}
                   theme={NIVO_THEME} animate={true} motionConfig="gentle"
                 />
@@ -460,7 +460,7 @@ export function Insights() {
                   })}
                   keys={["listeners"]} indexBy="album" layout="horizontal"
                   margin={{ top: 5, right: 20, bottom: 5, left: 200 }}
-                  padding={0.3} colors={["#22c55e"]} borderRadius={3}
+                  padding={0.3} colors={["#06b6d4"]} borderRadius={3}
                   enableLabel={false}
                   theme={NIVO_THEME} animate={true} motionConfig="gentle"
                 />

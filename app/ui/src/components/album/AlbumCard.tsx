@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
-import { Badge } from "@/components/ui/badge";
 import { encPath, formatBadgeClass } from "@/lib/utils";
 import { Music, Play, Heart, ListPlus } from "lucide-react";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
@@ -148,13 +147,9 @@ export const AlbumCard = React.memo(function AlbumCard({
           <span>&middot;</span>
           <span>{tracks}t</span>
           {formats.map((f) => (
-            <Badge
-              key={f}
-              variant="outline"
-              className={formatBadgeClass(f)}
-            >
+            <span key={f} className={formatBadgeClass(f)}>
               {f.replace(".", "").toUpperCase()}
-            </Badge>
+            </span>
           ))}
         </div>
       </div>

@@ -478,7 +478,7 @@ export function Dashboard() {
                   innerRadius={0.6}
                   padAngle={2}
                   cornerRadius={4}
-                  colors={["#06b6d4", "#8b5cf6", "#f59e0b", "#ef4444", "#22c55e"]}
+                  colors={["#06b6d4", "#06b6d4cc", "#06b6d499", "#06b6d466", "#06b6d433"]}
                   borderWidth={0}
                   enableArcLinkLabels={true}
                   arcLinkLabelsColor={{ from: "color" }}
@@ -542,7 +542,7 @@ export function Dashboard() {
                   layout="horizontal"
                   margin={{ top: 5, right: 20, bottom: 5, left: 100 }}
                   padding={0.3}
-                  colors={["#8b5cf6"]}
+                  colors={["#06b6d4"]}
                   borderRadius={3}
                   enableLabel={true}
                   labelTextColor="#fff"

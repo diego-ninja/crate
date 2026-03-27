@@ -34,7 +34,8 @@ def start_scan(request: Request, body: ScanRequest | None = None):
 
 @router.get("/api/status")
 def api_status(request: Request):
-    _require_admin(request)
+    # No auth — used by Docker healthcheck and sidebar polling
+    pass
     import json as _json
 
     running = list_tasks(status="running", task_type="scan", limit=1)
