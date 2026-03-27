@@ -126,7 +126,7 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
       </div>
 
       {/* WebGL Visualizer */}
-      <div className="h-[250px] relative bg-black overflow-hidden">
+      <div className="h-[250px] relative bg-card overflow-hidden">
         <canvas ref={canvasRef} className="w-full h-full" />
         {/* Settings toggle */}
         <button
