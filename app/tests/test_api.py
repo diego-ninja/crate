@@ -5,19 +5,24 @@ from unittest.mock import patch, MagicMock
 
 class TestArtistsAPI:
     def test_get_artists_from_db(self, test_app):
-        mock_artists = [
-            {
-                "name": "Radiohead",
-                "album_count": 9,
-                "track_count": 100,
-                "total_size": 1024**3,
-                "formats": ["flac"],
-                "primary_format": "flac",
-                "has_photo": 1,
-            },
-        ]
+        mock_row = {
+            "name": "Radiohead",
+            "album_count": 9,
+            "track_count": 100,
+            "total_size": 1024**3,
+            "formats_json": ["flac"],
+            "primary_format": "flac",
+            "has_photo": 1,
+        }
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = {"cnt": 1}
+        mock_cur.fetchall.return_value = [mock_row]
+
         with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
-             patch("musicdock.api.browse.get_library_artists", return_value=(mock_artists, 1)):
+             patch("musicdock.api.browse.get_all_artist_issue_counts", return_value={}), \
+             patch("musicdock.api.browse.get_db_ctx") as mock_ctx:
+            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
+            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.get("/api/artists")
             assert resp.status_code == 200
             data = resp.json()
@@ -26,11 +31,18 @@ class TestArtistsAPI:
             assert data["items"][0]["name"] == "Radiohead"
 
     def test_get_artists_pagination(self, test_app):
-        artists = [{"name": f"Artist {i}", "album_count": 1, "track_count": 10,
-                     "total_size": 1000, "formats": [], "primary_format": None, "has_photo": 0}
-                    for i in range(5)]
+        rows = [{"name": f"Artist {i}", "album_count": 1, "track_count": 10,
+                 "total_size": 1000, "formats_json": [], "primary_format": None, "has_photo": 0}
+                for i in range(3)]
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = {"cnt": 5}
+        mock_cur.fetchall.return_value = rows
+
         with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
-             patch("musicdock.api.browse.get_library_artists", return_value=(artists[:3], 5)):
+             patch("musicdock.api.browse.get_all_artist_issue_counts", return_value={}), \
+             patch("musicdock.api.browse.get_db_ctx") as mock_ctx:
+            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
+            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.get("/api/artists?page=1&per_page=3")
             assert resp.status_code == 200
             data = resp.json()
@@ -38,11 +50,19 @@ class TestArtistsAPI:
             assert data["total"] == 5
 
     def test_get_artists_with_query(self, test_app):
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = {"cnt": 0}
+        mock_cur.fetchall.return_value = []
+
         with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
-             patch("musicdock.api.browse.get_library_artists", return_value=([], 0)) as mock_get:
+             patch("musicdock.api.browse.get_all_artist_issue_counts", return_value={}), \
+             patch("musicdock.api.browse.get_db_ctx") as mock_ctx:
+            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
+            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.get("/api/artists?q=radio&sort=name")
             assert resp.status_code == 200
-            mock_get.assert_called_once_with(q="radio", sort="name", page=1, per_page=60)
+            data = resp.json()
+            assert data["total"] == 0
 
 
 class TestArtistDetailAPI:
@@ -62,9 +82,10 @@ class TestArtistDetailAPI:
         with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
              patch("musicdock.api.browse.get_library_artist", return_value=mock_artist), \
              patch("musicdock.api.browse.get_library_albums", return_value=mock_albums), \
+             patch("musicdock.api.browse.get_artist_issue_count", return_value=0), \
              patch("musicdock.api.browse.get_db_ctx") as mock_ctx:
             mock_cur = MagicMock()
-            mock_cur.fetchall.return_value = [{"genre": "Progressive Metal", "cnt": 30}]
+            mock_cur.fetchall.return_value = [{"name": "Progressive Metal"}]
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -112,6 +133,7 @@ class TestSearchAPI:
         mock_cur.fetchall.side_effect = [
             [{"name": "Radiohead"}],
             [{"artist": "Radiohead", "name": "OK Computer"}],
+            [],  # track results
         ]
 
         with patch("musicdock.api.browse.get_library_track_count", return_value=100), \

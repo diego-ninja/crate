@@ -71,43 +71,40 @@ def pg_db():
     conn.autocommit = True
     cur = conn.cursor()
 
-    cur.execute("DROP TABLE IF EXISTS library_tracks CASCADE")
-    cur.execute("DROP TABLE IF EXISTS library_albums CASCADE")
-    cur.execute("DROP TABLE IF EXISTS library_artists CASCADE")
-    cur.execute("DROP TABLE IF EXISTS scan_results CASCADE")
-    cur.execute("DROP TABLE IF EXISTS tasks CASCADE")
-    cur.execute("DROP TABLE IF EXISTS settings CASCADE")
-    cur.execute("DROP TABLE IF EXISTS mb_cache CASCADE")
-    cur.execute("DROP TABLE IF EXISTS cache CASCADE")
-    cur.execute("DROP TABLE IF EXISTS dir_mtimes CASCADE")
+    # Drop all tables cleanly
+    cur.execute("DROP SCHEMA public CASCADE")
+    cur.execute("CREATE SCHEMA public")
+    cur.execute("GRANT ALL ON SCHEMA public TO PUBLIC")
+    cur.close()
     conn.close()
 
     os.environ["MUSICDOCK_POSTGRES_HOST"] = os.environ.get("MUSICDOCK_POSTGRES_HOST", "localhost")
     os.environ["MUSICDOCK_POSTGRES_DB"] = os.environ.get("MUSICDOCK_POSTGRES_DB", "musicdock_test")
 
     import musicdock.db as db_mod
-    if db_mod._pool is not None:
+    import musicdock.db.core as db_core
+    if db_core._pool is not None:
         try:
-            db_mod._pool.closeall()
+            db_core._pool.closeall()
         except Exception:
             pass
-        db_mod._pool = None
+        db_core._pool = None
 
     db_mod.init_db()
     yield db_mod
 
-    if db_mod._pool is not None:
+    if db_core._pool is not None:
         try:
-            db_mod._pool.closeall()
+            db_core._pool.closeall()
         except Exception:
             pass
-        db_mod._pool = None
+        db_core._pool = None
 
 
 @pytest.fixture
 def test_app():
     """Provide a FastAPI TestClient with mocked DB layer."""
-    from unittest.mock import patch
+    from unittest.mock import patch, AsyncMock
 
     try:
         from fastapi.testclient import TestClient
@@ -120,8 +117,20 @@ def test_app():
         "exclude_dirs": [],
     }
 
+    # Mock the AuthMiddleware to always inject a fake admin user
+    async def _fake_dispatch(self, request, call_next):
+        request.state.user = {
+            "id": 1,
+            "email": "test@test.com",
+            "role": "admin",
+            "username": "testadmin",
+            "name": "Test Admin",
+        }
+        return await call_next(request)
+
     with patch("musicdock.api._deps.load_config", return_value=mock_config), \
-         patch("musicdock.db.init_db"):
+         patch("musicdock.db.init_db"), \
+         patch("musicdock.api.auth.AuthMiddleware.dispatch", _fake_dispatch):
         from musicdock.api import create_app
         app = create_app()
         client = TestClient(app)

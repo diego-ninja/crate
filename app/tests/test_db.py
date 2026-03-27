@@ -147,13 +147,18 @@ class TestCache:
         assert pg_db.get_cache("key") == {"v": 2}
 
     def test_cache_max_age(self, pg_db):
+        from unittest.mock import patch
         pg_db.set_cache("aged", {"data": True})
         # With a very large max_age, should return data
         result = pg_db.get_cache("aged", max_age_seconds=3600)
         assert result is not None
-        # With max_age=0, should return None (expired immediately)
-        result = pg_db.get_cache("aged", max_age_seconds=0)
-        assert result is None
+        # Clear L1 memory cache and disable L2 Redis so max_age is tested at PG level
+        from musicdock.db.cache import _mem_cache
+        _mem_cache.pop("aged", None)
+        with patch("musicdock.db.cache._get_redis", return_value=None):
+            # With max_age=0, should return None (expired immediately)
+            result = pg_db.get_cache("aged", max_age_seconds=0)
+            assert result is None
 
 
 class TestMBCache:

@@ -42,6 +42,7 @@ class TestLibrarySyncFullSync:
             # Mock all DB calls
             with patch("musicdock.library_sync.get_library_artist", return_value=None), \
                  patch("musicdock.library_sync.get_library_albums", return_value=[]), \
+                 patch("musicdock.library_sync.get_library_artists", return_value=([], 0)), \
                  patch("musicdock.library_sync.upsert_artist") as mock_upsert_artist, \
                  patch("musicdock.library_sync.upsert_album", return_value=1) as mock_upsert_album, \
                  patch("musicdock.library_sync.upsert_track") as mock_upsert_track, \
@@ -94,6 +95,7 @@ class TestLibrarySyncFullSync:
 
             with patch("musicdock.library_sync.get_library_artist", side_effect=mock_get_artist), \
                  patch("musicdock.library_sync.get_library_albums", return_value=[]), \
+                 patch("musicdock.library_sync.get_library_artists", return_value=([existing_artist], 1)), \
                  patch("musicdock.library_sync.upsert_artist") as mock_upsert, \
                  patch("musicdock.library_sync.upsert_album", return_value=1), \
                  patch("musicdock.library_sync.upsert_track"), \
@@ -169,14 +171,20 @@ class TestRemoveStale:
             }
 
             with patch("musicdock.library_sync.get_db_ctx") as mock_ctx, \
+                 patch("musicdock.library_sync.get_library_artist", return_value=None), \
                  patch("musicdock.library_sync.delete_artist") as mock_delete, \
                  patch("musicdock.library_sync.delete_album"):
                 mock_cur = MagicMock()
-                # First call: artists query returns existing + stale
-                # Second call: albums query returns empty
+                # First call: artists query returns existing + stale (with folder_name, album_count, track_count)
+                # Second call: albums for stale artist (empty paths)
+                # Third call: albums query for remove_stale albums phase
                 mock_cur.fetchall.side_effect = [
-                    [{"name": "Existing Artist"}, {"name": "Gone Artist"}],
-                    [],
+                    [
+                        {"name": "Existing Artist", "folder_name": "Existing Artist", "album_count": 1, "track_count": 5},
+                        {"name": "Gone Artist", "folder_name": "Gone Artist", "album_count": 1, "track_count": 3},
+                    ],
+                    [],  # album paths for "Gone Artist"
+                    [],  # albums phase
                 ]
                 mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
                 mock_ctx.return_value.__exit__ = MagicMock(return_value=False)

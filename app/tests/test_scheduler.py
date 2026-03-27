@@ -75,11 +75,12 @@ class TestGetSetSchedules:
 
     def test_get_schedules_custom(self):
         import json
-        custom = {"library_sync": 3600, "enrich_artists": 0}
-        with patch("musicdock.scheduler.get_setting", return_value=json.dumps(custom)):
+        custom = {"library_pipeline": 3600, "enrich_artists": 0}
+        with patch("musicdock.scheduler.get_setting", return_value=json.dumps(custom)), \
+             patch("musicdock.scheduler.set_setting"):
             from musicdock.scheduler import get_schedules
             schedules = get_schedules()
-            assert schedules["library_sync"] == 3600
+            assert schedules["library_pipeline"] == 3600
             assert schedules["enrich_artists"] == 0
 
     def test_set_schedules(self):
