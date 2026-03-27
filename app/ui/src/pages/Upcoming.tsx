@@ -9,8 +9,19 @@ import { toast } from "sonner";
 import {
   Loader2, Download, X, RefreshCw, Disc3, MapPin, Calendar,
   Ticket, ExternalLink, Sparkles, List, CalendarDays,
-  ChevronLeft, ChevronRight, Clock,
+  ChevronLeft, ChevronRight, Clock, Search,
 } from "lucide-react";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+// Fix Leaflet default marker icon
+delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+});
 
 interface UpcomingItem {
   type: "release" | "show";
@@ -38,14 +49,20 @@ interface UpcomingItem {
 type ViewMode = "list" | "calendar";
 type TypeFilter = "all" | "releases" | "shows";
 
+function itemKey(item: UpcomingItem, index: number): string {
+  return `${item.type}-${item.release_id ?? item.venue ?? index}-${item.date}`;
+}
+
 export function Upcoming() {
   const [items, setItems] = useState<UpcomingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<TypeFilter>("all");
   const [genreFilter, setGenreFilter] = useState("");
   const [cityFilter, setCityFilter] = useState("");
+  const [search, setSearch] = useState("");
   const [view, setView] = useState<ViewMode>("list");
   const [syncing, setSyncing] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [calMonth, setCalMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -81,12 +98,13 @@ export function Upcoming() {
   // Apply filters
   const filtered = useMemo(() => {
     let list = items;
+    if (search) list = list.filter((i) => i.artist.toLowerCase().includes(search.toLowerCase()));
     if (filter === "releases") list = list.filter((i) => i.type === "release");
     if (filter === "shows") list = list.filter((i) => i.type === "show");
-    if (genreFilter) list = list.filter((i) => i.genres?.some((g) => g.toLowerCase() === genreFilter.toLowerCase()));
-    if (cityFilter) list = list.filter((i) => i.city === cityFilter);
+    if (genreFilter) list = list.filter((i) => (i.genres || []).some((g) => g.toLowerCase() === genreFilter.toLowerCase()));
+    if (cityFilter) list = list.filter((i) => i.city?.toLowerCase() === cityFilter.toLowerCase());
     return list;
-  }, [items, filter, genreFilter, cityFilter]);
+  }, [items, search, filter, genreFilter, cityFilter]);
 
   const today = new Date().toISOString().slice(0, 10);
   const upcoming = filtered.filter((i) => i.is_upcoming || (i.date && i.date >= today));
@@ -168,6 +186,17 @@ export function Upcoming() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2 mb-6">
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
+          <input
+            type="text"
+            placeholder="Filter by artist..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="h-8 pl-8 pr-3 text-sm bg-card border border-border rounded-lg w-48 focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/30"
+          />
+        </div>
+
         {(["all", "releases", "shows"] as const).map((f) => (
           <Button key={f} size="sm" variant={filter === f ? "default" : "outline"}
             onClick={() => { setFilter(f); if (f !== "shows") { setGenreFilter(""); setCityFilter(""); } }}>
@@ -215,7 +244,7 @@ export function Upcoming() {
           <Calendar size={48} className="text-primary mx-auto mb-3 opacity-30" />
           <div className="text-lg font-semibold">Nothing upcoming</div>
           <div className="text-sm text-muted-foreground mt-1">
-            Check for new releases or browse the Shows map
+            Check for new releases or sync shows
           </div>
         </div>
       )}
@@ -230,7 +259,8 @@ export function Upcoming() {
               </h2>
               {groupByMonth(upcoming).map(([month, monthItems]) => (
                 <MonthGroup key={month} month={month} items={monthItems}
-                  onDownload={downloadRelease} onDismiss={dismissRelease} />
+                  onDownload={downloadRelease} onDismiss={dismissRelease}
+                  expandedId={expandedId} onToggleExpand={setExpandedId} />
               ))}
             </section>
           )}
@@ -241,7 +271,8 @@ export function Upcoming() {
               </h2>
               {groupByMonth(past).map(([month, monthItems]) => (
                 <MonthGroup key={month} month={month} items={monthItems}
-                  onDownload={downloadRelease} onDismiss={dismissRelease} />
+                  onDownload={downloadRelease} onDismiss={dismissRelease}
+                  expandedId={expandedId} onToggleExpand={setExpandedId} />
               ))}
             </section>
           )}
@@ -256,6 +287,10 @@ export function Upcoming() {
           onMonthChange={(dir) => setCalMonth((m) => new Date(m.getFullYear(), m.getMonth() + dir, 1))}
           onDownload={downloadRelease}
           onDismiss={dismissRelease}
+          onShowClick={(item, idx) => {
+            setView("list");
+            setExpandedId(itemKey(item, idx));
+          }}
         />
       )}
     </div>
@@ -264,11 +299,13 @@ export function Upcoming() {
 
 // ── Month group for list view ──
 
-function MonthGroup({ month, items, onDownload, onDismiss }: {
+function MonthGroup({ month, items, onDownload, onDismiss, expandedId, onToggleExpand }: {
   month: string;
   items: UpcomingItem[];
   onDownload: (id: number) => void;
   onDismiss: (id: number) => void;
+  expandedId: string | null;
+  onToggleExpand: (id: string | null) => void;
 }) {
   const label = month === "Unknown" ? "Unknown Date"
     : new Date(month + "-15").toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -279,10 +316,23 @@ function MonthGroup({ month, items, onDownload, onDismiss }: {
         {label}
       </div>
       <div className="space-y-1">
-        {items.map((item, i) => (
-          <EventCard key={`${item.type}-${item.release_id ?? item.venue}-${i}`}
-            item={item} onDownload={onDownload} onDismiss={onDismiss} />
-        ))}
+        {items.map((item, i) => {
+          const key = itemKey(item, i);
+          const isExpanded = expandedId === key;
+          return (
+            <div key={key}>
+              <EventCard
+                item={item}
+                onDownload={onDownload}
+                onDismiss={onDismiss}
+                onClick={item.type === "show" ? () => onToggleExpand(isExpanded ? null : key) : undefined}
+              />
+              {isExpanded && item.type === "show" && (
+                <ShowDetailPanel item={item} onClose={() => onToggleExpand(null)} />
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -290,10 +340,11 @@ function MonthGroup({ month, items, onDownload, onDismiss }: {
 
 // ── EventCard ──
 
-function EventCard({ item, onDownload, onDismiss }: {
+function EventCard({ item, onDownload, onDismiss, onClick }: {
   item: UpcomingItem;
   onDownload?: (id: number) => void;
   onDismiss?: (id: number) => void;
+  onClick?: () => void;
 }) {
   const isShow = item.type === "show";
   const isRelease = item.type === "release";
@@ -303,10 +354,14 @@ function EventCard({ item, onDownload, onDismiss }: {
   const timeStr = item.time ? item.time.slice(0, 5) : "";
 
   return (
-    <div className={cn(
-      "flex items-center gap-4 p-3 rounded-xl border transition-colors hover:bg-card/80 group",
-      isShow ? "border-amber-500/10 hover:border-amber-500/20" : "border-cyan-500/10 hover:border-cyan-500/20"
-    )}>
+    <div
+      className={cn(
+        "flex items-center gap-4 p-3 rounded-xl border transition-colors hover:bg-card/80 group",
+        isShow ? "border-amber-500/10 hover:border-amber-500/20" : "border-cyan-500/10 hover:border-cyan-500/20",
+        isShow && "cursor-pointer"
+      )}
+      onClick={onClick}
+    >
       {/* Thumbnail */}
       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-secondary">
         {isShow ? (
@@ -336,9 +391,7 @@ function EventCard({ item, onDownload, onDismiss }: {
           {isShow ? (
             <>
               <MapPin size={10} className="text-amber-400/60 flex-shrink-0" />
-              <Link to="/shows" className="hover:text-foreground transition-colors">
-                {item.venue}
-              </Link>
+              <span>{item.venue}</span>
               <span className="text-muted-foreground/40">&middot;</span>
               <span>{item.city}, {item.country}</span>
             </>
@@ -365,6 +418,7 @@ function EventCard({ item, onDownload, onDismiss }: {
       <div className="flex items-center gap-1 flex-shrink-0">
         {isShow && item.url && (
           <a href={item.url} target="_blank" rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
             className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-amber-500/10">
             <ExternalLink size={14} className="text-amber-400" />
           </a>
@@ -396,14 +450,124 @@ function EventCard({ item, onDownload, onDismiss }: {
   );
 }
 
+// ── Show Detail Panel (inline expansion) ──
+
+function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () => void }) {
+  const hasCoords = item.latitude && item.longitude;
+
+  return (
+    <div className="border border-amber-500/20 rounded-xl overflow-hidden mb-2 bg-card/50">
+      <div className="flex flex-col sm:flex-row">
+        {/* Mini map */}
+        {hasCoords && (
+          <div className="w-full sm:w-[300px] h-[200px] flex-shrink-0">
+            <MiniMap lat={item.latitude!} lng={item.longitude!} venue={item.venue || ""} />
+          </div>
+        )}
+
+        {/* Details */}
+        <div className="flex-1 p-4">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <Link to={`/artist/${encPath(item.artist)}`}
+                className="text-lg font-bold hover:text-primary transition-colors">
+                {item.artist}
+              </Link>
+              {item.genres?.slice(0, 3).map(g => (
+                <Badge key={g} variant="outline" className="text-[9px] px-1 py-0 ml-1">{g}</Badge>
+              ))}
+            </div>
+            <button onClick={onClose} className="p-1 rounded-md hover:bg-white/5">
+              <X size={16} className="text-muted-foreground" />
+            </button>
+          </div>
+
+          {/* Venue */}
+          <div className="flex items-start gap-2 text-sm text-muted-foreground mb-2">
+            <MapPin size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="text-foreground font-medium">{item.venue}</div>
+              <div>{item.city}, {item.country}</div>
+            </div>
+          </div>
+
+          {/* Date + Time */}
+          <div className="flex items-center gap-3 text-sm text-muted-foreground mb-2">
+            <span className="flex items-center gap-1.5">
+              <Calendar size={14} className="text-amber-400" />
+              {item.date ? new Date(item.date + "T12:00:00").toLocaleDateString("en-US", {
+                weekday: "long", month: "long", day: "numeric", year: "numeric"
+              }) : ""}
+            </span>
+            {item.time && (
+              <span className="flex items-center gap-1.5">
+                <Clock size={14} className="text-amber-400" />
+                {item.time.slice(0, 5)}
+              </span>
+            )}
+          </div>
+
+          {/* Lineup */}
+          {item.lineup && item.lineup.length > 0 && (
+            <div className="mb-3">
+              <div className="text-xs text-muted-foreground/50 uppercase tracking-wider mb-1.5">Lineup</div>
+              <div className="flex flex-wrap gap-2">
+                {item.lineup.map(name => (
+                  <Link key={name} to={`/artist/${encPath(name)}`}
+                    className="flex items-center gap-1.5 text-xs bg-card border border-border rounded-full px-2 py-1 hover:border-primary/30 transition-colors">
+                    <img src={`/api/artist/${encPath(name)}/photo`} alt=""
+                      className="w-5 h-5 rounded-full object-cover"
+                      onError={e => (e.target as HTMLImageElement).style.display = "none"} />
+                    {name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tickets button */}
+          {item.url && (
+            <a href={item.url} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors text-sm font-medium">
+              <Ticket size={14} /> Get Tickets
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MiniMap (Leaflet) ──
+
+function MiniMap({ lat, lng, venue }: { lat: number; lng: number; venue: string }) {
+  return (
+    <MapContainer
+      center={[lat, lng]}
+      zoom={14}
+      style={{ width: "100%", height: "100%" }}
+      zoomControl={false}
+      attributionControl={false}
+      dragging={false}
+      scrollWheelZoom={false}
+    >
+      <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+      <Marker position={[lat, lng]}>
+        <Popup>{venue}</Popup>
+      </Marker>
+    </MapContainer>
+  );
+}
+
 // ── Calendar View ──
 
-function CalendarView({ items, month, onMonthChange, onDownload, onDismiss }: {
+function CalendarView({ items, month, onMonthChange, onDownload, onDismiss, onShowClick }: {
   items: UpcomingItem[];
   month: Date;
   onMonthChange: (dir: number) => void;
   onDownload: (id: number) => void;
   onDismiss: (id: number) => void;
+  onShowClick: (item: UpcomingItem, index: number) => void;
 }) {
   const year = month.getFullYear();
   const m = month.getMonth();
@@ -470,7 +634,8 @@ function CalendarView({ items, month, onMonthChange, onDownload, onDismiss }: {
               <div className="text-[10px] text-muted-foreground/50 mb-0.5">{day}</div>
               <div className="space-y-0.5">
                 {dayItems.slice(0, 3).map((item, idx) => (
-                  <CalendarPill key={idx} item={item} onDownload={onDownload} onDismiss={onDismiss} />
+                  <CalendarPill key={idx} item={item} onDownload={onDownload} onDismiss={onDismiss}
+                    onShowClick={() => onShowClick(item, idx)} />
                 ))}
                 {dayItems.length > 3 && (
                   <div className="text-[9px] text-muted-foreground/40">+{dayItems.length - 3} more</div>
@@ -486,10 +651,11 @@ function CalendarView({ items, month, onMonthChange, onDownload, onDismiss }: {
 
 // ── Calendar Pill with Popover ──
 
-function CalendarPill({ item, onDownload, onDismiss }: {
+function CalendarPill({ item, onDownload, onDismiss, onShowClick }: {
   item: UpcomingItem;
   onDownload: (id: number) => void;
   onDismiss: (id: number) => void;
+  onShowClick: () => void;
 }) {
   const isShow = item.type === "show";
 
@@ -507,7 +673,17 @@ function CalendarPill({ item, onDownload, onDismiss }: {
       </PopoverTrigger>
       <PopoverContent className="w-[340px] p-0" align="start">
         {isShow ? (
-          <ShowPopoverContent item={item} />
+          <div>
+            <ShowPopoverContent item={item} />
+            <div className="px-3 pb-3">
+              <button
+                onClick={onShowClick}
+                className="w-full text-center text-xs text-amber-400 hover:text-amber-300 transition-colors py-1.5 rounded-lg bg-amber-500/5 hover:bg-amber-500/10"
+              >
+                View full details
+              </button>
+            </div>
+          </div>
         ) : (
           <ReleasePopoverContent item={item} onDownload={onDownload} onDismiss={onDismiss} />
         )}

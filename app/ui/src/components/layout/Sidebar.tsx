@@ -18,7 +18,6 @@ import {
   Users,
   LogOut,
   Settings,
-  CalendarDays,
   Sparkles,
   Calendar,
 } from "lucide-react";
@@ -53,7 +52,6 @@ const navItems = [
   { to: "/upcoming", icon: Calendar, label: "Upcoming" },
   { to: "/new-releases", icon: Sparkles, label: "New Releases" },
   { to: "/playlists", icon: ListMusic, label: "Playlists" },
-  { to: "/shows", icon: CalendarDays, label: "Shows" },
   { to: "/download", icon: Download, label: "Acquisition" },
   // AudioMuse AI — disabled (profile not active)
   // { external: "https://ai.lespedants.org", icon: BrainCircuit, label: "AudioMuse AI" },
