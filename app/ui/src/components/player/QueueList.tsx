@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { GripVertical, Music, Trash2 } from "lucide-react";
 
 export function QueueList() {
-  const { queue, currentIndex, jumpTo, removeFromQueue } = usePlayer();
+  const { queue, currentIndex, jumpTo, removeFromQueue, reorderQueue } = usePlayer();
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
 
@@ -19,7 +19,13 @@ export function QueueList() {
             onDragStart={() => setDragIdx(i)}
             onDragOver={(e) => { e.preventDefault(); setOverIdx(i); }}
             onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
-            onDrop={() => { setDragIdx(null); setOverIdx(null); }}
+            onDrop={() => {
+              if (dragIdx !== null && overIdx !== null && dragIdx !== overIdx) {
+                reorderQueue(dragIdx, overIdx);
+              }
+              setDragIdx(null);
+              setOverIdx(null);
+            }}
             className={cn(
               "flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-colors group",
               isCurrent ? "bg-primary/10 text-primary" : "hover:bg-white/5 cursor-pointer",

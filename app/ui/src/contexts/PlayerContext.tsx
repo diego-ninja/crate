@@ -53,6 +53,7 @@ interface PlayerActionsValue {
   playNext: (track: Track) => void;
   addToQueue: (track: Track) => void;
   removeFromQueue: (index: number) => void;
+  reorderQueue: (fromIndex: number, toIndex: number) => void;
   setPlaybackRate: (rate: number) => void;
   setSleepTimer: (minutes: number | null) => void;
 }
@@ -408,6 +409,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, [currentIndex, queue.length]);
 
+  const reorderQueue = useCallback((fromIndex: number, toIndex: number) => {
+    setQueue(prev => {
+      if (fromIndex < 0 || fromIndex >= prev.length) return prev;
+      const newQueue = [...prev];
+      const moved = newQueue.splice(fromIndex, 1)[0]!;
+      newQueue.splice(toIndex, 0, moved);
+      return newQueue;
+    });
+    setCurrentIndex(prev => {
+      if (fromIndex === prev) return toIndex;
+      if (fromIndex < prev && toIndex >= prev) return prev - 1;
+      if (fromIndex > prev && toIndex <= prev) return prev + 1;
+      return prev;
+    });
+  }, []);
+
   const setPlaybackRate = useCallback((rate: number) => {
     audio.playbackRate = rate;
     setPlaybackRateState(rate);
@@ -458,6 +475,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playNext,
       addToQueue,
       removeFromQueue,
+      reorderQueue,
       setPlaybackRate,
       setSleepTimer,
     }),
@@ -485,6 +503,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playNext,
       addToQueue,
       removeFromQueue,
+      reorderQueue,
       setPlaybackRate,
       setSleepTimer,
     ],

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useMusicVisualizer } from "./visualizer/useMusicVisualizer";
@@ -104,6 +104,23 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const albumName = currentTrack.album || trackMeta?.album || "";
 
+  // Generate pseudo-waveform bars from track ID (deterministic, looks like SoundCloud)
+  const waveformBars = useMemo(() => {
+    const id = currentTrack?.id || "default";
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0;
+    const bars: number[] = [];
+    for (let i = 0; i < 80; i++) {
+      hash = ((hash << 5) - hash + i * 7) | 0;
+      const base = 25 + Math.abs(hash % 50);
+      // Create a natural waveform shape: louder in the middle, quieter at edges
+      const pos = i / 80;
+      const envelope = Math.sin(pos * Math.PI) * 0.4 + 0.6;
+      bars.push(Math.min(100, base * envelope + Math.abs((hash >> 3) % 20)));
+    }
+    return bars;
+  }, [currentTrack?.id]);
+
   // Find active lyric line
   const activeLyricIdx = lyrics.synced
     ? lyrics.synced.reduce((best, line, i) => line.time <= currentTime ? i : best, 0)
@@ -206,22 +223,30 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
         </div>
       </div>
 
-      {/* Progress bar */}
+      {/* SoundCloud-style waveform progress */}
       <div className="px-4 pb-1">
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono">
           <span className="w-8 text-right">{formatDuration(Math.floor(currentTime))}</span>
           <div
-            className="flex-1 h-1.5 bg-border rounded-full cursor-pointer group relative"
+            className="flex-1 h-8 cursor-pointer relative flex items-end gap-[1.5px]"
             onClick={(e) => {
               const rect = e.currentTarget.getBoundingClientRect();
               seek(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * duration);
             }}
           >
-            <div className="h-full bg-primary rounded-full" style={{ width: `${progress}%` }} />
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-primary opacity-0 group-hover:opacity-100 transition-opacity shadow"
-              style={{ left: `calc(${progress}% - 6px)` }}
-            />
+            {waveformBars.map((h, i) => {
+              const barProgress = (i / waveformBars.length) * 100;
+              const filled = barProgress < progress;
+              return (
+                <div key={i} className="flex-1 rounded-sm transition-colors duration-75"
+                  style={{
+                    height: `${h}%`,
+                    backgroundColor: filled ? "var(--color-primary)" : "var(--color-border)",
+                    opacity: filled ? 0.9 : 0.4,
+                  }}
+                />
+              );
+            })}
           </div>
           <span className="w-8">{formatDuration(Math.floor(duration))}</span>
         </div>

@@ -1095,10 +1095,10 @@ export function Artist() {
 
         {/* ── Shows Tab ── */}
         {activeTab === "shows" && (
-          <div className="space-y-2">
+          <div className="space-y-1">
             {upcomingShows.map((show, i) => {
-              const d = show.date ? new Date(show.date) : null;
-              const dateStr = d ? d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : show.local_date;
+              const dateObj = show.date ? new Date(show.date + (show.date.includes("T") ? "" : "T12:00:00")) : null;
+              const dateStr = dateObj ? dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : show.local_date;
               const location = [show.city, show.country].filter(Boolean).join(", ");
               return (
                 <a
@@ -1106,35 +1106,51 @@ export function Artist() {
                   href={show.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-4 p-4 bg-card border border-border rounded-lg hover:bg-white/5 transition-colors"
+                  className="flex items-center gap-4 p-3 rounded-xl border border-amber-500/10 hover:border-amber-500/20 transition-all hover:bg-card/80 group"
                 >
-                  {d ? (
-                    <div className="w-14 text-center flex-shrink-0">
-                      <div className="text-2xl font-bold text-primary">{d.getDate()}</div>
-                      <div className="text-[10px] uppercase text-muted-foreground">{d.toLocaleDateString(undefined, { month: "short" })}</div>
-                    </div>
-                  ) : (
-                    <div className="w-14 text-center flex-shrink-0 text-sm text-muted-foreground">{show.local_date}</div>
-                  )}
+                  {/* Thumbnail */}
+                  <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-secondary">
+                    <img src={`/api/artist/${encPath(data.name)}/photo`} alt=""
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                  </div>
+
+                  {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium">{show.name || show.venue}</div>
-                    <div className="text-sm text-muted-foreground">{show.venue}{location ? ` — ${location}` : ""}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm truncate">{show.name || show.venue}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
+                      <MapPin size={10} className="text-amber-400/60 flex-shrink-0" />
+                      <span>{show.venue}</span>
+                      <span className="text-muted-foreground/40">&middot;</span>
+                      <span>{location}</span>
+                    </div>
                     {show.lineup.length > 1 && (
-                      <div className="text-xs text-muted-foreground mt-0.5">
+                      <div className="text-[10px] text-muted-foreground/60 mt-0.5 truncate">
                         with {show.lineup.filter(l => l.toLowerCase() !== data.name.toLowerCase()).join(", ")}
                       </div>
                     )}
                   </div>
-                  <div className="text-right flex-shrink-0 space-y-1">
-                    <div className="text-sm text-muted-foreground">{dateStr}</div>
+
+                  {/* Date */}
+                  <div className="text-right flex-shrink-0 text-amber-400">
+                    <div className="text-xs font-semibold">{dateStr}</div>
                     {show.price_range && (
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-[10px] text-muted-foreground">
                         {show.price_range.min}–{show.price_range.max} {show.price_range.currency}
                       </div>
                     )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     {show.status === "onsale" && (
-                      <Badge variant="secondary" className="text-[10px]">On Sale</Badge>
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 border-amber-500/30 text-amber-400">On Sale</Badge>
                     )}
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-amber-500/10">
+                      <ExternalLink size={14} className="text-amber-400" />
+                    </span>
                   </div>
                 </a>
               );
