@@ -204,6 +204,15 @@ def api_clean_tasks_by_status(request: Request, status: str):
     if status not in allowed:
         raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(allowed)}")
     with get_db_ctx() as cur:
+        # Delete dependent rows first (FK constraints)
+        cur.execute(
+            "DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE status = %s)",
+            (status,),
+        )
+        cur.execute(
+            "DELETE FROM scan_results WHERE task_id IN (SELECT id FROM tasks WHERE status = %s)",
+            (status,),
+        )
         cur.execute("DELETE FROM tasks WHERE status = %s", (status,))
         deleted = cur.rowcount
     return {"deleted": deleted, "status": status}
