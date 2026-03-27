@@ -43,45 +43,47 @@ export function Shows() {
     }
   }, []);
 
-  // Stream shows via fetch + ReadableStream
+  // Fetch shows from DB
   useEffect(() => {
     setLoading(true);
     setDone(false);
     setEvents([]);
     let cancelled = false;
 
-    async function streamShows() {
+    async function fetchShows() {
       try {
-        const res = await fetch("/api/shows?limit=5", { credentials: "include" });
-        if (!res.ok || !res.body) { setLoading(false); setDone(true); return; }
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done: readerDone, value } = await reader.read();
-          if (readerDone || cancelled) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-          for (const line of lines) {
-            if (line.startsWith("event: done")) {
-              if (!cancelled) { setLoading(false); setDone(true); }
-              return;
-            }
-            if (line.startsWith("data: ")) {
-              try {
-                const show: ShowEvent = JSON.parse(line.slice(6));
-                if (!cancelled) setEvents((prev) => [...prev, show]);
-              } catch { /* skip */ }
-            }
-          }
-        }
+        const res = await fetch("/api/shows/cached?limit=200", { credentials: "include" });
+        if (!res.ok) { setLoading(false); setDone(true); return; }
+        const data = await res.json();
+        if (cancelled) return;
+        const mapped: ShowEvent[] = (data.events || []).map((e: Record<string, unknown>) => ({
+          id: e.external_id || e.id || "",
+          name: e.artist_name || "",
+          date: e.date || "",
+          local_date: (e.date as string || "").slice(0, 10),
+          local_time: e.local_time || "",
+          venue: e.venue || "",
+          city: e.city || "",
+          region: e.region || "",
+          country: e.country || "",
+          country_code: e.country_code || "",
+          url: e.url || "",
+          image: e.image_url || "",
+          lineup: Array.isArray(e.lineup) ? e.lineup : (e.artist_name ? [e.artist_name as string] : []),
+          price_range: null,
+          status: e.status || "onsale",
+          latitude: e.latitude ? String(e.latitude) : undefined,
+          longitude: e.longitude ? String(e.longitude) : undefined,
+          artist_name: e.artist_name as string || "",
+          artist_listeners: 0,
+          artist_genres: Array.isArray(e.artist_genres) ? e.artist_genres : [],
+        }));
+        setEvents(mapped);
       } catch { /* network error */ }
       if (!cancelled) { setLoading(false); setDone(true); }
     }
 
-    streamShows();
+    fetchShows();
     return () => { cancelled = true; };
   }, []);
 

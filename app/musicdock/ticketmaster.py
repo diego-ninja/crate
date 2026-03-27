@@ -67,12 +67,15 @@ def search_events(artist_name: str, country_code: str = "", size: int = 10) -> l
 
         events = []
         for e in raw_events:
-            # Strict filter: artist must be explicitly listed in attractions
+            # Filter: artist must be in attractions (exact or contained match)
             attractions = e.get("_embedded", {}).get("attractions", [])
             if not attractions:
-                continue  # skip events without listed artists (tributes, DJ sets, etc.)
+                continue
+            search_lower = artist_name.lower()
             artist_match = any(
-                a.get("name", "").lower() == artist_name.lower()
+                a.get("name", "").lower() == search_lower
+                or search_lower in a.get("name", "").lower()
+                or a.get("name", "").lower() in search_lower
                 for a in attractions
             )
             if not artist_match:
