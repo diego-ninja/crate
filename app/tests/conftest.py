@@ -25,7 +25,8 @@ except ImportError:
 
 # Mock other optional deps that may not be installed locally
 for mod_name in ("musicbrainzngs", "mutagen", "watchdog", "thefuzz", "thefuzz.fuzz",
-                 "rich", "beets", "librosa", "soundfile"):
+                 "rich", "beets", "librosa", "soundfile",
+                 "jwt", "bcrypt"):
     if mod_name not in sys.modules:
         try:
             __import__(mod_name)

@@ -991,8 +991,9 @@ export function Artist() {
                         for (const song of setlistData.probable_setlist) {
                           const t = fuzzyMatchTrack(song.title, titles);
                           if (t) {
+                            const streamPath = t.path.replace(/^\/music\//, "");
                             matched.push({
-                              id: t.path,
+                              id: streamPath,
                               title: t.title,
                               artist: data.name,
                               album: t.album,
@@ -1048,7 +1049,7 @@ export function Artist() {
                       onClick={() => {
                         if (libraryMatch) {
                           player.play({
-                            id: libraryMatch.path,
+                            id: libraryMatch.path.replace(/^\/music\//, ""),
                             title: libraryMatch.title,
                             artist: data.name,
                             album: libraryMatch.album,
