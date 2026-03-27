@@ -10,6 +10,6 @@ COPY src/ src/
 
 RUN cargo build --release
 
-# Output: /build/target/release/grooveyard-bliss
+# Output: /build/target/release/crate-cli
 FROM scratch AS export
-COPY --from=builder /build/target/release/grooveyard-bliss /grooveyard-bliss
+COPY --from=builder /build/target/release/crate-cli /crate-cli

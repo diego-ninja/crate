@@ -1,98 +1,42 @@
-"""Integration with grooveyard-bliss Rust CLI for song distance/similarity."""
+"""Integration with crate-cli Rust binary for bliss song distance/similarity."""
 
-import json
 import logging
-import shutil
-import subprocess
-from pathlib import Path
 
+from musicdock.crate_cli import find_binary, is_available, run_bliss
 from musicdock.db import get_db_ctx
 
 log = logging.getLogger(__name__)
 
-BLISS_BIN = "grooveyard-bliss"
-
-
-def _find_binary() -> str | None:
-    """Find the grooveyard-bliss binary."""
-    # Check common locations
-    for path in [
-        "/app/bin/grooveyard-bliss",
-        "/usr/local/bin/grooveyard-bliss",
-        shutil.which(BLISS_BIN),
-    ]:
-        if path and Path(path).is_file():
-            return str(path)
-    return None
-
-
-def is_available() -> bool:
-    return _find_binary() is not None
-
 
 def analyze_file(filepath: str) -> list[float] | None:
     """Analyze a single file, return 20-float feature vector."""
-    binary = _find_binary()
-    if not binary:
+    data = run_bliss(file=filepath)
+    if not data:
         return None
-    try:
-        result = subprocess.run(
-            [binary, "--file", filepath],
-            capture_output=True, text=True, timeout=60,
-        )
-        if result.returncode != 0:
-            log.warning("bliss failed for %s: %s", filepath, result.stderr)
-            return None
-        data = json.loads(result.stdout)
-        if data.get("error"):
-            log.warning("bliss error for %s: %s", filepath, data["error"])
-            return None
-        return data.get("features")
-    except Exception:
-        log.warning("bliss subprocess failed for %s", filepath, exc_info=True)
+    if data.get("error"):
+        log.warning("bliss error for %s: %s", filepath, data["error"])
         return None
+    return data.get("features")
 
 
 def analyze_directory(dirpath: str, extensions: str = "flac,mp3,m4a,ogg,opus") -> dict:
     """Analyze all files in a directory. Returns {path: features} dict."""
-    binary = _find_binary()
-    if not binary:
+    data = run_bliss(directory=dirpath, extensions=extensions)
+    if not data:
         return {}
-    try:
-        result = subprocess.run(
-            [binary, "--dir", dirpath, "--extensions", extensions],
-            capture_output=True, text=True, timeout=3600,
-        )
-        if result.returncode != 0:
-            return {}
-        data = json.loads(result.stdout)
-        out = {}
-        for track in data.get("tracks", []):
-            if not track.get("error") and track.get("features"):
-                out[track["path"]] = track["features"]
-        return out
-    except Exception:
-        log.warning("bliss batch failed for %s", dirpath, exc_info=True)
-        return {}
+    out = {}
+    for track in data.get("tracks", []):
+        if not track.get("error") and track.get("features"):
+            out[track["path"]] = track["features"]
+    return out
 
 
 def find_similar(source_path: str, library_path: str, limit: int = 20) -> list[dict]:
     """Find similar tracks to source within the library."""
-    binary = _find_binary()
-    if not binary:
+    data = run_bliss(directory=library_path, similar_to=source_path, limit=limit)
+    if not data:
         return []
-    try:
-        result = subprocess.run(
-            [binary, "--dir", library_path, "--similar-to", source_path, "--limit", str(limit)],
-            capture_output=True, text=True, timeout=3600,
-        )
-        if result.returncode != 0:
-            return []
-        data = json.loads(result.stdout)
-        return data.get("similar", [])
-    except Exception:
-        log.warning("bliss similar failed for %s", source_path, exc_info=True)
-        return []
+    return data.get("similar", [])
 
 
 def store_vectors(vectors: dict[str, list[float]]):
