@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+"""Crate CLI — setup, start, stop, and manage your music library."""
+
+import json
+import os
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+# Colors
+CYAN = "\033[0;36m"
+GREEN = "\033[0;32m"
+YELLOW = "\033[1;33m"
+RED = "\033[0;31m"
+BOLD = "\033[1m"
+DIM = "\033[2m"
+NC = "\033[0m"
+
+ROOT = Path(__file__).resolve().parent
+ENV_FILE = ROOT / ".env"
+COMPOSE_FILE = ROOT / "docker-compose.yaml"
+
+
+def header(title: str):
+    w = 41
+    print(f"\n{CYAN}╔{'═' * w}╗{NC}")
+    print(f"{CYAN}║{BOLD}{title:^{w}}{NC}{CYAN}║{NC}")
+    print(f"{CYAN}╚{'═' * w}╝{NC}\n")
+
+
+def ask(prompt: str, default: str = "", secret: bool = False, required: bool = False) -> str:
+    """Ask user for input with optional default."""
+    suffix = f" [{default}]" if default and not secret else ""
+    while True:
+        try:
+            if secret:
+                import getpass
+                value = getpass.getpass(f"  {prompt}{suffix}: ")
+            else:
+                value = input(f"  {prompt}{suffix}: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            sys.exit(1)
+        value = value or default
+        if required and not value:
+            print(f"  {RED}Required.{NC}")
+            continue
+        return value
+
+
+def ask_choice(prompt: str, choices: list[str], default: int = 0) -> int:
+    """Ask user to choose from a list."""
+    print(f"  {BOLD}{prompt}{NC}")
+    for i, c in enumerate(choices):
+        marker = ">" if i == default else " "
+        print(f"   {marker} [{i + 1}] {c}")
+    while True:
+        raw = input(f"\n  Choice [{default + 1}]: ").strip()
+        if not raw:
+            return default
+        try:
+            idx = int(raw) - 1
+            if 0 <= idx < len(choices):
+                return idx
+        except ValueError:
+            pass
+        print(f"  {RED}Invalid choice.{NC}")
+
+
+def ok(msg: str):
+    print(f"  {GREEN}✓{NC} {msg}")
+
+
+def warn(msg: str):
+    print(f"  {YELLOW}!{NC} {msg}")
+
+
+def fail(msg: str):
+    print(f"  {RED}✗{NC} {msg}")
+
+
+def run(cmd: str, check: bool = True, capture: bool = False, **kwargs) -> subprocess.CompletedProcess:
+    """Run a shell command."""
+    return subprocess.run(cmd, shell=True, check=check, capture_output=capture, text=True, cwd=str(ROOT), **kwargs)
+
+
+def docker_compose(cmd: str, **kwargs) -> subprocess.CompletedProcess:
+    return run(f"docker compose -f {COMPOSE_FILE} {cmd}", **kwargs)
+
+
+# ── Commands ──────────────────────────────────────────────────────
+
+
+def cmd_setup():
+    """Interactive setup wizard."""
+    header("Crate Setup")
+
+    # Step 1: Setup mode
+    mode = ask_choice(
+        "How would you like to configure Crate?",
+        [
+            "Web wizard (recommended) — configure in your browser",
+            "Terminal wizard — configure everything here",
+        ],
+    )
+
+    # Step 2: Music library path
+    print(f"\n  {BOLD}Music Library{NC}")
+    print(f"  {DIM}Path to your music collection (will be mounted read-only){NC}")
+    while True:
+        music_path = ask("Music directory", "/music", required=True)
+        music_path = os.path.expanduser(music_path)
+        if os.path.isdir(music_path):
+            ok(f"Found: {music_path}")
+            break
+        warn(f"Directory not found: {music_path}")
+        if ask("Create it?", "n").lower() == "y":
+            os.makedirs(music_path, exist_ok=True)
+            ok(f"Created: {music_path}")
+            break
+
+    # Step 3: Data directory
+    data_path = ask("Data directory", str(ROOT / "data"))
+    os.makedirs(data_path, exist_ok=True)
+
+    if mode == 0:
+        # Web wizard mode — minimal .env, start stack, open browser
+        _generate_env(music_path, data_path, {})
+        _start_stack()
+        url = "http://localhost:8585/setup"
+        print(f"\n  {BOLD}Open {CYAN}{url}{NC} {BOLD}to complete setup.{NC}")
+        print(f"  {DIM}The web wizard will guide you through admin account, API keys, and more.{NC}\n")
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception:
+            pass
+        return
+
+    # Terminal wizard mode
+    print(f"\n  {BOLD}Admin Account{NC}")
+    admin_email = ask("Admin email", "admin@crate.local", required=True)
+    admin_password = ask("Admin password", "", secret=True, required=True)
+
+    print(f"\n  {BOLD}API Keys {DIM}(all optional — press Enter to skip){NC}")
+    print(f"  {DIM}These enable enrichment features. You can add them later in Settings.{NC}\n")
+
+    api_keys = {}
+    key_info = [
+        ("LASTFM_APIKEY", "Last.fm API key", "Artist bios, similar artists, popularity", "https://www.last.fm/api/account/create"),
+        ("TICKETMASTER_API_KEY", "Ticketmaster key", "Upcoming shows/concerts", "https://developer.ticketmaster.com/"),
+        ("SPOTIFY_ID", "Spotify Client ID", "Artist images, popularity", "https://developer.spotify.com/dashboard"),
+        ("SPOTIFY_SECRET", "Spotify Client Secret", "", ""),
+        ("FANART_API_KEY", "Fanart.tv key", "Artist backgrounds, logos", "https://fanart.tv/get-an-api-key/"),
+        ("SETLISTFM_API_KEY", "Setlist.fm key", "Concert setlists", "https://api.setlist.fm/docs/1.0/index.html"),
+    ]
+    for key, label, desc, url in key_info:
+        hint = f" — {desc}" if desc else ""
+        link = f" {DIM}({url}){NC}" if url else ""
+        value = ask(f"{label}{hint}{link}", "")
+        if value:
+            api_keys[key] = value
+
+    print(f"\n  {BOLD}External Access {DIM}(optional){NC}")
+    domain = ask("Domain name (empty for local only)", "")
+
+    # Generate .env
+    env_vars = {
+        "DEFAULT_ADMIN_EMAIL": admin_email,
+        "DEFAULT_ADMIN_PASSWORD": admin_password,
+        "DOMAIN": domain or "localhost",
+        **api_keys,
+    }
+    _generate_env(music_path, data_path, env_vars)
+
+    # Start
+    _start_stack()
+
+    # Summary
+    url = f"https://admin.{domain}" if domain else "http://localhost:8585"
+    print(f"\n{'═' * 45}")
+    print(f"  {GREEN}{BOLD}Crate is running!{NC}")
+    print(f"  {BOLD}URL:{NC}   {CYAN}{url}{NC}")
+    print(f"  {BOLD}Login:{NC} {admin_email}")
+    print(f"\n  {BOLD}Next steps:{NC}")
+    print(f"  - Open the UI and trigger a Library Scan")
+    print(f"  - Configure Tidal in Settings for downloads")
+    print(f"  - Add missing API keys in Settings > Enrichment")
+    print(f"{'═' * 45}\n")
+
+
+def _generate_env(music_path: str, data_path: str, extra: dict):
+    """Generate .env file with sensible defaults."""
+    jwt_secret = secrets.token_urlsafe(32)
+    pg_password = secrets.token_urlsafe(16)
+
+    # MEDIA_DIR is the parent of the music directory
+    # compose maps ${MEDIA_DIR}/music:/music (or similar)
+    media_dir = str(Path(music_path).parent)
+
+    env = {
+        "# Crate configuration — generated by 'crate setup'": "",
+        "MEDIA_DIR": media_dir,
+        "DATA_DIR": data_path,
+        "PUID": str(os.getuid()),
+        "PGID": str(os.getgid()),
+        "TZ": _detect_timezone(),
+        "DOMAIN": extra.get("DOMAIN", "localhost"),
+        "JWT_SECRET": jwt_secret,
+        "MUSICDOCK_POSTGRES_USER": "crate",
+        "MUSICDOCK_POSTGRES_PASSWORD": pg_password,
+        "MUSICDOCK_POSTGRES_DB": "crate",
+        "DEFAULT_ADMIN_EMAIL": extra.get("DEFAULT_ADMIN_EMAIL", ""),
+        "DEFAULT_ADMIN_PASSWORD": extra.get("DEFAULT_ADMIN_PASSWORD", ""),
+        "LASTFM_APIKEY": extra.get("LASTFM_APIKEY", ""),
+        "FANART_API_KEY": extra.get("FANART_API_KEY", ""),
+        "SPOTIFY_ID": extra.get("SPOTIFY_ID", ""),
+        "SPOTIFY_SECRET": extra.get("SPOTIFY_SECRET", ""),
+        "SETLISTFM_API_KEY": extra.get("SETLISTFM_API_KEY", ""),
+        "TICKETMASTER_API_KEY": extra.get("TICKETMASTER_API_KEY", ""),
+        "NAVIDROME_PASSWORD": extra.get("NAVIDROME_PASSWORD", secrets.token_urlsafe(12)),
+    }
+
+    lines = []
+    for k, v in env.items():
+        if k.startswith("#"):
+            lines.append(k)
+        else:
+            lines.append(f"{k}={v}")
+
+    ENV_FILE.write_text("\n".join(lines) + "\n")
+    ok(f"Generated .env ({len([v for v in env.values() if v])} configured)")
+
+
+def _detect_timezone() -> str:
+    """Try to detect the system timezone."""
+    try:
+        tz = Path("/etc/timezone").read_text().strip()
+        if tz:
+            return tz
+    except Exception:
+        pass
+    try:
+        link = os.readlink("/etc/localtime")
+        if "zoneinfo/" in link:
+            return link.split("zoneinfo/")[-1]
+    except Exception:
+        pass
+    return "UTC"
+
+
+def _start_stack():
+    """Start the Docker Compose stack with progress."""
+    print(f"\n  {BOLD}Starting Crate...{NC}")
+
+    print(f"  {DIM}Building containers (this may take a few minutes on first run)...{NC}")
+    docker_compose("build --quiet", check=False)
+
+    docker_compose("up -d")
+
+    services = [
+        ("PostgreSQL", "musicdock-postgres", 30),
+        ("Redis", "musicdock-redis", 10),
+        ("API", "musicdock-api", 30),
+        ("Worker", "musicdock-worker", 15),
+        ("UI", "musicdock-ui", 15),
+    ]
+
+    for name, container, timeout in services:
+        start = time.time()
+        while time.time() - start < timeout:
+            result = run(f"docker inspect -f '{{{{.State.Running}}}}' {container}", check=False, capture=True)
+            if result.returncode == 0 and "true" in result.stdout:
+                ok(name)
+                break
+            time.sleep(1)
+        else:
+            warn(f"{name} (not ready after {timeout}s)")
+
+
+def cmd_start():
+    """Start the stack."""
+    header("Starting Crate")
+    if not ENV_FILE.exists():
+        fail(".env not found — run 'crate setup' first")
+        sys.exit(1)
+    docker_compose("up -d")
+    ok("Crate started")
+
+
+def cmd_stop():
+    """Stop the stack."""
+    header("Stopping Crate")
+    docker_compose("down")
+    ok("Crate stopped")
+
+
+def cmd_restart():
+    """Restart the stack."""
+    header("Restarting Crate")
+    docker_compose("restart")
+    ok("Crate restarted")
+
+
+def cmd_status():
+    """Show stack status."""
+    header("Crate Status")
+    docker_compose("ps")
+
+
+def cmd_logs(args: list[str]):
+    """Show logs."""
+    service = next((a for a in args if not a.startswith("-")), "")
+    follow = "-f" if "--follow" in args or "-f" in args else "--tail=50"
+    docker_compose(f"logs {follow} {service}")
+
+
+def cmd_update():
+    """Update to latest version."""
+    header("Updating Crate")
+    run("git pull")
+    ok("Code updated")
+    docker_compose("build --quiet")
+    ok("Containers rebuilt")
+    docker_compose("up -d")
+    ok("Crate restarted")
+
+
+def cmd_help():
+    print(f"""
+{BOLD}Crate{NC} — Self-hosted music library manager
+
+{BOLD}Usage:{NC}
+  ./crate <command> [args]
+
+{BOLD}Commands:{NC}
+  setup       Interactive setup wizard
+  start       Start the stack
+  stop        Stop the stack
+  restart     Restart the stack
+  status      Show container status
+  logs        Show logs (./crate logs [service] [-f])
+  update      Pull latest code and restart
+  help        Show this help
+""")
+
+
+def main():
+    if len(sys.argv) < 2:
+        cmd_help()
+        sys.exit(0)
+
+    command = sys.argv[1]
+    args = sys.argv[2:]
+
+    commands = {
+        "setup": lambda: cmd_setup(),
+        "start": lambda: cmd_start(),
+        "stop": lambda: cmd_stop(),
+        "restart": lambda: cmd_restart(),
+        "status": lambda: cmd_status(),
+        "logs": lambda: cmd_logs(args),
+        "update": lambda: cmd_update(),
+        "help": lambda: cmd_help(),
+        "--help": lambda: cmd_help(),
+        "-h": lambda: cmd_help(),
+    }
+
+    fn = commands.get(command)
+    if fn:
+        fn()
+    else:
+        fail(f"Unknown command: {command}")
+        cmd_help()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,5 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router";
+import { api } from "@/lib/api";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PlayerProvider } from "@/contexts/PlayerContext";
@@ -29,6 +30,7 @@ const Discover = lazy(() => import("@/pages/Discover").then(m => ({ default: m.D
 const Profile = lazy(() => import("@/pages/Profile").then(m => ({ default: m.Profile })));
 const NewReleases = lazy(() => import("@/pages/NewReleases").then(m => ({ default: m.NewReleases })));
 const Upcoming = lazy(() => import("@/pages/Upcoming").then(m => ({ default: m.Upcoming })));
+const Setup = lazy(() => import("@/pages/Setup").then(m => ({ default: m.Setup })));
 
 function PageSpinner() {
   return (
@@ -45,6 +47,19 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function SetupGuard() {
+  useEffect(() => {
+    api<{ needs_setup: boolean }>("/api/setup/status")
+      .then(d => {
+        if (d.needs_setup && !window.location.pathname.startsWith("/setup")) {
+          window.location.href = "/setup";
+        }
+      })
+      .catch(() => {});
+  }, []);
+  return null;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -52,8 +67,10 @@ export default function App() {
         <PlayerProvider>
           <NotificationProvider>
           <TooltipProvider>
+            <SetupGuard />
             <Suspense fallback={<PageSpinner />}>
               <Routes>
+                <Route path="setup" element={<Setup />} />
                 <Route path="login" element={<Login />} />
                 <Route
                   element={

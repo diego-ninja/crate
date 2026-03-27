@@ -39,6 +39,7 @@ def create_app() -> FastAPI:
     from musicdock.api.auth import AuthMiddleware
     app.add_middleware(AuthMiddleware)
 
+    from musicdock.api.setup import router as setup_router
     from musicdock.api.auth import router as auth_router
     from musicdock.api.browse import router as browse_router
     from musicdock.api.tags import router as tags_router
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     from musicdock.api.acquisition import router as acquisition_router
 
     # Auth + management + settings + enrichment + audiomuse BEFORE browse (browse has {name:path} catch-all)
+    app.include_router(setup_router)
     app.include_router(auth_router)
     app.include_router(management_router)
     app.include_router(settings_router)
