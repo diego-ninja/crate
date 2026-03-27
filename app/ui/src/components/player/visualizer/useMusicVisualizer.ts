@@ -20,20 +20,28 @@ export function useMusicVisualizer(
       return;
     }
 
-    const node = createAnalyserNode(audioElement, 2048);
-    if (!node) return;
-    analyserRef.current = node;
+    const canvas = canvasRef.current;
 
-    try {
-      const viz = new MusicVisualizer(canvasRef.current, node);
-      vizRef.current = viz;
-      viz.start();
-    } catch (e) {
-      console.error('Failed to initialize WebGL visualizer:', e);
-      return;
-    }
+    // Wait for canvas to have layout dimensions before creating WebGL context
+    const initId = requestAnimationFrame(() => {
+      if (!canvas.clientWidth || !canvas.clientHeight) return;
+
+      const node = createAnalyserNode(audioElement, 2048);
+      if (!node) return;
+      analyserRef.current = node;
+
+      try {
+        const viz = new MusicVisualizer(canvas, node);
+        vizRef.current = viz;
+        viz.setSize(canvas.clientWidth, canvas.clientHeight);
+        viz.start();
+      } catch (e) {
+        console.error('Failed to initialize WebGL visualizer:', e);
+      }
+    });
 
     return () => {
+      cancelAnimationFrame(initId);
       if (vizRef.current) {
         vizRef.current.destroy();
         vizRef.current = null;

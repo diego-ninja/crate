@@ -55,6 +55,13 @@ export class MusicVisualizer {
     this.freqDomain = new Uint8Array(analyser.frequencyBinCount);
     this.timeDomain = new Uint8Array(analyser.frequencyBinCount);
 
+    // Ensure canvas has pixel dimensions
+    const dpr = window.devicePixelRatio || 1;
+    this.width = canvas.clientWidth * dpr;
+    this.height = canvas.clientHeight * dpr;
+    canvas.width = this.width;
+    canvas.height = this.height;
+
     setGL(glCtx);
     this.initScene();
   }
@@ -159,6 +166,8 @@ export class MusicVisualizer {
     if (w === this.width && h === this.height) return;
     this.width = w;
     this.height = h;
+    this.canvas.width = w;
+    this.canvas.height = h;
 
     const g = this.glCtx;
 
