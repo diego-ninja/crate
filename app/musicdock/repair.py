@@ -390,41 +390,61 @@ class LibraryRepair:
                 return result
 
             if expected_dir.exists() and expected_dir != current_dir:
-                # Target exists — check if it's a duplicate (same files)
-                # If so, remove the old-naming duplicate and keep the correctly-named one
-                src_files = {f.name for f in current_dir.iterdir() if f.is_file()}
-                dst_files = {f.name for f in expected_dir.iterdir() if f.is_file()}
-                if src_files and src_files <= dst_files:
-                    # All source files exist in dest — safe to remove old folder
-                    shutil.rmtree(str(current_dir))
-                    log.info("Removed duplicate folder %s (already exists at %s)", current_dir, expected_dir)
-                    # Update DB to point to the correct path
-                    old_path_str = str(current_dir)
-                    new_path_str = str(expected_dir)
-                    with get_db_ctx() as cur:
-                        cur.execute(
-                            "UPDATE library_albums SET name = %s, path = %s WHERE path = %s",
-                            (clean_name, new_path_str, details.get("path", old_path_str)),
-                        )
-                        cur.execute(
-                            "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
-                            (old_path_str, new_path_str, old_path_str + "%"),
-                        )
-                    # Delete the duplicate album DB entry if both exist
-                    with get_db_ctx() as cur:
-                        cur.execute(
-                            "DELETE FROM library_albums WHERE path = %s AND EXISTS "
-                            "(SELECT 1 FROM library_albums WHERE path = %s)",
-                            (old_path_str, new_path_str),
-                        )
-                    result["details"]["merged"] = True
-                    log_audit("merge_duplicate_album_folder", "album", f"{artist}/{year}/{clean_name}",
-                              details=result["details"], task_id=task_id)
-                    return result
-                else:
-                    result["applied"] = False
-                    result["details"]["error"] = f"Target already exists with different content: {expected_dir.name}"
-                    return result
+                # Smart merge: copy missing files, upgrade lossy→lossless
+                QUALITY_RANK = {".flac": 3, ".wav": 3, ".alac": 3, ".ogg": 2, ".opus": 2, ".m4a": 2, ".mp3": 1}
+                src_files = {f.name: f for f in current_dir.iterdir() if f.is_file()}
+                dst_files = {f.name: f for f in expected_dir.iterdir() if f.is_file()}
+                # Build stem→file maps for quality comparison
+                src_by_stem: dict[str, Path] = {}
+                for f in current_dir.iterdir():
+                    if f.is_file():
+                        src_by_stem[f.stem.lower()] = f
+                dst_by_stem: dict[str, Path] = {}
+                for f in expected_dir.iterdir():
+                    if f.is_file():
+                        dst_by_stem[f.stem.lower()] = f
+                copied = []
+                upgraded = []
+                for name, src_file in src_files.items():
+                    if name not in dst_files:
+                        # Check if dest has same track in lower quality
+                        stem = src_file.stem.lower()
+                        dst_match = dst_by_stem.get(stem)
+                        src_rank = QUALITY_RANK.get(src_file.suffix.lower(), 0)
+                        if dst_match and src_rank > QUALITY_RANK.get(dst_match.suffix.lower(), 0):
+                            # Source is higher quality — replace
+                            dst_match.unlink()
+                            shutil.copy2(str(src_file), str(expected_dir / src_file.name))
+                            upgraded.append(f"{dst_match.name} → {src_file.name}")
+                        elif not dst_match:
+                            shutil.copy2(str(src_file), str(expected_dir / name))
+                            copied.append(name)
+                shutil.rmtree(str(current_dir))
+                log.info("Merged %s → %s (%d copied, %d upgraded, folder removed)",
+                         current_dir, expected_dir, len(copied), len(upgraded))
+                old_path_str = str(current_dir)
+                new_path_str = str(expected_dir)
+                with get_db_ctx() as cur:
+                    cur.execute(
+                        "UPDATE library_albums SET name = %s, path = %s WHERE path = %s",
+                        (clean_name, new_path_str, details.get("path", old_path_str)),
+                    )
+                    cur.execute(
+                        "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
+                        (old_path_str, new_path_str, old_path_str + "%"),
+                    )
+                    # Remove duplicate album DB entry if both paths existed
+                    cur.execute(
+                        "DELETE FROM library_albums WHERE path = %s AND EXISTS "
+                        "(SELECT 1 FROM library_albums WHERE path = %s)",
+                        (old_path_str, new_path_str),
+                    )
+                result["details"]["merged"] = True
+                result["details"]["files_copied"] = len(copied)
+                result["details"]["files_upgraded"] = upgraded
+                log_audit("merge_duplicate_album_folder", "album", f"{artist}/{year}/{clean_name}",
+                          details=result["details"], task_id=task_id)
+                return result
 
             try:
                 # Create year subdirectory if needed
