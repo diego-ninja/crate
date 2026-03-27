@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo, cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useApi } from "@/hooks/use-api";
 import { useTaskEvents } from "@/hooks/use-task-events";
@@ -19,7 +25,7 @@ import { toast } from "sonner";
 import {
   Loader2, CheckCircle2, XCircle, Clock, Ban, RefreshCw,
   ChevronDown, ChevronUp, RotateCcw, Trash2, Activity,
-  Filter, Zap,
+  Filter, Zap, Cpu, Minus, Plus,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────
@@ -398,9 +404,41 @@ export function Tasks() {
           Tasks
           <Button variant="ghost" size="sm" onClick={refetch}><RefreshCw size={14} /></Button>
         </h1>
-        <Button variant="ghost" size="sm" onClick={handleCleanup} className="text-xs text-muted-foreground">
-          <Trash2 size={12} className="mr-1" /> Cleanup old tasks
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={handleCleanup} className="text-xs text-muted-foreground">
+            <Trash2 size={12} className="mr-1" /> Cleanup old
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Trash2 size={14} className="mr-1" /> Clean
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={async () => {
+                const res = await api<{deleted: number}>("/api/tasks/clean/completed", "POST");
+                toast.success(`Cleaned ${res.deleted} completed tasks`);
+                refetch();
+              }}>
+                Completed tasks
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={async () => {
+                const res = await api<{deleted: number}>("/api/tasks/clean/failed", "POST");
+                toast.success(`Cleaned ${res.deleted} failed tasks`);
+                refetch();
+              }}>
+                Failed tasks
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={async () => {
+                const res = await api<{deleted: number}>("/api/tasks/clean/cancelled", "POST");
+                toast.success(`Cleaned ${res.deleted} cancelled tasks`);
+                refetch();
+              }}>
+                Cancelled tasks
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Stats row */}
@@ -644,16 +682,16 @@ interface WorkerInfo {
   max_slots: number;
   running: number;
   pending: number;
-  running_tasks: { id: string; type: string }[];
+  running_tasks: { id: string; type: string; params?: Record<string, string> }[];
   pending_tasks: { id: string; type: string }[];
 }
 
 function WorkerStatus({ running, pending }: { running: number; pending: number }) {
+  const [workerInfo, setWorkerInfo] = useState<WorkerInfo | null>(null);
+  const [restarting, setRestarting] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
-  const [workerInfo, setWorkerInfo] = useState<WorkerInfo | null>(null);
-  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     api<WorkerInfo>("/api/worker/status").then(setWorkerInfo).catch(() => {});
@@ -662,23 +700,25 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
   }, []);
 
   const maxSlots = workerInfo?.max_slots ?? 3;
+  const runningTasks = workerInfo?.running_tasks ?? [];
 
-  async function toggleLogs() {
-    if (showLogs) { setShowLogs(false); return; }
-    setShowLogs(true);
-    setLogsLoading(true);
+  async function incrementSlots() {
+    const next = maxSlots + 1;
+    if (next > 5) return;
     try {
-      const d = await api<{ name: string; logs: string }>("/api/stack/container/musicdock-worker/logs?tail=40");
-      setLogs(d.logs);
-    } catch { setLogs("Failed to load logs"); }
-    finally { setLogsLoading(false); }
+      await api("/api/worker/slots", "POST", { slots: next });
+      setWorkerInfo((prev) => prev ? { ...prev, max_slots: next } : prev);
+      toast.success(`Worker slots set to ${next}`);
+    } catch { toast.error("Failed to set slots"); }
   }
 
-  async function setSlots(n: number) {
+  async function decrementSlots() {
+    const next = maxSlots - 1;
+    if (next < 1) return;
     try {
-      await api("/api/worker/slots", "POST", { slots: n });
-      setWorkerInfo((prev) => prev ? { ...prev, max_slots: n } : prev);
-      toast.success(`Worker slots set to ${n}`);
+      await api("/api/worker/slots", "POST", { slots: next });
+      setWorkerInfo((prev) => prev ? { ...prev, max_slots: next } : prev);
+      toast.success(`Worker slots set to ${next}`);
     } catch { toast.error("Failed to set slots"); }
   }
 
@@ -696,43 +736,77 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
     } catch { toast.error("Failed to cancel tasks"); }
   }
 
+  async function toggleLogs() {
+    if (showLogs) { setShowLogs(false); return; }
+    setShowLogs(true);
+    setLogsLoading(true);
+    try {
+      const d = await api<{ name: string; logs: string }>("/api/stack/container/musicdock-worker/logs?tail=40");
+      setLogs(d.logs);
+    } catch { setLogs("Failed to load logs"); }
+    finally { setLogsLoading(false); }
+  }
+
   return (
-    <Card className="bg-card">
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <div className="text-sm font-medium">Worker</div>
-            <div className="flex gap-1">
-              {Array.from({ length: maxSlots }, (_, i) => (
-                <div key={i} className={`w-3 h-3 rounded-full transition-colors ${i < running ? "bg-blue-500 animate-pulse" : "bg-border"}`} />
-              ))}
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {running}/{maxSlots} active{pending > 0 && ` · ${pending} queued`}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="flex items-center gap-0.5 mr-2 border border-border rounded-md">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button key={n} onClick={() => setSlots(n)}
-                  className={`px-2 py-1 text-[10px] font-mono transition-colors ${n === maxSlots ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-secondary"} ${n === 1 ? "rounded-l-md" : ""} ${n === 5 ? "rounded-r-md" : ""}`}>
-                  {n}
-                </button>
-              ))}
-            </div>
-            <Button variant="ghost" size="sm" onClick={cancelAll} className="text-xs text-red-500 hover:text-red-400">
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Cpu size={16} />
+            Workers
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="h-7 px-2" onClick={decrementSlots} disabled={maxSlots <= 1}>
+              <Minus size={12} />
+            </Button>
+            <span className="text-sm font-mono w-6 text-center">{maxSlots}</span>
+            <Button size="sm" variant="outline" className="h-7 px-2" onClick={incrementSlots} disabled={maxSlots >= 5}>
+              <Plus size={12} />
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-red-400" onClick={restartWorker} disabled={restarting} title="Restart workers">
+              {restarting ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={cancelAll} className="text-xs text-red-500 hover:text-red-400 h-7">
               <Ban size={12} className="mr-1" /> Cancel all
             </Button>
-            <Button variant="ghost" size="sm" onClick={restartWorker} disabled={restarting} className="text-xs text-yellow-500 hover:text-yellow-400">
-              {restarting ? <Loader2 size={12} className="animate-spin mr-1" /> : <RefreshCw size={12} className="mr-1" />} Restart
-            </Button>
-            <Button variant="ghost" size="sm" onClick={toggleLogs} className="text-xs text-muted-foreground">
+            <Button variant="ghost" size="sm" onClick={toggleLogs} className="text-xs text-muted-foreground h-7">
               {showLogs ? "Hide logs" : "Logs"}
             </Button>
           </div>
         </div>
+      </CardHeader>
+      <CardContent>
+        {/* Slot bar visualization */}
+        <div className="flex gap-1 mb-3">
+          {Array.from({ length: maxSlots }, (_, i) => {
+            const task = runningTasks[i];
+            return (
+              <div
+                key={i}
+                className={cn(
+                  "h-8 flex-1 rounded-md flex items-center justify-center text-[10px] truncate px-1 transition-colors",
+                  task
+                    ? "bg-cyan-500/20 border border-cyan-500/30 text-cyan-400"
+                    : "bg-muted/30 border border-border text-muted-foreground/40"
+                )}
+                title={task ? `${task.type}: ${task.params?.artist || task.id}` : "Idle"}
+              >
+                {task ? (task.params?.artist || task.type.replace(/_/g, " ")) : "idle"}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Stats row */}
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <span>{running} running</span>
+          <span>{pending} pending</span>
+          <span>{maxSlots} slots</span>
+        </div>
+
+        {/* Logs */}
         {showLogs && (
-          <div className="bg-[#060608] rounded-lg p-3 max-h-[250px] overflow-auto mt-2">
+          <div className="bg-[#060608] rounded-lg p-3 max-h-[250px] overflow-auto mt-3">
             {logsLoading ? (
               <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Loading...</div>
             ) : (
@@ -744,3 +818,4 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
     </Card>
   );
 }
+

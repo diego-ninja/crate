@@ -1,16 +1,11 @@
 import json
 import logging
 import shutil
-import signal
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from musicdock.config import load_config
-from musicdock.db import init_db, claim_next_task, update_task, save_scan_result, create_task, create_task_dedup, set_cache, get_cache, list_tasks, get_task, get_setting, get_db_ctx, emit_task_event
-from musicdock.importer import ImportQueue
+from musicdock.db import update_task, save_scan_result, create_task, create_task_dedup, set_cache, get_cache, list_tasks, get_task, get_setting, get_db_ctx, emit_task_event, delete_cache
 from musicdock.scanner import LibraryScanner
 from musicdock.report import save_report
 from musicdock.artwork import scan_missing_covers, fetch_cover_from_caa, save_cover
@@ -18,85 +13,43 @@ from musicdock.matcher import match_album, apply_match
 from musicdock.audio import get_audio_files
 from musicdock.lastfm import get_artist_info, get_best_artist_image
 from musicdock.library_sync import LibrarySync
-from musicdock.library_watcher import LibraryWatcher
 
 log = logging.getLogger(__name__)
 
-_shutdown = False
+CHUNK_SIZE = 10  # artists per chunk for parallel processing
 
-
-def _handle_signal(signum, frame):
-    global _shutdown
-    log.info("Received signal %d, shutting down gracefully...", signum)
-    _shutdown = True
+# DB_HEAVY_TASKS moved to db/tasks.py for claim_next_task logic
+DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
 
 
 def _is_cancelled(task_id: str) -> bool:
-    task = get_task(task_id)
-    return task is not None and task.get("status") == "cancelled"
-
-
-MAX_WORKERS = 5
-CLAIM_RETRY_INTERVAL = 0.5  # seconds between task claim retries
-IDLE_POLL_INTERVAL = 1.0    # seconds between idle polls
-SCHEDULE_CHECK_INTERVAL = 60  # seconds between scheduler checks
-IMPORT_CHECK_INTERVAL = 60   # seconds between import queue checks
-
-_active_tasks: set[str] = set()
-_stale_task_ids: set[str] = set()  # tasks that failed but couldn't be marked in DB
-_watcher = None  # LibraryWatcher ref for processing lock
-
-# Tasks that do heavy DB writes — only one at a time
-DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
-CHUNK_SIZE = 10  # artists per chunk for parallel processing
-_db_heavy_running = False
-_db_heavy_lock = threading.Lock()
-
-
-def _run_task(task: dict, config: dict):
-    global _db_heavy_running
-    task_id = task["id"]
-    task_type = task["type"]
-    params = task.get("params", {})
-    is_db_heavy = task_type in DB_HEAVY_TASKS
-
-    if is_db_heavy:
-        with _db_heavy_lock:
-            if _db_heavy_running:
-                # Re-queue: another DB-heavy task is running — backoff to avoid busy loop
-                update_task(task_id, status="pending", progress="Waiting for DB-heavy task to finish")
-                time.sleep(10)
-                return
-            _db_heavy_running = True
-
-    _active_tasks.add(task_id)
-    log.info("Processing task %s (type=%s)", task_id, task_type)
-
+    """Check if a task has been cancelled (reads from DB)."""
     try:
-        handler = TASK_HANDLERS.get(task_type)
-        if not handler:
-            update_task(task_id, status="failed", error=f"Unknown task type: {task_type}")
-            return
+        task = get_task(task_id)
+        return task is not None and task.get("status") == "cancelled"
+    except Exception:
+        return False
 
-        result = handler(task_id, params, config)
-        if _is_cancelled(task_id):
-            log.info("Task %s was cancelled", task_id)
-        else:
-            update_task(task_id, status="completed", result=result or {})
-            log.info("Task %s completed", task_id)
 
-    except Exception as e:
-        log.exception("Task %s failed", task_id)
-        try:
-            update_task(task_id, status="failed", error=str(e))
-        except Exception:
-            log.error("Could not mark task %s as failed (DB unavailable?)", task_id)
-            _stale_task_ids.add(task_id)
-    finally:
-        _active_tasks.discard(task_id)
-        if is_db_heavy:
-            with _db_heavy_lock:
-                _db_heavy_running = False
+def mark_processing(artist_name: str):
+    """Mark an artist as being processed — watcher will skip changes."""
+    set_cache(f"processing:{artist_name.lower()}", True, ttl=3600)
+
+
+def unmark_processing(artist_name: str):
+    """Unmark an artist as being processed."""
+    delete_cache(f"processing:{artist_name.lower()}")
+
+
+def run_worker(config: dict):
+    """Start the orchestrator which manages worker processes."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    from musicdock.orchestrator import Orchestrator
+    orch = Orchestrator(config)
+    orch.run()
 
 
 def _compute_dir_hash(directory: Path) -> str:
@@ -119,119 +72,6 @@ def _compute_dir_hash(directory: Path) -> str:
         if f.is_file():
             h.update(f"{f.relative_to(directory)}:{f.stat().st_size}\n".encode())
     return h.hexdigest()
-
-
-def run_worker(config: dict):
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
-
-    signal.signal(signal.SIGTERM, _handle_signal)
-    signal.signal(signal.SIGINT, _handle_signal)
-
-    init_db()
-
-    from musicdock.utils import init_musicbrainz
-    init_musicbrainz()
-
-    # Clean up orphaned tasks from previous worker crash/restart
-    orphaned = list_tasks(status="running")
-    for t in orphaned:
-        log.warning("Marking orphaned task %s (type=%s) as failed", t["id"], t["type"])
-        update_task(t["id"], status="failed", error="Orphaned: worker restarted while task was running")
-
-    # Start filesystem watcher (non-blocking)
-    try:
-        global _watcher
-        sync = LibrarySync(config)
-        _watcher = LibraryWatcher(config, sync)
-        _watcher.start()
-        log.info("Filesystem watcher started")
-    except Exception:
-        log.exception("Library watcher failed to start")
-
-    # Initial library sync if needed
-    from musicdock.scheduler import check_and_create_scheduled_tasks, mark_run
-    check_and_create_scheduled_tasks()
-
-    log.info("Worker started with %d slots, polling for tasks...", MAX_WORKERS)
-
-    _last_schedule_check = time.time()
-    _last_import_check = 0
-    _last_cleanup = 0.0
-    executor = ThreadPoolExecutor(max_workers=MAX_WORKERS)
-
-    try:
-        while not _shutdown:
-            # Periodic import queue check every 60s
-            if time.time() - _last_import_check > IMPORT_CHECK_INTERVAL:
-                _last_import_check = time.time()
-                try:
-                    queue = ImportQueue(load_config())
-                    count = len(queue.scan_pending())
-                    set_cache("imports_pending", {"count": count})
-                except Exception:
-                    pass
-
-            # Check scheduled tasks every 60s
-            if time.time() - _last_schedule_check > SCHEDULE_CHECK_INTERVAL:
-                _last_schedule_check = time.time()
-                try:
-                    check_and_create_scheduled_tasks()
-                except Exception:
-                    log.debug("Schedule check failed")
-
-            # Auto-cleanup old tasks + events every hour + recover zombie tasks
-            if time.time() - _last_cleanup > 3600:
-                _last_cleanup = time.time()
-                try:
-                    from musicdock.db.events import cleanup_old_events, cleanup_old_tasks
-                    cleanup_old_events(max_age_hours=48)
-                    cleanup_old_tasks(max_age_days=7)
-                except Exception:
-                    log.debug("Auto-cleanup failed")
-                # Reset tasks stuck in 'running' that aren't actually active in this worker
-                try:
-                    zombie = list_tasks(status="running")
-                    for t in zombie:
-                        if t["id"] not in _active_tasks:
-                            log.warning("Resetting zombie task %s (type=%s) to failed", t["id"], t["type"])
-                            update_task(t["id"], status="failed", error="Zombie: stuck in running without active worker")
-                except Exception:
-                    log.debug("Zombie cleanup failed")
-
-            # Retry marking stale tasks as failed (from previous DB outage)
-            if _stale_task_ids:
-                recovered = set()
-                for stale_id in list(_stale_task_ids):
-                    try:
-                        update_task(stale_id, status="failed", error="Worker lost DB connection during execution")
-                        recovered.add(stale_id)
-                        log.info("Recovered stale task %s → failed", stale_id)
-                    except Exception:
-                        break  # DB still down, stop trying
-                _stale_task_ids.difference_update(recovered)
-
-            # Read dynamic slot count from settings
-            current_max = int(get_setting("max_workers", str(MAX_WORKERS)) or MAX_WORKERS)
-
-            # Only claim if we have free slots
-            if len(_active_tasks) >= current_max:
-                time.sleep(CLAIM_RETRY_INTERVAL)
-                continue
-
-            task = claim_next_task(max_running=current_max)
-            if not task:
-                time.sleep(IDLE_POLL_INTERVAL)
-                continue
-
-            executor.submit(_run_task, task, config)
-
-    finally:
-        log.info("Worker shutting down, waiting for active tasks...")
-        executor.shutdown(wait=True)
-        log.info("Worker shut down")
 
 
 # ── Task handlers ─────────────────────────────────────────────────
@@ -336,7 +176,7 @@ def _handle_fetch_artwork_all(task_id: str, params: dict, config: dict) -> dict:
     total = len(missing)
 
     for i, album in enumerate(missing):
-        if _shutdown:
+        if _is_cancelled(task_id):
             break
         mbid = album.get("mbid")
         if not mbid:
@@ -359,7 +199,7 @@ def _handle_batch_retag(task_id: str, params: dict, config: dict) -> dict:
     results = []
 
     for i, item in enumerate(albums):
-        if _shutdown:
+        if _is_cancelled(task_id):
             break
         artist = item.get("artist")
         album_name = item.get("album")
@@ -395,7 +235,7 @@ def _handle_batch_covers(task_id: str, params: dict, config: dict) -> dict:
     results = []
 
     for i, item in enumerate(albums):
-        if _shutdown:
+        if _is_cancelled(task_id):
             break
         mbid = item.get("mbid")
         path = item.get("path")
@@ -475,7 +315,7 @@ def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
     skipped = 0
 
     for i, artist in enumerate(all_artists):
-        if _shutdown or _is_cancelled(task_id):
+        if _is_cancelled(task_id):
             break
 
         name = artist["name"]
@@ -719,7 +559,7 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
 
     # Process in batches for PANNs efficiency
     for batch_start in range(0, total, batch_size):
-        if _shutdown or _is_cancelled(task_id):
+        if _is_cancelled(task_id):
             break
 
         batch = tracks_to_analyze[batch_start:batch_start + batch_size]
@@ -824,9 +664,9 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
         artist = d.get("artist") or d.get("db_artist") or ""
         if artist:
             affected_artists.add(artist)
-    if _watcher and not dry_run:
+    if not dry_run:
         for a in affected_artists:
-            _watcher.mark_processing(a)
+            mark_processing(a)
 
     try:
         repairer = LibraryRepair(config)
@@ -842,9 +682,9 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
 
         return result
     finally:
-        if _watcher and not dry_run:
+        if not dry_run:
             for a in affected_artists:
-                _watcher.unmark_processing(a)
+                unmark_processing(a)
 
 
 def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
@@ -1291,7 +1131,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     failed = 0
 
     for i, album in enumerate(albums):
-        if _shutdown or _is_cancelled(task_id):
+        if _is_cancelled(task_id):
             break
 
         album_name = album.get("tag_album") or album.get("name", "")
@@ -1604,7 +1444,7 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
     checked = 0
 
     for i, artist in enumerate(all_artists):
-        if _shutdown or _is_cancelled(task_id):
+        if _is_cancelled(task_id):
             break
 
         name = artist["name"]
@@ -1782,13 +1622,11 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
     album_folder = params.get("album", "")
 
     # Tell watcher to ignore changes while we write tags/photos
-    if _watcher:
-        _watcher.mark_processing(artist_name)
+    mark_processing(artist_name)
     try:
         return _process_new_content_inner(task_id, params, config, artist_name, album_folder)
     finally:
-        if _watcher:
-            _watcher.unmark_processing(artist_name)
+        unmark_processing(artist_name)
 
 
 def _process_new_content_inner(task_id, params, config, artist_name, album_folder):
@@ -1939,7 +1777,7 @@ def _process_new_content_inner(task_id, params, config, artist_name, album_folde
 
         # Process in batches
         for batch_start in range(0, len(pending), PANNS_BATCH_SIZE):
-            if _shutdown or _is_cancelled(task_id):
+            if _is_cancelled(task_id):
                 break
             batch = pending[batch_start:batch_start + PANNS_BATCH_SIZE]
             try:
@@ -2126,7 +1964,7 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
     not_found = 0
 
     for i, album in enumerate(missing):
-        if _shutdown or _is_cancelled(task_id):
+        if _is_cancelled(task_id):
             break
 
         artist = album["artist"]
@@ -2347,7 +2185,7 @@ def _chunk_coordinator(task_id: str, params: dict, config: dict, chunk_task_type
     coordinator_start = time.time()
     coordinator_timeout = 3600 * 6  # 6 hours max
     while completed < len(chunk_task_ids):
-        if _shutdown or _is_cancelled(task_id):
+        if _is_cancelled(task_id):
             return {"status": "cancelled", "completed_chunks": completed}
         if time.time() - coordinator_start > coordinator_timeout:
             log.warning("Coordinator %s timed out after %ds", task_id, coordinator_timeout)
@@ -2402,7 +2240,7 @@ def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:
     analyzed = 0
 
     for i, name in enumerate(artists):
-        if _shutdown or _is_cancelled(task_id):
+        if _is_cancelled(task_id):
             break
         # Find artist dir (check year subdirs too)
         from musicdock.db import get_library_artist
@@ -2442,7 +2280,7 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
     tracks_fetched = 0
 
     for i, artist_name in enumerate(artists):
-        if _shutdown or _is_cancelled(task_id):
+        if _is_cancelled(task_id):
             break
         update_task(task_id, progress=json.dumps({"artist": artist_name, "done": i, "total": len(artists)}))
 
@@ -2690,7 +2528,7 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         retries_done = 0
         completed_files = []
         while elapsed < max_wait:
-            if _shutdown or _is_cancelled(task_id):
+            if _is_cancelled(task_id):
                 return {"status": "cancelled"}
             time.sleep(5)
             elapsed += 5

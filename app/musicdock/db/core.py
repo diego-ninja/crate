@@ -12,6 +12,13 @@ import psycopg2.pool
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 
 
+def _reset_pool():
+    """Reset the connection pool. Must be called after fork() in child processes.
+    Does NOT close connections — they belong to the parent process."""
+    global _pool
+    _pool = None
+
+
 def _get_dsn() -> str:
     user = os.environ.get("MUSICDOCK_POSTGRES_USER", "musicdock")
     password = os.environ.get("MUSICDOCK_POSTGRES_PASSWORD", "musicdock")

@@ -10,7 +10,8 @@ from musicdock.scheduler import get_schedules, set_schedules
 
 router = APIRouter()
 
-DEFAULT_MAX_WORKERS = 3
+DEFAULT_MAX_WORKERS = 5
+DEFAULT_MIN_WORKERS = 2
 
 
 @router.get("/api/tasks")
@@ -84,29 +85,47 @@ def api_sync_library(request: Request):
 
 @router.get("/api/worker/status")
 def api_worker_status(request: Request):
-    """Get worker status: slots, running/pending tasks."""
+    """Get worker status: process info, running/pending tasks."""
     _require_auth(request)
+    from musicdock.db import get_cache
     running = list_tasks(status="running")
     pending = list_tasks(status="pending")
     max_workers = int(get_setting("max_workers", str(DEFAULT_MAX_WORKERS)) or DEFAULT_MAX_WORKERS)
+
+    # Orchestrator publishes its status to cache
+    orch_status = get_cache("worker_status") or {}
+
     return {
         "max_slots": max_workers,
         "running": len(running),
         "pending": len(pending),
         "running_tasks": [{"id": t["id"], "type": t["type"]} for t in running],
         "pending_tasks": [{"id": t["id"], "type": t["type"]} for t in pending],
+        "workers": orch_status.get("workers", []),
+        "total_workers": orch_status.get("total_workers", 0),
+        "alive_workers": orch_status.get("alive_workers", 0),
+        "min_workers": orch_status.get("min_workers", DEFAULT_MIN_WORKERS),
     }
 
 
 @router.post("/api/worker/slots")
 def api_set_worker_slots(request: Request, body: dict):
-    """Set max worker slots (1-5). Worker reads this on next poll."""
+    """Set max/min worker slots. Workers read this on next poll."""
     _require_admin(request)
-    slots = body.get("slots", DEFAULT_MAX_WORKERS)
-    if not isinstance(slots, int) or slots < 1 or slots > 5:
-        return JSONResponse({"error": "Slots must be 1-5"}, status_code=400)
-    set_setting("max_workers", str(slots))
-    return {"max_slots": slots}
+    slots = body.get("slots")
+    min_slots = body.get("min_slots")
+    if slots is not None:
+        if not isinstance(slots, int) or slots < 1 or slots > 10:
+            return JSONResponse({"error": "Slots must be 1-10"}, status_code=400)
+        set_setting("max_workers", str(slots))
+    if min_slots is not None:
+        if not isinstance(min_slots, int) or min_slots < 1 or min_slots > 10:
+            return JSONResponse({"error": "min_slots must be 1-10"}, status_code=400)
+        set_setting("min_workers", str(min_slots))
+    return {
+        "max_slots": int(get_setting("max_workers", str(DEFAULT_MAX_WORKERS)) or DEFAULT_MAX_WORKERS),
+        "min_slots": int(get_setting("min_workers", "2") or 2),
+    }
 
 
 @router.post("/api/worker/restart")
@@ -173,6 +192,21 @@ def _format_interval(seconds: int) -> str:
     if seconds < 86400:
         return f"{seconds // 3600}h"
     return f"{seconds // 86400}d"
+
+
+@router.post("/api/tasks/clean/{status}")
+def api_clean_tasks_by_status(request: Request, status: str):
+    """Delete all tasks with the given status. Allowed: completed, cancelled, failed."""
+    _require_admin(request)
+    from fastapi import HTTPException
+    from musicdock.db import get_db_ctx
+    allowed = {"completed", "cancelled", "failed"}
+    if status not in allowed:
+        raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(allowed)}")
+    with get_db_ctx() as cur:
+        cur.execute("DELETE FROM tasks WHERE status = %s", (status,))
+        deleted = cur.rowcount
+    return {"deleted": deleted, "status": status}
 
 
 @router.post("/api/tasks/cleanup")

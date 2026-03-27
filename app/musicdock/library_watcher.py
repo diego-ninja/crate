@@ -59,7 +59,9 @@ class LibraryWatcher:
             self._observer.join(timeout=5)
 
     def mark_processing(self, artist_name: str):
-        """Called by worker before writing to /music — suppresses watcher triggers."""
+        """Called by worker before writing to /music — suppresses watcher triggers.
+        NOTE: With multi-process workers, use the DB-based mark_processing in worker.py instead.
+        This method is kept for backward compatibility within the same process."""
         self._processing.add(artist_name.lower())
 
     def unmark_processing(self, artist_name: str):
@@ -87,9 +89,17 @@ class LibraryWatcher:
         album_dir = self.library_path / parts[0] / parts[1]
 
         # Skip if this artist is currently being processed by worker
+        # Check both in-process set and DB cache (for cross-process coordination)
         if artist_name.lower() in self._processing:
             log.debug("Watcher: ignoring change during processing for %s", artist_name)
             return
+        try:
+            from musicdock.db import get_cache
+            if get_cache(f"processing:{artist_name.lower()}"):
+                log.debug("Watcher: ignoring change during processing for %s (DB flag)", artist_name)
+                return
+        except Exception:
+            pass
 
         key = str(album_dir)
         with self._lock:

@@ -87,6 +87,10 @@ def list_tasks(status: str | None = None, task_type: str | None = None, limit: i
     return [_row_to_task(r) for r in rows]
 
 
+# Tasks that do heavy DB writes — only one at a time
+DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
+
+
 def claim_next_task(max_running: int = 5) -> dict | None:
     with get_db_ctx() as cur:
         # Gate at DB level: don't claim if already at max running
@@ -94,9 +98,27 @@ def claim_next_task(max_running: int = 5) -> dict | None:
         running_count = cur.fetchone()["cnt"]
         if running_count >= max_running:
             return None
+
+        # Check if a DB-heavy task is already running
         cur.execute(
-            "SELECT * FROM tasks WHERE status = 'pending' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
+            "SELECT COUNT(*) AS cnt FROM tasks WHERE status = 'running' AND type = ANY(%s)",
+            (list(DB_HEAVY_TASKS),),
         )
+        db_heavy_running = cur.fetchone()["cnt"] > 0
+
+        # If DB-heavy is running, only claim non-DB-heavy tasks
+        if db_heavy_running:
+            cur.execute(
+                "SELECT * FROM tasks WHERE status = 'pending' AND type != ALL(%s) "
+                "ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
+                (list(DB_HEAVY_TASKS),),
+            )
+        else:
+            cur.execute(
+                "SELECT * FROM tasks WHERE status = 'pending' "
+                "ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
+            )
+
         row = cur.fetchone()
         if not row:
             return None
