@@ -78,33 +78,47 @@ export function Upcoming() {
 
   useEffect(() => { fetchItems(); }, []);
 
-  // Derived filter options
-  const availableGenres = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const i of items) {
-      if (i.type === "show") for (const g of i.genres || []) counts[g] = (counts[g] || 0) + 1;
-    }
-    return Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 20);
-  }, [items]);
-
-  const availableCities = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const i of items) {
-      if (i.type === "show" && i.city) counts[i.city] = (counts[i.city] || 0) + 1;
-    }
-    return Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 20);
-  }, [items]);
-
-  // Apply filters
-  const filtered = useMemo(() => {
+  // Apply type + search filter first
+  const typeFiltered = useMemo(() => {
     let list = items;
     if (search) list = list.filter((i) => i.artist.toLowerCase().includes(search.toLowerCase()));
     if (filter === "releases") list = list.filter((i) => i.type === "release");
-    if (filter === "shows") list = list.filter((i) => i.type === "show");
+    else if (filter === "shows") list = list.filter((i) => i.type === "show");
+    return list;
+  }, [items, search, filter]);
+
+  // Derived filter options from type-filtered list (so genres/cities adjust per view)
+  const availableGenres = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const i of typeFiltered) {
+      for (const g of i.genres || []) counts[g] = (counts[g] || 0) + 1;
+    }
+    return Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 30);
+  }, [typeFiltered]);
+
+  const availableCities = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const i of typeFiltered) {
+      if (i.city) counts[i.city] = (counts[i.city] || 0) + 1;
+    }
+    return Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 50);
+  }, [typeFiltered]);
+
+  // Reset genre/city filter if the selected value is no longer available
+  useEffect(() => {
+    if (genreFilter && !availableGenres.some(([g]) => g === genreFilter)) setGenreFilter("");
+  }, [genreFilter, availableGenres]);
+  useEffect(() => {
+    if (cityFilter && !availableCities.some(([c]) => c === cityFilter)) setCityFilter("");
+  }, [cityFilter, availableCities]);
+
+  // Apply genre + city filters
+  const filtered = useMemo(() => {
+    let list = typeFiltered;
     if (genreFilter) list = list.filter((i) => (i.genres || []).some((g) => g.toLowerCase() === genreFilter.toLowerCase()));
     if (cityFilter) list = list.filter((i) => i.city?.toLowerCase() === cityFilter.toLowerCase());
     return list;
-  }, [items, search, filter, genreFilter, cityFilter]);
+  }, [typeFiltered, genreFilter, cityFilter]);
 
   const today = new Date().toISOString().slice(0, 10);
   const upcoming = filtered.filter((i) => i.is_upcoming || (i.date && i.date >= today));
@@ -454,108 +468,108 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
 
 function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () => void }) {
   const hasCoords = item.latitude && item.longitude;
+  const dateStr = item.date ? new Date(item.date + "T12:00:00").toLocaleDateString("en-US", {
+    weekday: "long", month: "long", day: "numeric", year: "numeric"
+  }) : "";
+  const timeStr = item.time ? item.time.slice(0, 5) : "";
+  const location = [item.city, item.country].filter(Boolean).join(", ");
 
   return (
-    <div className="border border-amber-500/20 rounded-xl overflow-hidden mb-2 bg-card/50">
-      <div className="flex flex-col sm:flex-row">
-        {/* Mini map */}
-        {hasCoords && (
-          <div className="w-full sm:w-[300px] h-[200px] flex-shrink-0">
-            <MiniMap lat={item.latitude!} lng={item.longitude!} venue={item.venue || ""} />
-          </div>
-        )}
+    <div className="border border-amber-500/20 rounded-xl overflow-hidden mb-2 relative h-[320px]">
+      {/* Full-bleed map background */}
+      {hasCoords ? (
+        <div className="absolute inset-0">
+          <MapContainer
+            center={[item.latitude!, item.longitude!]}
+            zoom={14}
+            style={{ width: "100%", height: "100%" }}
+            zoomControl={false}
+            attributionControl={false}
+            dragging={false}
+            scrollWheelZoom={false}
+          >
+            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
+            <Marker position={[item.latitude!, item.longitude!]}>
+              <Popup>
+                <div className="text-xs">
+                  <div className="font-bold">{item.venue}</div>
+                  <div>{location}</div>
+                </div>
+              </Popup>
+            </Marker>
+          </MapContainer>
+        </div>
+      ) : (
+        <div className="absolute inset-0 bg-card/80" />
+      )}
 
-        {/* Details */}
-        <div className="flex-1 p-4">
-          <div className="flex items-start justify-between mb-3">
-            <div>
-              <Link to={`/artist/${encPath(item.artist)}`}
-                className="text-lg font-bold hover:text-primary transition-colors">
-                {item.artist}
-              </Link>
+      {/* Close button */}
+      <button onClick={onClose}
+        className="absolute top-3 right-3 z-[1000] p-1.5 rounded-full bg-black/60 hover:bg-black/80 transition-colors">
+        <X size={14} className="text-white" />
+      </button>
+
+      {/* Venue card overlay (top-left) */}
+      {item.venue && (
+        <div className="absolute top-3 left-3 z-[1000] bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 max-w-[220px]">
+          <div className="flex items-center gap-1.5">
+            <MapPin size={12} className="text-amber-400 flex-shrink-0" />
+            <div className="text-xs font-semibold text-white truncate">{item.venue}</div>
+          </div>
+          <div className="text-[10px] text-white/50 ml-[18px]">{location}</div>
+        </div>
+      )}
+
+      {/* Info overlay (bottom) */}
+      <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-gradient-to-t from-black/90 via-black/70 to-transparent pt-16 pb-4 px-4">
+        <div className="flex items-end gap-4">
+          <div className="flex-1 min-w-0">
+            <Link to={`/artist/${encPath(item.artist)}`}
+              className="text-xl font-bold text-white hover:text-amber-400 transition-colors">
+              {item.artist}
+            </Link>
+            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
               {item.genres?.slice(0, 3).map(g => (
-                <Badge key={g} variant="outline" className="text-[9px] px-1 py-0 ml-1">{g}</Badge>
+                <Badge key={g} variant="outline" className="text-[9px] px-1 py-0 border-white/20 text-white/70">{g}</Badge>
               ))}
             </div>
-            <button onClick={onClose} className="p-1 rounded-md hover:bg-white/5">
-              <X size={16} className="text-muted-foreground" />
-            </button>
-          </div>
 
-          {/* Venue */}
-          <div className="flex items-start gap-2 text-sm text-muted-foreground mb-2">
-            <MapPin size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
-            <div>
-              <div className="text-foreground font-medium">{item.venue}</div>
-              <div>{item.city}, {item.country}</div>
-            </div>
-          </div>
-
-          {/* Date + Time */}
-          <div className="flex items-center gap-3 text-sm text-muted-foreground mb-2">
-            <span className="flex items-center gap-1.5">
-              <Calendar size={14} className="text-amber-400" />
-              {item.date ? new Date(item.date + "T12:00:00").toLocaleDateString("en-US", {
-                weekday: "long", month: "long", day: "numeric", year: "numeric"
-              }) : ""}
-            </span>
-            {item.time && (
-              <span className="flex items-center gap-1.5">
-                <Clock size={14} className="text-amber-400" />
-                {item.time.slice(0, 5)}
+            <div className="flex items-center gap-4 mt-2 text-xs text-white/70">
+              <span className="flex items-center gap-1">
+                <Calendar size={12} className="text-amber-400" /> {dateStr}
               </span>
-            )}
-          </div>
+              {timeStr && (
+                <span className="flex items-center gap-1">
+                  <Clock size={12} className="text-amber-400" /> {timeStr}
+                </span>
+              )}
+            </div>
 
-          {/* Lineup */}
-          {item.lineup && item.lineup.length > 0 && (
-            <div className="mb-3">
-              <div className="text-xs text-muted-foreground/50 uppercase tracking-wider mb-1.5">Lineup</div>
-              <div className="flex flex-wrap gap-2">
-                {item.lineup.map(name => (
+            {item.lineup && item.lineup.length > 1 && (
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <span className="text-[10px] text-white/40">Lineup:</span>
+                {item.lineup.slice(0, 5).map(name => (
                   <Link key={name} to={`/artist/${encPath(name)}`}
-                    className="flex items-center gap-1.5 text-xs bg-card border border-border rounded-full px-2 py-1 hover:border-primary/30 transition-colors">
+                    className="flex items-center gap-1 text-[11px] text-white/80 hover:text-amber-400 transition-colors">
                     <img src={`/api/artist/${encPath(name)}/photo`} alt=""
-                      className="w-5 h-5 rounded-full object-cover"
-                      onError={e => (e.target as HTMLImageElement).style.display = "none"} />
+                      className="w-4 h-4 rounded-full object-cover"
+                      onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                     {name}
                   </Link>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Tickets button */}
           {item.url && (
             <a href={item.url} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors text-sm font-medium">
-              <Ticket size={14} /> Get Tickets
+              className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-amber-500 text-black font-semibold text-sm hover:bg-amber-400 transition-colors shadow-lg">
+              <Ticket size={14} /> Tickets
             </a>
           )}
         </div>
       </div>
     </div>
-  );
-}
-
-// ── MiniMap (Leaflet) ──
-
-function MiniMap({ lat, lng, venue }: { lat: number; lng: number; venue: string }) {
-  return (
-    <MapContainer
-      center={[lat, lng]}
-      zoom={14}
-      style={{ width: "100%", height: "100%" }}
-      zoomControl={false}
-      attributionControl={false}
-      dragging={false}
-      scrollWheelZoom={false}
-    >
-      <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-      <Marker position={[lat, lng]}>
-        <Popup>{venue}</Popup>
-      </Marker>
-    </MapContainer>
   );
 }
 

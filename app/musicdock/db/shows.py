@@ -4,10 +4,19 @@ from datetime import datetime, timezone
 from musicdock.db.core import get_db_ctx
 
 
-def upsert_show(external_id: str, artist_name: str, date: str, **kwargs) -> int:
-    """Insert or update a show by external_id."""
+def upsert_show(external_id: str, artist_name: str, date: str, **kwargs) -> int | None:
+    """Insert or update a show. Deduplicates by (artist, date, venue)."""
     now = datetime.now(timezone.utc).isoformat()
+    venue = kwargs.get("venue") or ""
     with get_db_ctx() as cur:
+        # Skip if same artist+date+venue already exists (Ticketmaster returns dupes)
+        cur.execute(
+            "SELECT id FROM shows WHERE artist_name = %s AND date = %s AND venue = %s LIMIT 1",
+            (artist_name, date, venue),
+        )
+        existing = cur.fetchone()
+        if existing:
+            return existing["id"]
         cur.execute("""
             INSERT INTO shows (external_id, artist_name, date, local_time, venue, city, region,
                 country, country_code, latitude, longitude, url, image_url, lineup,
