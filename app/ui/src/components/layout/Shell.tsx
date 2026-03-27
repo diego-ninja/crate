@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Outlet, useLocation } from "react-router";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,9 @@ import { SearchBar } from "./SearchBar";
 import { CommandPalette } from "./CommandPalette";
 import { GlobalShortcuts } from "./GlobalShortcuts";
 import { NotificationBell } from "./NotificationBell";
-import { AudioPlayer } from "@/components/player/AudioPlayer";
+import { BottomBar } from "@/components/player/BottomBar";
+import { FloatingPlayer } from "@/components/player/FloatingPlayer";
+import { FloatingLyrics } from "@/components/player/FloatingLyrics";
 import { useKeyboard } from "@/hooks/use-keyboard";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useNotifications } from "@/hooks/use-notifications";
@@ -28,9 +30,23 @@ import { VisuallyHidden } from "radix-ui";
 export function Shell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [playerOpen, setPlayerOpen] = useState(false);
+  const [lyricsOpen, setLyricsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { queue } = usePlayer();
   const hasPlayer = queue.length > 0;
+
+  // Listen for custom events from GlobalShortcuts
+  useEffect(() => {
+    const togglePlayer = () => setPlayerOpen((p) => !p);
+    const toggleLyrics = () => setLyricsOpen((p) => !p);
+    window.addEventListener("toggle-player", togglePlayer);
+    window.addEventListener("toggle-lyrics", toggleLyrics);
+    return () => {
+      window.removeEventListener("toggle-player", togglePlayer);
+      window.removeEventListener("toggle-lyrics", toggleLyrics);
+    };
+  }, []);
 
   const focusSearch = useCallback(() => {
     searchInputRef.current?.focus();
@@ -82,7 +98,7 @@ export function Shell() {
         </SheetContent>
       </Sheet>
 
-      <main className={`flex-1 md:ml-[220px] overflow-x-hidden ${hasPlayer ? "pb-20" : ""}`}>
+      <main className={`flex-1 md:ml-[220px] overflow-x-hidden ${hasPlayer ? "pb-28" : ""}`}>
         <div className="p-4 pt-16 md:p-8 md:pt-8">
           <div className="flex items-center gap-3 mb-6 max-w-[1100px] relative z-[1100]">
             <div className="flex-1">
@@ -96,7 +112,24 @@ export function Shell() {
         </div>
       </main>
 
-      <AudioPlayer />
+      <BottomBar
+        onTogglePlayer={() => setPlayerOpen((p) => !p)}
+        onToggleLyrics={() => setLyricsOpen((p) => !p)}
+        playerOpen={playerOpen}
+      />
+      {playerOpen && (
+        <FloatingPlayer
+          open={playerOpen}
+          onClose={() => setPlayerOpen(false)}
+          onOpenLyrics={() => setLyricsOpen(true)}
+        />
+      )}
+      {lyricsOpen && (
+        <FloatingLyrics
+          open={lyricsOpen}
+          onClose={() => setLyricsOpen(false)}
+        />
+      )}
       <CommandPalette />
       <GlobalShortcuts />
 
@@ -121,6 +154,8 @@ export function Shell() {
             <Shortcut keys={["S"]} label="Toggle shuffle" />
             <Shortcut keys={["R"]} label="Cycle repeat" />
             <Shortcut keys={["[", "]"]} label="Playback speed" />
+            <Shortcut keys={["V"]} label="Toggle player panel" />
+            <Shortcut keys={["L"]} label="Toggle lyrics" />
           </div>
         </DialogContent>
       </Dialog>

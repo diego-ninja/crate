@@ -68,6 +68,12 @@ export function GlobalShortcuts() {
           if (idx < SPEED_STEPS.length - 1) setPlaybackRate(SPEED_STEPS[idx + 1]!);
           break;
         }
+        case "v":
+          window.dispatchEvent(new Event("toggle-player"));
+          break;
+        case "l":
+          window.dispatchEvent(new Event("toggle-lyrics"));
+          break;
         default:
           return;
       }

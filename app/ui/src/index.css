@@ -98,3 +98,6 @@ body {
   50% { box-shadow: 0 0 16px rgba(6,182,212,0.25); }
 }
 .animate-pulse-subtle { animation: pulse-subtle 3s ease-in-out infinite; }
+
+/* Lyric line gradient mask */
+.lyrics-mask { mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); }
