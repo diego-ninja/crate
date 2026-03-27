@@ -81,8 +81,13 @@ def list_tasks(status: str | None = None, task_type: str | None = None, limit: i
     return [_row_to_task(r) for r in rows]
 
 
-def claim_next_task() -> dict | None:
+def claim_next_task(max_running: int = 5) -> dict | None:
     with get_db_ctx() as cur:
+        # Gate at DB level: don't claim if already at max running
+        cur.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE status = 'running'")
+        running_count = cur.fetchone()["cnt"]
+        if running_count >= max_running:
+            return None
         cur.execute(
             "SELECT * FROM tasks WHERE status = 'pending' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
         )

@@ -69,6 +69,74 @@ def tidal_logout(request: Request):
     return {"success": success}
 
 
+# ── Missing from Tidal ────────────────────────────────────────────
+
+@router.get("/missing/{artist:path}")
+def tidal_missing(request: Request, artist: str):
+    """Find Tidal albums not in the local library for an artist."""
+    _require_auth(request)
+    if not tidal.is_authenticated():
+        return {"albums": [], "authenticated": False}
+
+    import re
+    from musicdock.db import get_library_albums
+
+    result = tidal.search(artist, content_type="albums", limit=50)
+    albums = result.get("albums", [])
+
+    # Build set of normalized local album names
+    local_albums = get_library_albums(artist)
+    def _norm(s: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", s.lower())
+    local_names = {_norm(a["name"]) for a in local_albums}
+
+    missing = []
+    for a in albums:
+        title = a.get("title", "")
+        tracks = a.get("tracks", 0)
+        album_artist = a.get("artist", "")
+        if not title:
+            continue
+        # Must be by the same artist
+        if album_artist.lower() != artist.lower():
+            continue
+        # Skip singles and short EPs (less than 4 tracks)
+        if tracks and tracks < 4:
+            continue
+        if _norm(title) not in local_names:
+            missing.append(a)
+
+    return {"albums": missing, "authenticated": True}
+
+
+@router.post("/download-missing/{artist:path}")
+def tidal_download_missing(request: Request, artist: str, body: dict):
+    """Download multiple missing albums from Tidal."""
+    _require_auth(request)
+    album_urls = body.get("albums", [])  # [{url, title}]
+    if not album_urls:
+        return {"queued": 0}
+
+    from musicdock.db import create_task_dedup
+    queued = 0
+    for a in album_urls:
+        url = a.get("url", "")
+        title = a.get("title", "")
+        if not url:
+            continue
+        task_id = create_task_dedup("tidal_download", {
+            "url": url,
+            "artist": artist,
+            "album": title,
+            "quality": body.get("quality", "max"),
+            "cover_url": a.get("cover_url", ""),
+        })
+        if task_id:
+            queued += 1
+
+    return {"queued": queued}
+
+
 # ── Search ───────────────────────────────────────────────────────
 
 @router.get("/search")

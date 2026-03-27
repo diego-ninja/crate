@@ -8,6 +8,7 @@ import { AlbumCard } from "@/components/album/AlbumCard";
 import ForceGraph2D from "react-force-graph-2d";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { MissingAlbumCard } from "@/components/album/MissingAlbumCard";
+import { TidalAlbumCard } from "@/components/album/TidalAlbumCard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,6 +49,7 @@ import {
   ListMusic,
   Trash2,
   Radio,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -189,6 +191,9 @@ export function Artist() {
   const [showsLoaded, setShowsLoaded] = useState(false);
   const [missingAlbums, setMissingAlbums] = useState<{ title: string; first_release_date: string; type: string }[]>([]);
   const [missingLoaded, setMissingLoaded] = useState(false);
+  const [tidalMissing, setTidalMissing] = useState<{ url: string; title: string; year: string; tracks: number; cover: string | null; quality: string }[]>([]);
+  const [tidalMissingLoaded, setTidalMissingLoaded] = useState(false);
+  const [downloadingDiscog, setDownloadingDiscog] = useState(false);
   const [allTrackTitles, setAllTrackTitles] = useState<{ title: string; album: string; path: string }[]>([]);
   const [bioExpanded, setBioExpanded] = useState(false);
   const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.name);
@@ -227,6 +232,14 @@ export function Artist() {
       .catch(() => { if (!cancelled) setMissingLoaded(true); });
     return () => { cancelled = true; };
   }, [data?.name, activeTab, missingLoaded]);
+
+  // Fetch Tidal missing albums (lazy, on discography tab)
+  useEffect(() => {
+    if (!data?.name || activeTab !== "discography" || tidalMissingLoaded) return;
+    api<{ albums: typeof tidalMissing; authenticated: boolean }>(`/api/tidal/missing/${encPath(data.name)}`)
+      .then((d) => { if (d.albums) setTidalMissing(d.albums); setTidalMissingLoaded(true); })
+      .catch(() => setTidalMissingLoaded(true));
+  }, [data?.name, activeTab, tidalMissingLoaded]);
 
   if (loading) {
     return (
@@ -818,6 +831,28 @@ export function Artist() {
                     {showMissing ? "Hide" : "Show"} missing ({missingAlbums.length})
                   </button>
                 )}
+                {tidalMissing.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+                    disabled={downloadingDiscog}
+                    onClick={async () => {
+                      setDownloadingDiscog(true);
+                      try {
+                        const res = await api<{ queued: number }>(`/api/tidal/download-missing/${encPath(data.name)}`, "POST", {
+                          albums: tidalMissing.map((a) => ({ url: a.url, title: a.title, cover_url: a.cover })),
+                        });
+                        toast.success(`Queued ${res.queued} albums for download`);
+                        setTidalMissing([]);
+                      } catch { toast.error("Failed to queue downloads"); }
+                      finally { setDownloadingDiscog(false); }
+                    }}
+                  >
+                    {downloadingDiscog ? <Loader2 size={14} className="animate-spin mr-1" /> : <Disc3 size={14} className="mr-1" />}
+                    Complete Discography ({tidalMissing.length} from Tidal)
+                  </Button>
+                )}
               </div>
               <Select value={sort} onValueChange={setSort}>
                 <SelectTrigger className="w-[140px] bg-card border-border h-8 text-xs">
@@ -832,17 +867,32 @@ export function Artist() {
             </div>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
               {(() => {
-                type GridItem = { kind: "local"; album: typeof sortedAlbums[0] } | { kind: "missing"; album: typeof missingAlbums[0] };
+                type TidalItem = typeof tidalMissing[0];
+                type GridItem =
+                  | { kind: "local"; album: typeof sortedAlbums[0] }
+                  | { kind: "tidal"; album: TidalItem }
+                  | { kind: "missing"; album: typeof missingAlbums[0] };
                 const items: GridItem[] = sortedAlbums.map((a) => ({ kind: "local" as const, album: a }));
+
+                // Tidal missing always shown if available
+                const tidalTitles = new Set(tidalMissing.map((t) => t.title.toLowerCase()));
+                for (const t of tidalMissing) {
+                  items.push({ kind: "tidal" as const, album: t });
+                }
+
+                // MB missing: only those NOT already covered by Tidal
                 if (showMissing) {
                   for (const m of missingAlbums) {
-                    items.push({ kind: "missing" as const, album: m });
+                    if (!tidalTitles.has(m.title.toLowerCase())) {
+                      items.push({ kind: "missing" as const, album: m });
+                    }
                   }
                 }
+
                 if (sort === "year") {
                   items.sort((a, b) => {
-                    const ya = a.kind === "local" ? (a.album.year || "") : (a.album.first_release_date || "");
-                    const yb = b.kind === "local" ? (b.album.year || "") : (b.album.first_release_date || "");
+                    const ya = a.kind === "local" ? (a.album.year || "") : a.kind === "tidal" ? (a.album.year || "") : (a.album.first_release_date || "");
+                    const yb = b.kind === "local" ? (b.album.year || "") : b.kind === "tidal" ? (b.album.year || "") : (b.album.first_release_date || "");
                     return yb.localeCompare(ya);
                   });
                 }
@@ -857,6 +907,16 @@ export function Artist() {
                       tracks={item.album.tracks}
                       formats={item.album.formats}
                       hasCover={item.album.has_cover}
+                    />
+                  ) : item.kind === "tidal" ? (
+                    <TidalAlbumCard
+                      key={`tidal-${item.album.url}`}
+                      artist={data.name}
+                      title={item.album.title}
+                      year={item.album.year}
+                      tracks={item.album.tracks}
+                      cover={item.album.cover}
+                      url={item.album.url}
                     />
                   ) : (
                     <MissingAlbumCard

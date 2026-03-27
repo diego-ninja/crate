@@ -41,6 +41,7 @@ SCHEDULE_CHECK_INTERVAL = 60  # seconds between scheduler checks
 IMPORT_CHECK_INTERVAL = 60   # seconds between import queue checks
 
 _active_tasks: set[str] = set()
+_stale_task_ids: set[str] = set()  # tasks that failed but couldn't be marked in DB
 _watcher = None  # LibraryWatcher ref for processing lock
 
 # Tasks that do heavy DB writes — only one at a time
@@ -84,7 +85,11 @@ def _run_task(task: dict, config: dict):
 
     except Exception as e:
         log.exception("Task %s failed", task_id)
-        update_task(task_id, status="failed", error=str(e))
+        try:
+            update_task(task_id, status="failed", error=str(e))
+        except Exception:
+            log.error("Could not mark task %s as failed (DB unavailable?)", task_id)
+            _stale_task_ids.add(task_id)
     finally:
         _active_tasks.discard(task_id)
         if is_db_heavy:
@@ -106,8 +111,8 @@ def run_worker(config: dict):
     # Clean up orphaned tasks from previous worker crash/restart
     orphaned = list_tasks(status="running")
     for t in orphaned:
-        log.warning("Resetting orphaned task %s (type=%s) to pending", t["id"], t["type"])
-        update_task(t["id"], status="pending", progress="")
+        log.warning("Marking orphaned task %s (type=%s) as failed", t["id"], t["type"])
+        update_task(t["id"], status="failed", error="Orphaned: worker restarted while task was running")
 
     # Start filesystem watcher (non-blocking)
     try:
@@ -150,7 +155,7 @@ def run_worker(config: dict):
                 except Exception:
                     log.debug("Schedule check failed")
 
-            # Auto-cleanup old tasks + events every hour
+            # Auto-cleanup old tasks + events every hour + recover zombie tasks
             if time.time() - _last_cleanup > 3600:
                 _last_cleanup = time.time()
                 try:
@@ -159,6 +164,27 @@ def run_worker(config: dict):
                     cleanup_old_tasks(max_age_days=7)
                 except Exception:
                     log.debug("Auto-cleanup failed")
+                # Reset tasks stuck in 'running' that aren't actually active in this worker
+                try:
+                    zombie = list_tasks(status="running")
+                    for t in zombie:
+                        if t["id"] not in _active_tasks:
+                            log.warning("Resetting zombie task %s (type=%s) to failed", t["id"], t["type"])
+                            update_task(t["id"], status="failed", error="Zombie: stuck in running without active worker")
+                except Exception:
+                    log.debug("Zombie cleanup failed")
+
+            # Retry marking stale tasks as failed (from previous DB outage)
+            if _stale_task_ids:
+                recovered = set()
+                for stale_id in list(_stale_task_ids):
+                    try:
+                        update_task(stale_id, status="failed", error="Worker lost DB connection during execution")
+                        recovered.add(stale_id)
+                        log.info("Recovered stale task %s → failed", stale_id)
+                    except Exception:
+                        break  # DB still down, stop trying
+                _stale_task_ids.difference_update(recovered)
 
             # Read dynamic slot count from settings
             current_max = int(get_setting("max_workers", str(MAX_WORKERS)) or MAX_WORKERS)
@@ -168,7 +194,7 @@ def run_worker(config: dict):
                 time.sleep(CLAIM_RETRY_INTERVAL)
                 continue
 
-            task = claim_next_task()
+            task = claim_next_task(max_running=current_max)
             if not task:
                 time.sleep(IDLE_POLL_INTERVAL)
                 continue
@@ -1438,6 +1464,34 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         if download_id:
             update_tidal_download(download_id, status="failed", error="No files moved")
         return {"error": "No files were moved", "phase": "move"}
+
+    # 2b. Download Tidal cover if provided and no cover exists yet
+    cover_url = params.get("cover_url", "")
+    if cover_url and modified_artists:
+        for artist_name in modified_artists:
+            album_name = params.get("album", "")
+            if not album_name:
+                continue
+            album_dir = lib / artist_name / album_name
+            if not album_dir.is_dir():
+                # Try to find the album dir by scanning artist folder
+                artist_dir = lib / artist_name
+                if artist_dir.is_dir():
+                    for d in artist_dir.iterdir():
+                        if d.is_dir() and album_name.lower() in d.name.lower():
+                            album_dir = d
+                            break
+            if album_dir.is_dir():
+                cover_path = album_dir / "cover.jpg"
+                if not cover_path.exists():
+                    try:
+                        import requests
+                        resp = requests.get(cover_url, timeout=15)
+                        if resp.status_code == 200 and len(resp.content) > 1000:
+                            cover_path.write_bytes(resp.content)
+                            log.info("Downloaded Tidal cover for %s/%s", artist_name, album_name)
+                    except Exception:
+                        log.debug("Failed to download Tidal cover", exc_info=True)
 
     # 3. Sync modified artists
     emit_task_event(task_id, "info", {"message": f"Syncing {', '.join(modified_artists)} to library"})
