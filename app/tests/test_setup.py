@@ -37,7 +37,7 @@ class TestSetupAdmin:
         mock_cur.fetchone.return_value = {"cnt": 0}
 
         with patch("crate.api.setup.get_db_ctx") as mock_ctx, \
-             patch("crate.api.setup.create_user", return_value=42) as mock_create:
+             patch("crate.db.create_user", return_value=42) as mock_create:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.post("/api/setup/admin", json={
