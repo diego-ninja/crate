@@ -82,7 +82,7 @@ export function MissingAlbums() {
 
   function typeBadgeClass(type: string): string {
     const t = type.toLowerCase();
-    if (t === "album") return "border-cyan-500/30 text-cyan-400";
+    if (t === "album") return "border-primary/30 text-primary";
     if (t === "ep") return "border-blue-500/30 text-blue-400";
     if (t === "single") return "border-emerald-500/30 text-emerald-400";
     if (t === "compilation") return "border-orange-500/30 text-orange-400";
@@ -164,8 +164,8 @@ export function MissingAlbums() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <Card className="bg-card border-border">
               <CardContent className="pt-5 pb-4 px-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-                  <Library size={18} className="text-cyan-400" />
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Library size={18} className="text-primary" />
                 </div>
                 <div>
                   <div className="text-2xl font-bold">{data.local_count}</div>
@@ -245,7 +245,7 @@ export function MissingAlbums() {
                       className="flex-shrink-0"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-white/30 hover:text-cyan-400">
+                      <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-white/30 hover:text-primary">
                         <Download size={14} />
                       </Button>
                     </a>
@@ -264,7 +264,7 @@ export function MissingAlbums() {
           {data.local.length > 0 && (
             <div>
               <h3 className="font-semibold mb-3 flex items-center gap-2">
-                <Library size={16} className="text-cyan-400" />
+                <Library size={16} className="text-primary" />
                 Your local albums
                 <span className="text-xs text-muted-foreground font-normal ml-1">{data.local.length}</span>
               </h3>

@@ -63,34 +63,24 @@ interface TrackTableProps {
 
 
 function EnergyBar({ value }: { value: number }) {
-  // 0-1: blue (low) → green (mid) → red (high)
   const pct = Math.max(0, Math.min(1, value));
-  const r = pct < 0.5 ? Math.round(pct * 2 * 80) : Math.round(80 + (pct - 0.5) * 2 * 175);
-  const g = pct < 0.5 ? Math.round(100 + pct * 2 * 55) : Math.round(155 - (pct - 0.5) * 2 * 155);
-  const b = pct < 0.5 ? Math.round(220 - pct * 2 * 180) : 0;
   return (
     <div className="flex items-center gap-1.5">
-      <div
-        className="h-1.5 rounded-full"
-        style={{ width: 40, background: `rgb(${r},${g},${b})`, opacity: 0.85 }}
-      >
-        <div
-          className="h-full rounded-full"
-          style={{ width: `${pct * 100}%`, background: `rgb(${r},${g},${b})` }}
-        />
+      <div className="h-1.5 rounded-full bg-primary/20" style={{ width: 40 }}>
+        <div className="h-full rounded-full bg-primary" style={{ width: `${pct * 100}%`, opacity: 0.4 + pct * 0.6 }} />
       </div>
       <span className="text-xs text-muted-foreground font-mono">{Math.round(pct * 100)}</span>
     </div>
   );
 }
 
-const FEATURE_BARS: { key: keyof AudioMuseTrack; label: string; color: string }[] = [
-  { key: "danceability", label: "Danceability", color: "#a855f7" },
-  { key: "valence", label: "Valence", color: "#eab308" },
-  { key: "acousticness", label: "Acousticness", color: "#22c55e" },
-  { key: "instrumentalness", label: "Instrumental", color: "#3b82f6" },
-  { key: "energy", label: "Energy", color: "#f97316" },
-  { key: "spectral_complexity", label: "Complexity", color: "#06b6d4" },
+const FEATURE_BARS: { key: keyof AudioMuseTrack; label: string }[] = [
+  { key: "danceability", label: "Danceability" },
+  { key: "valence", label: "Valence" },
+  { key: "acousticness", label: "Acousticness" },
+  { key: "instrumentalness", label: "Instrumental" },
+  { key: "energy", label: "Energy" },
+  { key: "spectral_complexity", label: "Complexity" },
 ];
 
 function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
@@ -154,10 +144,10 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
               return (
                 <div key={f.key} className="flex items-center gap-2">
                   <span className="text-[10px] text-white/50 w-[70px] shrink-0">{f.label}</span>
-                  <div className="h-1.5 flex-1 bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-1.5 flex-1 bg-primary/10 rounded-full overflow-hidden">
                     <div
-                      className="h-full rounded-full"
-                      style={{ width: `${Math.round(val * 100)}%`, background: f.color }}
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${Math.round(val * 100)}%`, opacity: 0.4 + val * 0.6 }}
                     />
                   </div>
                   <span className="text-[10px] text-white/40 font-mono w-[28px] text-right">

@@ -405,8 +405,8 @@ export function Dashboard() {
                       className="w-full h-full object-cover"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center -z-10">
-                      <Disc3 size={28} className="text-primary/40" />
+                    <div className="absolute inset-0 bg-secondary flex items-center justify-center -z-10">
+                      <Music size={28} className="text-muted-foreground/30" />
                     </div>
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                       <Play size={20} className="text-white fill-white" />
@@ -446,8 +446,8 @@ export function Dashboard() {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <div className="w-full h-full bg-gradient-to-br from-primary/30 to-primary/10 flex items-center justify-center">
-                        <Music size={24} className="text-primary/50" />
+                      <div className="w-full h-full bg-secondary flex items-center justify-center">
+                        <Music size={24} className="text-muted-foreground/30" />
                       </div>
                     )}
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">

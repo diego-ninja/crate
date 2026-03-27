@@ -32,14 +32,8 @@ const NIVO_THEME = {
   labels: { text: { fill: "#9ca3af", fontSize: 10 } },
 };
 
-const FEATURE_COLORS: Record<string, string> = {
-  Danceability: "#06b6d4",
-  Valence: "#f59e0b",
-  Acousticness: "#22c55e",
-  Energy: "#ef4444",
-  Complexity: "#a78bfa",
-  Instrumental: "#3b82f6",
-};
+// All features use primary color with varying opacity
+const PRIMARY_COLOR = "#06b6d4";
 
 export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
   const tracks = Object.values(audiomuseData);
@@ -105,9 +99,9 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
           {/* Left: Key metrics */}
           <div className="grid grid-cols-2 gap-3 md:w-[220px] shrink-0">
             <StatBox icon={<Gauge size={16} />} label="Avg BPM" value={avgBpm > 0 ? String(Math.round(avgBpm)) : "—"} color="text-primary" />
-            <StatBox icon={<Key size={16} />} label="Key" value={key || "—"} color="text-[#f59e0b]" />
-            <StatBox icon={<Volume2 size={16} />} label="Loudness" value={avgLoudness ? `${avgLoudness.toFixed(1)} dB` : "—"} color="text-[#ef4444]" />
-            <StatBox icon={<Music size={16} />} label="Energy" value={avgEnergy > 0 ? `${Math.round(avgEnergy * 100)}%` : "—"} color="text-[#22c55e]" />
+            <StatBox icon={<Key size={16} />} label="Key" value={key || "—"} color="text-primary" />
+            <StatBox icon={<Volume2 size={16} />} label="Loudness" value={avgLoudness ? `${avgLoudness.toFixed(1)} dB` : "—"} color="text-primary" />
+            <StatBox icon={<Music size={16} />} label="Energy" value={avgEnergy > 0 ? `${Math.round(avgEnergy * 100)}%` : "—"} color="text-primary" />
           </div>
 
           {/* Center: Nivo Radar */}
@@ -145,7 +139,7 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
                 layout="horizontal"
                 margin={{ top: 0, right: 30, bottom: 0, left: 80 }}
                 padding={0.35}
-                colors={(d) => FEATURE_COLORS[d.indexValue as string] || "#06b6d4"}
+                colors={() => PRIMARY_COLOR}
                 borderRadius={3}
                 enableLabel={true}
                 label={(d) => `${d.value}%`}
@@ -166,8 +160,8 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
                   <span className="text-[11px] text-muted-foreground w-[70px] shrink-0">{d.name}</span>
                   <div className="h-2 flex-1 bg-secondary rounded-full overflow-hidden">
                     <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${d.value}%`, background: FEATURE_COLORS[d.name] || "#06b6d4" }}
+                      className="h-full rounded-full transition-all duration-500 bg-primary"
+                      style={{ width: `${d.value}%` }}
                     />
                   </div>
                   <span className="text-[10px] text-muted-foreground font-mono w-[30px] text-right">{d.value}%</span>
