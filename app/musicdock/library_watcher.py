@@ -128,15 +128,27 @@ class LibraryWatcher:
                 self.sync.sync_album(album_dir, canonical)
             self.sync.sync_artist(artist_dir)
 
-            # Queue enrichment for new content (new artist or new album)
+            # Queue enrichment for new content (only if content actually changed)
             if is_new_file:
                 try:
-                    from musicdock.db import create_task_dedup
-                    create_task_dedup("process_new_content", {
-                        "artist": canonical,
-                        "album_folder": album_dir.name,
-                    })
-                    log.info("Watcher: queued process_new_content for %s/%s", canonical, album_dir.name)
+                    from musicdock.db import create_task_dedup, get_library_artist
+                    artist_row = get_library_artist(canonical)
+                    old_hash = artist_row.get("content_hash") if artist_row else None
+                    should_queue = True
+                    if old_hash:
+                        import hashlib
+                        h = hashlib.md5(usedforsecurity=False)
+                        for f in sorted(artist_dir.rglob("*")):
+                            if f.is_file():
+                                h.update(f"{f.relative_to(artist_dir)}:{f.stat().st_size}\n".encode())
+                        if h.hexdigest() == old_hash:
+                            should_queue = False
+                            log.debug("Watcher: skipping %s — content unchanged", canonical)
+                    if should_queue:
+                        create_task_dedup("process_new_content", {
+                            "artist": canonical,
+                        })
+                        log.info("Watcher: queued process_new_content for %s", canonical)
                 except Exception:
                     log.debug("Watcher: failed to queue processing for %s", canonical)
 

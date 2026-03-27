@@ -52,6 +52,22 @@ def run_worker(config: dict):
     orch.run()
 
 
+def _should_process_artist(artist_name: str, config: dict) -> bool:
+    """Check if artist content has changed since last processing."""
+    from musicdock.db import get_library_artist
+    lib = Path(config["library_path"])
+    artist_row = get_library_artist(artist_name)
+    folder = (artist_row.get("folder_name") if artist_row else None) or artist_name
+    artist_dir = lib / folder
+    if not artist_dir.is_dir():
+        return False
+    old_hash = artist_row.get("content_hash") if artist_row else None
+    if not old_hash:
+        return True  # Never processed — should process
+    new_hash = _compute_dir_hash(artist_dir)
+    return new_hash != old_hash
+
+
 def _compute_dir_hash(directory: Path) -> str:
     """Fast hash of directory contents. Uses Rust CLI if available, falls back to Python."""
     try:
@@ -1387,10 +1403,11 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
             except Exception:
                 log.warning("Sync failed for %s", artist_name, exc_info=True)
 
-    # 4. Queue process_new_content for each artist
+    # 4. Queue process_new_content for artists that actually changed
     for artist_name in modified_artists:
         try:
-            create_task_dedup("process_new_content", {"artist": artist_name})
+            if _should_process_artist(artist_name, config):
+                create_task_dedup("process_new_content", {"artist": artist_name})
         except Exception:
             pass
 
@@ -2623,8 +2640,8 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
 
         emit_task_event(task_id, "info", {"message": f"Moved {moved} files to {artist}/{year}/{clean_album}" if year else f"Moved {moved} files to {artist}/{clean_album}"})
 
-    # Trigger process_new_content for the artist
-    if artist and moved > 0:
+    # Trigger process_new_content for the artist (only if content changed)
+    if artist and moved > 0 and _should_process_artist(artist, config):
         create_task_dedup("process_new_content", {"artist": artist})
         emit_task_event(task_id, "info", {"message": f"Processing new content for {artist}"})
 
