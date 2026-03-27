@@ -11,7 +11,7 @@ import {
   Ticket, ExternalLink, Sparkles, List, CalendarDays,
   ChevronLeft, ChevronRight, ChevronDown, Clock, Search, Trash2,
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -415,26 +415,17 @@ function MonthGroup({ month, items, onDownload, onDismiss, expandedId, onToggleE
           const key = itemKey(item, i);
           const isExpanded = expandedId === key;
           return (
-            <div key={key} className={cn(
-              "rounded-xl border overflow-hidden transition-all duration-300 ease-out",
-              isExpanded
-                ? "border-amber-500/30 bg-card/50"
-                : "border-transparent"
-            )}>
-              <EventCard
-                item={item}
-                onDownload={onDownload}
-                onDismiss={onDismiss}
-                onClick={item.type === "show" ? () => onToggleExpand(isExpanded ? null : key) : undefined}
-              />
-              <div className={cn(
-                "transition-all duration-300 ease-out overflow-hidden",
-                isExpanded ? "max-h-[340px] opacity-100" : "max-h-0 opacity-0"
-              )}>
-                {item.type === "show" && (
-                  <ShowDetailPanel item={item} onClose={() => onToggleExpand(null)} />
-                )}
-              </div>
+            <div key={key}>
+              {isExpanded && item.type === "show" ? (
+                <ShowDetailPanel item={item} onClose={() => onToggleExpand(null)} />
+              ) : (
+                <EventCard
+                  item={item}
+                  onDownload={onDownload}
+                  onDismiss={onDismiss}
+                  onClick={item.type === "show" ? () => onToggleExpand(key) : undefined}
+                />
+              )}
             </div>
           );
         })}
@@ -566,7 +557,7 @@ function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () =>
   const location = [item.city, item.country].filter(Boolean).join(", ");
 
   return (
-    <div className="relative h-[320px]">
+    <div className="relative h-[320px] rounded-xl overflow-hidden border border-amber-500/20 mb-1">
       {/* Full-bleed map background */}
       {hasCoords ? (
         <div className="absolute inset-0">
@@ -580,14 +571,7 @@ function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () =>
             scrollWheelZoom={false}
           >
             <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-            <Marker position={[item.latitude!, item.longitude!]}>
-              <Popup>
-                <div className="text-xs">
-                  <div className="font-bold">{item.venue}</div>
-                  <div>{location}</div>
-                </div>
-              </Popup>
-            </Marker>
+            <Marker position={[item.latitude!, item.longitude!]} />
           </MapContainer>
         </div>
       ) : (
@@ -615,10 +599,15 @@ function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () =>
       <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-gradient-to-t from-black/90 via-black/70 to-transparent pt-16 pb-4 px-4">
         <div className="flex items-end gap-4">
           <div className="flex-1 min-w-0">
-            <Link to={`/artist/${encPath(item.artist)}`}
-              className="text-xl font-bold text-white hover:text-amber-400 transition-colors">
+            <div className="flex items-center gap-2.5 mb-1">
+              <img src={`/api/artist/${encPath(item.artist)}/photo`} alt=""
+                className="w-10 h-10 rounded-full object-cover ring-2 ring-amber-500/30 flex-shrink-0"
+                onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+              <Link to={`/artist/${encPath(item.artist)}`}
+                className="text-xl font-bold text-white hover:text-amber-400 transition-colors">
               {item.artist}
             </Link>
+            </div>
             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
               {item.genres?.slice(0, 3).map(g => (
                 <Badge key={g} variant="outline" className="text-[9px] px-1 py-0 border-white/20 text-white/70">{g}</Badge>
