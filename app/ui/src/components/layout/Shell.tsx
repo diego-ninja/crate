@@ -21,7 +21,7 @@ import { GlobalShortcuts } from "./GlobalShortcuts";
 import { NotificationBell } from "./NotificationBell";
 import { BottomBar } from "@/components/player/BottomBar";
 import { FloatingPlayer } from "@/components/player/FloatingPlayer";
-import { FloatingLyrics } from "@/components/player/FloatingLyrics";
+// FloatingLyrics removed — lyrics are now a tab inside FloatingPlayer
 import { useKeyboard } from "@/hooks/use-keyboard";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useNotifications } from "@/hooks/use-notifications";
@@ -31,20 +31,16 @@ export function Shell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [playerOpen, setPlayerOpen] = useState(false);
-  const [lyricsOpen, setLyricsOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { queue } = usePlayer();
   const hasPlayer = queue.length > 0;
 
   // Listen for custom events from GlobalShortcuts
   useEffect(() => {
-    const togglePlayer = () => setPlayerOpen((p) => !p);
-    const toggleLyrics = () => setLyricsOpen((p) => !p);
+    const togglePlayer = () => setPlayerOpen((p: boolean) => !p);
     window.addEventListener("toggle-player", togglePlayer);
-    window.addEventListener("toggle-lyrics", toggleLyrics);
     return () => {
       window.removeEventListener("toggle-player", togglePlayer);
-      window.removeEventListener("toggle-lyrics", toggleLyrics);
     };
   }, []);
 
@@ -114,20 +110,12 @@ export function Shell() {
 
       <BottomBar
         onTogglePlayer={() => setPlayerOpen((p) => !p)}
-        onToggleLyrics={() => setLyricsOpen((p) => !p)}
         playerOpen={playerOpen}
       />
       {playerOpen && (
         <FloatingPlayer
           open={playerOpen}
           onClose={() => setPlayerOpen(false)}
-          onOpenLyrics={() => setLyricsOpen(true)}
-        />
-      )}
-      {lyricsOpen && (
-        <FloatingLyrics
-          open={lyricsOpen}
-          onClose={() => setLyricsOpen(false)}
         />
       )}
       <CommandPalette />

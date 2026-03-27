@@ -9,7 +9,6 @@ import {
 
 interface BottomBarProps {
   onTogglePlayer: () => void;
-  onToggleLyrics: () => void;
   playerOpen: boolean;
 }
 
