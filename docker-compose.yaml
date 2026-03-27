@@ -240,6 +240,12 @@ services:
     container_name: musicdock-redis
     restart: unless-stopped
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - musicdock_redis:/data
     networks:
@@ -250,6 +256,12 @@ services:
     image: postgres:15-alpine
     container_name: musicdock-postgres
     restart: unless-stopped
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MUSICDOCK_POSTGRES_USER}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     environment:
       - POSTGRES_USER=${MUSICDOCK_POSTGRES_USER}
       - POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD}
@@ -309,6 +321,12 @@ services:
     depends_on:
       - musicdock-postgres
       - musicdock-redis
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8585/api/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     command: ["api"]
 
   musicdock-worker:
@@ -353,6 +371,7 @@ services:
     depends_on:
       - musicdock-postgres
       - musicdock-redis
+    mem_limit: 2g
     command: ["worker"]
 
   musicdock-ui:

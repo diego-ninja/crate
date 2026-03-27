@@ -94,7 +94,7 @@ def logout() -> bool:
 
 # ── Search ───────────────────────────────────────────────────────
 
-def search(query: str, content_type: str = "all", limit: int = 20, offset: int = 0) -> dict:
+def search(query: str, content_type: str = "all", limit: int = 20, offset: int = 0, _retried: bool = False) -> dict:
     """Search Tidal API. Returns albums, artists, tracks."""
     token = get_auth_token()
     if not token:
@@ -127,9 +127,8 @@ def search(query: str, content_type: str = "all", limit: int = 20, offset: int =
         )
 
         if resp.status_code == 401:
-            # Try refresh
-            if refresh_token():
-                return search(query, content_type, limit, offset)
+            if not _retried and refresh_token():
+                return search(query, content_type, limit, offset, _retried=True)
             return {"error": "Tidal auth expired"}
 
         resp.raise_for_status()

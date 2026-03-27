@@ -97,6 +97,16 @@ def _run_task(task: dict, config: dict):
                 _db_heavy_running = False
 
 
+def _compute_dir_hash(directory: Path) -> str:
+    """Fast hash of directory contents: sorted file paths + sizes."""
+    import hashlib
+    h = hashlib.md5(usedforsecurity=False)
+    for f in sorted(directory.rglob("*")):
+        if f.is_file():
+            h.update(f"{f.relative_to(directory)}:{f.stat().st_size}\n".encode())
+    return h.hexdigest()
+
+
 def run_worker(config: dict):
     logging.basicConfig(
         level=logging.INFO,
@@ -1781,6 +1791,17 @@ def _process_new_content_inner(task_id, params, config, artist_name, album_folde
     lib = Path(config["library_path"])
     result = {"artist": artist_name, "album": album_folder, "steps": {}}
 
+    # ── Skip if content hasn't changed (hash check) ──
+    artist_row = get_library_artist(artist_name)
+    folder = (artist_row.get("folder_name") if artist_row else None) or artist_name
+    artist_dir = lib / folder
+    if artist_dir.is_dir():
+        new_hash = _compute_dir_hash(artist_dir)
+        old_hash = artist_row.get("content_hash") if artist_row else None
+        if old_hash and new_hash == old_hash:
+            log.info("Skipping %s — content unchanged (hash: %s)", artist_name, new_hash[:12])
+            return {"artist": artist_name, "skipped": True, "reason": "content_unchanged"}
+
     # ── 0. Reorganize folders to Artist/Year/Album structure ──
     update_task(task_id, progress=json.dumps({"step": "organize_folders", "artist": artist_name}))
     try:
@@ -2060,6 +2081,13 @@ def _process_new_content_inner(task_id, params, config, artist_name, album_folde
     except Exception:
         log.warning("Cover fetching failed", exc_info=True)
         result["steps"]["covers"] = "failed"
+
+    # Save content hash so next run can skip if unchanged
+    if artist_dir.is_dir():
+        final_hash = _compute_dir_hash(artist_dir)
+        with get_db_ctx() as cur:
+            cur.execute("UPDATE library_artists SET content_hash = %s WHERE name = %s",
+                        (final_hash, artist_name))
 
     return result
 

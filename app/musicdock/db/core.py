@@ -303,6 +303,7 @@ def init_db():
             ("lastfm_playcount", "INTEGER"),
             ("discogs_profile", "TEXT"), ("discogs_members_json", "JSONB"),
             ("latest_release_date", "TEXT"),
+            ("content_hash", "TEXT"),
         ]:
             cur.execute(f"""
                 DO $$ BEGIN
