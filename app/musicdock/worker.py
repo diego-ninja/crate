@@ -2742,6 +2742,63 @@ def _handle_cleanup_incomplete_downloads(task_id: str, params: dict, config: dic
     return {"cleaned": cleaned, "details": details}
 
 
+def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
+    """Sync shows from Ticketmaster to DB for all library artists."""
+    from musicdock.ticketmaster import get_upcoming_shows as tm_get_shows, is_configured
+    from musicdock.db import upsert_show, get_library_artists, delete_past_shows
+
+    if not is_configured():
+        return {"error": "Ticketmaster not configured"}
+
+    artists, _ = get_library_artists(per_page=10000)
+    total = len(artists)
+    synced = 0
+    shows_found = 0
+
+    for i, artist in enumerate(artists):
+        if _is_cancelled(task_id):
+            break
+        name = artist["name"]
+        if i % 10 == 0:
+            update_task(task_id, progress=json.dumps({
+                "phase": "fetching", "artist": name, "done": i, "total": total
+            }))
+
+        try:
+            events = tm_get_shows(name, limit=20)
+            for e in events:
+                ext_id = e.get("id")
+                if not ext_id:
+                    continue
+                upsert_show(
+                    external_id=ext_id,
+                    artist_name=name,
+                    date=e.get("local_date") or e.get("date", "")[:10],
+                    local_time=e.get("local_time"),
+                    venue=e.get("venue"),
+                    city=e.get("city"),
+                    region=e.get("region"),
+                    country=e.get("country"),
+                    country_code=e.get("country_code"),
+                    latitude=float(e["latitude"]) if e.get("latitude") else None,
+                    longitude=float(e["longitude"]) if e.get("longitude") else None,
+                    url=e.get("url"),
+                    image_url=e.get("image"),
+                    lineup=e.get("lineup"),
+                    price_range=str(e["price_range"]) if e.get("price_range") else None,
+                    status=e.get("status", "onsale"),
+                )
+                shows_found += 1
+            synced += 1
+        except Exception:
+            log.debug("Failed to sync shows for %s", name, exc_info=True)
+
+    # Clean up old shows
+    deleted = delete_past_shows(days_old=30)
+
+    return {"artists_checked": synced, "shows_found": shows_found, "old_deleted": deleted}
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
@@ -2784,4 +2841,5 @@ TASK_HANDLERS = {
     "map_navidrome_ids": _handle_map_navidrome_ids,
     "cleanup_incomplete_downloads": _handle_cleanup_incomplete_downloads,
     "upload_image": _handle_upload_image,
+    "sync_shows": _handle_sync_shows,
 }

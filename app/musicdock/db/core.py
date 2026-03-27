@@ -523,6 +523,35 @@ def init_db():
             )
         """)
 
+        # Shows (persistent concert/event storage)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS shows (
+                id SERIAL PRIMARY KEY,
+                external_id TEXT UNIQUE,
+                artist_name TEXT NOT NULL,
+                date TEXT NOT NULL,
+                local_time TEXT,
+                venue TEXT,
+                city TEXT,
+                region TEXT,
+                country TEXT,
+                country_code TEXT,
+                latitude DOUBLE PRECISION,
+                longitude DOUBLE PRECISION,
+                url TEXT,
+                image_url TEXT,
+                lineup TEXT[],
+                price_range TEXT,
+                status TEXT DEFAULT 'onsale',
+                source TEXT DEFAULT 'ticketmaster',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_date ON shows(date)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_artist ON shows(artist_name)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_city ON shows(city)")
+
         # Migration: add release_date, release_type, mb_release_group_id to new_releases
         cur.execute("""
             DO $$ BEGIN

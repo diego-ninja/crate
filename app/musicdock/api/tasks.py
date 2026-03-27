@@ -71,6 +71,18 @@ def api_task_detail(request: Request, task_id: str):
     }
 
 
+@router.post("/api/tasks/sync-shows")
+def api_sync_shows(request: Request):
+    """Trigger a sync_shows task to fetch shows from Ticketmaster into DB."""
+    _require_admin(request)
+    pending = list_tasks(status="pending", task_type="sync_shows", limit=1)
+    running = list_tasks(status="running", task_type="sync_shows", limit=1)
+    if pending or running:
+        return JSONResponse({"error": "Already running"}, status_code=409)
+    task_id = create_task("sync_shows")
+    return {"task_id": task_id}
+
+
 @router.post("/api/tasks/sync-library")
 def api_sync_library(request: Request):
     """Create a library_sync task to re-sync the filesystem to DB."""

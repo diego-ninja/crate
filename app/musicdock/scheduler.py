@@ -15,6 +15,7 @@ DEFAULT_SCHEDULES = {
     "compute_analytics": 3600,    # 1h — recompute analytics from DB
     "check_new_releases": 21600,  # 6h — check Tidal for new releases
     "cleanup_incomplete_downloads": 172800,  # 48h — remove incomplete soulseek downloads
+    "sync_shows": 86400,  # 24h — sync shows from Ticketmaster
 }
 
 

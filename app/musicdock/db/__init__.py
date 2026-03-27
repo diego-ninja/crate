@@ -90,6 +90,12 @@ from musicdock.db.releases import (
     mark_release_downloaded, mark_release_dismissed, is_album_in_library,
 )
 
+# Shows
+from musicdock.db.shows import (
+    upsert_show, get_upcoming_shows, get_all_shows,
+    get_show_cities, get_show_countries, delete_past_shows,
+)
+
 # Task Events (SSE)
 from musicdock.db.events import (
     emit_task_event, get_task_events, cleanup_task_events, cleanup_old_events,

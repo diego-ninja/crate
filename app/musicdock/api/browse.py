@@ -529,100 +529,53 @@ def api_artist_shows(request: Request, name: str, limit: int = Query(10), countr
 
 @router.get("/api/shows/artists-with-shows")
 def api_artists_with_shows(request: Request):
-    """Return names of artists that have cached upcoming shows (fast, no API calls)."""
+    """Return names of artists that have upcoming shows in DB."""
     _require_auth(request)
-    from musicdock.ticketmaster import is_configured
-    if not is_configured():
-        return {"artists": []}
-    all_artists, _ = get_library_artists(per_page=10000)
-    with_shows = []
-    for artist in all_artists:
-        cache_key = f"ticketmaster:events:{artist['name'].lower()}:"
-        cached = get_cache(cache_key)
-        if cached and len(cached) > 0:
-            with_shows.append(artist["name"])
-    return {"artists": with_shows}
+    from musicdock.db import get_upcoming_shows as db_get_shows
+    shows = db_get_shows()
+    artist_names = sorted({s["artist_name"] for s in shows})
+    return {"artists": artist_names}
 
 
 @router.get("/api/shows/cached")
-def api_cached_shows(request: Request, limit: int = Query(5)):
-    """Get already-cached shows (fast, no Ticketmaster calls). For dashboard widgets."""
+def api_cached_shows(request: Request, limit: int = Query(50)):
+    """Get upcoming shows from DB. For dashboard widgets and Shows map page."""
     _require_auth(request)
-    from musicdock.ticketmaster import is_configured
-    if not is_configured():
-        return {"events": []}
+    from musicdock.db import get_upcoming_shows as db_get_shows
+    shows = db_get_shows(limit=limit)
+    # Enrich with genres
+    genre_map = {}
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT ag.artist_name, g.name FROM artist_genres ag
+            JOIN genres g ON ag.genre_id = g.id ORDER BY ag.weight DESC
+        """)
+        for row in cur.fetchall():
+            genre_map.setdefault(row["artist_name"], []).append(row["name"])
 
-    all_artists, _ = get_library_artists(per_page=10000)
-    all_events = []
-    for artist in all_artists:
-        cache_key = f"ticketmaster:events:{artist['name'].lower()}:"
-        cached = get_cache(cache_key)
-        if cached:
-            tags = artist.get("tags_json")
-            genres = []
-            if isinstance(tags, list):
-                genres = [t.lower() for t in tags[:3]]
-            elif isinstance(tags, str):
-                try:
-                    import json as _j
-                    genres = [t.lower() for t in _j.loads(tags)[:3]]
-                except Exception:
-                    pass
-            for e in cached:
-                e["artist_name"] = artist["name"]
-                e["artist_listeners"] = artist.get("listeners") or 0
-                e["artist_genres"] = genres
-            all_events.extend(cached)
-    all_events.sort(key=lambda e: e.get("date", ""))
-    return {"events": all_events[:limit]}
+    events = []
+    for s in shows:
+        events.append({
+            **s,
+            "artist_genres": genre_map.get(s["artist_name"], [])[:3],
+            "artist_listeners": 0,
+        })
+    return {"events": events}
 
 
 @router.get("/api/shows")
-async def api_all_shows(request: Request, country: str = Query(""), limit: int = Query(5)):
-    """SSE endpoint: streams shows for all library artists as they're fetched."""
+def api_shows_list(request: Request, city: str = "", country: str = ""):
+    """Get upcoming shows from DB with filters."""
     _require_auth(request)
-    import json as _json
-    import asyncio
-    from starlette.responses import StreamingResponse
-    from musicdock.ticketmaster import get_upcoming_shows, is_configured
-
-    if not is_configured():
-        return {"events": [], "configured": False}
-
-    all_artists, _ = get_library_artists(per_page=10000)
-
-    async def generate():
-        loop = asyncio.get_event_loop()
-        for artist in all_artists:
-            name = artist["name"]
-            try:
-                # Run blocking Ticketmaster call in thread pool
-                events = await loop.run_in_executor(
-                    None, lambda n=name: get_upcoming_shows(n, country_code=country, limit=limit)
-                )
-                # Parse artist genres from tags_json
-                tags = artist.get("tags_json")
-                genres = []
-                if isinstance(tags, list):
-                    genres = [t.lower() for t in tags[:3]]
-                elif isinstance(tags, str):
-                    try:
-                        genres = [t.lower() for t in _json.loads(tags)[:3]]
-                    except Exception:
-                        pass
-
-                for e in events:
-                    e["artist_name"] = name
-                    e["artist_listeners"] = artist.get("listeners") or 0
-                    e["artist_genres"] = genres
-                    yield f"data: {_json.dumps(e)}\n\n"
-            except Exception:
-                pass
-            # Yield control to event loop so other requests can be served
-            await asyncio.sleep(0)
-        yield "event: done\ndata: {}\n\n"
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    from musicdock.db import get_upcoming_shows as db_get_shows, get_show_cities, get_show_countries
+    shows = db_get_shows(city=city or None, country=country or None)
+    return {
+        "shows": shows,
+        "filters": {
+            "cities": get_show_cities(),
+            "countries": get_show_countries(),
+        },
+    }
 
 
 @router.post("/api/artist/{name}/enrich")
@@ -653,13 +606,13 @@ def api_artist_track_titles(request: Request, name: str):
 def api_upcoming(request: Request):
     """Unified upcoming events: shows + releases, sorted by date."""
     from datetime import datetime, timezone
-    from musicdock.db import get_new_releases
+    from musicdock.db import get_new_releases, get_upcoming_shows as db_get_shows
     _require_auth(request)
     items = []
-
-    # 1. Releases from DB (all non-dismissed)
-    releases = get_new_releases(limit=50)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # 1. Releases from DB
+    releases = get_new_releases(limit=50)
     for r in releases:
         if r.get("status") == "dismissed":
             continue
@@ -676,29 +629,41 @@ def api_upcoming(request: Request):
             "is_upcoming": bool(r.get("release_date") and r["release_date"] >= today),
         })
 
-    # 2. Shows from cache (Ticketmaster)
-    from musicdock.ticketmaster import is_configured
-    if is_configured():
-        all_artists, _ = get_library_artists(per_page=10000)
-        for artist in all_artists:
-            cache_key = f"ticketmaster:events:{artist['name'].lower()}:"
-            cached = get_cache(cache_key)
-            if cached:
-                for e in cached:
-                    items.append({
-                        "type": "show",
-                        "date": e.get("date", ""),
-                        "artist": artist["name"],
-                        "title": e.get("venue", ""),
-                        "subtitle": f"{e.get('city', '')}, {e.get('country', '')}",
-                        "cover_url": None,
-                        "status": "upcoming",
-                        "url": e.get("url"),
-                        "venue": e.get("venue"),
-                        "city": e.get("city"),
-                        "country": e.get("country"),
-                        "is_upcoming": True,
-                    })
+    # 2. Shows from DB (not cache)
+    shows = db_get_shows()
+    # Get artist genres for enrichment
+    genre_map = {}
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT ag.artist_name, g.name FROM artist_genres ag
+            JOIN genres g ON ag.genre_id = g.id
+            ORDER BY ag.weight DESC
+        """)
+        for row in cur.fetchall():
+            genre_map.setdefault(row["artist_name"], []).append(row["name"])
+
+    for s in shows:
+        artist = s["artist_name"]
+        items.append({
+            "type": "show",
+            "date": s["date"],
+            "time": s.get("local_time"),
+            "artist": artist,
+            "title": s.get("venue") or "",
+            "subtitle": f"{s.get('city', '')}, {s.get('country', '')}".strip(", "),
+            "cover_url": s.get("image_url"),
+            "status": s.get("status", "onsale"),
+            "url": s.get("url"),
+            "venue": s.get("venue"),
+            "city": s.get("city"),
+            "country": s.get("country"),
+            "country_code": s.get("country_code"),
+            "latitude": s.get("latitude"),
+            "longitude": s.get("longitude"),
+            "lineup": s.get("lineup"),
+            "genres": genre_map.get(artist, [])[:3],
+            "is_upcoming": True,
+        })
 
     items.sort(key=lambda x: x.get("date") or "9999")
     return {"items": items}
