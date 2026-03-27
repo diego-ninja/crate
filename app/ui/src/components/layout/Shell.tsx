@@ -108,14 +108,15 @@ export function Shell() {
         </div>
       </main>
 
-      <BottomBar
-        onTogglePlayer={() => setPlayerOpen((p) => !p)}
-        playerOpen={playerOpen}
-      />
-      {playerOpen && (
+      {playerOpen ? (
         <FloatingPlayer
           open={playerOpen}
           onClose={() => setPlayerOpen(false)}
+        />
+      ) : (
+        <BottomBar
+          onTogglePlayer={() => setPlayerOpen(true)}
+          playerOpen={false}
         />
       )}
       <CommandPalette />
