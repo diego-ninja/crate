@@ -649,6 +649,61 @@ def api_artist_track_titles(request: Request, name: str):
     return [{"title": r["title"], "album": r["album"], "path": r["path"]} for r in rows]
 
 
+@router.get("/api/upcoming")
+def api_upcoming(request: Request):
+    """Unified upcoming events: shows + releases, sorted by date."""
+    from datetime import datetime, timezone
+    from musicdock.db import get_new_releases
+    _require_auth(request)
+    items = []
+
+    # 1. Releases from DB (all non-dismissed)
+    releases = get_new_releases(limit=50)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for r in releases:
+        if r.get("status") == "dismissed":
+            continue
+        items.append({
+            "type": "release",
+            "date": r.get("release_date") or (r.get("detected_at") or "")[:10],
+            "artist": r.get("artist_name", ""),
+            "title": r.get("album_title", ""),
+            "subtitle": r.get("release_type") or "Album",
+            "cover_url": r.get("cover_url"),
+            "status": r.get("status", "detected"),
+            "tidal_url": r.get("tidal_url"),
+            "release_id": r.get("id"),
+            "is_upcoming": bool(r.get("release_date") and r["release_date"] >= today),
+        })
+
+    # 2. Shows from cache (Ticketmaster)
+    from musicdock.ticketmaster import is_configured
+    if is_configured():
+        all_artists, _ = get_library_artists(per_page=10000)
+        for artist in all_artists:
+            cache_key = f"ticketmaster:events:{artist['name'].lower()}:"
+            cached = get_cache(cache_key)
+            if cached:
+                for e in cached:
+                    items.append({
+                        "type": "show",
+                        "date": e.get("date", ""),
+                        "artist": artist["name"],
+                        "title": e.get("venue", ""),
+                        "subtitle": f"{e.get('city', '')}, {e.get('country', '')}",
+                        "cover_url": None,
+                        "status": "upcoming",
+                        "url": e.get("url"),
+                        "venue": e.get("venue"),
+                        "city": e.get("city"),
+                        "country": e.get("country"),
+                        "is_upcoming": True,
+                    })
+
+    items.sort(key=lambda x: x.get("date") or "9999")
+    return {"items": items}
+
+
 @router.get("/api/artist/{name:path}")
 def api_artist(request: Request, name: str):
     _require_auth(request)

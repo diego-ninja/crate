@@ -20,6 +20,7 @@ import {
   Settings,
   CalendarDays,
   Sparkles,
+  Calendar,
 } from "lucide-react";
 import { cn, encPath } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -49,6 +50,7 @@ const navItems = [
   { section: "Tools" },
   { to: "/health", icon: HeartPulse, label: "Library Health", badgeKey: "issue_count" as const },
   { section: "Music" },
+  { to: "/upcoming", icon: Calendar, label: "Upcoming" },
   { to: "/new-releases", icon: Sparkles, label: "New Releases" },
   { to: "/playlists", icon: ListMusic, label: "Playlists" },
   { to: "/shows", icon: CalendarDays, label: "Shows" },
