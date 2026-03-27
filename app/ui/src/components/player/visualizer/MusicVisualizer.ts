@@ -84,7 +84,8 @@ export class MusicVisualizer {
 
     // Renderer
     this.renderer = new OpenGLRenderer(this.canvas);
-    this.renderer.setClearColor(0.0, 0.0, 0.0, 1);
+    // Match Crate card background (#0a0a0c → ~0.039, 0.039, 0.047)
+    this.renderer.setClearColor(0.039, 0.039, 0.047, 1);
     g.enable(g.DEPTH_TEST);
 
     // Shaders
