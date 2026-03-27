@@ -12,7 +12,7 @@ try:
     _HAS_PSYCOPG2 = True
 except ImportError:
     _HAS_PSYCOPG2 = False
-    # Create mock psycopg2 module hierarchy so musicdock.db can be imported
+    # Create mock psycopg2 module hierarchy so crate.db can be imported
     _mock_psycopg2 = types.ModuleType("psycopg2")
     _mock_psycopg2.extras = types.ModuleType("psycopg2.extras")
     _mock_psycopg2.pool = types.ModuleType("psycopg2.pool")
@@ -45,11 +45,11 @@ def _check_pg():
     if not _HAS_PSYCOPG2:
         return
     try:
-        user = os.environ.get("MUSICDOCK_POSTGRES_USER", "musicdock")
-        password = os.environ.get("MUSICDOCK_POSTGRES_PASSWORD", "musicdock")
-        host = os.environ.get("MUSICDOCK_POSTGRES_HOST", "localhost")
-        port = os.environ.get("MUSICDOCK_POSTGRES_PORT", "5432")
-        db = os.environ.get("MUSICDOCK_POSTGRES_DB", "musicdock_test")
+        user = os.environ.get("CRATE_POSTGRES_USER", "crate")
+        password = os.environ.get("CRATE_POSTGRES_PASSWORD", "crate")
+        host = os.environ.get("CRATE_POSTGRES_HOST", "localhost")
+        port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
+        db = os.environ.get("CRATE_POSTGRES_DB", "crate_test")
         _test_dsn = f"postgresql://{user}:{password}@{host}:{port}/{db}"
         conn = psycopg2.connect(_test_dsn)
         conn.close()
@@ -78,11 +78,11 @@ def pg_db():
     cur.close()
     conn.close()
 
-    os.environ["MUSICDOCK_POSTGRES_HOST"] = os.environ.get("MUSICDOCK_POSTGRES_HOST", "localhost")
-    os.environ["MUSICDOCK_POSTGRES_DB"] = os.environ.get("MUSICDOCK_POSTGRES_DB", "musicdock_test")
+    os.environ["CRATE_POSTGRES_HOST"] = os.environ.get("CRATE_POSTGRES_HOST", "localhost")
+    os.environ["CRATE_POSTGRES_DB"] = os.environ.get("CRATE_POSTGRES_DB", "crate_test")
 
-    import musicdock.db as db_mod
-    import musicdock.db.core as db_core
+    import crate.db as db_mod
+    import crate.db.core as db_core
     if db_core._pool is not None:
         try:
             db_core._pool.closeall()
@@ -112,7 +112,7 @@ def test_app():
         pytest.skip("FastAPI/httpx not installed")
 
     mock_config = {
-        "library_path": "/tmp/test_musicdock_library",
+        "library_path": "/tmp/test_crate_library",
         "audio_extensions": [".flac", ".mp3", ".m4a"],
         "exclude_dirs": [],
     }
@@ -128,10 +128,10 @@ def test_app():
         }
         return await call_next(request)
 
-    with patch("musicdock.api._deps.load_config", return_value=mock_config), \
-         patch("musicdock.db.init_db"), \
-         patch("musicdock.api.auth.AuthMiddleware.dispatch", _fake_dispatch):
-        from musicdock.api import create_app
+    with patch("crate.api._deps.load_config", return_value=mock_config), \
+         patch("crate.db.init_db"), \
+         patch("crate.api.auth.AuthMiddleware.dispatch", _fake_dispatch):
+        from crate.api import create_app
         app = create_app()
         client = TestClient(app)
         yield client

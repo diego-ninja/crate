@@ -1,4 +1,4 @@
-# Crate (codebase: musicdock)
+# Crate
 
 ## Project Overview
 
@@ -7,10 +7,10 @@ Self-hosted music library manager with enrichment, analysis, streaming, and Tida
 ## Architecture
 
 ```
-musicdock-api     (FastAPI, Python 3.12)     → port 8585, /music:ro
-musicdock-worker  (Python, ThreadPoolExecutor) → /music:rw, background tasks
-musicdock-ui      (React 19 + Vite + Tailwind 4) → nginx, proxies /api → api:8585
-musicdock-postgres (PostgreSQL 15)            → data persistence
+crate-api     (FastAPI, Python 3.12)     → port 8585, /music:ro
+crate-worker  (Python, ThreadPoolExecutor) → /music:rw, background tasks
+crate-ui      (React 19 + Vite + Tailwind 4) → nginx, proxies /api → api:8585
+crate-postgres (PostgreSQL 15)            → data persistence
 ```
 
 API mounts /music as **read-only**. All filesystem writes go through **worker tasks**. Never write to filesystem from API endpoints.
@@ -18,8 +18,8 @@ API mounts /music as **read-only**. All filesystem writes go through **worker ta
 ## Key Directories
 
 ```
-app/musicdock/          Python backend (API + Worker)
-app/musicdock/api/      FastAPI routers (one file per domain)
+app/crate/          Python backend (API + Worker)
+app/crate/api/      FastAPI routers (one file per domain)
 app/ui/src/             React frontend
 app/ui/src/pages/       Page components (lazy-loaded)
 app/ui/src/components/  Shared components
@@ -56,7 +56,7 @@ test-music/             Local dev music (3 artists, not committed)
 All DB access uses `get_db_ctx()` context manager (yields psycopg2 RealDictCursor):
 
 ```python
-from musicdock.db import get_db_ctx
+from crate.db import get_db_ctx
 with get_db_ctx() as cur:
     cur.execute("SELECT * FROM library_artists WHERE name = %s", (name,))
     row = cur.fetchone()
@@ -70,7 +70,7 @@ API creates tasks, worker processes them:
 
 ```python
 # API side
-from musicdock.db import create_task
+from crate.db import create_task
 task_id = create_task("task_type", {"param": "value"})
 
 # Worker side (worker.py)
@@ -169,15 +169,15 @@ Login: yosoy@diego.ninja / admin (dev), same email in production.
 
 | File | Purpose |
 |------|---------|
-| `app/musicdock/db.py` | All database functions + schema migrations in `init_db()` |
-| `app/musicdock/worker.py` | Task handlers + worker loop (TASK_HANDLERS dict) |
-| `app/musicdock/enrichment.py` | Unified artist enrichment (all sources) |
-| `app/musicdock/audio_analysis.py` | Essentia/librosa dual backend |
-| `app/musicdock/bliss.py` | Python integration with grooveyard-bliss Rust CLI |
-| `app/musicdock/tidal.py` | Tidal auth, search, download via tiddl |
-| `app/musicdock/library_sync.py` | Filesystem → DB sync |
-| `app/musicdock/library_watcher.py` | Watchdog filesystem watcher |
-| `app/musicdock/api/__init__.py` | Router registration order (important!) |
+| `app/crate/db.py` | All database functions + schema migrations in `init_db()` |
+| `app/crate/worker.py` | Task handlers + worker loop (TASK_HANDLERS dict) |
+| `app/crate/enrichment.py` | Unified artist enrichment (all sources) |
+| `app/crate/audio_analysis.py` | Essentia/librosa dual backend |
+| `app/crate/bliss.py` | Python integration with grooveyard-bliss Rust CLI |
+| `app/crate/tidal.py` | Tidal auth, search, download via tiddl |
+| `app/crate/library_sync.py` | Filesystem → DB sync |
+| `app/crate/library_watcher.py` | Watchdog filesystem watcher |
+| `app/crate/api/__init__.py` | Router registration order (important!) |
 | `app/ui/src/contexts/PlayerContext.tsx` | Audio player state + HTMLAudioElement |
 | `app/ui/src/components/player/AudioPlayer.tsx` | Full + mini player with visualizer |
 | `app/ui/src/components/layout/SearchBar.tsx` | Unified Library + Tidal search |
@@ -189,5 +189,5 @@ Login: yosoy@diego.ninja / admin (dev), same email in production.
 ## Server
 
 - Host: root@104.152.210.73
-- Path: /home/musicdock/musicdock
+- Path: /home/crate/crate
 - Domain: admin.lespedants.org (UI), play.lespedants.org (Navidrome)

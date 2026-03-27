@@ -741,7 +741,7 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
     setShowLogs(true);
     setLogsLoading(true);
     try {
-      const d = await api<{ name: string; logs: string }>("/api/stack/container/musicdock-worker/logs?tail=40");
+      const d = await api<{ name: string; logs: string }>("/api/stack/container/crate-worker/logs?tail=40");
       setLogs(d.logs);
     } catch { setLogs("Failed to load logs"); }
     finally { setLogsLoading(false); }

@@ -18,9 +18,9 @@ class TestArtistsAPI:
         mock_cur.fetchone.return_value = {"cnt": 1}
         mock_cur.fetchall.return_value = [mock_row]
 
-        with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
-             patch("musicdock.api.browse.get_all_artist_issue_counts", return_value={}), \
-             patch("musicdock.api.browse.get_db_ctx") as mock_ctx:
+        with patch("crate.api.browse.get_library_track_count", return_value=100), \
+             patch("crate.api.browse.get_all_artist_issue_counts", return_value={}), \
+             patch("crate.api.browse.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.get("/api/artists")
@@ -38,9 +38,9 @@ class TestArtistsAPI:
         mock_cur.fetchone.return_value = {"cnt": 5}
         mock_cur.fetchall.return_value = rows
 
-        with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
-             patch("musicdock.api.browse.get_all_artist_issue_counts", return_value={}), \
-             patch("musicdock.api.browse.get_db_ctx") as mock_ctx:
+        with patch("crate.api.browse.get_library_track_count", return_value=100), \
+             patch("crate.api.browse.get_all_artist_issue_counts", return_value={}), \
+             patch("crate.api.browse.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.get("/api/artists?page=1&per_page=3")
@@ -54,9 +54,9 @@ class TestArtistsAPI:
         mock_cur.fetchone.return_value = {"cnt": 0}
         mock_cur.fetchall.return_value = []
 
-        with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
-             patch("musicdock.api.browse.get_all_artist_issue_counts", return_value={}), \
-             patch("musicdock.api.browse.get_db_ctx") as mock_ctx:
+        with patch("crate.api.browse.get_library_track_count", return_value=100), \
+             patch("crate.api.browse.get_all_artist_issue_counts", return_value={}), \
+             patch("crate.api.browse.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.get("/api/artists?q=radio&sort=name")
@@ -79,11 +79,11 @@ class TestArtistDetailAPI:
              "formats": ["flac"], "year": "2001", "has_cover": 1},
         ]
 
-        with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
-             patch("musicdock.api.browse.get_library_artist", return_value=mock_artist), \
-             patch("musicdock.api.browse.get_library_albums", return_value=mock_albums), \
-             patch("musicdock.api.browse.get_artist_issue_count", return_value=0), \
-             patch("musicdock.api.browse.get_db_ctx") as mock_ctx:
+        with patch("crate.api.browse.get_library_track_count", return_value=100), \
+             patch("crate.api.browse.get_library_artist", return_value=mock_artist), \
+             patch("crate.api.browse.get_library_albums", return_value=mock_albums), \
+             patch("crate.api.browse.get_artist_issue_count", return_value=0), \
+             patch("crate.api.browse.get_db_ctx") as mock_ctx:
             mock_cur = MagicMock()
             mock_cur.fetchall.return_value = [{"name": "Progressive Metal"}]
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
@@ -96,9 +96,9 @@ class TestArtistDetailAPI:
             assert len(data["albums"]) == 1
 
     def test_get_artist_not_found(self, test_app):
-        with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
-             patch("musicdock.api.browse.get_library_artist", return_value=None), \
-             patch("musicdock.api.browse.safe_path", return_value=None):
+        with patch("crate.api.browse.get_library_track_count", return_value=100), \
+             patch("crate.api.browse.get_library_artist", return_value=None), \
+             patch("crate.api.browse.safe_path", return_value=None):
             resp = test_app.get("/api/artist/NonExistent")
             assert resp.status_code == 404
 
@@ -112,8 +112,8 @@ class TestStatsAPI:
             "total_size": 1024**4,
             "formats": {"flac": 4000, "mp3": 1000},
         }
-        with patch("musicdock.api.browse.get_library_track_count", return_value=5000), \
-             patch("musicdock.db.get_library_stats", return_value=mock_stats):
+        with patch("crate.api.browse.get_library_track_count", return_value=5000), \
+             patch("crate.db.get_library_stats", return_value=mock_stats):
             # Stats endpoint is in the browse module via /api/stats in web.py
             # The FastAPI app doesn't have /api/stats from browse, it's from web.py (Flask)
             # Let's check available endpoints
@@ -136,8 +136,8 @@ class TestSearchAPI:
             [],  # track results
         ]
 
-        with patch("musicdock.api.browse.get_library_track_count", return_value=100), \
-             patch("musicdock.api.browse.get_db_ctx") as mock_ctx:
+        with patch("crate.api.browse.get_library_track_count", return_value=100), \
+             patch("crate.api.browse.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -150,8 +150,8 @@ class TestSearchAPI:
 
 class TestScanAPI:
     def test_start_scan(self, test_app):
-        with patch("musicdock.api.scanner.list_tasks", return_value=[]), \
-             patch("musicdock.api.scanner.create_task", return_value="abc123"):
+        with patch("crate.api.scanner.list_tasks", return_value=[]), \
+             patch("crate.api.scanner.create_task", return_value="abc123"):
             resp = test_app.post("/api/scan", json={})
             assert resp.status_code == 200
             data = resp.json()
@@ -159,13 +159,13 @@ class TestScanAPI:
             assert data["task_id"] == "abc123"
 
     def test_start_scan_already_running(self, test_app):
-        with patch("musicdock.api.scanner.list_tasks", return_value=[{"id": "x"}]):
+        with patch("crate.api.scanner.list_tasks", return_value=[{"id": "x"}]):
             resp = test_app.post("/api/scan", json={})
             assert resp.status_code == 409
 
     def test_start_scan_with_only(self, test_app):
-        with patch("musicdock.api.scanner.list_tasks", return_value=[]), \
-             patch("musicdock.api.scanner.create_task", return_value="def456") as mock_create:
+        with patch("crate.api.scanner.list_tasks", return_value=[]), \
+             patch("crate.api.scanner.create_task", return_value="def456") as mock_create:
             resp = test_app.post("/api/scan", json={"only": "naming"})
             assert resp.status_code == 200
             mock_create.assert_called_once_with("scan", {"only": "naming"})
@@ -173,26 +173,26 @@ class TestScanAPI:
 
 class TestSyncLibraryAPI:
     def test_sync_library(self, test_app):
-        with patch("musicdock.api.tasks.list_tasks", return_value=[]), \
-             patch("musicdock.api.tasks.create_task", return_value="sync123"):
+        with patch("crate.api.tasks.list_tasks", return_value=[]), \
+             patch("crate.api.tasks.create_task", return_value="sync123"):
             resp = test_app.post("/api/tasks/sync-library")
             assert resp.status_code == 200
             data = resp.json()
             assert data["task_id"] == "sync123"
 
     def test_sync_library_already_running(self, test_app):
-        with patch("musicdock.api.tasks.list_tasks", side_effect=[[{"id": "x"}], []]):
+        with patch("crate.api.tasks.list_tasks", side_effect=[[{"id": "x"}], []]):
             resp = test_app.post("/api/tasks/sync-library")
             assert resp.status_code == 409
 
 
 class TestWorkerAPI:
     def test_worker_status(self, test_app):
-        with patch("musicdock.api.tasks.list_tasks", side_effect=[
+        with patch("crate.api.tasks.list_tasks", side_effect=[
             [{"id": "r1", "type": "scan"}],
             [{"id": "p1", "type": "library_sync"}],
         ]), \
-             patch("musicdock.api.tasks.get_setting", return_value="3"):
+             patch("crate.api.tasks.get_setting", return_value="3"):
             resp = test_app.get("/api/worker/status")
             assert resp.status_code == 200
             data = resp.json()
@@ -205,8 +205,8 @@ class TestWorkerAPI:
             "library_sync": 1800,
             "enrich_artists": 86400,
         }
-        with patch("musicdock.api.tasks.get_schedules", return_value=mock_schedules), \
-             patch("musicdock.api.tasks.get_setting", return_value=None):
+        with patch("crate.api.tasks.get_schedules", return_value=mock_schedules), \
+             patch("crate.api.tasks.get_setting", return_value=None):
             resp = test_app.get("/api/worker/schedules")
             assert resp.status_code == 200
             data = resp.json()
@@ -222,7 +222,7 @@ class TestTasksAPI:
              "error": None, "result": {"issues": 5}, "params": {},
              "created_at": "2024-01-01T00:00:00", "updated_at": "2024-01-01T00:01:00"},
         ]
-        with patch("musicdock.api.tasks.list_tasks", return_value=mock_tasks):
+        with patch("crate.api.tasks.list_tasks", return_value=mock_tasks):
             resp = test_app.get("/api/tasks")
             assert resp.status_code == 200
             data = resp.json()
@@ -236,7 +236,7 @@ class TestTasksAPI:
             "error": None, "result": None, "params": {},
             "created_at": "2024-01-01T00:00:00", "updated_at": "2024-01-01T00:01:00",
         }
-        with patch("musicdock.api.tasks.get_task", return_value=mock_task):
+        with patch("crate.api.tasks.get_task", return_value=mock_task):
             resp = test_app.get("/api/tasks/t1")
             assert resp.status_code == 200
             data = resp.json()
@@ -244,7 +244,7 @@ class TestTasksAPI:
             assert data["progress"]["scanner"] == "naming"
 
     def test_get_task_not_found(self, test_app):
-        with patch("musicdock.api.tasks.get_task", return_value=None):
+        with patch("crate.api.tasks.get_task", return_value=None):
             resp = test_app.get("/api/tasks/nonexistent")
             assert resp.status_code == 404
 
@@ -254,8 +254,8 @@ class TestTasksAPI:
             "progress": "", "error": None, "result": None, "params": {},
             "created_at": "2024-01-01", "updated_at": "2024-01-01",
         }
-        with patch("musicdock.api.tasks.get_task", return_value=mock_task), \
-             patch("musicdock.api.tasks.update_task") as mock_update:
+        with patch("crate.api.tasks.get_task", return_value=mock_task), \
+             patch("crate.api.tasks.update_task") as mock_update:
             resp = test_app.post("/api/tasks/t1/cancel")
             assert resp.status_code == 200
             mock_update.assert_called_once_with("t1", status="cancelled")

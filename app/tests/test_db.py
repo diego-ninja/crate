@@ -1,4 +1,4 @@
-"""Tests for musicdock.db — CRUD operations on PostgreSQL."""
+"""Tests for crate.db — CRUD operations on PostgreSQL."""
 
 import json
 import time
@@ -153,9 +153,9 @@ class TestCache:
         result = pg_db.get_cache("aged", max_age_seconds=3600)
         assert result is not None
         # Clear L1 memory cache and disable L2 Redis so max_age is tested at PG level
-        from musicdock.db.cache import _mem_cache
+        from crate.db.cache import _mem_cache
         _mem_cache.pop("aged", None)
-        with patch("musicdock.db.cache._get_redis", return_value=None):
+        with patch("crate.db.cache._get_redis", return_value=None):
             # With max_age=0, should return None (expired immediately)
             result = pg_db.get_cache("aged", max_age_seconds=0)
             assert result is None

@@ -35,5 +35,5 @@ RUN if [ -f bin/grooveyard-bliss-linux-amd64 ] && [ "$(uname -m)" = "x86_64" ]; 
         chmod +x /usr/local/bin/grooveyard-bliss; \
     fi
 
-ENTRYPOINT ["python", "-m", "musicdock"]
+ENTRYPOINT ["python", "-m", "crate"]
 CMD ["api"]

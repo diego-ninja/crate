@@ -1,4 +1,4 @@
-"""Tests for musicdock.library_sync — filesystem-to-DB synchronization."""
+"""Tests for crate.library_sync — filesystem-to-DB synchronization."""
 
 import os
 import tempfile
@@ -40,24 +40,24 @@ class TestLibrarySyncFullSync:
             }
 
             # Mock all DB calls
-            with patch("musicdock.library_sync.get_library_artist", return_value=None), \
-                 patch("musicdock.library_sync.get_library_albums", return_value=[]), \
-                 patch("musicdock.library_sync.get_library_artists", return_value=([], 0)), \
-                 patch("musicdock.library_sync.upsert_artist") as mock_upsert_artist, \
-                 patch("musicdock.library_sync.upsert_album", return_value=1) as mock_upsert_album, \
-                 patch("musicdock.library_sync.upsert_track") as mock_upsert_track, \
-                 patch("musicdock.library_sync.get_db_ctx") as mock_ctx, \
-                 patch("musicdock.library_sync.delete_artist"), \
-                 patch("musicdock.library_sync.delete_album"), \
-                 patch("musicdock.library_sync.mutagen.File", return_value=None), \
-                 patch("musicdock.library_sync.read_tags", return_value={}):
+            with patch("crate.library_sync.get_library_artist", return_value=None), \
+                 patch("crate.library_sync.get_library_albums", return_value=[]), \
+                 patch("crate.library_sync.get_library_artists", return_value=([], 0)), \
+                 patch("crate.library_sync.upsert_artist") as mock_upsert_artist, \
+                 patch("crate.library_sync.upsert_album", return_value=1) as mock_upsert_album, \
+                 patch("crate.library_sync.upsert_track") as mock_upsert_track, \
+                 patch("crate.library_sync.get_db_ctx") as mock_ctx, \
+                 patch("crate.library_sync.delete_artist"), \
+                 patch("crate.library_sync.delete_album"), \
+                 patch("crate.library_sync.mutagen.File", return_value=None), \
+                 patch("crate.library_sync.read_tags", return_value={}):
                 mock_cur = MagicMock()
                 mock_cur.fetchone.return_value = None
                 mock_cur.fetchall.return_value = []
                 mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
                 mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
-                from musicdock.library_sync import LibrarySync
+                from crate.library_sync import LibrarySync
                 sync = LibrarySync(config)
                 result = sync.full_sync()
 
@@ -93,24 +93,24 @@ class TestLibrarySyncFullSync:
                     return existing_artist
                 return None
 
-            with patch("musicdock.library_sync.get_library_artist", side_effect=mock_get_artist), \
-                 patch("musicdock.library_sync.get_library_albums", return_value=[]), \
-                 patch("musicdock.library_sync.get_library_artists", return_value=([existing_artist], 1)), \
-                 patch("musicdock.library_sync.upsert_artist") as mock_upsert, \
-                 patch("musicdock.library_sync.upsert_album", return_value=1), \
-                 patch("musicdock.library_sync.upsert_track"), \
-                 patch("musicdock.library_sync.get_db_ctx") as mock_ctx, \
-                 patch("musicdock.library_sync.delete_artist"), \
-                 patch("musicdock.library_sync.delete_album"), \
-                 patch("musicdock.library_sync.mutagen.File", return_value=None), \
-                 patch("musicdock.library_sync.read_tags", return_value={}):
+            with patch("crate.library_sync.get_library_artist", side_effect=mock_get_artist), \
+                 patch("crate.library_sync.get_library_albums", return_value=[]), \
+                 patch("crate.library_sync.get_library_artists", return_value=([existing_artist], 1)), \
+                 patch("crate.library_sync.upsert_artist") as mock_upsert, \
+                 patch("crate.library_sync.upsert_album", return_value=1), \
+                 patch("crate.library_sync.upsert_track"), \
+                 patch("crate.library_sync.get_db_ctx") as mock_ctx, \
+                 patch("crate.library_sync.delete_artist"), \
+                 patch("crate.library_sync.delete_album"), \
+                 patch("crate.library_sync.mutagen.File", return_value=None), \
+                 patch("crate.library_sync.read_tags", return_value={}):
                 mock_cur = MagicMock()
                 mock_cur.fetchone.return_value = None
                 mock_cur.fetchall.return_value = []
                 mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
                 mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
-                from musicdock.library_sync import LibrarySync
+                from crate.library_sync import LibrarySync
                 sync = LibrarySync(config)
                 result = sync.full_sync()
 
@@ -136,20 +136,20 @@ class TestSyncAlbum:
             mock_mf.info.length = 240.0
             mock_mf.info.bitrate = 320000
 
-            with patch("musicdock.library_sync.get_library_artist", return_value={"name": "Artist"}), \
-                 patch("musicdock.library_sync.upsert_artist"), \
-                 patch("musicdock.library_sync.upsert_album", return_value=1), \
-                 patch("musicdock.library_sync.upsert_track") as mock_upsert_track, \
-                 patch("musicdock.library_sync.get_db_ctx") as mock_ctx, \
-                 patch("musicdock.library_sync.mutagen.File", return_value=mock_mf), \
-                 patch("musicdock.library_sync.read_tags", return_value={"artist": "Artist", "album": "Album", "title": "Track"}):
+            with patch("crate.library_sync.get_library_artist", return_value={"name": "Artist"}), \
+                 patch("crate.library_sync.upsert_artist"), \
+                 patch("crate.library_sync.upsert_album", return_value=1), \
+                 patch("crate.library_sync.upsert_track") as mock_upsert_track, \
+                 patch("crate.library_sync.get_db_ctx") as mock_ctx, \
+                 patch("crate.library_sync.mutagen.File", return_value=mock_mf), \
+                 patch("crate.library_sync.read_tags", return_value={"artist": "Artist", "album": "Album", "title": "Track"}):
                 mock_cur = MagicMock()
                 mock_cur.fetchone.return_value = None
                 mock_cur.fetchall.return_value = []
                 mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
                 mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
-                from musicdock.library_sync import LibrarySync
+                from crate.library_sync import LibrarySync
                 sync = LibrarySync(config)
                 result = sync.sync_album(album_dir, "Artist")
 
@@ -170,10 +170,10 @@ class TestRemoveStale:
                 "audio_extensions": [".flac"],
             }
 
-            with patch("musicdock.library_sync.get_db_ctx") as mock_ctx, \
-                 patch("musicdock.library_sync.get_library_artist", return_value=None), \
-                 patch("musicdock.library_sync.delete_artist") as mock_delete, \
-                 patch("musicdock.library_sync.delete_album"):
+            with patch("crate.library_sync.get_db_ctx") as mock_ctx, \
+                 patch("crate.library_sync.get_library_artist", return_value=None), \
+                 patch("crate.library_sync.delete_artist") as mock_delete, \
+                 patch("crate.library_sync.delete_album"):
                 mock_cur = MagicMock()
                 # First call: artists query returns existing + stale (with folder_name, album_count, track_count)
                 # Second call: albums for stale artist (empty paths)
@@ -189,7 +189,7 @@ class TestRemoveStale:
                 mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
                 mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
-                from musicdock.library_sync import LibrarySync
+                from crate.library_sync import LibrarySync
                 sync = LibrarySync(config)
                 removed = sync.remove_stale()
 
@@ -199,21 +199,21 @@ class TestRemoveStale:
 
 class TestParseInt:
     def test_normal_int(self):
-        from musicdock.library_sync import _parse_int
+        from crate.library_sync import _parse_int
         assert _parse_int("5") == 5
 
     def test_fraction_format(self):
-        from musicdock.library_sync import _parse_int
+        from crate.library_sync import _parse_int
         assert _parse_int("3/12") == 3
 
     def test_none(self):
-        from musicdock.library_sync import _parse_int
+        from crate.library_sync import _parse_int
         assert _parse_int(None) is None
 
     def test_invalid(self):
-        from musicdock.library_sync import _parse_int
+        from crate.library_sync import _parse_int
         assert _parse_int("abc") is None
 
     def test_default(self):
-        from musicdock.library_sync import _parse_int
+        from crate.library_sync import _parse_int
         assert _parse_int(None, 1) == 1

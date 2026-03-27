@@ -1,4 +1,4 @@
-"""Tests for musicdock.audio_analysis — BPM, key, energy detection."""
+"""Tests for crate.audio_analysis — BPM, key, energy detection."""
 
 import os
 import tempfile
@@ -32,7 +32,7 @@ class TestAnalyzeTrack:
         try:
             _create_sine_wav(tmppath, freq=440.0, duration=5.0)
 
-            from musicdock.audio_analysis import analyze_track
+            from crate.audio_analysis import analyze_track
             result = analyze_track(tmppath)
 
             assert isinstance(result, dict)
@@ -55,7 +55,7 @@ class TestAnalyzeTrack:
         except ImportError:
             pytest.skip("librosa not available")
 
-        from musicdock.audio_analysis import analyze_track
+        from crate.audio_analysis import analyze_track
         result = analyze_track("/nonexistent/path/to/file.wav")
         assert result["bpm"] is None
         assert result["key"] is None
@@ -74,7 +74,7 @@ class TestAnalyzeTrack:
         try:
             _create_sine_wav(tmppath, freq=440.0, duration=1.0)
 
-            from musicdock.audio_analysis import analyze_track
+            from crate.audio_analysis import analyze_track
             result = analyze_track(tmppath)
 
             assert result["bpm"] is None
@@ -94,7 +94,7 @@ class TestAnalyzeTrack:
         try:
             _create_sine_wav(tmppath, freq=440.0, duration=5.0)
 
-            from musicdock.audio_analysis import analyze_track
+            from crate.audio_analysis import analyze_track
             result = analyze_track(tmppath)
 
             if result["mood"] is not None:

@@ -4,7 +4,7 @@
 # Servidor remoto
 SERVER_HOST   := 104.152.210.73
 SERVER_USER   := root
-SERVER_PATH   := /home/musicdock/musicdock
+SERVER_PATH   := /home/crate/crate
 SSH           := ssh $(SERVER_USER)@$(SERVER_HOST)
 SCP           := scp
 
@@ -14,7 +14,7 @@ DC_PROD       := $(DC) -f docker-compose.yaml
 DC_LOCAL      := $(DC) -f docker-compose.yaml -f docker-compose.override.yaml
 
 # Dominios locales
-LOCAL_DOMAIN  := musicdock.local
+LOCAL_DOMAIN  := crate.local
 LOCAL_HOSTS   := traefik auth collection play search web api admin ai
 
 # Colores
@@ -120,12 +120,12 @@ _check-deps:
 
 .PHONY: _create-network
 _create-network:
-	@docker network inspect musicdock >/dev/null 2>&1 || docker network create musicdock
-	@echo "$(GREEN)Red musicdock OK$(NC)"
+	@docker network inspect crate >/dev/null 2>&1 || docker network create crate
+	@echo "$(GREEN)Red crate OK$(NC)"
 
 .PHONY: _check-network
 _check-network:
-	@docker network inspect musicdock >/dev/null 2>&1 || { echo "$(RED)Red musicdock no existe. Ejecuta 'make setup'$(NC)"; exit 1; }
+	@docker network inspect crate >/dev/null 2>&1 || { echo "$(RED)Red crate no existe. Ejecuta 'make setup'$(NC)"; exit 1; }
 
 .PHONY: _generate-certs
 _generate-certs:
@@ -164,7 +164,7 @@ deploy: ## Deploy completo al servidor: sync + build + restart
 	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
 	@echo "$(YELLOW)Building servicios (api + worker + ui)...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build musicdock-api musicdock-worker musicdock-ui"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build crate-api crate-worker crate-ui"
 	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
 	@echo "$(YELLOW)Reiniciando servicios...$(NC)"
@@ -217,25 +217,25 @@ _confirm-deploy:
 
 .PHONY: lib-scan
 lib-scan: ## Scan de la biblioteca de musica (busca problemas)
-	@$(DC_LOCAL) run --rm musicdock-worker scan
+	@$(DC_LOCAL) run --rm crate-worker scan
 
 .PHONY: lib-fix
 lib-fix: ## Fix con dry-run (muestra que haria sin tocar nada)
-	@$(DC_LOCAL) run --rm musicdock-worker fix --dry-run
+	@$(DC_LOCAL) run --rm crate-worker fix --dry-run
 
 .PHONY: lib-fix-apply
 lib-fix-apply: ## Fix real (aplica correcciones con confianza >= umbral)
 	@echo "$(RED)ATENCION: Esto modificara ficheros en la biblioteca$(NC)"
 	@read -p "Seguro? [y/N] " confirm && [ "$$confirm" = "y" ] || { echo "Cancelado"; exit 1; }
-	@$(DC_LOCAL) run --rm musicdock-worker fix --apply
+	@$(DC_LOCAL) run --rm crate-worker fix --apply
 
 .PHONY: lib-report
 lib-report: ## Genera informe de salud de la biblioteca
-	@$(DC_LOCAL) run --rm musicdock-worker report
+	@$(DC_LOCAL) run --rm crate-worker report
 
 .PHONY: lib-build-ui
 lib-build-ui: ## Build de la UI del app
-	@$(DC_LOCAL) build musicdock-ui
+	@$(DC_LOCAL) build crate-ui
 	@echo "$(GREEN)Librarian UI construida$(NC)"
 
 .PHONY: clean

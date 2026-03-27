@@ -211,9 +211,9 @@ def _generate_env(music_path: str, data_path: str, extra: dict):
         "TZ": _detect_timezone(),
         "DOMAIN": extra.get("DOMAIN", "localhost"),
         "JWT_SECRET": jwt_secret,
-        "MUSICDOCK_POSTGRES_USER": "crate",
-        "MUSICDOCK_POSTGRES_PASSWORD": pg_password,
-        "MUSICDOCK_POSTGRES_DB": "crate",
+        "CRATE_POSTGRES_USER": "crate",
+        "CRATE_POSTGRES_PASSWORD": pg_password,
+        "CRATE_POSTGRES_DB": "crate",
         "DEFAULT_ADMIN_EMAIL": extra.get("DEFAULT_ADMIN_EMAIL", ""),
         "DEFAULT_ADMIN_PASSWORD": extra.get("DEFAULT_ADMIN_PASSWORD", ""),
         "LASTFM_APIKEY": extra.get("LASTFM_APIKEY", ""),
@@ -263,11 +263,11 @@ def _start_stack():
     docker_compose("up -d")
 
     services = [
-        ("PostgreSQL", "musicdock-postgres", 30),
-        ("Redis", "musicdock-redis", 10),
-        ("API", "musicdock-api", 30),
-        ("Worker", "musicdock-worker", 15),
-        ("UI", "musicdock-ui", 15),
+        ("PostgreSQL", "crate-postgres", 30),
+        ("Redis", "crate-redis", 10),
+        ("API", "crate-api", 30),
+        ("Worker", "crate-worker", 15),
+        ("UI", "crate-ui", 15),
     ]
 
     for name, container, timeout in services:

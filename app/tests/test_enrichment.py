@@ -13,8 +13,8 @@ class TestSpotifySearchArtist:
             "genres": ["alternative rock"],
             "images": [],
         }
-        with patch("musicdock.spotify.get_cache", return_value=cached_result):
-            from musicdock.spotify import search_artist
+        with patch("crate.spotify.get_cache", return_value=cached_result):
+            from crate.spotify import search_artist
             result = search_artist("Radiohead")
             assert result == cached_result
 
@@ -31,10 +31,10 @@ class TestSpotifySearchArtist:
                 }]
             }
         }
-        with patch("musicdock.spotify.get_cache", return_value=None), \
-             patch("musicdock.spotify._api_get", return_value=api_response), \
-             patch("musicdock.spotify.set_cache") as mock_set:
-            from musicdock.spotify import search_artist
+        with patch("crate.spotify.get_cache", return_value=None), \
+             patch("crate.spotify._api_get", return_value=api_response), \
+             patch("crate.spotify.set_cache") as mock_set:
+            from crate.spotify import search_artist
             result = search_artist("Radiohead")
             assert result["id"] == "sp123"
             assert result["name"] == "Radiohead"
@@ -42,16 +42,16 @@ class TestSpotifySearchArtist:
             mock_set.assert_called_once()
 
     def test_search_artist_no_results(self):
-        with patch("musicdock.spotify.get_cache", return_value=None), \
-             patch("musicdock.spotify._api_get", return_value={"artists": {"items": []}}):
-            from musicdock.spotify import search_artist
+        with patch("crate.spotify.get_cache", return_value=None), \
+             patch("crate.spotify._api_get", return_value={"artists": {"items": []}}):
+            from crate.spotify import search_artist
             result = search_artist("NonExistentBand12345")
             assert result is None
 
     def test_search_artist_api_failure(self):
-        with patch("musicdock.spotify.get_cache", return_value=None), \
-             patch("musicdock.spotify._api_get", return_value=None):
-            from musicdock.spotify import search_artist
+        with patch("crate.spotify.get_cache", return_value=None), \
+             patch("crate.spotify._api_get", return_value=None):
+            from crate.spotify import search_artist
             result = search_artist("Radiohead")
             assert result is None
 
@@ -59,8 +59,8 @@ class TestSpotifySearchArtist:
 class TestSetlistfmProbableSetlist:
     def test_get_probable_setlist_cached(self):
         cached = {"songs": [{"title": "Creep", "frequency": 0.8}]}
-        with patch("musicdock.setlistfm.get_cache", return_value=cached):
-            from musicdock.setlistfm import get_probable_setlist
+        with patch("crate.setlistfm.get_cache", return_value=cached):
+            from crate.setlistfm import get_probable_setlist
             result = get_probable_setlist("Radiohead")
             assert result == [{"title": "Creep", "frequency": 0.8}]
 
@@ -84,11 +84,11 @@ class TestSetlistfmProbableSetlist:
                 },
             ]
         }
-        with patch("musicdock.setlistfm.get_cache", return_value=None), \
-             patch("musicdock.setlistfm.search_artist", return_value="mbid-123"), \
-             patch("musicdock.setlistfm.get_setlists", return_value=setlist_data), \
-             patch("musicdock.setlistfm.set_cache"):
-            from musicdock.setlistfm import get_probable_setlist
+        with patch("crate.setlistfm.get_cache", return_value=None), \
+             patch("crate.setlistfm.search_artist", return_value="mbid-123"), \
+             patch("crate.setlistfm.get_setlists", return_value=setlist_data), \
+             patch("crate.setlistfm.set_cache"):
+            from crate.setlistfm import get_probable_setlist
             result = get_probable_setlist("Radiohead", num_setlists=2)
             assert result is not None
             assert len(result) > 0
@@ -97,9 +97,9 @@ class TestSetlistfmProbableSetlist:
             assert result[0]["play_count"] == 3
 
     def test_get_probable_setlist_no_mbid(self):
-        with patch("musicdock.setlistfm.get_cache", return_value=None), \
-             patch("musicdock.setlistfm.search_artist", return_value=None):
-            from musicdock.setlistfm import get_probable_setlist
+        with patch("crate.setlistfm.get_cache", return_value=None), \
+             patch("crate.setlistfm.search_artist", return_value=None):
+            from crate.setlistfm import get_probable_setlist
             result = get_probable_setlist("Unknown Artist")
             assert result is None
 
@@ -111,8 +111,8 @@ class TestMusicBrainzGetArtistDetails:
             "type": "Group",
             "country": "GB",
         }
-        with patch("musicdock.musicbrainz_ext.get_cache", return_value=cached):
-            from musicdock.musicbrainz_ext import get_artist_details
+        with patch("crate.musicbrainz_ext.get_cache", return_value=cached):
+            from crate.musicbrainz_ext import get_artist_details
             result = get_artist_details("Radiohead")
             assert result == cached
 
@@ -139,11 +139,11 @@ class TestMusicBrainzGetArtistDetails:
                 ],
             }
         }
-        with patch("musicdock.musicbrainz_ext.get_cache", return_value=None), \
-             patch("musicdock.musicbrainz_ext._search_mbid", return_value="abc-123"), \
-             patch("musicdock.musicbrainz_ext.musicbrainzngs.get_artist_by_id", return_value=mock_artist), \
-             patch("musicdock.musicbrainz_ext.set_cache") as mock_set:
-            from musicdock.musicbrainz_ext import get_artist_details
+        with patch("crate.musicbrainz_ext.get_cache", return_value=None), \
+             patch("crate.musicbrainz_ext._search_mbid", return_value="abc-123"), \
+             patch("crate.musicbrainz_ext.musicbrainzngs.get_artist_by_id", return_value=mock_artist), \
+             patch("crate.musicbrainz_ext.set_cache") as mock_set:
+            from crate.musicbrainz_ext import get_artist_details
             result = get_artist_details("Radiohead")
             assert result is not None
             assert result["mbid"] == "abc-123"
@@ -155,9 +155,9 @@ class TestMusicBrainzGetArtistDetails:
             mock_set.assert_called_once()
 
     def test_get_artist_details_no_mbid(self):
-        with patch("musicdock.musicbrainz_ext.get_cache", return_value=None), \
-             patch("musicdock.musicbrainz_ext._search_mbid", return_value=None):
-            from musicdock.musicbrainz_ext import get_artist_details
+        with patch("crate.musicbrainz_ext.get_cache", return_value=None), \
+             patch("crate.musicbrainz_ext._search_mbid", return_value=None):
+            from crate.musicbrainz_ext import get_artist_details
             result = get_artist_details("Unknown")
             assert result is None
 
@@ -169,8 +169,8 @@ class TestLastfmGetArtistInfo:
             "tags": ["rock"],
             "listeners": 5000000,
         }
-        with patch("musicdock.lastfm.get_cache", return_value=cached):
-            from musicdock.lastfm import get_artist_info
+        with patch("crate.lastfm.get_cache", return_value=cached):
+            from crate.lastfm import get_artist_info
             result = get_artist_info("Radiohead")
             assert result == cached
 
@@ -189,11 +189,11 @@ class TestLastfmGetArtistInfo:
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("musicdock.lastfm.get_cache", return_value=None), \
-             patch("musicdock.lastfm._lastfm_key", return_value="test_key"), \
-             patch("musicdock.lastfm.requests.get", return_value=mock_response), \
-             patch("musicdock.lastfm.set_cache") as mock_set:
-            from musicdock.lastfm import get_artist_info
+        with patch("crate.lastfm.get_cache", return_value=None), \
+             patch("crate.lastfm._lastfm_key", return_value="test_key"), \
+             patch("crate.lastfm.requests.get", return_value=mock_response), \
+             patch("crate.lastfm.set_cache") as mock_set:
+            from crate.lastfm import get_artist_info
             result = get_artist_info("Radiohead")
             assert result is not None
             assert "rock" in result["tags"]
@@ -201,9 +201,9 @@ class TestLastfmGetArtistInfo:
             mock_set.assert_called_once()
 
     def test_get_artist_info_no_api_key(self):
-        with patch("musicdock.lastfm.get_cache", return_value=None), \
-             patch("musicdock.lastfm._lastfm_key", return_value=None):
-            from musicdock.lastfm import get_artist_info
+        with patch("crate.lastfm.get_cache", return_value=None), \
+             patch("crate.lastfm._lastfm_key", return_value=None):
+            from crate.lastfm import get_artist_info
             result = get_artist_info("Radiohead")
             assert result is None
 
@@ -232,15 +232,15 @@ class TestCachingBehavior:
         }
 
         # First call: no cache, hits API
-        with patch("musicdock.spotify.get_cache", return_value=None), \
-             patch("musicdock.spotify._api_get", side_effect=mock_api_get), \
-             patch("musicdock.spotify.set_cache"):
-            from musicdock.spotify import search_artist
+        with patch("crate.spotify.get_cache", return_value=None), \
+             patch("crate.spotify._api_get", side_effect=mock_api_get), \
+             patch("crate.spotify.set_cache"):
+            from crate.spotify import search_artist
             search_artist("Tool")
             assert call_count["api"] == 1
 
         # Second call: returns from cache
-        with patch("musicdock.spotify.get_cache", return_value=cached_result):
+        with patch("crate.spotify.get_cache", return_value=cached_result):
             result = search_artist("Tool")
             assert result == cached_result
             assert call_count["api"] == 1  # No additional API call

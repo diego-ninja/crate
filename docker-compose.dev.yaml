@@ -4,35 +4,35 @@
 # API: http://localhost:8585
 
 networks:
-  musicdock-dev:
+  crate-dev:
 
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: musicdock-dev-postgres
+    container_name: crate-dev-postgres
     environment:
-      - POSTGRES_USER=musicdock
-      - POSTGRES_PASSWORD=musicdock
-      - POSTGRES_DB=musicdock
+      - POSTGRES_USER=crate
+      - POSTGRES_PASSWORD=crate
+      - POSTGRES_DB=crate
     volumes:
       - dev_postgres:/var/lib/postgresql/data
     ports:
       - "5433:5432"
     networks:
-      - musicdock-dev
+      - crate-dev
 
   redis:
     image: redis:7-alpine
-    container_name: musicdock-dev-redis
+    container_name: crate-dev-redis
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     ports:
       - "6380:6379"
     networks:
-      - musicdock-dev
+      - crate-dev
 
   slskd:
     image: slskd/slskd:latest
-    container_name: musicdock-dev-slskd
+    container_name: crate-dev-slskd
     entrypoint: ["/bin/sh", "-c", "mkdir -p /downloads/complete /downloads/incomplete && exec /usr/bin/tini -- ./start.sh"]
     environment:
       - SLSKD_REMOTE_CONFIGURATION=true
@@ -49,19 +49,19 @@ services:
     ports:
       - "5030:5030"
     networks:
-      - musicdock-dev
+      - crate-dev
 
   api:
     build: ./app
-    container_name: musicdock-dev-api
+    container_name: crate-dev-api
     environment:
       - TZ=Europe/Madrid
-      - MUSICDOCK_CONFIG=/app/config.yaml
+      - CRATE_CONFIG=/app/config.yaml
       - DATA_DIR=/data
-      - MUSICDOCK_POSTGRES_USER=musicdock
-      - MUSICDOCK_POSTGRES_PASSWORD=musicdock
-      - MUSICDOCK_POSTGRES_DB=musicdock
-      - MUSICDOCK_POSTGRES_HOST=postgres
+      - CRATE_POSTGRES_USER=crate
+      - CRATE_POSTGRES_PASSWORD=crate
+      - CRATE_POSTGRES_DB=crate
+      - CRATE_POSTGRES_HOST=postgres
       - DOMAIN=localhost
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
@@ -83,7 +83,7 @@ services:
     ports:
       - "8585:8585"
     networks:
-      - musicdock-dev
+      - crate-dev
     depends_on:
       - postgres
       - redis
@@ -92,15 +92,15 @@ services:
 
   worker:
     build: ./app
-    container_name: musicdock-dev-worker
+    container_name: crate-dev-worker
     environment:
       - TZ=Europe/Madrid
-      - MUSICDOCK_CONFIG=/app/config.yaml
+      - CRATE_CONFIG=/app/config.yaml
       - DATA_DIR=/data
-      - MUSICDOCK_POSTGRES_USER=musicdock
-      - MUSICDOCK_POSTGRES_PASSWORD=musicdock
-      - MUSICDOCK_POSTGRES_DB=musicdock
-      - MUSICDOCK_POSTGRES_HOST=postgres
+      - CRATE_POSTGRES_USER=crate
+      - CRATE_POSTGRES_PASSWORD=crate
+      - CRATE_POSTGRES_DB=crate
+      - CRATE_POSTGRES_HOST=postgres
       - DOMAIN=localhost
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
@@ -121,7 +121,7 @@ services:
       - dev_slskd_downloads:/downloads/soulseek
       - dev_data:/data
     networks:
-      - musicdock-dev
+      - crate-dev
     depends_on:
       - postgres
       - redis

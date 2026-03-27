@@ -1,5 +1,5 @@
 networks:
-  musicdock:
+  crate:
     external: true
 
 services:
@@ -10,7 +10,7 @@ services:
     security_opt:
       - 'no-new-privileges:true'
     networks:
-      - musicdock
+      - crate
     environment:
       - TZ=${TZ}
       - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
@@ -44,12 +44,12 @@ services:
       - '${DATA_DIR}/authelia/config:/config'
       - '${DATA_DIR}/authelia/logs:/var/log/authelia/'
     networks:
-      - musicdock
+      - crate
     ports:
       - "${AUTHELIA_PORT}:9091"
     labels:
       traefik.enable: true
-      traefik.docker.network: musicdock
+      traefik.docker.network: crate
       traefik.http.routers.authelia.rule: Host(`auth.${DOMAIN}`)
       traefik.http.routers.authelia.entryPoints: websecure
       # Forward-auth middleware for protected services
@@ -73,10 +73,10 @@ services:
     ports:
       - "${LIDARR_PORT}:8686"
     networks:
-      - musicdock
+      - crate
     labels:
       traefik.enable: true
-      traefik.docker.network: musicdock
+      traefik.docker.network: crate
       traefik.http.routers.lidarr.rule: Host(`collection.${DOMAIN}`)
       traefik.http.routers.lidarr.entryPoints: websecure
       traefik.http.services.lidarr.loadbalancer.server.port: 8686
@@ -123,16 +123,16 @@ services:
     ports:
       - "${NAVIDROME_PORT}:4533"
     networks:
-      - musicdock
+      - crate
     labels:
       traefik.enable: true
-      traefik.docker.network: musicdock
+      traefik.docker.network: crate
       traefik.http.services.navidrome.loadbalancer.server.port: 4533
       traefik.http.routers.navidrome.entryPoints: websecure
       traefik.http.routers.navidrome.rule: Host(`play.${DOMAIN}`)
       traefik.http.routers.navidrome.tls: true
       traefik.http.routers.navidrome.tls.certresolver: letsencrypt
-      traefik.http.routers.navidrome.middlewares: musicdock-auth-soft@docker
+      traefik.http.routers.navidrome.middlewares: crate-auth-soft@docker
       traefik.http.routers.navidrome-subsonic.rule: Host(`api.${DOMAIN}`) && PathPrefix(`/rest/`) && !Query(`c`, `NavidromeUI`)
       traefik.http.routers.navidrome-subsonic.entryPoints: websecure
 
@@ -159,15 +159,15 @@ services:
     ports:
       - "${TIDARR_PORT}:8484"
     networks:
-      - musicdock
+      - crate
     labels:
       traefik.enable: true
-      traefik.docker.network: musicdock
+      traefik.docker.network: crate
       traefik.http.routers.tidarr.rule: Host(`search.${DOMAIN}`)
       traefik.http.routers.tidarr.entryPoints: websecure
       traefik.http.routers.tidarr.tls: true
       traefik.http.routers.tidarr.tls.certresolver: letsencrypt
-      traefik.http.routers.tidarr.middlewares: musicdock-auth-soft@docker
+      traefik.http.routers.tidarr.middlewares: crate-auth-soft@docker
       traefik.http.services.tidarr.loadbalancer.server.port: 8484
       traefik.http.services.tidarr.loadbalancer.server.scheme: http
 
@@ -185,10 +185,10 @@ services:
     ports:
       - "${NGINX_PORT}:80"
     networks:
-      - musicdock
+      - crate
     labels:
       traefik.enable: true
-      traefik.docker.network: musicdock
+      traefik.docker.network: crate
       traefik.http.routers.diego-ninja.rule: Host(`diego.ninja`)
       traefik.http.routers.diego-ninja.entryPoints: websecure
       traefik.http.services.diego-ninja.loadbalancer.server.port: 80
@@ -224,10 +224,10 @@ services:
       - "${SLSKD_PORT}:5030"
       - "${SLSKD_LISTEN_PORT}:${SLSKD_LISTEN_PORT}"
     networks:
-      - musicdock
+      - crate
     labels:
       traefik.enable: true
-      traefik.docker.network: musicdock
+      traefik.docker.network: crate
       traefik.http.routers.slskd.rule: Host(`soulseek.${DOMAIN}`)
       traefik.http.routers.slskd.entryPoints: websecure
       traefik.http.services.slskd.loadbalancer.server.port: 5030
@@ -235,9 +235,9 @@ services:
       traefik.http.routers.slskd.tls.certresolver: letsencrypt
 
   # MusicDock — Redis cache
-  musicdock-redis:
+  crate-redis:
     image: redis:7-alpine
-    container_name: musicdock-redis
+    container_name: crate-redis
     restart: unless-stopped
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     mem_limit: 512m
@@ -247,41 +247,41 @@ services:
       timeout: 5s
       retries: 3
     volumes:
-      - musicdock_redis:/data
+      - crate_redis:/data
     networks:
-      - musicdock
+      - crate
 
   # MusicDock — PostgreSQL database
-  musicdock-postgres:
+  crate-postgres:
     image: postgres:15-alpine
-    container_name: musicdock-postgres
+    container_name: crate-postgres
     restart: unless-stopped
     mem_limit: 1g
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${MUSICDOCK_POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${CRATE_POSTGRES_USER}"]
       interval: 30s
       timeout: 5s
       retries: 3
     environment:
-      - POSTGRES_USER=${MUSICDOCK_POSTGRES_USER}
-      - POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD}
-      - POSTGRES_DB=${MUSICDOCK_POSTGRES_DB}
+      - POSTGRES_USER=${CRATE_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
+      - POSTGRES_DB=${CRATE_POSTGRES_DB}
     volumes:
-      - musicdock_postgres:/var/lib/postgresql/data
+      - crate_postgres:/var/lib/postgresql/data
     networks:
-      - musicdock
+      - crate
 
   # MusicDock — Music stack management
-  musicdock-api:
+  crate-api:
     build: ./app
-    container_name: musicdock-api
+    container_name: crate-api
     restart: unless-stopped
     user: ${PUID}:${PGID}
     group_add:
       - "${DOCKER_GID:-988}"
     environment:
       - TZ=${TZ}
-      - MUSICDOCK_CONFIG=/app/config.yaml
+      - CRATE_CONFIG=/app/config.yaml
       - DATA_DIR=/data
       - LASTFM_APIKEY=${LASTFM_APIKEY}
       - FANART_API_KEY=${FANART_API_KEY:-}
@@ -297,15 +297,15 @@ services:
       - AUDIOMUSE_POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
       - AUDIOMUSE_POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
       - AUDIOMUSE_POSTGRES_DB=${AUDIOMUSE_POSTGRES_DB}
-      - MUSICDOCK_POSTGRES_USER=${MUSICDOCK_POSTGRES_USER}
-      - MUSICDOCK_POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD}
-      - MUSICDOCK_POSTGRES_DB=${MUSICDOCK_POSTGRES_DB}
-      - MUSICDOCK_POSTGRES_HOST=musicdock-postgres
+      - CRATE_POSTGRES_USER=${CRATE_POSTGRES_USER}
+      - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
+      - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
+      - CRATE_POSTGRES_HOST=crate-postgres
       - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
-      - REDIS_URL=redis://musicdock-redis:6379/0
+      - REDIS_URL=redis://crate-redis:6379/0
       - SLSKD_URL=http://slskd:5030
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - DISCOGS_CONSUMER_KEY=${DISCOGS_CONSUMER_KEY:-}
@@ -317,10 +317,10 @@ services:
       - ${DATA_DIR}/librarian:/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
-      - musicdock
+      - crate
     depends_on:
-      - musicdock-postgres
-      - musicdock-redis
+      - crate-postgres
+      - crate-redis
     mem_limit: 1g
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8585/api/status"]
@@ -329,14 +329,14 @@ services:
       retries: 3
     command: ["api"]
 
-  musicdock-worker:
+  crate-worker:
     build: ./app
-    container_name: musicdock-worker
+    container_name: crate-worker
     restart: unless-stopped
     user: ${PUID}:${PGID}
     environment:
       - TZ=${TZ}
-      - MUSICDOCK_CONFIG=/app/config.yaml
+      - CRATE_CONFIG=/app/config.yaml
       - DATA_DIR=/data
       - LASTFM_APIKEY=${LASTFM_APIKEY}
       - FANART_API_KEY=${FANART_API_KEY:-}
@@ -347,16 +347,16 @@ services:
       - SPOTIFY_ID=${SPOTIFY_ID}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET}
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY}
-      - MUSICDOCK_POSTGRES_USER=${MUSICDOCK_POSTGRES_USER}
-      - MUSICDOCK_POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD}
-      - MUSICDOCK_POSTGRES_DB=${MUSICDOCK_POSTGRES_DB}
-      - MUSICDOCK_POSTGRES_HOST=musicdock-postgres
+      - CRATE_POSTGRES_USER=${CRATE_POSTGRES_USER}
+      - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
+      - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
+      - CRATE_POSTGRES_HOST=crate-postgres
       - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
       - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
       - NUMBA_CACHE_DIR=/tmp/numba_cache
-      - REDIS_URL=redis://musicdock-redis:6379/0
+      - REDIS_URL=redis://crate-redis:6379/0
       - SLSKD_URL=http://slskd:5030
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - DISCOGS_CONSUMER_KEY=${DISCOGS_CONSUMER_KEY:-}
@@ -368,36 +368,36 @@ services:
       - ${MEDIA_DIR}/downloads/soulseek:/downloads/soulseek
       - ${DATA_DIR}/librarian:/data
     networks:
-      - musicdock
+      - crate
     depends_on:
-      - musicdock-postgres
-      - musicdock-redis
+      - crate-postgres
+      - crate-redis
     mem_limit: 2g
     command: ["worker"]
 
-  musicdock-ui:
+  crate-ui:
     build: ./app/ui
-    container_name: musicdock-ui
+    container_name: crate-ui
     restart: unless-stopped
     depends_on:
-      - musicdock-api
+      - crate-api
     networks:
-      - musicdock
+      - crate
     labels:
       traefik.enable: true
-      traefik.docker.network: musicdock
+      traefik.docker.network: crate
       traefik.http.routers.admin.rule: Host(`admin.${DOMAIN}`)
       traefik.http.routers.admin.entryPoints: websecure
       traefik.http.services.admin.loadbalancer.server.port: 80
       traefik.http.routers.admin.tls: true
       traefik.http.routers.admin.tls.certresolver: letsencrypt
       # Forward-auth middlewares (used by other services)
-      traefik.http.middlewares.musicdock-auth.forwardAuth.address: http://musicdock-api:8585/api/auth/verify
-      traefik.http.middlewares.musicdock-auth.forwardAuth.trustForwardHeader: true
-      traefik.http.middlewares.musicdock-auth.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
-      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.address: http://musicdock-api:8585/api/auth/verify-soft
-      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.trustForwardHeader: true
-      traefik.http.middlewares.musicdock-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
+      traefik.http.middlewares.crate-auth.forwardAuth.address: http://crate-api:8585/api/auth/verify
+      traefik.http.middlewares.crate-auth.forwardAuth.trustForwardHeader: true
+      traefik.http.middlewares.crate-auth.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
+      traefik.http.middlewares.crate-auth-soft.forwardAuth.address: http://crate-api:8585/api/auth/verify-soft
+      traefik.http.middlewares.crate-auth-soft.forwardAuth.trustForwardHeader: true
+      traefik.http.middlewares.crate-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
       # traefik.http.routers.admin.middlewares: authelia@docker  # Enable after creating users
 
   # AudioMuse-AI — Sonic analysis and intelligent playlists
@@ -410,7 +410,7 @@ services:
     volumes:
       - audiomuse_redis:/data
     networks:
-      - musicdock
+      - crate
 
   audiomuse-postgres:
     image: postgres:15-alpine
@@ -424,7 +424,7 @@ services:
     volumes:
       - audiomuse_postgres:/var/lib/postgresql/data
     networks:
-      - musicdock
+      - crate
 
   audiomuse:
     image: ghcr.io/neptunehub/audiomuse-ai:latest
@@ -456,10 +456,10 @@ services:
       - audiomuse-postgres
       - navidrome
     networks:
-      - musicdock
+      - crate
     labels:
       traefik.enable: true
-      traefik.docker.network: musicdock
+      traefik.docker.network: crate
       traefik.http.routers.audiomuse.rule: Host(`ai.${DOMAIN}`)
       traefik.http.routers.audiomuse.entryPoints: websecure
       traefik.http.services.audiomuse.loadbalancer.server.port: 8000
@@ -494,12 +494,12 @@ services:
       - audiomuse-redis
       - audiomuse-postgres
     networks:
-      - musicdock
+      - crate
 
 volumes:
-  musicdock_redis:
+  crate_redis:
     driver: local
-  musicdock_postgres:
+  crate_postgres:
     driver: local
   audiomuse_redis:
     driver: local
