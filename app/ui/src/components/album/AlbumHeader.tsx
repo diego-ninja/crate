@@ -243,7 +243,7 @@ export function AlbumHeader({
               {(navidromeData?.songs.length || trackList?.length) ? (
                 <Button
                   size="sm"
-                  className="bg-primary hover:bg-primary/80 text-primary-foreground"
+                  className="bg-primary hover:bg-primary/80 text-white"
                   onClick={handlePlayAll}
                 >
                   <Play size={14} className="mr-1 fill-current" /> Play All
