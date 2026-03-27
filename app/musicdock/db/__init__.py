@@ -81,6 +81,7 @@ from musicdock.db.health import (
     upsert_health_issue, get_open_issues, get_issue_counts,
     resolve_issue, resolve_issues_by_type, dismiss_issue,
     resolve_stale_issues, cleanup_old_resolved,
+    get_artist_issues, get_artist_issue_count, get_all_artist_issue_counts,
 )
 
 # New Releases

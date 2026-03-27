@@ -97,5 +97,32 @@ def save_cover(album_dir: Path, image_data: bytes, filename: str = "cover.jpg") 
     return cover_path
 
 
+def fetch_cover_from_tidal(artist: str, album: str) -> bytes | None:
+    """Search Tidal for an album and return cover art bytes, or None."""
+    try:
+        from musicdock import tidal
+        results = tidal.search(f"{artist} {album}", content_type="albums", limit=3)
+        albums = results.get("albums", [])
+        if not albums:
+            return None
+        query_lower = album.lower()
+        best = None
+        for a in albums:
+            if a.get("title", "").lower() == query_lower:
+                best = a
+                break
+        if best is None:
+            best = albums[0]
+        cover_url = best.get("cover")
+        if not cover_url:
+            return None
+        resp = requests.get(cover_url, timeout=15)
+        if resp.status_code == 200 and len(resp.content) > 1000:
+            return resp.content
+    except Exception as e:
+        log.debug("Tidal cover fetch failed for %s / %s: %s", artist, album, e)
+    return None
+
+
 def _has_embedded_art(track_path: Path) -> bool:
     return extract_embedded_cover(track_path) is not None

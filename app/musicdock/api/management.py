@@ -117,6 +117,30 @@ def api_fix_type(request: Request, check_type: str):
     return {"task_id": task_id, "fixable": len(fixable)}
 
 
+# ── Per-Artist Health ────────────────────────────────────────────
+
+@router.get("/health-issues/artist/{name:path}")
+def get_artist_health_issues(request: Request, name: str):
+    """Get open health issues for a specific artist."""
+    _require_admin(request)
+    from musicdock.db import get_artist_issues
+    issues = get_artist_issues(name)
+    return {"artist": name, "issues": issues, "count": len(issues)}
+
+
+@router.post("/repair-artist/{name:path}")
+def repair_artist(request: Request, name: str):
+    """Repair all auto-fixable issues for a specific artist."""
+    _require_admin(request)
+    from musicdock.db import get_artist_issues
+    issues = get_artist_issues(name)
+    fixable = [i for i in issues if i.get("auto_fixable")]
+    if not fixable:
+        return {"task_id": None, "count": 0}
+    task_id = create_task("repair", {"dry_run": False, "auto_only": False, "issues": fixable})
+    return {"task_id": task_id, "count": len(fixable)}
+
+
 # ── Artist Management ────────────────────────────────────────────
 
 @router.post("/artist/{name:path}/delete")

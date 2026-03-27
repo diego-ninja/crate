@@ -11,6 +11,7 @@ from musicdock.db import (
     get_library_artists, get_library_artist, get_library_albums,
     get_library_album, get_library_tracks, get_library_track_count,
     get_db_ctx, get_cache, set_cache,
+    get_artist_issue_count, get_all_artist_issue_counts,
 )
 from musicdock.lastfm import get_artist_info, get_best_artist_image
 
@@ -338,6 +339,8 @@ def api_artists(
         cur.execute(query_sql, params + [per_page, (page - 1) * per_page])
         rows = cur.fetchall()
 
+    issue_counts = get_all_artist_issue_counts()
+
     items = []
     for r in rows:
         item = {
@@ -348,12 +351,12 @@ def api_artists(
             "formats": r.get("formats_json") if isinstance(r.get("formats_json"), list) else [],
             "primary_format": r.get("primary_format"),
             "has_photo": bool(r.get("has_photo")),
+            "has_issues": bool(issue_counts.get(r["name"], 0)),
         }
         if view == "list":
             item["listeners"] = r.get("listeners") or 0
             item["track_count"] = r["track_count"]
             item["total_size_mb"] = round(r["total_size"] / (1024 ** 2)) if r["total_size"] else 0
-            # Fetch genres for list view
             with get_db_ctx() as cur2:
                 cur2.execute(
                     "SELECT g.name FROM artist_genres ag JOIN genres g ON ag.genre_id = g.id "
@@ -681,6 +684,7 @@ def api_artist(name: str):
         "total_size_mb": round(artist["total_size"] / (1024 ** 2)) if artist["total_size"] else 0,
         "primary_format": artist.get("primary_format"),
         "genres": top_genres,
+        "issue_count": get_artist_issue_count(canonical),
     }
 
 

@@ -83,3 +83,36 @@ def cleanup_old_resolved(days: int = 30):
             WHERE status IN ('fixed', 'dismissed')
             AND resolved_at < NOW() - INTERVAL '%s days'
         """, (days,))
+
+
+def get_artist_issues(artist_name: str) -> list[dict]:
+    """Get open health issues related to a specific artist."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT * FROM health_issues WHERE status = 'open' "
+            "AND (details_json->>'artist' = %s OR details_json->>'db_artist' = %s) "
+            "ORDER BY severity, created_at DESC",
+            (artist_name, artist_name),
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_artist_issue_count(artist_name: str) -> int:
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT COUNT(*) AS cnt FROM health_issues WHERE status = 'open' "
+            "AND (details_json->>'artist' = %s OR details_json->>'db_artist' = %s)",
+            (artist_name, artist_name),
+        )
+        return cur.fetchone()["cnt"]
+
+
+def get_all_artist_issue_counts() -> dict[str, int]:
+    """Get issue counts grouped by artist for all open issues."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT details_json->>'artist' AS artist, COUNT(*) AS cnt "
+            "FROM health_issues WHERE status = 'open' AND details_json->>'artist' IS NOT NULL "
+            "GROUP BY details_json->>'artist'"
+        )
+        return {r["artist"]: r["cnt"] for r in cur.fetchall()}

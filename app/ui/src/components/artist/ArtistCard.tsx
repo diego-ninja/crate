@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { encPath, formatSize } from "@/lib/utils";
+import { Wrench } from "lucide-react";
 
 interface ArtistCardProps {
   name: string;
@@ -9,6 +10,7 @@ interface ArtistCardProps {
   tracks: number;
   size_mb: number;
   primary_format: string;
+  hasIssues?: boolean;
 }
 
 export function ArtistCard({
@@ -17,6 +19,7 @@ export function ArtistCard({
   tracks,
   size_mb,
   primary_format,
+  hasIssues,
 }: ArtistCardProps) {
   const navigate = useNavigate();
   const [imgError, setImgError] = useState(false);
@@ -28,7 +31,12 @@ export function ArtistCard({
       onClick={() => navigate(`/artist/${encPath(name)}`)}
       className="bg-card border border-border rounded-lg p-4 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 hover:border-primary"
     >
-      <div className="w-full aspect-square rounded-lg mb-3 overflow-hidden">
+      <div className="relative w-full aspect-square rounded-lg mb-3 overflow-hidden">
+        {hasIssues && (
+          <div className="absolute top-2 right-2 z-10">
+            <Wrench size={14} className="text-amber-400/70" />
+          </div>
+        )}
         {!imgError ? (
           <img
             src={`/api/artist/${encPath(name)}/photo`}

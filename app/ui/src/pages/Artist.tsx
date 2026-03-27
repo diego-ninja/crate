@@ -50,6 +50,7 @@ import {
   Trash2,
   Radio,
   Loader2,
+  Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -73,6 +74,7 @@ interface ArtistData {
   total_tracks?: number;
   total_size_mb?: number;
   primary_format?: string;
+  issue_count?: number;
 }
 
 interface TopTrack {
@@ -591,6 +593,21 @@ export function Artist() {
                 >
                   <RefreshCw size={14} className={`mr-1 ${enriching ? "animate-spin" : ""}`} /> {enriching ? "Enriching..." : "Enrich"}
                 </Button>
+                {(data.issue_count ?? 0) > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-amber-500/30 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+                    onClick={async () => {
+                      try {
+                        await api(`/api/manage/repair-artist/${encPath(data.name)}`, "POST");
+                        toast.success(`Repair started for ${data.issue_count} issue${(data.issue_count ?? 0) !== 1 ? "s" : ""}`);
+                      } catch { toast.error("Failed to start repair"); }
+                    }}
+                  >
+                    <Wrench size={14} className="mr-1" /> Repair ({data.issue_count})
+                  </Button>
+                )}
                 {isAdmin && (
                   <Button
                     size="sm"

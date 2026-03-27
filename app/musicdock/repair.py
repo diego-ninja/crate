@@ -9,6 +9,7 @@ from musicdock.db import (
     delete_album,
     delete_track,
     upsert_artist,
+    create_task_dedup,
 )
 
 log = logging.getLogger(__name__)
@@ -41,11 +42,15 @@ class LibraryRepair:
             "unindexed_files": self._fix_unindexed_files,
             "tag_mismatch": self._fix_tag_mismatch,
             "folder_naming": self._fix_folder_naming,
+            "missing_cover": self._fix_missing_cover,
         }
 
         by_check: dict[str, list[dict]] = {}
         for issue in issues:
-            check = issue.get("check", "")
+            # Normalize: DB uses check_type/details_json, health_check uses check/details
+            check = issue.get("check") or issue.get("check_type", "")
+            if "details" not in issue and "details_json" in issue:
+                issue["details"] = issue["details_json"]
             if auto_only and not issue.get("auto_fixable", False):
                 continue
             by_check.setdefault(check, []).append(issue)
@@ -282,11 +287,18 @@ class LibraryRepair:
         }
 
         if not dry_run:
-            # Update DB artist name to match tag canonical name if different
             with get_db_ctx() as cur:
                 cur.execute(
-                    "UPDATE library_artists SET folder_name = %s WHERE name = %s",
-                    (details.get("folder", ""), artist_name),
+                    "UPDATE library_artists SET name = %s, folder_name = %s WHERE name = %s",
+                    (tag_name, details.get("folder", ""), artist_name),
+                )
+                cur.execute(
+                    "UPDATE library_albums SET artist = %s WHERE artist = %s",
+                    (tag_name, artist_name),
+                )
+                cur.execute(
+                    "UPDATE library_tracks SET artist = %s WHERE artist = %s",
+                    (tag_name, artist_name),
                 )
             log_audit("fix_canonical_mismatch", "artist", artist_name,
                       details={"tag_name": tag_name}, task_id=task_id)
@@ -306,6 +318,10 @@ class LibraryRepair:
         }
 
         if not dry_run:
+            dir_parts = Path(dir_path).relative_to(self.library_path).parts
+            artist_name = dir_parts[0] if dir_parts else ""
+            if artist_name:
+                create_task_dedup("process_new_content", {"artist": artist_name})
             log_audit("flag_unindexed", "directory", dir_path,
                       details={"count": details.get("count", 0)}, task_id=task_id)
 
@@ -374,9 +390,41 @@ class LibraryRepair:
                 return result
 
             if expected_dir.exists() and expected_dir != current_dir:
-                result["applied"] = False
-                result["details"]["error"] = f"Target already exists: {expected_dir.name}"
-                return result
+                # Target exists — check if it's a duplicate (same files)
+                # If so, remove the old-naming duplicate and keep the correctly-named one
+                src_files = {f.name for f in current_dir.iterdir() if f.is_file()}
+                dst_files = {f.name for f in expected_dir.iterdir() if f.is_file()}
+                if src_files and src_files <= dst_files:
+                    # All source files exist in dest — safe to remove old folder
+                    shutil.rmtree(str(current_dir))
+                    log.info("Removed duplicate folder %s (already exists at %s)", current_dir, expected_dir)
+                    # Update DB to point to the correct path
+                    old_path_str = str(current_dir)
+                    new_path_str = str(expected_dir)
+                    with get_db_ctx() as cur:
+                        cur.execute(
+                            "UPDATE library_albums SET name = %s, path = %s WHERE path = %s",
+                            (clean_name, new_path_str, details.get("path", old_path_str)),
+                        )
+                        cur.execute(
+                            "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
+                            (old_path_str, new_path_str, old_path_str + "%"),
+                        )
+                    # Delete the duplicate album DB entry if both exist
+                    with get_db_ctx() as cur:
+                        cur.execute(
+                            "DELETE FROM library_albums WHERE path = %s AND EXISTS "
+                            "(SELECT 1 FROM library_albums WHERE path = %s)",
+                            (old_path_str, new_path_str),
+                        )
+                    result["details"]["merged"] = True
+                    log_audit("merge_duplicate_album_folder", "album", f"{artist}/{year}/{clean_name}",
+                              details=result["details"], task_id=task_id)
+                    return result
+                else:
+                    result["applied"] = False
+                    result["details"]["error"] = f"Target already exists with different content: {expected_dir.name}"
+                    return result
 
             try:
                 # Create year subdirectory if needed
@@ -401,5 +449,62 @@ class LibraryRepair:
                 log.error("Failed to reorganize folder %s -> %s: %s", current_dir, expected_dir, e)
                 result["applied"] = False
                 result["details"]["error"] = str(e)
+
+        return result
+
+    def _fix_missing_cover(self, issue: dict, dry_run: bool, task_id: str | None = None) -> dict | None:
+        from musicdock.artwork import fetch_cover_from_caa, fetch_cover_from_tidal, extract_embedded_cover, save_cover
+        from musicdock.audio import get_audio_files
+
+        details = issue.get("details", {})
+        artist = details.get("artist", "")
+        album = details.get("album", "")
+        album_path = details.get("path", "")
+
+        if not album_path:
+            return None
+
+        album_dir = Path(album_path)
+
+        result = {
+            "action": "fetch_missing_cover",
+            "target": f"{artist}/{album}",
+            "applied": not dry_run,
+            "fs_write": True,
+        }
+
+        if dry_run:
+            return result
+
+        image_data: bytes | None = None
+        source = None
+
+        mbid = details.get("mbid")
+        if mbid:
+            image_data = fetch_cover_from_caa(mbid)
+            if image_data:
+                source = "caa"
+
+        if not image_data and artist and album:
+            image_data = fetch_cover_from_tidal(artist, album)
+            if image_data:
+                source = "tidal"
+
+        if not image_data:
+            tracks = get_audio_files(album_dir, self.extensions)
+            for track in tracks:
+                image_data = extract_embedded_cover(track)
+                if image_data:
+                    source = "embedded"
+                    break
+
+        if image_data:
+            save_cover(album_dir, image_data)
+            result["details"] = {"source": source}
+            log_audit("fetch_missing_cover", "album", f"{artist}/{album}",
+                      details={"source": source, "path": album_path}, task_id=task_id)
+        else:
+            result["applied"] = False
+            result["details"] = {"error": "no cover source found"}
 
         return result

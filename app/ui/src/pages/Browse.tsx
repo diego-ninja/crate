@@ -16,7 +16,7 @@ import { encPath, formatSize, formatCompact } from "@/lib/utils";
 import { toast } from "sonner";
 import {
   LayoutGrid, List, Users, Loader2,
-  Check, SquareCheck, X, RefreshCw, BrainCircuit, Trash2,
+  Check, SquareCheck, X, RefreshCw, BrainCircuit, Trash2, Wrench,
 } from "lucide-react";
 
 interface ArtistItem {
@@ -28,6 +28,7 @@ interface ArtistItem {
   primary_format?: string;
   listeners?: number;
   genres?: string[];
+  has_issues?: boolean;
 }
 
 interface PaginatedResponse {
@@ -445,6 +446,11 @@ function ArtistGridCard({
             }`}>
               {isSelected && <Check size={12} className="text-white" />}
             </div>
+          </div>
+        )}
+        {artist.has_issues && (
+          <div className="absolute top-2 right-2 z-10">
+            <Wrench size={14} className="text-amber-400/70" />
           </div>
         )}
         {!imgError ? (
