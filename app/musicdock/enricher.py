@@ -11,8 +11,6 @@ from musicdock.models import Album
 
 log = logging.getLogger(__name__)
 
-musicbrainzngs.set_useragent("musicdock-librarian", "0.1", "https://github.com/musicdock")
-
 # Simple in-memory cache to avoid re-querying within a single process run
 _mb_cache: dict[str, dict] = {}
 

@@ -17,11 +17,9 @@ from musicdock.db import (
     upsert_artist,
     upsert_track,
 )
+from musicdock.utils import COVER_NAMES, PHOTO_NAMES, normalize_key
 
 log = logging.getLogger(__name__)
-
-COVER_NAMES = {"cover.jpg", "cover.png", "folder.jpg", "front.jpg"}
-PHOTO_NAMES = {"artist.jpg", "artist.png", "photo.jpg"}
 
 
 class LibrarySync:
@@ -405,21 +403,6 @@ class LibrarySync:
                             pass
         return fallback
 
-    @staticmethod
-    def _normalize_key(name: str) -> str:
-        """Normalize artist name for dedup: lowercase, normalize unicode hyphens/quotes/spaces."""
-        import unicodedata
-        # Normalize unicode (NFC)
-        name = unicodedata.normalize("NFC", name.lower().strip())
-        # Replace common unicode hyphens/dashes with ASCII hyphen
-        for ch in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uff0d":
-            name = name.replace(ch, "-")
-        # Collapse multiple spaces/hyphens
-        import re
-        name = re.sub(r"\s+", " ", name)
-        name = re.sub(r"-+", "-", name)
-        return name
-
     def _merge_duplicate_artists(self) -> int:
         """Merge artists with same normalized name into one canonical entry."""
         merged = 0
@@ -430,7 +413,7 @@ class LibrarySync:
         # Group by normalized key
         groups: dict[str, list[dict]] = {}
         for row in all_artists:
-            key = self._normalize_key(row["name"])
+            key = normalize_key(row["name"])
             groups.setdefault(key, []).append(dict(row))
 
         for key, artists in groups.items():

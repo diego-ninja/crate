@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import subprocess
 import shutil
 from pathlib import Path
@@ -247,8 +248,6 @@ def download(url: str, quality: str = "max", task_id: str = "",
             line = line.rstrip()
             output_lines.append(line)
             if progress_callback:
-                # Parse progress: "X/Y" pattern
-                import re
                 match = re.search(r"(\d+)/(\d+)", line)
                 if match:
                     progress_callback({

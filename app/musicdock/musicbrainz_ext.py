@@ -6,7 +6,6 @@ from musicdock.db import get_cache, set_cache
 
 log = logging.getLogger(__name__)
 
-musicbrainzngs.set_useragent("musicdock-librarian", "0.1", "https://github.com/musicdock")
 
 
 def _search_mbid(name: str) -> str | None:

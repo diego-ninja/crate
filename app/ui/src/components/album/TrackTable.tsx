@@ -16,13 +16,7 @@ import {
   TooltipContent,
   TooltipProvider,
 } from "@/components/ui/tooltip";
-import {
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  Radar,
-  ResponsiveContainer,
-} from "recharts";
+import { ResponsiveRadar } from "@nivo/radar";
 import { formatDuration, formatBitrate } from "@/lib/utils";
 import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { useFavorites } from "@/hooks/use-favorites";
@@ -112,7 +106,7 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
   if (!hasFeatures && track.loudness == null && !track.mood) return null;
 
   const radarData = FEATURE_BARS.map((f) => ({
-    feature: f.label.slice(0, 5),
+    feature: f.label,
     value: (track[f.key] as number | null) ?? 0,
   }));
   const hasRadar = radarData.some((d) => d.value > 0);
@@ -138,13 +132,27 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
           <div className="text-[11px] font-semibold text-white/70 mb-2">Audio Profile</div>
           {hasRadar && (
             <div className="w-[120px] h-[120px] mx-auto mb-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="70%">
-                  <PolarGrid stroke="rgba(255,255,255,0.08)" />
-                  <PolarAngleAxis dataKey="feature" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 9 }} />
-                  <Radar dataKey="value" fill="#88c0d0" fillOpacity={0.3} stroke="#88c0d0" />
-                </RadarChart>
-              </ResponsiveContainer>
+              <ResponsiveRadar
+                data={radarData}
+                keys={["value"]}
+                indexBy="feature"
+                maxValue={1}
+                margin={{ top: 20, right: 40, bottom: 20, left: 40 }}
+                gridShape="circular"
+                gridLevels={3}
+                dotSize={4}
+                dotColor={{ theme: "background" }}
+                dotBorderWidth={1}
+                colors={["var(--primary)"]}
+                fillOpacity={0.2}
+                borderWidth={1}
+                borderColor={{ theme: "background" }}
+                gridLabelOffset={12}
+                theme={{
+                  text: { fill: "var(--muted-foreground)", fontSize: 10 },
+                  grid: { line: { stroke: "var(--border)", strokeOpacity: 0.3 } },
+                }}
+              />
             </div>
           )}
           <div className="space-y-1">

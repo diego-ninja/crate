@@ -2,8 +2,10 @@ import json
 import logging
 import shutil
 import signal
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 
 from musicdock.config import load_config
@@ -48,7 +50,7 @@ _watcher = None  # LibraryWatcher ref for processing lock
 DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
 CHUNK_SIZE = 10  # artists per chunk for parallel processing
 _db_heavy_running = False
-_db_heavy_lock = __import__("threading").Lock()
+_db_heavy_lock = threading.Lock()
 
 
 def _run_task(task: dict, config: dict):
@@ -117,6 +119,9 @@ def run_worker(config: dict):
     signal.signal(signal.SIGINT, _handle_signal)
 
     init_db()
+
+    from musicdock.utils import init_musicbrainz
+    init_musicbrainz()
 
     # Clean up orphaned tasks from previous worker crash/restart
     orphaned = list_tasks(status="running")
@@ -1253,7 +1258,6 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     from musicdock.matcher import _search_musicbrainz, _get_release_detail, _score_match, _gather_local_info
     from musicdock.db import get_library_albums, get_library_tracks, get_db_ctx
 
-    musicbrainzngs.set_useragent("musicdock", "0.1", "https://github.com/musicdock")
     lib = Path(config["library_path"])
     exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
     artist_filter = params.get("artist")
@@ -1547,7 +1551,7 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
 
     emit_task_event(task_id, "info", {"message": f"Download complete: {len(modified_artists)} artists", "artists": modified_artists})
     # 6. Mark download complete
-    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     if download_id:
         update_tidal_download(download_id, status="completed", completed_at=now)
 
@@ -1852,8 +1856,6 @@ def _process_new_content_inner(task_id, params, config, artist_name, album_folde
     # ── 3. Album MBID lookup ──
     update_task(task_id, progress=json.dumps({"step": "album_mbid", "artist": artist_name}))
     try:
-        import musicbrainzngs
-        musicbrainzngs.set_useragent("grooveyard", "0.1", "https://github.com/grooveyard")
         from musicdock.matcher import _search_musicbrainz, _get_release_detail, _score_match, _gather_local_info
         from musicdock.audio import get_audio_files
 
@@ -2204,7 +2206,6 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
         if not cover_data and not (mbid and mbid.strip()):
             try:
                 import musicbrainzngs
-                musicbrainzngs.set_useragent("grooveyard", "0.1", "x")
                 results = musicbrainzngs.search_releases(artist=artist, release=album_name, limit=3)
                 for r in results.get("release-list", []):
                     found_mbid = r.get("id")

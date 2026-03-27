@@ -17,7 +17,7 @@ from musicdock.db import (
     update_user_last_login, update_user, list_users, delete_user, get_db_ctx,
 )
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

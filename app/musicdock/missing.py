@@ -9,7 +9,6 @@ from musicdock.audio import get_audio_files, read_tags
 
 log = logging.getLogger(__name__)
 
-musicbrainzngs.set_useragent("musicdock-librarian", "0.1", "https://github.com/musicdock")
 
 
 def find_missing_albums(artist_dir: Path, extensions: set[str]) -> dict:

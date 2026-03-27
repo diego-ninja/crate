@@ -11,10 +11,9 @@ from musicdock.db import (
     upsert_artist,
     create_task_dedup,
 )
+from musicdock.utils import PHOTO_NAMES
 
 log = logging.getLogger(__name__)
-
-PHOTO_NAMES = {"artist.jpg", "artist.png", "photo.jpg"}
 
 
 class LibraryRepair:

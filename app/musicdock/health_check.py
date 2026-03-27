@@ -1,7 +1,6 @@
 import logging
 import re
 import time
-import unicodedata
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,10 +8,9 @@ from pathlib import Path
 from musicdock.audio import read_tags
 from musicdock.db import get_db_ctx
 from musicdock.db.health import upsert_health_issue, resolve_stale_issues
+from musicdock.utils import PHOTO_NAMES, normalize_key
 
 log = logging.getLogger(__name__)
-
-PHOTO_NAMES = {"artist.jpg", "artist.png", "photo.jpg"}
 
 
 class LibraryHealthCheck:
@@ -86,15 +84,6 @@ class LibraryHealthCheck:
             "duration_ms": duration_ms,
         }
 
-    @staticmethod
-    def _normalize_key(name: str) -> str:
-        name = unicodedata.normalize("NFC", name.lower().strip())
-        for ch in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uff0d":
-            name = name.replace(ch, "-")
-        name = re.sub(r"\s+", " ", name)
-        name = re.sub(r"-+", "-", name)
-        return name
-
     def _first_audio_albumartist(self, folder: Path) -> str | None:
         for f in sorted(folder.iterdir()):
             if f.is_file() and f.suffix.lower() in self.extensions:
@@ -117,7 +106,7 @@ class LibraryHealthCheck:
         groups: dict[str, list[str]] = defaultdict(list)
         for d in self.library_path.iterdir():
             if d.is_dir():
-                groups[self._normalize_key(d.name)].append(d.name)
+                groups[normalize_key(d.name)].append(d.name)
         issues = []
         for norm, folders in groups.items():
             if len(folders) > 1:

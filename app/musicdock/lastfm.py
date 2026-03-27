@@ -12,7 +12,6 @@ FANART_BASE = "https://webservice.fanart.tv/v3/music/"
 LASTFM_PLACEHOLDER_HASH = "2a96cbd8b46e442fc41c2b86b821562f"
 log = logging.getLogger(__name__)
 
-musicbrainzngs.set_useragent("musicdock-librarian", "0.1", "https://github.com/musicdock")
 
 
 def _lastfm_key() -> str | None:
