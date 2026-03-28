@@ -79,7 +79,7 @@ def filter_options():
 @router.get("")
 def list_playlists(request: Request):
     user = _require_auth(request)
-    playlists = get_playlists()
+    playlists = get_playlists(user_id=user["id"])
     return playlists
 
 
@@ -100,10 +100,12 @@ def create(request: Request, body: CreatePlaylistRequest):
 
 @router.get("/{playlist_id}")
 def get_one(request: Request, playlist_id: int):
-    _require_auth(request)
+    user = _require_auth(request)
     pl = get_playlist(playlist_id)
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
+    if pl.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
     tracks = get_playlist_tracks(playlist_id)
     pl["tracks"] = tracks
     return pl
@@ -111,10 +113,12 @@ def get_one(request: Request, playlist_id: int):
 
 @router.put("/{playlist_id}")
 def update(request: Request, playlist_id: int, body: UpdatePlaylistRequest):
-    _require_auth(request)
+    user = _require_auth(request)
     pl = get_playlist(playlist_id)
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
+    if pl.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
     kwargs = {}
     if body.name is not None:
         kwargs["name"] = body.name.strip()
@@ -129,10 +133,12 @@ def update(request: Request, playlist_id: int, body: UpdatePlaylistRequest):
 
 @router.delete("/{playlist_id}")
 def delete(request: Request, playlist_id: int):
-    _require_auth(request)
+    user = _require_auth(request)
     pl = get_playlist(playlist_id)
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
+    if pl.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
     delete_playlist(playlist_id)
     return {"ok": True}
 

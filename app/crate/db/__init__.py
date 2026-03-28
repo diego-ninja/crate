@@ -108,3 +108,12 @@ from crate.db.similarities import (
     upsert_similarity, bulk_upsert_similarities, get_similar_artists,
     get_artist_network, mark_library_status,
 )
+
+# User Library (personal: follows, saves, likes, history)
+from crate.db.user_library import (
+    follow_artist, unfollow_artist, get_followed_artists, is_following,
+    save_album, unsave_album, get_saved_albums, is_album_saved,
+    like_track, unlike_track, get_liked_tracks, is_track_liked,
+    record_play, get_play_history, get_play_stats,
+    get_user_library_counts,
+)

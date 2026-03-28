@@ -64,10 +64,12 @@ def create_app() -> FastAPI:
     from crate.api.genres import router as genres_router
     from crate.api.tidal import router as tidal_router
     from crate.api.acquisition import router as acquisition_router
+    from crate.api.me import router as me_router
 
     # Auth + management + settings + enrichment + audiomuse BEFORE browse (browse has {name:path} catch-all)
     app.include_router(setup_router)
     app.include_router(auth_router)
+    app.include_router(me_router)
     app.include_router(management_router)
     app.include_router(settings_router)
     app.include_router(playlists_router)

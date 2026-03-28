@@ -632,4 +632,56 @@ def init_db():
             END $$
         """)
 
+        # User personal library tables
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_follows (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                artist_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, artist_name)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_follows_user ON user_follows(user_id)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_saved_albums (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                album_id INTEGER NOT NULL REFERENCES library_albums(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, album_id)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_saved_albums_user ON user_saved_albums(user_id)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_liked_tracks (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                track_path TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, track_path)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_liked_tracks_user ON user_liked_tracks(user_id)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS play_history (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                track_path TEXT NOT NULL,
+                title TEXT,
+                artist TEXT,
+                album TEXT,
+                played_at TEXT NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_user ON play_history(user_id, played_at DESC)")
+
+        # Migration: add user_id to favorites table if missing
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE favorites ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
 
