@@ -239,7 +239,7 @@ services:
     image: redis:7-alpine
     container_name: crate-redis
     restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 512mb --maxmemory-policy volatile-lru
     mem_limit: 512m
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

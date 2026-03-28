@@ -23,6 +23,7 @@ from crate.db.core import (
 # Tasks
 from crate.db.tasks import (
     create_task, create_task_dedup, update_task, get_task, list_tasks, claim_next_task,
+    list_child_tasks, heartbeat_task, cleanup_zombie_tasks, cleanup_orphaned_tasks,
     save_scan_result, get_latest_scan,
 )
 

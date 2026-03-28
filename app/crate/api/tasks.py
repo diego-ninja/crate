@@ -40,7 +40,10 @@ def api_tasks(request: Request, status: str | None = None, limit: int = 50):
             "error": t.get("error"),
             "result": t.get("result"),
             "params": params_parsed,
+            "priority": t.get("priority", 2),
+            "pool": t.get("pool", "default"),
             "created_at": t["created_at"],
+            "started_at": t.get("started_at"),
             "updated_at": t["updated_at"],
         })
     return result
@@ -105,39 +108,25 @@ def api_task_detail(request: Request, task_id: str):
         "created_at": task["created_at"],
         "updated_at": task["updated_at"],
     }
-def api_sync_library(request: Request):
-    """Create a library_sync task to re-sync the filesystem to DB."""
-    _require_admin(request)
-    running = list_tasks(status="running", task_type="library_sync", limit=1)
-    pending = list_tasks(status="pending", task_type="library_sync", limit=1)
-    if running or pending:
-        return JSONResponse({"error": "Library sync already in progress"}, status_code=409)
-    task_id = create_task("library_sync")
-    return {"status": "started", "task_id": task_id}
 
 
 @router.get("/api/worker/status")
 def api_worker_status(request: Request):
-    """Get worker status: process info, running/pending tasks."""
+    """Get worker status: running/pending tasks, engine info."""
     _require_auth(request)
     from crate.db import get_cache
     running = list_tasks(status="running")
     pending = list_tasks(status="pending")
-    max_workers = int(get_setting("max_workers", str(DEFAULT_MAX_WORKERS)) or DEFAULT_MAX_WORKERS)
 
-    # Orchestrator publishes its status to cache
-    orch_status = get_cache("worker_status") or {}
+    # Service loop publishes status to cache
+    cached_status = get_cache("worker_status") or {}
 
     return {
-        "max_slots": max_workers,
+        "engine": cached_status.get("engine", "dramatiq"),
         "running": len(running),
         "pending": len(pending),
-        "running_tasks": [{"id": t["id"], "type": t["type"]} for t in running],
-        "pending_tasks": [{"id": t["id"], "type": t["type"]} for t in pending],
-        "workers": orch_status.get("workers", []),
-        "total_workers": orch_status.get("total_workers", 0),
-        "alive_workers": orch_status.get("alive_workers", 0),
-        "min_workers": orch_status.get("min_workers", DEFAULT_MIN_WORKERS),
+        "running_tasks": [{"id": t["id"], "type": t["type"], "pool": t.get("pool", "default")} for t in running],
+        "pending_tasks": [{"id": t["id"], "type": t["type"], "pool": t.get("pool", "default")} for t in pending],
     }
 
 
@@ -271,7 +260,7 @@ def api_cleanup_tasks(request: Request, body: dict | None = None):
 
 @router.post("/api/tasks/retry")
 def api_retry_task(request: Request, body: dict):
-    """Retry a failed task by creating a new one with the same type and params."""
+    """Retry a failed task by creating a new one with the same type and params (dispatches to Dramatiq)."""
     _require_admin(request)
     task_id = body.get("task_id")
     if not task_id:
@@ -280,11 +269,12 @@ def api_retry_task(request: Request, body: dict):
     if not task:
         return JSONResponse({"error": "Task not found"}, status_code=404)
 
-    params_raw = task.get("params")
-    try:
-        params = _json.loads(params_raw) if isinstance(params_raw, str) else (params_raw or {})
-    except (_json.JSONDecodeError, TypeError):
-        params = {}
+    params = task.get("params") or {}
+    if isinstance(params, str):
+        try:
+            params = _json.loads(params)
+        except (_json.JSONDecodeError, TypeError):
+            params = {}
 
     new_id = create_task(task["type"], params)
     return {"task_id": new_id, "original_id": task_id}

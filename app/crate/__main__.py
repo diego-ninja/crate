@@ -43,7 +43,9 @@ def main():
     api_cmd.add_argument("--port", type=int, default=8585)
     api_cmd.add_argument("--host", default="0.0.0.0")
 
-    worker_cmd = sub.add_parser("worker", help="Run background task worker")
+    worker_cmd = sub.add_parser("worker", help="Run Dramatiq workers + scheduler/watcher")
+    worker_cmd.add_argument("--processes", type=int, default=6, help="Number of Dramatiq worker processes (default: 6)")
+    worker_cmd.add_argument("--legacy", action="store_true", help="Use legacy orchestrator (pre-Dramatiq)")
 
     args = parser.parse_args()
     if not args.command:
@@ -81,8 +83,14 @@ def main():
         uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
     elif args.command == "worker":
-        from crate.worker import run_worker
-        run_worker(config)
+        if args.legacy:
+            from crate.orchestrator import Orchestrator
+            orch = Orchestrator(config)
+            orch.run()
+        else:
+            config["worker_processes"] = args.processes
+            from crate.worker import run_worker
+            run_worker(config)
 
 
 if __name__ == "__main__":

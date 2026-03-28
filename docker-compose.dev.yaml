@@ -24,7 +24,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: crate-dev-redis
-    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 256mb --maxmemory-policy volatile-lru
     ports:
       - "6380:6379"
     networks:

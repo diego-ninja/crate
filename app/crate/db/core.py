@@ -576,6 +576,42 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_similarities_artist ON artist_similarities(artist_name)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_similarities_similar ON artist_similarities(similar_name)")
 
+        # Migration: Dramatiq worker system — priority, pool, heartbeat, parent tasks
+        for col, col_type, default in [
+            ("priority", "INTEGER", "2"),
+            ("pool", "TEXT", "'default'"),
+            ("parent_task_id", "TEXT", None),
+            ("max_duration_sec", "INTEGER", "1800"),
+            ("heartbeat_at", "TEXT", None),
+            ("worker_id", "TEXT", None),
+            ("retry_count", "INTEGER", "0"),
+            ("max_retries", "INTEGER", "0"),
+            ("started_at", "TEXT", None),
+        ]:
+            default_clause = f" DEFAULT {default}" if default else ""
+            cur.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE tasks ADD COLUMN {col} {col_type}{default_clause};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+
+        # Index for efficient claim/dispatch queries (pending tasks by pool+priority)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tasks_dispatch
+            ON tasks (pool, priority, created_at) WHERE status = 'pending'
+        """)
+        # Index for parent task lookups (sub-task coordination)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tasks_parent
+            ON tasks (parent_task_id) WHERE parent_task_id IS NOT NULL
+        """)
+        # Index for heartbeat monitoring (zombie detection)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tasks_heartbeat
+            ON tasks (heartbeat_at) WHERE status = 'running'
+        """)
+
         # Migration: add release_date, release_type, mb_release_group_id to new_releases
         cur.execute("""
             DO $$ BEGIN

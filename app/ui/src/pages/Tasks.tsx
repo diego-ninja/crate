@@ -59,6 +59,7 @@ interface Task {
   params: Record<string, string> | null;
   result: Record<string, unknown> | null;
   created_at: string;
+  started_at: string | null;
   updated_at: string;
 }
 
@@ -322,11 +323,11 @@ export function Tasks() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Auto-refresh every 3s if there are running tasks
+  // Auto-refresh: 2s if running tasks, 5s otherwise (catches new tasks)
   useEffect(() => {
-    const hasRunning = tasks?.some((t) => t.status === "running" || t.status === "pending");
-    if (!hasRunning) return;
-    const timer = setInterval(refetch, 3000);
+    const hasActive = tasks?.some((t) => t.status === "running" || t.status === "pending");
+    const interval = hasActive ? 2000 : 5000;
+    const timer = setInterval(refetch, interval);
     return () => clearInterval(timer);
   }, [tasks, refetch]);
 
@@ -386,7 +387,7 @@ export function Tasks() {
     const avgDuration = tasks
       .filter((t) => t.status === "completed")
       .slice(0, 20)
-      .reduce((sum, t) => sum + (new Date(t.updated_at).getTime() - new Date(t.created_at).getTime()), 0);
+      .reduce((sum, t) => sum + (new Date(t.updated_at).getTime() - new Date(t.started_at || t.created_at).getTime()), 0);
     const avgCount = Math.min(20, tasks.filter((t) => t.status === "completed").length);
     return {
       todayTotal: todayTasks.length,
@@ -493,8 +494,9 @@ export function Tasks() {
                         <div>
                           <div className="font-medium text-sm">{getTaskLabel(task)}</div>
                           <div className="text-xs text-muted-foreground">
-                            Started {timeAgo(task.created_at)}
-                            {task.status === "running" && <> · Running for {fmtDuration(task.created_at, new Date().toISOString())}</>}
+                            {task.status === "running" && task.started_at
+                              ? <>Running for {fmtDuration(task.started_at, new Date().toISOString())}</>
+                              : <>Queued {timeAgo(task.created_at)}</>}
                           </div>
                         </div>
                       </div>
@@ -606,7 +608,7 @@ function TaskRow({ task, expanded, onToggle, onRetry }: {
           <span className="text-xs text-muted-foreground ml-2">{summary}</span>
         </div>
         <span className="text-xs text-muted-foreground flex-shrink-0">
-          {fmtDuration(task.created_at, task.updated_at)}
+          {fmtDuration(task.started_at || task.created_at, task.updated_at)}
         </span>
         <span className="text-[11px] text-muted-foreground flex-shrink-0 w-[80px] text-right hidden sm:block">
           {timeAgo(task.updated_at)}
@@ -637,7 +639,7 @@ function TaskRow({ task, expanded, onToggle, onRetry }: {
             </div>
             <div>
               <span className="text-muted-foreground">Duration:</span>{" "}
-              {fmtDuration(task.created_at, task.updated_at)}
+              {fmtDuration(task.started_at || task.created_at, task.updated_at)}
             </div>
           </div>
 
