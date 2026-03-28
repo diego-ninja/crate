@@ -1369,12 +1369,13 @@ interface NetworkNode { id: string; group: number; in_library: boolean; score: n
 interface NetworkLink { source: string; target: string; value: number }
 interface NetworkData { nodes: NetworkNode[]; links: NetworkLink[] }
 
-function ArtistNetworkGraph({ centerArtist, onNodeClick }: { centerArtist: string; onNodeClick: (name: string) => void }) {
+function ArtistNetworkGraph({ centerArtist, onNodeClick: _onNodeClick }: { centerArtist: string; onNodeClick: (name: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(undefined);
   const navigate = useNavigate();
-  const [width, setWidth] = useState(500);
+  const [width, setWidth] = useState(0);
   const [networkData, setNetworkData] = useState<NetworkData>({ nodes: [], links: [] });
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
   const [artistsWithShows, setArtistsWithShows] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
@@ -1384,17 +1385,48 @@ function ArtistNetworkGraph({ centerArtist, onNodeClick }: { centerArtist: strin
       .catch(() => {});
 
     setLoading(true);
+    setExpandedNodes(new Set([centerArtist]));
     api<NetworkData>(`/api/artist/${encPath(centerArtist)}/network`)
       .then((d) => setNetworkData(d))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [centerArtist]);
 
+  // Expand a node: fetch its network and merge into existing data
+  function expandNode(name: string) {
+    if (expandedNodes.has(name)) return;
+    setExpandedNodes(prev => new Set([...prev, name]));
+    api<NetworkData>(`/api/artist/${encPath(name)}/network?depth=1`)
+      .then((d) => {
+        setNetworkData(prev => {
+          const existingIds = new Set(prev.nodes.map(n => n.id));
+          const existingLinks = new Set(prev.links.map(l => `${l.source}-${l.target}`));
+          const newNodes = d.nodes.filter(n => !existingIds.has(n.id));
+          const newLinks = d.links.filter(l => {
+            const key = `${l.source}-${l.target}`;
+            const keyR = `${l.target}-${l.source}`;
+            return !existingLinks.has(key) && !existingLinks.has(keyR);
+          });
+          return {
+            nodes: [...prev.nodes, ...newNodes],
+            links: [...prev.links, ...newLinks],
+          };
+        });
+      })
+      .catch(() => {});
+  }
+
   useEffect(() => {
     if (!containerRef.current) return;
-    setWidth(containerRef.current.clientWidth || 500);
+    // Use requestAnimationFrame to ensure layout is computed
+    requestAnimationFrame(() => {
+      if (containerRef.current) setWidth(containerRef.current.clientWidth);
+    });
     const ro = new ResizeObserver((entries) => {
-      for (const e of entries) setWidth(Math.floor(e.contentRect.width) || 500);
+      for (const e of entries) {
+        const w = Math.floor(e.contentRect.width);
+        if (w > 0) setWidth(w);
+      }
     });
     ro.observe(containerRef.current);
     return () => ro.disconnect();
@@ -1434,16 +1466,17 @@ function ArtistNetworkGraph({ centerArtist, onNodeClick }: { centerArtist: strin
   }
 
   if (networkData.nodes.length <= 1) {
-    return <div style={{ height: 500 }} className="flex items-center justify-center text-muted-foreground text-sm">No similarity data available — run backfill-similarities task to populate.</div>;
+    return <div ref={containerRef} style={{ height: 500 }} className="flex items-center justify-center text-muted-foreground text-sm">No similarity data available — run backfill-similarities task to populate.</div>;
   }
 
   const nodeSet = new Map(networkData.nodes.map((n) => [n.id, n]));
+  const graphWidth = width || 800;
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: 500 }}>
       <ForceGraph2D
         ref={fgRef}
-        width={width}
+        width={graphWidth}
         height={500}
         graphData={networkData}
         backgroundColor="transparent"
@@ -1548,9 +1581,8 @@ function ArtistNetworkGraph({ centerArtist, onNodeClick }: { centerArtist: strin
           </div>`;
         }}
         onNodeClick={(node: any) => {
-          const n = nodeSet.get(node.id) as NetworkNode | undefined;
-          if (n?.in_library) navigate(`/artist/${encPath(node.id)}`);
-          else onNodeClick(node.id);
+          // Single click expands the node's relationships
+          expandNode(node.id);
         }}
         onNodeRightClick={(node: any) => {
           const n = nodeSet.get(node.id) as NetworkNode | undefined;

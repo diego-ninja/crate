@@ -92,40 +92,63 @@ def get_artist_network(artist_name: str, depth: int = 2, limit_per_level: int = 
     if depth >= 2 and level1_names:
         with get_db_ctx() as cur:
             placeholders = ",".join(["%s"] * len(level1_names))
+            # Forward: level1 artists as source
+            # Reverse: level1 artists as target (bidirectional)
+            # Cross-links: any connection between two level1 nodes
             cur.execute(f"""
                 SELECT artist_name, similar_name, score, in_library
                 FROM artist_similarities
                 WHERE artist_name IN ({placeholders})
+                   OR similar_name IN ({placeholders})
                 ORDER BY score DESC
-            """, level1_names)
+            """, level1_names + level1_names)
             level2_rows = cur.fetchall()
 
-        # Track how many depth-2 nodes per level-1 parent to respect limit
+        # Process level-2 rows (forward + reverse)
         per_parent: dict[str, int] = {}
         for row in level2_rows:
-            parent = row["artist_name"]
-            name = row["similar_name"]
-            if name == artist_name:
+            src = row["artist_name"]
+            dst = row["similar_name"]
+            score = float(row["score"])
+
+            # Skip self-references back to center
+            if src == artist_name or dst == artist_name:
+                # But add cross-link if the OTHER end is a level1 node
+                other = dst if src == artist_name else src
+                if other in nodes:
+                    key = (min(artist_name, other), max(artist_name, other))
+                    if key not in seen_links:
+                        seen_links.add(key)
+                        links.append({"source": artist_name, "target": other, "value": score})
                 continue
 
-            # Cross-link between two level-1 nodes (both already in graph)
-            if name in nodes:
-                key = (min(parent, name), max(parent, name))
+            # Normalize: ensure parent is the node already in graph
+            if src in nodes and dst in nodes:
+                # Cross-link between two existing nodes
+                key = (min(src, dst), max(src, dst))
                 if key not in seen_links:
                     seen_links.add(key)
-                    links.append({"source": parent, "target": name, "value": float(row["score"])})
+                    links.append({"source": src, "target": dst, "value": score})
+                continue
+
+            if dst in nodes and src not in nodes:
+                src, dst = dst, src  # reverse: parent is the one in graph
+
+            if src not in nodes:
                 continue
 
             # New depth-2 node
-            count = per_parent.get(parent, 0)
+            count = per_parent.get(src, 0)
             if count >= limit_per_level:
                 continue
-            per_parent[parent] = count + 1
-            nodes[name] = {"id": name, "group": 2, "in_library": bool(row["in_library"]), "score": float(row["score"])}
-            key = (min(parent, name), max(parent, name))
+            per_parent[src] = count + 1
+
+            in_lib = bool(row["in_library"])
+            nodes[dst] = {"id": dst, "group": 2, "in_library": in_lib, "score": score}
+            key = (min(src, dst), max(src, dst))
             if key not in seen_links:
                 seen_links.add(key)
-                links.append({"source": parent, "target": name, "value": float(row["score"])})
+                links.append({"source": src, "target": dst, "value": score})
 
     return {"nodes": list(nodes.values()), "links": links}
 

@@ -672,11 +672,11 @@ def api_upcoming(request: Request):
 
 
 @router.get("/api/artist/{name}/network")
-def api_artist_network(request: Request, name: str):
+def api_artist_network(request: Request, name: str, depth: int = 2):
     """Return pre-computed artist similarity network (nodes + links) for ForceGraph2D."""
     _require_auth(request)
     from crate.db import get_artist_network
-    return get_artist_network(name, depth=2, limit_per_level=15)
+    return get_artist_network(name, depth=min(depth, 3), limit_per_level=15)
 
 
 @router.get("/api/artist/{name:path}")
