@@ -40,7 +40,7 @@ enum Command {
         #[arg(long)]
         covers: bool,
     },
-    /// Analyze audio features (BPM, key, loudness, energy)
+    /// Analyze audio features (BPM, key, loudness, energy, mood, danceability)
     Analyze {
         #[arg(short, long)]
         file: Option<PathBuf>,
@@ -48,6 +48,9 @@ enum Command {
         dir: Option<PathBuf>,
         #[arg(long, default_value = "flac,mp3,m4a,ogg,opus,wav")]
         extensions: String,
+        /// Path to PANNs CNN14 ONNX model for ML features (mood, danceability, etc.)
+        #[arg(long)]
+        model_path: Option<PathBuf>,
     },
 }
 
@@ -70,6 +73,7 @@ fn main() {
             file,
             dir,
             extensions,
-        } => analyze::run_analyze(file, dir, extensions),
+            model_path,
+        } => analyze::run_analyze(file, dir, extensions, model_path),
     }
 }

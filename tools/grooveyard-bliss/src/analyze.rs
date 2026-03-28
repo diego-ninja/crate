@@ -1,7 +1,9 @@
 use rayon::prelude::*;
 use realfft::RealFftPlanner;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::FormatOptions;
@@ -25,6 +27,16 @@ pub struct AnalysisResult {
     pub energy: Option<f32>,
     pub dynamic_range: Option<f32>,
     pub spectral_centroid: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mood: Option<HashMap<String, f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub danceability: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub valence: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acousticness: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instrumentalness: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -132,6 +144,89 @@ fn decode_audio(path: &Path) -> Result<(Vec<f32>, u32), String> {
             }
         }
         return Ok((resampled, TARGET_SAMPLE_RATE));
+    }
+
+    Ok((all_samples, sample_rate))
+}
+
+/// Decode audio and return the original (pre-resample) mono samples + original sample rate.
+/// Used when we need to resample to 32kHz for PANNs (not 22050).
+fn decode_audio_original(path: &Path) -> Result<(Vec<f32>, u32), String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("open: {}", e))?;
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+
+    let probed = symphonia::default::get_probe()
+        .format(
+            &hint,
+            mss,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .map_err(|e| format!("probe: {}", e))?;
+
+    let mut format = probed.format;
+    let track = format
+        .default_track()
+        .ok_or_else(|| "no default track".to_string())?;
+    let track_id = track.id;
+    let sample_rate = track
+        .codec_params
+        .sample_rate
+        .ok_or_else(|| "no sample rate".to_string())?;
+    let channels = track
+        .codec_params
+        .channels
+        .map(|c| c.count())
+        .unwrap_or(1);
+
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|e| format!("decoder: {}", e))?;
+
+    let mut all_samples: Vec<f32> = Vec::new();
+
+    loop {
+        let packet = match format.next_packet() {
+            Ok(p) => p,
+            Err(symphonia::core::errors::Error::IoError(ref e))
+                if e.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break;
+            }
+            Err(_) => break,
+        };
+
+        if packet.track_id() != track_id {
+            continue;
+        }
+
+        let decoded = match decoder.decode(&packet) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        let spec = *decoded.spec();
+        let num_frames = decoded.frames();
+        let mut sample_buf = SampleBuffer::<f32>::new(num_frames as u64, spec);
+        sample_buf.copy_interleaved_ref(decoded);
+        let samples = sample_buf.samples();
+
+        if channels > 1 {
+            for frame in 0..num_frames {
+                let mut sum = 0.0f32;
+                for ch in 0..channels {
+                    sum += samples[frame * channels + ch];
+                }
+                all_samples.push(sum / channels as f32);
+            }
+        } else {
+            all_samples.extend_from_slice(samples);
+        }
     }
 
     Ok((all_samples, sample_rate))
@@ -391,6 +486,53 @@ fn detect_key(samples: &[f32], sample_rate: u32) -> (String, String) {
     (NOTE_NAMES[best_key].to_string(), best_scale.to_string())
 }
 
+/// Analyze a single track. If `panns` is provided, also compute ML features.
+#[cfg(feature = "ml")]
+pub fn analyze_track_with_ml(
+    path: &Path,
+    panns: Option<&crate::ml::PannsModel>,
+) -> AnalysisResult {
+    let mut result = analyze_track(path);
+    if result.error.is_some() {
+        return result;
+    }
+
+    if let Some(model) = panns {
+        match decode_audio_original(path) {
+            Ok((orig_samples, orig_sr)) => {
+                let waveform_32k = crate::ml::resample_linear(
+                    &orig_samples,
+                    orig_sr,
+                    crate::ml::PANNS_SAMPLE_RATE,
+                    crate::ml::PANNS_DURATION,
+                );
+                let ctx = crate::ml::SignalContext {
+                    bpm: result.bpm,
+                    scale: result.scale.clone(),
+                    energy: result.energy,
+                };
+                match model.compute_features(&waveform_32k, &ctx) {
+                    Ok(features) => {
+                        result.mood = Some(features.mood);
+                        result.danceability = Some(features.danceability);
+                        result.valence = Some(features.valence);
+                        result.acousticness = Some(features.acousticness);
+                        result.instrumentalness = Some(features.instrumentalness);
+                    }
+                    Err(e) => {
+                        eprintln!("ML inference failed for {}: {}", path.display(), e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Decode for ML failed for {}: {}", path.display(), e);
+            }
+        }
+    }
+
+    result
+}
+
 pub fn analyze_track(path: &Path) -> AnalysisResult {
     let (samples, sample_rate) = match decode_audio(path) {
         Ok(r) => r,
@@ -404,6 +546,11 @@ pub fn analyze_track(path: &Path) -> AnalysisResult {
                 energy: None,
                 dynamic_range: None,
                 spectral_centroid: None,
+                mood: None,
+                danceability: None,
+                valence: None,
+                acousticness: None,
+                instrumentalness: None,
                 error: Some(e),
             }
         }
@@ -419,6 +566,11 @@ pub fn analyze_track(path: &Path) -> AnalysisResult {
             energy: None,
             dynamic_range: None,
             spectral_centroid: None,
+            mood: None,
+            danceability: None,
+            valence: None,
+            acousticness: None,
+            instrumentalness: None,
             error: Some("empty audio".to_string()),
         };
     }
@@ -458,15 +610,54 @@ pub fn analyze_track(path: &Path) -> AnalysisResult {
         energy: Some((energy * 1000.0).round() / 1000.0),
         dynamic_range: Some((dynamic_range * 10.0).round() / 10.0),
         spectral_centroid,
+        mood: None,
+        danceability: None,
+        valence: None,
+        acousticness: None,
+        instrumentalness: None,
         error: None,
     }
 }
 
-pub fn run_analyze(file: Option<PathBuf>, dir: Option<PathBuf>, extensions: String) {
+pub fn run_analyze(
+    file: Option<PathBuf>,
+    dir: Option<PathBuf>,
+    extensions: String,
+    model_path: Option<PathBuf>,
+) {
     let exts = parse_extensions(&extensions);
 
+    // Load PANNs model if path provided and feature enabled
+    #[cfg(feature = "ml")]
+    let panns: Option<Arc<crate::ml::PannsModel>> = model_path.as_ref().and_then(|p| {
+        if !p.exists() {
+            eprintln!("Model file not found: {}", p.display());
+            return None;
+        }
+        match crate::ml::PannsModel::load(p) {
+            Ok(m) => {
+                eprintln!("PANNs CNN14 model loaded from {}", p.display());
+                Some(Arc::new(m))
+            }
+            Err(e) => {
+                eprintln!("Failed to load PANNs model: {}", e);
+                None
+            }
+        }
+    });
+
+    #[cfg(not(feature = "ml"))]
+    let panns: Option<Arc<()>> = {
+        let _ = model_path;
+        None
+    };
+
     if let Some(file_path) = file {
+        #[cfg(feature = "ml")]
+        let result = analyze_track_with_ml(&file_path, panns.as_deref());
+        #[cfg(not(feature = "ml"))]
         let result = analyze_track(&file_path);
+
         println!("{}", serde_json::to_string(&result).unwrap_or_default());
         return;
     }
@@ -476,6 +667,18 @@ pub fn run_analyze(file: Option<PathBuf>, dir: Option<PathBuf>, extensions: Stri
         let total = files.len();
         eprintln!("Found {} files, analyzing...", total);
 
+        #[cfg(feature = "ml")]
+        let results: Vec<AnalysisResult> = if panns.is_some() {
+            let model = panns.as_ref().unwrap().clone();
+            files
+                .par_iter()
+                .map(|f| analyze_track_with_ml(f, Some(&model)))
+                .collect()
+        } else {
+            files.par_iter().map(|f| analyze_track(f)).collect()
+        };
+
+        #[cfg(not(feature = "ml"))]
         let results: Vec<AnalysisResult> = files.par_iter().map(|f| analyze_track(f)).collect();
 
         let analyzed = results.iter().filter(|r| r.error.is_none()).count();

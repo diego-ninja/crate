@@ -1,8 +1,12 @@
 [package]
 name = "crate-cli"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Audio analysis and library management CLI for Crate"
+
+[features]
+default = ["ml"]
+ml = ["ort"]
 
 [dependencies]
 bliss-audio = { version = "0.10", default-features = false, features = ["aubio-static", "symphonia-all", "library"] }
@@ -16,6 +20,7 @@ md-5 = "0.10"
 hex = "0.4"
 symphonia = { version = "0.5", features = ["all"] }
 realfft = "3"
+ort = { version = "2", features = ["download-binaries"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

@@ -229,6 +229,42 @@ export function CommandPalette() {
                   <Link2 size={14} className="text-muted-foreground" />
                   Map Navidrome IDs
                 </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/tasks/backfill-similarities", "POST"),
+                      "Backfill Similarities",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Sparkles size={14} className="text-muted-foreground" />
+                  Backfill Artist Similarities
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/tasks/sync-shows", "POST"),
+                      "Sync Shows",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Sparkles size={14} className="text-muted-foreground" />
+                  Sync Shows (Ticketmaster)
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
+                      () => api("/api/acquisition/new-releases/check", "POST"),
+                      "Check New Releases",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Sparkles size={14} className="text-muted-foreground" />
+                  Check New Releases (MusicBrainz)
+                </Command.Item>
               </Command.Group>
             )}
 

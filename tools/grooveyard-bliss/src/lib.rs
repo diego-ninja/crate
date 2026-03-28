@@ -1,5 +1,7 @@
 pub mod analyze;
 pub mod bliss;
+#[cfg(feature = "ml")]
+pub mod ml;
 pub mod scan;
 
 use std::path::{Path, PathBuf};
