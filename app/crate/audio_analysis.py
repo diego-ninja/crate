@@ -19,17 +19,24 @@ log = logging.getLogger(__name__)
 # ── Backend detection ─────────────────────────────────────────────
 
 _BACKEND = "none"
-try:
-    import essentia.standard
-    _BACKEND = "essentia"
-    log.info("Audio analysis backend: Essentia")
-except ImportError:
+_BACKEND_CHECKED = False
+
+def _detect_backend():
+    global _BACKEND, _BACKEND_CHECKED
+    if _BACKEND_CHECKED:
+        return
+    _BACKEND_CHECKED = True
     try:
-        import librosa
-        _BACKEND = "librosa"
-        log.info("Audio analysis backend: librosa")
+        import essentia.standard  # noqa: F401
+        _BACKEND = "essentia"
+        log.info("Audio analysis backend: Essentia")
     except ImportError:
-        log.warning("No audio analysis backend available")
+        try:
+            import librosa  # noqa: F401
+            _BACKEND = "librosa"
+            log.info("Audio analysis backend: librosa")
+        except ImportError:
+            log.warning("No audio analysis backend available")
 
 _MODEL_DIR = Path("/app/models")
 
@@ -185,6 +192,8 @@ def analyze_track(filepath: Union[str, Path]) -> dict:
     rust = _analyze_rust(str(filepath))
     if rust:
         return rust
+    # Lazy-load Python backend only when Rust unavailable
+    _detect_backend()
     if _BACKEND == "essentia":
         return _analyze_essentia(str(filepath))
     elif _BACKEND == "librosa":
@@ -205,6 +214,7 @@ def analyze_batch(filepaths: list) -> list:
     rust = _analyze_rust_batch(filepaths)
     if rust:
         return rust
+    _detect_backend()
     if _BACKEND == "essentia":
         return _analyze_batch_essentia(filepaths)
     return [analyze_track(fp) for fp in filepaths]
