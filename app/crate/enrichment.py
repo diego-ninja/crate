@@ -58,6 +58,14 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
             persist_data["lastfm_playcount"] = info.get("playcount")
             if info.get("url"):
                 persist_data.setdefault("urls", {})["lastfm"] = info["url"]
+            # Persist similar artists to dedicated table
+            similar_list = info.get("similar", [])
+            if similar_list:
+                try:
+                    from crate.db import bulk_upsert_similarities
+                    bulk_upsert_similarities(name, similar_list)
+                except Exception:
+                    log.debug("Failed to persist similarities for %s", name)
     except Exception:
         log.debug("Last.fm failed for %s", name)
     time.sleep(0.3)

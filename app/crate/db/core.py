@@ -560,6 +560,22 @@ def init_db():
             END $$
         """)
 
+        # Artist similarities table
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS artist_similarities (
+                id SERIAL PRIMARY KEY,
+                artist_name TEXT NOT NULL,
+                similar_name TEXT NOT NULL,
+                score REAL DEFAULT 0,
+                source TEXT DEFAULT 'lastfm',
+                in_library BOOLEAN DEFAULT FALSE,
+                updated_at TEXT NOT NULL,
+                UNIQUE(artist_name, similar_name)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_similarities_artist ON artist_similarities(artist_name)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_similarities_similar ON artist_similarities(similar_name)")
+
         # Migration: add release_date, release_type, mb_release_group_id to new_releases
         cur.execute("""
             DO $$ BEGIN

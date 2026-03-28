@@ -1161,30 +1161,25 @@ export function Artist() {
         {/* ── Similar Artists Tab ── */}
         {activeTab === "similar" && (
           <div>
-            {mergedSimilar.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">No similar artists available</div>
-            ) : (
-              <>
-                {/* Network Graph */}
-                <div className="bg-card border border-border rounded-lg p-4 mb-6">
-                  <h4 className="text-sm font-semibold mb-3">Artist Network</h4>
-                  <ArtistNetworkGraph
-                    centerArtist={data.name}
-                    similar={mergedSimilar.map((s) => s.name)}
-                    onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
+            {/* Network Graph — fetches from DB, shows its own empty state */}
+            <div className="bg-card border border-border rounded-lg p-4 mb-6">
+              <h4 className="text-sm font-semibold mb-3">Artist Network</h4>
+              <ArtistNetworkGraph
+                centerArtist={data.name}
+                onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
+              />
+            </div>
+            {mergedSimilar.length > 0 && (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">
+                {mergedSimilar.map((s) => (
+                  <SimilarArtistCard
+                    key={s.name}
+                    name={s.name}
+                    genres={s.genres}
+                    popularity={s.popularity}
                   />
-                </div>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-4">
-                  {mergedSimilar.map((s) => (
-                    <SimilarArtistCard
-                      key={s.name}
-                      name={s.name}
-                      genres={s.genres}
-                      popularity={s.popularity}
-                    />
-                  ))}
-                </div>
-              </>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -1193,16 +1188,13 @@ export function Artist() {
         {activeTab === "stats" && (
           <div className="space-y-6">
             <ArtistStats name={data.name} />
-            {mergedSimilar.length > 0 && (
-              <div className="bg-card border border-border rounded-lg p-4">
-                <h4 className="text-sm font-semibold mb-3">Artist Network</h4>
-                <ArtistNetworkGraph
-                  centerArtist={data.name}
-                  similar={mergedSimilar.map((s) => s.name)}
-                  onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
-                />
-              </div>
-            )}
+            <div className="bg-card border border-border rounded-lg p-4">
+              <h4 className="text-sm font-semibold mb-3">Artist Network</h4>
+              <ArtistNetworkGraph
+                centerArtist={data.name}
+                onNodeClick={(name) => navigate(`/artist/${encPath(name)}`)}
+              />
+            </div>
           </div>
         )}
 
@@ -1373,111 +1365,30 @@ function PopularityBar({ value }: { value: number }) {
   );
 }
 
-// Global enrichment cache — survives navigation between artist pages
-interface NetworkNodeMeta { similar: string[]; popularity: number; listeners?: number; playcount?: number; genres?: string[] }
-const _networkEnrichCache = new Map<string, NetworkNodeMeta>();
+interface NetworkNode { id: string; group: number; in_library: boolean; score: number }
+interface NetworkLink { source: string; target: string; value: number }
+interface NetworkData { nodes: NetworkNode[]; links: NetworkLink[] }
 
-function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArtist: string; similar: string[]; onNodeClick: (name: string) => void }) {
+function ArtistNetworkGraph({ centerArtist, onNodeClick }: { centerArtist: string; onNodeClick: (name: string) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(undefined);
   const navigate = useNavigate();
   const [width, setWidth] = useState(500);
-  const [nodes, setNodes] = useState<{ id: string; depth: number }[]>([]);
-  const [libraryArtists, setLibraryArtists] = useState<Set<string>>(new Set());
+  const [networkData, setNetworkData] = useState<NetworkData>({ nodes: [], links: [] });
   const [artistsWithShows, setArtistsWithShows] = useState<Set<string>>(new Set());
-  const [links, setLinks] = useState<{ source: string; target: string }[]>([]);
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
-  const [focusNode, setFocusNode] = useState(centerArtist);
-  const [nodeMeta, setNodeMeta] = useState<Map<string, { popularity: number; listeners?: number; playcount?: number; genres?: string[] }>>(new Map());
-  function calcPop(d: { lastfm?: { listeners?: number }; spotify?: { popularity?: number } }): number {
-    const listeners = d?.lastfm?.listeners ?? 0;
-    const spotPop = d?.spotify?.popularity ?? 0;
-    const pop = spotPop || (listeners > 0 ? Math.min(100, Math.round((Math.log(listeners) - Math.log(5000)) / (Math.log(50000000) - Math.log(5000)) * 100)) : 0);
-    return Math.max(0, Math.min(100, pop));
-  }
+  const [loading, setLoading] = useState(true);
 
-  async function prefetchNode(name: string): Promise<NetworkNodeMeta | null> {
-    if (_networkEnrichCache.has(name)) {
-      const cached = _networkEnrichCache.get(name)!;
-      setNodeMeta((prev) => {
-        const n = new Map(prev);
-        if (!n.has(name)) n.set(name, { popularity: cached.popularity, listeners: cached.listeners, playcount: cached.playcount, genres: cached.genres });
-        return n;
-      });
-      return cached;
-    }
-    try {
-      const d = await api<{ lastfm?: { similar?: { name: string }[]; listeners?: number; playcount?: number; tags?: string[] }; spotify?: { popularity?: number; genres?: string[] } }>(`/api/artist/${encPath(name)}/enrichment`);
-      const genres = d?.lastfm?.tags?.slice(0, 3) ?? d?.spotify?.genres?.slice(0, 3) ?? [];
-      const result: NetworkNodeMeta = {
-        similar: d?.lastfm?.similar?.map((s) => s.name) ?? [],
-        popularity: calcPop(d),
-        listeners: d?.lastfm?.listeners,
-        playcount: d?.lastfm?.playcount,
-        genres,
-      };
-      _networkEnrichCache.set(name, result);
-      setNodeMeta((prev) => new Map(prev).set(name, { popularity: result.popularity, listeners: result.listeners, playcount: result.playcount, genres: result.genres }));
-      return result;
-    } catch { return null; }
-  }
-
-  // Initialize with center artist + level 1, prefetch level 2 in background
   useEffect(() => {
-    // Fetch library artists + artists with shows for graph coloring
-    api<{ items: { name: string }[] }>("/api/artists?per_page=10000")
-      .then((d) => setLibraryArtists(new Set(d.items.map((a) => a.name.toLowerCase()))))
-      .catch(() => {});
     api<{ artists: string[] }>("/api/shows/artists-with-shows")
       .then((d) => setArtistsWithShows(new Set(d.artists.map((a) => a.toLowerCase()))))
       .catch(() => {});
 
-    const nodeMap = new Map<string, number>();
-    nodeMap.set(centerArtist, 0);
-    const newLinks: { source: string; target: string }[] = [];
-    for (const s of similar) {
-      if (!nodeMap.has(s)) nodeMap.set(s, 1);
-      newLinks.push({ source: centerArtist, target: s });
-    }
-    setNodes(Array.from(nodeMap.entries()).map(([id, depth]) => ({ id, depth })));
-    setLinks(newLinks);
-    setExpandedNodes(new Set([centerArtist]));
-    setFocusNode(centerArtist);
-
-    // Prefetch all level-1 nodes, then build cross-links
-    const allNames = [centerArtist, ...similar];
-    const nodeSet = new Set(similar.map((s) => s.toLowerCase()));
-    let cancelled = false;
-    (async () => {
-      for (const n of allNames) {
-        if (cancelled) break;
-        await prefetchNode(n);
-        await new Promise((r) => setTimeout(r, 200));
-      }
-      if (cancelled) return;
-
-      // Build cross-links: if artist A lists artist B as similar, and both are in the graph
-      const crossLinks: { source: string; target: string }[] = [];
-      const seen = new Set<string>();
-      for (const n of similar) {
-        const cached = _networkEnrichCache.get(n);
-        if (!cached?.similar) continue;
-        for (const s of cached.similar) {
-          if (nodeSet.has(s.toLowerCase()) && s.toLowerCase() !== n.toLowerCase()) {
-            const key = [n, s].sort().join("|");
-            if (!seen.has(key)) {
-              seen.add(key);
-              crossLinks.push({ source: n, target: s });
-            }
-          }
-        }
-      }
-      if (crossLinks.length > 0) {
-        setLinks((prev) => [...prev, ...crossLinks]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [centerArtist, similar]);
+    setLoading(true);
+    api<NetworkData>(`/api/artist/${encPath(centerArtist)}/network`)
+      .then((d) => setNetworkData(d))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [centerArtist]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1488,66 +1399,6 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
     ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, []);
-
-  async function expandNode(name: string) {
-    if (expandedNodes.has(name)) {
-      onNodeClick(name);
-      return;
-    }
-
-    // Use cache (prefetched in background), falls back to fetch
-    const cached = await prefetchNode(name);
-    if (!cached || cached.similar.length === 0) {
-      onNodeClick(name);
-      return;
-    }
-
-    const nodeSimilar = cached.similar;
-    // Only add nodes that will have at least 2 connections (source node + at least one cross-link)
-    // This prevents disconnected islands
-    const existingNames = new Set(nodes.map((n) => n.id));
-    const candidates = nodeSimilar.filter((s) => !existingNames.has(s));
-
-    // Score candidates by how many existing nodes they connect to
-    const scored = candidates.map((s) => {
-      const connectionsToExisting = nodeSimilar.includes(s) ? 1 : 0; // connected to expanded node
-      const crossConnections = [...existingNames].filter((existing) => {
-        const ec = _networkEnrichCache.get(existing);
-        return ec?.similar?.includes(s);
-      }).length;
-      return { id: s, score: connectionsToExisting + crossConnections };
-    });
-
-    // Only add well-connected nodes (score >= 1), limit to 6
-    const toAdd = scored.filter((s) => s.score >= 1).sort((a, b) => b.score - a.score).slice(0, 6);
-
-    if (toAdd.length > 0) {
-      setNodes((prev) => [...prev, ...toAdd.map(({ id }) => ({ id, depth: 2 }))]);
-    }
-
-    // Add links from expanded node + cross-links
-    setLinks((prev) => {
-      const existingSet = new Set(prev.map((l) => `${l.source}->${l.target}`));
-      const addedSet = new Set(toAdd.map((t) => t.id));
-      const allRelevant = new Set([...existingNames, ...addedSet]);
-      const newLinks = nodeSimilar
-        .filter((s) => allRelevant.has(s))
-        .map((s) => ({ source: name, target: s }))
-        .filter((l) => !existingSet.has(`${l.source}->${l.target}`) && !existingSet.has(`${l.target}->${l.source}`));
-      return [...prev, ...newLinks];
-    });
-    setExpandedNodes((prev) => new Set([...prev, name]));
-    setFocusNode(name);
-
-    // Prefetch next level in background (staggered)
-    (async () => {
-      for (const s of nodeSimilar.slice(0, 8)) {
-        if (_networkEnrichCache.has(s)) continue;
-        await prefetchNode(s);
-        await new Promise((r) => setTimeout(r, 200));
-      }
-    })();
-  }
 
   // Strip tooltip default inline styles (d3 applies background/padding inline)
   useEffect(() => {
@@ -1576,7 +1427,17 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
     fg.d3Force("link")?.distance(80);
     fg.d3Force("center")?.strength(0.1);
     fg.d3ReheatSimulation();
-  }, [nodes.length]);
+  }, [networkData.nodes.length]);
+
+  if (loading) {
+    return <div style={{ height: 500 }} className="flex items-center justify-center text-muted-foreground text-sm">Loading network...</div>;
+  }
+
+  if (networkData.nodes.length <= 1) {
+    return <div style={{ height: 500 }} className="flex items-center justify-center text-muted-foreground text-sm">No similarity data available — run backfill-similarities task to populate.</div>;
+  }
+
+  const nodeSet = new Map(networkData.nodes.map((n) => [n.id, n]));
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: 500 }}>
@@ -1584,27 +1445,25 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
         ref={fgRef}
         width={width}
         height={500}
-        graphData={{ nodes, links }}
+        graphData={networkData}
         backgroundColor="transparent"
         nodeRelSize={6}
         nodeVal={(node: any) => {
-          const meta = nodeMeta.get(node.id);
-          const pop = meta?.popularity ?? 0;
-          if (node.id === centerArtist) return Math.max(4, pop / 10);
-          return Math.max(1.5, pop / 15);
+          const n = nodeSet.get(node.id) as NetworkNode | undefined;
+          const score = n?.score ?? 0;
+          if (node.id === centerArtist) return Math.max(4, score * 20);
+          return Math.max(1.5, score * 10);
         }}
         nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-          const meta = nodeMeta.get(node.id);
-          const pop = meta?.popularity ?? 0;
-          const inLibrary = libraryArtists.has(node.id.toLowerCase());
+          const n = nodeSet.get(node.id) as NetworkNode | undefined;
+          const score = n?.score ?? 0;
+          const inLibrary = n?.in_library ?? false;
           const hasShows = artistsWithShows.has(node.id.toLowerCase());
           const isCenter = node.id === centerArtist;
-          const isFocus = node.id === focusNode;
 
-          // Size by popularity (bigger = more popular)
           const baseSize = isCenter ? 10 : 4;
-          const popBonus = pop / 8;
-          const size = Math.max(baseSize, baseSize + popBonus);
+          const scoreBonus = score * 10;
+          const size = Math.max(baseSize, baseSize + scoreBonus);
 
           const x = node.x ?? 0;
           const y = node.y ?? 0;
@@ -1632,7 +1491,6 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
           ctx.beginPath();
           ctx.arc(x, y, size, 0, 2 * Math.PI);
           ctx.fillStyle = isCenter ? "#06b6d4"
-            : isFocus ? "#06b6d4cc"
             : inLibrary ? "#06b6d4"
             : "#3f3f50";
           ctx.fill();
@@ -1663,40 +1521,40 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
         linkColor={() => "rgba(100,116,139,0.3)"}
         linkWidth={1}
         nodeLabel={(node: any) => {
-          const meta = nodeMeta.get(node.id);
-          const inLib = libraryArtists.has(node.id.toLowerCase());
-          const genres = meta?.genres?.join(" · ") || "";
-          const pop = meta?.popularity ?? 0;
-          const listeners = meta?.listeners ? `${Math.round(meta.listeners / 1000)}K` : "";
+          const n = nodeSet.get(node.id) as NetworkNode | undefined;
+          const inLib = n?.in_library ?? false;
+          const score = n?.score ?? 0;
           const photoUrl = `/api/artist/${encodeURIComponent(node.id)}/photo`;
           return `<div style="background:var(--color-card);border:1px solid var(--color-border);border-radius:10px;padding:0;font-size:12px;min-width:200px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
             <div style="display:flex;align-items:center;gap:8px;padding:10px 12px">
               <img src="${photoUrl}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;background:#1c1c28" onerror="this.style.display='none'" />
               <div style="min-width:0;flex:1">
                 <div style="font-weight:600;color:var(--color-foreground)">${node.id}</div>
-                ${genres ? `<div style="color:var(--color-muted-foreground);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${genres}</div>` : ""}
               </div>
             </div>
-            ${pop > 0 ? `<div style="padding:0 12px 8px">
+            ${score > 0 ? `<div style="padding:0 12px 8px">
               <div style="display:flex;align-items:center;gap:6px">
                 <div style="flex:1;height:5px;background:#1c1c28;border-radius:3px;overflow:hidden">
-                  <div style="height:100%;width:${pop}%;border-radius:3px;background:linear-gradient(90deg,#06b6d433,#06b6d4)"></div>
+                  <div style="height:100%;width:${Math.round(score * 100)}%;border-radius:3px;background:linear-gradient(90deg,#06b6d433,#06b6d4)"></div>
                 </div>
-                <span style="font-size:9px;color:var(--color-muted-foreground)">${pop}%</span>
-                ${listeners ? `<span style="font-size:9px;color:var(--color-muted-foreground)">· ${listeners}</span>` : ""}
+                <span style="font-size:9px;color:var(--color-muted-foreground)">${Math.round(score * 100)}%</span>
               </div>
             </div>` : ""}
             <div style="padding:6px 12px;border-top:1px solid var(--color-border);font-size:10px;display:flex;justify-content:space-between;align-items:center">
-              <span style="color:${inLib ? "#06b6d4" : "var(--color-muted-foreground)"}">${inLib ? "✓ In library" : "Not in library"}</span>
-              ${artistsWithShows.has(node.id.toLowerCase()) ? `<span style="color:#f97316">● Shows</span>` : ""}
-              <span style="color:var(--color-primary)">Click to expand</span>
+              <span style="color:${inLib ? "#06b6d4" : "var(--color-muted-foreground)"}">${inLib ? "In library" : "Not in library"}</span>
+              ${artistsWithShows.has(node.id.toLowerCase()) ? `<span style="color:#f97316">Shows</span>` : ""}
+              <span style="color:var(--color-primary)">Click to navigate</span>
             </div>
           </div>`;
         }}
-        onNodeClick={(node: any) => expandNode(node.id)}
+        onNodeClick={(node: any) => {
+          const n = nodeSet.get(node.id) as NetworkNode | undefined;
+          if (n?.in_library) navigate(`/artist/${encPath(node.id)}`);
+          else onNodeClick(node.id);
+        }}
         onNodeRightClick={(node: any) => {
-          const inLib = libraryArtists.has(node.id.toLowerCase());
-          if (inLib) navigate(`/artist/${encPath(node.id)}`);
+          const n = nodeSet.get(node.id) as NetworkNode | undefined;
+          if (n?.in_library) navigate(`/artist/${encPath(node.id)}`);
           else navigate(`/download?q=${encodeURIComponent(node.id)}`);
         }}
         cooldownTicks={200}
@@ -1707,8 +1565,7 @@ function ArtistNetworkGraph({ centerArtist, similar, onNodeClick }: { centerArti
         enablePanInteraction={true}
         enableNodeDrag={true}
         onEngineStop={() => {
-          // Only auto-fit on first render, not on every expansion
-          if (nodes.length <= similar.length + 1) fgRef.current?.zoomToFit(400, 60);
+          fgRef.current?.zoomToFit(400, 60);
         }}
       />
     </div>

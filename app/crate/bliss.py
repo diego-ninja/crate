@@ -1,11 +1,172 @@
 """Integration with crate-cli Rust binary for bliss song distance/similarity."""
 
+import json
 import logging
+import random
 
 from crate.crate_cli import find_binary, is_available, run_bliss
 from crate.db import get_db_ctx
 
 log = logging.getLogger(__name__)
+
+# Camelot wheel mapping: (key, scale) -> camelot position
+CAMELOT = {
+    ("C", "major"): "8B",  ("A", "minor"): "8A",
+    ("G", "major"): "9B",  ("E", "minor"): "9A",
+    ("D", "major"): "10B", ("B", "minor"): "10A",
+    ("A", "major"): "11B", ("F#", "minor"): "11A",
+    ("E", "major"): "12B", ("C#", "minor"): "12A",
+    ("B", "major"): "1B",  ("G#", "minor"): "1A",
+    ("F#", "major"): "2B", ("D#", "minor"): "2A",
+    ("C#", "major"): "3B", ("A#", "minor"): "3A",
+    ("G#", "major"): "4B", ("F", "minor"): "4A",
+    ("D#", "major"): "5B", ("C", "minor"): "5A",
+    ("A#", "major"): "6B", ("G", "minor"): "6A",
+    ("F", "major"): "7B",  ("D", "minor"): "7A",
+}
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    mag_a = sum(x * x for x in a) ** 0.5
+    mag_b = sum(x * x for x in b) ** 0.5
+    return max(0.0, dot / (mag_a * mag_b)) if mag_a and mag_b else 0.0
+
+
+def _key_compatibility(key_a: str | None, scale_a: str | None,
+                       key_b: str | None, scale_b: str | None) -> float:
+    """Return 1.0 for same key, 0.8 for adjacent on Camelot wheel, 0.3 otherwise."""
+    if not key_a or not scale_a or not key_b or not scale_b:
+        return 0.5  # neutral when data missing
+    pos_a = CAMELOT.get((key_a, scale_a))
+    pos_b = CAMELOT.get((key_b, scale_b))
+    if not pos_a or not pos_b:
+        return 0.5
+    if pos_a == pos_b:
+        return 1.0
+    # Adjacent: same number different letter, or +/-1 number same letter
+    num_a, letter_a = int(pos_a[:-1]), pos_a[-1]
+    num_b, letter_b = int(pos_b[:-1]), pos_b[-1]
+    if letter_a == letter_b and abs(num_a - num_b) in (1, 11):
+        return 0.8
+    if num_a == num_b and letter_a != letter_b:
+        return 0.8
+    return 0.3
+
+
+def _genre_jaccard(genres_a: set[str], genres_b: set[str]) -> float:
+    if not genres_a or not genres_b:
+        return 0.0
+    intersection = len(genres_a & genres_b)
+    union = len(genres_a | genres_b)
+    return intersection / union if union else 0.0
+
+
+def _score_candidate(candidate: dict, seeds: list[dict],
+                     artist_genres: set[str], similar_artist_names: set[str]) -> float:
+    """Score a candidate track against a list of seed tracks, return best score."""
+    best = 0.0
+    cand_genres = set(candidate.get("_genres") or [])
+
+    for seed in seeds:
+        score = 0.0
+
+        # Bliss cosine similarity (weight 0.3)
+        if candidate.get("bliss_vector") and seed.get("bliss_vector"):
+            score += 0.3 * _cosine_similarity(candidate["bliss_vector"], seed["bliss_vector"])
+
+        # BPM proximity (weight 0.15)
+        if candidate.get("bpm") and seed.get("bpm"):
+            diff = abs(candidate["bpm"] - seed["bpm"])
+            score += 0.15 * max(0.0, 1.0 - diff / 40.0)
+
+        # Key compatibility via Camelot (weight 0.1)
+        score += 0.1 * _key_compatibility(
+            seed.get("audio_key"), seed.get("audio_scale"),
+            candidate.get("audio_key"), candidate.get("audio_scale"),
+        )
+
+        # Energy proximity (weight 0.1)
+        if candidate.get("energy") is not None and seed.get("energy") is not None:
+            score += 0.1 * (1.0 - abs(candidate["energy"] - seed["energy"]))
+
+        # Genre Jaccard overlap (weight 0.15)
+        seed_genres = set(seed.get("_genres") or [])
+        score += 0.15 * _genre_jaccard(artist_genres | seed_genres, cand_genres)
+
+        # Similar artist bonus (weight 0.2)
+        if candidate.get("artist") in similar_artist_names:
+            score += 0.2
+
+        if score > best:
+            best = score
+
+    return best
+
+
+def _get_similar_artist_names(cur, artist_name: str) -> set[str]:
+    """Return set of similar artist names using artist_similarities table or similar_json fallback."""
+    # Try artist_similarities table first (Phase 1)
+    try:
+        cur.execute("""
+            SELECT artist_b FROM artist_similarities
+            WHERE artist_a = %s AND artist_b_in_library = TRUE
+        """, (artist_name,))
+        rows = cur.fetchall()
+        if rows:
+            return {r["artist_b"] for r in rows}
+    except Exception:
+        pass  # table may not exist yet
+
+    # Fallback: parse similar_json from library_artists
+    cur.execute("SELECT similar_json FROM library_artists WHERE name = %s", (artist_name,))
+    row = cur.fetchone()
+    if not row or not row["similar_json"]:
+        return set()
+    similar = row["similar_json"]
+    if isinstance(similar, str):
+        similar = json.loads(similar)
+    if not isinstance(similar, list):
+        return set()
+    names = set()
+    for item in similar:
+        n = item.get("name") if isinstance(item, dict) else str(item)
+        if n:
+            names.add(n)
+    return names
+
+
+def _get_artist_genre_ids(cur, artist_name: str) -> set[str]:
+    """Return genre names for an artist via artist_genres table."""
+    cur.execute("""
+        SELECT g.name FROM genres g
+        JOIN artist_genres ag ON ag.genre_id = g.id
+        WHERE ag.artist_name = %s
+    """, (artist_name,))
+    return {r["name"] for r in cur.fetchall()}
+
+
+def _apply_diversity(scored: list[tuple[float, dict]], max_consecutive: int = 3) -> list[dict]:
+    """Sort by score and ensure no more than max_consecutive tracks from same artist."""
+    scored.sort(key=lambda x: x[0], reverse=True)
+    result = []
+    consecutive: dict[str, int] = {}
+    skipped = []
+
+    for score, track in scored:
+        artist = track.get("artist", "")
+        count = consecutive.get(artist, 0)
+        if count < max_consecutive:
+            result.append(track)
+            consecutive[artist] = count + 1
+        else:
+            skipped.append((score, track))
+
+    # Append skipped tracks at end (still sorted by score)
+    for _, track in skipped:
+        result.append(track)
+
+    return result
 
 
 def analyze_file(filepath: str) -> list[float] | None:
@@ -50,54 +211,102 @@ def store_vectors(vectors: dict[str, list[float]]):
 
 
 def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 0.4) -> list[dict]:
-    """Generate an Artist Radio playlist: mix of artist tracks + similar tracks from other artists.
+    """Generate an Artist Radio playlist using multi-signal scoring.
 
     mix_ratio: fraction of tracks from the artist (0.4 = 40% artist, 60% similar)
     """
     with get_db_ctx() as cur:
-        # Get all bliss vectors for this artist
-        cur.execute("""
-            SELECT t.path, t.title, t.artist, a.name AS album, t.duration, t.bliss_vector
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            WHERE a.artist = %s AND t.bliss_vector IS NOT NULL
-        """, (artist_name,))
-        artist_tracks = [dict(r) for r in cur.fetchall()]
-
-        if not artist_tracks:
-            return []
-
-        import numpy as np
-
-        # Compute centroid of artist's sound
-        vectors = [t["bliss_vector"] for t in artist_tracks]
-        centroid = np.mean(vectors, axis=0).tolist()
-
-        # Find closest tracks from OTHER artists
+        # Fetch artist tracks (with or without bliss vectors)
         cur.execute("""
             SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                   SQRT(
-                       (SELECT SUM(POW(x - y, 2))
-                        FROM UNNEST(t.bliss_vector, %s::float8[]) AS v(x, y))
-                   ) AS distance
+                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
-            WHERE t.bliss_vector IS NOT NULL AND a.artist != %s
-            ORDER BY distance ASC
-            LIMIT %s
-        """, (centroid, artist_name, limit))
-        similar_tracks = [dict(r) for r in cur.fetchall()]
+            WHERE a.artist = %s
+        """, (artist_name,))
+        all_artist_tracks = [dict(r) for r in cur.fetchall()]
 
-    # Mix: artist tracks + similar
-    import random
+        if not all_artist_tracks:
+            return []
+
+        # Get artist genres
+        artist_genres = _get_artist_genre_ids(cur, artist_name)
+
+        # Get similar artist names
+        similar_artist_names = _get_similar_artist_names(cur, artist_name)
+
+        # Pick up to 5 random seed tracks that have bliss vectors
+        tracks_with_bliss = [t for t in all_artist_tracks if t.get("bliss_vector")]
+        if tracks_with_bliss:
+            seeds = random.sample(tracks_with_bliss, min(5, len(tracks_with_bliss)))
+        else:
+            seeds = random.sample(all_artist_tracks, min(5, len(all_artist_tracks)))
+
+        # Attach genres to seeds
+        for seed in seeds:
+            seed["_genres"] = list(artist_genres)
+
+        # Build candidate set: tracks from similar artists + random sample, bliss_vector NOT NULL
+        candidate_limit = 2000
+        if similar_artist_names:
+            cur.execute("""
+                SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
+                       t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+                FROM library_tracks t
+                JOIN library_albums a ON t.album_id = a.id
+                WHERE t.bliss_vector IS NOT NULL
+                  AND a.artist != %s
+                  AND (a.artist = ANY(%s) OR t.id IN (
+                      SELECT id FROM library_tracks
+                      WHERE bliss_vector IS NOT NULL
+                      ORDER BY RANDOM() LIMIT 500
+                  ))
+                LIMIT %s
+            """, (artist_name, list(similar_artist_names), candidate_limit))
+        else:
+            cur.execute("""
+                SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
+                       t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+                FROM library_tracks t
+                JOIN library_albums a ON t.album_id = a.id
+                WHERE t.bliss_vector IS NOT NULL AND a.artist != %s
+                ORDER BY RANDOM()
+                LIMIT %s
+            """, (artist_name, candidate_limit))
+
+        candidates = [dict(r) for r in cur.fetchall()]
+
+        if not candidates:
+            return []
+
+        # Fetch genre names for each unique candidate artist
+        candidate_artists = {c["artist"] for c in candidates}
+        artist_genre_map: dict[str, set[str]] = {}
+        for ca in candidate_artists:
+            artist_genre_map[ca] = _get_artist_genre_ids(cur, ca)
+
+    # Attach genres to candidates
+    for c in candidates:
+        c["_genres"] = list(artist_genre_map.get(c["artist"], set()))
+
+    # Score each candidate
+    scored = [
+        (_score_candidate(c, seeds, artist_genres, similar_artist_names), c)
+        for c in candidates
+    ]
+
+    # Apply diversity (no more than 3 consecutive from same artist) and sort
+    diverse = _apply_diversity(scored, max_consecutive=3)
+
+    # Mix: artist tracks + external tracks
     artist_count = max(1, int(limit * mix_ratio))
     similar_count = limit - artist_count
 
-    picked_artist = random.sample(artist_tracks, min(artist_count, len(artist_tracks)))
-    picked_similar = similar_tracks[:similar_count]
+    picked_artist = random.sample(all_artist_tracks, min(artist_count, len(all_artist_tracks)))
+    picked_similar = diverse[:similar_count]
 
-    # Interleave: start with artist, sprinkle similar
-    playlist = []
+    # Interleave artist tracks into similar tracks organically
+    playlist: list[dict] = []
     a_idx, s_idx = 0, 0
     for i in range(limit):
         if a_idx < len(picked_artist) and (s_idx >= len(picked_similar) or i % 3 == 0):
@@ -117,34 +326,110 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
             "artist": t["artist"],
             "album": t["album"],
             "duration": t.get("duration", 0),
-            "distance": t.get("distance"),
+            "score": t.get("_score"),
         })
 
     return playlist
 
 
 def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
-    """Find similar tracks using pre-computed vectors stored in DB."""
+    """Find similar tracks using pre-computed vectors stored in DB (multi-signal scoring)."""
     with get_db_ctx() as cur:
-        cur.execute("SELECT bliss_vector FROM library_tracks WHERE path = %s", (track_path,))
+        cur.execute("""
+            SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE t.path = %s
+        """, (track_path,))
         row = cur.fetchone()
-        if not row or not row["bliss_vector"]:
+        if not row:
             return []
 
-        source_vec = row["bliss_vector"]
+        source = dict(row)
+        if not source.get("bliss_vector"):
+            return []
 
-        # Calculate euclidean distance in SQL (PostgreSQL array math)
-        # This is O(n) over all tracks but fast for < 100K tracks
+        # Get source artist genres
+        source_genres = _get_artist_genre_ids(cur, source["artist"])
+        source["_genres"] = list(source_genres)
+
+        # Get candidates via broad bliss distance (top 200), then re-rank in Python
         cur.execute("""
-            SELECT path, title, artist, album, duration,
+            SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy,
                    SQRT(
                        (SELECT SUM(POW(x - y, 2))
-                        FROM UNNEST(bliss_vector, %s::float8[]) AS v(x, y))
-                   ) AS distance
-            FROM library_tracks
-            WHERE bliss_vector IS NOT NULL AND path != %s
-            ORDER BY distance ASC
-            LIMIT %s
-        """, (source_vec, track_path, limit))
+                        FROM UNNEST(t.bliss_vector, %s::float8[]) AS v(x, y))
+                   ) AS bliss_dist
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE t.bliss_vector IS NOT NULL AND t.path != %s
+            ORDER BY bliss_dist ASC
+            LIMIT 200
+        """, (source["bliss_vector"], track_path))
+        candidates = [dict(r) for r in cur.fetchall()]
 
-        return [dict(r) for r in cur.fetchall()]
+        if not candidates:
+            return []
+
+        # Fetch genres for unique candidate artists
+        candidate_artists = {c["artist"] for c in candidates}
+        artist_genre_map: dict[str, set[str]] = {}
+        for ca in candidate_artists:
+            artist_genre_map[ca] = _get_artist_genre_ids(cur, ca)
+
+        # Get similar artist names for source artist
+        similar_artist_names = _get_similar_artist_names(cur, source["artist"])
+
+    # Attach genres and score
+    for c in candidates:
+        c["_genres"] = list(artist_genre_map.get(c["artist"], set()))
+
+    scored = []
+    for c in candidates:
+        score = 0.0
+
+        # Bliss cosine similarity (weight 0.3)
+        score += 0.3 * _cosine_similarity(source["bliss_vector"], c["bliss_vector"])
+
+        # BPM proximity (weight 0.15)
+        if source.get("bpm") and c.get("bpm"):
+            diff = abs(source["bpm"] - c["bpm"])
+            score += 0.15 * max(0.0, 1.0 - diff / 40.0)
+
+        # Key compatibility (weight 0.1)
+        score += 0.1 * _key_compatibility(
+            source.get("audio_key"), source.get("audio_scale"),
+            c.get("audio_key"), c.get("audio_scale"),
+        )
+
+        # Energy proximity (weight 0.1)
+        if source.get("energy") is not None and c.get("energy") is not None:
+            score += 0.1 * (1.0 - abs(source["energy"] - c["energy"]))
+
+        # Genre overlap (weight 0.15)
+        score += 0.15 * _genre_jaccard(source_genres, set(c["_genres"]))
+
+        # Similar artist bonus (weight 0.2)
+        if c.get("artist") in similar_artist_names:
+            score += 0.2
+
+        scored.append((score, c))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+
+    result = []
+    for score, t in scored[:limit]:
+        track_path_out = t["path"]
+        if track_path_out.startswith("/music/"):
+            track_path_out = track_path_out[len("/music/"):]
+        result.append({
+            "path": track_path_out,
+            "title": t["title"],
+            "artist": t["artist"],
+            "album": t["album"],
+            "duration": t.get("duration", 0),
+            "score": round(score, 4),
+        })
+    return result

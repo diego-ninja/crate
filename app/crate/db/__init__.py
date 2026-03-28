@@ -101,3 +101,9 @@ from crate.db.shows import (
 from crate.db.events import (
     emit_task_event, get_task_events, cleanup_task_events, cleanup_old_events,
 )
+
+# Similarities
+from crate.db.similarities import (
+    upsert_similarity, bulk_upsert_similarities, get_similar_artists,
+    get_artist_network, mark_library_status,
+)

@@ -71,6 +71,18 @@ def api_task_detail(request: Request, task_id: str):
     }
 
 
+@router.post("/api/tasks/backfill-similarities")
+def api_backfill_similarities(request: Request):
+    """Populate artist_similarities table from existing similar_json data."""
+    _require_admin(request)
+    pending = list_tasks(status="pending", task_type="backfill_similarities", limit=1)
+    running = list_tasks(status="running", task_type="backfill_similarities", limit=1)
+    if pending or running:
+        return JSONResponse({"error": "Already running"}, status_code=409)
+    task_id = create_task("backfill_similarities")
+    return {"task_id": task_id}
+
+
 @router.post("/api/tasks/sync-shows")
 def api_sync_shows(request: Request):
     """Trigger a sync_shows task to fetch shows from Ticketmaster into DB."""

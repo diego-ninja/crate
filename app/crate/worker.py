@@ -2820,6 +2820,50 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
     return {"artists_checked": synced, "shows_found": shows_found, "old_deleted": deleted}
 
 
+def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> dict:
+    """Populate artist_similarities from existing similar_json on library_artists."""
+    from crate.db import get_db_ctx, bulk_upsert_similarities, mark_library_status
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT name, similar_json FROM library_artists WHERE similar_json IS NOT NULL"
+        )
+        rows = cur.fetchall()
+
+    total = len(rows)
+    upserted = 0
+    for i, row in enumerate(rows):
+        if _is_cancelled(task_id):
+            break
+        similar_json = row["similar_json"]
+        if not similar_json:
+            continue
+        try:
+            similar = similar_json if isinstance(similar_json, list) else json.loads(similar_json)
+        except Exception:
+            continue
+        if not isinstance(similar, list) or not similar:
+            continue
+        try:
+            bulk_upsert_similarities(row["name"], similar)
+            upserted += len(similar)
+        except Exception:
+            log.warning("backfill_similarities: failed for %s", row["name"], exc_info=True)
+        if i % 50 == 0:
+            update_task(task_id, progress=json.dumps({
+                "phase": "backfill", "done": i + 1, "total": total,
+            }))
+
+    # Update in_library flags
+    try:
+        updated = mark_library_status()
+        log.info("backfill_similarities: marked %d rows in_library", updated)
+    except Exception:
+        log.warning("backfill_similarities: mark_library_status failed", exc_info=True)
+
+    return {"artists_processed": total, "rows_upserted": upserted}
+
+
 TASK_HANDLERS = {
     "scan": _handle_scan,
     "analyze_tracks": _handle_analyze_tracks,
@@ -2863,4 +2907,5 @@ TASK_HANDLERS = {
     "cleanup_incomplete_downloads": _handle_cleanup_incomplete_downloads,
     "upload_image": _handle_upload_image,
     "sync_shows": _handle_sync_shows,
+    "backfill_similarities": _handle_backfill_similarities,
 }

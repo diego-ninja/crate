@@ -192,6 +192,14 @@ def analyze_track(filepath: Union[str, Path]) -> dict:
     return _empty_result()
 
 
+def _normalize_centroid(hz: float | None) -> float | None:
+    """Normalize spectral centroid from Hz to 0-1 scale. Same formula as librosa path."""
+    if hz is None:
+        return None
+    import math
+    return round(min(1.0, math.log1p(hz) / math.log1p(4000)), 3)
+
+
 def analyze_batch(filepaths: list) -> list:
     """Analyze multiple tracks. Tries Rust CLI batch first, falls back to Python."""
     rust = _analyze_rust_batch(filepaths)
@@ -218,7 +226,7 @@ def _analyze_rust(filepath: str) -> dict | None:
             "energy": data.get("energy"),
             "loudness": data.get("loudness"),
             "dynamic_range": data.get("dynamic_range"),
-            "spectral_complexity": data.get("spectral_centroid"),
+            "spectral_complexity": _normalize_centroid(data.get("spectral_centroid")),
             "mood": None,  # Rust CLI doesn't do mood (needs ML model)
             "danceability": None,
             "valence": None,
@@ -255,7 +263,7 @@ def _analyze_rust_batch(filepaths: list) -> list | None:
                         "bpm": t.get("bpm"), "key": t.get("key"), "scale": t.get("scale"),
                         "energy": t.get("energy"), "loudness": t.get("loudness"),
                         "dynamic_range": t.get("dynamic_range"),
-                        "spectral_complexity": t.get("spectral_centroid"),
+                        "spectral_complexity": _normalize_centroid(t.get("spectral_centroid")),
                         "mood": None, "danceability": None, "valence": None,
                         "acousticness": None, "instrumentalness": None,
                     })
