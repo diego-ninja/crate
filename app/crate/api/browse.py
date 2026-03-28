@@ -2,7 +2,7 @@ from io import BytesIO
 from pathlib import Path
 
 import mutagen
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from crate.api.auth import _require_auth
@@ -1255,6 +1255,26 @@ def api_artist_radio(request: Request, name: str, limit: int = 50):
     return tracks
 
 
+@router.get("/api/similar-tracks")
+def api_similar_tracks_query(request: Request, path: str = "", track_id: int = 0, limit: int = 20):
+    """Find similar tracks using multi-signal scoring (query param version, avoids route conflicts)."""
+    _require_auth(request)
+    from crate.bliss import get_similar_from_db
+
+    if track_id:
+        with get_db_ctx() as cur:
+            cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
+            row = cur.fetchone()
+            if row:
+                path = row["path"]
+
+    if not path:
+        raise HTTPException(status_code=400, detail="path or track_id required")
+
+    results = get_similar_from_db(path, limit=limit)
+    return {"tracks": results}
+
+
 @router.get("/api/similar-tracks/{filepath:path}")
 def api_similar_tracks(request: Request, filepath: str, limit: int = 20):
     """Find tracks similar to the given track using bliss vectors."""
@@ -1265,7 +1285,7 @@ def api_similar_tracks(request: Request, filepath: str, limit: int = 20):
     if not full_path or not full_path.is_file():
         return JSONResponse({"error": "Track not found"}, status_code=404)
     similar = get_similar_from_db(str(full_path), limit=limit)
-    return similar
+    return {"tracks": similar}
 
 
 @router.get("/api/download/track/{filepath:path}")

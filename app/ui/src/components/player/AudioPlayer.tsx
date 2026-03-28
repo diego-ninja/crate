@@ -3,11 +3,12 @@ import { useNavigate } from "react-router";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { Button } from "@/components/ui/button";
+import { SimilarTracksPanel } from "@/components/track/SimilarTracksPanel";
 import { api } from "@/lib/api";
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, X,
   Shuffle, Repeat, Repeat1, PanelRightOpen, PanelRightClose,
-  Music, Timer, Gauge, Save, Download, Trash2,
+  Music, Timer, Gauge, Save, Download, Trash2, Radar,
 } from "lucide-react";
 import { formatDuration, encPath } from "@/lib/utils";
 import { toast } from "sonner";
@@ -280,6 +281,7 @@ export function AudioPlayer() {
   const [panelOpen, setPanelOpen] = useState(getStoredPanel);
   const [vizMode, setVizMode] = useState<VizMode>(getStoredViz);
   const [activeTab, setActiveTab] = useState<"queue" | "lyrics">("queue");
+  const [similarOpen, setSimilarOpen] = useState(false);
   const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
   const { meta: trackMeta, rating: currentRating, setRating: setCurrentRating } = useTrackMeta(currentTrack?.id);
 
@@ -515,12 +517,30 @@ export function AudioPlayer() {
           </div>
           {sleepTimer && <span className="text-[9px] text-primary font-mono">{sleepTimer}m</span>}
           {playbackRate !== 1 && <span className="text-[9px] text-primary font-mono">{playbackRate}x</span>}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground"
+            onClick={() => setSimilarOpen(true)}
+            title="Find similar tracks"
+          >
+            <Radar size={13} />
+          </Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={togglePanel} title={panelOpen ? "Close panel" : "Open panel"}>
             {panelOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
           </Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={clearQueue}><X size={13} /></Button>
         </div>
       </div>
+      {similarOpen && currentTrack && (
+        <SimilarTracksPanel
+          trackPath={currentTrack.id.includes("/") ? `/music/${currentTrack.id}` : ""}
+          trackTitle={currentTrack.title}
+          artist={currentTrack.artist}
+          open={similarOpen}
+          onClose={() => setSimilarOpen(false)}
+        />
+      )}
     </>
   );
 }

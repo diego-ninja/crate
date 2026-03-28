@@ -9,6 +9,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
+import { SimilarTracksPanel } from "@/components/track/SimilarTracksPanel";
 import { Play, Pause, BarChart3, Download, Heart } from "lucide-react";
 import { StarRating } from "@/components/ui/star-rating";
 import { api } from "@/lib/api";
@@ -196,6 +197,7 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
     for (const t of tracks) if (t.id != null) init[t.id] = t.rating ?? 0;
     return init;
   });
+  const [similarTrack, setSimilarTrack] = useState<{ path: string; title: string; artist: string } | null>(null);
 
   function handleRate(trackId: number | undefined, path: string | undefined, rating: number) {
     if (trackId != null) setRatings(prev => ({ ...prev, [trackId]: rating }));
@@ -252,6 +254,7 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
   });
 
   return (
+    <>
     <Table>
       <TableHeader>
         <TableRow>
@@ -280,7 +283,7 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
           const ndSong = hasNavidrome ? findNavidromeSong(t, i) : undefined;
           const amTrack = audiomuseData ? (audiomuseData[trackTitle] ?? audiomuseData[ndSong?.id ?? ""]) : undefined;
           return (
-            <MusicContextMenu key={t.filename} type="track" artist={artist || t.tags.artist || ""} album={t.tags.album || ""} trackId={trackId} trackTitle={t.tags.title || t.filename} albumCover={albumCover}>
+            <MusicContextMenu key={t.filename} type="track" artist={artist || t.tags.artist || ""} album={t.tags.album || ""} trackId={trackId} trackTitle={t.tags.title || t.filename} albumCover={albumCover} onFindSimilar={t.path ? () => setSimilarTrack({ path: t.path!, title: t.tags.title || t.filename, artist: artist || t.tags.artist || "" }) : undefined}>
             <TableRow className={cn(isCurrentTrack && "bg-primary/5")}>
               <TableCell>
                 <Button
@@ -385,5 +388,15 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
         })}
       </TableBody>
     </Table>
+    {similarTrack && (
+      <SimilarTracksPanel
+        trackPath={similarTrack.path}
+        trackTitle={similarTrack.title}
+        artist={similarTrack.artist}
+        open={!!similarTrack}
+        onClose={() => setSimilarTrack(null)}
+      />
+    )}
+  </>
   );
 }

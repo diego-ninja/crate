@@ -3,6 +3,7 @@ import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
+import { Radar } from "lucide-react";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -19,6 +20,7 @@ interface MusicContextMenuProps {
   trackId?: string;
   trackTitle?: string;
   albumCover?: string;
+  onFindSimilar?: () => void;
 }
 
 interface NavidromeSong {
@@ -43,6 +45,7 @@ export function MusicContextMenu({
   trackId,
   trackTitle,
   albumCover,
+  onFindSimilar,
 }: MusicContextMenuProps) {
   const navigate = useNavigate();
   const { play, playAll, playNext, addToQueue } = usePlayer();
@@ -129,6 +132,14 @@ export function MusicContextMenu({
           >
             Open Album
           </ContextMenuItem>
+        )}
+        {type === "track" && onFindSimilar && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem onClick={onFindSimilar} className="text-sm">
+              <Radar size={14} className="mr-2" /> Find Similar
+            </ContextMenuItem>
+          </>
         )}
         <ContextMenuSeparator />
         <ContextMenuItem
