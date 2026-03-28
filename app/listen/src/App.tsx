@@ -1,5 +1,5 @@
 import React, { Suspense } from "react";
-import { BrowserRouter, Routes, Route } from "react-router";
+import { Routes, Route } from "react-router";
 import { PlayerProvider } from "@/contexts/PlayerContext";
 import { Shell } from "@/components/layout/Shell";
 import { Home } from "@/pages/Home";
@@ -28,9 +28,8 @@ function Spinner() {
 
 export function App() {
   return (
-    <BrowserRouter>
-      <PlayerProvider>
-        <Routes>
+    <PlayerProvider>
+      <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<Shell />}>
             <Route index element={<Home />} />
@@ -64,6 +63,5 @@ export function App() {
           </Route>
         </Routes>
       </PlayerProvider>
-    </BrowserRouter>
   );
 }
