@@ -29,8 +29,11 @@ RUN if [ "$(uname -m)" = "x86_64" ]; then \
         rm -rf /var/lib/apt/lists/*; \
     fi
 
-# Install grooveyard-bliss binary if available (x86_64 only)
-RUN if [ -f bin/grooveyard-bliss-linux-amd64 ] && [ "$(uname -m)" = "x86_64" ]; then \
+# Install crate-cli binary if available (x86_64 only)
+RUN if [ -f bin/crate-cli-linux-amd64 ] && [ "$(uname -m)" = "x86_64" ]; then \
+        cp bin/crate-cli-linux-amd64 /usr/local/bin/crate-cli && \
+        chmod +x /usr/local/bin/crate-cli; \
+    elif [ -f bin/grooveyard-bliss-linux-amd64 ] && [ "$(uname -m)" = "x86_64" ]; then \
         cp bin/grooveyard-bliss-linux-amd64 /usr/local/bin/grooveyard-bliss && \
         chmod +x /usr/local/bin/grooveyard-bliss; \
     fi
