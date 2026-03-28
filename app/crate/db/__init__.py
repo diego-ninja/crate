@@ -42,6 +42,7 @@ from crate.db.library import (
     upsert_artist, upsert_album, upsert_track,
     update_track_audiomuse, update_artist_enrichment,
     delete_artist, delete_album, delete_track,
+    set_track_rating, get_track_rating,
 )
 
 # Auth

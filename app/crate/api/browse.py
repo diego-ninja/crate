@@ -840,11 +840,13 @@ def api_album(request: Request, artist: str, album: str):
     album_tags = {}
     for t in tracks_data:
         track_list.append({
+            "id": t["id"],
             "filename": t["filename"],
             "format": t.get("format", ""),
             "size_mb": round(t["size"] / (1024**2), 1) if t.get("size") else 0,
             "bitrate": t.get("bitrate") // 1000 if t.get("bitrate") else None,
             "length_sec": round(t["duration"]) if t.get("duration") else 0,
+            "rating": t.get("rating", 0) or 0,
             "tags": {
                 "title": t.get("title", ""),
                 "artist": t.get("artist", ""),
@@ -1069,6 +1071,38 @@ def api_favorites_remove(request: Request, body: dict):
     return {"ok": True}
 
 
+@router.post("/api/track/rate")
+def api_rate_track(request: Request, body: dict):
+    _require_auth(request)
+    from crate.db import set_track_rating
+    rating = body.get("rating", 0)
+    track_id = body.get("track_id")
+    track_path = body.get("path")
+
+    if not isinstance(rating, int) or not 0 <= rating <= 5:
+        return JSONResponse({"error": "Rating must be 0-5"}, status_code=400)
+
+    if not track_id and track_path:
+        with get_db_ctx() as cur:
+            cur.execute("SELECT id FROM library_tracks WHERE path LIKE %s LIMIT 1", (f"%{track_path}",))
+            row = cur.fetchone()
+            track_id = row["id"] if row else None
+
+    if not track_id:
+        return JSONResponse({"error": "Track not found"}, status_code=404)
+
+    set_track_rating(track_id, rating)
+
+    # Sync to Navidrome if available
+    try:
+        from crate.navidrome import set_navidrome_rating
+        set_navidrome_rating(track_id, rating)
+    except Exception:
+        pass  # Navidrome sync is best-effort
+
+    return {"ok": True, "rating": rating}
+
+
 @router.get("/api/track-info/{filepath:path}")
 def api_track_info(request: Request, filepath: str):
     """Get audio metadata for a single track (BPM, key, energy etc.)."""
@@ -1080,7 +1114,7 @@ def api_track_info(request: Request, filepath: str):
         cur.execute(
             "SELECT title, artist, album, bpm, audio_key, audio_scale, energy, "
             "danceability, valence, acousticness, instrumentalness, loudness, "
-            "dynamic_range, lastfm_listeners, lastfm_playcount, popularity "
+            "dynamic_range, lastfm_listeners, lastfm_playcount, popularity, rating "
             "FROM library_tracks WHERE path LIKE %s LIMIT 1",
             (f"%{filepath}",),
         )

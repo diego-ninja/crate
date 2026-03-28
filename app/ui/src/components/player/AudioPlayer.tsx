@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { formatDuration, encPath } from "@/lib/utils";
 import { toast } from "sonner";
+import { StarRating } from "@/components/ui/star-rating";
 
 const VIZ_KEY = "player-viz";
 const PANEL_KEY = "player-panel";
@@ -129,15 +130,16 @@ const VIZ_MAP: Record<VizMode, typeof BarVisualizer> = {
 
 // ── Track info ───────────────────────────────────────────────────
 
-interface TrackMeta { bpm?: number; audio_key?: string; audio_scale?: string; energy?: number; album?: string }
+interface TrackMeta { bpm?: number; audio_key?: string; audio_scale?: string; energy?: number; album?: string; rating?: number }
 
-function useTrackMeta(trackId: string | undefined): TrackMeta | null {
+function useTrackMeta(trackId: string | undefined): { meta: TrackMeta | null; rating: number; setRating: (r: number) => void } {
   const [meta, setMeta] = useState<TrackMeta | null>(null);
+  const [rating, setRating] = useState(0);
   useEffect(() => {
-    if (!trackId?.includes("/")) { setMeta(null); return; }
-    api<TrackMeta>(`/api/track-info/${trackId}`).then(setMeta).catch(() => setMeta(null));
+    if (!trackId?.includes("/")) { setMeta(null); setRating(0); return; }
+    api<TrackMeta>(`/api/track-info/${trackId}`).then((m) => { setMeta(m); setRating(m?.rating ?? 0); }).catch(() => { setMeta(null); setRating(0); });
   }, [trackId]);
-  return meta;
+  return { meta, rating, setRating };
 }
 
 // ── Waveform Progress ────────────────────────────────────────────
@@ -279,7 +281,14 @@ export function AudioPlayer() {
   const [vizMode, setVizMode] = useState<VizMode>(getStoredViz);
   const [activeTab, setActiveTab] = useState<"queue" | "lyrics">("queue");
   const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
-  const trackMeta = useTrackMeta(currentTrack?.id);
+  const { meta: trackMeta, rating: currentRating, setRating: setCurrentRating } = useTrackMeta(currentTrack?.id);
+
+  function handleRate(r: number) {
+    if (!currentTrack) return;
+    setCurrentRating(r);
+    const path = currentTrack.id.includes("/") ? currentTrack.id : undefined;
+    api("/api/track/rate", "POST", { path, rating: r }).catch(() => setCurrentRating(0));
+  }
 
   if (!currentTrack) return null;
 
@@ -367,6 +376,10 @@ export function AudioPlayer() {
                   {albumName}
                 </button>
               )}
+            </div>
+
+            <div className="mt-1.5">
+              <StarRating value={currentRating} onChange={handleRate} size={14} />
             </div>
 
             {/* Metadata */}
@@ -470,6 +483,9 @@ export function AudioPlayer() {
           <div className="min-w-0">
             <div className="text-xs font-semibold truncate">{currentTrack.title}</div>
             <div className="text-[10px] text-muted-foreground truncate">{currentTrack.artist}{albumName ? ` — ${albumName}` : ""}</div>
+          </div>
+          <div className="hidden sm:block flex-shrink-0">
+            <StarRating value={currentRating} onChange={handleRate} size={11} />
           </div>
         </div>
 

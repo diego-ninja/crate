@@ -387,6 +387,17 @@ def map_library_ids() -> dict:
     return {"artists": mapped_artists, "albums": mapped_albums, "tracks": mapped_tracks}
 
 
+def set_navidrome_rating(track_id: int, rating: int):
+    """Sync rating to Navidrome via Subsonic API setRating."""
+    from crate.db import get_db_ctx
+    with get_db_ctx() as cur:
+        cur.execute("SELECT navidrome_id FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    if not row or not row.get("navidrome_id"):
+        return
+    _request("setRating", id=row["navidrome_id"], rating=rating)
+
+
 def stream_song(song_id: str) -> requests.Response:
     return _request_raw("stream", id=song_id)
 

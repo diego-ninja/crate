@@ -281,6 +281,19 @@ def delete_track(path: str):
 
 # ── Library helpers ──────────────────────────────────────────────
 
+def set_track_rating(track_id: int, rating: int) -> None:
+    """Set rating (0-5) for a track."""
+    with get_db_ctx() as cur:
+        cur.execute("UPDATE library_tracks SET rating = %s WHERE id = %s", (max(0, min(5, rating)), track_id))
+
+
+def get_track_rating(track_id: int) -> int:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT rating FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+        return row["rating"] if row and row["rating"] else 0
+
+
 def _row_to_lib_artist(row: dict) -> dict:
     d = dict(row)
     fmt = d.pop("formats_json", [])

@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { Play, Pause, BarChart3, Download, Heart } from "lucide-react";
+import { StarRating } from "@/components/ui/star-rating";
+import { api } from "@/lib/api";
 import {
   Tooltip,
   TooltipTrigger,
@@ -17,16 +19,19 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { ResponsiveRadar } from "@nivo/radar";
+import { useState } from "react";
 import { formatDuration, formatBitrate, formatBadgeClass, cn } from "@/lib/utils";
 import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { useFavorites } from "@/hooks/use-favorites";
 
 interface Track {
+  id?: number;
   filename: string;
   format: string;
   size_mb: number;
   bitrate: number | null;
   length_sec: number;
+  rating?: number;
   tags: Record<string, string>;
   path?: string;
 }
@@ -186,6 +191,19 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
   const { play, playAll, pause, resume, isPlaying, queue, currentIndex } = usePlayer();
   const { isFavorite, toggleFavorite } = useFavorites();
   const currentTrack = queue[currentIndex];
+  const [ratings, setRatings] = useState<Record<number, number>>(() => {
+    const init: Record<number, number> = {};
+    for (const t of tracks) if (t.id != null) init[t.id] = t.rating ?? 0;
+    return init;
+  });
+
+  function handleRate(trackId: number | undefined, path: string | undefined, rating: number) {
+    if (trackId != null) setRatings(prev => ({ ...prev, [trackId]: rating }));
+    api("/api/track/rate", "POST", { track_id: trackId, path, rating }).catch(() => {
+      // revert on failure
+      if (trackId != null) setRatings(prev => ({ ...prev, [trackId]: 0 }));
+    });
+  }
 
   const hasNavidrome = navidromeSongs && navidromeSongs.length > 0;
 
@@ -243,6 +261,7 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
           <TableHead>Format</TableHead>
           <TableHead>Bitrate</TableHead>
           <TableHead>Duration</TableHead>
+          <TableHead className="w-28">Rating</TableHead>
           <TableHead>Size</TableHead>
           {hasAudiomuse && <TableHead className="text-muted-foreground font-mono text-xs">BPM</TableHead>}
           {hasAudiomuse && <TableHead className="text-muted-foreground text-xs">Key</TableHead>}
@@ -304,6 +323,13 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
               </TableCell>
               <TableCell className="text-muted-foreground font-mono text-sm">
                 {formatDuration(t.length_sec)}
+              </TableCell>
+              <TableCell>
+                <StarRating
+                  value={t.id != null ? (ratings[t.id] ?? 0) : 0}
+                  onChange={(r) => handleRate(t.id, t.path, r)}
+                  size={13}
+                />
               </TableCell>
               <TableCell className="text-muted-foreground font-mono text-sm">
                 {t.size_mb} MB

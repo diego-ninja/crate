@@ -11,8 +11,9 @@ import {
   X, Music, ListMusic, Mic2, Save, Download, Settings2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { StarRating } from "@/components/ui/star-rating";
 
-interface TrackMeta { bpm?: number; energy?: number; audio_key?: string; audio_scale?: string; album?: string }
+interface TrackMeta { bpm?: number; energy?: number; audio_key?: string; audio_scale?: string; album?: string; rating?: number }
 
 interface FloatingPlayerProps {
   open: boolean;
@@ -33,6 +34,7 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vizRef = useMusicVisualizer(canvasRef, audioElement, open && isPlaying);
   const [trackMeta, setTrackMeta] = useState<TrackMeta | null>(null);
+  const [currentRating, setCurrentRating] = useState(0);
   const [showVizSettings, setShowVizSettings] = useState(false);
   const [activeTab, setActiveTab] = useState<"queue" | "lyrics">("queue");
 
@@ -43,9 +45,16 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
   useEffect(() => {
     if (!currentTrack) return;
     api<TrackMeta>(`/api/track-info/${currentTrack.id}`)
-      .then(setTrackMeta)
-      .catch(() => setTrackMeta(null));
+      .then((m) => { setTrackMeta(m); setCurrentRating(m?.rating ?? 0); })
+      .catch(() => { setTrackMeta(null); setCurrentRating(0); });
   }, [currentTrack?.id]);
+
+  function handleRate(rating: number) {
+    if (!currentTrack) return;
+    setCurrentRating(rating);
+    const path = currentTrack.id.includes("/") ? currentTrack.id : undefined;
+    api("/api/track/rate", "POST", { path, rating }).catch(() => setCurrentRating(0));
+  }
 
   // Fetch lyrics when lyrics tab active
   useEffect(() => {
@@ -214,6 +223,9 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
               {albumName}
             </button>
           )}
+          <div className="mt-1">
+            <StarRating value={currentRating} onChange={handleRate} size={12} />
+          </div>
           {trackMeta && (trackMeta.bpm || trackMeta.audio_key) && (
             <div className="flex gap-1.5 mt-1">
               {trackMeta.bpm ? <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary">{Math.round(trackMeta.bpm)} BPM</span> : null}

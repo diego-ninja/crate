@@ -552,6 +552,14 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_artist ON shows(artist_name)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_city ON shows(city)")
 
+        # Migration: track rating (0-5 stars)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_tracks ADD COLUMN rating INTEGER DEFAULT 0;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
         # Migration: add release_date, release_type, mb_release_group_id to new_releases
         cur.execute("""
             DO $$ BEGIN

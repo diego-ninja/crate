@@ -44,11 +44,13 @@ interface AlbumData {
   has_cover: boolean;
   cover_file: string | null;
   tracks: {
+    id?: number;
     filename: string;
     format: string;
     size_mb: number;
     bitrate: number | null;
     length_sec: number;
+    rating?: number;
     tags: Record<string, string>;
   }[];
   album_tags: {
