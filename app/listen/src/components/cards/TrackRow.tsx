@@ -1,5 +1,7 @@
-import { Play, Pause, Plus, ListPlus } from "lucide-react";
+import { useState } from "react";
+import { Play, Pause, Plus, ListPlus, Heart } from "lucide-react";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { api } from "@/lib/api";
 import { formatDuration, encPath } from "@/lib/utils";
 
 interface TrackRowProps {
@@ -23,6 +25,8 @@ interface TrackRowProps {
 export function TrackRow({ track, index, showArtist = false, showAlbum = false, albumCover }: TrackRowProps) {
   const { currentTrack, isPlaying } = usePlayer();
   const { play, addToQueue, playNext } = usePlayerActions();
+
+  const [liked, setLiked] = useState(false);
 
   const trackId = track.navidrome_id || track.path || track.id || "";
   const isActive = currentTrack?.id === trackId;
@@ -78,6 +82,31 @@ export function TrackRow({ track, index, showArtist = false, showAlbum = false, 
           {formatDuration(track.duration)}
         </span>
       )}
+
+      {/* Like + Actions */}
+      <button
+        className={`flex-shrink-0 p-1 transition-opacity ${
+          liked ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        }`}
+        title={liked ? "Unlike" : "Like"}
+        onClick={(e) => {
+          e.stopPropagation();
+          const path = track.path || "";
+          if (!path) return;
+          if (liked) {
+            api("/api/me/likes", "DELETE", { track_path: path }).catch(() => {});
+            setLiked(false);
+          } else {
+            api("/api/me/likes", "POST", { track_path: path }).catch(() => {});
+            setLiked(true);
+          }
+        }}
+      >
+        <Heart
+          size={14}
+          className={liked ? "text-primary fill-primary" : "text-muted-foreground"}
+        />
+      </button>
 
       {/* Actions (on hover) */}
       <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

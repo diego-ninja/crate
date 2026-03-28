@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams } from "react-router";
-import { Play, Shuffle, Radio, ChevronDown, ChevronUp, Users } from "lucide-react";
+import { Play, Shuffle, Radio, ChevronDown, ChevronUp, Users, UserPlus, UserCheck } from "lucide-react";
+import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
+import { api } from "@/lib/api";
 import { encPath, formatCompact } from "@/lib/utils";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
@@ -40,6 +42,31 @@ export function Artist() {
   const { name } = useParams<{ name: string }>();
   const decodedName = decodeURIComponent(name || "");
   const [bioExpanded, setBioExpanded] = useState(false);
+  const [following, setFollowing] = useState(false);
+
+  useEffect(() => {
+    if (!decodedName) return;
+    api<{ following: boolean }>(`/api/me/follows/${encPath(decodedName)}`)
+      .then((d) => setFollowing(d.following))
+      .catch(() => {});
+  }, [decodedName]);
+
+  async function toggleFollow() {
+    if (!decodedName) return;
+    try {
+      if (following) {
+        await api(`/api/me/follows/${encPath(decodedName)}`, "DELETE");
+        setFollowing(false);
+        toast.success(`Unfollowed ${decodedName}`);
+      } else {
+        await api("/api/me/follows", "POST", { artist_name: decodedName });
+        setFollowing(true);
+        toast.success(`Following ${decodedName}`);
+      }
+    } catch {
+      toast.error("Failed to update follow status");
+    }
+  }
 
   const { data, loading, error } = useApi<ArtistData>(
     decodedName ? `/api/artist/${encPath(decodedName)}` : null,
@@ -152,6 +179,17 @@ export function Artist() {
         >
           <Radio size={15} />
           Radio
+        </button>
+        <button
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm transition-colors ${
+            following
+              ? "bg-primary/15 text-primary border border-primary/30"
+              : "border border-white/15 text-foreground hover:bg-white/5"
+          }`}
+          onClick={toggleFollow}
+        >
+          {following ? <UserCheck size={15} /> : <UserPlus size={15} />}
+          {following ? "Following" : "Follow"}
         </button>
       </div>
 

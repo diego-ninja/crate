@@ -198,6 +198,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             artist: endedTrack.artist,
           }),
         }).catch(() => {});
+
+        // Record play in history
+        fetch("/api/me/history", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            track_path: endedTrack.id,
+            title: endedTrack.title,
+            artist: endedTrack.artist,
+            album: endedTrack.album || "",
+          }),
+        }).catch(() => {});
       }
 
       if (repeat === "one") {
