@@ -61,14 +61,21 @@ def get_artist_network(artist_name: str, depth: int = 2, limit_per_level: int = 
     depth=1: center + direct similar
     depth=2: center + direct similar + similar-of-similar
     """
-    nodes: dict[str, dict] = {}
+    # Use lowercase keys for dedup, preserve original casing in id
+    nodes: dict[str, dict] = {}  # key = lowercase name
     links: list[dict] = []
     seen_links: set[tuple[str, str]] = set()
 
-    nodes[artist_name] = {"id": artist_name, "group": 0, "in_library": True, "score": 1.0}
+    def _key(name: str) -> str:
+        return name.lower()
+
+    def _link_key(a: str, b: str) -> tuple[str, str]:
+        la, lb = _key(a), _key(b)
+        return (min(la, lb), max(la, lb))
+
+    nodes[_key(artist_name)] = {"id": artist_name, "group": 0, "in_library": True, "score": 1.0}
 
     with get_db_ctx() as cur:
-        # Level 1: direct similar
         cur.execute("""
             SELECT similar_name, score, in_library
             FROM artist_similarities
@@ -81,10 +88,11 @@ def get_artist_network(artist_name: str, depth: int = 2, limit_per_level: int = 
     level1_names: list[str] = []
     for row in level1:
         name = row["similar_name"]
-        if name not in nodes:
-            nodes[name] = {"id": name, "group": 1, "in_library": bool(row["in_library"]), "score": float(row["score"])}
+        nk = _key(name)
+        if nk not in nodes:
+            nodes[nk] = {"id": name, "group": 1, "in_library": bool(row["in_library"]), "score": float(row["score"])}
         level1_names.append(name)
-        key = (min(artist_name, name), max(artist_name, name))
+        key = _link_key(artist_name, name)
         if key not in seen_links:
             seen_links.add(key)
             links.append({"source": artist_name, "target": name, "value": float(row["score"])})
@@ -104,59 +112,61 @@ def get_artist_network(artist_name: str, depth: int = 2, limit_per_level: int = 
             """, level1_names + level1_names)
             level2_rows = cur.fetchall()
 
-        # Process level-2 rows (forward + reverse)
+        # Process level-2 rows (forward + reverse) — all lookups case-insensitive
         per_parent: dict[str, int] = {}
         for row in level2_rows:
             src = row["artist_name"]
             dst = row["similar_name"]
             score = float(row["score"])
+            sk, dk = _key(src), _key(dst)
 
             # Skip self-references back to center
-            if src == artist_name or dst == artist_name:
-                # But add cross-link if the OTHER end is a level1 node
-                other = dst if src == artist_name else src
-                if other in nodes:
-                    key = (min(artist_name, other), max(artist_name, other))
-                    if key not in seen_links:
-                        seen_links.add(key)
-                        links.append({"source": artist_name, "target": other, "value": score})
+            if sk == _key(artist_name) or dk == _key(artist_name):
+                other = dst if sk == _key(artist_name) else src
+                ok = _key(other)
+                if ok in nodes:
+                    lk = _link_key(artist_name, other)
+                    if lk not in seen_links:
+                        seen_links.add(lk)
+                        links.append({"source": nodes[_key(artist_name)]["id"], "target": nodes[ok]["id"], "value": score})
+                continue
+
+            # Cross-link between two existing nodes
+            if sk in nodes and dk in nodes:
+                lk = _link_key(src, dst)
+                if lk not in seen_links:
+                    seen_links.add(lk)
+                    links.append({"source": nodes[sk]["id"], "target": nodes[dk]["id"], "value": score})
                 continue
 
             # Normalize: ensure parent is the node already in graph
-            if src in nodes and dst in nodes:
-                # Cross-link between two existing nodes
-                key = (min(src, dst), max(src, dst))
-                if key not in seen_links:
-                    seen_links.add(key)
-                    links.append({"source": src, "target": dst, "value": score})
+            if dk in nodes and sk not in nodes:
+                src, dst = dst, src
+                sk, dk = dk, sk
+
+            if sk not in nodes:
                 continue
 
-            if dst in nodes and src not in nodes:
-                src, dst = dst, src  # reverse: parent is the one in graph
-
-            if src not in nodes:
-                continue
-
-            # Skip if target already exists in graph
-            if dst in nodes:
-                key = (min(src, dst), max(src, dst))
-                if key not in seen_links:
-                    seen_links.add(key)
-                    links.append({"source": src, "target": dst, "value": score})
+            # Skip if target already exists
+            if dk in nodes:
+                lk = _link_key(src, dst)
+                if lk not in seen_links:
+                    seen_links.add(lk)
+                    links.append({"source": nodes[sk]["id"], "target": nodes[dk]["id"], "value": score})
                 continue
 
             # New depth-2 node
-            count = per_parent.get(src, 0)
+            count = per_parent.get(sk, 0)
             if count >= limit_per_level:
                 continue
-            per_parent[src] = count + 1
+            per_parent[sk] = count + 1
 
             in_lib = bool(row["in_library"])
-            nodes[dst] = {"id": dst, "group": 2, "in_library": in_lib, "score": score}
-            key = (min(src, dst), max(src, dst))
-            if key not in seen_links:
-                seen_links.add(key)
-                links.append({"source": src, "target": dst, "value": score})
+            nodes[dk] = {"id": dst, "group": 2, "in_library": in_lib, "score": score}
+            lk = _link_key(src, dst)
+            if lk not in seen_links:
+                seen_links.add(lk)
+                links.append({"source": nodes[sk]["id"], "target": dst, "value": score})
 
     return {"nodes": list(nodes.values()), "links": links}
 
