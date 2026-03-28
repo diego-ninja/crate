@@ -4,7 +4,8 @@
 //! Maps class probabilities to high-level features (mood, danceability, etc.)
 //! using the same weighted label groups as the Python `audio_analysis.py`.
 
-use ort::{session::Session, value::Value};
+use ort::session::Session;
+use ort::value::TensorRef;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -200,21 +201,24 @@ impl PannsModel {
     /// Returns 527-class probability vector.
     fn predict_raw(&self, waveform: &[f32]) -> Result<Vec<f32>, String> {
         let n = waveform.len();
-        let input = Value::from_array(([1usize, n], waveform.to_vec()))
+        let input_tensor = TensorRef::from_array_view(([1usize, n], waveform))
             .map_err(|e| format!("ort input: {e}"))?;
 
-        let outputs = self.session.run(ort::inputs![input].map_err(|e| format!("ort inputs: {e}"))?)
+        let session_inputs = ort::inputs!["waveform" => input_tensor]
+            .map_err(|e| format!("ort inputs: {e}"))?;
+
+        let outputs = self
+            .session
+            .run(session_inputs)
             .map_err(|e| format!("ort run: {e}"))?;
 
-        let output = outputs
-            .get("clipwise_output")
-            .ok_or_else(|| "missing clipwise_output".to_string())?;
+        let output = &outputs["clipwise_output"];
 
-        let tensor = output
+        let (_shape, data) = output
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("ort extract: {e}"))?;
 
-        Ok(tensor.iter().copied().collect())
+        Ok(data.to_vec())
     }
 
     /// Compute high-level ML features from audio + signal analysis context.

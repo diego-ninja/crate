@@ -654,7 +654,10 @@ pub fn run_analyze(
 
     if let Some(file_path) = file {
         #[cfg(feature = "ml")]
-        let result = analyze_track_with_ml(&file_path, panns.as_deref());
+        let result = analyze_track_with_ml(
+            &file_path,
+            panns.as_ref().map(|m| m.as_ref()),
+        );
         #[cfg(not(feature = "ml"))]
         let result = analyze_track(&file_path);
 
@@ -668,11 +671,10 @@ pub fn run_analyze(
         eprintln!("Found {} files, analyzing...", total);
 
         #[cfg(feature = "ml")]
-        let results: Vec<AnalysisResult> = if panns.is_some() {
-            let model = panns.as_ref().unwrap().clone();
+        let results: Vec<AnalysisResult> = if let Some(ref model) = panns {
             files
                 .par_iter()
-                .map(|f| analyze_track_with_ml(f, Some(&model)))
+                .map(|f| analyze_track_with_ml(f, Some(model.as_ref())))
                 .collect()
         } else {
             files.par_iter().map(|f| analyze_track(f)).collect()

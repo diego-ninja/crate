@@ -227,11 +227,11 @@ def _analyze_rust(filepath: str) -> dict | None:
             "loudness": data.get("loudness"),
             "dynamic_range": data.get("dynamic_range"),
             "spectral_complexity": _normalize_centroid(data.get("spectral_centroid")),
-            "mood": None,  # Rust CLI doesn't do mood (needs ML model)
-            "danceability": None,
-            "valence": None,
-            "acousticness": None,
-            "instrumentalness": None,
+            "mood": data.get("mood"),
+            "danceability": data.get("danceability"),
+            "valence": data.get("valence"),
+            "acousticness": data.get("acousticness"),
+            "instrumentalness": data.get("instrumentalness"),
         }
     except Exception:
         return None
@@ -264,8 +264,9 @@ def _analyze_rust_batch(filepaths: list) -> list | None:
                         "energy": t.get("energy"), "loudness": t.get("loudness"),
                         "dynamic_range": t.get("dynamic_range"),
                         "spectral_complexity": _normalize_centroid(t.get("spectral_centroid")),
-                        "mood": None, "danceability": None, "valence": None,
-                        "acousticness": None, "instrumentalness": None,
+                        "mood": t.get("mood"), "danceability": t.get("danceability"),
+                        "valence": t.get("valence"), "acousticness": t.get("acousticness"),
+                        "instrumentalness": t.get("instrumentalness"),
                     })
                 else:
                     results.append(_empty_result())

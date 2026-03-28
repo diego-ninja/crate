@@ -8,7 +8,8 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
 
-RUN cargo build --release
+# Build with ML feature (ONNX Runtime downloaded automatically via ort)
+RUN cargo build --release --features ml
 
 # Output: /build/target/release/crate-cli
 FROM scratch AS export

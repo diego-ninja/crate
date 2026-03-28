@@ -46,31 +46,6 @@ def api_tasks(request: Request, status: str | None = None, limit: int = 50):
     return result
 
 
-@router.get("/api/tasks/{task_id}")
-def api_task_detail(request: Request, task_id: str):
-    _require_auth(request)
-    task = get_task(task_id)
-    if not task:
-        return JSONResponse({"error": "Task not found"}, status_code=404)
-
-    progress = task.get("progress", "")
-    try:
-        progress_parsed = _json.loads(progress) if progress and progress.startswith("{") else progress
-    except (_json.JSONDecodeError, TypeError):
-        progress_parsed = progress
-
-    return {
-        "id": task["id"],
-        "type": task["type"],
-        "status": task["status"],
-        "progress": progress_parsed,
-        "error": task.get("error"),
-        "result": task.get("result"),
-        "created_at": task["created_at"],
-        "updated_at": task["updated_at"],
-    }
-
-
 @router.post("/api/tasks/backfill-similarities")
 def api_backfill_similarities(request: Request):
     """Populate artist_similarities table from existing similar_json data."""
@@ -96,6 +71,40 @@ def api_sync_shows(request: Request):
 
 
 @router.post("/api/tasks/sync-library")
+def api_sync_library(request: Request):
+    """Create a library_sync task to re-sync the filesystem to DB."""
+    _require_admin(request)
+    running = list_tasks(status="running", task_type="library_sync", limit=1)
+    pending = list_tasks(status="pending", task_type="library_sync", limit=1)
+    if running or pending:
+        return JSONResponse({"error": "Library sync already in progress"}, status_code=409)
+    task_id = create_task("library_sync")
+    return {"task_id": task_id, "status": "started"}
+
+
+@router.get("/api/tasks/{task_id}")
+def api_task_detail(request: Request, task_id: str):
+    _require_auth(request)
+    task = get_task(task_id)
+    if not task:
+        return JSONResponse({"error": "Task not found"}, status_code=404)
+
+    progress = task.get("progress", "")
+    try:
+        progress_parsed = _json.loads(progress) if progress and progress.startswith("{") else progress
+    except (_json.JSONDecodeError, TypeError):
+        progress_parsed = progress
+
+    return {
+        "id": task["id"],
+        "type": task["type"],
+        "status": task["status"],
+        "progress": progress_parsed,
+        "error": task.get("error"),
+        "result": task.get("result"),
+        "created_at": task["created_at"],
+        "updated_at": task["updated_at"],
+    }
 def api_sync_library(request: Request):
     """Create a library_sync task to re-sync the filesystem to DB."""
     _require_admin(request)

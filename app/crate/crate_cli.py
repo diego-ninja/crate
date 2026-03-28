@@ -69,6 +69,20 @@ def run_scan(directory: str, hash: bool = True, covers: bool = True,
         return None
 
 
+PANNS_ONNX_PATHS = [
+    "/app/models/panns_cnn14.onnx",
+    "/usr/local/share/crate/panns_cnn14.onnx",
+]
+
+
+@lru_cache(maxsize=1)
+def _find_panns_model() -> str | None:
+    for p in PANNS_ONNX_PATHS:
+        if Path(p).is_file():
+            return p
+    return None
+
+
 def run_analyze(directory: str = "", file: str = "",
                 extensions: str = "flac,mp3,m4a,ogg,opus") -> dict | None:
     """Run audio analysis with Rust CLI. Returns AnalysisResult(s) or None."""
@@ -76,6 +90,9 @@ def run_analyze(directory: str = "", file: str = "",
     if not binary or not has_subcommands():
         return None
     args = [binary, "analyze"]
+    model = _find_panns_model()
+    if model:
+        args.extend(["--model-path", model])
     if file:
         args.extend(["--file", file])
     elif directory:
