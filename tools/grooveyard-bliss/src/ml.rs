@@ -178,9 +178,12 @@ pub struct MlFeatures {
 
 /// Holds the ONNX session for PANNs CNN14 inference.
 pub struct PannsModel {
-    session: Session,
+    session: std::sync::Mutex<Session>,
     lb_to_ix: HashMap<&'static str, usize>,
 }
+
+// Safe to share across threads — Mutex protects the session
+unsafe impl Sync for PannsModel {}
 
 impl PannsModel {
     /// Load the ONNX model from disk.
@@ -192,7 +195,7 @@ impl PannsModel {
             .commit_from_file(model_path)
             .map_err(|e| format!("ort load model: {e}"))?;
         Ok(Self {
-            session,
+            session: std::sync::Mutex::new(session),
             lb_to_ix: audioset_label_index(),
         })
     }
@@ -204,11 +207,11 @@ impl PannsModel {
         let input_tensor = TensorRef::from_array_view(([1usize, n], waveform))
             .map_err(|e| format!("ort input: {e}"))?;
 
-        let session_inputs = ort::inputs!["waveform" => input_tensor]
-            .map_err(|e| format!("ort inputs: {e}"))?;
+        let session_inputs = ort::inputs!["waveform" => input_tensor];
 
-        let outputs = self
-            .session
+        let mut session = self.session.lock()
+            .map_err(|e| format!("session lock: {e}"))?;
+        let outputs = session
             .run(session_inputs)
             .map_err(|e| format!("ort run: {e}"))?;
 

@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 rust:1.85-slim AS builder
+FROM --platform=linux/amd64 rust:latest AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config libssl-dev build-essential libsqlite3-dev \

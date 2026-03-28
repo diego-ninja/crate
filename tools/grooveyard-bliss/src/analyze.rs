@@ -671,9 +671,10 @@ pub fn run_analyze(
         eprintln!("Found {} files, analyzing...", total);
 
         #[cfg(feature = "ml")]
-        let results: Vec<AnalysisResult> = if let Some(ref model) = panns {
+        let results: Vec<AnalysisResult> = if let Some(model) = panns.as_ref() {
+            // Sequential when using ML model (ONNX session requires &mut)
             files
-                .par_iter()
+                .iter()
                 .map(|f| analyze_track_with_ml(f, Some(model.as_ref())))
                 .collect()
         } else {
