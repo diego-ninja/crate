@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision 1: UI Concept & Layout — Crate Listen</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1a1a2e; min-height: 100vh; padding: 2rem; line-height: 1.6; }
+    header { text-align: center; margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; max-width: 1400px; margin-left: auto; margin-right: auto; }
+    .decision-number { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
+    header h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; margin-top: 0.25rem; }
+    .category-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 0.5rem; }
+    .category-badge.visual { background: #fce7f3; color: #be185d; }
+    .decision-description { font-size: 1rem; color: #475569; margin-top: 0.75rem; max-width: 700px; margin-left: auto; margin-right: auto; line-height: 1.7; }
+    .instruction { margin-top: 1rem; font-size: 0.85rem; background: #eff6ff; color: #1d4ed8; padding: 0.6rem 1.25rem; border-radius: 8px; display: inline-block; border: 1px solid #bfdbfe; }
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 1400px; margin: 0 auto 3rem; }
+    .option-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04); border: 2px solid #e2e8f0; transition: all 0.2s ease; display: flex; flex-direction: column; position: relative; }
+    .option-card:hover { border-color: #6366f1; box-shadow: 0 4px 20px rgba(99,102,241,0.12); }
+    .card-header { padding: 1rem 1.25rem 0.75rem; border-bottom: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 0.2rem; }
+    .card-header-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .option-label { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+    .option-card.option-a .option-label { color: #7c3aed; }
+    .option-card.option-b .option-label { color: #0891b2; }
+    .option-card.option-c .option-label { color: #059669; }
+    .option-card.option-d .option-label { color: #dc2626; }
+    .option-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; }
+    .recommended-badge { background: #f59e0b; color: white; padding: 3px 10px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+    .option-card.chosen { border: 3px solid #059669; box-shadow: 0 4px 20px rgba(5,150,105,0.15); }
+    .card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    .chosen-badge { background: #059669; color: white; padding: 3px 10px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; display: none; }
+    .option-card.chosen .chosen-badge { display: inline-block; }
+    .option-card.not-chosen { opacity: 0.55; filter: grayscale(20%); }
+    .option-card.not-chosen:hover { opacity: 0.8; filter: none; }
+    .visual-preview { padding: 1rem; background: #0a0a0f; min-height: 340px; display: flex; align-items: center; justify-content: center; }
+    .option-summary { padding: 1rem 1.25rem; font-size: 0.875rem; color: #334155; line-height: 1.65; border-top: 1px solid #f1f5f9; }
+    .verdict { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #f1f5f9; }
+    .pros, .cons { padding: 1rem 1.25rem; }
+    .pros { border-right: 1px solid #f1f5f9; }
+    .pros h3, .cons h3 { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; }
+    .pros h3 { color: #059669; }
+    .cons h3 { color: #e11d48; }
+    .verdict ul { list-style: none; padding: 0; }
+    .verdict li { font-size: 0.8rem; color: #475569; line-height: 1.5; padding: 0.15rem 0; padding-left: 1rem; position: relative; }
+    .pros li::before { content: "✓ "; color: #059669; font-weight: 700; position: absolute; left: 0; }
+    .cons li::before { content: "! "; color: #e11d48; font-weight: 700; position: absolute; left: 0; }
+    .card-footer { padding: 0.75rem 1.25rem; background: #f8fafc; border-top: 1px solid #f1f5f9; }
+    .tell-claude { font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 0.35rem 0.65rem; border-radius: 6px; display: block; font-family: 'SF Mono', 'Fira Code', monospace; }
+    .comparison-section { max-width: 1400px; margin: 0 auto 3rem; }
+    .comparison-section h2 { font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; }
+    .comparison-table-wrapper { overflow-x: auto; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04); }
+    .comparison-table { width: 100%; border-collapse: collapse; background: white; font-size: 0.85rem; }
+    .comparison-table th { padding: 0.85rem 1rem; text-align: left; font-weight: 700; font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+    .comparison-table th:first-child { background: #f8fafc; color: #64748b; }
+    .comparison-table th.col-a { color: #7c3aed; }
+    .comparison-table th.col-b { color: #0891b2; }
+    .comparison-table th.col-c { color: #059669; }
+    .comparison-table th.col-d { color: #dc2626; }
+    .comparison-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    .comparison-table td:first-child { font-weight: 600; color: #475569; background: #f8fafc; }
+    .comparison-table tr:nth-child(even) td { background: #fafbfc; }
+    .comparison-table tr:nth-child(even) td:first-child { background: #f1f5f9; }
+    .comparison-table .col-recommended { background: #fffbeb !important; }
+    .comparison-table tr:last-child td { border-bottom: none; }
+    .page-footer { max-width: 1400px; margin: 0 auto; text-align: center; padding: 1.5rem; background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .page-footer p { font-size: 0.85rem; color: #64748b; margin: 0.3rem 0; }
+    .page-footer strong { color: #334155; }
+    .back-link { display: inline-block; margin-bottom: 1.5rem; font-size: 0.85rem; color: #6366f1; text-decoration: none; max-width: 1400px; }
+    .back-link:hover { text-decoration: underline; }
+    @media (max-width: 900px) { .options-grid { grid-template-columns: 1fr; } body { padding: 1rem; } }
+
+    /* Mockup shared styles */
+    .mockup { width: 100%; max-width: 380px; border-radius: 12px; overflow: hidden; font-family: -apple-system, system-ui, sans-serif; font-size: 11px; border: 1px solid #1a1a2e; }
+    .mockup * { box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">&larr; All Decisions</a>
+
+  <header>
+    <span class="decision-number">Decision 1 of 1</span>
+    <h1>Overall UI Concept & Layout</h1>
+    <span class="category-badge visual">Visual / UX</span>
+    <p class="decision-description">
+      This is the foundational decision for Crate Listen — the layout pattern, navigation approach, and visual density that will define the entire user experience. Each concept uses the same dark minimal palette (#0a0a0f background, #06b6d4 cyan accent) but takes a very different approach to how users navigate, discover music, and interact with the player. Think about where your users will primarily use this: desktop at home? Phone on the go? Both equally?
+    </p>
+    <p class="instruction">
+      Tell Claude: <strong>"Option B"</strong> &middot; <strong>"Option A but [change]"</strong> &middot; <strong>"more options"</strong>
+    </p>
+  </header>
+
+  <main class="options-grid">
+
+    <!-- ═══════════════════════════════════════════════════ OPTION A ═══ -->
+    <article class="option-card option-a">
+      <div class="card-header">
+        <div class="card-header-top">
+          <span class="option-label">Option A</span>
+          <div class="card-badges">
+            <span class="chosen-badge">Chosen</span>
+          </div>
+        </div>
+        <h2 class="option-title">Sidebar Command Center</h2>
+      </div>
+
+      <div class="visual-preview">
+        <div class="mockup" style="display:grid; grid-template-columns:56px 1fr; grid-template-rows:1fr 52px; height:340px; background:#0a0a0f;">
+          <!-- Sidebar -->
+          <div style="background:#0f0f17; border-right:1px solid #1a1a2e; display:flex; flex-direction:column; align-items:center; padding:12px 0; gap:6px;">
+            <div style="width:32px;height:32px;border-radius:8px;background:#06b6d4;display:flex;align-items:center;justify-content:center;font-weight:700;color:#0a0a0f;font-size:13px;margin-bottom:8px;">C</div>
+            <div style="width:36px;height:36px;border-radius:10px;background:#06b6d4/15;display:flex;align-items:center;justify-content:center;" title="Home">
+              <svg width="16" height="16" fill="none" stroke="#06b6d4" stroke-width="2"><path d="M2 6l6-4 6 4v7a1 1 0 01-1 1H3a1 1 0 01-1-1V6z"/></svg>
+            </div>
+            <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;" title="Search">
+              <svg width="16" height="16" fill="none" stroke="#555" stroke-width="2"><circle cx="7" cy="7" r="5"/><path d="M11 11l3 3"/></svg>
+            </div>
+            <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;" title="Library">
+              <svg width="16" height="16" fill="none" stroke="#555" stroke-width="2"><rect x="2" y="2" width="12" height="12" rx="2"/><path d="M6 2v12M2 7h12"/></svg>
+            </div>
+            <div style="width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;" title="Shows">
+              <svg width="16" height="16" fill="none" stroke="#555" stroke-width="2"><rect x="2" y="3" width="12" height="11" rx="1"/><path d="M2 7h12M6 3V1M10 3V1"/></svg>
+            </div>
+            <div style="flex:1"></div>
+            <div style="width:28px;height:28px;border-radius:50%;background:#1a1a2e;border:1px solid #333;"></div>
+          </div>
+          <!-- Main content -->
+          <div style="display:flex;flex-direction:column;overflow:hidden;">
+            <!-- Top bar -->
+            <div style="padding:10px 16px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #1a1a2e;">
+              <div style="flex:1;background:#12121a;border-radius:6px;padding:6px 10px;color:#444;font-size:10px;">Search artists, albums, tracks...</div>
+            </div>
+            <!-- Content -->
+            <div style="flex:1;padding:14px 16px;overflow:hidden;">
+              <div style="color:#fff;font-weight:700;font-size:14px;margin-bottom:10px;">Good evening</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px;">
+                <div style="background:#12121a;border-radius:6px;padding:8px;display:flex;align-items:center;gap:6px;">
+                  <div style="width:28px;height:28px;border-radius:4px;background:linear-gradient(135deg,#333,#111);flex-shrink:0;"></div>
+                  <div style="color:#ccc;font-size:9px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">Daily Mix 1</div>
+                </div>
+                <div style="background:#12121a;border-radius:6px;padding:8px;display:flex;align-items:center;gap:6px;">
+                  <div style="width:28px;height:28px;border-radius:4px;background:linear-gradient(135deg,#06b6d4,#0e7490);flex-shrink:0;"></div>
+                  <div style="color:#ccc;font-size:9px;font-weight:600;">Artist Radio</div>
+                </div>
+                <div style="background:#12121a;border-radius:6px;padding:8px;display:flex;align-items:center;gap:6px;">
+                  <div style="width:28px;height:28px;border-radius:4px;background:linear-gradient(135deg,#444,#222);flex-shrink:0;"></div>
+                  <div style="color:#ccc;font-size:9px;font-weight:600;">Liked Songs</div>
+                </div>
+                <div style="background:#12121a;border-radius:6px;padding:8px;display:flex;align-items:center;gap:6px;">
+                  <div style="width:28px;height:28px;border-radius:4px;background:linear-gradient(135deg,#553,#221);flex-shrink:0;"></div>
+                  <div style="color:#ccc;font-size:9px;font-weight:600;">New Releases</div>
+                </div>
+              </div>
+              <div style="color:#fff;font-weight:600;font-size:11px;margin-bottom:8px;">Recently Played</div>
+              <div style="display:flex;gap:8px;overflow:hidden;">
+                <div style="width:72px;flex-shrink:0;">
+                  <div style="width:72px;height:72px;border-radius:6px;background:linear-gradient(135deg,#1a2a3a,#0a1520);margin-bottom:4px;"></div>
+                  <div style="color:#aaa;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Converge</div>
+                </div>
+                <div style="width:72px;flex-shrink:0;">
+                  <div style="width:72px;height:72px;border-radius:6px;background:linear-gradient(135deg,#2a1a1a,#150a0a);margin-bottom:4px;"></div>
+                  <div style="color:#aaa;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Deafheaven</div>
+                </div>
+                <div style="width:72px;flex-shrink:0;">
+                  <div style="width:72px;height:72px;border-radius:6px;background:linear-gradient(135deg,#1a1a2a,#0a0a15);margin-bottom:4px;"></div>
+                  <div style="color:#aaa;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Touche Amore</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Bottom player bar -->
+          <div style="grid-column:1/-1;background:#0f0f17;border-top:1px solid #1a1a2e;display:flex;align-items:center;padding:0 12px;gap:8px;">
+            <div style="width:36px;height:36px;border-radius:4px;background:linear-gradient(135deg,#1a2a3a,#0a1520);flex-shrink:0;"></div>
+            <div style="flex:1;min-width:0;">
+              <div style="color:#ddd;font-size:9px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Aimless Arrow</div>
+              <div style="color:#666;font-size:8px;">Converge</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <svg width="12" height="12" fill="#666" viewBox="0 0 24 24"><path d="M19 12L5 21V3l14 9z"/></svg>
+              <svg width="14" height="14" fill="#06b6d4" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+              <svg width="12" height="12" fill="#666" viewBox="0 0 24 24"><path d="M5 12l14-9v18L5 12z"/></svg>
+            </div>
+            <div style="width:60px;height:3px;background:#1a1a2e;border-radius:2px;margin-left:8px;">
+              <div style="width:35%;height:100%;background:#06b6d4;border-radius:2px;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="option-summary">
+        The classic Spotify layout adapted to our dark theme. A narrow icon sidebar (56px) on the left for primary navigation, with the main content area taking up most of the screen. A persistent bottom bar shows now-playing with mini controls. Clicking the bottom bar opens a fullscreen player. This is the layout most music app users already know — zero learning curve. Desktop-optimized but works on tablets.
+      </div>
+
+      <div class="verdict">
+        <div class="pros">
+          <h3>Works well when</h3>
+          <ul>
+            <li>Users primarily use desktop/laptop</li>
+            <li>Maximum familiarity desired</li>
+            <li>Lots of content to navigate</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h3>Watch out for</h3>
+          <ul>
+            <li>Poor mobile experience without major adaptation</li>
+            <li>Sidebar wastes space on narrow screens</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <code class="tell-claude">Tell Claude: "Option A"</code>
+      </div>
+    </article>
+
+    <!-- ═══════════════════════════════════════════════════ OPTION B ═══ -->
+    <article class="option-card option-b">
+      <div class="card-header">
+        <div class="card-header-top">
+          <span class="option-label">Option B</span>
+          <div class="card-badges">
+            <span class="recommended-badge">Recommended</span>
+            <span class="chosen-badge">Chosen</span>
+          </div>
+        </div>
+        <h2 class="option-title">Mobile-First Fluid</h2>
+      </div>
+
+      <div class="visual-preview">
+        <div class="mockup" style="width:260px;height:340px;background:#0a0a0f;display:flex;flex-direction:column;border-radius:16px;">
+          <!-- Status bar -->
+          <div style="padding:6px 14px;display:flex;justify-content:space-between;font-size:9px;color:#666;">
+            <span>21:30</span>
+            <div style="display:flex;gap:4px;">
+              <span>&#9679;&#9679;&#9679;</span>
+              <span>100%</span>
+            </div>
+          </div>
+          <!-- Header -->
+          <div style="padding:8px 16px;display:flex;align-items:center;justify-content:space-between;">
+            <div style="color:#fff;font-weight:700;font-size:16px;">Listen</div>
+            <div style="display:flex;gap:8px;">
+              <div style="width:28px;height:28px;border-radius:50%;background:#12121a;display:flex;align-items:center;justify-content:center;">
+                <svg width="13" height="13" fill="none" stroke="#888" stroke-width="2"><circle cx="6" cy="6" r="4.5"/><path d="M9.5 9.5l2.5 2.5"/></svg>
+              </div>
+              <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#06b6d4,#0e7490);"></div>
+            </div>
+          </div>
+          <!-- Content -->
+          <div style="flex:1;padding:0 16px;overflow:hidden;">
+            <!-- Quick access pills -->
+            <div style="display:flex;gap:6px;margin-bottom:12px;overflow:hidden;">
+              <span style="background:#06b6d4;color:#0a0a0f;padding:4px 10px;border-radius:99px;font-size:9px;font-weight:700;white-space:nowrap;">All</span>
+              <span style="background:#12121a;color:#aaa;padding:4px 10px;border-radius:99px;font-size:9px;font-weight:600;white-space:nowrap;">Playlists</span>
+              <span style="background:#12121a;color:#aaa;padding:4px 10px;border-radius:99px;font-size:9px;font-weight:600;white-space:nowrap;">Shows</span>
+              <span style="background:#12121a;color:#aaa;padding:4px 10px;border-radius:99px;font-size:9px;font-weight:600;white-space:nowrap;">New</span>
+            </div>
+            <!-- Hero card -->
+            <div style="background:linear-gradient(135deg,#06b6d420,#0a0a0f);border:1px solid #06b6d430;border-radius:12px;padding:14px;margin-bottom:12px;">
+              <div style="color:#06b6d4;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Now Playing</div>
+              <div style="display:flex;gap:10px;align-items:center;">
+                <div style="width:48px;height:48px;border-radius:8px;background:linear-gradient(135deg,#1a2a3a,#0a1520);flex-shrink:0;"></div>
+                <div style="flex:1;min-width:0;">
+                  <div style="color:#fff;font-size:11px;font-weight:700;">Aimless Arrow</div>
+                  <div style="color:#888;font-size:9px;margin-top:1px;">Converge &middot; All We Love We Leave Behind</div>
+                  <div style="margin-top:6px;height:3px;background:#1a1a2e;border-radius:2px;">
+                    <div style="width:35%;height:100%;background:#06b6d4;border-radius:2px;"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Section -->
+            <div style="color:#fff;font-weight:700;font-size:11px;margin-bottom:8px;">Jump back in</div>
+            <div style="display:flex;gap:8px;overflow:hidden;">
+              <div style="width:80px;flex-shrink:0;">
+                <div style="width:80px;height:80px;border-radius:8px;background:linear-gradient(135deg,#2a1a1a,#150a0a);margin-bottom:4px;"></div>
+                <div style="color:#ccc;font-size:8px;font-weight:600;">Deafheaven</div>
+                <div style="color:#555;font-size:7px;">Sunbather</div>
+              </div>
+              <div style="width:80px;flex-shrink:0;">
+                <div style="width:80px;height:80px;border-radius:8px;background:linear-gradient(135deg,#1a1a2a,#0a0a15);margin-bottom:4px;"></div>
+                <div style="color:#ccc;font-size:8px;font-weight:600;">Touche Amore</div>
+                <div style="color:#555;font-size:7px;">Stage Four</div>
+              </div>
+              <div style="width:80px;flex-shrink:0;">
+                <div style="width:80px;height:80px;border-radius:8px;background:linear-gradient(135deg,#1a2a1a,#0a150a);margin-bottom:4px;"></div>
+                <div style="color:#ccc;font-size:8px;font-weight:600;">Pianos Become</div>
+                <div style="color:#555;font-size:7px;">The Lack Long A...</div>
+              </div>
+            </div>
+          </div>
+          <!-- Bottom nav -->
+          <div style="display:flex;border-top:1px solid #1a1a2e;background:#0a0a0f;">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;">
+              <svg width="16" height="16" fill="#06b6d4" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/></svg>
+              <span style="font-size:7px;color:#06b6d4;font-weight:700;">Home</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;">
+              <svg width="16" height="16" fill="none" stroke="#555" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/></svg>
+              <span style="font-size:7px;color:#555;">Explore</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;">
+              <svg width="16" height="16" fill="none" stroke="#555" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              <span style="font-size:7px;color:#555;">Library</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;">
+              <svg width="16" height="16" fill="none" stroke="#555" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M8 4V2M16 4V2"/></svg>
+              <span style="font-size:7px;color:#555;">Shows</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="option-summary">
+        <strong>This is my recommendation.</strong> A mobile-first design with bottom tab navigation (Home, Explore, Library, Shows) that scales beautifully to desktop via a responsive layout. The "now playing" card is integrated into the home feed rather than a separate bar — tapping it opens the fullscreen player. Filter pills at the top let users quickly switch context. This approach ensures the app feels native on phones (where most music listening happens) while still working great on desktop with wider content areas.
+      </div>
+
+      <div class="verdict">
+        <div class="pros">
+          <h3>Works well when</h3>
+          <ul>
+            <li>Mobile is the primary use case</li>
+            <li>PWA installable experience matters</li>
+            <li>Clean, modern feel desired</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h3>Watch out for</h3>
+          <ul>
+            <li>Desktop may feel "spacious" without sidebar density</li>
+            <li>Bottom nav less common on web (mobile pattern)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <code class="tell-claude">Tell Claude: "Option B"</code>
+      </div>
+    </article>
+
+    <!-- ═══════════════════════════════════════════════════ OPTION C ═══ -->
+    <article class="option-card option-c">
+      <div class="card-header">
+        <div class="card-header-top">
+          <span class="option-label">Option C</span>
+          <div class="card-badges">
+            <span class="chosen-badge">Chosen</span>
+          </div>
+        </div>
+        <h2 class="option-title">Immersive Art Focus</h2>
+      </div>
+
+      <div class="visual-preview">
+        <div class="mockup" style="width:260px;height:340px;background:#0a0a0f;display:flex;flex-direction:column;border-radius:16px;position:relative;overflow:hidden;">
+          <!-- Background gradient from "album art" -->
+          <div style="position:absolute;top:0;left:0;right:0;height:160px;background:linear-gradient(180deg,#1a2a3a 0%,#0a0a0f 100%);opacity:0.6;"></div>
+          <!-- Content over gradient -->
+          <div style="position:relative;z-index:1;flex:1;display:flex;flex-direction:column;">
+            <!-- Top bar (minimal) -->
+            <div style="padding:10px 16px;display:flex;justify-content:space-between;align-items:center;">
+              <div style="color:#fff;font-weight:700;font-size:13px;opacity:0.9;">Crate</div>
+              <div style="display:flex;gap:6px;">
+                <svg width="18" height="18" fill="none" stroke="#fff8" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/></svg>
+                <svg width="18" height="18" fill="none" stroke="#fff8" stroke-width="1.5" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+              </div>
+            </div>
+            <!-- Hero album -->
+            <div style="padding:0 16px;margin-bottom:12px;">
+              <div style="display:flex;gap:12px;align-items:flex-end;">
+                <div style="width:100px;height:100px;border-radius:10px;background:linear-gradient(135deg,#2a3a4a,#0a1520);box-shadow:0 8px 24px rgba(0,0,0,0.5);flex-shrink:0;"></div>
+                <div>
+                  <div style="color:#06b6d4;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;">Now Playing</div>
+                  <div style="color:#fff;font-size:13px;font-weight:700;margin-top:2px;">All We Love We Leave Behind</div>
+                  <div style="color:#aaa;font-size:10px;margin-top:1px;">Converge</div>
+                  <div style="display:flex;gap:8px;margin-top:8px;">
+                    <div style="width:24px;height:24px;border-radius:50%;background:#06b6d4;display:flex;align-items:center;justify-content:center;">
+                      <svg width="10" height="10" fill="#0a0a0f" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+                    </div>
+                    <div style="width:24px;height:24px;border-radius:50%;background:#1a1a2e;display:flex;align-items:center;justify-content:center;">
+                      <svg width="10" height="10" fill="#888" viewBox="0 0 24 24"><path d="M5 12l14-9v18L5 12z"/></svg>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- Progress -->
+              <div style="margin-top:10px;height:2px;background:#1a1a2e;border-radius:1px;">
+                <div style="width:35%;height:100%;background:#06b6d4;border-radius:1px;"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:7px;color:#555;margin-top:3px;">
+                <span>1:23</span><span>3:45</span>
+              </div>
+            </div>
+            <!-- Feed -->
+            <div style="flex:1;padding:0 16px;overflow:hidden;">
+              <div style="color:#fff;font-weight:700;font-size:11px;margin-bottom:8px;">Your Feed</div>
+              <!-- Feed item -->
+              <div style="background:#12121a80;backdrop-filter:blur(10px);border-radius:10px;padding:10px;margin-bottom:6px;border:1px solid #ffffff08;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <div style="width:36px;height:36px;border-radius:6px;background:linear-gradient(135deg,#2a1a1a,#150a0a);flex-shrink:0;"></div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="color:#ccc;font-size:9px;font-weight:600;">New Release</div>
+                    <div style="color:#888;font-size:8px;">Deafheaven &middot; Infinite Granite</div>
+                  </div>
+                  <div style="color:#06b6d4;font-size:8px;font-weight:600;">Play</div>
+                </div>
+              </div>
+              <div style="background:#12121a80;border-radius:10px;padding:10px;margin-bottom:6px;border:1px solid #ffffff08;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <div style="width:36px;height:36px;border-radius:6px;background:linear-gradient(135deg,#1a1a2a,#0a0a15);flex-shrink:0;"></div>
+                  <div style="flex:1;min-width:0;">
+                    <div style="color:#ccc;font-size:9px;font-weight:600;">Show near you</div>
+                    <div style="color:#888;font-size:8px;">Touche Amore &middot; Madrid, Apr 15</div>
+                  </div>
+                  <div style="color:#06b6d4;font-size:8px;font-weight:600;">Info</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Floating bottom nav (glass) -->
+          <div style="position:relative;z-index:1;margin:0 12px 10px;background:#12121a99;backdrop-filter:blur(20px);border-radius:16px;display:flex;border:1px solid #ffffff10;">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;">
+              <svg width="15" height="15" fill="#06b6d4" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/></svg>
+              <span style="font-size:7px;color:#06b6d4;font-weight:700;">Home</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;">
+              <svg width="15" height="15" fill="none" stroke="#555" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 3"/></svg>
+              <span style="font-size:7px;color:#555;">Explore</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:2px;">
+              <svg width="15" height="15" fill="none" stroke="#555" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              <span style="font-size:7px;color:#555;">Library</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="option-summary">
+        Album art and the current track dominate the screen. The background bleeds with a gradient extracted from the cover art (like Apple Music). Navigation is a floating glass-morphism pill at the bottom, and the now-playing section is always visible at the top with large artwork. The feed below mixes new releases, shows, and friend activity into a unified timeline. This creates a visually striking, magazine-like experience where the music itself is the UI.
+      </div>
+
+      <div class="verdict">
+        <div class="pros">
+          <h3>Works well when</h3>
+          <ul>
+            <li>Visual impact is the #1 priority</li>
+            <li>Users care deeply about album art / aesthetics</li>
+            <li>Small library where discovery is curated</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h3>Watch out for</h3>
+          <ul>
+            <li>Less space for content density</li>
+            <li>Glassmorphism can hurt readability</li>
+            <li>Performance cost of blurs on low-end devices</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <code class="tell-claude">Tell Claude: "Option C"</code>
+      </div>
+    </article>
+
+    <!-- ═══════════════════════════════════════════════════ OPTION D ═══ -->
+    <article class="option-card option-d">
+      <div class="card-header">
+        <div class="card-header-top">
+          <span class="option-label">Option D</span>
+          <div class="card-badges">
+            <span class="chosen-badge">Chosen</span>
+          </div>
+        </div>
+        <h2 class="option-title">Split Panel Pro</h2>
+      </div>
+
+      <div class="visual-preview">
+        <div class="mockup" style="display:grid; grid-template-columns:140px 1fr; height:340px; background:#0a0a0f; max-width:380px;">
+          <!-- Left panel (list + nav) -->
+          <div style="background:#0f0f17;border-right:1px solid #1a1a2e;display:flex;flex-direction:column;overflow:hidden;">
+            <!-- Nav tabs -->
+            <div style="display:flex;border-bottom:1px solid #1a1a2e;">
+              <div style="flex:1;padding:8px 0;text-align:center;font-size:8px;font-weight:700;color:#06b6d4;border-bottom:2px solid #06b6d4;">Library</div>
+              <div style="flex:1;padding:8px 0;text-align:center;font-size:8px;font-weight:600;color:#555;">Queue</div>
+            </div>
+            <!-- Search -->
+            <div style="padding:6px 8px;">
+              <div style="background:#12121a;border-radius:4px;padding:4px 6px;font-size:8px;color:#444;">Filter...</div>
+            </div>
+            <!-- Artist list -->
+            <div style="flex:1;overflow:hidden;">
+              <div style="padding:4px 8px;display:flex;align-items:center;gap:6px;background:#06b6d410;border-left:2px solid #06b6d4;">
+                <div style="width:24px;height:24px;border-radius:4px;background:linear-gradient(135deg,#1a2a3a,#0a1520);flex-shrink:0;"></div>
+                <div>
+                  <div style="color:#fff;font-size:8px;font-weight:600;">Converge</div>
+                  <div style="color:#555;font-size:7px;">12 albums</div>
+                </div>
+              </div>
+              <div style="padding:4px 8px;display:flex;align-items:center;gap:6px;">
+                <div style="width:24px;height:24px;border-radius:4px;background:linear-gradient(135deg,#2a1a1a,#150a0a);flex-shrink:0;"></div>
+                <div>
+                  <div style="color:#aaa;font-size:8px;font-weight:600;">Deafheaven</div>
+                  <div style="color:#555;font-size:7px;">5 albums</div>
+                </div>
+              </div>
+              <div style="padding:4px 8px;display:flex;align-items:center;gap:6px;">
+                <div style="width:24px;height:24px;border-radius:4px;background:linear-gradient(135deg,#1a1a2a,#0a0a15);flex-shrink:0;"></div>
+                <div>
+                  <div style="color:#aaa;font-size:8px;font-weight:600;">Touche Amore</div>
+                  <div style="color:#555;font-size:7px;">4 albums</div>
+                </div>
+              </div>
+              <div style="padding:4px 8px;display:flex;align-items:center;gap:6px;">
+                <div style="width:24px;height:24px;border-radius:4px;background:linear-gradient(135deg,#222,#111);flex-shrink:0;"></div>
+                <div>
+                  <div style="color:#aaa;font-size:8px;font-weight:600;">Envy</div>
+                  <div style="color:#555;font-size:7px;">7 albums</div>
+                </div>
+              </div>
+              <div style="padding:4px 8px;display:flex;align-items:center;gap:6px;">
+                <div style="width:24px;height:24px;border-radius:4px;background:linear-gradient(135deg,#2a2a1a,#15150a);flex-shrink:0;"></div>
+                <div>
+                  <div style="color:#aaa;font-size:8px;font-weight:600;">Pg.99</div>
+                  <div style="color:#555;font-size:7px;">3 albums</div>
+                </div>
+              </div>
+              <div style="padding:4px 8px;display:flex;align-items:center;gap:6px;">
+                <div style="width:24px;height:24px;border-radius:4px;background:linear-gradient(135deg,#1a2a2a,#0a1515);flex-shrink:0;"></div>
+                <div>
+                  <div style="color:#aaa;font-size:8px;font-weight:600;">Caspian</div>
+                  <div style="color:#555;font-size:7px;">6 albums</div>
+                </div>
+              </div>
+            </div>
+            <!-- Mini player at bottom of left panel -->
+            <div style="border-top:1px solid #1a1a2e;padding:6px 8px;display:flex;align-items:center;gap:6px;">
+              <div style="width:28px;height:28px;border-radius:4px;background:linear-gradient(135deg,#1a2a3a,#0a1520);flex-shrink:0;"></div>
+              <div style="flex:1;min-width:0;">
+                <div style="color:#ccc;font-size:7px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Aimless Arrow</div>
+                <div style="height:2px;background:#1a1a2e;border-radius:1px;margin-top:2px;">
+                  <div style="width:35%;height:100%;background:#06b6d4;border-radius:1px;"></div>
+                </div>
+              </div>
+              <svg width="12" height="12" fill="#06b6d4" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+            </div>
+          </div>
+          <!-- Right panel (detail) -->
+          <div style="display:flex;flex-direction:column;overflow:hidden;">
+            <!-- Detail header -->
+            <div style="padding:12px 14px;border-bottom:1px solid #1a1a2e;">
+              <div style="display:flex;gap:10px;align-items:center;">
+                <div style="width:48px;height:48px;border-radius:6px;background:linear-gradient(135deg,#1a2a3a,#0a1520);flex-shrink:0;"></div>
+                <div>
+                  <div style="color:#fff;font-size:12px;font-weight:700;">Converge</div>
+                  <div style="color:#666;font-size:9px;">12 albums &middot; 156 tracks</div>
+                  <div style="display:flex;gap:4px;margin-top:4px;">
+                    <span style="background:#06b6d420;color:#06b6d4;padding:2px 6px;border-radius:4px;font-size:7px;font-weight:600;">Hardcore</span>
+                    <span style="background:#12121a;color:#888;padding:2px 6px;border-radius:4px;font-size:7px;font-weight:600;">Metalcore</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Album grid -->
+            <div style="flex:1;padding:10px 14px;overflow:hidden;">
+              <div style="display:flex;gap:4px;margin-bottom:8px;">
+                <span style="color:#06b6d4;font-size:8px;font-weight:700;border-bottom:1px solid #06b6d4;padding-bottom:2px;">Albums</span>
+                <span style="color:#555;font-size:8px;font-weight:600;margin-left:8px;padding-bottom:2px;">Tracks</span>
+                <span style="color:#555;font-size:8px;font-weight:600;margin-left:8px;padding-bottom:2px;">Similar</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div>
+                  <div style="aspect-ratio:1;border-radius:6px;background:linear-gradient(135deg,#2a3a4a,#0a1520);margin-bottom:3px;"></div>
+                  <div style="color:#ccc;font-size:7px;font-weight:600;">All We Love...</div>
+                  <div style="color:#555;font-size:6px;">2012</div>
+                </div>
+                <div>
+                  <div style="aspect-ratio:1;border-radius:6px;background:linear-gradient(135deg,#3a2a2a,#1a0a0a);margin-bottom:3px;"></div>
+                  <div style="color:#ccc;font-size:7px;font-weight:600;">Axe to Fall</div>
+                  <div style="color:#555;font-size:6px;">2009</div>
+                </div>
+                <div>
+                  <div style="aspect-ratio:1;border-radius:6px;background:linear-gradient(135deg,#2a2a3a,#0a0a1a);margin-bottom:3px;"></div>
+                  <div style="color:#ccc;font-size:7px;font-weight:600;">No Heroes</div>
+                  <div style="color:#555;font-size:6px;">2006</div>
+                </div>
+                <div>
+                  <div style="aspect-ratio:1;border-radius:6px;background:linear-gradient(135deg,#3a3a2a,#1a1a0a);margin-bottom:3px;"></div>
+                  <div style="color:#ccc;font-size:7px;font-weight:600;">Jane Doe</div>
+                  <div style="color:#555;font-size:6px;">2001</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="option-summary">
+        A power-user layout with a persistent left panel for browsing (artists, queue, playlists) and a detail panel on the right showing the selected content. Think of it like a file manager for music — click an artist on the left, see their albums on the right. The mini player lives in the bottom-left corner. This is the most information-dense option, ideal for users who browse their library extensively and want to see as much data as possible. Tabs in the right panel (Albums/Tracks/Similar) reduce context-switching.
+      </div>
+
+      <div class="verdict">
+        <div class="pros">
+          <h3>Works well when</h3>
+          <ul>
+            <li>Power users with large libraries (900+ artists)</li>
+            <li>Desktop-primary usage</li>
+            <li>Maximum information density</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h3>Watch out for</h3>
+          <ul>
+            <li>Not viable on mobile — needs a completely different mobile layout</li>
+            <li>Can feel like an admin tool, not a consumer app</li>
+            <li>Higher complexity to build responsive version</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="card-footer">
+        <code class="tell-claude">Tell Claude: "Option D"</code>
+      </div>
+    </article>
+
+  </main>
+
+  <!-- COMPARISON TABLE -->
+  <section class="comparison-section">
+    <h2>How They Compare</h2>
+    <div class="comparison-table-wrapper">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th class="col-a">A: Sidebar Command Center</th>
+            <th class="col-b col-recommended">B: Mobile-First Fluid</th>
+            <th class="col-c">C: Immersive Art Focus</th>
+            <th class="col-d">D: Split Panel Pro</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Mobile Experience</td>
+            <td>Needs separate mobile nav</td>
+            <td class="col-recommended">Native-feeling, primary target</td>
+            <td>Good but glass effects costly</td>
+            <td>Requires completely different mobile layout</td>
+          </tr>
+          <tr>
+            <td>Desktop Experience</td>
+            <td>Excellent — familiar pattern</td>
+            <td class="col-recommended">Good — scales up with wider cards</td>
+            <td>Striking but low density</td>
+            <td>Excellent — maximum info density</td>
+          </tr>
+          <tr>
+            <td>Content Density</td>
+            <td>Medium — balanced</td>
+            <td class="col-recommended">Medium — card-focused</td>
+            <td>Low — art dominates</td>
+            <td>High — list-heavy, data-rich</td>
+          </tr>
+          <tr>
+            <td>Now Playing Integration</td>
+            <td>Bottom bar (persistent)</td>
+            <td class="col-recommended">Hero card on home (contextual)</td>
+            <td>Always visible at top (prominent)</td>
+            <td>Mini player in sidebar corner</td>
+          </tr>
+          <tr>
+            <td>Navigation Pattern</td>
+            <td>Icon sidebar (left)</td>
+            <td class="col-recommended">Bottom tabs (4 items)</td>
+            <td>Floating glass pill (bottom)</td>
+            <td>Top tabs in left panel</td>
+          </tr>
+          <tr>
+            <td>PWA Installable Feel</td>
+            <td>Feels like web app</td>
+            <td class="col-recommended">Feels like native app</td>
+            <td>Feels like art gallery</td>
+            <td>Feels like desktop software</td>
+          </tr>
+          <tr>
+            <td>Implementation Complexity</td>
+            <td>Medium</td>
+            <td class="col-recommended">Medium</td>
+            <td>High (blur effects, color extraction)</td>
+            <td>High (dual panel responsive)</td>
+          </tr>
+          <tr>
+            <td>Best For</td>
+            <td>Desktop Spotify users</td>
+            <td class="col-recommended">Phone + desktop users equally</td>
+            <td>Visual-first music lovers</td>
+            <td>Library power users</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="page-footer">
+    <p>Tell Claude: <strong>"Option A"</strong>, <strong>"Option C but [your change]"</strong>, or <strong>"more options"</strong></p>
+    <p>To change a past decision: <strong>"for decision-001 I want Option B instead"</strong></p>
+  </div>
+
+</body>
+</html>

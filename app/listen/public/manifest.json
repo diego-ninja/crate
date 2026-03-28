@@ -1,0 +1,9 @@
+{
+  "name": "Crate Listen",
+  "short_name": "Listen",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0a0a0f",
+  "background_color": "#0a0a0f",
+  "icons": []
+}

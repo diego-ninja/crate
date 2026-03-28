@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision Hub — Crate Listen</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1a1a2e; min-height: 100vh; padding: 2rem; line-height: 1.6; }
+    .container { max-width: 900px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 2rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; }
+    header h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; }
+    .project-description { font-size: 1rem; color: #475569; margin-top: 0.5rem; }
+    .progress-section { margin: 1.5rem 0; }
+    .progress-label { font-size: 0.85rem; color: #64748b; margin-bottom: 0.5rem; display: flex; justify-content: space-between; }
+    .progress-bar { width: 100%; height: 8px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #059669; border-radius: 999px; transition: width 0.3s ease; }
+    .decision-list { display: flex; flex-direction: column; gap: 1rem; }
+    .decision-item { background: white; border-radius: 12px; padding: 1.25rem 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); border: 2px solid #e2e8f0; text-decoration: none; color: inherit; display: flex; align-items: center; gap: 1rem; transition: border-color 0.2s; }
+    .decision-item:hover { border-color: #6366f1; }
+    .decision-item.pending { border-left: 4px solid #f59e0b; }
+    .decision-number-badge { width: 36px; height: 36px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; flex-shrink: 0; background: #fffbeb; color: #d97706; }
+    .decision-info { flex: 1; }
+    .decision-info h3 { font-size: 1rem; font-weight: 600; color: #0f172a; }
+    .decision-meta { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.3rem; flex-wrap: wrap; }
+    .landing-category-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+    .landing-category-badge.visual { background: #fce7f3; color: #be185d; }
+    .decision-status { font-size: 0.8rem; color: #64748b; }
+    .decision-status .pending-text { color: #d97706; font-weight: 600; }
+    .decision-summary { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; }
+    .arrow-icon { color: #94a3b8; font-size: 1.1rem; flex-shrink: 0; }
+    .footer-note { text-align: center; margin-top: 2rem; font-size: 0.8rem; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Decision Hub</h1>
+      <p class="project-description">Crate Listen — Self-hosted Spotify alternative PWA for small music communities</p>
+    </header>
+    <div class="progress-section">
+      <div class="progress-label">
+        <span>0 of 1 decisions made</span>
+        <span>0%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width: 0%"></div>
+      </div>
+    </div>
+    <div class="decision-list">
+      <a href="decision-001-ui-concept.html" class="decision-item pending">
+        <div class="decision-number-badge">1</div>
+        <div class="decision-info">
+          <h3>Overall UI Concept & Layout</h3>
+          <div class="decision-meta">
+            <span class="landing-category-badge visual">Visual</span>
+            <span class="decision-status">
+              <span class="pending-text">Pending</span>
+            </span>
+          </div>
+          <p class="decision-summary">The foundational layout and navigation pattern for the entire client app</p>
+        </div>
+        <span class="arrow-icon">&rarr;</span>
+      </a>
+    </div>
+    <p class="footer-note">To change a decision, tell Claude: "for decision-001 I want Option B instead"</p>
+  </div>
+</body>
+</html>
