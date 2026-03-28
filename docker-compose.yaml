@@ -372,7 +372,7 @@ services:
     depends_on:
       - crate-postgres
       - crate-redis
-    mem_limit: 2g
+    mem_limit: 4g
     command: ["worker"]
 
   crate-ui:
