@@ -102,6 +102,8 @@ class Orchestrator:
             if now - last_health_check > HEALTH_CHECK_INTERVAL:
                 last_health_check = now
                 self._health_check()
+                # Also clean zombie tasks (stuck in running >30min with no active worker)
+                self._cleanup_zombie_tasks()
 
             # Autoscale every 30s
             if now - last_scale_check > SCALE_CHECK_INTERVAL:
@@ -241,6 +243,27 @@ class Orchestrator:
             cleanup_old_tasks(max_age_days=7)
         except Exception:
             log.debug("Auto-cleanup failed")
+
+    def _cleanup_zombie_tasks(self):
+        """Mark tasks stuck in 'running' for >30min as failed.
+        Workers that die (OOM, crash) leave tasks in running state."""
+        try:
+            from crate.db import update_task
+            running = list_tasks(status="running")
+            now_ts = time.time()
+            for t in running:
+                try:
+                    from datetime import datetime, timezone
+                    updated = datetime.fromisoformat(t["updated_at"].replace("Z", "+00:00"))
+                    age_sec = (datetime.now(timezone.utc) - updated).total_seconds()
+                    if age_sec > 1800:  # 30 minutes
+                        log.warning("Marking zombie task %s (type=%s, age=%dm) as failed",
+                                   t["id"], t["type"], int(age_sec / 60))
+                        update_task(t["id"], status="failed", error="Zombie: no heartbeat for >30min")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def _get_min_workers(self) -> int:
         return int(get_setting("min_workers", str(DEFAULT_MIN_WORKERS)) or DEFAULT_MIN_WORKERS)
