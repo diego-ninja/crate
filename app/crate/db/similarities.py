@@ -137,6 +137,14 @@ def get_artist_network(artist_name: str, depth: int = 2, limit_per_level: int = 
             if src not in nodes:
                 continue
 
+            # Skip if target already exists in graph
+            if dst in nodes:
+                key = (min(src, dst), max(src, dst))
+                if key not in seen_links:
+                    seen_links.add(key)
+                    links.append({"source": src, "target": dst, "value": score})
+                continue
+
             # New depth-2 node
             count = per_parent.get(src, 0)
             if count >= limit_per_level:
