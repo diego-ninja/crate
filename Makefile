@@ -4,7 +4,7 @@
 # Servidor remoto
 SERVER_HOST   := 104.152.210.73
 SERVER_USER   := root
-SERVER_PATH   := /home/crate/crate
+SERVER_PATH   := /home/musicdock/musicdock
 SSH           := ssh $(SERVER_USER)@$(SERVER_HOST)
 SCP           := scp
 
