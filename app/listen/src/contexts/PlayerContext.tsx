@@ -192,6 +192,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         fetch("/api/navidrome/scrobble", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
             navidrome_id: endedTrack.id.includes("/") ? "" : endedTrack.id,
             title: endedTrack.title,
@@ -203,6 +204,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         fetch("/api/me/history", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
             track_path: endedTrack.id,
             title: endedTrack.title,

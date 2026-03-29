@@ -23,7 +23,7 @@ export function Shell() {
   const hasTrack = !!currentTrack;
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
     navigate("/login");
   }
 
