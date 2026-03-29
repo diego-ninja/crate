@@ -10,6 +10,8 @@ import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
+import { QueuePanel } from "@/components/player/QueuePanel";
+import { LyricsPanel } from "@/components/player/LyricsPanel";
 
 function formatTime(s: number): string {
   if (!s || !isFinite(s)) return "0:00";
@@ -54,6 +56,8 @@ export function PlayerBar() {
   const [liked, setLiked] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showQueue, setShowQueue] = useState(false);
+  const [showLyrics, setShowLyrics] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close menu on outside click
@@ -269,7 +273,11 @@ export function PlayerBar() {
             </button>
 
             {/* Queue */}
-            <button className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60 relative" title="Queue">
+            <button
+              onClick={() => { setShowQueue(!showQueue); setShowLyrics(false); }}
+              className={`p-1.5 hover:bg-white/5 rounded-md transition-colors relative ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+              title="Queue"
+            >
               <ListMusic size={16} />
               {queue.length > 1 && (
                 <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-primary text-[8px] font-bold text-primary-foreground rounded-full flex items-center justify-center">
@@ -279,7 +287,11 @@ export function PlayerBar() {
             </button>
 
             {/* Lyrics */}
-            <button className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60" title="Lyrics">
+            <button
+              onClick={() => { setShowLyrics(!showLyrics); setShowQueue(false); }}
+              className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${showLyrics ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+              title="Lyrics"
+            >
               <Mic2 size={16} />
             </button>
 
@@ -295,6 +307,8 @@ export function PlayerBar() {
 
         </div>
       </div>
+      <QueuePanel open={showQueue} onClose={() => setShowQueue(false)} />
+      <LyricsPanel open={showLyrics} onClose={() => setShowLyrics(false)} />
       <FullscreenPlayer open={fsOpen} onClose={() => setFsOpen(false)} />
     </>
   );
