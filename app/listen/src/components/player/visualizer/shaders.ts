@@ -243,10 +243,11 @@ void main() {
   vec3 result = vec3(1.0) - exp(-color * exposure);
   result = pow(result, vec3(1.0 / gamma));
 
-  // Alpha = brightness — dark pixels become transparent, spheres stay opaque
+  // Alpha = brightness — dark pixels become transparent, spheres stay visible
   float lum = dot(result, vec3(0.299, 0.587, 0.114));
-  float alpha = smoothstep(0.01, 0.15, lum);
-  out_Col = vec4(result * alpha, alpha);
+  float alpha = smoothstep(0.002, 0.08, lum);
+  alpha = max(alpha, lum * 2.0); // ensure spheres are always somewhat visible
+  out_Col = vec4(result, alpha);
 }
 `;
 

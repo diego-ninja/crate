@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { ChevronDown, X, Loader2, Star } from "lucide-react";
+import { ChevronDown, X, Loader2, Star, Settings } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { api } from "@/lib/api";
@@ -140,10 +140,10 @@ function QueueTab() {
           {upcoming.map((track, i) => {
             const idx = currentIndex + 1 + i;
             return (
-              <button
+              <div
                 key={`next-${track.id}-${idx}`}
                 onClick={() => jumpTo(idx)}
-                className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left group"
+                className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-white/5 transition-colors text-left group cursor-pointer"
               >
                 <span className="text-[10px] text-white/20 w-4 text-right tabular-nums shrink-0">{i + 1}</span>
                 <div className="min-w-0 flex-1">
@@ -157,7 +157,7 @@ function QueueTab() {
                 >
                   <X size={12} />
                 </button>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -519,13 +519,63 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "info", label: "Info" },
 ];
 
+const VIZ_DEFAULTS = { separation: 0.15, glow: 6.0, scale: 1.4, persistence: 0.8, octaves: 2 };
+
+function dbg(msg: string) {
+  const d = document.getElementById('viz-debug');
+  if (d) d.textContent = msg;
+}
+
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   usePlayer(); // subscribe to state updates for child components
   const { currentTrack, audioElement } = usePlayerActions();
   const [tab, setTab] = useState<TabId>("queue");
+  const [showVizSettings, setShowVizSettings] = useState(false);
+  const [vizConfig, setVizConfig] = useState(VIZ_DEFAULTS);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  useMusicVisualizer(canvasRef, audioElement, open);
+  const vizRef = useMusicVisualizer(canvasRef, audioElement, open);
+
+  // Extract palette from album cover and apply to visualizer
+  useEffect(() => {
+    if (!currentTrack?.albumCover) return;
+    let cancelled = false;
+    import("@/lib/palette").then(({ extractPalette }) =>
+      extractPalette(currentTrack.albumCover!)
+    ).then(([c1, c2, c3]) => {
+      if (cancelled) return;
+      dbg(`palette: [${c1.map(v=>v.toFixed(2))}] [${c2.map(v=>v.toFixed(2))}] [${c3.map(v=>v.toFixed(2))}]`);
+      const apply = () => {
+        if (vizRef.current) {
+          vizRef.current.color1 = c1;
+          vizRef.current.color2 = c2;
+          vizRef.current.color3 = c3;
+        }
+      };
+      apply();
+      // Keep retrying — viz may not exist yet
+      const t1 = setTimeout(apply, 500);
+      const t2 = setTimeout(apply, 1500);
+      return () => { clearTimeout(t1); clearTimeout(t2); };
+    }).catch((e) => { dbg(`palette error: ${e}`); });
+    return () => { cancelled = true; };
+  }, [currentTrack?.albumCover, vizRef]);
+
+  // Apply viz config whenever it changes
+  useEffect(() => {
+    const apply = () => {
+      if (vizRef.current) {
+        vizRef.current.separation = vizConfig.separation;
+        vizRef.current.glow = vizConfig.glow;
+        vizRef.current.scale = vizConfig.scale;
+        vizRef.current.persistence = vizConfig.persistence;
+        vizRef.current.octaves = vizConfig.octaves;
+      }
+    };
+    apply();
+    const t = setTimeout(apply, 300);
+    return () => clearTimeout(t);
+  }, [vizConfig, vizRef, open]);
 
   // Close on Escape
   useEffect(() => {
@@ -537,50 +587,98 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
     return () => document.removeEventListener("keydown", handler);
   }, [open, onClose]);
 
-  if (!open || !currentTrack) return null;
+  if (!currentTrack) return null;
 
   return (
-    <div className="fixed inset-0 bottom-[72px] z-40 bg-[#0a0a0f] flex animate-in fade-in slide-in-from-bottom-4 duration-300">
-      {/* ── Left Panel: Visualizer + Track Info ── */}
-      <div className="relative w-1/2 overflow-hidden">
-        {/* Darkened album cover background */}
-        {currentTrack.albumCover && (
-          <img
-            src={currentTrack.albumCover}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ filter: "brightness(0.2) blur(40px)", transform: "scale(1.1)" }}
-          />
+    <div className={`fixed top-0 right-0 bottom-[72px] left-0 md:left-14 z-40 bg-[#0a0a0f] flex ${open ? "" : "hidden"}`}>
+      {/* Debug trace — remove after fixing */}
+      <div id="viz-debug" className="absolute top-2 left-20 z-50 text-[10px] text-yellow-400 font-mono bg-black/80 px-2 py-1 rounded" />
+
+      {/* ── Left Panel: Cover + Visualizer + Track Info ── */}
+      <div className="relative w-1/2 flex flex-col items-center justify-center overflow-hidden bg-[#060609]">
+        {/* Top buttons */}
+        <div className="absolute top-4 left-4 right-4 z-20 flex justify-between">
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full bg-black/30 backdrop-blur-sm text-white/60 hover:text-white hover:bg-black/50 transition-colors"
+          >
+            <ChevronDown size={20} />
+          </button>
+          <button
+            onClick={() => setShowVizSettings(!showVizSettings)}
+            className={`p-2 rounded-full backdrop-blur-sm transition-colors ${showVizSettings ? "bg-primary/20 text-primary" : "bg-black/30 text-white/40 hover:text-white/70"}`}
+          >
+            <Settings size={18} />
+          </button>
+        </div>
+
+        {/* Visualizer settings popup */}
+        {showVizSettings && (
+          <div className="absolute top-14 right-4 z-30 w-56 bg-[#12121a]/95 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-2xl space-y-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">Visualizer</span>
+              <button
+                onClick={() => setVizConfig(VIZ_DEFAULTS)}
+                className="text-[10px] text-primary hover:underline"
+              >
+                Reset
+              </button>
+            </div>
+            {([
+              { key: "separation" as const, label: "Separation", min: 0, max: 0.5, step: 0.01 },
+              { key: "glow" as const, label: "Glow", min: 0, max: 15, step: 0.5 },
+              { key: "scale" as const, label: "Scale", min: 0.2, max: 3, step: 0.1 },
+              { key: "persistence" as const, label: "Persistence", min: 0, max: 2, step: 0.1 },
+              { key: "octaves" as const, label: "Octaves", min: 1, max: 5, step: 1 },
+            ]).map(({ key, label, min, max, step }) => (
+              <div key={key}>
+                <div className="flex justify-between text-[10px] mb-1">
+                  <span className="text-white/40">{label}</span>
+                  <span className="text-white/60 font-mono">{vizConfig[key].toFixed(key === "octaves" ? 0 : 1)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={min} max={max} step={step}
+                  value={vizConfig[key]}
+                  onChange={(e) => setVizConfig({ ...vizConfig, [key]: parseFloat(e.target.value) })}
+                  className="w-full h-1 accent-cyan-400"
+                />
+              </div>
+            ))}
+          </div>
         )}
 
-        {/* Dark overlay for extra depth */}
-        <div className="absolute inset-0 bg-[#0a0a0f]/40" />
+        {/* Cover art — centered, B/W + darkened */}
+        <div className="relative w-[70%] max-w-[480px] aspect-square rounded-xl overflow-hidden shadow-2xl shadow-black/50 shrink-0">
+          {currentTrack.albumCover ? (
+            <img
+              src={currentTrack.albumCover}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ filter: "grayscale(100%) brightness(0.35)" }}
+            />
+          ) : (
+            <div className="absolute inset-0 bg-white/5" />
+          )}
+        </div>
 
-        {/* WebGL Visualizer Canvas */}
+        {/* WebGL Visualizer Canvas — overlays the ENTIRE left panel */}
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 w-full h-full"
+          className="absolute inset-0 w-full h-full z-10 pointer-events-none"
           style={{ background: "transparent" }}
         />
 
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 left-4 z-10 p-2 rounded-full bg-black/30 backdrop-blur-sm text-white/60 hover:text-white hover:bg-black/50 transition-colors"
-        >
-          <ChevronDown size={20} />
-        </button>
-
-        {/* Track info at bottom */}
-        <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-[#0a0a0f]/90 via-[#0a0a0f]/40 to-transparent">
-          <h2 className="text-2xl font-bold text-white leading-tight mb-1 drop-shadow-lg">
+        {/* Track info below the cover */}
+        <div className="mt-6 text-center px-8 max-w-full">
+          <h2 className="text-xl font-bold text-white leading-tight truncate">
             {currentTrack.title}
           </h2>
-          <p className="text-lg text-white/60 drop-shadow-md">
+          <p className="text-base text-white/50 mt-1 truncate">
             {currentTrack.artist}
           </p>
           {currentTrack.album && (
-            <p className="text-sm text-white/30 mt-1">
+            <p className="text-sm text-white/25 mt-0.5 truncate">
               {currentTrack.album}
             </p>
           )}

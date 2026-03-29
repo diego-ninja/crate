@@ -271,6 +271,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [audio, currentIndex, queue.length, repeat, shuffle, queue]);
 
   const play = useCallback((track: Track, source?: PlaySource) => {
+    // Warm up AudioContext synchronously on user gesture (browsers require this)
+    try {
+      const w = window as unknown as Record<string, AudioContext>;
+      if (!w.__crateAudioCtx) w.__crateAudioCtx = new AudioContext();
+      if (w.__crateAudioCtx.state === "suspended") w.__crateAudioCtx.resume();
+    } catch { /* ok */ }
     restoredRef.current = false;
     audio.src = getStreamUrl(track);
     audio.play().catch((e) => console.warn("[player] play failed:", e));
@@ -304,6 +310,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [audio]);
 
   const resume = useCallback(() => {
+    try {
+      const w = window as unknown as Record<string, AudioContext>;
+      if (!w.__crateAudioCtx) w.__crateAudioCtx = new AudioContext();
+      if (w.__crateAudioCtx.state === "suspended") w.__crateAudioCtx.resume();
+    } catch { /* ok */ }
     audio.play().catch(() => {});
   }, [audio]);
 

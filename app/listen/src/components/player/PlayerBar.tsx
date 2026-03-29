@@ -6,6 +6,7 @@ import {
   Mic2, Maximize2, Radio, Info, User, Share2, Plus, Disc,
 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
@@ -49,8 +50,12 @@ export function PlayerBar() {
   const {
     currentTrack, shuffle, repeat, playSource, queue, currentIndex,
     pause, resume, next, prev, seek, setVolume,
-    toggleShuffle, cycleRepeat,
+    toggleShuffle, cycleRepeat, audioElement,
   } = usePlayerActions();
+
+  // Connect audio to Web Audio API — this creates the AudioContext + source node
+  // on first play, enabling the WebGL visualizer in ExtendedPlayer to work.
+  const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
 
   const navigate = useNavigate();
   const [fsOpen, setFsOpen] = useState(false);
@@ -73,7 +78,7 @@ export function PlayerBar() {
   }, [showMenu]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const bars = useMemo(() => currentTrack ? generateBars(currentTrack.id, 80) : [], [currentTrack?.id]);
+  const pseudoBars = useMemo(() => currentTrack ? generateBars(currentTrack.id, 80) : [], [currentTrack?.id]);
   const fmt = currentTrack ? formatBadge(currentTrack) : null;
 
   if (!currentTrack) return null;
@@ -211,17 +216,23 @@ export function PlayerBar() {
                   seek(pct * duration);
                 }}
               >
-                {/* Waveform bars */}
-                {bars.map((h, i) => {
-                  const barPct = ((i + 0.5) / bars.length) * 100;
+                {/* Waveform bars — blend real frequencies with pseudo-random base */}
+                {pseudoBars.map((base, i) => {
+                  const barPct = ((i + 0.5) / pseudoBars.length) * 100;
                   const played = barPct <= progress;
+                  // Map bar index to frequency bin
+                  const freqIdx = Math.floor((i / pseudoBars.length) * frequencies.length);
+                  const freq = frequencies[freqIdx] ?? 0;
+                  // Blend: base shape + real audio reactivity
+                  const h = isPlaying ? Math.max(base * 0.3, base * 0.4 + freq * 0.6) : base;
                   return (
                     <div
                       key={i}
-                      className="flex-1 mx-px rounded-sm transition-colors"
+                      className="flex-1 mx-px rounded-sm"
                       style={{
                         height: `${h * 100}%`,
                         backgroundColor: played ? "rgba(6,182,212,0.6)" : "rgba(255,255,255,0.08)",
+                        transition: "height 0.1s ease-out",
                       }}
                     />
                   );

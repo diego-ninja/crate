@@ -39,11 +39,16 @@ export class MusicVisualizer {
   private height = 0;
 
   // Exposed controls
-  separation = 0.0;
-  glow = 4.5;
-  scale = 1.0;
-  persistence = 1.0;
-  octaves = 1;
+  separation = 0.15;
+  glow = 6.0;
+  scale = 1.4;
+  persistence = 0.8;
+  octaves = 2;
+
+  // Dynamic sphere colors — [r, g, b] normalized 0-1
+  color1: [number, number, number] = [0.024, 0.714, 0.831]; // outer: cyan
+  color2: [number, number, number] = [0.4, 0.9, 1.0];       // middle: light cyan
+  color3: [number, number, number] = [0.1, 0.3, 0.8];       // inner: deep blue
 
   constructor(canvas: HTMLCanvasElement, analyser: AnalyserNode) {
     const glCtx = canvas.getContext('webgl2', { alpha: true, antialias: false, preserveDrawingBuffer: false });
@@ -55,10 +60,11 @@ export class MusicVisualizer {
     this.freqDomain = new Uint8Array(analyser.frequencyBinCount);
     this.timeDomain = new Uint8Array(analyser.frequencyBinCount);
 
-    // Ensure canvas has pixel dimensions
-    const dpr = window.devicePixelRatio || 1;
-    this.width = canvas.clientWidth * dpr;
-    this.height = canvas.clientHeight * dpr;
+    // Ensure canvas has pixel dimensions — cap at 1024 to avoid FBO failures on large/retina displays
+    const MAX_DIM = 1024;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.width = Math.min(Math.floor(canvas.clientWidth * dpr), MAX_DIM);
+    this.height = Math.min(Math.floor(canvas.clientHeight * dpr), MAX_DIM);
     canvas.width = this.width;
     canvas.height = this.height;
 
@@ -215,13 +221,12 @@ export class MusicVisualizer {
     const g = this.glCtx;
     this.time++;
 
-    // Handle canvas size via devicePixelRatio
-    const dpr = window.devicePixelRatio || 1;
-    const displayW = this.canvas.clientWidth;
-    const displayH = this.canvas.clientHeight;
-    const w = Math.floor(displayW * dpr);
-    const h = Math.floor(displayH * dpr);
-    if (w > 0 && h > 0) {
+    // Handle canvas size — capped to avoid FBO issues on retina
+    const MAX_DIM = 1024;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.min(Math.floor(this.canvas.clientWidth * dpr), MAX_DIM);
+    const h = Math.min(Math.floor(this.canvas.clientHeight * dpr), MAX_DIM);
+    if (w > 0 && h > 0 && (w !== this.width || h !== this.height)) {
       this.setSize(w, h);
     }
 
@@ -250,22 +255,22 @@ export class MusicVisualizer {
     this.line.setTime(this.time);
     this.line.setAudio(freqAvg, timeAvg);
 
-    // Sphere 1 (outermost): cyan -- Crate primary
+    // Sphere 1 (outermost)
     let scaleVal = 1.2;
     this.line.setNoise(this.scale * 2.0, this.persistence * 0.5, 3 + this.octaves, 0.005);
-    this.line.setGeometryColor(vec4.fromValues(0.024, 0.714, 0.831, 1.0));
+    this.line.setGeometryColor(vec4.fromValues(this.color1[0], this.color1[1], this.color1[2], 1.0));
     this.renderer.render(this.camera, this.line, [this.sphere3], scaleVal);
 
-    // Sphere 2: lighter cyan
+    // Sphere 2 (middle)
     scaleVal += this.separation;
     this.line.setNoise(this.scale, this.persistence * 0.2, 1 + this.octaves, -0.01);
-    this.line.setGeometryColor(vec4.fromValues(0.4, 0.9, 1.0, 1.0));
+    this.line.setGeometryColor(vec4.fromValues(this.color2[0], this.color2[1], this.color2[2], 1.0));
     this.renderer.render(this.camera, this.line, [this.sphere2], scaleVal);
 
-    // Sphere 3 (innermost): deep blue
+    // Sphere 3 (innermost)
     scaleVal += this.separation;
     this.line.setNoise(this.scale, this.persistence, 2 + this.octaves, 0.01);
-    this.line.setGeometryColor(vec4.fromValues(0.1, 0.3, 0.8, 1.0));
+    this.line.setGeometryColor(vec4.fromValues(this.color3[0], this.color3[1], this.color3[2], 1.0));
     this.renderer.render(this.camera, this.line, [this.sphere1], scaleVal);
 
     g.bindFramebuffer(g.FRAMEBUFFER, null);

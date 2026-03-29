@@ -2,6 +2,11 @@ import { useRef, useEffect } from 'react';
 import { MusicVisualizer } from './MusicVisualizer';
 import { createAnalyserNode } from '@/hooks/use-audio-visualizer';
 
+function dbg(msg: string) {
+  const d = document.getElementById('viz-debug');
+  if (d) d.textContent = msg;
+}
+
 export function useMusicVisualizer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   audioElement: HTMLAudioElement | null,
@@ -11,44 +16,81 @@ export function useMusicVisualizer(
   const analyserRef = useRef<AnalyserNode | null>(null);
 
   useEffect(() => {
-    if (!canvasRef.current || !audioElement || !active) {
-      if (vizRef.current) {
-        vizRef.current.destroy();
-        vizRef.current = null;
-      }
-      analyserRef.current = null;
+    if (!active || !canvasRef.current || !audioElement) {
+      dbg(`off: active=${active} canvas=${!!canvasRef.current} audio=${!!audioElement}`);
       return;
     }
 
     const canvas = canvasRef.current;
 
-    // Wait for canvas to have layout dimensions before creating WebGL context
-    const initId = requestAnimationFrame(() => {
-      if (!canvas.clientWidth || !canvas.clientHeight) return;
+    // Retry until canvas has layout dimensions (display:none → visible transition)
+    let cancelled = false;
+    let attempts = 0;
 
-      const node = createAnalyserNode(audioElement, 2048);
-      if (!node) return;
-      analyserRef.current = node;
+    const tryInit = () => {
+      if (cancelled) return;
+      attempts++;
 
-      try {
-        const viz = new MusicVisualizer(canvas, node);
-        vizRef.current = viz;
-        viz.setSize(canvas.clientWidth, canvas.clientHeight);
-        viz.start();
-      } catch (e) {
-        console.error('Failed to initialize WebGL visualizer:', e);
+      const w = canvas.clientWidth;
+      const h = canvas.clientHeight;
+
+      if (!w || !h) {
+        dbg(`attempt ${attempts}: ${w}x${h} waiting...`);
+        if (attempts < 50) requestAnimationFrame(tryInit);
+        return;
       }
-    });
+
+      // Get or create analyser node
+      if (!analyserRef.current) {
+        const node = createAnalyserNode(audioElement, 2048);
+        if (!node) {
+          dbg(`attempt ${attempts}: no analyser, retrying`);
+          if (attempts < 50) setTimeout(tryInit, 200);
+          return;
+        }
+        analyserRef.current = node;
+      }
+
+      const forceResize = (viz: MusicVisualizer) => {
+        // Physically jiggle the canvas to force WebGL to recalculate
+        const origW = canvas.style.width;
+        canvas.style.width = (canvas.clientWidth - 1) + 'px';
+        requestAnimationFrame(() => {
+          canvas.style.width = origW;
+          requestAnimationFrame(() => {
+            const cw = canvas.clientWidth;
+            const ch = canvas.clientHeight;
+            if (cw > 0 && ch > 0) viz.setSize(cw, ch);
+          });
+        });
+      };
+
+      // Create or restart visualizer
+      if (vizRef.current) {
+        vizRef.current.start();
+        setTimeout(() => forceResize(vizRef.current!), 100);
+        dbg(`restarted ${w}x${h}`);
+      } else {
+        try {
+          const viz = new MusicVisualizer(canvas, analyserRef.current);
+          vizRef.current = viz;
+          viz.start();
+          setTimeout(() => forceResize(viz), 100);
+          dbg(`created ${w}x${h}`);
+        } catch (e) {
+          dbg(`FAIL: ${e}`);
+        }
+      }
+    };
+
+    // Small delay to let the DOM settle after display:none → visible
+    const id = setTimeout(tryInit, 50);
 
     return () => {
-      cancelAnimationFrame(initId);
+      cancelled = true;
+      clearTimeout(id);
       if (vizRef.current) {
-        vizRef.current.destroy();
-        vizRef.current = null;
-      }
-      if (analyserRef.current) {
-        try { analyserRef.current.disconnect(); } catch { /* ok */ }
-        analyserRef.current = null;
+        vizRef.current.stop();
       }
     };
   }, [canvasRef, audioElement, active]);

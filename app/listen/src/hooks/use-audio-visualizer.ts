@@ -3,40 +3,57 @@ import { useEffect, useRef, useState, useCallback } from "react";
 const FFT_SIZE = 128;
 const BAR_COUNT = FFT_SIZE / 2; // 64 bars
 
-// Singleton — one AudioContext and AnalyserNode shared across the app
-let audioCtx: AudioContext | null = null;
+// AudioContext is stored on window.__crateAudioCtx (created by PlayerContext on user gesture).
+// Source node is stored on the audio element itself to survive hot reloads.
 let analyser: AnalyserNode | null = null;
 let sourceNode: MediaElementAudioSourceNode | null = null;
-let connectedElement: HTMLAudioElement | null = null;
 
-function ensureAudioContext(audio: HTMLAudioElement) {
+const SRC_KEY = "__crateAudioSource" as const;
+const CTX_KEY = "__crateAudioCtx" as const;
+
+function getAudioCtx(): AudioContext | null {
+  const w = window as unknown as Record<string, AudioContext>;
+  return w[CTX_KEY] || null;
+}
+
+function ensureAudioContext(audio: HTMLAudioElement & { [SRC_KEY]?: MediaElementAudioSourceNode }) {
+  let audioCtx = getAudioCtx();
   if (!audioCtx) {
+    // Last resort: create here (may be suspended if no user gesture yet)
     audioCtx = new AudioContext();
+    (window as unknown as Record<string, AudioContext>)[CTX_KEY] = audioCtx;
   }
   if (audioCtx.state === "suspended") {
     audioCtx.resume();
   }
-  if (connectedElement !== audio) {
-    if (sourceNode) {
-      try { sourceNode.disconnect(); } catch { /* ok */ }
-    }
+  // Reuse existing source node if already attached (survives hot reload)
+  if (audio[SRC_KEY]) {
+    sourceNode = audio[SRC_KEY];
+    return;
+  }
+  try {
     sourceNode = audioCtx.createMediaElementSource(audio);
-    connectedElement = audio;
+    audio[SRC_KEY] = sourceNode;
+  } catch {
+    return;
   }
 }
 
 function connectAudio(audio: HTMLAudioElement): AnalyserNode | null {
-  if (connectedElement === audio && analyser) return analyser;
+  if (analyser && sourceNode) return analyser;
+  const ctx = getAudioCtx();
+  if (!ctx) return null;
 
   try {
     ensureAudioContext(audio);
+    if (!sourceNode) return null;
 
-    analyser = audioCtx!.createAnalyser();
+    analyser = ctx.createAnalyser();
     analyser.fftSize = FFT_SIZE;
     analyser.smoothingTimeConstant = 0.8;
 
-    sourceNode!.connect(analyser);
-    analyser.connect(audioCtx!.destination);
+    sourceNode.connect(analyser);
+    analyser.connect(ctx.destination);
 
     return analyser;
   } catch {
@@ -49,17 +66,32 @@ function connectAudio(audio: HTMLAudioElement): AnalyserNode | null {
  * Used by the WebGL visualizer which needs its own AnalyserNode (higher fftSize).
  * Safe to call multiple times — reuses the same MediaElementSource.
  */
+/**
+ * Get or create an AnalyserNode for the WebGL visualizer.
+ * Reuses the shared analyser from connectAudio but with higher fftSize.
+ */
+let vizAnalyser: AnalyserNode | null = null;
+
 export function createAnalyserNode(audio: HTMLAudioElement, fftSize = 2048): AnalyserNode | null {
+  // First ensure connectAudio has been called (sets up source → destination chain)
+  const mainAnalyser = connectAudio(audio);
+  if (!mainAnalyser) return null;
+
+  const ctx = getAudioCtx();
+  if (!ctx || !sourceNode) return null;
+
+  // Reuse existing viz analyser
+  if (vizAnalyser) return vizAnalyser;
+
   try {
-    ensureAudioContext(audio);
+    vizAnalyser = ctx.createAnalyser();
+    vizAnalyser.fftSize = fftSize;
+    vizAnalyser.smoothingTimeConstant = 0.8;
 
-    const node = audioCtx!.createAnalyser();
-    node.fftSize = fftSize;
-    node.smoothingTimeConstant = 0.8;
-
-    sourceNode!.connect(node);
-    // Don't connect to destination — the main analyser already does that
-    return node;
+    // Connect from the main analyser output (not sourceNode directly)
+    // This ensures the audio chain: source → mainAnalyser → destination stays intact
+    mainAnalyser.connect(vizAnalyser);
+    return vizAnalyser;
   } catch {
     return null;
   }

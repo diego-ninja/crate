@@ -96,7 +96,7 @@ function SearchResultsView({ results }: { results: SearchResults }) {
               <ArtistCard
                 key={a.name}
                 name={a.name}
-                subtitle={`${a.album_count} album${a.album_count !== 1 ? "s" : ""}`}
+                subtitle={a.album_count ? `${a.album_count} albums` : undefined}
               />
             ))}
           </div>
@@ -125,8 +125,8 @@ function SearchResultsView({ results }: { results: SearchResults }) {
           <div className="rounded-xl bg-white/[0.02] border border-white/5">
             {results.tracks.slice(0, 10).map((t, i) => (
               <TrackRow
-                key={t.path || `${t.artist}-${t.title}-${i}`}
-                track={t}
+                key={`${t.artist}-${t.title}-${i}`}
+                track={{ ...t, path: t.path || "", duration: t.duration || 0 }}
                 index={i + 1}
                 showArtist
                 showAlbum
