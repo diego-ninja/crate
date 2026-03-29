@@ -1,9 +1,10 @@
-import { Outlet, NavLink, useNavigate } from "react-router";
-import { Home, Compass, Library, Radio, User, LogOut } from "lucide-react";
+import { Outlet, NavLink } from "react-router";
+import { Home, Compass, Library, Radio } from "lucide-react";
 import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { PlayerBar } from "@/components/player/PlayerBar";
 import { MiniPlayer } from "@/components/player/MiniPlayer";
+import { TopBar } from "@/components/layout/TopBar";
 
 const NAV_ITEMS = [
   { to: "/", icon: Home, label: "Home" },
@@ -18,14 +19,8 @@ function navClass(isActive: boolean) {
 
 export function Shell() {
   const isDesktop = useIsDesktop();
-  const navigate = useNavigate();
   const { currentTrack } = usePlayerActions();
   const hasTrack = !!currentTrack;
-
-  async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
-    navigate("/login");
-  }
 
   if (isDesktop) {
     return (
@@ -45,20 +40,13 @@ export function Shell() {
               <Icon size={22} />
             </NavLink>
           ))}
-          <div className="mt-auto flex flex-col items-center gap-3">
-            <NavLink to="/library" title="Profile" className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/40 hover:text-white/70">
-              <User size={16} />
-            </NavLink>
-            <button onClick={handleLogout} title="Sign out" className="w-8 h-8 rounded-full flex items-center justify-center text-white/20 hover:text-red-400 transition-colors">
-              <LogOut size={14} />
-            </button>
-          </div>
         </aside>
 
         {/* Main content */}
         <main
           className={`flex-1 ml-14 overflow-x-hidden ${hasTrack ? "pb-16" : ""}`}
         >
+          <TopBar />
           <div className="p-6">
             <Outlet />
           </div>
@@ -77,6 +65,7 @@ export function Shell() {
       <main
         className={`flex-1 overflow-x-hidden ${hasTrack ? "pb-[116px]" : "pb-16"}`}
       >
+        <TopBar />
         <div className="p-4">
           <Outlet />
         </div>

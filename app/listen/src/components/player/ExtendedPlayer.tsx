@@ -532,12 +532,30 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const [tab, setTab] = useState<TabId>("queue");
   const [showVizSettings, setShowVizSettings] = useState(false);
   const [vizConfig, setVizConfig] = useState(VIZ_DEFAULTS);
+  const [useAlbumPalette, setUseAlbumPalette] = useState(true);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vizRef = useMusicVisualizer(canvasRef, audioElement, open);
 
   // Extract palette from album cover and apply to visualizer
   useEffect(() => {
+    const defaultC1: [number, number, number] = [0.024, 0.714, 0.831];
+    const defaultC2: [number, number, number] = [0.4, 0.9, 1.0];
+    const defaultC3: [number, number, number] = [0.1, 0.3, 0.8];
+
+    if (!useAlbumPalette) {
+      const apply = () => {
+        if (vizRef.current) {
+          vizRef.current.color1 = defaultC1;
+          vizRef.current.color2 = defaultC2;
+          vizRef.current.color3 = defaultC3;
+        }
+      };
+      apply();
+      const t1 = setTimeout(apply, 500);
+      return () => clearTimeout(t1);
+    }
+
     if (!currentTrack?.albumCover) return;
     let cancelled = false;
     import("@/lib/palette").then(({ extractPalette }) =>
@@ -559,7 +577,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
       return () => { clearTimeout(t1); clearTimeout(t2); };
     }).catch((e) => { dbg(`palette error: ${e}`); });
     return () => { cancelled = true; };
-  }, [currentTrack?.albumCover, vizRef]);
+  }, [currentTrack?.albumCover, vizRef, useAlbumPalette]);
 
   // Apply viz config whenever it changes
   useEffect(() => {
@@ -622,6 +640,17 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
                 className="text-[10px] text-primary hover:underline"
               >
                 Reset
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-white/50">Album palette</span>
+              <button
+                onClick={() => {
+                  setUseAlbumPalette(!useAlbumPalette);
+                }}
+                className={`w-9 h-5 rounded-full transition-colors ${useAlbumPalette ? "bg-primary" : "bg-white/20"}`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${useAlbumPalette ? "translate-x-4.5" : "translate-x-0.5"}`} />
               </button>
             </div>
             {([
