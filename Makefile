@@ -164,7 +164,7 @@ deploy: ## Deploy completo al servidor: sync + build + restart
 	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
 	@echo "$(YELLOW)Building servicios (api + worker + ui)...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build crate-api crate-worker crate-ui"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build crate-api crate-worker crate-ui crate-listen"
 	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
 	@echo "$(YELLOW)Reiniciando servicios...$(NC)"

@@ -391,6 +391,23 @@ services:
       traefik.http.services.admin.loadbalancer.server.port: 80
       traefik.http.routers.admin.tls: true
       traefik.http.routers.admin.tls.certresolver: letsencrypt
+
+  crate-listen:
+    build: ./app/listen
+    container_name: crate-listen
+    restart: unless-stopped
+    depends_on:
+      - crate-api
+    networks:
+      - crate
+    labels:
+      traefik.enable: true
+      traefik.docker.network: crate
+      traefik.http.routers.listen.rule: Host(`listen.${DOMAIN}`)
+      traefik.http.routers.listen.entryPoints: websecure
+      traefik.http.services.listen.loadbalancer.server.port: 80
+      traefik.http.routers.listen.tls: true
+      traefik.http.routers.listen.tls.certresolver: letsencrypt
       # Forward-auth middlewares (used by other services)
       traefik.http.middlewares.crate-auth.forwardAuth.address: http://crate-api:8585/api/auth/verify
       traefik.http.middlewares.crate-auth.forwardAuth.trustForwardHeader: true
