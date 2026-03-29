@@ -19,6 +19,11 @@ export interface Track {
 
 type RepeatMode = "off" | "one" | "all";
 
+export interface PlaySource {
+  type: "album" | "playlist" | "radio" | "track" | "queue";
+  name: string;
+}
+
 interface PlayerStateValue {
   currentTime: number;
   duration: number;
@@ -31,11 +36,12 @@ interface PlayerActionsValue {
   currentIndex: number;
   shuffle: boolean;
   repeat: RepeatMode;
+  playSource: PlaySource | null;
   recentlyPlayed: Track[];
   currentTrack: Track | undefined;
   audioElement: HTMLAudioElement | null;
-  play: (track: Track) => void;
-  playAll: (tracks: Track[], startIndex?: number) => void;
+  play: (track: Track, source?: PlaySource) => void;
+  playAll: (tracks: Track[], startIndex?: number, source?: PlaySource) => void;
   pause: () => void;
   resume: () => void;
   next: () => void;
@@ -137,6 +143,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [duration, setDuration] = useState(0);
   const [volume, setVolumeState] = useState(getStoredVolume);
   const [shuffle, setShuffle] = useState(false);
+  const [playSource, setPlaySource] = useState<PlaySource | null>(null);
   const [repeat, setRepeat] = useState<RepeatMode>("off");
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>(getStoredRecentlyPlayed);
   const restoredRef = useRef(stored.current.queue.length > 0);
@@ -263,7 +270,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
   }, [audio, currentIndex, queue.length, repeat, shuffle, queue]);
 
-  const play = useCallback((track: Track) => {
+  const play = useCallback((track: Track, source?: PlaySource) => {
     restoredRef.current = false;
     audio.src = getStreamUrl(track);
     audio.play().catch((e) => console.warn("[player] play failed:", e));
@@ -272,10 +279,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(true);
+    setPlaySource(source || { type: "track", name: track.title });
     addToRecentlyPlayed(track);
   }, [audio]);
 
-  const playAll = useCallback((tracks: Track[], startIndex = 0) => {
+  const playAll = useCallback((tracks: Track[], startIndex = 0, source?: PlaySource) => {
     if (tracks.length === 0) return;
     const track = tracks[startIndex];
     if (!track) return;
@@ -287,6 +295,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentTime(0);
     setDuration(0);
     setIsPlaying(true);
+    setPlaySource(source || (tracks.length > 1 ? { type: "queue", name: "Queue" } : { type: "track", name: track.title }));
     addToRecentlyPlayed(track);
   }, [audio]);
 
@@ -426,6 +435,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       queue,
       currentIndex,
       shuffle,
+      playSource,
       repeat,
       recentlyPlayed,
       currentTrack: queue[currentIndex],
@@ -448,7 +458,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       reorderQueue,
     }),
     [
-      queue, currentIndex, shuffle, repeat, recentlyPlayed,
+      queue, currentIndex, shuffle, repeat, playSource, recentlyPlayed,
       play, playAll, pause, resume, next, prev, seek, setVolume,
       clearQueue, toggleShuffle, cycleRepeat, jumpTo, playNext,
       addToQueue, removeFromQueue, reorderQueue,
