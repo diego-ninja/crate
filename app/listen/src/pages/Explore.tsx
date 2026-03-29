@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router";
-import { Search, Loader2 } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { Search, Loader2, ArrowLeft } from "lucide-react";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { AlbumCard } from "@/components/cards/AlbumCard";
@@ -35,45 +35,20 @@ interface SearchResults {
   tracks: SearchTrack[];
 }
 
-interface Genre {
-  id: number;
-  name: string;
-  slug: string;
-  artist_count: number;
-  album_count: number;
+interface BrowseFilters {
+  genres: { name: string; count: number }[];
+  decades: string[];
 }
 
-function genreColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 55%, 35%)`;
-}
-
-function GenreGrid({ genres }: { genres: Genre[] }) {
-  const navigate = useNavigate();
-
+function Pill({ label, count, onClick }: { label: string; count?: number; onClick: () => void }) {
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-      {genres.map((genre) => (
-        <button
-          key={genre.id}
-          onClick={() => navigate(`/explore?genre=${genre.slug}`)}
-          className="relative overflow-hidden rounded-xl p-4 text-left transition-transform hover:scale-[1.02] active:scale-[0.98] min-h-[90px] flex flex-col justify-end"
-          style={{ backgroundColor: genreColor(genre.name) }}
-        >
-          <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
-          <div className="relative z-10">
-            <div className="text-sm font-bold text-white leading-tight">{genre.name}</div>
-            <div className="text-xs text-white/60 mt-0.5">
-              {genre.artist_count} artist{genre.artist_count !== 1 ? "s" : ""}
-            </div>
-          </div>
-        </button>
-      ))}
-    </div>
+    <button
+      onClick={onClick}
+      className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 hover:border-primary/40 hover:bg-primary/5 transition-colors"
+    >
+      <span className="text-sm font-medium text-primary">{label}</span>
+      {count != null && count > 0 && <span className="text-xs text-white/50">{count}</span>}
+    </button>
   );
 }
 
@@ -139,13 +114,121 @@ function SearchResultsView({ results }: { results: SearchResults }) {
   );
 }
 
+// ── Genre Detail View ────────────────────────────────────────────
+
+interface GenreDetail {
+  id: number;
+  name: string;
+  slug: string;
+  artists: { artist_name: string; album_count: number; track_count: number; has_photo: boolean; listeners: number | null }[];
+  albums: { album_id: number; artist: string; name: string; year: string; track_count: number; has_cover: boolean }[];
+}
+
+function GenreDetailView({ slug, onBack }: { slug: string; onBack: () => void }) {
+  const { data, loading } = useApi<GenreDetail>(`/api/genres/${slug}`);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 size={24} className="text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return <p className="text-muted-foreground text-sm">Genre not found.</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="p-2 rounded-lg hover:bg-white/5 text-white/50 hover:text-white transition-colors">
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold">{data.name}</h1>
+          <p className="text-sm text-muted-foreground">{data.artists.length} artists, {data.albums.length} albums</p>
+        </div>
+      </div>
+
+      {data.artists.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-bold px-1">Artists</h2>
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+            {data.artists.map((a) => (
+              <ArtistCard key={a.artist_name} name={a.artist_name} subtitle={`${a.album_count} albums`} compact />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.albums.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-bold px-1">Albums</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+            {data.albums.map((a) => (
+              <AlbumCard key={`${a.artist}-${a.name}`} artist={a.artist} album={a.name} year={a.year} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Decade Detail View ───────────────────────────────────────────
+
+interface DecadeArtists {
+  items: { name: string; albums: number; tracks: number; has_photo: boolean }[];
+  total: number;
+}
+
+function DecadeDetailView({ decade, onBack }: { decade: string; onBack: () => void }) {
+  const { data, loading } = useApi<DecadeArtists>(`/api/artists?decade=${decade}&limit=50`);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 size={24} className="text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="p-2 rounded-lg hover:bg-white/5 text-white/50 hover:text-white transition-colors">
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold">{decade}</h1>
+          <p className="text-sm text-muted-foreground">{data?.total ?? 0} artists</p>
+        </div>
+      </div>
+
+      {data && data.items.length > 0 ? (
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
+          {data.items.map((a) => (
+            <ArtistCard key={a.name} name={a.name} subtitle={`${a.albums} albums`} compact />
+          ))}
+        </div>
+      ) : (
+        <p className="text-muted-foreground text-sm">No artists found for this decade.</p>
+      )}
+    </div>
+  );
+}
+
 export function Explore() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const genreSlug = searchParams.get("genre");
+
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [searching, setSearching] = useState(false);
 
-  const { data: genres, loading: genresLoading } = useApi<Genre[]>("/api/genres");
+  const { data: filters, loading: filtersLoading } = useApi<BrowseFilters>("/api/browse/filters");
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300);
@@ -178,6 +261,15 @@ export function Explore() {
 
   const isSearching = debouncedQuery.trim().length > 0;
 
+  // Genre or decade detail view
+  const decadeParam = searchParams.get("decade");
+  if (genreSlug) {
+    return <GenreDetailView slug={genreSlug} onBack={() => setSearchParams({})} />;
+  }
+  if (decadeParam) {
+    return <DecadeDetailView decade={decadeParam} onBack={() => setSearchParams({})} />;
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Explore</h1>
@@ -207,16 +299,50 @@ export function Explore() {
           <SearchResultsView results={searchResults} />
         ) : null
       ) : (
-        <div className="space-y-4">
-          <h2 className="text-lg font-bold px-1">Browse by Genre</h2>
-          {genresLoading ? (
+        <div className="space-y-6">
+          {filtersLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 size={24} className="text-primary animate-spin" />
             </div>
-          ) : genres && genres.length > 0 ? (
-            <GenreGrid genres={genres} />
+          ) : filters ? (
+            <>
+              {/* Genres — top 10 by artist count */}
+              <div className="space-y-3">
+                <h2 className="text-lg font-bold px-1">Genres</h2>
+                <div className="flex flex-wrap gap-2">
+                  {filters.genres
+                    .sort((a, b) => b.count - a.count)
+                    .slice(0, 10)
+                    .map((g) => (
+                      <Pill
+                        key={g.name}
+                        label={g.name}
+                        count={g.count}
+                        onClick={() => setSearchParams({ genre: g.name.toLowerCase().replace(/\s+/g, "-") })}
+                      />
+                    ))}
+                </div>
+              </div>
+
+              {/* Decades */}
+              {filters.decades.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-lg font-bold px-1">Decades</h2>
+                  <div className="flex flex-wrap gap-2">
+                    {filters.decades.map((d) => (
+                      <Pill
+                        key={d}
+                        label={d}
+                        count={0}
+                        onClick={() => setSearchParams({ decade: d })}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
-            <p className="text-muted-foreground text-sm">No genres found.</p>
+            <p className="text-muted-foreground text-sm">No filters available.</p>
           )}
         </div>
       )}

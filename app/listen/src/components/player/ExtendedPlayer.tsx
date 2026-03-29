@@ -313,7 +313,7 @@ function LyricsTab() {
                 onClick={() => seek(line.time)}
                 className={`block w-full text-left py-1.5 px-2 rounded-md transition-all duration-300 ${
                   isActive
-                    ? "text-white text-[15px] font-bold bg-white/5"
+                    ? "text-primary text-[15px] font-bold bg-primary/5"
                     : isPast
                       ? "text-white/25 text-[14px]"
                       : "text-white/40 text-[14px] hover:text-white/60"
@@ -533,9 +533,10 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const [showVizSettings, setShowVizSettings] = useState(false);
   const [vizConfig, setVizConfig] = useState(VIZ_DEFAULTS);
   const [useAlbumPalette, setUseAlbumPalette] = useState(false);
+  const [vizEnabled, setVizEnabled] = useState(true);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const vizRef = useMusicVisualizer(canvasRef, audioElement, open);
+  const vizRef = useMusicVisualizer(canvasRef, audioElement, open && vizEnabled);
 
   // Extract palette from album cover and apply to visualizer
   useEffect(() => {
@@ -609,7 +610,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
 
   return (
     <div
-      className={`fixed right-0 bottom-[72px] left-0 md:left-14 z-40 bg-[#0a0a0f] flex transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+      className={`fixed inset-0 bottom-[72px] z-[60] bg-[#0a0a0f] flex transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
         open
           ? "top-0 opacity-100"
           : "top-[100vh] opacity-0 pointer-events-none"
@@ -619,7 +620,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
       <div id="viz-debug" className="absolute top-2 left-20 z-50 text-[10px] text-yellow-400 font-mono bg-black/80 px-2 py-1 rounded" />
 
       {/* ── Left Panel: Cover + Visualizer + Track Info ── */}
-      <div className="relative w-1/2 flex flex-col items-center justify-center overflow-hidden bg-[#060609]">
+      <div className="relative w-1/2 flex flex-col items-center justify-center overflow-hidden bg-[#0a0a0f]">
         {/* Top buttons */}
         <div className="absolute top-4 left-4 right-4 z-20 flex justify-between">
           <button
@@ -649,11 +650,18 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
               </button>
             </div>
             <div className="flex items-center justify-between">
+              <span className="text-[11px] text-white/50">Enabled</span>
+              <button
+                onClick={() => setVizEnabled(!vizEnabled)}
+                className={`w-9 h-5 rounded-full transition-colors ${vizEnabled ? "bg-primary" : "bg-white/20"}`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${vizEnabled ? "translate-x-4.5" : "translate-x-0.5"}`} />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
               <span className="text-[11px] text-white/50">Album palette</span>
               <button
-                onClick={() => {
-                  setUseAlbumPalette(!useAlbumPalette);
-                }}
+                onClick={() => setUseAlbumPalette(!useAlbumPalette)}
                 className={`w-9 h-5 rounded-full transition-colors ${useAlbumPalette ? "bg-primary" : "bg-white/20"}`}
               >
                 <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${useAlbumPalette ? "translate-x-4.5" : "translate-x-0.5"}`} />
@@ -690,7 +698,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
               src={currentTrack.albumCover}
               alt=""
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ filter: "grayscale(100%) brightness(0.35)" }}
+              style={{ filter: vizEnabled ? "grayscale(100%) brightness(0.35)" : "none" }}
             />
           ) : (
             <div className="absolute inset-0 bg-white/5" />
@@ -700,7 +708,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
         {/* WebGL Visualizer Canvas — overlays the ENTIRE left panel */}
         <canvas
           ref={canvasRef}
-          className="absolute inset-0 w-full h-full z-10 pointer-events-none"
+          className={`absolute inset-0 w-full h-full z-10 pointer-events-none ${vizEnabled ? "" : "hidden"}`}
           style={{ background: "transparent" }}
         />
 
@@ -721,7 +729,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
       </div>
 
       {/* ── Right Panel: Tabs ── */}
-      <div className="w-1/2 flex flex-col border-l border-white/5 bg-[#0a0a0f]">
+      <div className="w-1/2 flex flex-col bg-[#0a0a0f]">
         {/* Tab bar */}
         <div className="flex items-center gap-1.5 px-5 pt-5 pb-3">
           {TABS.map((t) => (
