@@ -1,6 +1,7 @@
-import { useNavigate } from "react-router";
+import { useState } from "react";
 import { Play, Pause, SkipBack, SkipForward, Volume2 } from "lucide-react";
 import { usePlayer } from "@/contexts/PlayerContext";
+import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
 
 function formatTime(s: number): string {
   if (!s || !isFinite(s)) return "0:00";
@@ -23,22 +24,19 @@ export function PlayerBar() {
     seek,
     setVolume,
   } = usePlayer();
-  const navigate = useNavigate();
+  const [fsOpen, setFsOpen] = useState(false);
 
   if (!currentTrack) return null;
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   return (
+    <>
     <div className="fixed bottom-0 left-0 right-0 z-50 h-16 bg-[#0f0f17] border-t border-white/5 flex items-center px-4 gap-4">
       {/* Left: track info */}
       <button
         className="flex items-center gap-3 min-w-0 w-56 shrink-0 text-left"
-        onClick={() => {
-          if (currentTrack.artist && currentTrack.album) {
-            navigate(`/album/${encodeURIComponent(currentTrack.artist)}/${encodeURIComponent(currentTrack.album)}`);
-          }
-        }}
+        onClick={() => setFsOpen(true)}
       >
         {currentTrack.albumCover ? (
           <img
@@ -112,5 +110,7 @@ export function PlayerBar() {
         />
       </div>
     </div>
+    <FullscreenPlayer open={fsOpen} onClose={() => setFsOpen(false)} />
+    </>
   );
 }
