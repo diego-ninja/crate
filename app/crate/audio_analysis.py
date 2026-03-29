@@ -188,11 +188,28 @@ def _weighted_sum(probs: np.ndarray, group: dict, lb_to_ix: dict) -> float:
 # ── Main entry points ─────────────────────────────────────────────
 
 def analyze_track(filepath: Union[str, Path]) -> dict:
-    """Analyze a single audio track. Tries Rust CLI first, falls back to Python."""
+    """Analyze a single audio track. Tries Rust CLI first, falls back to Python.
+    If Rust CLI returns partial results (missing danceability/valence/mood),
+    supplements with Python backend for the missing metrics."""
     rust = _analyze_rust(str(filepath))
     if rust:
+        # Check if advanced metrics are missing — Rust CLI only does signal-level analysis
+        has_advanced = any(rust.get(k) is not None for k in ("danceability", "valence", "mood", "acousticness"))
+        if not has_advanced:
+            _detect_backend()
+            supplement = None
+            if _BACKEND == "essentia":
+                supplement = _analyze_essentia(str(filepath))
+            elif _BACKEND == "librosa":
+                supplement = _analyze_librosa(str(filepath))
+            if supplement:
+                # Merge: keep Rust values for basic metrics, add Python values for advanced
+                for key in ("danceability", "valence", "acousticness", "instrumentalness",
+                            "mood", "spectral_complexity"):
+                    if rust.get(key) is None and supplement.get(key) is not None:
+                        rust[key] = supplement[key]
         return rust
-    # Lazy-load Python backend only when Rust unavailable
+    # No Rust CLI — full Python analysis
     _detect_backend()
     if _BACKEND == "essentia":
         return _analyze_essentia(str(filepath))
