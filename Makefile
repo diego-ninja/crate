@@ -32,19 +32,46 @@ NC     := \033[0m
 DC_DEV := $(DC) -f docker-compose.dev.yaml
 
 .PHONY: dev
-dev: ## Levantar entorno de dev (API + Worker + Postgres + test music)
+dev: ## Levantar backend (Postgres + Redis + API + Worker) + frontend dev servers
 	@$(DC_DEV) up -d --build
-	@echo "$(GREEN)Dev stack levantado$(NC)"
+	@echo "$(GREEN)Backend levantado (Postgres, Redis, API :8585, Worker)$(NC)"
+	@echo ""
+	@echo "  API:    http://localhost:8585"
+	@echo "  Login:  yosoy@diego.ninja / admin"
+	@echo ""
+	@echo "Arrancando frontends..."
+	@cd app/ui && npm install --silent 2>/dev/null; cd ../..
+	@cd app/listen && npm install --silent 2>/dev/null; cd ../..
+	@(cd app/ui && npx vite --port 5173 --host > /dev/null 2>&1 &)
+	@(cd app/listen && npx vite --port 5174 --host > /dev/null 2>&1 &)
+	@sleep 2
+	@echo "  $(GREEN)Admin:$(NC)  http://localhost:5173"
+	@echo "  $(GREEN)Listen:$(NC) http://localhost:5174"
+	@echo ""
+	@echo "$(GREEN)Todo arrancado. make dev-down para parar.$(NC)"
+
+.PHONY: dev-back
+dev-back: ## Solo backend (Postgres + Redis + API + Worker) sin frontends
+	@$(DC_DEV) up -d --build
+	@echo "$(GREEN)Backend levantado$(NC)"
 	@echo "  API: http://localhost:8585"
-	@echo "  UI:  cd app/ui && API_URL=http://localhost:8585 npm run dev"
-	@echo "  Login: admin / admin"
+
+.PHONY: dev-admin
+dev-admin: ## Arrancar solo Admin UI dev server (:5173)
+	@cd app/ui && npx vite --port 5173 --host
+
+.PHONY: dev-listen
+dev-listen: ## Arrancar solo Listen dev server (:5174)
+	@cd app/listen && npx vite --port 5174 --host
 
 .PHONY: dev-down
-dev-down: ## Parar entorno de dev
+dev-down: ## Parar todo (backend + frontends)
 	@$(DC_DEV) down
+	@-pkill -f "vite.*517" 2>/dev/null || true
+	@echo "$(GREEN)Todo parado$(NC)"
 
 .PHONY: dev-logs
-dev-logs: ## Ver logs de dev (uso: make dev-logs o make dev-logs s=worker)
+dev-logs: ## Ver logs de backend (uso: make dev-logs o make dev-logs s=worker)
 	@if [ -n "$(s)" ]; then \
 		$(DC_DEV) logs -f $(s); \
 	else \
@@ -52,14 +79,19 @@ dev-logs: ## Ver logs de dev (uso: make dev-logs o make dev-logs s=worker)
 	fi
 
 .PHONY: dev-rebuild
-dev-rebuild: ## Rebuild y restart entorno dev
+dev-rebuild: ## Rebuild y restart todo
 	@$(DC_DEV) up -d --build --force-recreate
-	@echo "$(GREEN)Dev stack rebuildeado$(NC)"
+	@-pkill -f "vite.*517" 2>/dev/null || true
+	@(cd app/ui && npx vite --port 5173 --host > /dev/null 2>&1 &)
+	@(cd app/listen && npx vite --port 5174 --host > /dev/null 2>&1 &)
+	@sleep 2
+	@echo "$(GREEN)Todo rebuildeado$(NC)"
 
 .PHONY: dev-reset
-dev-reset: ## Reset entorno dev (borra datos)
+dev-reset: ## Reset entorno dev (borra datos, para todo)
 	@$(DC_DEV) down -v
-	@echo "$(GREEN)Dev stack reseteado (datos borrados)$(NC)"
+	@-pkill -f "vite.*517" 2>/dev/null || true
+	@echo "$(GREEN)Dev reseteado (datos borrados)$(NC)"
 
 .PHONY: dev-test
 dev-test: ## Correr tests en el contenedor dev
