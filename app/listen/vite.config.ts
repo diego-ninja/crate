@@ -16,6 +16,21 @@ export default defineConfig({
         target: process.env.API_URL || "http://localhost:8585",
         changeOrigin: true,
         secure: false,
+        cookieDomainRewrite: { "*": "" },
+        headers: { cookie: "" },
+        configure: (proxy) => {
+          // Strip Secure and Domain from Set-Cookie so it works on localhost
+          proxy.on("proxyRes", (proxyRes) => {
+            const setCookie = proxyRes.headers["set-cookie"];
+            if (setCookie) {
+              proxyRes.headers["set-cookie"] = setCookie.map((c) =>
+                c.replace(/;\s*Domain=[^;]*/gi, "")
+                  .replace(/;\s*Secure/gi, "")
+                  .replace(/;\s*SameSite=\w+/gi, "; SameSite=Lax"),
+              );
+            }
+          });
+        },
       },
     },
   },

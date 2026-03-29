@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, Link } from "react-router";
 
 export function Login() {
   const [email, setEmail] = useState("");
@@ -81,6 +81,11 @@ export function Login() {
         >
           {loading ? "Signing in..." : "Sign in"}
         </button>
+
+        <p className="text-center text-sm text-white/40">
+          No account?{" "}
+          <Link to="/register" className="text-cyan-400 hover:underline">Create one</Link>
+        </p>
       </form>
     </div>
   );

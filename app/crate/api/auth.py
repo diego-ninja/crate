@@ -29,9 +29,14 @@ GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
 
 def _cookie_domain() -> str | None:
     domain = os.environ.get("DOMAIN")
-    if domain:
+    if domain and domain != "localhost":
         return f".{domain}"
     return None
+
+
+def _is_secure() -> bool:
+    domain = os.environ.get("DOMAIN", "localhost")
+    return domain != "localhost"
 
 
 def _set_auth_cookie(response: Response, token: str):
@@ -39,7 +44,7 @@ def _set_auth_cookie(response: Response, token: str):
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=True,
+        secure=_is_secure(),
         samesite="lax",
         domain=_cookie_domain(),
         max_age=JWT_EXPIRY_HOURS * 3600,
@@ -159,11 +164,15 @@ async def login(body: LoginRequest):
 
 @router.post("/register")
 async def register(request: Request, body: RegisterRequest):
+    from crate.db import get_setting
     with get_db_ctx() as cur:
         cur.execute("SELECT COUNT(*) AS cnt FROM users")
         user_count = cur.fetchone()["cnt"]
+    # First user = no auth needed. After that: open registration or admin-only.
     if user_count > 0:
-        _require_admin(request)
+        open_registration = get_setting("open_registration") == "true"
+        if not open_registration:
+            _require_admin(request)
     existing = get_user_by_email(body.email)
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")

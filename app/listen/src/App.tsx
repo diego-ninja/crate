@@ -7,6 +7,7 @@ import { Explore } from "@/pages/Explore";
 import { Library } from "@/pages/Library";
 import { Shows } from "@/pages/Shows";
 import { Login } from "@/pages/Login";
+import { Register } from "@/pages/Register";
 
 const Artist = React.lazy(() =>
   import("@/pages/Artist").then((m) => ({ default: m.Artist })),
@@ -31,6 +32,7 @@ export function App() {
     <PlayerProvider>
       <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
           <Route element={<Shell />}>
             <Route index element={<Home />} />
             <Route path="explore" element={<Explore />} />

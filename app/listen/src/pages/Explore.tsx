@@ -162,7 +162,7 @@ export function Explore() {
     let cancelled = false;
     setSearching(true);
 
-    api<SearchResults>(`/api/browse/search?q=${encodeURIComponent(debouncedQuery)}&limit=20`)
+    api<SearchResults>(`/api/search?q=${encodeURIComponent(debouncedQuery)}&limit=20`)
       .then((data) => {
         if (!cancelled) setSearchResults(data);
       })

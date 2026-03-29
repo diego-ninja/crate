@@ -85,7 +85,7 @@ export function Home() {
   const { data: recentAlbums, loading: recentLoading } =
     useApi<RecentAlbum[]>("/api/navidrome/recently-played");
   const { data: newArtists, loading: artistsLoading } =
-    useApi<NewArtist[]>("/api/browse/artists?sort=recent&limit=10");
+    useApi<NewArtist[]>("/api/artists?sort=recent&limit=10");
   const { data: playlists, loading: playlistsLoading } =
     useApi<Playlist[]>("/api/playlists");
 
