@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
 import { QueuePanel } from "@/components/player/QueuePanel";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
+import { ExtendedPlayer } from "@/components/player/ExtendedPlayer";
 
 function formatTime(s: number): string {
   if (!s || !isFinite(s)) return "0:00";
@@ -53,6 +54,7 @@ export function PlayerBar() {
 
   const navigate = useNavigate();
   const [fsOpen, setFsOpen] = useState(false);
+  const [extendedOpen, setExtendedOpen] = useState(false);
   const [liked, setLiked] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -272,34 +274,41 @@ export function PlayerBar() {
               <Airplay size={16} />
             </button>
 
-            {/* Queue */}
-            <button
-              onClick={() => { setShowQueue(!showQueue); setShowLyrics(false); }}
-              className={`p-1.5 hover:bg-white/5 rounded-md transition-colors relative ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-              title="Queue"
-            >
-              <ListMusic size={16} />
-              {queue.length > 1 && (
-                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-primary text-[8px] font-bold text-primary-foreground rounded-full flex items-center justify-center">
-                  {queue.length - currentIndex - 1}
-                </span>
-              )}
-            </button>
+            {/* Queue (hidden when extended player is open) */}
+            {!extendedOpen && (
+              <button
+                onClick={() => { setShowQueue(!showQueue); setShowLyrics(false); }}
+                className={`p-1.5 hover:bg-white/5 rounded-md transition-colors relative ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                title="Queue"
+              >
+                <ListMusic size={16} />
+                {queue.length > 1 && (
+                  <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-primary text-[8px] font-bold text-primary-foreground rounded-full flex items-center justify-center">
+                    {queue.length - currentIndex - 1}
+                  </span>
+                )}
+              </button>
+            )}
 
-            {/* Lyrics */}
-            <button
-              onClick={() => { setShowLyrics(!showLyrics); setShowQueue(false); }}
-              className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${showLyrics ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-              title="Lyrics"
-            >
-              <Mic2 size={16} />
-            </button>
+            {/* Lyrics (hidden when extended player is open) */}
+            {!extendedOpen && (
+              <button
+                onClick={() => { setShowLyrics(!showLyrics); setShowQueue(false); }}
+                className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${showLyrics ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                title="Lyrics"
+              >
+                <Mic2 size={16} />
+              </button>
+            )}
 
-            {/* Full player */}
+            {/* Extended / Full player */}
             <button
-              onClick={() => setFsOpen(true)}
-              className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60"
-              title="Full player"
+              onClick={() => {
+                setExtendedOpen(!extendedOpen);
+                if (!extendedOpen) { setShowQueue(false); setShowLyrics(false); }
+              }}
+              className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${extendedOpen ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+              title="Extended player"
             >
               <Maximize2 size={16} />
             </button>
@@ -309,6 +318,7 @@ export function PlayerBar() {
       </div>
       <QueuePanel open={showQueue} onClose={() => setShowQueue(false)} />
       <LyricsPanel open={showLyrics} onClose={() => setShowLyrics(false)} />
+      <ExtendedPlayer open={extendedOpen} onClose={() => setExtendedOpen(false)} />
       <FullscreenPlayer open={fsOpen} onClose={() => setFsOpen(false)} />
     </>
   );
