@@ -33,26 +33,48 @@ interface FlatItem {
   label: string;
   sublabel?: string;
   navigateTo?: string;
+  imageUrl?: string;
 }
 
 function flattenResults(data: SearchResult): FlatItem[] {
   const items: FlatItem[] = [];
   for (const a of data.artists) {
-    items.push({ type: "artist", label: a.name, navigateTo: `/artist/${encPath(a.name)}` });
+    items.push({
+      type: "artist", label: a.name,
+      navigateTo: `/artist/${encPath(a.name)}`,
+      imageUrl: `/api/artist/${encPath(a.name)}/photo`,
+    });
   }
   for (const a of data.albums) {
-    items.push({ type: "album", label: a.name, sublabel: a.artist, navigateTo: `/album/${encPath(a.artist)}/${encPath(a.name)}` });
+    items.push({
+      type: "album", label: a.name, sublabel: a.artist,
+      navigateTo: `/album/${encPath(a.artist)}/${encPath(a.name)}`,
+      imageUrl: `/api/cover/${encPath(a.artist)}/${encPath(a.name)}`,
+    });
   }
   for (const t of data.tracks) {
-    items.push({ type: "track", label: t.title, sublabel: `${t.artist} - ${t.album}` });
+    items.push({
+      type: "track", label: t.title, sublabel: `${t.artist} - ${t.album}`,
+      imageUrl: t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : undefined,
+    });
   }
   return items;
 }
 
-function ResultIcon({ type }: { type: FlatItem["type"] }) {
-  if (type === "artist") return <User size={14} className="text-white/30 shrink-0" />;
-  if (type === "album") return <Disc size={14} className="text-white/30 shrink-0" />;
-  return <Music size={14} className="text-white/30 shrink-0" />;
+function ResultThumb({ item }: { item: FlatItem }) {
+  if (item.imageUrl) {
+    return (
+      <img
+        src={item.imageUrl}
+        alt=""
+        className={`w-8 h-8 object-cover shrink-0 bg-white/5 ${item.type === "artist" ? "rounded-full" : "rounded"}`}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+      />
+    );
+  }
+  if (item.type === "artist") return <User size={14} className="w-8 h-8 p-2 rounded-full bg-white/5 text-white/30 shrink-0" />;
+  if (item.type === "album") return <Disc size={14} className="w-8 h-8 p-2 rounded bg-white/5 text-white/30 shrink-0" />;
+  return <Music size={14} className="w-8 h-8 p-2 rounded bg-white/5 text-white/30 shrink-0" />;
 }
 
 export function TopBar() {
@@ -170,9 +192,12 @@ export function TopBar() {
   const userInitial = userName ? userName.charAt(0).toUpperCase() : null;
 
   return (
-    <div className="flex items-center gap-4 px-4 py-3 bg-[#0a0a0f]">
+    <div className="flex items-center gap-4 px-4 py-3 pointer-events-none">
+      {/* Spacer pushes search + avatar to the right */}
+      <div className="flex-1" />
+
       {/* Search */}
-      <div className="relative flex-1 max-w-lg">
+      <div className="relative w-full max-w-md pointer-events-auto">
         <div className="relative flex items-center">
           <Search size={16} className="absolute left-3 text-white/30 pointer-events-none" />
           {loading && <Loader2 size={14} className="absolute right-3 text-white/30 animate-spin" />}
@@ -205,7 +230,7 @@ export function TopBar() {
                 onClick={() => selectItem(item)}
                 className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${i === activeIdx ? "bg-white/10" : "hover:bg-white/5"}`}
               >
-                <ResultIcon type={item.type} />
+                <ResultThumb item={item} />
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] text-white/80 truncate">{item.label}</p>
                   {item.sublabel && <p className="text-[11px] text-white/35 truncate">{item.sublabel}</p>}
@@ -235,7 +260,7 @@ export function TopBar() {
       </div>
 
       {/* User avatar */}
-      <div className="relative">
+      <div className="relative pointer-events-auto">
         <button
           onClick={() => setShowUserMenu(!showUserMenu)}
           className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/15 transition-colors text-sm font-medium"

@@ -532,7 +532,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const [tab, setTab] = useState<TabId>("queue");
   const [showVizSettings, setShowVizSettings] = useState(false);
   const [vizConfig, setVizConfig] = useState(VIZ_DEFAULTS);
-  const [useAlbumPalette, setUseAlbumPalette] = useState(true);
+  const [useAlbumPalette, setUseAlbumPalette] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vizRef = useMusicVisualizer(canvasRef, audioElement, open);
@@ -608,7 +608,13 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   if (!currentTrack) return null;
 
   return (
-    <div className={`fixed top-0 right-0 bottom-[72px] left-0 md:left-14 z-40 bg-[#0a0a0f] flex ${open ? "" : "hidden"}`}>
+    <div
+      className={`fixed right-0 bottom-[72px] left-0 md:left-14 z-40 bg-[#0a0a0f] flex transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        open
+          ? "top-0 opacity-100"
+          : "top-[100vh] opacity-0 pointer-events-none"
+      }`}
+    >
       {/* Debug trace — remove after fixing */}
       <div id="viz-debug" className="absolute top-2 left-20 z-50 text-[10px] text-yellow-400 font-mono bg-black/80 px-2 py-1 rounded" />
 
