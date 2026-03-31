@@ -454,25 +454,42 @@ function TidalAuthCard() {
     setLoggingIn(true);
     setLoginMessages([]);
     try {
-      const source = new EventSource("/api/tidal/auth/login");
-      source.onmessage = (e) => {
-        const msg = e.data;
-        setLoginMessages((prev) => [...prev, msg]);
-        if (msg === "AUTH_SUCCESS") {
-          source.close();
-          setLoggingIn(false);
-          setStatus({ authenticated: true });
-          toast.success("Tidal authenticated!");
-        } else if (msg.startsWith("AUTH_FAILED") || msg.startsWith("AUTH_ERROR") || msg.startsWith("AUTH_TIMEOUT")) {
-          source.close();
-          setLoggingIn(false);
-          toast.error("Tidal login failed");
-        }
-      };
-      source.onerror = () => {
-        source.close();
+      const res = await fetch("/api/tidal/auth/login", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok || !res.body) {
+        toast.error("Failed to start Tidal login");
         setLoggingIn(false);
-      };
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const msg = line.slice(6).trim();
+          if (!msg) continue;
+          setLoginMessages((prev) => [...prev, msg]);
+          if (msg === "AUTH_SUCCESS") {
+            setLoggingIn(false);
+            setStatus({ authenticated: true });
+            toast.success("Tidal authenticated!");
+            return;
+          } else if (msg.startsWith("AUTH_FAILED") || msg.startsWith("AUTH_ERROR") || msg.startsWith("AUTH_TIMEOUT")) {
+            setLoggingIn(false);
+            toast.error("Tidal login failed");
+            return;
+          }
+        }
+      }
+      setLoggingIn(false);
     } catch {
       setLoggingIn(false);
       toast.error("Failed to start login");
