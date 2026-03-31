@@ -11,6 +11,7 @@ import { Shell } from "@/components/layout/Shell";
 import { Home } from "@/pages/Home";
 import { Explore } from "@/pages/Explore";
 import { Library } from "@/pages/Library";
+import { Settings } from "@/pages/Settings";
 import { Shows } from "@/pages/Shows";
 import { Login } from "@/pages/Login";
 import { Register } from "@/pages/Register";
@@ -72,6 +73,7 @@ export function App() {
                     <Route index element={<Home />} />
                     <Route path="explore" element={<Explore />} />
                     <Route path="library" element={<Library />} />
+                    <Route path="settings" element={<Settings />} />
                     <Route path="shows" element={<Shows />} />
                     <Route
                       path="artist/:name"

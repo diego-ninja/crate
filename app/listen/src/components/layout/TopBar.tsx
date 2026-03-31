@@ -6,7 +6,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
 import { encPath } from "@/lib/utils";
-import { toast } from "sonner";
 
 interface SearchResult {
   artists: { name: string }[];
@@ -298,7 +297,7 @@ export function TopBar() {
               Profile
             </AppMenuButton>
             <AppMenuButton
-              onClick={() => { setShowUserMenu(false); toast("Coming soon"); }}
+              onClick={() => { setShowUserMenu(false); navigate("/settings"); }}
               className="gap-2.5 px-3 py-2 text-[13px] text-white/70 hover:text-white"
             >
               <Settings size={14} />

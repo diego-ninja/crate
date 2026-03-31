@@ -375,6 +375,16 @@ Follow-up architectural decision:
   - added dedicated category detail view for system playlists via `/api/curation/playlists/category/{category}`
   - `Explore` now connects genres/decades browsing with playlist-led discovery instead of acting only as a filter/search page
   - verified with `cd app/listen && npm run build`
+- added a first real `Settings` surface for `listen`:
+  - `app/listen/src/pages/Settings.tsx` now exposes persisted playback and visualizer preferences
+  - `app/listen/src/App.tsx` routes `/settings`
+  - `app/listen/src/components/layout/TopBar.tsx` now opens the real settings page instead of a placeholder
+  - verified with `cd app/listen && npm run build`
+- improved player-level playlist actions:
+  - `app/listen/src/components/player/PlayerBar.tsx` now supports adding the current track to an existing playlist from the player menu
+  - the same menu can now seed a new playlist from the current track
+  - the player menu now navigates to artist/album instead of showing placeholder actions
+  - verified with `cd app/listen && npm run build`
 
 ### In Progress
 
@@ -418,6 +428,9 @@ Follow-up architectural decision:
     - row-level primary play affordance
     - compact secondary action cluster on hover / desktop
     - shared menu for lower-priority actions on mobile
+- settings surface should keep growing as player features stabilize:
+  - playback preferences now have a first home
+  - future iterations should likely add infinite playback, suggestion cadence, and other player intelligence controls there
 - reusable overlay primitives for `listen`:
   - extract consistent `Dropdown` / `Popover` / `Menu` components
   - unify `Escape`, click-outside, z-index, animation, and focus behavior

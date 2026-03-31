@@ -3,19 +3,28 @@ import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
   Heart, MoreHorizontal, Volume2, VolumeX, Airplay, ListMusic,
-  Mic2, Maximize2, Radio, Info, User, Share2, Plus, Disc, Loader2,
+  Mic2, Maximize2, User, Share2, Plus, Disc, Loader2, ArrowLeft,
 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
+import { useApi } from "@/hooks/use-api";
+import { api } from "@/lib/api";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { AppMenuButton, AppPopover } from "@/components/ui/AppPopover";
+import { type PlaylistComposerTrack } from "@/components/playlists/PlaylistCreateModal";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
 import { QueuePanel } from "@/components/player/QueuePanel";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
 import { ExtendedPlayer } from "@/components/player/ExtendedPlayer";
+
+interface PlaylistOption {
+  id: number;
+  name: string;
+}
 
 function formatTime(s: number): string {
   if (!s || !isFinite(s)) return "0:00";
@@ -64,6 +73,7 @@ export function PlayerBar() {
   const [extendedOpen, setExtendedOpen] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -71,11 +81,16 @@ export function PlayerBar() {
   const volumeRef = useRef<HTMLDivElement>(null);
   const volumeButtonRef = useRef<HTMLButtonElement>(null);
   const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
+  const { openCreatePlaylist } = usePlaylistComposer();
+  const { data: playlists } = useApi<PlaylistOption[]>("/api/playlists");
 
   useDismissibleLayer({
     active: showMenu,
     refs: [menuRef, menuButtonRef],
-    onDismiss: () => setShowMenu(false),
+    onDismiss: () => {
+      setShowMenu(false);
+      setShowPlaylistPicker(false);
+    },
     closeOnEscape: false,
   });
 
@@ -118,6 +133,43 @@ export function PlayerBar() {
         await likeTrack(trackId, trackPath);
       }
     } catch { /* ignore */ }
+  }
+
+  function currentTrackToPlaylistSeed(): PlaylistComposerTrack | null {
+    if (!currentTrack) return null;
+    return {
+      title: currentTrack.title,
+      artist: currentTrack.artist,
+      album: currentTrack.album,
+      duration: duration || 0,
+      path: currentTrack.path,
+      libraryTrackId: currentTrack.libraryTrackId,
+      navidromeId: currentTrack.navidromeId,
+    };
+  }
+
+  async function handleAddCurrentTrackToPlaylist(playlistId: number) {
+    if (!currentTrack?.path) {
+      toast.error("This track cannot be added to a playlist yet");
+      return;
+    }
+    try {
+      const payload = {
+        tracks: [{
+          path: currentTrack.path,
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          album: currentTrack.album || "",
+          duration: duration || 0,
+        }],
+      };
+      await api(`/api/playlists/${playlistId}/tracks`, "POST", payload);
+      toast.success("Added to playlist");
+      setShowMenu(false);
+      setShowPlaylistPicker(false);
+    } catch {
+      toast.error("Failed to add track to playlist");
+    }
   }
 
   return (
@@ -165,36 +217,92 @@ export function PlayerBar() {
             <div className="relative" ref={menuRef}>
               <button
                 ref={menuButtonRef}
-                onClick={() => setShowMenu(!showMenu)}
+                onClick={() => {
+                  setShowPlaylistPicker(false);
+                  setShowMenu(!showMenu);
+                }}
                 className="shrink-0 p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60"
               >
                 <MoreHorizontal size={16} />
               </button>
               {showMenu && currentTrack && (
                 <AppPopover ref={menuRef} className="absolute bottom-full left-0 z-[60] mb-2 w-52 py-1.5">
-                  {[
-                    { icon: Plus, label: "Add to playlist", action: () => toast.info("Coming soon") },
-                    { icon: Disc, label: "Add to my collection", action: () => {
-                      likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id).then(() => {
-                        toast.success("Added to collection");
-                      }).catch(() => {});
-                    }},
-                    { icon: Radio, label: "Go to track radio", action: () => toast.info("Coming soon") },
-                    { icon: Info, label: "Track info", action: () => toast.info("Coming soon") },
-                    { icon: User, label: "Go to artist", action: () => { navigate(`/artist/${encPath(currentTrack.artist)}`); } },
-                    { icon: Share2, label: "Share", action: () => {
-                      navigator.clipboard.writeText(`${currentTrack.title} - ${currentTrack.artist}`).then(() => toast.success("Copied to clipboard")).catch(() => {});
-                    }},
-                  ].map(({ icon: Icon, label, action }) => (
-                    <AppMenuButton
-                      key={label}
-                      onClick={() => { action(); setShowMenu(false); }}
-                      className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
-                    >
-                      <Icon size={14} className="text-white/40 shrink-0" />
-                      {label}
-                    </AppMenuButton>
-                  ))}
+                  {showPlaylistPicker ? (
+                    <>
+                      <AppMenuButton
+                        onClick={() => setShowPlaylistPicker(false)}
+                        className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
+                      >
+                        <ArrowLeft size={14} className="text-white/40 shrink-0" />
+                        Back
+                      </AppMenuButton>
+                      <div className="mx-3 my-1 h-px bg-white/10" />
+                      <AppMenuButton
+                        onClick={() => {
+                          const seed = currentTrackToPlaylistSeed();
+                          if (seed) {
+                            openCreatePlaylist({ tracks: [seed] });
+                          } else {
+                            openCreatePlaylist();
+                          }
+                          setShowMenu(false);
+                          setShowPlaylistPicker(false);
+                        }}
+                        className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
+                      >
+                        <Plus size={14} className="text-white/40 shrink-0" />
+                        Add new playlist
+                      </AppMenuButton>
+                      <div className="mx-3 my-1 h-px bg-white/10" />
+                      {playlists && playlists.length > 0 ? (
+                        playlists.map((playlist) => (
+                          <AppMenuButton
+                            key={playlist.id}
+                            onClick={() => void handleAddCurrentTrackToPlaylist(playlist.id)}
+                            className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
+                          >
+                            <ListMusic size={14} className="text-white/40 shrink-0" />
+                            {playlist.name}
+                          </AppMenuButton>
+                        ))
+                      ) : (
+                        <div className="px-4 py-2 text-[12px] text-white/45">No playlists yet</div>
+                      )}
+                    </>
+                  ) : (
+                    [
+                      { icon: Plus, label: "Add to playlist", action: () => setShowPlaylistPicker(true) },
+                      { icon: Disc, label: "Add to my collection", action: () => {
+                        likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id).then(() => {
+                          toast.success("Added to collection");
+                        }).catch(() => {});
+                        setShowMenu(false);
+                      }},
+                      { icon: User, label: "Go to artist", action: () => {
+                        navigate(`/artist/${encPath(currentTrack.artist)}`);
+                        setShowMenu(false);
+                      } },
+                      { icon: Disc, label: "Go to album", action: () => {
+                        if (currentTrack.album) {
+                          navigate(`/album/${encPath(currentTrack.artist)}/${encPath(currentTrack.album)}`);
+                        }
+                        setShowMenu(false);
+                      } },
+                      { icon: Share2, label: "Share", action: () => {
+                        navigator.clipboard.writeText(`${currentTrack.title} - ${currentTrack.artist}`).then(() => toast.success("Copied to clipboard")).catch(() => {});
+                        setShowMenu(false);
+                      }},
+                    ].map(({ icon: Icon, label, action }) => (
+                      <AppMenuButton
+                        key={label}
+                        onClick={action}
+                        className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
+                      >
+                        <Icon size={14} className="text-white/40 shrink-0" />
+                        {label}
+                      </AppMenuButton>
+                    ))
+                  )}
                 </AppPopover>
               )}
             </div>
