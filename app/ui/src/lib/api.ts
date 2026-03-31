@@ -1,29 +1,5 @@
-const BASE = "";
+export { ApiError } from "../../../shared/web/api";
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+import { createApiClient } from "../../../shared/web/api";
 
-export async function api<T = unknown>(
-  url: string,
-  method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
-  body?: unknown,
-): Promise<T> {
-  const opts: RequestInit = { method, headers: {} };
-  if (body) {
-    (opts.headers as Record<string, string>)["Content-Type"] =
-      "application/json";
-    opts.body = JSON.stringify(body);
-  }
-  const res = await fetch(`${BASE}${url}`, opts);
-  if (!res.ok) {
-    const text = await res.text().catch(() => "Request failed");
-    throw new ApiError(res.status, text);
-  }
-  return res.json();
-}
+export const api = createApiClient();

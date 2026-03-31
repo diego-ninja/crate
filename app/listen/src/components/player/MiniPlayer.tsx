@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, Loader2 } from "lucide-react";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
 
 export function MiniPlayer() {
-  const { currentTrack, isPlaying, currentTime, duration, pause, resume } = usePlayer();
+  const { currentTrack, isPlaying, isBuffering, currentTime, duration, pause, resume } = usePlayer();
   const [fsOpen, setFsOpen] = useState(false);
 
   if (!currentTrack) return null;
@@ -51,7 +51,13 @@ export function MiniPlayer() {
             }}
             className="w-8 h-8 flex items-center justify-center text-white"
           >
-            {isPlaying ? <Pause size={20} /> : <Play size={20} className="ml-0.5" />}
+            {isBuffering ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : isPlaying ? (
+              <Pause size={20} />
+            ) : (
+              <Play size={20} className="ml-0.5" />
+            )}
           </button>
         </div>
       </div>

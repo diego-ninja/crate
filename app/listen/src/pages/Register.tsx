@@ -1,15 +1,28 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router";
+import { Link, Navigate } from "react-router";
 import { Loader2 } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function Register() {
-  const navigate = useNavigate();
+  const { user, loading: authLoading, refetch } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Loader2 size={20} className="animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to="/" replace />;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -17,7 +30,7 @@ export function Register() {
     setLoading(true);
     try {
       await api("/api/auth/register", "POST", { email, password, name });
-      navigate("/");
+      await refetch();
     } catch (err) {
       if (err instanceof ApiError) {
         const msg = err.message;

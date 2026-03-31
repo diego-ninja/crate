@@ -1,494 +1,472 @@
-# Radio y Curated Playlists - Diseño
+# Radio, Smart Playlists y Curated Playlists - Diseño
 
-**Fecha**: 2026-03-29
-**Estado**: Aprobado para implementación
+**Fecha**: 2026-03-30
+**Estado**: Revisado
+**Scope**: radio por artista/album/track y playlists globales del sistema gestionadas desde `admin`
 
 ## Resumen
 
-Implementación de dos funcionalidades principales:
-1. **Radio basada en Bliss**: Stream infinito de música similar usando similitud coseno en bliss vectors
-2. **Curated Playlists**: Playlists predefinidas (mood/genre/fresh) que usuarios pueden seguir, estilo Spotify/Tidal
-
----
-
-## 1. Radio basada en Bliss
-
-### Propósito
-
-Generar un stream infinito de música similar basado en la pista actual o tracks semilla, usando los 20-float bliss vectors almacenados en `library_tracks.bliss_vector`.
-
-### Backend
-
-#### API: `/api/bliss/similar/{track_path}` (nuevo archivo `app/crate/api/bliss.py`)
-
-```python
-GET /api/bliss/similar/{track_path}?limit=10&threshold=0.7
-```
-
-- Retorna tracks similares al track especificado
-- Calcula similitud coseno: `dot(a,b) / (norm(a) * norm(b))`
-- Filtra tracks con `bliss_vector IS NOT NULL`
-- Excluye track semilla
-- Ordena por similitud descendente
-- Limita a N tracks (default: 10, threshold: 0.7)
-
-#### API: `/api/bliss/similar/playlist/{playlist_id}` (opcional futuro)
-
-- Calcula vector promedio de tracks en playlist
-- Busca tracks similares al blend
-
-#### PlayerContext Extensiones
-
-Nuevo estado en `src/contexts/PlayerContext.tsx`:
-
-```tsx
-interface RadioState {
-  active: boolean;
-  seedTracks: Track[];
-  threshold: number;
-  autoAddThreshold: number; // añadir cuando queue < este valor
-}
-
-const [radio, setRadio] = useState<RadioState>({
-  active: false,
-  seedTracks: [],
-  threshold: 0.7,
-  autoAddThreshold: 2,
-});
-```
-
-Nuevas acciones:
-
-```tsx
-const startRadio = useCallback((track: Track) => {
-  setRadio({
-    active: true,
-    seedTracks: [track],
-    threshold: 0.7,
-    autoAddThreshold: 2,
-  });
-  play(track, { type: "radio", name: "Radio" });
-  fetchRadioSuggestions([track.id]);
-}, []);
-
-const stopRadio = useCallback(() => {
-  setRadio({
-    active: false,
-    seedTracks: [],
-    threshold: 0.7,
-    autoAddThreshold: 2,
-  });
-}, []);
-
-const fetchRadioSuggestions = useCallback(async (excludeIds: string[]) => {
-  if (!radio.active) return;
-  
-  try {
-    const tracks = await api<Track[]>(`/api/bliss/similar/${radio.seedTracks[0]?.id}`, undefined, {
-      limit: 10,
-      threshold: radio.threshold,
-    });
-    
-    tracks.forEach(t => addToQueue(t));
-  } catch (e) {
-    console.warn("Failed to fetch radio suggestions", e);
-  }
-}, [radio.active, radio.seedTracks, radio.threshold, addToQueue]);
-```
-
-#### Auto-Add Logic
-
-Effect que monitorea queue length:
-
-```tsx
-useEffect(() => {
-  if (!radio.active) return;
-  
-  if (queue.length < radio.autoAddThreshold) {
-    const excludeIds = queue.slice(0, currentIndex).map(t => t.id);
-    fetchRadioSuggestions(excludeIds);
-  }
-}, [queue.length, currentIndex, radio.active, radio.autoAddThreshold, fetchRadioSuggestions]);
-```
-
-### Frontend UI
-
-#### PlayerBar (`src/components/player/PlayerBar.tsx`)
-- Indicador "Radio: [seed track]" cuando `radio.active`
-- Botón "Stop Radio" en menú del player (únicamente cuando radio está activa)
-
-#### Context Menu (tracks, albums, artists)
-- Nuevo item "Start Radio" que llama `startRadio(track)`
-
-### Data Flow
-
-1. Usuario hace clic en "Start Radio" en un track
-2. PlayerContext activa radio, reproduce track semilla
-3. Effect detecta queue.length < 2
-4. Fetch suggestions desde `/api/bliss/similar/{track_path}`
-5. Tracks añadidos al queue con `addToQueue()`
-6. Loop:每当 queue baja de umbral, fetch más tracks
-
----
-
-## 2. Curated Playlists
-
-### Propósito
-
-Playlists predefinidas (curated) que los usuarios pueden seguir, con categorías por mood/genre/freshness, similares a las "Featured" playlists de Spotify/Tidal.
-
-### Backend
-
-#### Schema DB
-
-**Nueva tabla `curated_playlists`**:
-
-```sql
-CREATE TABLE curated_playlists (
-  id SERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
-  description TEXT,
-  category TEXT NOT NULL,  -- 'mood', 'genre', 'fresh'
-  type TEXT NOT NULL,      -- 'high_energy', 'chill', 'rock', 'electronic', 'top_50', etc
-  is_active BOOLEAN DEFAULT TRUE,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-```
-
-**Nueva tabla `user_followed_playlists`**:
-
-```sql
-CREATE TABLE user_followed_playlists (
-  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-  playlist_id INTEGER REFERENCES curated_playlists(id) ON DELETE CASCADE,
-  followed_at TEXT NOT NULL,
-  PRIMARY KEY (user_id, playlist_id)
-);
-```
-
-**Extensiones a tabla existente `playlists`**:
-
-- Añadir columna: `curated_id INTEGER REFERENCES curated_playlists(id)`
-- Smart playlists con `user_id = NULL` indican que son curated (públicas)
-
-#### API Endpoints (Admin - crate-ui)
-
-```
-GET    /api/admin/curated-playlists    Listar todas (admin-only)
-POST   /api/admin/curated-playlists    Crear nueva (admin-only)
-PUT    /api/admin/curated-playlists/:id Actualizar nombre/descripción/activo (admin-only)
-DELETE /api/admin/curated-playlists/:id Eliminar (admin-only)
-POST   /api/admin/curated-playlists/:id/regenerate Regenerar tracks (admin-only)
-POST   /api/admin/curated-playlists/:id/activate Activar (admin-only)
-POST   /api/admin/curated-playlists/:id/deactivate Desactivar (admin-only)
-```
-
-#### API Endpoints (Listen - app/listen)
-
-```
-GET    /api/curated-playlists             Listar activas (públicas)
-GET    /api/curated-playlists/:category   Listar por categoría (mood|genre|fresh)
-POST   /api/curated-playlists/:id/follow  Seguir playlist
-DELETE /api/curated-playlists/:id/follow  Dejar de seguir
-GET    /api/me/followed-playlists         Playlists seguidas por usuario
-GET    /api/curated-playlists/:id/tracks  Tracks (reutiliza endpoint playlists)
-```
-
-#### Task Handler: `regenerate_curated_playlist`
-
-```python
-def _handle_regenerate_curated_playlist(task_id, params, config):
-    curated_id = params["curated_id"]
-
-    # Obtener curated_playlist y su smart playlist asociada
-    with get_db_ctx() as cur:
-        cur.execute("SELECT * FROM curated_playlists WHERE id = %s", (curated_id,))
-        curated = cur.fetchone()
-
-        cur.execute("""
-            SELECT * FROM playlists 
-            WHERE curated_id = %s AND is_smart = TRUE
-        """, (curated_id,))
-        playlist = cur.fetchone()
-
-    if not playlist:
-        return {"error": "Associated smart playlist not found"}
-
-    # Ejecutar reglas y generar tracks
-    rules = playlist["smart_rules_json"]
-    tracks = _execute_smart_rules(rules)
-
-    # Reemplazar tracks en playlist_tracks
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM playlist_tracks WHERE playlist_id = %s", (playlist["id"],))
-
-    if tracks:
-        add_playlist_tracks(playlist["id"], tracks)
-
-    # Actualizar metadata
-    with get_db_ctx() as cur:
-        cur.execute("""
-            UPDATE playlists
-            SET updated_at = %s, track_count = %s, total_duration = %s
-            WHERE id = %s
-        """, (datetime.now().isoformat(), len(tracks),
-              sum(t["duration"] for t in tracks), playlist["id"]))
-
-    # Programar recálculo en 6 horas
-    create_task("regenerate_curated_playlist", {"curated_id": curated_id}, delay=6*3600)
-
-    return {"track_count": len(tracks)}
-```
-
-#### Reglas Smart para Curated
-
-Las smart playlists existentes se extienden con Bliss similarity:
-
-```python
-elif field == "bliss_similarity" and op == "gt":
-    seed_path = rule.get("seed_track_path") or rule.get("value")
-    if seed_path:
-        from crate.db import get_track_by_path
-        seed_track = get_track_by_path(seed_path)
-        if seed_track and seed_track.get("bliss_vector"):
-            # Filtrado post-query con NumPy
-            bliss_rules.append((seed_path, value))
-```
-
-Post-filtrado:
-
-```python
-def filter_by_bliss(tracks: list, seed_path: str, threshold: float) -> list:
-    from crate.db import get_track_by_path
-    import numpy as np
-    seed = get_track_by_path(seed_path)
-    if not seed or not seed.get("bliss_vector"):
-        return []
-    seed_vec = np.array(seed["bliss_vector"])
-
-    filtered = []
-    for t in tracks:
-        if not t.get("bliss_vector"):
-            continue
-        vec = np.array(t["bliss_vector"])
-        similarity = np.dot(seed_vec, vec) / (np.linalg.norm(seed_vec) * np.linalg.norm(vec))
-        if similarity >= threshold:
-            filtered.append(t)
-    return filtered
-```
-
-### Frontend - Admin (crate-ui)
-
-#### Nueva página: CuratedPlaylists (`app/ui/src/pages/CuratedPlaylists.tsx`)
-
-**Sections**:
-
-1. **Active Curated Playlists**
-   - Grid de cards con gradientes por categoría
-   - Botones: Regenerate, Deactivate, Edit, Delete
-
-2. **Templates**
-   - Lista de pre-built playlists:
-     - **Moods**: High Energy, Chill, Focus, Party, Sleep, Workout
-     - **Genres**: Rock, Metal, Electronic, Hip-Hop, Indie, Jazz
-     - **Fresh**: Top 50 2025, New Releases, Trending
-   - Botón "Activate" crea curated playlist y genera tracks
-   - Botón "Deactivate" marca is_active = FALSE
-
-3. **Create Curated**
-   - Formulario simple:
-     - Nombre
-     - Descripción
-     - Category: mood | genre | fresh
-     - Type: (dropdown basado en category)
-
-### Frontend - Listen (app/listen)
-
-#### Home (`src/pages/Home.tsx`)
-- Nueva sección "Featured Playlists" encima de Recently Played
-- 4-6 cards horizontales de curated destacadas
-- Cards con gradientes por categoría:
-  - Mood: cian/azul (chill), rojo/naranja (high energy)
-  - Genre: colores variados
-  - Fresh: dorado/verde
-- Badge "Followed" si usuario la sigue
-
-#### Nueva página Explore (`src/pages/Explore.tsx`)
-- Tabs: "Moods", "Genres", "Fresh"
-- Grid de curated playlists activas por categoría
-- Card con:
-  - Gradient background
-  - Nombre, descripción
-  - Botón Follow/Play
-  - Badge "Followed" si está seguida
-
-#### Library (`src/pages/Library.tsx`)
-- Nueva sección "Followed Playlists"
-- Lista de curated playlists seguidas
-- Botón Unfollow en cada card
-- Mismo estilo que "Your Playlists"
-
-#### Follow/Unfollow
-```tsx
-async function toggleFollow(curatedId: number) {
-  const followed = followedIds.includes(curatedId);
-  
-  if (followed) {
-    await api(`/api/curated-playlists/${curatedId}/follow`, "DELETE");
-    setFollowedIds(prev => prev.filter(id => id !== curatedId));
-    toast.success("Removed from library");
-  } else {
-    await api(`/api/curated-playlists/${curatedId}/follow`, "POST");
-    setFollowedIds(prev => [...prev, curatedId]);
-    toast.success("Added to library");
-  }
-}
-```
-
----
-
-## 3. Playlists Normales (Usuario)
-
-### Propósito
-
-Gestión de playlists personales del usuario (no smart) en app/listen.
-
-### Backend
-
-Reutilizar APIs existentes sin cambios:
-- `POST /api/playlists` con `is_smart: false` (default)
-- `GET /api/playlists` - filtrar por `user_id` (ya implementado)
-- `GET /api/playlists/{id}/tracks` - tracks normales
-- `POST /api/playlists/{id}/tracks` - añadir tracks
-- `DELETE /api/playlists/{id}/tracks/{position}` - eliminar track
-- `PUT /api/playlists/{id}` - editar nombre/descripción
-- `DELETE /api/playlists/{id}` - eliminar playlist
-
-### Frontend - Listen
-
-#### Create Playlist Modal
-
-```tsx
-interface CreatePlaylist {
-  name: string;
-  description?: string;
-  tracks?: Track[]; // opcional, crear con tracks preseleccionados
-}
-```
-
-- Botón "Create Playlist" en Library
-- Modal con:
-  - Input: nombre (required)
-  - Input: descripción (optional)
-  - Checkbox: "Add current queue" (optional)
-  - Botón Create
-
-#### Añadir Tracks - Método 1: Drag & Drop
-
-- Tracks arrastrables desde cualquier vista (Library, Album, Artist)
-- Drop zone en sidebar (Library → playlists list)
-- Drop en playlist card específica para añadir directamente
-- Visual feedback durante drag
-
-#### Añadir Tracks - Método 2: Context Menu
-
-Click derecho en track/album/artist → menú con:
-- "Add to playlist" → submenu con lista de playlists del usuario
-- "Add to new playlist" → abre modal de creación
-
-#### Manage Playlist - Playlist Page
-
-Página existente (`src/pages/Playlist.tsx`) con:
-- Header:
-  - Cover (gradient)
-  - Nombre, descripción
-  - Botón Play
-  - Botón Delete (solo del usuario)
-  - Botón Edit (nombre/descripción)
-- Track list:
-  - Drag & drop para reorder
-  - Click derecho en track → Remove
-  - Botón "Add tracks" para añadir más
-
-#### Library Reorganization
-
-```
-Library Page:
-  ├─ Your Playlists (normales del usuario)
-  │   ├─ Create Playlist
-  │   └─ Lista de playlists con actions
-  └─ Followed Playlists (curated que sigue)
-      └─ Lista de curated con unfollow button
-```
-
----
-
-## Arquitectura de Implementación
-
-### Fase 1: Backend Core
-1. Schema migrations: `curated_playlists`, `user_followed_playlists`, columnas nuevas
-2. API: `/api/bliss/similar/{track_path}` (NumPy, cosine similarity)
-3. API: `/api/admin/curated-playlists/*` (CRUD, activate/deactivate)
-4. API: `/api/curated-playlists/*` (listen: list, follow/unfollow, tracks)
-5. Task handler: `regenerate_curated_playlist`
-
-### Fase 2: Backend Extensions
-1. Extender `_execute_smart_rules` con Bliss similarity
-2. Implementar `filter_by_bliss` con NumPy post-filtrado
-3. Testing de similitud coseno con bliss vectors reales
-
-### Fase 3: Admin UI (crate-ui)
-1. Nueva página `CuratedPlaylists.tsx`
-2. Templates con presets (moods, genres, fresh)
-3. Create/Activate/Deactivate flow
-4. Test de generación de playlists
-
-### Fase 4: Listen UI - Core
-1. PlayerContext: Radio state, startRadio/stopRadio, auto-add effect
-2. `/api/bliss/similar` integration
-3. PlayerBar: Radio indicator, stop button
-4. Context menu: "Start Radio" action
-
-### Fase 5: Listen UI - Curated Playlists
-1. Home: Featured Playlists section
-2. Nueva página Explore.tsx con tabs
-3. Library: Followed Playlists section
-4. Follow/Unfollow actions con optimistic UI
-
-### Fase 6: Listen UI - User Playlists
-1. Create Playlist modal
-2. Drag & drop implementation
-3. Context menu integration
-4. Playlist page enhancements
-
----
-
-## Decisiones Técnicas
-
-### Bliss Similarity
-- **Backend**: NumPy para cálculo eficiente de cosine distance
-- **Threshold**: 0.7 default, configurable
-- **Auto-add**: Queue threshold de 2 tracks, batch de 10
-
-### Curated Playlists
-- **Storage**: Tabla separada `curated_playlists` + vinculación a smart playlists
-- **Visibility**: `user_id = NULL` en playlists indica pública
-- **Cache**: Recálculo cada 6 horas vía task scheduler
-
-### Follow System
-- **Simplicity**: Follow simple (sin remix), tracks se recalculan server-side
-- **Storage**: Tabla `user_followed_playlists` para optimizar queries
-
-### Drag & Drop
-- **Library**: HTML5 Drag and Drop API
-- **Fallback**: Context menu como alternativa siempre disponible
-
----
-
-## Métricas de Éxito
-
-- **Radio**: Al menos 10 tracks similares por semilla con threshold 0.7
-- **Curated Playlists**: Recálculo < 5s para playlists de 50 tracks
-- **Follow**: < 100ms para toggle follow/unfollow
-- **User Playlists**: Drag & drop < 50ms latency, reorder smooth
+Este documento redefine el modelo de radio y playlists globales en Crate con una regla central:
+
+- `listen` es una app de consumo
+- `admin` es la app de gestión y curación
+- los usuarios finales pueden crear playlists normales propias
+- los usuarios finales no pueden crear ni editar playlists `smart` o `curated`
+- las playlists `smart` y `curated` son entidades del sistema, creadas y mantenidas por admins/curators de Crate
+- lo que sí es por usuario es la relación de `follow`, librería personal y, en su caso, las proyecciones personales a Navidrome
+
+## Objetivos
+
+Queremos soportar tres familias de funcionalidad:
+
+1. radio por `track`, `album` y `artist`
+2. playlists globales del sistema mantenidas desde `admin`
+3. follow/unfollow por usuario sobre esas playlists globales desde `listen`
+
+## Principios de Producto
+
+### Separación de responsabilidades
+
+- `app/ui` administra, configura, genera y publica playlists del sistema
+- `app/listen` descubre, reproduce, sigue y consume esas playlists
+- `app/listen` no expone ningún flujo de creación de smart/curated playlists
+
+### Identidad de usuario
+
+- Crate sigue siendo el origen de verdad para auth, follows, likes, saves, playlists personales y relaciones de librería
+- la sincronización con Navidrome tiene dos capas distintas:
+  - proyección global del sistema para clientes externos Subsonic/OpenSubsonic
+  - proyección personal por usuario enlazado cuando aplique
+- ninguna playlist global del sistema debe depender de una cuenta Navidrome compartida para existir
+
+### Modelo conceptual claro
+
+En Crate, `smart` y `curated` no son sinónimos.
+
+- `smart` responde a: "como se construyen los tracks"
+- `curated` responde a: "como se presenta, publica y distribuye una playlist del sistema"
+
+Esto permite casos como:
+
+- playlist global estática y editorial: `curated`, pero no `smart`
+- playlist global regenerada por reglas: `smart` y `curated`
+- playlist personal normal del usuario: ni `smart` ni `curated`
+
+## Definiciones
+
+### Playlist personal
+
+Playlist privada del usuario.
+
+- creada por el usuario
+- editable por el usuario
+- visible en su librería personal
+- puede sincronizarse a Navidrome si el usuario está enlazado
+
+### Smart playlist
+
+Playlist cuyo contenido se genera a partir de reglas.
+
+- no define por sí sola visibilidad ni audiencia
+- describe un mecanismo de generación
+- puede ser del sistema
+- puede regenerarse manual o automáticamente
+
+### Curated playlist
+
+Playlist global publicada por el sistema para los usuarios finales.
+
+- existe como objeto editorial
+- tiene identidad, metadata, artwork, copy y visibilidad pública dentro de `listen`
+- puede ser estática o smart
+- puede ser seguida por usuarios
+
+## Relación entre Smart y Curated
+
+La diferencia importante es esta:
+
+- `smart` es el motor
+- `curated` es el producto final publicado
+
+Relación recomendada:
+
+- una playlist `curated` puede estar respaldada por una playlist `smart`
+- una playlist `curated` también puede ser manual/estática
+- no toda playlist `smart` tiene por qué ser visible en `listen`
+
+Ejemplos:
+
+- `Top 50 2026`: curated + smart
+- `Chill Evenings`: curated + smart
+- `Diego Picks Vol. 1`: curated + estática
+- `Repair Candidates`: smart interna para admin, no curated
+
+## Modelo Recomendado
+
+Se recomienda unificar todo sobre la entidad `playlists` ya existente, en vez de crear dos sistemas totalmente paralelos.
+
+Campos conceptuales recomendados:
+
+- `scope`: `user | system`
+- `generation_mode`: `static | smart`
+- `is_curated`: boolean
+- `is_active`: boolean
+- `managed_by_user_id`: nullable, para saber qué admin/curator la mantiene
+- `follower_count`: derivado, no necesariamente persistido
+- `curation_key` o `slug`: opcional, para templates/identidad editorial estable
+
+Consecuencias:
+
+- playlist personal: `scope=user`, `generation_mode=static`, `is_curated=false`
+- smart interna de admin: `scope=system`, `generation_mode=smart`, `is_curated=false`
+- curated editorial manual: `scope=system`, `generation_mode=static`, `is_curated=true`
+- curated editorial regenerada: `scope=system`, `generation_mode=smart`, `is_curated=true`
+
+Esto encaja mejor con la infraestructura actual de Crate:
+
+- API ya existente en `app/crate/api/playlists.py`
+- capa DB ya existente en `app/crate/db/playlists.py`
+- UI admin de playlists ya existente en `app/ui/src/pages/Playlists.tsx`
+- UI de consumo ya existente en `app/listen/src/pages/Library.tsx`, `Home.tsx` y `Playlist.tsx`
+
+## Follow por Usuario
+
+El `follow` sí es estrictamente por usuario.
+
+Un usuario puede:
+
+- seguir una playlist `curated`
+- dejar de seguir una playlist `curated`
+- ver sus playlists globales seguidas dentro de su librería
+- opcionalmente copiarlas o guardarlas en su espacio personal si más adelante se decide ofrecer esa acción
+
+Un usuario no puede:
+
+- crear una curated playlist
+- editar reglas smart del sistema
+- activar/desactivar playlists del sistema
+- cambiar portada/copy/editorial de playlists del sistema
+
+Relación recomendada:
+
+- `user_followed_playlists(user_id, playlist_id, followed_at)`
+
+Esa relación debe apuntar a la playlist global real, no a una entidad paralela distinta.
+
+## Radio
+
+## Propósito
+
+La radio debe ser una capa de reproducción continua y contextual, no una playlist persistente.
+
+Debe soportar:
+
+- `track radio`
+- `album radio`
+- `artist radio`
+
+Todas comparten una misma idea:
+
+- partir de una o varias semillas
+- encontrar continuidad musical razonable
+- rellenar cola progresivamente
+
+## Tipos de Radio
+
+### Track Radio
+
+Usa una pista concreta como semilla principal.
+
+Fuentes recomendadas:
+
+- `bliss_vector` como señal principal
+- exclusión de la propia pista y de tracks recientes en la cola
+- posible mezcla con popularidad o afinidad de artista para evitar resultados demasiado raros
+
+Es el mejor caso para aprovechar Bliss de forma directa.
+
+### Album Radio
+
+Usa un álbum como semilla.
+
+Opciones válidas:
+
+- centroid/blend de los `bliss_vector` del álbum
+- sampleo de varias pistas del álbum como semillas
+- mezcla de similitud sonora + cercanía de artista/escena
+
+Objetivo:
+
+- capturar el "mundo" de un álbum, no solo una pista aislada
+
+### Artist Radio
+
+Usa un artista como semilla.
+
+Debe apoyarse en:
+
+- catálogo del artista
+- artistas similares ya enriquecidos
+- pistas similares vía Bliss
+- opcionalmente popularidad o recurrencia para no quedarse en resultados demasiado dispersos
+
+Nota:
+
+- Crate ya tiene una base de `artist radio`
+- el diseño nuevo debe absorber esa capacidad dentro de un modelo de radio unificado, no duplicarla sin criterio
+
+## Contrato Recomendado de Radio
+
+La radio debería apoyarse en identidad moderna de pista:
+
+- `libraryTrackId` como identidad de biblioteca
+- `navidromeId` como backend preferido de playback si existe
+- `path` solo como fallback de stream
+
+Por tanto:
+
+- evitar diseño basado en `track_path` como identidad principal de API
+- preferir endpoints por `track_id`, `album_id` o `artist name / artist_id`
+
+Propuesta de superficie:
+
+- `GET /api/radio/track/{track_id}`
+- `GET /api/radio/album/{album_id}`
+- `GET /api/radio/artist/{name:path}`
+
+Parámetros posibles:
+
+- `limit`
+- `exclude_track_ids`
+- `exclude_artists`
+- `threshold`
+
+Respuesta esperada:
+
+- lista de tracks lista para encolar, con `track_id`, `path`, `navidrome_id`, metadata y cover data derivable
+
+## Player Model
+
+La radio es una modalidad del player, no una playlist guardada.
+
+El player debería manejar:
+
+- `radio.active`
+- `radio.type`: `track | album | artist`
+- `radio.seed`
+- `radio.autoRefillThreshold`
+- `radio.lastFetchAt`
+
+Comportamiento:
+
+1. usuario inicia una radio
+2. se reproduce una pista inicial o se encola un lote inicial
+3. cuando la cola baja del umbral, el player pide más resultados
+4. los tracks nuevos se añaden al final de la cola
+5. al parar radio, la cola deja de autoalimentarse
+
+## Smart Rules
+
+Las smart playlists del sistema deben reutilizar el motor de reglas ya existente en Crate.
+
+Posibles familias de reglas:
+
+- género
+- artista
+- año
+- bpm
+- energy
+- danceability
+- valence
+- formato
+- popularidad
+- reglas basadas en similitud Bliss
+
+Pero Bliss en playlists smart debe entenderse como una herramienta adicional, no como la única forma de construir radio o curation.
+
+Ejemplos:
+
+- `High Energy Metal`: reglas de género + energy + bpm
+- `Late Night Electronics`: reglas de género + valence baja + decades
+- `If You Like Converge`: mezcla editorial + similar artists + Bliss
+
+## Curated del Sistema
+
+Las curated playlists son objetos editoriales publicados por el sistema.
+
+Propiedades recomendadas:
+
+- nombre
+- descripción
+- portada
+- short copy / subtitle opcional
+- categoría: `mood | genre | fresh | editorial | scene`
+- posición/orden editorial
+- activa o no activa
+- visibilidad en Home / Explore / Library
+
+Secciones naturales en `listen`:
+
+- `Featured`
+- `Moods`
+- `Genres`
+- `Fresh`
+- `For Fans Of`
+
+## Admin UX
+
+`admin` debe ser el único punto de creación y gestión de playlists del sistema.
+
+Capacidades necesarias:
+
+- crear playlist del sistema estática
+- crear playlist del sistema smart
+- editar metadata editorial
+- editar reglas smart
+- regenerar manualmente
+- activar/desactivar
+- destacar en Home/Explore
+- ver track count, freshness y follower count
+
+También conviene distinguir visualmente en admin:
+
+- personales del usuario
+- smart internas
+- curated públicas
+
+## Listen UX
+
+`listen` debe comportarse como cliente de consumo.
+
+Capacidades:
+
+- descubrir playlists curated
+- seguir/dejar de seguir
+- reproducir
+- compartir
+- ver detalles y tracks
+- opcionalmente sincronizar a Navidrome si el usuario está enlazado
+
+No debe permitir:
+
+- crear curated
+- crear smart
+- editar reglas smart
+- regenerar playlists del sistema
+
+## Home, Explore y Library
+
+### Home
+
+- secciones editoriales destacadas
+- mezcla de curated playlists, artistas y álbumes
+- algunas playlists pueden marcarse como `featured`
+
+### Explore
+
+- navegación por categorías editoriales
+- filtros o tabs por `mood`, `genre`, `fresh`, etc.
+
+### Library
+
+Debe separar claramente:
+
+- `Your Playlists`
+- `Followed Playlists`
+
+Esto evita mezclar playlists personales con objetos globales del sistema.
+
+## Proyección a Navidrome
+
+Regla importante:
+
+- las playlists del sistema viven primero en Crate
+- el follow vive en Crate
+- Navidrome nunca es la fuente de verdad de estas playlists
+
+Hay dos proyecciones distintas:
+
+### 1. Proyección global del sistema
+
+- las playlists `curated` y, cuando tenga sentido, algunas `smart`, deben existir también en Navidrome para clientes externos Subsonic/OpenSubsonic
+- esa proyección debe crearse bajo un owner de sistema
+- esas playlists deben marcarse como públicas/visibles para todos los usuarios permitidos por Navidrome
+- su existencia no depende de que nadie las siga en `listen`
+
+Objetivo:
+
+- que otros clientes además de `listen` vean esas playlists globales
+
+### 2. Proyección personal por usuario
+
+- opcional y separada
+- depende del `user sync` enlazado
+- sirve para casos de copia o persistencia dentro del espacio personal del usuario
+
+Por tanto, el follow en Crate no debe significar automáticamente "copiar playlist al usuario en Navidrome".
+
+Consecuencias:
+
+- una playlist curated no existe "solo en Navidrome"
+- una playlist global del sistema puede proyectarse a Navidrome como pública sin depender del usuario
+- si Navidrome está caído, la relación de follow no debe romperse
+- el `follow` sigue siendo una señal de biblioteca personal dentro de Crate/`listen`
+
+## Arquitectura Recomendada por Fases
+
+### Fase 1: Aclarar modelo de playlist
+
+- consolidar modelo `scope + generation_mode + is_curated`
+- separar claramente personales vs sistema
+- añadir relación de follow por usuario para playlists globales
+
+### Fase 2: Radio unificada
+
+- formalizar `track radio`, `album radio` y `artist radio`
+- mover a un contrato común de endpoints y PlayerContext
+- usar `track_id` / `album_id` / `artist`
+
+### Fase 3: Admin editorial
+
+- UI de admin para playlists globales
+- reglas smart
+- publicación y activación
+- regeneración manual y programada
+
+### Fase 4: Listen de consumo
+
+- secciones curated en Home y Explore
+- Followed Playlists en Library
+- UX clara entre playlist personal y playlist del sistema
+
+### Fase 5: Sync opcional a Navidrome
+
+Dividir esta fase en dos subcapas:
+
+- `system projection`
+  - publicar playlists globales en Navidrome como playlists públicas
+- `user projection`
+  - solo para usuarios enlazados
+  - opcional
+  - nunca como fuente de verdad
+
+## Criterios de Éxito
+
+- el usuario final entiende la diferencia entre playlist propia y playlist seguida
+- `listen` no expone herramientas de curación que pertenecen a `admin`
+- radio por track/album/artist funciona sin acoplarse a paths frágiles
+- playlists del sistema pueden ser estáticas o smart sin crear dos productos separados
+- las playlists globales pueden existir también en Navidrome para clientes externos sin alterar la fuente de verdad en Crate
+
+## Recomendación Final
+
+Crate debe tratar:
+
+- `radio` como una modalidad de reproducción dinámica
+- `smart` como un mecanismo de generación
+- `curated` como una capa editorial de publicación
+
+La fuente de gestión de todo eso debe vivir en `admin`.
+La fuente de consumo y follow debe vivir en `listen`.
+
+Esa separación es la que mejor encaja con la arquitectura actual del proyecto y con la dirección de producto de ambas apps.

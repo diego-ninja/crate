@@ -23,10 +23,26 @@ def _auth_params() -> dict:
     }
 
 
+def _extauth_headers(username: str) -> dict[str, str]:
+    return {"Remote-User": username}
+
+
 def _request(endpoint: str, **params) -> dict:
     url = f"{_base_url()}/rest/{endpoint}"
     all_params = {**_auth_params(), **params}
     resp = requests.get(url, params=all_params, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    sr = data.get("subsonic-response", {})
+    if sr.get("status") != "ok":
+        raise RuntimeError(f"Subsonic error: {sr.get('error', {}).get('message', 'unknown')}")
+    return sr
+
+
+def _request_with_headers(endpoint: str, headers: dict[str, str] | None = None, **params) -> dict:
+    url = f"{_base_url()}/rest/{endpoint}"
+    all_params = {**_auth_params(), **params}
+    resp = requests.get(url, params=all_params, timeout=10, headers=headers or {})
     resp.raise_for_status()
     data = resp.json()
     sr = data.get("subsonic-response", {})
@@ -46,6 +62,14 @@ def _request_raw(endpoint: str, **params) -> requests.Response:
 def ping() -> bool:
     try:
         sr = _request("ping")
+        return sr.get("status") == "ok"
+    except Exception:
+        return False
+
+
+def ping_as_user(username: str) -> bool:
+    try:
+        sr = _request_with_headers("ping", headers=_extauth_headers(username))
         return sr.get("status") == "ok"
     except Exception:
         return False
@@ -88,6 +112,27 @@ def get_playlists() -> list:
     return sr.get("playlists", {}).get("playlist", [])
 
 
+def get_users() -> list[dict]:
+    sr = _request("getUsers")
+    users = sr.get("users", {}).get("user", [])
+    if isinstance(users, dict):
+        return [users]
+    return users
+
+
+def get_user(username: str) -> dict | None:
+    try:
+        sr = _request("getUser", username=username)
+    except Exception:
+        return None
+    return sr.get("user")
+
+
+def ensure_external_user(username: str) -> dict:
+    sr = _request_with_headers("ping", headers=_extauth_headers(username))
+    return {"username": username, "status": sr.get("status")}
+
+
 def create_playlist(name: str, song_ids: list[str]) -> str:
     url = f"{_base_url()}/rest/createPlaylist"
     params = {**_auth_params(), "name": name}
@@ -97,6 +142,25 @@ def create_playlist(name: str, song_ids: list[str]) -> str:
     resp.raise_for_status()
     data = resp.json()
     sr = data.get("subsonic-response", {})
+    playlist = sr.get("playlist", {})
+    return playlist.get("id", "")
+
+
+def create_playlist_as_user(name: str, song_ids: list[str], username: str) -> str:
+    url = f"{_base_url()}/rest/createPlaylist"
+    params = {**_auth_params(), "name": name}
+    param_list = list(params.items()) + [("songId", sid) for sid in song_ids]
+    resp = requests.get(
+        url,
+        params=param_list,
+        timeout=10,
+        headers=_extauth_headers(username),
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    sr = data.get("subsonic-response", {})
+    if sr.get("status") != "ok":
+        raise RuntimeError(f"Subsonic error: {sr.get('error', {}).get('message', 'unknown')}")
     playlist = sr.get("playlist", {})
     return playlist.get("id", "")
 
@@ -286,12 +350,15 @@ def get_album_list(list_type: str, size: int = 20, offset: int = 0) -> list[dict
 
 def update_playlist(playlist_id: str, name: str | None = None,
                     song_ids_to_add: list[str] | None = None,
-                    song_indexes_to_remove: list[int] | None = None) -> bool:
+                    song_indexes_to_remove: list[int] | None = None,
+                    is_public: bool | None = None) -> bool:
     """Update a playlist: rename, add songs, remove songs by index."""
     url = f"{_base_url()}/rest/updatePlaylist"
     params = {**_auth_params(), "playlistId": playlist_id}
     if name:
         params["name"] = name
+    if is_public is not None:
+        params["public"] = "true" if is_public else "false"
     # Build param list for repeated params (same pattern as create_playlist)
     param_list = list(params.items())
     if song_ids_to_add:
@@ -317,6 +384,40 @@ def get_playlist(playlist_id: str) -> dict | None:
     except Exception:
         log.warning("Failed to get playlist %s", playlist_id, exc_info=True)
         return None
+
+
+def create_or_update_public_playlist(
+    name: str,
+    song_ids: list[str],
+    existing_playlist_id: str | None = None,
+) -> str:
+    if not song_ids:
+        raise ValueError("Cannot project empty playlist")
+
+    if existing_playlist_id:
+        existing = get_playlist(existing_playlist_id)
+        if existing:
+            entries = existing.get("entry", []) or []
+            if isinstance(entries, dict):
+                entries = [entries]
+            remove_indexes = list(range(len(entries)))
+            ok = update_playlist(
+                existing_playlist_id,
+                name=name,
+                song_ids_to_add=song_ids,
+                song_indexes_to_remove=remove_indexes,
+                is_public=True,
+            )
+            if not ok:
+                raise RuntimeError(f"Failed to update Navidrome playlist {existing_playlist_id}")
+            return existing_playlist_id
+
+    playlist_id = create_playlist(name, song_ids)
+    if not playlist_id:
+        raise RuntimeError("Navidrome did not return a playlist id")
+    if not update_playlist(playlist_id, name=name, is_public=True):
+        raise RuntimeError(f"Failed to mark Navidrome playlist {playlist_id} as public")
+    return playlist_id
 
 
 def map_library_ids() -> dict:

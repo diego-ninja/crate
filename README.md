@@ -2,7 +2,7 @@
 
 Self-hosted music library manager with enrichment, audio analysis, streaming, and acquisition from Tidal and Soulseek.
 
-Crate indexes your music collection, enriches it with metadata from multiple sources, analyzes audio characteristics using ML models, and provides a modern web UI for browsing, discovering, and playing your library.
+Crate indexes your music collection, enriches it with metadata from multiple sources, analyzes audio characteristics using ML models, and provides two separate frontend experiences on top of the same backend: an admin app for desktop-oriented library management and a consumer-facing Listen app for playback and discovery.
 
 ## Features
 
@@ -72,23 +72,27 @@ Crate indexes your music collection, enriches it with metadata from multiple sou
 ```
                     Traefik (reverse proxy + TLS)
                               |
-              +---------------+---------------+
-              |               |               |
-          crate-ui        crate-api       crate-worker
-         (React SPA)     (FastAPI)        (Python)
-          nginx proxy    /music:ro        /music:rw
-              |               |               |
-              +-------+-------+-------+-------+
-                      |               |
-                  PostgreSQL        Redis
-                                  (cache)
+      +-----------------------+-----------------------+
+      |                       |                       |
+  crate-ui               crate-listen            crate-api
+ (admin SPA)           (consumer PWA)           (FastAPI)
+ desktop-oriented      React + Capacitor        /music:ro
+ library management    target for app stores         |
+      |                       |                       |
+      +---------------+-------+-----------+-----------+
+                      |                   |
+                 crate-worker         PostgreSQL
+                   (Python)               |
+                  /music:rw            Redis
+                                       (cache)
 ```
 
 | Service | Tech | Role |
 |---------|------|------|
 | **crate-api** | FastAPI + Uvicorn | REST API, audio streaming, SSE events |
 | **crate-worker** | Python ThreadPoolExecutor (5 slots) | Background tasks, filesystem writes, analysis |
-| **crate-ui** | React 19 + Vite + Tailwind 4 | SPA with nginx reverse proxy to API |
+| **crate-ui** | React 19 + Vite + Tailwind 4 | Desktop-oriented admin SPA for library management |
+| **crate-listen** | React 19 + Vite + Tailwind 4 | Consumer-facing listening app, built as a PWA and intended to ship via Capacitor |
 | **PostgreSQL 15** | | Persistent storage |
 | **Redis 7** | | Multi-tier cache (256MB, allkeys-lru) |
 | **Navidrome** | Subsonic API | Streaming backend, top tracks, playlist sync |
@@ -102,6 +106,10 @@ The API container mounts the music library as **read-only**. All filesystem modi
 
 **Frontend**: React 19, TypeScript, Tailwind CSS 4, shadcn/ui, Nivo charts, react-easy-crop, cmdk, lucide-react, sonner
 
+**Frontend Apps**:
+- `app/ui` — admin web app, desktop-oriented, focused on management workflows
+- `app/listen` — user-facing listening app, kept separate from admin and intended for PWA + Capacitor packaging for app stores
+
 **Audio Analysis**: Essentia (signal processing), PANNs CNN14 (AudioSet classification), bliss-rs (Rust, song similarity vectors)
 
 **Infrastructure**: Docker Compose, Traefik, Navidrome, slskd, Redis, PostgreSQL
@@ -114,8 +122,11 @@ The API container mounts the music library as **read-only**. All filesystem modi
 # Start backend services (PostgreSQL + Redis + API + Worker)
 make dev
 
-# Start frontend dev server (separate terminal)
+# Start admin frontend dev server (separate terminal)
 cd app/ui && API_URL=http://localhost:8585 npm run dev
+
+# Start Listen frontend dev server (separate terminal)
+cd app/listen && API_URL=http://localhost:8585 npm run dev
 ```
 
 Dev uses 3 test artists (Birds In Row, High Vis, Rival Schools) in `test-music/`.
@@ -185,6 +196,13 @@ app/
       components/         Shared UI components
       contexts/           React contexts (Player, Auth)
       hooks/              Custom hooks (useApi, useFavorites, etc.)
+  listen/
+    src/
+      pages/              Consumer-facing pages (Home, Explore, Library, Artist, Album)
+      components/         Mobile-first listening UI, player, queue, lyrics
+      contexts/           Listen player state
+  shared/
+    web/                  Shared frontend core used by ui and listen without merging the apps
   scripts/
     download_models.sh    Essentia + PANNs model downloader
   Dockerfile

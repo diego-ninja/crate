@@ -1,12 +1,12 @@
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play, Sparkles } from "lucide-react";
-import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
+import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { TrackRow } from "@/components/cards/TrackRow";
+import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { encPath } from "@/lib/utils";
 
@@ -23,6 +23,8 @@ interface Playlist {
   id: number;
   name: string;
   description?: string;
+  cover_data_url?: string | null;
+  artwork_tracks?: PlaylistArtworkTrack[];
   track_count: number;
   is_smart: boolean;
   total_duration: number;
@@ -48,22 +50,17 @@ interface SavedAlbum {
   total_duration: number;
 }
 
-interface LikedTrack {
-  track_path: string;
-  liked_at: string;
-  title: string;
-  artist: string;
-  album: string;
-  duration: number;
-  navidrome_id?: string;
-}
-
 const tabs: { key: Tab; label: string; icon: typeof ListMusic }[] = [
   { key: "playlists", label: "Playlists", icon: ListMusic },
   { key: "artists", label: "Artists", icon: Users },
   { key: "albums", label: "Albums", icon: Disc },
   { key: "liked", label: "Liked", icon: Heart },
 ];
+
+function parseTab(value: string | null): Tab {
+  if (value === "artists" || value === "albums" || value === "liked") return value;
+  return "playlists";
+}
 
 function formatTotalDuration(seconds: number): string {
   if (!seconds) return "";
@@ -100,69 +97,21 @@ function StatBox({ value, label }: { value: number; label: string }) {
 
 function PlaylistsTab() {
   const navigate = useNavigate();
-  const { data: playlists, loading, refetch } = useApi<Playlist[]>("/api/playlists");
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleCreate() {
-    const name = newName.trim();
-    if (!name) return;
-    setSubmitting(true);
-    try {
-      await api("/api/playlists", "POST", { name });
-      toast.success("Playlist created");
-      setNewName("");
-      setCreating(false);
-      refetch();
-    } catch {
-      toast.error("Failed to create playlist");
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const { data: playlists, loading } = useApi<Playlist[]>("/api/playlists");
+  const { openCreatePlaylist } = usePlaylistComposer();
 
   if (loading) return <Spinner />;
 
   return (
     <div className="space-y-3">
-      {/* New playlist button / inline form */}
-      {creating ? (
-        <div className="flex items-center gap-2">
-          <input
-            autoFocus
-            type="text"
-            placeholder="Playlist name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-            className="flex-1 rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-          />
-          <button
-            onClick={handleCreate}
-            disabled={submitting || !newName.trim()}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-          >
-            Create
-          </button>
-          <button
-            onClick={() => { setCreating(false); setNewName(""); }}
-            className="rounded-lg bg-white/5 px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={() => setCreating(true)}
-          className="flex items-center gap-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors px-4 py-2.5 text-sm font-medium text-foreground w-full"
-        >
-          <Plus size={16} className="text-primary" />
-          New Playlist
-        </button>
-      )}
+      <button
+        onClick={() => openCreatePlaylist()}
+        className="flex items-center gap-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors px-4 py-2.5 text-sm font-medium text-foreground w-full"
+      >
+        <Plus size={16} className="text-primary" />
+        New Playlist
+      </button>
 
-      {/* Playlist list */}
       {!playlists || playlists.length === 0 ? (
         <EmptyState message="No playlists yet. Create one to get started." />
       ) : (
@@ -173,9 +122,12 @@ function PlaylistsTab() {
               onClick={() => navigate(`/playlist/${pl.id}`)}
               className="flex items-center gap-3 w-full rounded-lg px-3 py-3 hover:bg-white/5 transition-colors text-left"
             >
-              <div className="w-10 h-10 rounded-md bg-white/5 flex items-center justify-center flex-shrink-0">
-                <ListMusic size={18} className="text-muted-foreground" />
-              </div>
+              <PlaylistArtwork
+                name={pl.name}
+                coverDataUrl={pl.cover_data_url}
+                tracks={pl.artwork_tracks}
+                className="w-10 h-10 rounded-md flex-shrink-0"
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-foreground truncate">{pl.name}</span>
@@ -232,9 +184,10 @@ function AlbumsTab() {
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
       {albums.map((a) => (
         <AlbumCard
-          key={`${a.artist}-${a.name}`}
+          key={a.id}
           artist={a.artist}
           album={a.name}
+          albumId={a.id}
           year={a.year}
         />
       ))}
@@ -243,7 +196,7 @@ function AlbumsTab() {
 }
 
 function LikedTab() {
-  const { data: tracks, loading } = useApi<LikedTrack[]>("/api/me/likes?limit=100");
+  const { likedTracks: tracks, loading } = useLikedTracks();
   const { playAll } = usePlayerActions();
 
   if (loading) return <Spinner />;
@@ -254,13 +207,16 @@ function LikedTab() {
   function handlePlayAll() {
     if (!tracks || tracks.length === 0) return;
     const playerTracks: Track[] = tracks.map((t) => ({
-      id: t.navidrome_id || t.track_path,
+      id: t.relative_path || t.path,
       title: t.title,
       artist: t.artist,
       album: t.album,
       albumCover: t.artist && t.album
         ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}`
         : undefined,
+      path: t.relative_path || t.path,
+      navidromeId: t.navidrome_id,
+      libraryTrackId: t.track_id,
     }));
     playAll(playerTracks, 0);
   }
@@ -277,18 +233,22 @@ function LikedTab() {
       <div>
         {tracks.map((t, i) => (
           <TrackRow
-            key={t.track_path}
+            key={t.track_id}
             track={{
+              id: t.track_id,
               title: t.title,
               artist: t.artist,
               album: t.album,
               duration: t.duration,
-              path: t.track_path,
+              path: t.relative_path || t.path,
               navidrome_id: t.navidrome_id,
+              library_track_id: t.track_id,
             }}
             index={i + 1}
             showArtist
             showAlbum
+            albumCover={t.artist && t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : undefined}
+            showCoverThumb
           />
         ))}
       </div>
@@ -297,8 +257,13 @@ function LikedTab() {
 }
 
 export function Library() {
-  const [tab, setTab] = useState<Tab>("playlists");
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: stats } = useApi<MeStats>("/api/me");
+  const tab = parseTab(searchParams.get("tab"));
+
+  function setTab(tab: Tab) {
+    setSearchParams({ tab });
+  }
 
   return (
     <div className="space-y-6">

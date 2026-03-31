@@ -3,11 +3,11 @@ import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
   Heart, MoreHorizontal, Volume2, VolumeX, Airplay, ListMusic,
-  Mic2, Maximize2, Radio, Info, User, Share2, Plus, Disc,
+  Mic2, Maximize2, Radio, Info, User, Share2, Plus, Disc, Loader2,
 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
-import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
@@ -46,7 +46,7 @@ function generateBars(seed: string, count: number): number[] {
 }
 
 export function PlayerBar() {
-  const { currentTime, duration, isPlaying, volume } = usePlayer();
+  const { currentTime, duration, isPlaying, isBuffering, volume } = usePlayer();
   const {
     currentTrack, shuffle, repeat, playSource, queue, currentIndex,
     pause, resume, next, prev, seek, setVolume,
@@ -60,12 +60,12 @@ export function PlayerBar() {
   const navigate = useNavigate();
   const [fsOpen, setFsOpen] = useState(false);
   const [extendedOpen, setExtendedOpen] = useState(false);
-  const [liked, setLiked] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
 
   // Close menu on outside click
   useEffect(() => {
@@ -83,23 +83,24 @@ export function PlayerBar() {
 
   if (!currentTrack) return null;
 
+  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
+
   async function toggleLike() {
     if (!currentTrack) return;
-    const path = currentTrack.id;
+    const trackId = currentTrack.libraryTrackId ?? null;
+    const trackPath = currentTrack.path || currentTrack.id;
     try {
       if (liked) {
-        await api("/api/me/likes", "DELETE", { track_path: path });
-        setLiked(false);
+        await unlikeTrack(trackId, trackPath);
       } else {
-        await api("/api/me/likes", "POST", { track_path: path });
-        setLiked(true);
+        await likeTrack(trackId, trackPath);
       }
     } catch { /* ignore */ }
   }
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 z-50 h-[72px] bg-[#0c0c14] border-t border-white/5">
+      <div className={`fixed bottom-0 left-0 right-0 h-[72px] bg-[#0c0c14] border-t border-white/5 ${showVolume ? "z-[90]" : "z-50"}`}>
         <div className="h-full flex items-center px-4 gap-2">
 
           {/* ── Block 1: Track Info ── */}
@@ -126,6 +127,11 @@ export function PlayerBar() {
                   Playing from: {playSource.name}
                 </p>
               )}
+              {isBuffering && (
+                <p className="text-[10px] text-primary/80 truncate leading-tight mt-0.5">
+                  Buffering...
+                </p>
+              )}
             </div>
 
             {/* Heart */}
@@ -146,7 +152,9 @@ export function PlayerBar() {
                   {[
                     { icon: Plus, label: "Add to playlist", action: () => toast.info("Coming soon") },
                     { icon: Disc, label: "Add to my collection", action: () => {
-                      api("/api/me/likes", "POST", { track_path: currentTrack.id }).then(() => { setLiked(true); toast.success("Added to collection"); }).catch(() => {});
+                      likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id).then(() => {
+                        toast.success("Added to collection");
+                      }).catch(() => {});
                     }},
                     { icon: Radio, label: "Go to track radio", action: () => toast.info("Coming soon") },
                     { icon: Info, label: "Track info", action: () => toast.info("Coming soon") },
@@ -186,7 +194,9 @@ export function PlayerBar() {
                 onClick={isPlaying ? pause : resume}
                 className="w-9 h-9 rounded-full bg-white flex items-center justify-center hover:scale-105 transition-transform"
               >
-                {isPlaying ? (
+                {isBuffering ? (
+                  <Loader2 size={15} className="animate-spin text-black" />
+                ) : isPlaying ? (
                   <Pause size={16} className="text-black" />
                 ) : (
                   <Play size={16} className="text-black ml-0.5" fill="black" />
@@ -267,7 +277,7 @@ export function PlayerBar() {
                 {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
               {showVolume && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-[#16161e] border border-white/10 rounded-lg p-2 shadow-xl">
+                <div className="absolute bottom-full left-1/2 z-[90] -translate-x-1/2 mb-2 bg-[#16161e] border border-white/10 rounded-lg p-2 shadow-2xl">
                   <input
                     type="range"
                     min={0} max={1} step={0.01}

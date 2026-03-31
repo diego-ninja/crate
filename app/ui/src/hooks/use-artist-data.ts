@@ -8,15 +8,37 @@ interface EnrichmentData {
     tags?: string[];
     similar?: { name: string }[];
     listeners?: number;
+    playcount?: number;
+    url?: string;
   };
   spotify?: {
     popularity?: number;
     followers?: number;
     genres?: string[];
-    related_artists?: { name: string; images?: { url: string }[] }[];
+    top_tracks?: {
+      name: string;
+      album: string;
+      duration_ms: number;
+      popularity: number;
+      preview_url?: string;
+    }[];
+    related_artists?: {
+      name: string;
+      images?: { url: string }[];
+      genres?: string[];
+      popularity?: number;
+    }[];
+    url?: string;
   };
   setlist?: {
-    probable_setlist?: { title: string; frequency: number; play_count: number }[];
+    probable_setlist?: {
+      title: string;
+      frequency: number;
+      play_count: number;
+      last_played?: string;
+    }[];
+    total_shows?: number;
+    last_show?: { date: string; venue: string; city: string };
   };
   musicbrainz?: {
     mbid?: string;
@@ -25,10 +47,18 @@ interface EnrichmentData {
     area?: string;
     begin_date?: string;
     end_date?: string;
-    members?: { name: string; type?: string; begin?: string; end?: string }[];
+    members?: {
+      name: string;
+      type?: string;
+      begin?: string;
+      end?: string | null;
+      attributes?: string[];
+    }[];
     urls?: Record<string, string>;
   };
   fanart?: {
+    backgrounds?: string[];
+    thumbs?: string[];
     logos?: string[];
     banners?: string[];
   };

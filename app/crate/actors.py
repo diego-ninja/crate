@@ -50,6 +50,8 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "upload_image":         ("default", 0, 60, 0),
     "reset_enrichment":     ("fast",    1, 120, 0),
     "sync_playlist_navidrome": ("fast", 1, 120, 0),
+    "sync_user_navidrome":  ("fast",    1, 120, 5),
+    "sync_system_playlist_navidrome": ("fast", 1, 300, 2),
 
     # New content processing (priority 1)
     "process_new_content":  ("default", 1, 14400, 0),

@@ -13,7 +13,6 @@ export function useMusicVisualizer(
   active: boolean,
 ) {
   const vizRef = useRef<MusicVisualizer | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
 
   useEffect(() => {
     if (!active || !canvasRef.current || !audioElement) {
@@ -22,6 +21,10 @@ export function useMusicVisualizer(
     }
 
     const canvas = canvasRef.current;
+    if (vizRef.current) {
+      vizRef.current.stop();
+      vizRef.current = null;
+    }
 
     // Retry until canvas has layout dimensions (display:none → visible transition)
     let cancelled = false;
@@ -41,14 +44,11 @@ export function useMusicVisualizer(
       }
 
       // Get or create analyser node
-      if (!analyserRef.current) {
-        const node = createAnalyserNode(audioElement, 2048);
-        if (!node) {
-          dbg(`attempt ${attempts}: no analyser, retrying`);
-          if (attempts < 50) setTimeout(tryInit, 200);
-          return;
-        }
-        analyserRef.current = node;
+      const node = createAnalyserNode(audioElement, 2048);
+      if (!node) {
+        dbg(`attempt ${attempts}: no analyser, retrying`);
+        if (attempts < 50) setTimeout(tryInit, 200);
+        return;
       }
 
       const forceResize = (viz: MusicVisualizer) => {
@@ -65,21 +65,14 @@ export function useMusicVisualizer(
         });
       };
 
-      // Create or restart visualizer
-      if (vizRef.current) {
-        vizRef.current.start();
-        setTimeout(() => forceResize(vizRef.current!), 100);
-        dbg(`restarted ${w}x${h}`);
-      } else {
-        try {
-          const viz = new MusicVisualizer(canvas, analyserRef.current);
-          vizRef.current = viz;
-          viz.start();
-          setTimeout(() => forceResize(viz), 100);
-          dbg(`created ${w}x${h}`);
-        } catch (e) {
-          dbg(`FAIL: ${e}`);
-        }
+      try {
+        const viz = new MusicVisualizer(canvas, node);
+        vizRef.current = viz;
+        viz.start();
+        setTimeout(() => forceResize(viz), 100);
+        dbg(`created ${w}x${h}`);
+      } catch (e) {
+        dbg(`FAIL: ${e}`);
       }
     };
 

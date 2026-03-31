@@ -124,7 +124,7 @@ export function CommandPalette() {
                   { label: "Insights", path: "/insights", icon: BarChart3 },
                   { label: "Health", path: "/health", icon: HeartPulse },
                   { label: "Acquisition", path: "/download", icon: Download },
-                  { label: "Playlists", path: "/playlists", icon: ListMusic },
+                  { label: "System Playlists", path: "/playlists", icon: ListMusic },
                   { label: "Discover", path: "/discover", icon: Compass },
                   { label: "Settings", path: "/settings", icon: Settings },
                 ].map((item) => (

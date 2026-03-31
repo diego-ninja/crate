@@ -14,6 +14,7 @@ interface SearchArtist {
 }
 
 interface SearchAlbum {
+  id: number;
   artist: string;
   name: string;
   year: string;
@@ -21,6 +22,7 @@ interface SearchAlbum {
 }
 
 interface SearchTrack {
+  id: number;
   title: string;
   artist: string;
   album: string;
@@ -84,9 +86,10 @@ function SearchResultsView({ results }: { results: SearchResults }) {
           <div className="flex gap-4 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {results.albums.map((a) => (
               <AlbumCard
-                key={`${a.artist}-${a.name}`}
+                key={a.id || `${a.artist}-${a.name}`}
                 artist={a.artist}
                 album={a.name}
+                albumId={a.id}
                 year={a.year}
               />
             ))}
@@ -101,7 +104,12 @@ function SearchResultsView({ results }: { results: SearchResults }) {
             {results.tracks.slice(0, 10).map((t, i) => (
               <TrackRow
                 key={`${t.artist}-${t.title}-${i}`}
-                track={{ ...t, path: t.path || "", duration: t.duration || 0 }}
+                track={{
+                  ...t,
+                  path: t.path || "",
+                  duration: t.duration || 0,
+                  library_track_id: t.id,
+                }}
                 index={i + 1}
                 showArtist
                 showAlbum
@@ -167,7 +175,7 @@ function GenreDetailView({ slug, onBack }: { slug: string; onBack: () => void })
           <h2 className="text-lg font-bold px-1">Albums</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {data.albums.map((a) => (
-              <AlbumCard key={`${a.artist}-${a.name}`} artist={a.artist} album={a.name} year={a.year} />
+              <AlbumCard key={a.album_id || `${a.artist}-${a.name}`} artist={a.artist} album={a.name} albumId={a.album_id} year={a.year} />
             ))}
           </div>
         </div>

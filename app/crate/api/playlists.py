@@ -6,6 +6,7 @@ from crate.db import (
     create_playlist, get_playlists, get_playlist, update_playlist,
     delete_playlist, get_playlist_tracks, add_playlist_tracks,
     remove_playlist_track, reorder_playlist, get_db_ctx, create_task,
+    get_user_external_identity,
 )
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
@@ -14,6 +15,7 @@ router = APIRouter(prefix="/api/playlists", tags=["playlists"])
 class CreatePlaylistRequest(BaseModel):
     name: str
     description: str = ""
+    cover_data_url: str | None = None
     is_smart: bool = False
     smart_rules: dict | None = None
 
@@ -21,6 +23,7 @@ class CreatePlaylistRequest(BaseModel):
 class UpdatePlaylistRequest(BaseModel):
     name: str | None = None
     description: str | None = None
+    cover_data_url: str | None = None
     smart_rules: dict | None = None
 
 
@@ -91,6 +94,7 @@ def create(request: Request, body: CreatePlaylistRequest):
     playlist_id = create_playlist(
         name=body.name.strip(),
         description=body.description,
+        cover_data_url=body.cover_data_url,
         user_id=user["id"],
         is_smart=body.is_smart,
         smart_rules=body.smart_rules,
@@ -124,6 +128,8 @@ def update(request: Request, playlist_id: int, body: UpdatePlaylistRequest):
         kwargs["name"] = body.name.strip()
     if body.description is not None:
         kwargs["description"] = body.description
+    if body.cover_data_url is not None:
+        kwargs["cover_data_url"] = body.cover_data_url
     if body.smart_rules is not None:
         kwargs["smart_rules"] = body.smart_rules
     if kwargs:
@@ -301,9 +307,27 @@ def _execute_smart_rules(rules: dict) -> list[dict]:
 @router.post("/{playlist_id}/sync-navidrome")
 def sync_to_navidrome(request: Request, playlist_id: int):
     """Create/update this playlist in Navidrome."""
-    _require_auth(request)
+    user = _require_auth(request)
     pl = get_playlist(playlist_id)
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    task_id = create_task("sync_playlist_navidrome", {"playlist_id": playlist_id})
+    owner_id = pl.get("user_id")
+    if owner_id != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
+
+    identity = get_user_external_identity(owner_id, "navidrome")
+    if not identity or identity.get("status") != "synced" or not identity.get("external_username"):
+        raise HTTPException(
+            status_code=409,
+            detail="Navidrome user is not linked yet for this playlist owner",
+        )
+
+    task_id = create_task(
+        "sync_playlist_navidrome",
+        {
+            "playlist_id": playlist_id,
+            "user_id": owner_id,
+            "navidrome_username": identity["external_username"],
+        },
+    )
     return {"task_id": task_id}

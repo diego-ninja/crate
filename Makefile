@@ -97,6 +97,17 @@ dev-reset: ## Reset entorno dev (borra datos, para todo)
 dev-test: ## Correr tests en el contenedor dev
 	@$(DC_DEV) exec worker pytest tests/ -v
 
+.PHONY: regression-api
+regression-api: ## Contratos backend criticos (Explore/search/system playlists)
+	@$(DC_DEV) exec worker pytest tests/test_explore_contracts.py -q
+
+.PHONY: regression-smoke
+regression-smoke: ## Smoke real contra el entorno dev autenticado
+	@python3 scripts/regression_smoke.py
+
+.PHONY: regression-min
+regression-min: regression-api regression-smoke ## Suite minima de regresion antes de tocar listen
+
 # ===========================================================================
 # LOCAL (stack completo con Traefik)
 # ===========================================================================
@@ -123,8 +134,12 @@ logs: ## Ver logs (uso: make logs o make logs s=navidrome)
 	fi
 
 .PHONY: ps
-ps: ## Estado de los servicios
-	@$(DC_LOCAL) ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+ps: ## Estado de los servicios (dev)
+	@$(DC_DEV) ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+	@echo ""
+	@echo "$(YELLOW)Frontends:$(NC)"
+	@-pgrep -af "vite.*5173" > /dev/null 2>&1 && echo "  Admin:  http://localhost:5173 (running)" || echo "  Admin:  not running"
+	@-pgrep -af "vite.*5174" > /dev/null 2>&1 && echo "  Listen: http://localhost:5174 (running)" || echo "  Listen: not running"
 
 .PHONY: pull
 pull: ## Pull de imagenes en local

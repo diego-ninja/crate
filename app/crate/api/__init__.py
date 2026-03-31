@@ -61,6 +61,8 @@ def create_app() -> FastAPI:
     from crate.api.management import router as management_router
     from crate.api.settings import router as settings_router
     from crate.api.playlists import router as playlists_router
+    from crate.api.curation import router as curation_router
+    from crate.api.system_playlists import router as system_playlists_router
     from crate.api.genres import router as genres_router
     from crate.api.tidal import router as tidal_router
     from crate.api.acquisition import router as acquisition_router
@@ -73,6 +75,8 @@ def create_app() -> FastAPI:
     app.include_router(management_router)
     app.include_router(settings_router)
     app.include_router(playlists_router)
+    app.include_router(curation_router)
+    app.include_router(system_playlists_router)
     app.include_router(genres_router)
     app.include_router(tidal_router)
     app.include_router(acquisition_router)

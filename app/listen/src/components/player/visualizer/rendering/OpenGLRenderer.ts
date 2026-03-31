@@ -23,10 +23,13 @@ class OpenGLRenderer {
 
   render(camera: Camera, prog: ShaderProgram, drawables: Array<Drawable>, scale: number = 1.0) {
     const model = mat4.create();
-    const viewProj = mat4.create();
-
     mat4.identity(model);
     mat4.scale(model, model, vec3.fromValues(scale, scale, scale));
+    this.renderWithModel(camera, prog, drawables, model);
+  }
+
+  renderWithModel(camera: Camera, prog: ShaderProgram, drawables: Array<Drawable>, model: mat4) {
+    const viewProj = mat4.create();
     mat4.multiply(viewProj, camera.projectionMatrix, camera.viewMatrix);
     prog.setModelMatrix(model);
     prog.setViewProjMatrix(viewProj);

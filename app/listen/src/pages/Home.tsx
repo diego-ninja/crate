@@ -3,6 +3,7 @@ import { Heart, Clock, Sparkles, ListMusic, Loader2 } from "lucide-react";
 import { useApi } from "@/hooks/use-api";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
+import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 
 interface RecentAlbum {
   id: string;
@@ -24,6 +25,8 @@ interface Playlist {
   id: number;
   name: string;
   description?: string;
+  cover_data_url?: string | null;
+  artwork_tracks?: PlaylistArtworkTrack[];
   track_count: number;
   is_smart: boolean;
 }
@@ -41,16 +44,6 @@ function getDateString(): string {
     month: "long",
     day: "numeric",
   });
-}
-
-function playlistGradient(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue1 = Math.abs(hash) % 360;
-  const hue2 = (hue1 + 40) % 360;
-  return `linear-gradient(135deg, hsl(${hue1}, 50%, 30%), hsl(${hue2}, 60%, 20%))`;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -163,14 +156,18 @@ export function Home() {
               onClick={() => navigate(`/playlist/${pl.id}`)}
               className="flex-shrink-0 w-[160px] rounded-xl overflow-hidden transition-transform hover:scale-[1.02] active:scale-[0.98]"
             >
-              <div
-                className="aspect-square flex flex-col justify-end p-3"
-                style={{ background: playlistGradient(pl.name) }}
-              >
-                <ListMusic size={24} className="text-white/40 mb-2" />
-                <div className="text-sm font-bold text-white truncate">{pl.name}</div>
-                <div className="text-xs text-white/50">
-                  {pl.track_count} track{pl.track_count !== 1 ? "s" : ""}
+              <div className="space-y-2">
+                <PlaylistArtwork
+                  name={pl.name}
+                  coverDataUrl={pl.cover_data_url}
+                  tracks={pl.artwork_tracks}
+                  className="aspect-square rounded-2xl shadow-xl"
+                />
+                <div className="px-1">
+                  <div className="text-sm font-bold text-foreground truncate">{pl.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {pl.track_count} track{pl.track_count !== 1 ? "s" : ""}
+                  </div>
                 </div>
               </div>
             </button>

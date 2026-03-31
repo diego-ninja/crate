@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { Search, Loader2, User, LogOut, Settings, X, Disc, Music } from "lucide-react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { useUserSync } from "@/contexts/UserSyncContext";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -79,6 +81,14 @@ function ResultThumb({ item }: { item: FlatItem }) {
 
 export function TopBar() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const {
+    loading: syncLoading,
+    navidromeConnected,
+    navidromeStatus,
+    navidromeUsername,
+    navidromeLastError,
+  } = useUserSync();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FlatItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -86,20 +96,12 @@ export function TopBar() {
   const [activeIdx, setActiveIdx] = useState(-1);
   const [recents, setRecents] = useState<string[]>(getRecents);
 
-  const [userName, setUserName] = useState<string | null>(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  // Fetch user info
-  useEffect(() => {
-    api<{ name?: string; email?: string }>("/api/auth/me")
-      .then((u) => setUserName(u.name || u.email || null))
-      .catch(() => {});
-  }, []);
 
   // Debounced search
   useEffect(() => {
@@ -181,15 +183,30 @@ export function TopBar() {
     }
   }
 
-  async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
-    navigate("/login");
-  }
-
   const showRecents = showDropdown && !query.trim() && recents.length > 0;
   const showResults = showDropdown && query.trim().length > 0 && (results.length > 0 || loading);
 
+  const userName = user?.name || user?.email || null;
   const userInitial = userName ? userName.charAt(0).toUpperCase() : null;
+  const navidromeStatusLabel = (() => {
+    if (syncLoading) return "Checking Navidrome";
+    if (!navidromeConnected) return "Navidrome offline";
+    if (navidromeStatus === "synced") {
+      return navidromeUsername ? `Linked to ${navidromeUsername}` : "Navidrome linked";
+    }
+    if (navidromeStatus === "pending") return "Navidrome sync pending";
+    if (navidromeStatus === "errored") return "Navidrome sync error";
+    return "Navidrome not linked";
+  })();
+  const navidromeStatusTone = !navidromeConnected
+    ? "border-red-400/20 bg-red-400/10 text-red-200/80"
+    : navidromeStatus === "synced"
+      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200/80"
+      : navidromeStatus === "pending"
+        ? "border-amber-400/20 bg-amber-400/10 text-amber-100/80"
+        : navidromeStatus === "errored"
+          ? "border-red-400/20 bg-red-400/10 text-red-200/80"
+          : "border-white/10 bg-white/5 text-white/65";
 
   return (
     <div className="flex items-center gap-4 px-4 py-3 pointer-events-none">
@@ -269,7 +286,16 @@ export function TopBar() {
         </button>
 
         {showUserMenu && (
-          <div ref={userMenuRef} className="absolute top-full right-0 mt-2 w-44 bg-[#12121a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50 py-1">
+          <div ref={userMenuRef} className="absolute top-full right-0 mt-2 w-60 bg-[#12121a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50 py-1">
+            <div className="px-3 pb-2 pt-2">
+              <div className={`rounded-lg border px-2.5 py-2 text-[11px] ${navidromeStatusTone}`}>
+                <p className="font-medium">{navidromeStatusLabel}</p>
+                {navidromeStatus === "errored" && navidromeLastError && (
+                  <p className="mt-1 line-clamp-2 text-[10px] opacity-80">{navidromeLastError}</p>
+                )}
+              </div>
+            </div>
+            <div className="my-1 border-t border-white/5" />
             <button
               onClick={() => { setShowUserMenu(false); navigate("/library"); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-white/70 hover:bg-white/5 hover:text-white transition-colors text-left"
@@ -286,7 +312,7 @@ export function TopBar() {
             </button>
             <div className="my-1 border-t border-white/5" />
             <button
-              onClick={() => { setShowUserMenu(false); handleLogout(); }}
+              onClick={() => { setShowUserMenu(false); void logout(); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-red-400/70 hover:bg-white/5 hover:text-red-400 transition-colors text-left"
             >
               <LogOut size={14} />

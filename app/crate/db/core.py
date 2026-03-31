@@ -196,9 +196,28 @@ def init_db():
                 created_at TEXT NOT NULL
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_external_identities (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                provider TEXT NOT NULL,
+                external_user_id TEXT,
+                external_username TEXT,
+                status TEXT NOT NULL DEFAULT 'unlinked',
+                last_error TEXT,
+                last_task_id TEXT,
+                metadata_json JSONB DEFAULT '{}',
+                last_synced_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (user_id, provider)
+            )
+        """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_external_identities_provider ON user_external_identities(provider)")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_external_identities_provider_username ON user_external_identities(provider, external_username) WHERE external_username IS NOT NULL")
 
         # Migration: add username column if missing
         cur.execute("""
@@ -458,14 +477,78 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT DEFAULT '',
+                cover_data_url TEXT,
                 user_id INTEGER REFERENCES users(id),
                 is_smart BOOLEAN DEFAULT FALSE,
                 smart_rules_json JSONB,
+                scope TEXT NOT NULL DEFAULT 'user',
+                generation_mode TEXT NOT NULL DEFAULT 'static',
+                is_curated BOOLEAN NOT NULL DEFAULT FALSE,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                managed_by_user_id INTEGER REFERENCES users(id),
+                curation_key TEXT,
+                featured_rank INTEGER,
+                category TEXT,
+                navidrome_playlist_id TEXT,
+                navidrome_public BOOLEAN NOT NULL DEFAULT FALSE,
+                navidrome_projection_status TEXT NOT NULL DEFAULT 'unprojected',
+                navidrome_projection_error TEXT,
+                navidrome_projected_at TEXT,
                 track_count INTEGER DEFAULT 0,
                 total_duration DOUBLE PRECISION DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE playlists ADD COLUMN cover_data_url TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+        for col, col_type, default in [
+            ("scope", "TEXT", "'user'"),
+            ("generation_mode", "TEXT", "'static'"),
+            ("is_curated", "BOOLEAN", "FALSE"),
+            ("is_active", "BOOLEAN", "TRUE"),
+            ("managed_by_user_id", "INTEGER REFERENCES users(id)", None),
+            ("curation_key", "TEXT", None),
+            ("featured_rank", "INTEGER", None),
+            ("category", "TEXT", None),
+            ("navidrome_playlist_id", "TEXT", None),
+            ("navidrome_public", "BOOLEAN", "FALSE"),
+            ("navidrome_projection_status", "TEXT", "'unprojected'"),
+            ("navidrome_projection_error", "TEXT", None),
+            ("navidrome_projected_at", "TEXT", None),
+        ]:
+            default_clause = f" DEFAULT {default}" if default is not None else ""
+            cur.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE playlists ADD COLUMN {col} {col_type}{default_clause};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+        cur.execute("""
+            UPDATE playlists
+            SET scope = CASE WHEN user_id IS NULL THEN 'system' ELSE 'user' END
+            WHERE scope IS NULL OR scope = ''
+        """)
+        cur.execute("""
+            UPDATE playlists
+            SET generation_mode = CASE WHEN is_smart THEN 'smart' ELSE 'static' END
+            WHERE generation_mode IS NULL OR generation_mode = ''
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlists_scope_active
+            ON playlists(scope, is_active, updated_at DESC)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlists_curated
+            ON playlists(is_curated, category, featured_rank)
+        """)
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_curation_key
+            ON playlists(curation_key) WHERE curation_key IS NOT NULL
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS playlist_tracks (
@@ -481,6 +564,16 @@ def init_db():
             )
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id, position)")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_followed_playlists (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                followed_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, playlist_id)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_followed_playlists_user ON user_followed_playlists(user_id, followed_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_followed_playlists_playlist ON user_followed_playlists(playlist_id)")
 
         # Audit log
         cur.execute("""
@@ -654,11 +747,22 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_saved_albums_user ON user_saved_albums(user_id)")
 
         cur.execute("""
+            DO $$ BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'user_liked_tracks' AND column_name = 'track_path'
+                ) THEN
+                    DROP TABLE user_liked_tracks;
+                END IF;
+            END $$
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS user_liked_tracks (
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                track_path TEXT NOT NULL,
+                track_id INTEGER NOT NULL REFERENCES library_tracks(id) ON DELETE CASCADE,
                 created_at TEXT NOT NULL,
-                PRIMARY KEY (user_id, track_path)
+                PRIMARY KEY (user_id, track_id)
             )
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_liked_tracks_user ON user_liked_tracks(user_id)")
@@ -683,5 +787,3 @@ def init_db():
             EXCEPTION WHEN duplicate_column THEN NULL;
             END $$
         """)
-
-

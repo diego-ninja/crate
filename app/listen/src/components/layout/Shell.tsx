@@ -133,10 +133,10 @@ function Sidebar() {
           {collectionOpen && (
             <div className={`${expanded ? "mt-1 ml-3 border-l border-white/5 pl-3" : "absolute left-full top-0 ml-2 bg-[#12121a] border border-white/10 rounded-xl shadow-2xl py-2 w-44"}`}>
               {[
-                { to: "/library", icon: ListMusic, label: "Playlists", state: "playlists" },
-                { to: "/library", icon: Disc, label: "Albums", state: "albums" },
-                { to: "/library", icon: Heart, label: "Liked Tracks", state: "liked" },
-                { to: "/library", icon: Users, label: "Artists", state: "artists" },
+                { to: "/library?tab=playlists", icon: ListMusic, label: "Playlists" },
+                { to: "/library?tab=albums", icon: Disc, label: "Albums" },
+                { to: "/library?tab=liked", icon: Heart, label: "Liked Tracks" },
+                { to: "/library?tab=artists", icon: Users, label: "Artists" },
               ].map(({ to, icon: Icon, label }) => (
                 <button
                   key={label}

@@ -3,6 +3,12 @@ import { ChevronDown, X, Loader2, Star, Settings } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { api } from "@/lib/api";
+import { extractPalette } from "@/lib/palette";
+import {
+  getUseAlbumPalettePreference,
+  PLAYER_VIZ_PREFS_EVENT,
+  setUseAlbumPalettePreference,
+} from "@/lib/player-visualizer-prefs";
 import { formatDuration, formatCompact } from "@/lib/utils";
 
 // ── Types ──
@@ -16,6 +22,8 @@ interface LyricsData {
   synced: LyricLine[] | null;
   plain: string | null;
 }
+
+type PaletteTriplet = [number, number, number];
 
 interface SimilarTrack {
   path: string;
@@ -64,6 +72,11 @@ function parseSyncedLyrics(lrc: string): LyricLine[] {
     }
   }
   return lines;
+}
+
+function cssColor(color: PaletteTriplet, alpha = 1): string {
+  const [r, g, b] = color.map((value) => Math.round(value * 255));
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // ── Sub-components ──
@@ -234,11 +247,16 @@ function SuggestedTab() {
   );
 }
 
-function LyricsTab() {
+function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
   const { currentTime } = usePlayer();
   const { currentTrack, seek } = usePlayerActions();
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [palette, setPalette] = useState<{
+    primary: PaletteTriplet;
+    secondary: PaletteTriplet;
+    accent: PaletteTriplet;
+  } | null>(null);
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -266,6 +284,28 @@ function LyricsTab() {
       .catch(() => setLyrics({ synced: null, plain: null }))
       .finally(() => setLoading(false));
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    if (!useAlbumPalette || !currentTrack?.albumCover) {
+      setPalette(null);
+      return;
+    }
+    let cancelled = false;
+    extractPalette(currentTrack.albumCover)
+      .then(([primary, secondary, accent]) => {
+        if (!cancelled) {
+          setPalette({ primary, secondary, accent });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPalette(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrack?.albumCover, useAlbumPalette]);
 
   useEffect(() => {
     if (activeRef.current && containerRef.current) {
@@ -299,10 +339,19 @@ function LyricsTab() {
     );
   }
 
+  const primary = palette?.primary ?? [0.024, 0.714, 0.831];
+  const secondary = palette?.secondary ?? [0.4, 0.9, 1.0];
+
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto pr-1 lyrics-mask">
+    <div
+      ref={containerRef}
+      className="relative flex-1 overflow-y-auto pr-1 lyrics-mask"
+      style={{
+        background: `linear-gradient(180deg, ${cssColor(primary, 0.12)} 0%, transparent 28%, transparent 72%, ${cssColor(secondary, 0.06)} 100%)`,
+      }}
+    >
       {lyrics?.synced && (
-        <div className="space-y-1 py-2">
+        <div className="space-y-1" style={{ paddingTop: "34vh", paddingBottom: "34vh" }}>
           {lyrics.synced.map((line, i) => {
             const isActive = i === activeIndex;
             const isPast = i < activeIndex;
@@ -311,13 +360,17 @@ function LyricsTab() {
                 key={i}
                 ref={isActive ? activeRef : null}
                 onClick={() => seek(line.time)}
-                className={`block w-full text-left py-1.5 px-2 rounded-md transition-all duration-300 ${
+                className={`relative z-20 flex min-h-[72px] w-full items-center rounded-xl px-3 py-1.5 text-left transition-all duration-300 ${
                   isActive
-                    ? "text-primary text-[15px] font-bold bg-primary/5"
+                    ? "text-[18px] font-bold"
                     : isPast
-                      ? "text-white/25 text-[14px]"
-                      : "text-white/40 text-[14px] hover:text-white/60"
+                      ? "text-white/18 text-[14px]"
+                      : "text-white/35 text-[14px] hover:text-white/60"
                 }`}
+                style={isActive ? {
+                  color: cssColor(secondary, 1),
+                  textShadow: `0 0 24px ${cssColor(primary, 0.35)}`,
+                } : undefined}
               >
                 {line.text}
               </button>
@@ -327,7 +380,7 @@ function LyricsTab() {
       )}
 
       {!lyrics?.synced && lyrics?.plain && (
-        <pre className="text-[14px] text-white/50 whitespace-pre-wrap font-sans leading-relaxed py-2">
+        <pre className="whitespace-pre-wrap py-2 font-sans text-[14px] leading-relaxed text-white/55">
           {lyrics.plain}
         </pre>
       )}
@@ -521,22 +574,27 @@ const TABS: { id: TabId; label: string }[] = [
 
 const VIZ_DEFAULTS = { separation: 0.15, glow: 6.0, scale: 1.4, persistence: 0.8, octaves: 2 };
 
-function dbg(msg: string) {
-  const d = document.getElementById('viz-debug');
-  if (d) d.textContent = msg;
-}
-
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   usePlayer(); // subscribe to state updates for child components
   const { currentTrack, audioElement } = usePlayerActions();
   const [tab, setTab] = useState<TabId>("queue");
   const [showVizSettings, setShowVizSettings] = useState(false);
   const [vizConfig, setVizConfig] = useState(VIZ_DEFAULTS);
-  const [useAlbumPalette, setUseAlbumPalette] = useState(false);
+  const [useAlbumPalette, setUseAlbumPalette] = useState(getUseAlbumPalettePreference);
   const [vizEnabled, setVizEnabled] = useState(true);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const vizRef = useMusicVisualizer(canvasRef, audioElement, open && vizEnabled);
+
+  useEffect(() => {
+    const syncPreference = () => setUseAlbumPalette(getUseAlbumPalettePreference());
+    window.addEventListener("storage", syncPreference);
+    window.addEventListener(PLAYER_VIZ_PREFS_EVENT, syncPreference as EventListener);
+    return () => {
+      window.removeEventListener("storage", syncPreference);
+      window.removeEventListener(PLAYER_VIZ_PREFS_EVENT, syncPreference as EventListener);
+    };
+  }, []);
 
   // Extract palette from album cover and apply to visualizer
   useEffect(() => {
@@ -563,7 +621,6 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
       extractPalette(currentTrack.albumCover!)
     ).then(([c1, c2, c3]) => {
       if (cancelled) return;
-      dbg(`palette: [${c1.map(v=>v.toFixed(2))}] [${c2.map(v=>v.toFixed(2))}] [${c3.map(v=>v.toFixed(2))}]`);
       const apply = () => {
         if (vizRef.current) {
           vizRef.current.color1 = c1;
@@ -576,7 +633,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
       const t1 = setTimeout(apply, 500);
       const t2 = setTimeout(apply, 1500);
       return () => { clearTimeout(t1); clearTimeout(t2); };
-    }).catch((e) => { dbg(`palette error: ${e}`); });
+    }).catch(() => {});
     return () => { cancelled = true; };
   }, [currentTrack?.albumCover, vizRef, useAlbumPalette]);
 
@@ -616,13 +673,10 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
           : "top-[100vh] opacity-0 pointer-events-none"
       }`}
     >
-      {/* Debug trace — remove after fixing */}
-      <div id="viz-debug" className="absolute top-2 left-20 z-50 text-[10px] text-yellow-400 font-mono bg-black/80 px-2 py-1 rounded" />
-
       {/* ── Left Panel: Cover + Visualizer + Track Info ── */}
       <div className="relative w-1/2 flex flex-col items-center justify-center overflow-hidden bg-[#0a0a0f]">
         {/* Top buttons */}
-        <div className="absolute top-4 left-4 right-4 z-20 flex justify-between">
+        <div className="absolute top-4 left-4 right-4 z-30 flex justify-between">
           <button
             onClick={onClose}
             className="p-2 rounded-full bg-black/30 backdrop-blur-sm text-white/60 hover:text-white hover:bg-black/50 transition-colors"
@@ -639,7 +693,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
 
         {/* Visualizer settings popup */}
         {showVizSettings && (
-          <div className="absolute top-14 right-4 z-30 w-56 bg-[#12121a]/95 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-2xl space-y-3">
+          <div className="absolute top-14 right-4 z-40 w-56 bg-[#12121a]/95 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-2xl space-y-3">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">Visualizer</span>
               <button
@@ -661,7 +715,11 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-white/50">Album palette</span>
               <button
-                onClick={() => setUseAlbumPalette(!useAlbumPalette)}
+                onClick={() => {
+                  const next = !useAlbumPalette;
+                  setUseAlbumPalette(next);
+                  setUseAlbumPalettePreference(next);
+                }}
                 className={`w-9 h-5 rounded-full transition-colors ${useAlbumPalette ? "bg-primary" : "bg-white/20"}`}
               >
                 <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${useAlbumPalette ? "translate-x-4.5" : "translate-x-0.5"}`} />
@@ -692,28 +750,30 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
         )}
 
         {/* Cover art — centered, B/W + darkened */}
-        <div className="relative w-[70%] max-w-[480px] aspect-square rounded-xl overflow-hidden shadow-2xl shadow-black/50 shrink-0">
+        <div className="relative z-0 w-[70%] max-w-[480px] aspect-square shrink-0">
+          <div className="absolute inset-6 rounded-[28px] bg-primary/10 blur-3xl opacity-70" />
+          <div className="absolute inset-2 rounded-[26px] border border-white/10 bg-white/[0.02]" />
           {currentTrack.albumCover ? (
             <img
               src={currentTrack.albumCover}
               alt=""
-              className="absolute inset-0 w-full h-full object-cover"
+              className="absolute inset-0 w-full h-full rounded-xl object-cover shadow-[0_28px_100px_rgba(0,0,0,0.75),0_10px_28px_rgba(0,0,0,0.45)]"
               style={{ filter: vizEnabled ? "grayscale(100%) brightness(0.35)" : "none" }}
             />
           ) : (
-            <div className="absolute inset-0 bg-white/5" />
+            <div className="absolute inset-0 rounded-xl bg-white/5 shadow-[0_28px_100px_rgba(0,0,0,0.75)]" />
           )}
         </div>
 
         {/* WebGL Visualizer Canvas — overlays the ENTIRE left panel */}
         <canvas
           ref={canvasRef}
-          className={`absolute inset-0 w-full h-full z-10 pointer-events-none ${vizEnabled ? "" : "hidden"}`}
+          className={`absolute inset-0 z-10 h-full w-full pointer-events-none ${vizEnabled ? "" : "hidden"}`}
           style={{ background: "transparent" }}
         />
 
         {/* Track info below the cover */}
-        <div className="mt-6 text-center px-8 max-w-full">
+        <div className="relative z-20 mt-6 max-w-full px-8 text-center">
           <h2 className="text-xl font-bold text-white leading-tight truncate">
             {currentTrack.title}
           </h2>
@@ -751,7 +811,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
         <div className="flex-1 overflow-hidden flex flex-col px-5 pb-5">
           {tab === "queue" && <QueueTab />}
           {tab === "suggested" && <SuggestedTab />}
-          {tab === "lyrics" && <LyricsTab />}
+          {tab === "lyrics" && <LyricsTab useAlbumPalette={useAlbumPalette} />}
           {tab === "info" && <InfoTab />}
         </div>
       </div>

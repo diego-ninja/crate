@@ -24,7 +24,7 @@ def _fanart_key() -> str | None:
 
 def get_artist_info(artist_name: str) -> dict | None:
     """Get artist info from Last.fm with cache."""
-    cache_key = f"lastfm:artist:{artist_name.lower()}"
+    cache_key = f"lastfm:artist:v2:{artist_name.lower()}"
     cached = get_cache(cache_key, max_age_seconds=86400)  # 24h
     if cached:
         return cached
@@ -50,11 +50,11 @@ def get_artist_info(artist_name: str) -> dict | None:
     if not artist:
         return None
 
-    bio_content = artist.get("bio", {}).get("summary", "")
+    bio = artist.get("bio", {}) or {}
+    bio_content = bio.get("content") or bio.get("summary", "")
     bio_content = re.sub(r'<a href="https://www.last.fm/.*?>Read more on Last\.fm</a>\.?', '', bio_content).strip()
+    bio_content = re.sub(r'Read more on Last\.fm\.?$', '', bio_content).strip()
     bio_content = re.sub(r'<[^>]+>', '', bio_content).strip()
-    if len(bio_content) > 500:
-        bio_content = bio_content[:500].rsplit(' ', 1)[0] + '...'
 
     images = artist.get("image", [])
     image_url = None

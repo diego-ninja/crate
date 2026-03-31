@@ -1,0 +1,391 @@
+import logging
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse, Response
+
+from crate.api._deps import library_path, safe_path
+from crate.api.auth import _require_auth
+from crate.api.browse_shared import _YEAR_PREFIX_RE, fs_search, has_library_data
+from crate.db import get_cache, get_db_ctx, set_cache
+
+log = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+@router.get("/api/search")
+def api_search(request: Request, q: str = "", limit: int = 20):
+    _require_auth(request)
+    q_stripped = q.strip()
+    capped_limit = max(1, min(limit, 50))
+    if len(q_stripped) < 2:
+        return {"artists": [], "albums": [], "tracks": []}
+
+    if not has_library_data():
+        result = fs_search(q_stripped)
+        result["tracks"] = []
+        return result
+
+    like = f"%{q_stripped}%"
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT name, album_count, has_photo
+            FROM library_artists
+            WHERE name ILIKE %s
+            ORDER BY listeners DESC NULLS LAST, album_count DESC, name ASC
+            LIMIT %s
+            """,
+            (like, capped_limit),
+        )
+        artist_rows = cur.fetchall()
+        cur.execute(
+            """
+            SELECT id, artist, name, year, has_cover
+            FROM library_albums
+            WHERE name ILIKE %s OR artist ILIKE %s
+            ORDER BY year DESC NULLS LAST, name ASC
+            LIMIT %s
+            """,
+            (like, like, capped_limit),
+        )
+        album_rows = cur.fetchall()
+        cur.execute(
+            """
+            SELECT t.id, t.title, t.artist, a.name AS album, t.path, t.duration, t.navidrome_id
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE t.title ILIKE %s OR t.artist ILIKE %s OR a.name ILIKE %s
+            ORDER BY t.title ASC
+            LIMIT %s
+            """,
+            (like, like, like, capped_limit),
+        )
+        track_rows = cur.fetchall()
+
+    artists = [
+        {
+            "name": row["name"],
+            "album_count": row.get("album_count", 0),
+            "has_photo": bool(row.get("has_photo")),
+        }
+        for row in artist_rows
+    ]
+    albums = [
+        {
+            "id": row["id"],
+            "artist": row["artist"],
+            "name": row["name"],
+            "year": row.get("year") or "",
+            "has_cover": bool(row.get("has_cover")),
+        }
+        for row in album_rows
+    ]
+    tracks = [
+        {
+            "id": row["id"],
+            "title": row["title"],
+            "artist": row["artist"],
+            "album": row["album"],
+            "path": row["path"],
+            "duration": row["duration"],
+            "navidrome_id": row["navidrome_id"],
+        }
+        for row in track_rows
+    ]
+    return {"artists": artists, "albums": albums, "tracks": tracks}
+
+
+@router.get("/api/favorites")
+def api_favorites_list(request: Request):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT item_type, item_id, navidrome_id, created_at FROM favorites ORDER BY created_at DESC")
+        items = [dict(row) for row in cur.fetchall()]
+    return {"items": items}
+
+
+@router.post("/api/favorites/add")
+def api_favorites_add(request: Request, body: dict):
+    _require_auth(request)
+    from datetime import datetime, timezone
+
+    item_id = body.get("item_id", "")
+    item_type = body.get("type", "song")
+    if not item_id:
+        return Response(status_code=400)
+
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            "INSERT INTO favorites (item_type, item_id, created_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+            (item_type, item_id, now),
+        )
+
+    if "/" not in item_id and len(item_id) < 40:
+        try:
+            from crate import navidrome
+
+            navidrome.star(item_id, item_type)
+        except Exception:
+            pass
+    return {"ok": True}
+
+
+@router.post("/api/favorites/remove")
+def api_favorites_remove(request: Request, body: dict):
+    _require_auth(request)
+    item_id = body.get("item_id", "")
+    item_type = body.get("type", "song")
+    if not item_id:
+        return Response(status_code=400)
+
+    with get_db_ctx() as cur:
+        cur.execute("DELETE FROM favorites WHERE item_id = %s AND item_type = %s", (item_id, item_type))
+
+    if "/" not in item_id and len(item_id) < 40:
+        try:
+            from crate import navidrome
+
+            navidrome.unstar(item_id, item_type)
+        except Exception:
+            pass
+    return {"ok": True}
+
+
+@router.post("/api/track/rate")
+def api_rate_track(request: Request, body: dict):
+    _require_auth(request)
+    from crate.db import set_track_rating
+
+    rating = body.get("rating", 0)
+    track_id = body.get("track_id")
+    track_path = body.get("path")
+
+    if not isinstance(rating, int) or not 0 <= rating <= 5:
+        return JSONResponse({"error": "Rating must be 0-5"}, status_code=400)
+
+    if not track_id and track_path:
+        with get_db_ctx() as cur:
+            cur.execute("SELECT id FROM library_tracks WHERE path LIKE %s LIMIT 1", (f"%{track_path}",))
+            row = cur.fetchone()
+            track_id = row["id"] if row else None
+
+    if not track_id:
+        return JSONResponse({"error": "Track not found"}, status_code=404)
+
+    set_track_rating(track_id, rating)
+
+    try:
+        from crate.navidrome import set_navidrome_rating
+
+        set_navidrome_rating(track_id, rating)
+    except Exception:
+        pass
+
+    return {"ok": True, "rating": rating}
+
+
+@router.get("/api/track-info/{filepath:path}")
+def api_track_info(request: Request, filepath: str):
+    _require_auth(request)
+    if filepath.startswith("/music/"):
+        filepath = filepath[len("/music/") :]
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT title, artist, album, bpm, audio_key, audio_scale, energy, "
+            "danceability, valence, acousticness, instrumentalness, loudness, "
+            "dynamic_range, lastfm_listeners, lastfm_playcount, popularity, rating "
+            "FROM library_tracks WHERE path LIKE %s LIMIT 1",
+            (f"%{filepath}",),
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return Response(status_code=404)
+    return dict(row)
+
+
+@router.get("/api/discover/completeness")
+def api_discover_completeness(request: Request):
+    _require_auth(request)
+    cache_key = "discover:completeness"
+    cached = get_cache(cache_key, max_age_seconds=3600)
+    if cached:
+        return cached
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT name, mbid, album_count, has_photo, listeners
+            FROM library_artists
+            WHERE mbid IS NOT NULL AND mbid != ''
+            ORDER BY name
+            """
+        )
+        artists = [dict(row) for row in cur.fetchall()]
+
+    import musicbrainzngs
+
+    musicbrainzngs.set_useragent("grooveyard", "0.1", "https://github.com/grooveyard")
+
+    results = []
+    for artist in artists:
+        try:
+            mb_data = get_cache(f"mb:albums:{artist['mbid']}", max_age_seconds=86400 * 7)
+            if not mb_data:
+                try:
+                    mb_artist = musicbrainzngs.get_artist_by_id(artist["mbid"])["artist"]
+                    mb_name = mb_artist.get("name", "")
+                    from thefuzz import fuzz
+
+                    if fuzz.ratio(artist["name"].lower(), mb_name.lower()) < 70:
+                        log.warning(
+                            "MBID mismatch: %s -> %s (expected %s), skipping",
+                            artist["mbid"],
+                            mb_name,
+                            artist["name"],
+                        )
+                        continue
+                except Exception:
+                    pass
+
+                result = musicbrainzngs.browse_release_groups(
+                    artist=artist["mbid"], release_type=["album"], limit=100
+                )
+                mb_albums = result.get("release-group-list", [])
+                mb_data = {
+                    "count": result.get("release-group-count", len(mb_albums)),
+                    "albums": [
+                        {
+                            "title": release_group.get("title", ""),
+                            "type": release_group.get("primary-type", ""),
+                            "year": release_group.get("first-release-date", "")[:4]
+                            if release_group.get("first-release-date")
+                            else "",
+                        }
+                        for release_group in mb_albums
+                    ],
+                }
+                set_cache(f"mb:albums:{artist['mbid']}", mb_data, ttl=604800)
+
+            mb_count = mb_data["count"]
+            local_count = artist["album_count"] or 0
+            pct = round(local_count / mb_count * 100) if mb_count > 0 else 100
+
+            with get_db_ctx() as cur:
+                cur.execute("SELECT name FROM library_albums WHERE artist = %s", (artist["name"],))
+                local_names = {row["name"].lower() for row in cur.fetchall()}
+                local_clean = {_YEAR_PREFIX_RE.sub("", name).lower() for name in local_names}
+
+            missing = [
+                album
+                for album in mb_data["albums"]
+                if album["title"].lower() not in local_names and album["title"].lower() not in local_clean
+            ]
+
+            results.append(
+                {
+                    "artist": artist["name"],
+                    "has_photo": bool(artist["has_photo"]),
+                    "listeners": artist.get("listeners", 0),
+                    "local_count": local_count,
+                    "mb_count": mb_count,
+                    "pct": min(pct, 100),
+                    "missing": missing[:10],
+                }
+            )
+        except Exception:
+            pass
+
+    results.sort(key=lambda item: item["pct"])
+    set_cache(cache_key, results, ttl=3600)
+    return results
+
+
+@router.get("/api/stream/{filepath:path}")
+def api_stream_file(request: Request, filepath: str):
+    _require_auth(request)
+    from fastapi.responses import FileResponse
+
+    lib = library_path()
+    lib_str = str(lib)
+    if filepath.startswith(lib_str):
+        filepath = filepath[len(lib_str) :].lstrip("/")
+    elif filepath.startswith("/music/"):
+        filepath = filepath[len("/music/") :].lstrip("/")
+    file_path = safe_path(lib, filepath)
+    if not file_path or not file_path.is_file():
+        return Response(status_code=404)
+
+    ext = file_path.suffix.lower()
+    media_types = {
+        ".flac": "audio/flac",
+        ".mp3": "audio/mpeg",
+        ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".opus": "audio/opus",
+        ".wav": "audio/wav",
+    }
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_types.get(ext, "audio/mpeg"),
+        headers={"Accept-Ranges": "bytes"},
+    )
+
+
+@router.get("/api/artist-radio/{name:path}")
+def api_artist_radio(request: Request, name: str, limit: int = 50):
+    _require_auth(request)
+    from crate.bliss import generate_artist_radio
+
+    tracks = generate_artist_radio(name, limit=limit)
+    if not tracks:
+        return JSONResponse({"error": "No bliss data available. Run 'Compute Bliss' first."}, status_code=404)
+    return tracks
+
+
+@router.get("/api/similar-tracks")
+def api_similar_tracks_query(request: Request, path: str = "", track_id: int = 0, limit: int = 20):
+    _require_auth(request)
+    from crate.bliss import get_similar_from_db
+
+    if track_id:
+        with get_db_ctx() as cur:
+            cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
+            row = cur.fetchone()
+            if row:
+                path = row["path"]
+
+    if not path:
+        raise HTTPException(status_code=400, detail="path or track_id required")
+
+    results = get_similar_from_db(path, limit=limit)
+    return {"tracks": results}
+
+
+@router.get("/api/similar-tracks/{filepath:path}")
+def api_similar_tracks(request: Request, filepath: str, limit: int = 20):
+    _require_auth(request)
+    from crate.bliss import get_similar_from_db
+
+    lib = library_path()
+    full_path = safe_path(lib, filepath)
+    if not full_path or not full_path.is_file():
+        return JSONResponse({"error": "Track not found"}, status_code=404)
+    similar = get_similar_from_db(str(full_path), limit=limit)
+    return {"tracks": similar}
+
+
+@router.get("/api/download/track/{filepath:path}")
+def api_download_track(request: Request, filepath: str):
+    _require_auth(request)
+    from fastapi.responses import FileResponse
+
+    lib = library_path()
+    file_path = safe_path(lib, filepath)
+    if not file_path or not file_path.is_file():
+        return Response(status_code=404)
+
+    return FileResponse(path=str(file_path), filename=file_path.name, media_type="application/octet-stream")

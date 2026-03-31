@@ -17,7 +17,8 @@ class SaveAlbumRequest(BaseModel):
     album_id: int
 
 class LikeTrackRequest(BaseModel):
-    track_path: str
+    track_id: int | None = None
+    track_path: str | None = None
 
 class RecordPlayRequest(BaseModel):
     track_path: str
@@ -34,6 +35,41 @@ def my_library(request: Request):
     user = _require_auth(request)
     from crate.db.user_library import get_user_library_counts
     return get_user_library_counts(user["id"])
+
+
+@router.get("/sync")
+def my_sync_status(request: Request):
+    user = _require_auth(request)
+    from crate import navidrome
+    from crate.db import get_user_external_identity
+
+    identity = get_user_external_identity(user["id"], "navidrome")
+    return {
+        "navidrome_connected": navidrome.ping(),
+        "navidrome": identity or {
+            "provider": "navidrome",
+            "status": "unlinked",
+            "external_username": None,
+            "last_error": None,
+            "last_task_id": None,
+            "last_synced_at": None,
+        },
+    }
+
+
+@router.get("/followed-playlists")
+def my_followed_playlists(request: Request):
+    user = _require_auth(request)
+    from crate.db import get_followed_system_playlists, get_playlist_followers_count
+
+    playlists = get_followed_system_playlists(user["id"])
+    results = []
+    for playlist in playlists:
+        item = dict(playlist)
+        item["follower_count"] = get_playlist_followers_count(item["id"])
+        item["is_followed"] = True
+        results.append(item)
+    return results
 
 
 # ── Follows ──────────────────────────────────────────────────
@@ -104,14 +140,16 @@ def list_likes(request: Request, limit: int = 100):
 def like(request: Request, body: LikeTrackRequest):
     user = _require_auth(request)
     from crate.db.user_library import like_track
-    added = like_track(user["id"], body.track_path)
+    added = like_track(user["id"], track_id=body.track_id, track_path=body.track_path)
+    if added is None:
+        raise HTTPException(status_code=404, detail="Track not found")
     return {"ok": True, "added": added}
 
 @router.delete("/likes")
 def unlike(request: Request, body: LikeTrackRequest):
     user = _require_auth(request)
     from crate.db.user_library import unlike_track
-    removed = unlike_track(user["id"], body.track_path)
+    removed = unlike_track(user["id"], track_id=body.track_id, track_path=body.track_path)
     return {"ok": True, "removed": removed}
 
 
