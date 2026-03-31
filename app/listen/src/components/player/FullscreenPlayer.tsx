@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { useEscapeKey } from "@/hooks/use-escape-key";
 import { formatDuration } from "@/lib/utils";
 
 interface FullscreenPlayerProps {
@@ -62,6 +63,16 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       return () => clearTimeout(timer);
     }
   }, [open]);
+
+  useEscapeKey(visible, (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (showQueue) {
+      setShowQueue(false);
+      return;
+    }
+    onClose();
+  });
 
   const handleSeek = useCallback(
     (clientX: number) => {

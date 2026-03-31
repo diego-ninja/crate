@@ -1,18 +1,21 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronDown, X, Loader2, Star, Settings } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { api } from "@/lib/api";
 import { extractPalette } from "@/lib/palette";
 import {
-  getVisualizerModePreference,
   getUseAlbumPalettePreference,
+  getVisualizerEnabledPreference,
+  getVisualizerSettingsPreference,
+  DEFAULT_VISUALIZER_SETTINGS,
   PLAYER_VIZ_PREFS_EVENT,
   setUseAlbumPalettePreference,
-  setVisualizerModePreference,
-  type VisualizerMode,
+  setVisualizerEnabledPreference,
+  setVisualizerSettingsPreference,
 } from "@/lib/player-visualizer-prefs";
 import { formatDuration, formatCompact } from "@/lib/utils";
+import { useEscapeKey } from "@/hooks/use-escape-key";
 
 // ── Types ──
 
@@ -575,29 +578,25 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "info", label: "Info" },
 ];
 
-const VIZ_DEFAULTS = { separation: 0.15, glow: 6.0, scale: 1.4, persistence: 0.8, octaves: 2 };
-const VISUALIZER_MODES: Array<{ id: VisualizerMode; label: string }> = [
-  { id: "spheres", label: "Spheres" },
-  { id: "halo", label: "Halo" },
-];
+const VIZ_DEFAULTS = DEFAULT_VISUALIZER_SETTINGS;
 
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   usePlayer(); // subscribe to state updates for child components
   const { currentTrack, audioElement } = usePlayerActions();
   const [tab, setTab] = useState<TabId>("queue");
   const [showVizSettings, setShowVizSettings] = useState(false);
-  const [vizConfig, setVizConfig] = useState(VIZ_DEFAULTS);
+  const [vizConfig, setVizConfig] = useState(getVisualizerSettingsPreference);
   const [useAlbumPalette, setUseAlbumPalette] = useState(getUseAlbumPalettePreference);
-  const [visualizerMode, setVisualizerMode] = useState<VisualizerMode>(getVisualizerModePreference);
-  const [vizEnabled, setVizEnabled] = useState(true);
+  const [vizEnabled, setVizEnabled] = useState(getVisualizerEnabledPreference);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const vizRef = useMusicVisualizer(canvasRef, audioElement, open && vizEnabled, visualizerMode);
+  const vizRef = useMusicVisualizer(canvasRef, audioElement, open && vizEnabled);
 
   useEffect(() => {
     const syncPreference = () => {
       setUseAlbumPalette(getUseAlbumPalettePreference());
-      setVisualizerMode(getVisualizerModePreference());
+      setVizConfig(getVisualizerSettingsPreference());
+      setVizEnabled(getVisualizerEnabledPreference());
     };
     window.addEventListener("storage", syncPreference);
     window.addEventListener(PLAYER_VIZ_PREFS_EVENT, syncPreference as EventListener);
@@ -606,6 +605,13 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
       window.removeEventListener(PLAYER_VIZ_PREFS_EVENT, syncPreference as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (!showVizSettings) return;
+    setUseAlbumPalette(getUseAlbumPalettePreference());
+    setVizConfig(getVisualizerSettingsPreference());
+    setVizEnabled(getVisualizerEnabledPreference());
+  }, [showVizSettings]);
 
   // Extract palette from album cover and apply to visualizer
   useEffect(() => {
@@ -662,17 +668,24 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
     return () => clearTimeout(t);
   }, [vizConfig, vizRef, open]);
 
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  const handleEscape = useCallback((event: KeyboardEvent) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (showVizSettings) {
+      setShowVizSettings(false);
+      return;
+    }
+    onClose();
+  }, [onClose, showVizSettings]);
+
+  useEscapeKey(open, handleEscape);
 
   if (!currentTrack) return null;
+
+  const updateVizConfig = (next: typeof vizConfig) => {
+    setVizConfig(next);
+    setVisualizerSettingsPreference(next);
+  };
 
   return (
     <div
@@ -706,7 +719,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
             <div className="flex items-center justify-between mb-1">
               <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">Visualizer</span>
               <button
-                onClick={() => setVizConfig(VIZ_DEFAULTS)}
+                onClick={() => updateVizConfig(VIZ_DEFAULTS)}
                 className="text-[10px] text-primary hover:underline"
               >
                 Reset
@@ -715,7 +728,11 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-white/50">Enabled</span>
               <button
-                onClick={() => setVizEnabled(!vizEnabled)}
+                onClick={() => {
+                  const next = !vizEnabled;
+                  setVizEnabled(next);
+                  setVisualizerEnabledPreference(next);
+                }}
                 className={`w-9 h-5 rounded-full transition-colors ${vizEnabled ? "bg-primary" : "bg-white/20"}`}
               >
                 <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${vizEnabled ? "translate-x-4.5" : "translate-x-0.5"}`} />
@@ -734,27 +751,6 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
                 <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${useAlbumPalette ? "translate-x-4.5" : "translate-x-0.5"}`} />
               </button>
             </div>
-            <div>
-              <div className="mb-2 text-[11px] text-white/50">Mode</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {VISUALIZER_MODES.map((mode) => (
-                  <button
-                    key={mode.id}
-                    onClick={() => {
-                      setVisualizerMode(mode.id);
-                      setVisualizerModePreference(mode.id);
-                    }}
-                    className={`rounded-lg px-2 py-1.5 text-[11px] transition-colors ${
-                      visualizerMode === mode.id
-                        ? "bg-primary/15 text-primary"
-                        : "bg-white/5 text-white/55 hover:bg-white/10 hover:text-white/80"
-                    }`}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
-            </div>
             {([
               { key: "separation" as const, label: "Separation", min: 0, max: 0.5, step: 0.01 },
               { key: "glow" as const, label: "Glow", min: 0, max: 15, step: 0.5 },
@@ -771,7 +767,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
                   type="range"
                   min={min} max={max} step={step}
                   value={vizConfig[key]}
-                  onChange={(e) => setVizConfig({ ...vizConfig, [key]: parseFloat(e.target.value) })}
+                  onChange={(e) => updateVizConfig({ ...vizConfig, [key]: parseFloat(e.target.value) })}
                   className="w-full h-1 accent-cyan-400"
                 />
               </div>

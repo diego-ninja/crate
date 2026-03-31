@@ -12,7 +12,7 @@ export function useMusicVisualizer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   audioElement: HTMLAudioElement | null,
   active: boolean,
-  mode: VisualizerMode,
+  mode: VisualizerMode = "spheres",
 ) {
   const vizRef = useRef<MusicVisualizer | null>(null);
 

@@ -4,6 +4,7 @@ import { Clock, Disc, Heart, ListPlus, MoreHorizontal, Play, Share2, Shuffle, Us
 import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
+import { useEscapeKey } from "@/hooks/use-escape-key";
 import { api } from "@/lib/api";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
@@ -112,6 +113,13 @@ export function Album() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [menuOpen]);
+
+  useEscapeKey(menuOpen || playlistPickerOpen, (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setMenuOpen(false);
+    setPlaylistPickerOpen(false);
+  });
 
   if (loading) {
     return (

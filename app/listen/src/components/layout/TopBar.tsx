@@ -4,6 +4,7 @@ import { Search, Loader2, User, LogOut, Settings, X, Disc, Music } from "lucide-
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useUserSync } from "@/contexts/UserSyncContext";
+import { useEscapeKey } from "@/hooks/use-escape-key";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -161,6 +162,16 @@ export function TopBar() {
     },
     [],
   );
+
+  const handleEscape = useCallback((event: KeyboardEvent) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setShowDropdown(false);
+    setShowUserMenu(false);
+    inputRef.current?.blur();
+  }, []);
+
+  useEscapeKey(showDropdown || showUserMenu, handleEscape);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     const items = query.trim() ? results : recents.map((r) => ({ label: r }));

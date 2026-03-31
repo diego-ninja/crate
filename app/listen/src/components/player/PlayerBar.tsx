@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
@@ -8,6 +8,7 @@ import {
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
+import { useEscapeKey } from "@/hooks/use-escape-key";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
@@ -76,6 +77,17 @@ export function PlayerBar() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [showMenu]);
+
+  const handleEscape = useCallback((event: KeyboardEvent) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    setShowMenu(false);
+    setShowVolume(false);
+    setShowQueue(false);
+    setShowLyrics(false);
+  }, []);
+
+  useEscapeKey(showMenu || showVolume || showQueue || showLyrics, handleEscape);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const pseudoBars = useMemo(() => currentTrack ? generateBars(currentTrack.id, 80) : [], [currentTrack?.id]);
