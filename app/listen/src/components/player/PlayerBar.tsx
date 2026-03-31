@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
@@ -8,7 +8,8 @@ import {
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
-import { useEscapeKey } from "@/hooks/use-escape-key";
+import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
+import { AppMenuButton, AppPopover } from "@/components/ui/AppPopover";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
@@ -66,28 +67,36 @@ export function PlayerBar() {
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const volumeRef = useRef<HTMLDivElement>(null);
+  const volumeButtonRef = useRef<HTMLButtonElement>(null);
   const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
 
-  // Close menu on outside click
-  useEffect(() => {
-    if (!showMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showMenu]);
+  useDismissibleLayer({
+    active: showMenu,
+    refs: [menuRef, menuButtonRef],
+    onDismiss: () => setShowMenu(false),
+    closeOnEscape: false,
+  });
 
-  const handleEscape = useCallback((event: KeyboardEvent) => {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    setShowMenu(false);
-    setShowVolume(false);
-    setShowQueue(false);
-    setShowLyrics(false);
-  }, []);
+  useDismissibleLayer({
+    active: showVolume,
+    refs: [volumeRef, volumeButtonRef],
+    onDismiss: () => setShowVolume(false),
+    closeOnEscape: false,
+  });
 
-  useEscapeKey(showMenu || showVolume || showQueue || showLyrics, handleEscape);
+  useDismissibleLayer({
+    active: showMenu || showVolume || showQueue || showLyrics,
+    refs: [],
+    onDismiss: () => {
+      setShowMenu(false);
+      setShowVolume(false);
+      setShowQueue(false);
+      setShowLyrics(false);
+    },
+    closeOnPointerDownOutside: false,
+  });
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const pseudoBars = useMemo(() => currentTrack ? generateBars(currentTrack.id, 80) : [], [currentTrack?.id]);
@@ -154,13 +163,14 @@ export function PlayerBar() {
             {/* Menu */}
             <div className="relative" ref={menuRef}>
               <button
+                ref={menuButtonRef}
                 onClick={() => setShowMenu(!showMenu)}
                 className="shrink-0 p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60"
               >
                 <MoreHorizontal size={16} />
               </button>
               {showMenu && currentTrack && (
-                <div className="absolute bottom-full left-0 mb-2 w-52 bg-[#16161e] border border-white/10 rounded-xl shadow-2xl py-1.5 z-[60]">
+                <AppPopover ref={menuRef} className="absolute bottom-full left-0 z-[60] mb-2 w-52 py-1.5">
                   {[
                     { icon: Plus, label: "Add to playlist", action: () => toast.info("Coming soon") },
                     { icon: Disc, label: "Add to my collection", action: () => {
@@ -175,16 +185,16 @@ export function PlayerBar() {
                       navigator.clipboard.writeText(`${currentTrack.title} - ${currentTrack.artist}`).then(() => toast.success("Copied to clipboard")).catch(() => {});
                     }},
                   ].map(({ icon: Icon, label, action }) => (
-                    <button
+                    <AppMenuButton
                       key={label}
                       onClick={() => { action(); setShowMenu(false); }}
-                      className="w-full flex items-center gap-3 px-4 py-2 text-[13px] text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+                      className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
                     >
                       <Icon size={14} className="text-white/40 shrink-0" />
                       {label}
-                    </button>
+                    </AppMenuButton>
                   ))}
-                </div>
+                </AppPopover>
               )}
             </div>
           </div>
@@ -283,13 +293,14 @@ export function PlayerBar() {
             {/* Volume */}
             <div className="relative flex items-center">
               <button
+                ref={volumeButtonRef}
                 onClick={() => setShowVolume(!showVolume)}
                 className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60"
               >
                 {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
               {showVolume && (
-                <div className="absolute bottom-full left-1/2 z-[90] -translate-x-1/2 mb-2 bg-[#16161e] border border-white/10 rounded-lg p-2 shadow-2xl">
+                <AppPopover ref={volumeRef} className="absolute bottom-full left-1/2 z-[90] -translate-x-1/2 mb-2 rounded-lg p-2">
                   <input
                     type="range"
                     min={0} max={1} step={0.01}
@@ -298,7 +309,7 @@ export function PlayerBar() {
                     className="w-24 accent-cyan-400 h-1"
                     style={{ writingMode: "horizontal-tb" }}
                   />
-                </div>
+                </AppPopover>
               )}
             </div>
 

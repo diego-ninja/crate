@@ -356,6 +356,12 @@ Follow-up architectural decision:
   - `app/listen/src/pages/Artist.tsx`, `app/listen/src/pages/Explore.tsx`, and `app/listen/src/pages/Library.tsx` now pass album ids into album cards where available
   - verified with `cd app/listen && npm run build`
   - rebuilt local dev API container so album ids are active in backend responses
+- extracted reusable overlay primitives for `listen`:
+  - added `app/listen/src/components/ui/AppPopover.tsx` for shared popover/menu surfaces
+  - added `app/listen/src/hooks/use-dismissible-layer.ts` for shared outside-click + Escape dismissal behavior
+  - applied the shared primitives to `TopBar`, `PlayerBar`, `Album`, and `ExtendedPlayer`
+  - visual treatment and dismissal behavior are now more consistent across the main custom dropdown/popover surfaces
+  - verified with `cd app/listen && npm run build`
 
 ### In Progress
 

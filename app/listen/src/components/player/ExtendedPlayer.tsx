@@ -14,6 +14,8 @@ import {
   setVisualizerEnabledPreference,
   setVisualizerSettingsPreference,
 } from "@/lib/player-visualizer-prefs";
+import { AppPopover } from "@/components/ui/AppPopover";
+import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { formatDuration, formatCompact } from "@/lib/utils";
 import { useEscapeKey } from "@/hooks/use-escape-key";
 
@@ -590,6 +592,8 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const [vizEnabled, setVizEnabled] = useState(getVisualizerEnabledPreference);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const vizSettingsRef = useRef<HTMLDivElement>(null);
+  const vizSettingsButtonRef = useRef<HTMLButtonElement>(null);
   const vizRef = useMusicVisualizer(canvasRef, audioElement, open && vizEnabled);
 
   useEffect(() => {
@@ -612,6 +616,13 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
     setVizConfig(getVisualizerSettingsPreference());
     setVizEnabled(getVisualizerEnabledPreference());
   }, [showVizSettings]);
+
+  useDismissibleLayer({
+    active: showVizSettings,
+    refs: [vizSettingsRef, vizSettingsButtonRef],
+    onDismiss: () => setShowVizSettings(false),
+    closeOnEscape: false,
+  });
 
   // Extract palette from album cover and apply to visualizer
   useEffect(() => {
@@ -706,6 +717,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
             <ChevronDown size={20} />
           </button>
           <button
+            ref={vizSettingsButtonRef}
             onClick={() => setShowVizSettings(!showVizSettings)}
             className={`p-2 rounded-full backdrop-blur-sm transition-colors ${showVizSettings ? "bg-primary/20 text-primary" : "bg-black/30 text-white/40 hover:text-white/70"}`}
           >
@@ -715,7 +727,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
 
         {/* Visualizer settings popup */}
         {showVizSettings && (
-          <div className="absolute top-14 right-4 z-40 w-56 bg-[#12121a]/95 backdrop-blur-xl border border-white/10 rounded-xl p-4 shadow-2xl space-y-3">
+          <AppPopover ref={vizSettingsRef} className="absolute top-14 right-4 z-40 w-56 p-4 space-y-3">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">Visualizer</span>
               <button
@@ -772,7 +784,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
                 />
               </div>
             ))}
-          </div>
+          </AppPopover>
         )}
 
         {/* Cover art — centered, B/W + darkened */}

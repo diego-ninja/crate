@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import { Clock, Disc, Heart, ListPlus, MoreHorizontal, Play, Share2, Shuffle, User } from "lucide-react";
 import { toast } from "sonner";
 
+import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
 import { useApi } from "@/hooks/use-api";
-import { useEscapeKey } from "@/hooks/use-escape-key";
+import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { api } from "@/lib/api";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
@@ -102,23 +103,13 @@ export function Album() {
   );
   const { data: playlists } = useApi<Playlist[]>("/api/playlists");
 
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const handleClick = (event: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setMenuOpen(false);
-        setPlaylistPickerOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [menuOpen]);
-
-  useEscapeKey(menuOpen || playlistPickerOpen, (event) => {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    setMenuOpen(false);
-    setPlaylistPickerOpen(false);
+  useDismissibleLayer({
+    active: menuOpen || playlistPickerOpen,
+    refs: [menuRef],
+    onDismiss: () => {
+      setMenuOpen(false);
+      setPlaylistPickerOpen(false);
+    },
   });
 
   if (loading) {
@@ -388,7 +379,7 @@ export function Album() {
             More
           </button>
           {menuOpen && (
-            <div className="absolute top-full left-0 mt-2 w-72 rounded-2xl border border-white/10 bg-[#12121a]/95 backdrop-blur-xl shadow-2xl z-30 overflow-hidden">
+            <AppPopover className="absolute top-full left-0 z-30 mt-2 w-72 overflow-hidden rounded-2xl">
               <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
                 <div className="w-12 h-12 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
                   {data.has_cover ? (
@@ -406,8 +397,7 @@ export function Album() {
               </div>
 
               <div className="p-1.5">
-                <button
-                  className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+                <AppMenuButton
                   onClick={() => {
                     handlePlay();
                     setMenuOpen(false);
@@ -415,16 +405,15 @@ export function Album() {
                 >
                   <Play size={15} />
                   Play now
-                </button>
-                <button
-                  className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+                </AppMenuButton>
+                <AppMenuButton
                   onClick={handlePlayNextAlbum}
                 >
                   <ListPlus size={15} />
                   Play next
-                </button>
-                <button
-                  className="w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+                </AppMenuButton>
+                <AppMenuButton
+                  className="justify-between"
                   onClick={() => setPlaylistPickerOpen((open) => !open)}
                 >
                   <span className="flex items-center gap-3">
@@ -432,7 +421,7 @@ export function Album() {
                     Add to playlist
                   </span>
                   <span className="text-white/35">{playlistPickerOpen ? "−" : "+"}</span>
-                </button>
+                </AppMenuButton>
                 {playlistPickerOpen && (
                   <div className="px-3 pb-2 space-y-1">
                     <button
@@ -442,7 +431,7 @@ export function Album() {
                       Add new playlist
                     </button>
                     {playlists && playlists.length > 0 ? (
-                      <div className="mx-1 h-px bg-white/10" />
+                      <AppPopoverDivider className="mx-1" />
                     ) : null}
                     {playlists && playlists.length > 0 ? (
                       playlists.map((playlist) => (
@@ -459,8 +448,7 @@ export function Album() {
                     )}
                   </div>
                 )}
-                <button
-                  className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+                <AppMenuButton
                   onClick={async () => {
                     await handleToggleSaved();
                     setMenuOpen(false);
@@ -468,9 +456,8 @@ export function Album() {
                 >
                   <Heart size={15} className={saved ? "fill-current text-primary" : ""} />
                   {saved ? "Remove from my collection" : "Add to my collection"}
-                </button>
-                <button
-                  className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+                </AppMenuButton>
+                <AppMenuButton
                   onClick={() => {
                     navigate(`/artist/${encPath(data.artist)}`);
                     setMenuOpen(false);
@@ -478,9 +465,8 @@ export function Album() {
                 >
                   <User size={15} />
                   Go to artist
-                </button>
-                <button
-                  className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+                </AppMenuButton>
+                <AppMenuButton
                   onClick={async () => {
                     await handleShare();
                     setMenuOpen(false);
@@ -488,9 +474,9 @@ export function Album() {
                 >
                   <Share2 size={15} />
                   Share
-                </button>
+                </AppMenuButton>
               </div>
-            </div>
+            </AppPopover>
           )}
         </div>
       </div>
