@@ -579,7 +579,6 @@ const VIZ_DEFAULTS = { separation: 0.15, glow: 6.0, scale: 1.4, persistence: 0.8
 const VISUALIZER_MODES: Array<{ id: VisualizerMode; label: string }> = [
   { id: "spheres", label: "Spheres" },
   { id: "halo", label: "Halo" },
-  { id: "tunnel", label: "Tunnel" },
 ];
 
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
@@ -629,9 +628,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
 
     if (!currentTrack?.albumCover) return;
     let cancelled = false;
-    import("@/lib/palette").then(({ extractPalette }) =>
-      extractPalette(currentTrack.albumCover!)
-    ).then(([c1, c2, c3]) => {
+    extractPalette(currentTrack.albumCover!).then(([c1, c2, c3]) => {
       if (cancelled) return;
       const apply = () => {
         if (vizRef.current) {
@@ -739,7 +736,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
             </div>
             <div>
               <div className="mb-2 text-[11px] text-white/50">Mode</div>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-2 gap-1.5">
                 {VISUALIZER_MODES.map((mode) => (
                   <button
                     key={mode.id}

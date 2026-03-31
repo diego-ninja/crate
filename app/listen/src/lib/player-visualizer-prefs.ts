@@ -29,8 +29,11 @@ export function setUseAlbumPalettePreference(value: boolean) {
 export function getVisualizerModePreference(): VisualizerMode {
   try {
     const raw = localStorage.getItem(VISUALIZER_MODE_KEY);
-    if (raw === "halo" || raw === "tunnel" || raw === "spheres") {
+    if (raw === "halo" || raw === "spheres") {
       return raw;
+    }
+    if (raw === "tunnel") {
+      localStorage.setItem(VISUALIZER_MODE_KEY, DEFAULT_VISUALIZER_MODE);
     }
   } catch {
     // ignore storage failures

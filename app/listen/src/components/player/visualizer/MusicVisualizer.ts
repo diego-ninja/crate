@@ -252,9 +252,9 @@ export class MusicVisualizer {
     switch (this.mode) {
       case "halo":
         this.camera.position = vec3.fromValues(
-          Math.sin(this.time * 0.004) * 0.15,
-          Math.cos(this.time * 0.0035) * 0.12,
-          4.6 - metrics.pulse * 0.12,
+          Math.sin(this.time * 0.0034) * 0.2 + Math.cos(this.time * 0.0018) * 0.05,
+          Math.cos(this.time * 0.0031) * 0.14,
+          4.35 - metrics.low * 0.12,
         );
         break;
       case "tunnel":
@@ -295,33 +295,163 @@ export class MusicVisualizer {
   }
 
   private renderHaloScene(metrics: AudioMetrics) {
-    const pulse = 1 + metrics.pulse * 0.18;
-    const defs = [
-      { scale: 1.85 * pulse, rotate: [Math.PI / 2, 0, this.time * 0.004], translate: [0, 0, -0.45], color: this.color1, noise: 1.55 },
-      { scale: 1.55 + metrics.mid * 0.25, rotate: [1.05, this.time * 0.003, this.time * 0.002], translate: [0, 0, -0.2], color: mixColor(this.color1, this.color2, 0.45), noise: 1.3 },
-      { scale: 1.22 + metrics.high * 0.2, rotate: [0.35, 1.15, -this.time * 0.0028], translate: [0, 0, 0], color: this.color2, noise: 1.15 },
-      { scale: 0.92 + metrics.low * 0.16, rotate: [2.1, 0.8, this.time * 0.0035], translate: [0, 0, 0.2], color: mixColor(this.color2, this.color3, 0.55), noise: 0.95 },
-      { scale: 0.68 + metrics.mid * 0.12, rotate: [0.75, 0.3, -this.time * 0.005], translate: [0, 0, 0.38], color: this.color3, noise: 0.8 },
-    ] as const;
-
     this.line.setTime(this.time);
     this.line.setAudio(metrics.freqAvg, metrics.timeAvg);
+    const white: [number, number, number] = [1, 1, 1];
+    const cyanLift = mixColor(this.color1, white, 0.22);
+    const pearlLift = mixColor(this.color2, white, 0.32);
+    const deepLift = mixColor(this.color3, white, 0.16);
+    const pulse = 1 + metrics.low * 0.22;
+    const shimmer = 0.5 + 0.5 * Math.sin(this.time * 0.018);
+    const iris = 0.5 + 0.5 * Math.cos(this.time * 0.014);
 
-    defs.forEach((def, index) => {
+    const haloRings = [
+      {
+        scale: 2.32 + metrics.low * 0.28,
+        translate: [0, 0, -0.82] as [number, number, number],
+        rotate: [Math.PI / 2, this.time * 0.0018, this.time * 0.0026] as [number, number, number],
+        color: mixColor(deepLift, this.color1, 0.55),
+        noiseScale: 1.75,
+        persistence: 0.16,
+        octaves: 1.8,
+        offset: -0.028,
+      },
+      {
+        scale: 2.04 * pulse,
+        translate: [0, 0, -0.46] as [number, number, number],
+        rotate: [1.34, this.time * 0.0032, this.time * 0.0039] as [number, number, number],
+        color: cyanLift,
+        noiseScale: 1.52,
+        persistence: 0.24,
+        octaves: 2.2,
+        offset: -0.02,
+      },
+      {
+        scale: 1.72 + metrics.mid * 0.22,
+        translate: [0, 0, -0.12] as [number, number, number],
+        rotate: [0.42, 1.08 + shimmer * 0.12, -this.time * 0.0031] as [number, number, number],
+        color: mixColor(this.color1, pearlLift, 0.55),
+        noiseScale: 1.24,
+        persistence: 0.34,
+        octaves: 2.7,
+        offset: -0.008,
+      },
+      {
+        scale: 1.36 + metrics.high * 0.18,
+        translate: [0, 0, 0.18] as [number, number, number],
+        rotate: [2.08, 0.56 + iris * 0.16, this.time * 0.0037] as [number, number, number],
+        color: pearlLift,
+        noiseScale: 1.04,
+        persistence: 0.42,
+        octaves: 3.1,
+        offset: 0.012,
+      },
+      {
+        scale: 1.04 + metrics.low * 0.12,
+        translate: [0, 0, 0.44] as [number, number, number],
+        rotate: [0.84, 0.28, -this.time * 0.0054] as [number, number, number],
+        color: mixColor(this.color2, white, 0.18),
+        noiseScale: 0.88,
+        persistence: 0.52,
+        octaves: 3.4,
+        offset: 0.02,
+      },
+    ] as const;
+
+    haloRings.forEach((ring, index) => {
       this.line.setNoise(
-        this.scale * def.noise,
-        this.persistence * (0.22 + index * 0.1),
-        1.5 + this.octaves + index * 0.35,
-        -0.018 + index * 0.012,
+        this.scale * ring.noiseScale,
+        Math.max(0.08, this.persistence * ring.persistence),
+        ring.octaves + this.octaves * 0.2,
+        ring.offset,
       );
-      this.line.setGeometryColor(vec4.fromValues(def.color[0], def.color[1], def.color[2], 1.0));
-      const model = this.createModel({
-        scale: def.scale,
-        translate: def.translate as [number, number, number],
-        rotate: def.rotate as [number, number, number],
-      });
-      this.renderer.renderWithModel(this.camera, this.line, [this.ring], model);
+      this.line.setGeometryColor(vec4.fromValues(ring.color[0], ring.color[1], ring.color[2], 1.0));
+      this.renderer.renderWithModel(
+        this.camera,
+        this.line,
+        [this.ring],
+        this.createModel({
+          scale: ring.scale,
+          translate: ring.translate,
+          rotate: ring.rotate,
+        }),
+      );
+
+      if (index >= 1 && index <= 3) {
+        const echoColor = mixColor(ring.color, white, 0.1);
+        this.line.setNoise(
+          this.scale * (ring.noiseScale * 0.78),
+          Math.max(0.08, this.persistence * (ring.persistence * 0.82)),
+          ring.octaves + 0.6,
+          ring.offset + 0.01,
+        );
+        this.line.setGeometryColor(vec4.fromValues(echoColor[0], echoColor[1], echoColor[2], 1.0));
+        this.renderer.renderWithModel(
+          this.camera,
+          this.line,
+          [this.ring],
+          this.createModel({
+            scale: ring.scale * (0.92 + index * 0.01),
+            translate: [ring.translate[0], ring.translate[1], ring.translate[2] + 0.08],
+            rotate: [ring.rotate[0] + 0.08, ring.rotate[1] - 0.1, ring.rotate[2] + 0.16],
+          }),
+        );
+      }
     });
+
+    const orbitColorA = mixColor(this.color1, white, 0.2);
+    const orbitColorB = mixColor(this.color2, this.color3, 0.45);
+    const orbitDrift = Math.sin(this.time * 0.01) * 0.08;
+
+    this.line.setNoise(this.scale * 0.9, this.persistence * 0.44, 3.1, 0.026);
+    this.line.setGeometryColor(vec4.fromValues(orbitColorA[0], orbitColorA[1], orbitColorA[2], 1.0));
+    this.renderer.renderWithModel(
+      this.camera,
+      this.line,
+      [this.ring],
+      this.createModel({
+        scale: 0.72 + metrics.mid * 0.08,
+        translate: [0.34 + orbitDrift, 0.18, 0.28],
+        rotate: [1.24, 0.52, this.time * 0.0072],
+      }),
+    );
+
+    this.line.setNoise(this.scale * 0.84, this.persistence * 0.36, 2.8, -0.024);
+    this.line.setGeometryColor(vec4.fromValues(orbitColorB[0], orbitColorB[1], orbitColorB[2], 1.0));
+    this.renderer.renderWithModel(
+      this.camera,
+      this.line,
+      [this.ring],
+      this.createModel({
+        scale: 0.66 + metrics.high * 0.06,
+        translate: [-0.32 - orbitDrift * 0.7, -0.14, 0.16],
+        rotate: [0.96, 0.28, -this.time * 0.0064],
+      }),
+    );
+
+    this.line.setNoise(this.scale * 1.18, this.persistence * 0.32, 2.9 + this.octaves * 0.18, -0.014);
+    this.line.setGeometryColor(vec4.fromValues(cyanLift[0], cyanLift[1], cyanLift[2], 1.0));
+    this.renderer.renderWithModel(
+      this.camera,
+      this.line,
+      [this.sphere2],
+      this.createModel({
+        scale: 0.92 + metrics.low * 0.08,
+        rotate: [this.time * 0.0022, this.time * 0.0028, 0],
+      }),
+    );
+
+    this.line.setNoise(this.scale * 0.78, this.persistence * 0.56, 3.8 + this.octaves * 0.1, 0.034);
+    this.line.setGeometryColor(vec4.fromValues(pearlLift[0], pearlLift[1], pearlLift[2], 1.0));
+    this.renderer.renderWithModel(
+      this.camera,
+      this.line,
+      [this.sphere1],
+      this.createModel({
+        scale: 0.56 + metrics.mid * 0.06 + shimmer * 0.02,
+        rotate: [0, -this.time * 0.0038, this.time * 0.0024],
+      }),
+    );
   }
 
   private renderTunnelScene(metrics: AudioMetrics) {
