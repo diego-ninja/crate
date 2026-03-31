@@ -31,6 +31,18 @@ interface Playlist {
   created_at: string;
 }
 
+interface CuratedPlaylist {
+  id: number;
+  name: string;
+  description?: string;
+  cover_data_url?: string | null;
+  artwork_tracks?: PlaylistArtworkTrack[];
+  track_count: number;
+  follower_count: number;
+  is_smart: boolean;
+  category?: string | null;
+}
+
 interface FollowedArtist {
   artist_name: string;
   created_at: string;
@@ -98,9 +110,10 @@ function StatBox({ value, label }: { value: number; label: string }) {
 function PlaylistsTab() {
   const navigate = useNavigate();
   const { data: playlists, loading } = useApi<Playlist[]>("/api/playlists");
+  const { data: followedCurated, loading: followedLoading } = useApi<CuratedPlaylist[]>("/api/curation/followed");
   const { openCreatePlaylist } = usePlaylistComposer();
 
-  if (loading) return <Spinner />;
+  if (loading || followedLoading) return <Spinner />;
 
   return (
     <div className="space-y-3">
@@ -112,10 +125,51 @@ function PlaylistsTab() {
         New Playlist
       </button>
 
+      {followedCurated && followedCurated.length > 0 ? (
+        <div className="space-y-1">
+          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-white/35">
+            From Crate
+          </div>
+          {followedCurated.map((playlist) => (
+            <button
+              key={`curated-${playlist.id}`}
+              onClick={() => navigate(`/curation/playlist/${playlist.id}`)}
+              className="flex items-center gap-3 w-full rounded-lg px-3 py-3 hover:bg-white/5 transition-colors text-left"
+            >
+              <PlaylistArtwork
+                name={playlist.name}
+                coverDataUrl={playlist.cover_data_url}
+                tracks={playlist.artwork_tracks}
+                className="w-10 h-10 rounded-md flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-foreground truncate">{playlist.name}</span>
+                  <span className="inline-flex items-center rounded-md border border-primary/30 text-primary text-[10px] px-1.5 py-0 font-medium">
+                    <Sparkles size={10} className="mr-0.5" />
+                    {playlist.is_smart ? "Smart" : "Curated"}
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {playlist.track_count} track{playlist.track_count !== 1 ? "s" : ""}
+                  {playlist.category ? ` · ${playlist.category}` : ""}
+                  {playlist.follower_count > 0 ? ` · ${playlist.follower_count} follower${playlist.follower_count !== 1 ? "s" : ""}` : ""}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {!playlists || playlists.length === 0 ? (
-        <EmptyState message="No playlists yet. Create one to get started." />
+        !followedCurated || followedCurated.length === 0 ? (
+          <EmptyState message="No playlists yet. Create one to get started." />
+        ) : null
       ) : (
         <div className="space-y-1">
+          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-white/35">
+            Your Playlists
+          </div>
           {playlists.map((pl) => (
             <button
               key={pl.id}

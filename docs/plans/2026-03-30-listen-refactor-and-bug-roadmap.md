@@ -362,6 +362,14 @@ Follow-up architectural decision:
   - applied the shared primitives to `TopBar`, `PlayerBar`, `Album`, and `ExtendedPlayer`
   - visual treatment and dismissal behavior are now more consistent across the main custom dropdown/popover surfaces
   - verified with `cd app/listen && npm run build`
+- redesigned `Home` into a real listening surface and started consuming system playlists:
+  - `app/listen/src/pages/Home.tsx` now prioritizes continuity (`Continue Listening`), global system playlists (`From Crate`), and personal/library surfaces instead of utility quick-links
+  - added `app/listen/src/pages/CuratedPlaylist.tsx` as a dedicated read-only system-playlist page with play, shuffle, follow/unfollow, and track listing
+  - `app/listen/src/App.tsx` now routes `listen` to `/curation/playlist/:id`
+  - `app/listen/src/pages/Library.tsx` now shows followed system playlists alongside personal playlists
+  - `app/crate/api/curation.py` now exposes active system playlists to `listen`, not only `is_curated = true`, so admin-created smart playlists can surface in the app
+  - verified with `cd app/listen && npm run build`
+  - rebuilt local dev API container so the new curation behavior is active
 
 ### In Progress
 

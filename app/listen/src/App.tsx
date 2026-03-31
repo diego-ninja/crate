@@ -24,6 +24,9 @@ const Album = React.lazy(() =>
 const Playlist = React.lazy(() =>
   import("@/pages/Playlist").then((m) => ({ default: m.Playlist })),
 );
+const CuratedPlaylist = React.lazy(() =>
+  import("@/pages/CuratedPlaylist").then((m) => ({ default: m.CuratedPlaylist })),
+);
 
 function Spinner() {
   return (
@@ -91,6 +94,14 @@ export function App() {
                       element={
                         <Suspense fallback={<Spinner />}>
                           <Playlist />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="curation/playlist/:id"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <CuratedPlaylist />
                         </Suspense>
                       }
                     />
