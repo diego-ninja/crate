@@ -421,6 +421,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({
+            track_id: endedTrack.libraryTrackId ?? null,
             track_path: endedTrack.path || endedTrack.id,
             title: endedTrack.title,
             artist: endedTrack.artist,

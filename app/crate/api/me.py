@@ -21,6 +21,7 @@ class LikeTrackRequest(BaseModel):
     track_path: str | None = None
 
 class RecordPlayRequest(BaseModel):
+    track_id: int | None = None
     track_path: str
     title: str = ""
     artist: str = ""
@@ -165,7 +166,14 @@ def history(request: Request, limit: int = 50):
 def record(request: Request, body: RecordPlayRequest):
     user = _require_auth(request)
     from crate.db.user_library import record_play
-    record_play(user["id"], body.track_path, body.title, body.artist, body.album)
+    record_play(
+        user["id"],
+        track_path=body.track_path,
+        title=body.title,
+        artist=body.artist,
+        album=body.album,
+        track_id=body.track_id,
+    )
     return {"ok": True}
 
 @router.get("/stats")

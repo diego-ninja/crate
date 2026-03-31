@@ -807,6 +807,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS play_history (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
                 track_path TEXT NOT NULL,
                 title TEXT,
                 artist TEXT,
@@ -814,7 +815,14 @@ def init_db():
                 played_at TEXT NOT NULL
             )
         """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE play_history ADD COLUMN track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_user ON play_history(user_id, played_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_track ON play_history(track_id)")
 
         # Migration: add user_id to favorites table if missing
         cur.execute("""

@@ -210,24 +210,48 @@ def is_track_liked(user_id: int, track_id: int | None = None, track_path: str | 
 
 # ── Play History ─────────────────────────────────────────────
 
-def record_play(user_id: int, track_path: str, title: str = "", artist: str = "", album: str = ""):
+def record_play(
+    user_id: int,
+    track_path: str = "",
+    title: str = "",
+    artist: str = "",
+    album: str = "",
+    track_id: int | None = None,
+):
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
+        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
         cur.execute(
-            "INSERT INTO play_history (user_id, track_path, title, artist, album, played_at) VALUES (%s, %s, %s, %s, %s, %s)",
-            (user_id, track_path, title, artist, album, now))
+            """
+            INSERT INTO play_history (user_id, track_id, track_path, title, artist, album, played_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (user_id, resolved_track_id, track_path, title, artist, album, now),
+        )
 
 
 def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute("""
-            SELECT track_path, title, artist, album, played_at
+            SELECT
+                ph.track_id,
+                COALESCE(lt.path, ph.track_path) AS track_path,
+                COALESCE(lt.title, ph.title) AS title,
+                COALESCE(lt.artist, ph.artist) AS artist,
+                COALESCE(lt.album, ph.album) AS album,
+                ph.played_at
             FROM play_history
-            WHERE user_id = %s
-            ORDER BY played_at DESC
+            LEFT JOIN library_tracks lt ON lt.id = ph.track_id
+            WHERE ph.user_id = %s
+            ORDER BY ph.played_at DESC
             LIMIT %s
         """, (user_id, limit))
-        return [dict(r) for r in cur.fetchall()]
+        rows = []
+        for row in cur.fetchall():
+            item = dict(row)
+            item["relative_path"] = _relative_track_path(item.get("track_path") or "")
+            rows.append(item)
+        return rows
 
 
 def get_play_stats(user_id: int) -> dict:
