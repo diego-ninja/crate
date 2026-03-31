@@ -375,6 +375,10 @@ Follow-up architectural decision:
 - playlist cover data model and storage path
 - best API shape for upload music
 - safe approach for gapless/crossfade with current audio architecture
+- system playlists created in `admin` are not yet surfaced in `listen` discovery/library:
+  - example already present in dev: smart playlist `Hardcore` with 50 tracks
+  - `listen` needs dedicated consumption surfaces for global smart/curated playlists
+  - likely ties into the system-playlists roadmap and follow/public projection work
 - reusable overlay primitives for `listen`:
   - extract consistent `Dropdown` / `Popover` / `Menu` components
   - unify `Escape`, click-outside, z-index, animation, and focus behavior
