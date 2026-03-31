@@ -101,3 +101,42 @@ def delete_past_shows(days_old: int = 30):
     with get_db_ctx() as cur:
         cur.execute("DELETE FROM shows WHERE date < %s", (cutoff,))
         return cur.rowcount
+
+
+def attend_show(user_id: int, show_id: int) -> bool:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            INSERT INTO user_show_attendance (user_id, show_id, created_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT DO NOTHING
+            """,
+            (user_id, show_id, now),
+        )
+        return cur.rowcount > 0
+
+
+def unattend_show(user_id: int, show_id: int) -> bool:
+    with get_db_ctx() as cur:
+        cur.execute(
+            "DELETE FROM user_show_attendance WHERE user_id = %s AND show_id = %s",
+            (user_id, show_id),
+        )
+        return cur.rowcount > 0
+
+
+def get_attending_show_ids(user_id: int, show_ids: list[int]) -> set[int]:
+    if not show_ids:
+        return set()
+    placeholders = ",".join(["%s"] * len(show_ids))
+    with get_db_ctx() as cur:
+        cur.execute(
+            f"""
+            SELECT show_id
+            FROM user_show_attendance
+            WHERE user_id = %s AND show_id IN ({placeholders})
+            """,
+            [user_id, *show_ids],
+        )
+        return {row["show_id"] for row in cur.fetchall()}

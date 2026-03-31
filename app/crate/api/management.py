@@ -195,13 +195,66 @@ def rebuild_library(request: Request):
     return {"task_id": task_id}
 
 
-# ── Audio Analysis ──────────────────────────────────────────────
+# ── Audio Analysis (background daemons) ─────────────────────────
+
+@router.get("/analysis-status")
+def analysis_status(request: Request):
+    """Return current background analysis progress for audio analysis and bliss daemons."""
+    _require_admin(request)
+    from crate.analysis_daemon import get_analysis_status
+    status = get_analysis_status()
+
+    # Last analyzed track (for live monitoring)
+    from crate.db import get_db_ctx
+    last = {}
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT title, artist, album, bpm, audio_key, energy, danceability,
+                   mood_json IS NOT NULL as has_mood, updated_at
+            FROM library_tracks
+            WHERE analysis_state = 'done' AND bpm IS NOT NULL
+            ORDER BY updated_at DESC LIMIT 1
+        """)
+        row = cur.fetchone()
+        if row:
+            last = dict(row)
+
+    last_bliss = {}
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT title, artist, album, updated_at
+            FROM library_tracks
+            WHERE bliss_state = 'done' AND bliss_vector IS NOT NULL
+            ORDER BY updated_at DESC LIMIT 1
+        """)
+        row = cur.fetchone()
+        if row:
+            last_bliss = dict(row)
+
+    return {**status, "last_analyzed": last, "last_bliss": last_bliss}
+
 
 @router.post("/analyze-all")
 def analyze_all_tracks(request: Request):
-    """Analyze all unanalyzed tracks in the library (BPM, key, energy, mood)."""
+    """Reset all tracks to pending so background daemons re-analyze them."""
     _require_admin(request)
-    task_id = create_task("analyze_all")
+    task_id = create_task("analyze_all", {"scope": "all", "what": "both"})
+    return {"task_id": task_id}
+
+
+@router.post("/reanalyze-artist/{name:path}")
+def reanalyze_artist(request: Request, name: str):
+    """Reset analysis state for all tracks of an artist."""
+    _require_admin(request)
+    task_id = create_task("analyze_tracks", {"artist": name, "what": "both"})
+    return {"task_id": task_id}
+
+
+@router.post("/reanalyze-album/{album_id}")
+def reanalyze_album(request: Request, album_id: int):
+    """Reset analysis state for all tracks of an album."""
+    _require_admin(request)
+    task_id = create_task("analyze_tracks", {"album_id": album_id, "what": "both"})
     return {"task_id": task_id}
 
 
@@ -209,8 +262,9 @@ def analyze_all_tracks(request: Request):
 
 @router.post("/compute-bliss")
 def compute_bliss(request: Request):
+    """Reset bliss state for all tracks so background daemon recomputes vectors."""
     _require_admin(request)
-    task_id = create_task("compute_bliss")
+    task_id = create_task("compute_bliss", {"scope": "all", "what": "bliss"})
     return {"task_id": task_id}
 
 

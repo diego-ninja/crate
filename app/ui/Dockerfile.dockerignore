@@ -1,0 +1,14 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.git/
+bin/
+crate/
+tests/
+scripts/
+config.yaml
+requirements.txt
+Dockerfile
+listen/node_modules/
+listen/dist/

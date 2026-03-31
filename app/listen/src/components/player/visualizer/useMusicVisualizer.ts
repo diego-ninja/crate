@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { MusicVisualizer } from './MusicVisualizer';
 import { createAnalyserNode } from '@/hooks/use-audio-visualizer';
+import type { VisualizerMode } from '@/lib/player-visualizer-prefs';
 
 function dbg(msg: string) {
   const d = document.getElementById('viz-debug');
@@ -11,9 +12,9 @@ export function useMusicVisualizer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   audioElement: HTMLAudioElement | null,
   active: boolean,
+  mode: VisualizerMode = "spheres",
 ) {
   const vizRef = useRef<MusicVisualizer | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
 
   useEffect(() => {
     if (!active || !canvasRef.current || !audioElement) {
@@ -22,6 +23,10 @@ export function useMusicVisualizer(
     }
 
     const canvas = canvasRef.current;
+    if (vizRef.current) {
+      vizRef.current.stop();
+      vizRef.current = null;
+    }
 
     // Retry until canvas has layout dimensions (display:none → visible transition)
     let cancelled = false;
@@ -41,14 +46,11 @@ export function useMusicVisualizer(
       }
 
       // Get or create analyser node
-      if (!analyserRef.current) {
-        const node = createAnalyserNode(audioElement, 2048);
-        if (!node) {
-          dbg(`attempt ${attempts}: no analyser, retrying`);
-          if (attempts < 50) setTimeout(tryInit, 200);
-          return;
-        }
-        analyserRef.current = node;
+      const node = createAnalyserNode(audioElement, 2048);
+      if (!node) {
+        dbg(`attempt ${attempts}: no analyser, retrying`);
+        if (attempts < 50) setTimeout(tryInit, 200);
+        return;
       }
 
       const forceResize = (viz: MusicVisualizer) => {
@@ -65,21 +67,14 @@ export function useMusicVisualizer(
         });
       };
 
-      // Create or restart visualizer
-      if (vizRef.current) {
-        vizRef.current.start();
-        setTimeout(() => forceResize(vizRef.current!), 100);
-        dbg(`restarted ${w}x${h}`);
-      } else {
-        try {
-          const viz = new MusicVisualizer(canvas, analyserRef.current);
-          vizRef.current = viz;
-          viz.start();
-          setTimeout(() => forceResize(viz), 100);
-          dbg(`created ${w}x${h}`);
-        } catch (e) {
-          dbg(`FAIL: ${e}`);
-        }
+      try {
+        const viz = new MusicVisualizer(canvas, node, mode);
+        vizRef.current = viz;
+        viz.start();
+        setTimeout(() => forceResize(viz), 100);
+        dbg(`created ${w}x${h}`);
+      } catch (e) {
+        dbg(`FAIL: ${e}`);
       }
     };
 
@@ -93,7 +88,7 @@ export function useMusicVisualizer(
         vizRef.current.stop();
       }
     };
-  }, [canvasRef, audioElement, active]);
+  }, [canvasRef, audioElement, active, mode]);
 
   return vizRef;
 }

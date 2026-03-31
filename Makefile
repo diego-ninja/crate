@@ -4,7 +4,7 @@
 # Servidor remoto
 SERVER_HOST   := 104.152.210.73
 SERVER_USER   := root
-SERVER_PATH   := /home/musicdock/musicdock
+SERVER_PATH   := /home/crate/crate
 SSH           := ssh $(SERVER_USER)@$(SERVER_HOST)
 SCP           := scp
 
@@ -97,6 +97,17 @@ dev-reset: ## Reset entorno dev (borra datos, para todo)
 dev-test: ## Correr tests en el contenedor dev
 	@$(DC_DEV) exec worker pytest tests/ -v
 
+.PHONY: regression-api
+regression-api: ## Contratos backend criticos (Explore/search/system playlists)
+	@$(DC_DEV) exec worker pytest tests/test_explore_contracts.py tests/test_upload_contracts.py -q
+
+.PHONY: regression-smoke
+regression-smoke: ## Smoke real contra el entorno dev autenticado
+	@python3 scripts/regression_smoke.py
+
+.PHONY: regression-min
+regression-min: regression-api regression-smoke ## Suite minima de regresion antes de tocar listen
+
 # ===========================================================================
 # LOCAL (stack completo con Traefik)
 # ===========================================================================
@@ -123,8 +134,12 @@ logs: ## Ver logs (uso: make logs o make logs s=navidrome)
 	fi
 
 .PHONY: ps
-ps: ## Estado de los servicios
-	@$(DC_LOCAL) ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+ps: ## Estado de los servicios (dev)
+	@$(DC_DEV) ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
+	@echo ""
+	@echo "$(YELLOW)Frontends:$(NC)"
+	@-pgrep -af "vite.*5173" > /dev/null 2>&1 && echo "  Admin:  http://localhost:5173 (running)" || echo "  Admin:  not running"
+	@-pgrep -af "vite.*5174" > /dev/null 2>&1 && echo "  Listen: http://localhost:5174 (running)" || echo "  Listen: not running"
 
 .PHONY: pull
 pull: ## Pull de imagenes en local
@@ -190,12 +205,32 @@ _create-dirs:
 # ===========================================================================
 
 .PHONY: deploy
-deploy: ## Deploy completo al servidor: sync + build + restart
+deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
+	@echo "$(YELLOW)Sincronizando config...$(NC)"
+	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
+	@rsync -az \
+		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+		--exclude='.vite' --exclude='*.tsbuildinfo' \
+		--exclude='bin/' --exclude='crate/' --exclude='ui/' --exclude='listen/' \
+		--exclude='requirements.txt' --exclude='Dockerfile' --exclude='tests/' \
+		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
+	@echo "$(YELLOW)Pulling imagenes (GHCR + externas)...$(NC)"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-pull-failures" || true
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable" || true
+	@echo "$(YELLOW)Reiniciando servicios...$(NC)"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml up -d --remove-orphans"
+	@echo "$(GREEN)Deploy completado$(NC)"
+
+.PHONY: deploy-build
+deploy-build: ## Deploy con build en servidor (sin GHCR, fallback)
 	@echo "$(YELLOW)Sincronizando ficheros...$(NC)"
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
-	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+	@rsync -az --delete \
+		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+		--exclude='.vite' --exclude='*.tsbuildinfo' \
+		--exclude='bin/' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
-	@echo "$(YELLOW)Building servicios (api + worker + ui)...$(NC)"
+	@echo "$(YELLOW)Building servicios en servidor...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build crate-api crate-worker crate-ui crate-listen"
 	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
@@ -206,7 +241,10 @@ deploy: ## Deploy completo al servidor: sync + build + restart
 .PHONY: deploy-sync
 deploy-sync: ## Solo sincronizar ficheros al servidor (sin restart)
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
-	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+	@rsync -az --delete \
+		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+		--exclude='.vite' --exclude='*.tsbuildinfo' \
+		--exclude='bin/' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
 
 .PHONY: deploy-restart

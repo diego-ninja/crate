@@ -80,8 +80,10 @@ export function createAnalyserNode(audio: HTMLAudioElement, fftSize = 2048): Ana
   const ctx = getAudioCtx();
   if (!ctx || !sourceNode) return null;
 
-  // Reuse existing viz analyser
-  if (vizAnalyser) return vizAnalyser;
+  if (vizAnalyser) {
+    try { vizAnalyser.disconnect(); } catch { /* ignore */ }
+    vizAnalyser = null;
+  }
 
   try {
     vizAnalyser = ctx.createAnalyser();

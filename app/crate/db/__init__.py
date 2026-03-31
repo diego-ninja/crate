@@ -51,6 +51,8 @@ from crate.db.auth import (
     create_user, get_user_by_email, get_user_by_google_id,
     get_user_by_id, update_user_last_login, update_user, list_users, delete_user,
     create_session, get_session, delete_session,
+    suggest_username, get_user_external_identity, upsert_user_external_identity,
+    unlink_user_external_identity,
 )
 
 # Playlists
@@ -58,6 +60,9 @@ from crate.db.playlists import (
     create_playlist, get_playlists, get_playlist, update_playlist,
     delete_playlist, get_playlist_tracks, add_playlist_tracks,
     remove_playlist_track, reorder_playlist,
+    list_system_playlists, is_playlist_followed, follow_playlist,
+    unfollow_playlist, get_playlist_followers_count, get_followed_system_playlists,
+    set_playlist_navidrome_projection,
 )
 
 # Tidal
@@ -96,6 +101,7 @@ from crate.db.releases import (
 from crate.db.shows import (
     upsert_show, get_upcoming_shows, get_all_shows,
     get_show_cities, get_show_countries, delete_past_shows,
+    attend_show, unattend_show, get_attending_show_ids,
 )
 
 # Task Events (SSE)

@@ -1,66 +1,136 @@
-import { useState } from "react";
-import { Play, Pause, Plus, ListPlus, Heart } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Play, Pause, Plus, ListPlus, Heart, ListMusic } from "lucide-react";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
-import { api } from "@/lib/api";
+import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { formatDuration, encPath } from "@/lib/utils";
 
+export interface TrackRowData {
+  id?: string | number;
+  title: string;
+  artist: string;
+  album?: string;
+  duration?: number;
+  path?: string;
+  track_number?: number;
+  format?: string;
+  navidrome_id?: string;
+  library_track_id?: number;
+}
+
+interface TrackRowPlaylistOption {
+  id: number;
+  name: string;
+}
+
 interface TrackRowProps {
-  track: {
-    id?: string;
-    title: string;
-    artist: string;
-    album?: string;
-    duration?: number;
-    path?: string;
-    track_number?: number;
-    format?: string;
-    navidrome_id?: string;
-  };
+  track: TrackRowData;
   index?: number;
   showArtist?: boolean;
   showAlbum?: boolean;
   albumCover?: string;
+  showCoverThumb?: boolean;
+  playlistOptions?: TrackRowPlaylistOption[];
+  onAddToPlaylist?: (playlistId: number, track: TrackRowData) => void | Promise<void>;
+  onCreatePlaylist?: (track: TrackRowData) => void | Promise<void>;
 }
 
-export function TrackRow({ track, index, showArtist = false, showAlbum = false, albumCover }: TrackRowProps) {
+export function TrackRow({
+  track,
+  index,
+  showArtist = false,
+  showAlbum = false,
+  albumCover,
+  showCoverThumb = false,
+  playlistOptions,
+  onAddToPlaylist,
+  onCreatePlaylist,
+}: TrackRowProps) {
   const { currentTrack, isPlaying } = usePlayer();
-  const { play, addToQueue, playNext } = usePlayerActions();
+  const { play, pause, resume, addToQueue, playNext } = usePlayerActions();
+  const { isLiked, toggleTrackLike } = useLikedTracks();
+  const [playlistMenuOpen, setPlaylistMenuOpen] = useState(false);
+  const playlistMenuRef = useRef<HTMLDivElement>(null);
 
-  const [liked, setLiked] = useState(false);
-
-  const trackId = track.navidrome_id || track.path || track.id || "";
-  const isActive = currentTrack?.id === trackId;
+  const playbackId = track.path || String(track.id || track.navidrome_id || "");
+  const liked = isLiked(track.library_track_id ?? (typeof track.id === "number" ? track.id : null), track.path);
+  const isActive = currentTrack?.id === playbackId;
   const cover = albumCover || (track.artist && track.album
     ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
     : undefined);
 
   const playerTrack: Track = {
-    id: trackId,
+    id: playbackId,
     title: track.title || "Unknown",
     artist: track.artist,
     album: track.album,
     albumCover: cover,
+    path: track.path,
+    navidromeId: track.navidrome_id,
+    libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
   };
+
+  function handleActivate() {
+    if (isActive) {
+      if (isPlaying) {
+        pause();
+      } else {
+        resume();
+      }
+      return;
+    }
+    play(playerTrack);
+  }
+
+  useEffect(() => {
+    if (!playlistMenuOpen) return undefined;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (playlistMenuRef.current && !playlistMenuRef.current.contains(event.target as Node)) {
+        setPlaylistMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [playlistMenuOpen]);
 
   return (
     <div
       className={`group flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer
         ${isActive ? "bg-primary/10" : "hover:bg-white/5"}`}
-      onClick={() => play(playerTrack)}
+      onClick={handleActivate}
     >
-      {/* Track number / play indicator */}
-      <div className="w-8 text-center flex-shrink-0">
-        {isActive && isPlaying ? (
-          <Pause size={14} className="text-primary mx-auto" />
-        ) : (
-          <span className="text-xs text-muted-foreground group-hover:hidden">
-            {index != null ? index : track.track_number || "-"}
-          </span>
-        )}
-        {!(isActive && isPlaying) && (
-          <Play size={14} className="text-foreground mx-auto hidden group-hover:block" />
-        )}
-      </div>
+      {showCoverThumb && cover ? (
+        <div className="relative w-11 h-11 rounded-md overflow-hidden bg-white/5 flex-shrink-0">
+          <img src={cover} alt="" className="w-full h-full object-cover" />
+          <div
+            className={`absolute inset-0 flex items-center justify-center transition-colors ${
+              isActive ? "bg-black/40" : "bg-black/0 group-hover:bg-black/45"
+            }`}
+          >
+            {isActive && isPlaying ? (
+              <Pause size={16} className="text-white" fill="currentColor" />
+            ) : (
+              <Play
+                size={16}
+                className={`text-white transition-opacity ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                fill="currentColor"
+              />
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="w-8 text-center flex-shrink-0">
+          {isActive && isPlaying ? (
+            <Pause size={14} className="text-primary mx-auto" />
+          ) : (
+            <span className="text-xs text-muted-foreground group-hover:hidden">
+              {index != null ? index : track.track_number || "-"}
+            </span>
+          )}
+          {!(isActive && isPlaying) && (
+            <Play size={14} className="text-foreground mx-auto hidden group-hover:block" />
+          )}
+        </div>
+      )}
 
       {/* Title + optional artist/album */}
       <div className="flex-1 min-w-0">
@@ -89,16 +159,15 @@ export function TrackRow({ track, index, showArtist = false, showAlbum = false, 
           liked ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         }`}
         title={liked ? "Unlike" : "Like"}
-        onClick={(e) => {
+        onClick={async (e) => {
           e.stopPropagation();
           const path = track.path || "";
-          if (!path) return;
-          if (liked) {
-            api("/api/me/likes", "DELETE", { track_path: path }).catch(() => {});
-            setLiked(false);
-          } else {
-            api("/api/me/likes", "POST", { track_path: path }).catch(() => {});
-            setLiked(true);
+          const libraryTrackId = track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined);
+          if (!path && libraryTrackId == null) return;
+          try {
+            await toggleTrackLike(libraryTrackId ?? null, path);
+          } catch {
+            // Keep row interaction non-blocking; caller surfaces persistence elsewhere.
           }
         }}
       >
@@ -110,6 +179,56 @@ export function TrackRow({ track, index, showArtist = false, showAlbum = false, 
 
       {/* Actions (on hover) */}
       <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onAddToPlaylist && (
+          <div className="relative" ref={playlistMenuRef}>
+            <button
+              className="p-1 text-muted-foreground hover:text-foreground"
+              title="Add to playlist"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPlaylistMenuOpen((open) => !open);
+              }}
+            >
+              <ListMusic size={14} />
+            </button>
+            {playlistMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-white/10 bg-[#12121a]/95 backdrop-blur-xl shadow-2xl py-1 z-30">
+                {onCreatePlaylist ? (
+                  <button
+                    className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-white/5 transition-colors"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await onCreatePlaylist(track);
+                      setPlaylistMenuOpen(false);
+                    }}
+                  >
+                    Add new playlist
+                  </button>
+                ) : null}
+                {onCreatePlaylist && playlistOptions && playlistOptions.length > 0 ? (
+                  <div className="mx-3 my-1 h-px bg-white/10" />
+                ) : null}
+                {playlistOptions && playlistOptions.length > 0 ? (
+                  playlistOptions.map((playlist) => (
+                    <button
+                      key={playlist.id}
+                      className="w-full px-3 py-2 text-left text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        await onAddToPlaylist(playlist.id, track);
+                        setPlaylistMenuOpen(false);
+                      }}
+                    >
+                      {playlist.name}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-xs text-muted-foreground">No playlists yet</div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <button
           className="p-1 text-muted-foreground hover:text-foreground"
           title="Play next"

@@ -1,19 +1,30 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
   Heart, MoreHorizontal, Volume2, VolumeX, Airplay, ListMusic,
-  Mic2, Maximize2, Radio, Info, User, Share2, Plus, Disc,
+  Mic2, Maximize2, User, Share2, Plus, Disc, Loader2, ArrowLeft,
 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
-import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
+import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
+import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
+import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
+import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
+import { AppMenuButton, AppPopover } from "@/components/ui/AppPopover";
+import { type PlaylistComposerTrack } from "@/components/playlists/PlaylistCreateModal";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
 import { QueuePanel } from "@/components/player/QueuePanel";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
 import { ExtendedPlayer } from "@/components/player/ExtendedPlayer";
+
+interface PlaylistOption {
+  id: number;
+  name: string;
+}
 
 function formatTime(s: number): string {
   if (!s || !isFinite(s)) return "0:00";
@@ -46,7 +57,7 @@ function generateBars(seed: string, count: number): number[] {
 }
 
 export function PlayerBar() {
-  const { currentTime, duration, isPlaying, volume } = usePlayer();
+  const { currentTime, duration, isPlaying, isBuffering, volume } = usePlayer();
   const {
     currentTrack, shuffle, repeat, playSource, queue, currentIndex,
     pause, resume, next, prev, seek, setVolume,
@@ -60,46 +71,110 @@ export function PlayerBar() {
   const navigate = useNavigate();
   const [fsOpen, setFsOpen] = useState(false);
   const [extendedOpen, setExtendedOpen] = useState(false);
-  const [liked, setLiked] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const volumeRef = useRef<HTMLDivElement>(null);
+  const volumeButtonRef = useRef<HTMLButtonElement>(null);
+  const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
+  const { openCreatePlaylist } = usePlaylistComposer();
+  const { data: playlists } = useApi<PlaylistOption[]>("/api/playlists");
 
-  // Close menu on outside click
-  useEffect(() => {
-    if (!showMenu) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [showMenu]);
+  useDismissibleLayer({
+    active: showMenu,
+    refs: [menuRef, menuButtonRef],
+    onDismiss: () => {
+      setShowMenu(false);
+      setShowPlaylistPicker(false);
+    },
+    closeOnEscape: false,
+  });
+
+  useDismissibleLayer({
+    active: showVolume,
+    refs: [volumeRef, volumeButtonRef],
+    onDismiss: () => setShowVolume(false),
+    closeOnEscape: false,
+  });
+
+  useDismissibleLayer({
+    active: showMenu || showVolume || showQueue || showLyrics,
+    refs: [],
+    onDismiss: () => {
+      setShowMenu(false);
+      setShowVolume(false);
+      setShowQueue(false);
+      setShowLyrics(false);
+    },
+    closeOnPointerDownOutside: false,
+  });
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const pseudoBars = useMemo(() => currentTrack ? generateBars(currentTrack.id, 80) : [], [currentTrack?.id]);
   const fmt = currentTrack ? formatBadge(currentTrack) : null;
+  const hasFloatingOverlayOpen = showVolume || showMenu;
 
   if (!currentTrack) return null;
 
+  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
+
   async function toggleLike() {
     if (!currentTrack) return;
-    const path = currentTrack.id;
+    const trackId = currentTrack.libraryTrackId ?? null;
+    const trackPath = currentTrack.path || currentTrack.id;
     try {
       if (liked) {
-        await api("/api/me/likes", "DELETE", { track_path: path });
-        setLiked(false);
+        await unlikeTrack(trackId, trackPath);
       } else {
-        await api("/api/me/likes", "POST", { track_path: path });
-        setLiked(true);
+        await likeTrack(trackId, trackPath);
       }
     } catch { /* ignore */ }
   }
 
+  function currentTrackToPlaylistSeed(): PlaylistComposerTrack | null {
+    if (!currentTrack) return null;
+    return {
+      title: currentTrack.title,
+      artist: currentTrack.artist,
+      album: currentTrack.album,
+      duration: duration || 0,
+      path: currentTrack.path,
+      libraryTrackId: currentTrack.libraryTrackId,
+      navidromeId: currentTrack.navidromeId,
+    };
+  }
+
+  async function handleAddCurrentTrackToPlaylist(playlistId: number) {
+    if (!currentTrack?.path) {
+      toast.error("This track cannot be added to a playlist yet");
+      return;
+    }
+    try {
+      const payload = {
+        tracks: [{
+          path: currentTrack.path,
+          title: currentTrack.title,
+          artist: currentTrack.artist,
+          album: currentTrack.album || "",
+          duration: duration || 0,
+        }],
+      };
+      await api(`/api/playlists/${playlistId}/tracks`, "POST", payload);
+      toast.success("Added to playlist");
+      setShowMenu(false);
+      setShowPlaylistPicker(false);
+    } catch {
+      toast.error("Failed to add track to playlist");
+    }
+  }
+
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 z-50 h-[72px] bg-[#0c0c14] border-t border-white/5">
+      <div className={`fixed bottom-0 left-0 right-0 h-[72px] bg-[#0c0c14] border-t border-white/5 ${hasFloatingOverlayOpen ? "z-[90]" : "z-50"}`}>
         <div className="h-full flex items-center px-4 gap-2">
 
           {/* ── Block 1: Track Info ── */}
@@ -126,6 +201,11 @@ export function PlayerBar() {
                   Playing from: {playSource.name}
                 </p>
               )}
+              {isBuffering && (
+                <p className="text-[10px] text-primary/80 truncate leading-tight mt-0.5">
+                  Buffering...
+                </p>
+              )}
             </div>
 
             {/* Heart */}
@@ -136,35 +216,94 @@ export function PlayerBar() {
             {/* Menu */}
             <div className="relative" ref={menuRef}>
               <button
-                onClick={() => setShowMenu(!showMenu)}
+                ref={menuButtonRef}
+                onClick={() => {
+                  setShowPlaylistPicker(false);
+                  setShowMenu(!showMenu);
+                }}
                 className="shrink-0 p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60"
               >
                 <MoreHorizontal size={16} />
               </button>
               {showMenu && currentTrack && (
-                <div className="absolute bottom-full left-0 mb-2 w-52 bg-[#16161e] border border-white/10 rounded-xl shadow-2xl py-1.5 z-[60]">
-                  {[
-                    { icon: Plus, label: "Add to playlist", action: () => toast.info("Coming soon") },
-                    { icon: Disc, label: "Add to my collection", action: () => {
-                      api("/api/me/likes", "POST", { track_path: currentTrack.id }).then(() => { setLiked(true); toast.success("Added to collection"); }).catch(() => {});
-                    }},
-                    { icon: Radio, label: "Go to track radio", action: () => toast.info("Coming soon") },
-                    { icon: Info, label: "Track info", action: () => toast.info("Coming soon") },
-                    { icon: User, label: "Go to artist", action: () => { navigate(`/artist/${encPath(currentTrack.artist)}`); } },
-                    { icon: Share2, label: "Share", action: () => {
-                      navigator.clipboard.writeText(`${currentTrack.title} - ${currentTrack.artist}`).then(() => toast.success("Copied to clipboard")).catch(() => {});
-                    }},
-                  ].map(({ icon: Icon, label, action }) => (
-                    <button
-                      key={label}
-                      onClick={() => { action(); setShowMenu(false); }}
-                      className="w-full flex items-center gap-3 px-4 py-2 text-[13px] text-white/70 hover:text-white hover:bg-white/5 transition-colors"
-                    >
-                      <Icon size={14} className="text-white/40 shrink-0" />
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                <AppPopover ref={menuRef} className="absolute bottom-full left-0 z-[60] mb-2 w-52 py-1.5">
+                  {showPlaylistPicker ? (
+                    <>
+                      <AppMenuButton
+                        onClick={() => setShowPlaylistPicker(false)}
+                        className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
+                      >
+                        <ArrowLeft size={14} className="text-white/40 shrink-0" />
+                        Back
+                      </AppMenuButton>
+                      <div className="mx-3 my-1 h-px bg-white/10" />
+                      <AppMenuButton
+                        onClick={() => {
+                          const seed = currentTrackToPlaylistSeed();
+                          if (seed) {
+                            openCreatePlaylist({ tracks: [seed] });
+                          } else {
+                            openCreatePlaylist();
+                          }
+                          setShowMenu(false);
+                          setShowPlaylistPicker(false);
+                        }}
+                        className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
+                      >
+                        <Plus size={14} className="text-white/40 shrink-0" />
+                        Add new playlist
+                      </AppMenuButton>
+                      <div className="mx-3 my-1 h-px bg-white/10" />
+                      {playlists && playlists.length > 0 ? (
+                        playlists.map((playlist) => (
+                          <AppMenuButton
+                            key={playlist.id}
+                            onClick={() => void handleAddCurrentTrackToPlaylist(playlist.id)}
+                            className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
+                          >
+                            <ListMusic size={14} className="text-white/40 shrink-0" />
+                            {playlist.name}
+                          </AppMenuButton>
+                        ))
+                      ) : (
+                        <div className="px-4 py-2 text-[12px] text-white/45">No playlists yet</div>
+                      )}
+                    </>
+                  ) : (
+                    [
+                      { icon: Plus, label: "Add to playlist", action: () => setShowPlaylistPicker(true) },
+                      { icon: Disc, label: "Add to my collection", action: () => {
+                        likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id).then(() => {
+                          toast.success("Added to collection");
+                        }).catch(() => {});
+                        setShowMenu(false);
+                      }},
+                      { icon: User, label: "Go to artist", action: () => {
+                        navigate(`/artist/${encPath(currentTrack.artist)}`);
+                        setShowMenu(false);
+                      } },
+                      { icon: Disc, label: "Go to album", action: () => {
+                        if (currentTrack.album) {
+                          navigate(`/album/${encPath(currentTrack.artist)}/${encPath(currentTrack.album)}`);
+                        }
+                        setShowMenu(false);
+                      } },
+                      { icon: Share2, label: "Share", action: () => {
+                        navigator.clipboard.writeText(`${currentTrack.title} - ${currentTrack.artist}`).then(() => toast.success("Copied to clipboard")).catch(() => {});
+                        setShowMenu(false);
+                      }},
+                    ].map(({ icon: Icon, label, action }) => (
+                      <AppMenuButton
+                        key={label}
+                        onClick={action}
+                        className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
+                      >
+                        <Icon size={14} className="text-white/40 shrink-0" />
+                        {label}
+                      </AppMenuButton>
+                    ))
+                  )}
+                </AppPopover>
               )}
             </div>
           </div>
@@ -186,7 +325,9 @@ export function PlayerBar() {
                 onClick={isPlaying ? pause : resume}
                 className="w-9 h-9 rounded-full bg-white flex items-center justify-center hover:scale-105 transition-transform"
               >
-                {isPlaying ? (
+                {isBuffering ? (
+                  <Loader2 size={15} className="animate-spin text-black" />
+                ) : isPlaying ? (
                   <Pause size={16} className="text-black" />
                 ) : (
                   <Play size={16} className="text-black ml-0.5" fill="black" />
@@ -261,13 +402,14 @@ export function PlayerBar() {
             {/* Volume */}
             <div className="relative flex items-center">
               <button
+                ref={volumeButtonRef}
                 onClick={() => setShowVolume(!showVolume)}
                 className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60"
               >
                 {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
               {showVolume && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-[#16161e] border border-white/10 rounded-lg p-2 shadow-xl">
+                <AppPopover ref={volumeRef} className="absolute bottom-full left-1/2 z-[90] -translate-x-1/2 mb-2 rounded-lg p-2">
                   <input
                     type="range"
                     min={0} max={1} step={0.01}
@@ -276,7 +418,7 @@ export function PlayerBar() {
                     className="w-24 accent-cyan-400 h-1"
                     style={{ writingMode: "horizontal-tb" }}
                   />
-                </div>
+                </AppPopover>
               )}
             </div>
 

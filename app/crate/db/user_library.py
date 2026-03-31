@@ -1,6 +1,79 @@
 from datetime import datetime, timezone
+from pathlib import Path
 
+from crate.config import load_config
 from crate.db.core import get_db_ctx
+
+
+def _library_root() -> Path:
+    try:
+        return Path(load_config()["library_path"])
+    except Exception:
+        return Path("/music")
+
+
+def _relative_track_path(track_path: str) -> str:
+    if not track_path:
+        return ""
+
+    library_root = str(_library_root()).rstrip("/")
+    normalized = track_path.strip()
+    if library_root and normalized.startswith(f"{library_root}/"):
+        return normalized[len(library_root) + 1 :]
+    if normalized.startswith("/music/"):
+        return normalized[len("/music/") :]
+    if not normalized.startswith("/"):
+        return normalized
+    return ""
+
+
+def _resolve_track_id(cur, track_id: int | None = None, track_path: str | None = None) -> int | None:
+    if track_id:
+        cur.execute("SELECT id FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+        if row:
+            return row["id"]
+
+    if not track_path:
+        return None
+
+    relative_path = _relative_track_path(track_path)
+    library_root = str(_library_root()).rstrip("/")
+    absolute_candidate = f"{library_root}/{relative_path}" if library_root and relative_path else track_path
+    music_candidate = f"/music/{relative_path}" if relative_path else track_path
+    suffix_candidate = f"%/{relative_path}" if relative_path else ""
+
+    cur.execute(
+        """
+        SELECT id
+        FROM library_tracks
+        WHERE path = %s
+           OR path = %s
+           OR path = %s
+           OR navidrome_id = %s
+           OR (%s != '' AND path LIKE %s)
+        ORDER BY CASE
+            WHEN path = %s THEN 0
+            WHEN path = %s THEN 1
+            WHEN path = %s THEN 2
+            ELSE 3
+        END
+        LIMIT 1
+        """,
+        (
+            track_path,
+            absolute_candidate,
+            music_candidate,
+            track_path,
+            suffix_candidate,
+            suffix_candidate,
+            track_path,
+            absolute_candidate,
+            music_candidate,
+        ),
+    )
+    row = cur.fetchone()
+    return row["id"] if row else None
 
 
 # ── Follows ──────────────────────────────────────────────────
@@ -76,61 +149,109 @@ def is_album_saved(user_id: int, album_id: int) -> bool:
 
 # ── Liked Tracks ─────────────────────────────────────────────
 
-def like_track(user_id: int, track_path: str) -> bool:
+def like_track(user_id: int, track_id: int | None = None, track_path: str | None = None) -> bool | None:
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
+        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
+        if not resolved_track_id:
+            return None
         cur.execute(
-            "INSERT INTO user_liked_tracks (user_id, track_path, created_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (user_id, track_path, now))
+            "INSERT INTO user_liked_tracks (user_id, track_id, created_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+            (user_id, resolved_track_id, now))
         return cur.rowcount > 0
 
 
-def unlike_track(user_id: int, track_path: str) -> bool:
+def unlike_track(user_id: int, track_id: int | None = None, track_path: str | None = None) -> bool:
     with get_db_ctx() as cur:
-        cur.execute("DELETE FROM user_liked_tracks WHERE user_id = %s AND track_path = %s", (user_id, track_path))
+        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
+        if not resolved_track_id:
+            return False
+        cur.execute(
+            "DELETE FROM user_liked_tracks WHERE user_id = %s AND track_id = %s",
+            (user_id, resolved_track_id),
+        )
         return cur.rowcount > 0
 
 
 def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute("""
-            SELECT ult.track_path, ult.created_at AS liked_at,
-                   lt.title, lt.artist, lt.album, lt.duration, lt.navidrome_id
+            SELECT
+                ult.track_id,
+                ult.created_at AS liked_at,
+                lt.path,
+                lt.title,
+                lt.artist,
+                lt.album,
+                lt.duration,
+                lt.navidrome_id
             FROM user_liked_tracks ult
-            LEFT JOIN library_tracks lt ON lt.path = ult.track_path
+            JOIN library_tracks lt ON lt.id = ult.track_id
             WHERE ult.user_id = %s
             ORDER BY ult.created_at DESC
             LIMIT %s
         """, (user_id, limit))
-        return [dict(r) for r in cur.fetchall()]
+        rows = []
+        for row in cur.fetchall():
+            item = dict(row)
+            item["relative_path"] = _relative_track_path(item.get("path") or "")
+            rows.append(item)
+        return rows
 
 
-def is_track_liked(user_id: int, track_path: str) -> bool:
+def is_track_liked(user_id: int, track_id: int | None = None, track_path: str | None = None) -> bool:
     with get_db_ctx() as cur:
-        cur.execute("SELECT 1 FROM user_liked_tracks WHERE user_id = %s AND track_path = %s", (user_id, track_path))
+        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
+        if not resolved_track_id:
+            return False
+        cur.execute("SELECT 1 FROM user_liked_tracks WHERE user_id = %s AND track_id = %s", (user_id, resolved_track_id))
         return cur.fetchone() is not None
 
 
 # ── Play History ─────────────────────────────────────────────
 
-def record_play(user_id: int, track_path: str, title: str = "", artist: str = "", album: str = ""):
+def record_play(
+    user_id: int,
+    track_path: str = "",
+    title: str = "",
+    artist: str = "",
+    album: str = "",
+    track_id: int | None = None,
+):
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
+        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
         cur.execute(
-            "INSERT INTO play_history (user_id, track_path, title, artist, album, played_at) VALUES (%s, %s, %s, %s, %s, %s)",
-            (user_id, track_path, title, artist, album, now))
+            """
+            INSERT INTO play_history (user_id, track_id, track_path, title, artist, album, played_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """,
+            (user_id, resolved_track_id, track_path, title, artist, album, now),
+        )
 
 
 def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute("""
-            SELECT track_path, title, artist, album, played_at
+            SELECT
+                ph.track_id,
+                COALESCE(lt.path, ph.track_path) AS track_path,
+                COALESCE(lt.title, ph.title) AS title,
+                COALESCE(lt.artist, ph.artist) AS artist,
+                COALESCE(lt.album, ph.album) AS album,
+                ph.played_at
             FROM play_history
-            WHERE user_id = %s
-            ORDER BY played_at DESC
+            LEFT JOIN library_tracks lt ON lt.id = ph.track_id
+            WHERE ph.user_id = %s
+            ORDER BY ph.played_at DESC
             LIMIT %s
         """, (user_id, limit))
-        return [dict(r) for r in cur.fetchall()]
+        rows = []
+        for row in cur.fetchall():
+            item = dict(row)
+            item["relative_path"] = _relative_track_path(item.get("track_path") or "")
+            rows.append(item)
+        return rows
 
 
 def get_play_stats(user_id: int) -> dict:

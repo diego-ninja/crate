@@ -6,19 +6,22 @@ interface ArtistCardProps {
   photo?: string;
   subtitle?: string;
   compact?: boolean;
+  href?: string;
+  external?: boolean;
+  large?: boolean;
 }
 
-export function ArtistCard({ name, photo, subtitle, compact }: ArtistCardProps) {
+export function ArtistCard({ name, photo, subtitle, compact, href, external = false, large = false }: ArtistCardProps) {
   const navigate = useNavigate();
   const photoUrl = photo || `/api/artist/${encPath(name)}/photo`;
-
-  return (
-    <button
-      className={`group text-left flex-shrink-0 ${compact ? "w-[100px]" : "w-[140px]"}`}
-      onClick={() => navigate(`/artist/${encPath(name)}`)}
-    >
-      <div className="relative aspect-square rounded-full overflow-hidden bg-white/5 mb-2 mx-auto"
-        style={{ width: compact ? 100 : 140, height: compact ? 100 : 140 }}>
+  const targetHref = href || `/artist/${encPath(name)}`;
+  const imageSize = compact ? 100 : large ? 156 : 140;
+  const content = (
+    <>
+      <div
+        className="relative aspect-square rounded-full overflow-hidden bg-white/5 mb-2 mx-auto"
+        style={{ width: imageSize, height: imageSize }}
+      >
         <img
           src={photoUrl}
           alt={name}
@@ -31,6 +34,28 @@ export function ArtistCard({ name, photo, subtitle, compact }: ArtistCardProps) 
       {subtitle && (
         <div className="truncate text-xs text-muted-foreground text-center">{subtitle}</div>
       )}
+    </>
+  );
+
+  if (external) {
+    return (
+      <a
+        href={targetHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`group text-left flex-shrink-0 ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`}
+      >
+        {content}
+      </a>
+    );
+  }
+
+  return (
+    <button
+      className={`group text-left flex-shrink-0 ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`}
+      onClick={() => navigate(targetHref)}
+    >
+      {content}
     </button>
   );
 }

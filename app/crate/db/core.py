@@ -1,3 +1,4 @@
+import logging
 import json
 import os
 import time
@@ -9,7 +10,10 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 
+log = logging.getLogger(__name__)
+
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
+_db_provisioned = False
 
 
 def _reset_pool():
@@ -28,9 +32,63 @@ def _get_dsn() -> str:
     return f"postgresql://{user}:{password}@{host}:{port}/{db}"
 
 
+def _ensure_database():
+    """Create the app user and database if they don't exist.
+    Connects as the Postgres superuser (MUSICDOCK_POSTGRES_*) to provision
+    the app-level role (CRATE_POSTGRES_*). Idempotent and safe to call on
+    every startup. Skips silently if superuser creds are not available."""
+    global _db_provisioned
+    if _db_provisioned:
+        return
+    _db_provisioned = True
+
+    su_user = os.environ.get("MUSICDOCK_POSTGRES_USER")
+    su_pass = os.environ.get("MUSICDOCK_POSTGRES_PASSWORD")
+    if not su_user:
+        return  # No superuser creds — assume app user already exists
+
+    app_user = os.environ.get("CRATE_POSTGRES_USER", "crate")
+    app_pass = os.environ.get("CRATE_POSTGRES_PASSWORD", "crate")
+    app_db = os.environ.get("CRATE_POSTGRES_DB", "crate")
+    host = os.environ.get("CRATE_POSTGRES_HOST", "crate-postgres")
+    port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
+
+    if su_user == app_user:
+        return  # Same user, nothing to provision
+
+    try:
+        conn = psycopg2.connect(
+            host=host, port=port, user=su_user, password=su_pass,
+            dbname=os.environ.get("MUSICDOCK_POSTGRES_DB", "musicdock"),
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+
+        # Create app role if missing
+        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (app_user,))
+        if not cur.fetchone():
+            cur.execute(f"CREATE ROLE {app_user} WITH LOGIN PASSWORD %s", (app_pass,))
+            log.info("Created database role: %s", app_user)
+
+        # Create app database if missing
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (app_db,))
+        if not cur.fetchone():
+            cur.execute(f"CREATE DATABASE {app_db} OWNER {app_user}")
+            log.info("Created database: %s", app_db)
+
+        # Ensure ownership
+        cur.execute(f"ALTER DATABASE {app_db} OWNER TO {app_user}")
+
+        cur.close()
+        conn.close()
+    except Exception:
+        log.debug("Could not provision app database (superuser may not be available)", exc_info=True)
+
+
 def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
     global _pool
     if _pool is None or _pool.closed:
+        _ensure_database()
         for attempt in range(10):
             try:
                 _pool = psycopg2.pool.ThreadedConnectionPool(
@@ -196,9 +254,28 @@ def init_db():
                 created_at TEXT NOT NULL
             )
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_external_identities (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                provider TEXT NOT NULL,
+                external_user_id TEXT,
+                external_username TEXT,
+                status TEXT NOT NULL DEFAULT 'unlinked',
+                last_error TEXT,
+                last_task_id TEXT,
+                metadata_json JSONB DEFAULT '{}',
+                last_synced_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (user_id, provider)
+            )
+        """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_external_identities_provider ON user_external_identities(provider)")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_external_identities_provider_username ON user_external_identities(provider, external_username) WHERE external_username IS NOT NULL")
 
         # Migration: add username column if missing
         cur.execute("""
@@ -289,6 +366,24 @@ def init_db():
                 EXCEPTION WHEN duplicate_column THEN NULL;
                 END $$
             """)
+
+        # Migration: add background analysis state columns
+        for col, default in [("analysis_state", "pending"), ("bliss_state", "pending")]:
+            cur.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE library_tracks ADD COLUMN {col} TEXT DEFAULT '{default}';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+        # Set existing analyzed tracks to 'done' so daemons don't re-process them
+        cur.execute("""
+            UPDATE library_tracks SET analysis_state = 'done'
+            WHERE bpm IS NOT NULL AND energy IS NOT NULL AND analysis_state = 'pending'
+        """)
+        cur.execute("""
+            UPDATE library_tracks SET bliss_state = 'done'
+            WHERE bliss_vector IS NOT NULL AND bliss_state = 'pending'
+        """)
 
         # Migration: add folder_name to library_artists (filesystem dir name, may differ from canonical name)
         cur.execute("""
@@ -458,14 +553,85 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 description TEXT DEFAULT '',
+                cover_data_url TEXT,
+                cover_path TEXT,
                 user_id INTEGER REFERENCES users(id),
                 is_smart BOOLEAN DEFAULT FALSE,
                 smart_rules_json JSONB,
+                scope TEXT NOT NULL DEFAULT 'user',
+                generation_mode TEXT NOT NULL DEFAULT 'static',
+                is_curated BOOLEAN NOT NULL DEFAULT FALSE,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                managed_by_user_id INTEGER REFERENCES users(id),
+                curation_key TEXT,
+                featured_rank INTEGER,
+                category TEXT,
+                navidrome_playlist_id TEXT,
+                navidrome_public BOOLEAN NOT NULL DEFAULT FALSE,
+                navidrome_projection_status TEXT NOT NULL DEFAULT 'unprojected',
+                navidrome_projection_error TEXT,
+                navidrome_projected_at TEXT,
                 track_count INTEGER DEFAULT 0,
                 total_duration DOUBLE PRECISION DEFAULT 0,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE playlists ADD COLUMN cover_data_url TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE playlists ADD COLUMN cover_path TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+        for col, col_type, default in [
+            ("scope", "TEXT", "'user'"),
+            ("generation_mode", "TEXT", "'static'"),
+            ("is_curated", "BOOLEAN", "FALSE"),
+            ("is_active", "BOOLEAN", "TRUE"),
+            ("managed_by_user_id", "INTEGER REFERENCES users(id)", None),
+            ("curation_key", "TEXT", None),
+            ("featured_rank", "INTEGER", None),
+            ("category", "TEXT", None),
+            ("navidrome_playlist_id", "TEXT", None),
+            ("navidrome_public", "BOOLEAN", "FALSE"),
+            ("navidrome_projection_status", "TEXT", "'unprojected'"),
+            ("navidrome_projection_error", "TEXT", None),
+            ("navidrome_projected_at", "TEXT", None),
+        ]:
+            default_clause = f" DEFAULT {default}" if default is not None else ""
+            cur.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE playlists ADD COLUMN {col} {col_type}{default_clause};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+        cur.execute("""
+            UPDATE playlists
+            SET scope = CASE WHEN user_id IS NULL THEN 'system' ELSE 'user' END
+            WHERE scope IS NULL OR scope = ''
+        """)
+        cur.execute("""
+            UPDATE playlists
+            SET generation_mode = CASE WHEN is_smart THEN 'smart' ELSE 'static' END
+            WHERE generation_mode IS NULL OR generation_mode = ''
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlists_scope_active
+            ON playlists(scope, is_active, updated_at DESC)
+        """)
+        cur.execute("""
+            CREATE INDEX IF NOT EXISTS idx_playlists_curated
+            ON playlists(is_curated, category, featured_rank)
+        """)
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_curation_key
+            ON playlists(curation_key) WHERE curation_key IS NOT NULL
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS playlist_tracks (
@@ -481,6 +647,45 @@ def init_db():
             )
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id, position)")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_followed_playlists (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                followed_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, playlist_id)
+            )
+        """)
+        cur.execute("""
+            DO $$
+            DECLARE
+                target_table text;
+            BEGIN
+                SELECT ccu.table_name
+                INTO target_table
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.constraint_column_usage ccu
+                  ON tc.constraint_name = ccu.constraint_name
+                 AND tc.table_schema = ccu.table_schema
+                WHERE tc.table_name = 'user_followed_playlists'
+                  AND tc.constraint_name = 'user_followed_playlists_playlist_id_fkey'
+                LIMIT 1;
+
+                IF target_table IS DISTINCT FROM 'playlists' THEN
+                    BEGIN
+                        ALTER TABLE user_followed_playlists
+                        DROP CONSTRAINT IF EXISTS user_followed_playlists_playlist_id_fkey;
+                    EXCEPTION WHEN undefined_table THEN
+                        NULL;
+                    END;
+
+                    ALTER TABLE user_followed_playlists
+                    ADD CONSTRAINT user_followed_playlists_playlist_id_fkey
+                    FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE;
+                END IF;
+            END $$;
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_followed_playlists_user ON user_followed_playlists(user_id, followed_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_followed_playlists_playlist ON user_followed_playlists(playlist_id)")
 
         # Audit log
         cur.execute("""
@@ -551,6 +756,17 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_date ON shows(date)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_artist ON shows(artist_name)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_city ON shows(city)")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_show_attendance (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                show_id INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, show_id)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_attendance_user ON user_show_attendance(user_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_attendance_show ON user_show_attendance(show_id)")
 
         # Migration: track rating (0-5 stars)
         cur.execute("""
@@ -654,11 +870,22 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_saved_albums_user ON user_saved_albums(user_id)")
 
         cur.execute("""
+            DO $$ BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'user_liked_tracks' AND column_name = 'track_path'
+                ) THEN
+                    DROP TABLE user_liked_tracks;
+                END IF;
+            END $$
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS user_liked_tracks (
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                track_path TEXT NOT NULL,
+                track_id INTEGER NOT NULL REFERENCES library_tracks(id) ON DELETE CASCADE,
                 created_at TEXT NOT NULL,
-                PRIMARY KEY (user_id, track_path)
+                PRIMARY KEY (user_id, track_id)
             )
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_liked_tracks_user ON user_liked_tracks(user_id)")
@@ -667,6 +894,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS play_history (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
                 track_path TEXT NOT NULL,
                 title TEXT,
                 artist TEXT,
@@ -674,7 +902,14 @@ def init_db():
                 played_at TEXT NOT NULL
             )
         """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE play_history ADD COLUMN track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_user ON play_history(user_id, played_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_track ON play_history(track_id)")
 
         # Migration: add user_id to favorites table if missing
         cur.execute("""
@@ -683,5 +918,3 @@ def init_db():
             EXCEPTION WHEN duplicate_column THEN NULL;
             END $$
         """)
-
-

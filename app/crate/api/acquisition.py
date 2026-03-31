@@ -1,9 +1,14 @@
-"""Unified music acquisition API — Tidal + Soulseek."""
+"""Unified music acquisition API — Tidal + Soulseek + uploads."""
 
 import json
 import logging
+import os
+import re
+import shutil
+import uuid
+from pathlib import Path
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from crate import soulseek
@@ -12,6 +17,22 @@ from crate.db import get_setting, create_task, list_tasks
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/acquisition", tags=["acquisition"])
+
+ALLOWED_UPLOAD_EXTENSIONS = {
+    ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".aac", ".alac", ".zip",
+}
+
+
+def _upload_staging_root() -> Path:
+    return Path(os.environ.get("DATA_DIR", "/data")) / "uploads"
+
+
+def _safe_upload_name(filename: str, index: int) -> str:
+    raw_name = Path(filename or f"upload-{index}").name
+    cleaned = re.sub(r"[^A-Za-z0-9._ ()-]+", "_", raw_name).strip(" .")
+    if not cleaned:
+        cleaned = f"upload-{index}"
+    return f"{index:03d}_{cleaned}"
 
 
 @router.get("/status")
@@ -138,6 +159,82 @@ def acquisition_download(request: Request, body: dict):
         return {"task_id": task_id, "source": "soulseek", "finding_alternate": True}
 
     return JSONResponse({"error": "source must be 'tidal' or 'soulseek'"}, status_code=400)
+
+
+@router.post("/upload")
+async def acquisition_upload(request: Request, files: list[UploadFile] = File(...)):
+    """Stage uploaded music into shared /data and queue worker import."""
+    user = _require_auth(request)
+
+    if not files:
+        return JSONResponse({"error": "No files uploaded"}, status_code=400)
+
+    upload_id = uuid.uuid4().hex[:12]
+    staging_root = _upload_staging_root()
+    staging_dir = staging_root / upload_id
+    raw_dir = staging_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_files: list[dict] = []
+    total_bytes = 0
+
+    invalid_name = next(
+        (
+            upload.filename or "unknown"
+            for upload in files
+            if Path(upload.filename or "").suffix.lower() not in ALLOWED_UPLOAD_EXTENSIONS
+        ),
+        None,
+    )
+    if invalid_name:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        return JSONResponse({"error": f"Unsupported file type: {invalid_name}"}, status_code=400)
+
+    try:
+        for index, upload in enumerate(files, start=1):
+            safe_name = _safe_upload_name(upload.filename or "", index)
+            dest = raw_dir / safe_name
+            with dest.open("wb") as fh:
+                while True:
+                    chunk = await upload.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    total_bytes += len(chunk)
+
+            saved_files.append(
+                {
+                    "original_name": upload.filename or safe_name,
+                    "stored_name": safe_name,
+                    "size": dest.stat().st_size,
+                }
+            )
+    except Exception:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
+    finally:
+        for upload in files:
+            try:
+                await upload.close()
+            except Exception:
+                pass
+
+    task_id = create_task(
+        "library_upload",
+        {
+            "upload_id": upload_id,
+            "staging_dir": str(staging_dir),
+            "uploader_user_id": user["id"],
+            "files": saved_files,
+            "source": "admin_upload" if user.get("role") == "admin" else "listen_upload",
+        },
+    )
+    return {
+        "task_id": task_id,
+        "upload_id": upload_id,
+        "file_count": len(saved_files),
+        "total_bytes": total_bytes,
+    }
 
 
 # ── New Releases ──────────────────────────────────────────────────

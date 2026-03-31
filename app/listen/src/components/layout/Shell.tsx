@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
 import {
   Home, Compass, Rss, Library, Music, Disc, Heart, Users,
   ListMusic, PanelLeftClose, PanelLeftOpen, ChevronRight,
@@ -102,16 +102,16 @@ function Sidebar() {
           {expanded && <span className="text-[13px] font-medium">Explore</span>}
         </NavLink>
 
-        {/* Feed / Upcoming */}
+        {/* Upcoming */}
         <NavLink
-          to="/shows"
-          title="Feed"
+          to="/upcoming"
+          title="Upcoming"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
           }
         >
           <Rss size={20} />
-          {expanded && <span className="text-[13px] font-medium">Feed</span>}
+          {expanded && <span className="text-[13px] font-medium">Upcoming</span>}
         </NavLink>
 
         {/* Collection with popup */}
@@ -133,10 +133,10 @@ function Sidebar() {
           {collectionOpen && (
             <div className={`${expanded ? "mt-1 ml-3 border-l border-white/5 pl-3" : "absolute left-full top-0 ml-2 bg-[#12121a] border border-white/10 rounded-xl shadow-2xl py-2 w-44"}`}>
               {[
-                { to: "/library", icon: ListMusic, label: "Playlists", state: "playlists" },
-                { to: "/library", icon: Disc, label: "Albums", state: "albums" },
-                { to: "/library", icon: Heart, label: "Liked Tracks", state: "liked" },
-                { to: "/library", icon: Users, label: "Artists", state: "artists" },
+                { to: "/library?tab=playlists", icon: ListMusic, label: "Playlists" },
+                { to: "/library?tab=albums", icon: Disc, label: "Albums" },
+                { to: "/library?tab=liked", icon: Heart, label: "Liked Tracks" },
+                { to: "/library?tab=artists", icon: Users, label: "Artists" },
               ].map(({ to, icon: Icon, label }) => (
                 <button
                   key={label}
@@ -170,16 +170,23 @@ const MOBILE_NAV = [
   { to: "/", icon: Home, label: "Home" },
   { to: "/explore", icon: Compass, label: "Explore" },
   { to: "/library", icon: Library, label: "Library" },
-  { to: "/shows", icon: Rss, label: "Feed" },
+  { to: "/upcoming", icon: Rss, label: "Upcoming" },
 ] as const;
 
 // ── Shell ───────────────────────────────────────────────────────
 
 export function Shell() {
   const isDesktop = useIsDesktop();
+  const location = useLocation();
   const { currentTrack } = usePlayerActions();
   const hasTrack = !!currentTrack;
   const [sidebarExpanded, setSidebarExpanded] = useState(getStoredExpanded);
+  const overlayHeader =
+    /^\/artist\/[^/]+$/.test(location.pathname) ||
+    /^\/artist\/[^/]+\/top-tracks$/.test(location.pathname) ||
+    /^\/album\/[^/]+\/[^/]+$/.test(location.pathname);
+  const headerOffsetClass = overlayHeader ? "" : "pt-16";
+  const headerChromeClass = "bg-transparent border-transparent border-b-0 shadow-none backdrop-blur-0";
 
   // Sync with sidebar toggle (Sidebar writes to localStorage, we poll)
   useEffect(() => {
@@ -191,18 +198,18 @@ export function Shell() {
   const sidebarW = sidebarExpanded ? "ml-52" : "ml-14";
 
   if (isDesktop) {
-    return (
+      return (
       <div className="flex min-h-screen bg-[#0a0a0f]">
         <Sidebar />
 
-        {/* TopBar floating over content */}
-        <div className={`fixed top-0 ${sidebarW} right-0 z-30 transition-all duration-200`}>
+        <div
+          className={`fixed top-0 ${sidebarW} right-0 z-30 transition-all duration-200 ${headerChromeClass}`}
+        >
           <TopBar />
         </div>
 
-        {/* Main content */}
         <main className={`flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[80px]" : ""}`}>
-          <div className="p-6">
+          <div className={`p-6 ${headerOffsetClass}`}>
             <Outlet />
           </div>
         </main>
@@ -215,12 +222,12 @@ export function Shell() {
   // Mobile layout
   return (
     <div className="flex flex-col min-h-screen bg-[#0a0a0f]">
-      <div className="fixed top-0 left-0 right-0 z-30">
+      <div className={`fixed top-0 left-0 right-0 z-30 ${headerChromeClass}`}>
         <TopBar />
       </div>
 
       <main className={`flex-1 overflow-x-hidden ${hasTrack ? "pb-[116px]" : "pb-16"}`}>
-        <div className="p-4">
+        <div className={`p-4 ${headerOffsetClass}`}>
           <Outlet />
         </div>
       </main>

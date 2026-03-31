@@ -1,8 +1,16 @@
+import { useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { Play, Shuffle, ListPlus, Clock, Disc } from "lucide-react";
+import { Clock, Disc, Heart, ListPlus, MoreHorizontal, Play, Share2, Shuffle, User } from "lucide-react";
+import { toast } from "sonner";
+
+import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
 import { useApi } from "@/hooks/use-api";
+import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
+import { api } from "@/lib/api";
+import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
-import { TrackRow } from "@/components/cards/TrackRow";
+import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
+import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { encPath, formatBadgeClass } from "@/lib/utils";
 
 interface AlbumTrack {
@@ -29,6 +37,7 @@ interface AlbumTrack {
 }
 
 interface AlbumData {
+  id: number;
   artist: string;
   name: string;
   display_name: string;
@@ -49,6 +58,11 @@ interface AlbumData {
   genres: string[];
 }
 
+interface Playlist {
+  id: number;
+  name: string;
+}
+
 function buildPlayerTracks(data: AlbumData): Track[] {
   const cover = `/api/cover/${encPath(data.artist)}/${encPath(data.name)}`;
   return data.tracks.map((t) => ({
@@ -57,6 +71,8 @@ function buildPlayerTracks(data: AlbumData): Track[] {
     artist: data.artist,
     album: data.display_name || data.name,
     albumCover: cover,
+    path: t.path,
+    libraryTrackId: t.id,
   }));
 }
 
@@ -70,7 +86,12 @@ function formatTotalDuration(seconds: number): string {
 export function Album() {
   const { artist, album } = useParams<{ artist: string; album: string }>();
   const navigate = useNavigate();
-  const { playAll, addToQueue } = usePlayerActions();
+  const { playAll, addToQueue, playNext } = usePlayerActions();
+  const { openCreatePlaylist } = usePlaylistComposer();
+  const { isSaved, saveAlbum, unsaveAlbum } = useSavedAlbums();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [playlistPickerOpen, setPlaylistPickerOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const decodedArtist = decodeURIComponent(artist || "");
   const decodedAlbum = decodeURIComponent(album || "");
@@ -80,6 +101,16 @@ export function Album() {
       ? `/api/album/${encPath(decodedArtist)}/${encPath(decodedAlbum)}`
       : null,
   );
+  const { data: playlists } = useApi<Playlist[]>("/api/playlists");
+
+  useDismissibleLayer({
+    active: menuOpen || playlistPickerOpen,
+    refs: [menuRef],
+    onDismiss: () => {
+      setMenuOpen(false);
+      setPlaylistPickerOpen(false);
+    },
+  });
 
   if (loading) {
     return (
@@ -98,13 +129,19 @@ export function Album() {
   }
 
   const coverUrl = `/api/cover/${encPath(data.artist)}/${encPath(data.name)}`;
+  const artistPhotoUrl = `/api/artist/${encPath(data.artist)}/photo`;
   const displayName = data.display_name || data.name;
+  const albumId = data.id;
+  const artistName = data.artist;
+  const albumName = data.name;
+  const albumTracks = data.tracks;
   const year = data.album_tags?.year?.slice(0, 4);
   const genre = data.genres.length > 0 ? data.genres.join(", ") : data.album_tags?.genre;
   const playerTracks = buildPlayerTracks(data);
+  const saved = isSaved(albumId);
 
-  const formats = [...new Set(data.tracks.map((t) => t.format).filter(Boolean))];
-  const hasMultipleDiscs = data.tracks.some(
+  const formats = [...new Set(albumTracks.map((t) => t.format).filter(Boolean))];
+  const hasMultipleDiscs = albumTracks.some(
     (t) => t.tags.discnumber && parseInt(t.tags.discnumber) > 1,
   );
 
@@ -121,6 +158,107 @@ export function Album() {
   const handleAddToQueue = () => {
     playerTracks.forEach((t) => addToQueue(t));
   };
+
+  const handlePlayNextAlbum = () => {
+    [...playerTracks].reverse().forEach((track) => playNext(track));
+    toast.success("Album queued to play next");
+    setMenuOpen(false);
+  };
+
+  const shareUrl = `${window.location.origin}/album/${encPath(artistName)}/${encPath(albumName)}`;
+
+  async function handleShare() {
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `${artistName} - ${displayName}`, text: `${artistName} - ${displayName}`, url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Album link copied");
+      }
+    } catch {
+      toast.error("Failed to share album");
+    }
+  }
+
+  async function handleToggleSaved() {
+    try {
+      if (saved) {
+        await unsaveAlbum(albumId);
+        toast.success("Removed from your collection");
+      } else {
+        await saveAlbum(albumId);
+        toast.success("Added to your collection");
+      }
+    } catch {
+      toast.error("Failed to update collection");
+    }
+  }
+
+  const playlistTracksPayload = albumTracks.map((track) => ({
+    path: track.path,
+    title: track.tags.title || track.filename,
+    artist: artistName,
+    album: displayName,
+    duration: track.length_sec,
+  }));
+
+  async function handleAddToPlaylist(playlistId: number) {
+    try {
+      await api(`/api/playlists/${playlistId}/tracks`, "POST", { tracks: playlistTracksPayload });
+      toast.success("Album added to playlist");
+      setMenuOpen(false);
+      setPlaylistPickerOpen(false);
+    } catch {
+      toast.error("Failed to add album to playlist");
+    }
+  }
+
+  async function handleAddTrackToPlaylist(playlistId: number, track: TrackRowData) {
+    try {
+      await api(`/api/playlists/${playlistId}/tracks`, "POST", {
+        tracks: [{
+          path: track.path,
+          title: track.title,
+          artist: track.artist,
+          album: track.album || displayName,
+          duration: track.duration || 0,
+        }],
+      });
+      toast.success(`Added "${track.title}" to playlist`);
+    } catch {
+      toast.error("Failed to add track to playlist");
+    }
+  }
+
+  function handleCreatePlaylistFromAlbum() {
+    openCreatePlaylist({
+      name: displayName,
+      tracks: albumTracks.map((track) => ({
+        title: track.tags.title || track.filename,
+        artist: artistName,
+        album: displayName,
+        duration: track.length_sec,
+        path: track.path,
+        libraryTrackId: track.id,
+      })),
+    });
+    setMenuOpen(false);
+    setPlaylistPickerOpen(false);
+  }
+
+  function handleCreatePlaylistFromTrack(track: TrackRowData) {
+    openCreatePlaylist({
+      tracks: [{
+        title: track.title,
+        artist: track.artist,
+        album: track.album || displayName,
+        duration: track.duration,
+        path: track.path,
+        libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
+        navidromeId: track.navidrome_id,
+      }],
+    });
+  }
 
   // Group tracks by disc if multi-disc
   const tracksByDisc = new Map<number, AlbumTrack[]>();
@@ -154,12 +292,20 @@ export function Album() {
           </div>
 
           {/* Info */}
-          <div className="flex flex-col justify-end sm:text-left text-center">
+          <div className="flex flex-col justify-end text-left">
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1.5">{displayName}</h1>
             <button
-              className="text-sm text-muted-foreground hover:text-primary transition-colors mb-3"
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors mb-3 self-start"
               onClick={() => navigate(`/artist/${encPath(data.artist)}`)}
             >
+              <span className="w-6 h-6 rounded-full overflow-hidden bg-white/5 flex-shrink-0">
+                <img
+                  src={artistPhotoUrl}
+                  alt={data.artist}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                />
+              </span>
               {data.artist}
             </button>
 
@@ -176,7 +322,7 @@ export function Album() {
                 </span>
               )}
               {formats.map((f) => (
-                <span key={f} className={formatBadgeClass(f)}>{f}</span>
+                <span key={f} className={`${formatBadgeClass(f)} text-[11px] px-2.5 py-0.5`}>{f}</span>
               ))}
             </div>
           </div>
@@ -184,7 +330,7 @@ export function Album() {
       </div>
 
       {/* Action Row */}
-      <div className="flex items-center gap-3 px-4 sm:px-6 pb-4">
+      <div className="flex flex-wrap items-center gap-3 px-4 sm:px-6 pb-4">
         <button
           className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
           onClick={() => handlePlay()}
@@ -206,6 +352,133 @@ export function Album() {
           <ListPlus size={15} />
           Queue
         </button>
+        <button
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm transition-colors ${
+            saved
+              ? "border-primary/30 bg-primary/15 text-primary"
+              : "border-white/15 text-foreground hover:bg-white/5"
+          }`}
+          onClick={handleToggleSaved}
+        >
+          <Heart size={15} className={saved ? "fill-current" : ""} />
+          {saved ? "In Collection" : "Add to Collection"}
+        </button>
+        <button
+          className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"
+          onClick={handleShare}
+        >
+          <Share2 size={15} />
+          Share
+        </button>
+        <div className="relative" ref={menuRef}>
+          <button
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <MoreHorizontal size={15} />
+            More
+          </button>
+          {menuOpen && (
+            <AppPopover className="absolute top-full left-0 z-30 mt-2 w-72 overflow-hidden rounded-2xl">
+              <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
+                <div className="w-12 h-12 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
+                  {data.has_cover ? (
+                    <img src={coverUrl} alt={displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <Disc size={20} className="text-white/20" />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-foreground truncate">{displayName}</div>
+                  <div className="text-xs text-muted-foreground truncate">{data.artist}</div>
+                </div>
+              </div>
+
+              <div className="p-1.5">
+                <AppMenuButton
+                  onClick={() => {
+                    handlePlay();
+                    setMenuOpen(false);
+                  }}
+                >
+                  <Play size={15} />
+                  Play now
+                </AppMenuButton>
+                <AppMenuButton
+                  onClick={handlePlayNextAlbum}
+                >
+                  <ListPlus size={15} />
+                  Play next
+                </AppMenuButton>
+                <AppMenuButton
+                  className="justify-between"
+                  onClick={() => setPlaylistPickerOpen((open) => !open)}
+                >
+                  <span className="flex items-center gap-3">
+                    <ListPlus size={15} />
+                    Add to playlist
+                  </span>
+                  <span className="text-white/35">{playlistPickerOpen ? "−" : "+"}</span>
+                </AppMenuButton>
+                {playlistPickerOpen && (
+                  <div className="px-3 pb-2 space-y-1">
+                    <button
+                      className="w-full text-left rounded-lg px-3 py-2 text-sm text-foreground hover:bg-white/5 transition-colors"
+                      onClick={handleCreatePlaylistFromAlbum}
+                    >
+                      Add new playlist
+                    </button>
+                    {playlists && playlists.length > 0 ? (
+                      <AppPopoverDivider className="mx-1" />
+                    ) : null}
+                    {playlists && playlists.length > 0 ? (
+                      playlists.map((playlist) => (
+                        <button
+                          key={playlist.id}
+                          className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+                          onClick={() => handleAddToPlaylist(playlist.id)}
+                        >
+                          {playlist.name}
+                        </button>
+                      ))
+                    ) : (
+                      <div className="px-3 py-2 text-xs text-muted-foreground">No playlists yet</div>
+                    )}
+                  </div>
+                )}
+                <AppMenuButton
+                  onClick={async () => {
+                    await handleToggleSaved();
+                    setMenuOpen(false);
+                  }}
+                >
+                  <Heart size={15} className={saved ? "fill-current text-primary" : ""} />
+                  {saved ? "Remove from my collection" : "Add to my collection"}
+                </AppMenuButton>
+                <AppMenuButton
+                  onClick={() => {
+                    navigate(`/artist/${encPath(data.artist)}`);
+                    setMenuOpen(false);
+                  }}
+                >
+                  <User size={15} />
+                  Go to artist
+                </AppMenuButton>
+                <AppMenuButton
+                  onClick={async () => {
+                    await handleShare();
+                    setMenuOpen(false);
+                  }}
+                >
+                  <Share2 size={15} />
+                  Share
+                </AppMenuButton>
+              </div>
+            </AppPopover>
+          )}
+        </div>
       </div>
 
       {/* Track List */}
@@ -232,9 +505,13 @@ export function Album() {
                       track_number: parseInt(t.tags.tracknumber) || idx + 1,
                       format: t.format,
                       navidrome_id: undefined,
+                      library_track_id: t.id,
                     }}
                     index={parseInt(t.tags.tracknumber) || idx + 1}
                     albumCover={coverUrl}
+                    playlistOptions={playlists ?? undefined}
+                    onAddToPlaylist={handleAddTrackToPlaylist}
+                    onCreatePlaylist={handleCreatePlaylistFromTrack}
                   />
                 ))}
               </div>
@@ -253,9 +530,13 @@ export function Album() {
                 track_number: parseInt(t.tags.tracknumber) || idx + 1,
                 format: t.format,
                 navidrome_id: undefined,
+                library_track_id: t.id,
               }}
               index={parseInt(t.tags.tracknumber) || idx + 1}
               albumCover={coverUrl}
+              playlistOptions={playlists ?? undefined}
+              onAddToPlaylist={handleAddTrackToPlaylist}
+              onCreatePlaylist={handleCreatePlaylistFromTrack}
             />
           ))
         )}

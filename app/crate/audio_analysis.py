@@ -227,9 +227,32 @@ def _normalize_centroid(hz: float | None) -> float | None:
 
 
 def analyze_batch(filepaths: list) -> list:
-    """Analyze multiple tracks. Tries Rust CLI batch first, falls back to Python."""
+    """Analyze multiple tracks. Tries Rust CLI batch first, falls back to Python.
+    If Rust returns partial results (missing danceability/mood), supplements
+    each track with Python backend for the missing metrics."""
     rust = _analyze_rust_batch(filepaths)
     if rust:
+        _detect_backend()
+        if _BACKEND != "none":
+            needs_supplement = [
+                i for i, r in enumerate(rust)
+                if r and not any(r.get(k) is not None for k in ("danceability", "valence", "mood", "acousticness"))
+            ]
+            if needs_supplement:
+                supplement_paths = [filepaths[i] for i in needs_supplement]
+                supplements = None
+                if _BACKEND == "essentia":
+                    supplements = _analyze_batch_essentia(supplement_paths)
+                elif _BACKEND == "librosa":
+                    supplements = [_analyze_librosa(str(fp)) for fp in supplement_paths]
+                if supplements:
+                    _ADVANCED_KEYS = ("danceability", "valence", "acousticness", "instrumentalness",
+                                      "mood", "spectral_complexity")
+                    for idx, sup in zip(needs_supplement, supplements):
+                        if sup:
+                            for key in _ADVANCED_KEYS:
+                                if rust[idx].get(key) is None and sup.get(key) is not None:
+                                    rust[idx][key] = sup[key]
         return rust
     _detect_backend()
     if _BACKEND == "essentia":

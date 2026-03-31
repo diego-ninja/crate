@@ -1,13 +1,19 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
-import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play, Sparkles } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
+import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { TrackRow } from "@/components/cards/TrackRow";
+import { PlaylistListRow } from "@/components/playlists/PlaylistListRow";
+import { PlaylistCreateModal, type PlaylistComposerTrack } from "@/components/playlists/PlaylistCreateModal";
+import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from "@/components/ui/AppModal";
+import { type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 
 type Tab = "playlists" | "artists" | "albums" | "liked";
@@ -23,10 +29,40 @@ interface Playlist {
   id: number;
   name: string;
   description?: string;
+  cover_data_url?: string | null;
+  artwork_tracks?: PlaylistArtworkTrack[];
   track_count: number;
   is_smart: boolean;
   total_duration: number;
   created_at: string;
+}
+
+interface PlaylistTrack {
+  id: number;
+  track_id?: number;
+  track_path: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  position: number;
+  navidrome_id?: string;
+}
+
+interface PlaylistDetail extends Playlist {
+  tracks: PlaylistTrack[];
+}
+
+interface CuratedPlaylist {
+  id: number;
+  name: string;
+  description?: string;
+  cover_data_url?: string | null;
+  artwork_tracks?: PlaylistArtworkTrack[];
+  track_count: number;
+  follower_count: number;
+  is_smart: boolean;
+  category?: string | null;
 }
 
 interface FollowedArtist {
@@ -48,22 +84,17 @@ interface SavedAlbum {
   total_duration: number;
 }
 
-interface LikedTrack {
-  track_path: string;
-  liked_at: string;
-  title: string;
-  artist: string;
-  album: string;
-  duration: number;
-  navidrome_id?: string;
-}
-
 const tabs: { key: Tab; label: string; icon: typeof ListMusic }[] = [
   { key: "playlists", label: "Playlists", icon: ListMusic },
   { key: "artists", label: "Artists", icon: Users },
   { key: "albums", label: "Albums", icon: Disc },
   { key: "liked", label: "Liked", icon: Heart },
 ];
+
+function parseTab(value: string | null): Tab {
+  if (value === "artists" || value === "albums" || value === "liked") return value;
+  return "playlists";
+}
 
 function formatTotalDuration(seconds: number): string {
   if (!seconds) return "";
@@ -99,104 +130,253 @@ function StatBox({ value, label }: { value: number; label: string }) {
 }
 
 function PlaylistsTab() {
-  const navigate = useNavigate();
-  const { data: playlists, loading, refetch } = useApi<Playlist[]>("/api/playlists");
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const { data: playlists, loading, refetch: refetchPlaylists } = useApi<Playlist[]>("/api/playlists");
+  const {
+    data: followedCurated,
+    loading: followedLoading,
+    refetch: refetchFollowedCurated,
+  } = useApi<CuratedPlaylist[]>("/api/curation/followed");
+  const { openCreatePlaylist } = usePlaylistComposer();
+  const [editingPlaylist, setEditingPlaylist] = useState<PlaylistDetail | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingPlaylist, setDeletingPlaylist] = useState<Playlist | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  async function handleCreate() {
-    const name = newName.trim();
-    if (!name) return;
-    setSubmitting(true);
+  if (loading || followedLoading) return <Spinner />;
+
+  async function toggleSystemPlaylistFollow(playlist: CuratedPlaylist) {
     try {
-      await api("/api/playlists", "POST", { name });
-      toast.success("Playlist created");
-      setNewName("");
-      setCreating(false);
-      refetch();
+      const method = "DELETE";
+      await api(`/api/curation/playlists/${playlist.id}/follow`, method);
+      toast.success(`Removed ${playlist.name} from your library`);
+      refetchFollowedCurated();
     } catch {
-      toast.error("Failed to create playlist");
-    } finally {
-      setSubmitting(false);
+      toast.error("Failed to update playlist");
     }
   }
 
-  if (loading) return <Spinner />;
+  async function openPlaylistEditor(playlistId: number) {
+    try {
+      const detail = await api<PlaylistDetail>(`/api/playlists/${playlistId}`);
+      setEditingPlaylist(detail);
+    } catch {
+      toast.error("Failed to load playlist");
+    }
+  }
+
+  async function handleSavePlaylist(payload: {
+    name: string;
+    description: string;
+    coverDataUrl: string | null;
+    tracks: PlaylistComposerTrack[];
+  }) {
+    if (!editingPlaylist) return;
+    setSaving(true);
+    try {
+      await api(`/api/playlists/${editingPlaylist.id}`, "PUT", {
+        name: payload.name,
+        description: payload.description,
+        cover_data_url: payload.coverDataUrl,
+      });
+
+      const originalByEntryId = new Map(
+        editableTracks(editingPlaylist)
+          .filter((track) => track.playlistEntryId != null)
+          .map((track) => [track.playlistEntryId as number, track]),
+      );
+
+      const nextEntryIds = new Set(
+        payload.tracks
+          .map((track) => track.playlistEntryId)
+          .filter((value): value is number => value != null),
+      );
+
+      const removedTracks = [...originalByEntryId.values()]
+        .filter((track) => !nextEntryIds.has(track.playlistEntryId as number))
+        .sort((a, b) => (b.playlistPosition || 0) - (a.playlistPosition || 0));
+
+      for (const track of removedTracks) {
+        if (track.playlistPosition != null) {
+          await api(`/api/playlists/${editingPlaylist.id}/tracks/${track.playlistPosition}`, "DELETE");
+        }
+      }
+
+      const newTracks = payload.tracks.filter((track) => track.playlistEntryId == null && track.path);
+      if (newTracks.length > 0) {
+        await api(`/api/playlists/${editingPlaylist.id}/tracks`, "POST", {
+          tracks: newTracks.map((track) => ({
+            path: track.path,
+            title: track.title,
+            artist: track.artist,
+            album: track.album || "",
+            duration: track.duration || 0,
+          })),
+        });
+      }
+
+      toast.success("Playlist updated");
+      setEditingPlaylist(null);
+      refetchPlaylists();
+    } catch {
+      toast.error("Failed to update playlist");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeletePlaylist() {
+    if (!deletingPlaylist) return;
+    setDeleting(true);
+    try {
+      await api(`/api/playlists/${deletingPlaylist.id}`, "DELETE");
+      toast.success("Playlist deleted");
+      setDeletingPlaylist(null);
+      refetchPlaylists();
+    } catch {
+      toast.error("Failed to delete playlist");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="space-y-3">
-      {/* New playlist button / inline form */}
-      {creating ? (
-        <div className="flex items-center gap-2">
-          <input
-            autoFocus
-            type="text"
-            placeholder="Playlist name"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-            className="flex-1 rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
-          />
-          <button
-            onClick={handleCreate}
-            disabled={submitting || !newName.trim()}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
-          >
-            Create
-          </button>
-          <button
-            onClick={() => { setCreating(false); setNewName(""); }}
-            className="rounded-lg bg-white/5 px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={() => setCreating(true)}
-          className="flex items-center gap-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors px-4 py-2.5 text-sm font-medium text-foreground w-full"
-        >
-          <Plus size={16} className="text-primary" />
-          New Playlist
-        </button>
-      )}
+      <button
+        onClick={() => openCreatePlaylist()}
+        className="flex items-center gap-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors px-4 py-2.5 text-sm font-medium text-foreground w-full"
+      >
+        <Plus size={16} className="text-primary" />
+        New Playlist
+      </button>
 
-      {/* Playlist list */}
+      {followedCurated && followedCurated.length > 0 ? (
+        <div className="space-y-1">
+          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-white/35">
+            From Crate
+          </div>
+          {followedCurated.map((playlist) => (
+            <PlaylistListRow
+              key={`curated-${playlist.id}`}
+              name={playlist.name}
+              description={playlist.description}
+              coverDataUrl={playlist.cover_data_url}
+              artworkTracks={playlist.artwork_tracks}
+              trackCount={playlist.track_count}
+              meta={[playlist.category, playlist.follower_count > 0 ? `${playlist.follower_count} followers` : null].filter(Boolean).join(" · ")}
+              href={`/curation/playlist/${playlist.id}`}
+              detailEndpoint={`/api/curation/playlists/${playlist.id}`}
+              badge={playlist.is_smart ? "smart" : "curated"}
+              followState={{
+                isFollowed: true,
+                onToggle: async () => toggleSystemPlaylistFollow(playlist),
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+
       {!playlists || playlists.length === 0 ? (
-        <EmptyState message="No playlists yet. Create one to get started." />
+        !followedCurated || followedCurated.length === 0 ? (
+          <EmptyState message="No playlists yet. Create one to get started." />
+        ) : null
       ) : (
         <div className="space-y-1">
+          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-white/35">
+            Your Playlists
+          </div>
           {playlists.map((pl) => (
-            <button
+            <PlaylistListRow
               key={pl.id}
-              onClick={() => navigate(`/playlist/${pl.id}`)}
-              className="flex items-center gap-3 w-full rounded-lg px-3 py-3 hover:bg-white/5 transition-colors text-left"
-            >
-              <div className="w-10 h-10 rounded-md bg-white/5 flex items-center justify-center flex-shrink-0">
-                <ListMusic size={18} className="text-muted-foreground" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-foreground truncate">{pl.name}</span>
-                  {pl.is_smart && (
-                    <span className="inline-flex items-center rounded-md border border-primary/30 text-primary text-[10px] px-1.5 py-0 font-medium">
-                      <Sparkles size={10} className="mr-0.5" />
-                      Smart
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {pl.track_count} track{pl.track_count !== 1 ? "s" : ""}
-                  {pl.total_duration > 0 && ` · ${formatTotalDuration(pl.total_duration)}`}
-                </div>
-              </div>
-            </button>
+              name={pl.name}
+              description={pl.description}
+              coverDataUrl={pl.cover_data_url}
+              artworkTracks={pl.artwork_tracks}
+              trackCount={pl.track_count}
+              meta={pl.total_duration > 0 ? formatTotalDuration(pl.total_duration) : undefined}
+              href={`/playlist/${pl.id}`}
+              detailEndpoint={`/api/playlists/${pl.id}`}
+              badge={pl.is_smart ? "smart" : "personal"}
+              extraActions={[
+                {
+                  key: "edit",
+                  icon: Pencil,
+                  title: "Edit",
+                  onClick: async () => openPlaylistEditor(pl.id),
+                },
+                {
+                  key: "delete",
+                  icon: Trash2,
+                  title: "Delete",
+                  onClick: async () => setDeletingPlaylist(pl),
+                  tone: "danger",
+                },
+              ]}
+            />
           ))}
         </div>
       )}
+
+      <PlaylistCreateModal
+        open={!!editingPlaylist}
+        mode="edit"
+        initialName={editingPlaylist?.name}
+        initialDescription={editingPlaylist?.description}
+        initialCoverDataUrl={editingPlaylist?.cover_data_url}
+        initialTracks={editingPlaylist ? editableTracks(editingPlaylist) : []}
+        submitting={saving}
+        onClose={() => setEditingPlaylist(null)}
+        onSubmit={handleSavePlaylist}
+      />
+
+      <AppModal open={!!deletingPlaylist} onClose={() => !deleting && setDeletingPlaylist(null)} maxWidthClassName="sm:max-w-md">
+        <ModalHeader className="flex items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Delete playlist</h2>
+            <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
+          </div>
+          <ModalCloseButton onClick={() => setDeletingPlaylist(null)} disabled={deleting} />
+        </ModalHeader>
+        <ModalBody className="px-5 py-5">
+          <p className="text-sm text-muted-foreground">
+            Delete <span className="font-medium text-foreground">{deletingPlaylist?.name}</span> and remove all its track entries?
+          </p>
+        </ModalBody>
+        <ModalFooter className="flex items-center justify-end gap-3 px-5 py-4">
+          <button
+            type="button"
+            className="rounded-xl px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+            onClick={() => setDeletingPlaylist(null)}
+            disabled={deleting}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-500/90 transition-colors disabled:opacity-50"
+            onClick={handleDeletePlaylist}
+            disabled={deleting}
+          >
+            {deleting ? <Loader2 size={15} className="animate-spin" /> : null}
+            Delete playlist
+          </button>
+        </ModalFooter>
+      </AppModal>
     </div>
   );
+}
+
+function editableTracks(playlist: PlaylistDetail): PlaylistComposerTrack[] {
+  return playlist.tracks.map((track) => ({
+    title: track.title || "Unknown",
+    artist: track.artist || "",
+    album: track.album,
+    duration: track.duration,
+    path: track.track_path,
+    libraryTrackId: track.track_id,
+    navidromeId: track.navidrome_id,
+    playlistEntryId: track.id,
+    playlistPosition: track.position,
+  }));
 }
 
 function ArtistsTab() {
@@ -208,7 +388,7 @@ function ArtistsTab() {
   }
 
   return (
-    <div className="grid grid-cols-3 md:grid-cols-5 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-5">
       {artists.map((a) => (
         <ArtistCard
           key={a.artist_name}
@@ -229,12 +409,13 @@ function AlbumsTab() {
   }
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-5">
       {albums.map((a) => (
         <AlbumCard
-          key={`${a.artist}-${a.name}`}
+          key={a.id}
           artist={a.artist}
           album={a.name}
+          albumId={a.id}
           year={a.year}
         />
       ))}
@@ -243,7 +424,7 @@ function AlbumsTab() {
 }
 
 function LikedTab() {
-  const { data: tracks, loading } = useApi<LikedTrack[]>("/api/me/likes?limit=100");
+  const { likedTracks: tracks, loading } = useLikedTracks();
   const { playAll } = usePlayerActions();
 
   if (loading) return <Spinner />;
@@ -254,13 +435,16 @@ function LikedTab() {
   function handlePlayAll() {
     if (!tracks || tracks.length === 0) return;
     const playerTracks: Track[] = tracks.map((t) => ({
-      id: t.navidrome_id || t.track_path,
+      id: t.relative_path || t.path,
       title: t.title,
       artist: t.artist,
       album: t.album,
       albumCover: t.artist && t.album
         ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}`
         : undefined,
+      path: t.relative_path || t.path,
+      navidromeId: t.navidrome_id,
+      libraryTrackId: t.track_id,
     }));
     playAll(playerTracks, 0);
   }
@@ -277,18 +461,22 @@ function LikedTab() {
       <div>
         {tracks.map((t, i) => (
           <TrackRow
-            key={t.track_path}
+            key={t.track_id}
             track={{
+              id: t.track_id,
               title: t.title,
               artist: t.artist,
               album: t.album,
               duration: t.duration,
-              path: t.track_path,
+              path: t.relative_path || t.path,
               navidrome_id: t.navidrome_id,
+              library_track_id: t.track_id,
             }}
             index={i + 1}
             showArtist
             showAlbum
+            albumCover={t.artist && t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : undefined}
+            showCoverThumb
           />
         ))}
       </div>
@@ -297,8 +485,13 @@ function LikedTab() {
 }
 
 export function Library() {
-  const [tab, setTab] = useState<Tab>("playlists");
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: stats } = useApi<MeStats>("/api/me");
+  const tab = parseTab(searchParams.get("tab"));
+
+  function setTab(tab: Tab) {
+    setSearchParams({ tab });
+  }
 
   return (
     <div className="space-y-6">

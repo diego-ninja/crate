@@ -1,37 +1,48 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate, Link } from "react-router";
+import { Link, Navigate } from "react-router";
+import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function Login() {
+  const { user, loading: authLoading, refetch } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+  const [submitting, setSubmitting] = useState(false);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f] px-4">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to="/" replace />;
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError("");
-    setLoading(true);
+    setSubmitting(true);
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        credentials: "include",
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        setError(data?.detail || "Invalid credentials");
-        return;
+      await api("/api/auth/login", "POST", { email, password });
+      await refetch();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        try {
+          const parsed = JSON.parse(err.message);
+          setError(parsed.detail || "Invalid credentials");
+        } catch {
+          setError(err.message || "Invalid credentials");
+        }
+      } else {
+        setError("Connection error");
       }
-
-      navigate("/");
-    } catch {
-      setError("Connection error");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
@@ -77,10 +88,10 @@ export function Login() {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={submitting}
           className="w-full h-10 rounded-lg bg-cyan-400 text-black font-medium text-sm hover:bg-cyan-300 transition-colors disabled:opacity-50"
         >
-          {loading ? "Signing in..." : "Sign in"}
+          {submitting ? "Signing in..." : "Sign in"}
         </button>
 
         <p className="text-center text-sm text-white/40">

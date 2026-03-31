@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Link2, Loader2, Plus, RefreshCw, Trash2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,10 +32,22 @@ import { api, ApiError } from "@/lib/api";
 interface UserRecord {
   id: number;
   email: string;
+  username?: string | null;
   name: string;
   role: string;
   last_login: string | null;
   created_at: string;
+  navidrome_username?: string | null;
+  navidrome_status?: string | null;
+  navidrome_last_error?: string | null;
+  navidrome_last_task_id?: string | null;
+  navidrome_last_synced_at?: string | null;
+}
+
+interface NavidromeUser {
+  username: string;
+  email?: string;
+  admin_role?: boolean;
 }
 
 export function Users() {
@@ -43,6 +55,7 @@ export function Users() {
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
+  const [navidromeTarget, setNavidromeTarget] = useState<UserRecord | null>(null);
 
   async function fetchUsers() {
     try {
@@ -94,9 +107,11 @@ export function Users() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
+              <TableHead>Username</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Navidrome</TableHead>
               <TableHead>Last Login</TableHead>
-              <TableHead className="w-[60px]" />
+              <TableHead className="w-[140px]" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -104,15 +119,37 @@ export function Users() {
               <TableRow key={u.id}>
                 <TableCell className="font-medium">{u.name}</TableCell>
                 <TableCell className="text-muted-foreground">{u.email}</TableCell>
+                <TableCell className="text-muted-foreground text-sm">{u.username || "—"}</TableCell>
                 <TableCell>
                   <Badge variant={u.role === "admin" ? "default" : "secondary"}>
                     {u.role}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  <div className="space-y-1">
+                    <Badge variant={badgeVariantForNavidromeStatus(u.navidrome_status)}>
+                      {labelForNavidromeStatus(u.navidrome_status)}
+                    </Badge>
+                    {u.navidrome_username ? (
+                      <div className="text-xs text-muted-foreground">{u.navidrome_username}</div>
+                    ) : null}
+                    {u.navidrome_last_error ? (
+                      <div className="text-xs text-destructive line-clamp-2">{u.navidrome_last_error}</div>
+                    ) : null}
+                  </div>
+                </TableCell>
                 <TableCell className="text-muted-foreground text-sm">
                   {u.last_login ? new Date(u.last_login).toLocaleDateString() : "Never"}
                 </TableCell>
-                <TableCell>
+                <TableCell className="space-x-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground"
+                    onClick={() => setNavidromeTarget(u)}
+                  >
+                    <Link2 size={14} />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon"
@@ -126,7 +163,7 @@ export function Users() {
             ))}
             {users.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                   No users found
                 </TableCell>
               </TableRow>
@@ -141,6 +178,12 @@ export function Users() {
         onSuccess={fetchUsers}
       />
 
+      <ManageNavidromeDialog
+        user={navidromeTarget}
+        onOpenChange={(open) => { if (!open) setNavidromeTarget(null); }}
+        onSuccess={fetchUsers}
+      />
+
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
@@ -152,6 +195,20 @@ export function Users() {
       />
     </div>
   );
+}
+
+function labelForNavidromeStatus(status?: string | null) {
+  if (status === "synced") return "Synced";
+  if (status === "pending") return "Pending";
+  if (status === "errored") return "Errored";
+  return "Unlinked";
+}
+
+function badgeVariantForNavidromeStatus(status?: string | null): "default" | "secondary" | "destructive" | "outline" {
+  if (status === "synced") return "default";
+  if (status === "pending") return "secondary";
+  if (status === "errored") return "destructive";
+  return "outline";
 }
 
 function AddUserDialog({
@@ -180,8 +237,8 @@ function AddUserDialog({
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api("/api/auth/users", "POST", { email, name, password, role });
-      toast.success("User created");
+      const created = await api<{ navidrome_task_id?: string }>("/api/auth/users", "POST", { email, name, password, role });
+      toast.success(created.navidrome_task_id ? "User created and Navidrome sync queued" : "User created");
       onOpenChange(false);
       reset();
       onSuccess();
@@ -240,6 +297,177 @@ function AddUserDialog({
             </Button>
           </div>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ManageNavidromeDialog({
+  user,
+  onOpenChange,
+  onSuccess,
+}: {
+  user: UserRecord | null;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+}) {
+  const open = !!user;
+  const [existingUsers, setExistingUsers] = useState<NavidromeUser[]>([]);
+  const [mode, setMode] = useState<"existing" | "create">("existing");
+  const [username, setUsername] = useState("");
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open || !user) return;
+    setMode(user.navidrome_status === "unlinked" || !user.navidrome_username ? "create" : "existing");
+    setUsername(user.navidrome_username || user.username || user.email.split("@")[0] || "");
+    setLoadingUsers(true);
+    api<NavidromeUser[]>("/api/auth/navidrome/users")
+      .then((data) => setExistingUsers(data))
+      .catch((err) => {
+        toast.error(err instanceof ApiError ? err.message : "Failed to load Navidrome users");
+        setExistingUsers([]);
+      })
+      .finally(() => setLoadingUsers(false));
+  }, [open, user]);
+
+  async function handleLink() {
+    if (!user || !username.trim()) return;
+    setSubmitting(true);
+    try {
+      const result = await api<{ task_id?: string }>(`/api/auth/users/${user.id}/navidrome-link`, "POST", {
+        username: username.trim(),
+        create_if_missing: mode === "create",
+      });
+      toast.success(
+        mode === "create"
+          ? `Navidrome sync queued${result.task_id ? ` · task ${result.task_id.slice(0, 8)}` : ""}`
+          : "Navidrome user linked",
+      );
+      onOpenChange(false);
+      onSuccess();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to link Navidrome user");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleUnlink() {
+    if (!user) return;
+    setSubmitting(true);
+    try {
+      await api(`/api/auth/users/${user.id}/navidrome-unlink`, "POST");
+      toast.success("Navidrome link removed");
+      onOpenChange(false);
+      onSuccess();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to unlink Navidrome user");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Navidrome Sync</DialogTitle>
+          <DialogDescription>
+            Link {user?.name || user?.email} to an existing Navidrome user or create/sync one automatically.
+          </DialogDescription>
+        </DialogHeader>
+
+        {user ? (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border p-3 space-y-1">
+              <div className="text-sm font-medium">{user.name || user.email}</div>
+              <div className="text-xs text-muted-foreground">{user.email}</div>
+              <div className="flex items-center gap-2 pt-1">
+                <Badge variant={badgeVariantForNavidromeStatus(user.navidrome_status)}>
+                  {labelForNavidromeStatus(user.navidrome_status)}
+                </Badge>
+                {user.navidrome_username ? (
+                  <span className="text-xs text-muted-foreground">{user.navidrome_username}</span>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Mode</div>
+              <Select value={mode} onValueChange={(value: "existing" | "create") => setMode(value)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="existing">Link existing user</SelectItem>
+                  <SelectItem value="create">Create or sync user</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {mode === "existing" ? (
+              <div className="space-y-2">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Existing Navidrome user</div>
+                <Select value={username} onValueChange={setUsername} disabled={loadingUsers || existingUsers.length === 0}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder={loadingUsers ? "Loading users..." : "Select Navidrome user"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {existingUsers.map((navUser) => (
+                      <SelectItem key={navUser.username} value={navUser.username}>
+                        {navUser.username}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {existingUsers.length === 0 && !loadingUsers ? (
+                  <p className="text-xs text-muted-foreground">No Navidrome users found.</p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Navidrome username</div>
+                <Input
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="navidrome username"
+                />
+                <p className="text-xs text-muted-foreground">
+                  This queues a background sync task. If Navidrome is down, Dramatiq will retry before leaving it errored.
+                </p>
+              </div>
+            )}
+
+            {user.navidrome_last_error ? (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                {user.navidrome_last_error}
+              </div>
+            ) : null}
+
+            <div className="flex justify-between gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleUnlink}
+                disabled={submitting || !user.navidrome_username}
+              >
+                <Unlink size={14} className="mr-1" />
+                Unlink
+              </Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={handleLink} disabled={submitting || !username.trim()}>
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : mode === "create" ? <RefreshCw size={14} className="mr-1" /> : <Link2 size={14} className="mr-1" />}
+                  {mode === "create" ? "Sync user" : "Link user"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </DialogContent>
     </Dialog>
   );

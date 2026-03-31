@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from crate.api.auth import _require_auth
+from crate.playlist_covers import delete_playlist_cover, persist_playlist_cover_data, playlist_cover_abspath
 from crate.db import (
     create_playlist, get_playlists, get_playlist, update_playlist,
     delete_playlist, get_playlist_tracks, add_playlist_tracks,
     remove_playlist_track, reorder_playlist, get_db_ctx, create_task,
+    get_user_external_identity,
 )
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
@@ -14,6 +17,7 @@ router = APIRouter(prefix="/api/playlists", tags=["playlists"])
 class CreatePlaylistRequest(BaseModel):
     name: str
     description: str = ""
+    cover_data_url: str | None = None
     is_smart: bool = False
     smart_rules: dict | None = None
 
@@ -21,6 +25,7 @@ class CreatePlaylistRequest(BaseModel):
 class UpdatePlaylistRequest(BaseModel):
     name: str | None = None
     description: str | None = None
+    cover_data_url: str | None = None
     smart_rules: dict | None = None
 
 
@@ -34,6 +39,20 @@ class ReorderRequest(BaseModel):
 
 class SyncNavidromeRequest(BaseModel):
     playlist_id: int
+
+
+def _apply_playlist_cover_payload(playlist_id: int, cover_data_url: str | None, existing_cover_path: str | None = None):
+    if cover_data_url is None:
+        return None
+    if cover_data_url == "":
+        delete_playlist_cover(existing_cover_path)
+        return {"cover_data_url": None, "cover_path": None}
+    if cover_data_url.startswith("data:image/"):
+        new_cover_path = persist_playlist_cover_data(playlist_id, cover_data_url)
+        if existing_cover_path and existing_cover_path != new_cover_path:
+            delete_playlist_cover(existing_cover_path)
+        return {"cover_data_url": None, "cover_path": new_cover_path}
+    return {"cover_data_url": cover_data_url}
 
 
 # ── Filter options ───────────────────────────────────────────────
@@ -95,6 +114,9 @@ def create(request: Request, body: CreatePlaylistRequest):
         is_smart=body.is_smart,
         smart_rules=body.smart_rules,
     )
+    cover_update = _apply_playlist_cover_payload(playlist_id, body.cover_data_url)
+    if cover_update:
+        update_playlist(playlist_id, **cover_update)
     return {"id": playlist_id}
 
 
@@ -124,6 +146,8 @@ def update(request: Request, playlist_id: int, body: UpdatePlaylistRequest):
         kwargs["name"] = body.name.strip()
     if body.description is not None:
         kwargs["description"] = body.description
+    if body.cover_data_url is not None:
+        kwargs.update(_apply_playlist_cover_payload(playlist_id, body.cover_data_url, pl.get("cover_path")) or {})
     if body.smart_rules is not None:
         kwargs["smart_rules"] = body.smart_rules
     if kwargs:
@@ -139,8 +163,23 @@ def delete(request: Request, playlist_id: int):
         raise HTTPException(status_code=404, detail="Playlist not found")
     if pl.get("user_id") != user["id"] and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Not your playlist")
+    delete_playlist_cover(pl.get("cover_path"))
     delete_playlist(playlist_id)
     return {"ok": True}
+
+
+@router.get("/{playlist_id}/cover")
+def get_cover(request: Request, playlist_id: int):
+    user = _require_auth(request)
+    pl = get_playlist(playlist_id)
+    if not pl:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    if pl.get("scope") != "system" and pl.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
+    cover_path = playlist_cover_abspath(pl.get("cover_path"))
+    if not cover_path or not cover_path.exists():
+        raise HTTPException(status_code=404, detail="Cover not found")
+    return FileResponse(cover_path)
 
 
 # ── Tracks ───────────────────────────────────────────────────────
@@ -301,9 +340,27 @@ def _execute_smart_rules(rules: dict) -> list[dict]:
 @router.post("/{playlist_id}/sync-navidrome")
 def sync_to_navidrome(request: Request, playlist_id: int):
     """Create/update this playlist in Navidrome."""
-    _require_auth(request)
+    user = _require_auth(request)
     pl = get_playlist(playlist_id)
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    task_id = create_task("sync_playlist_navidrome", {"playlist_id": playlist_id})
+    owner_id = pl.get("user_id")
+    if owner_id != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
+
+    identity = get_user_external_identity(owner_id, "navidrome")
+    if not identity or identity.get("status") != "synced" or not identity.get("external_username"):
+        raise HTTPException(
+            status_code=409,
+            detail="Navidrome user is not linked yet for this playlist owner",
+        )
+
+    task_id = create_task(
+        "sync_playlist_navidrome",
+        {
+            "playlist_id": playlist_id,
+            "user_id": owner_id,
+            "navidrome_username": identity["external_username"],
+        },
+    )
     return {"task_id": task_id}

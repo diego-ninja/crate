@@ -13,7 +13,8 @@ import {
   ListMusic,
 } from "lucide-react";
 import { usePlayer } from "@/contexts/PlayerContext";
-import { api } from "@/lib/api";
+import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { useEscapeKey } from "@/hooks/use-escape-key";
 import { formatDuration } from "@/lib/utils";
 
 interface FullscreenPlayerProps {
@@ -42,12 +43,12 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   } = usePlayer();
   const navigate = useNavigate();
 
-  const [liked, setLiked] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+  const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
 
   // Animate in/out
   useEffect(() => {
@@ -63,10 +64,15 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     }
   }, [open]);
 
-  // Reset like state when track changes
-  useEffect(() => {
-    setLiked(false);
-  }, [currentTrack?.id]);
+  useEscapeKey(visible, (event) => {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (showQueue) {
+      setShowQueue(false);
+      return;
+    }
+    onClose();
+  });
 
   const handleSeek = useCallback(
     (clientX: number) => {
@@ -108,17 +114,16 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
   async function toggleLike() {
     if (!currentTrack) return;
-    const path = currentTrack.id;
+    const trackId = currentTrack.libraryTrackId ?? null;
+    const trackPath = currentTrack.path || currentTrack.id;
     if (liked) {
-      await api("/api/me/likes", "DELETE", { track_path: path }).catch(
+      await unlikeTrack(trackId, trackPath).catch(
         () => {},
       );
-      setLiked(false);
     } else {
-      await api("/api/me/likes", "POST", { track_path: path }).catch(
+      await likeTrack(trackId, trackPath).catch(
         () => {},
       );
-      setLiked(true);
     }
   }
 
@@ -132,6 +137,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 6);
+  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
 
   return (
     <div
