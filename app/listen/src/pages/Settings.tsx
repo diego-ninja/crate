@@ -1,8 +1,12 @@
 import {
   getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
+  getSmartPlaylistSuggestionsCadencePreference,
+  getSmartPlaylistSuggestionsPreference,
   setInfinitePlaybackPreference,
   setCrossfadeDurationPreference,
+  setSmartPlaylistSuggestionsCadencePreference,
+  setSmartPlaylistSuggestionsPreference,
 } from "@/lib/player-playback-prefs";
 import { useState } from "react";
 
@@ -109,6 +113,12 @@ function ToggleRow({
 export function Settings() {
   const [crossfadeSeconds, setCrossfadeSeconds] = useState(getCrossfadeDurationPreference);
   const [infinitePlaybackEnabled, setInfinitePlaybackEnabled] = useState(getInfinitePlaybackPreference);
+  const [smartPlaylistSuggestionsEnabled, setSmartPlaylistSuggestionsEnabled] = useState(
+    getSmartPlaylistSuggestionsPreference,
+  );
+  const [smartPlaylistSuggestionsCadence, setSmartPlaylistSuggestionsCadence] = useState(
+    getSmartPlaylistSuggestionsCadencePreference,
+  );
 
   return (
     <div className="space-y-8">
@@ -143,6 +153,28 @@ export function Settings() {
           onChange={(value) => {
             setCrossfadeSeconds(value);
             setCrossfadeDurationPreference(value);
+          }}
+        />
+        <ToggleRow
+          label="Smart playlist suggestions"
+          description="While listening to a playlist, occasionally slip in one contextual recommendation without changing the playlist itself."
+          checked={smartPlaylistSuggestionsEnabled}
+          onChange={(value) => {
+            setSmartPlaylistSuggestionsEnabled(value);
+            setSmartPlaylistSuggestionsPreference(value);
+          }}
+        />
+        <RangeRow
+          label="Suggestion cadence"
+          description="How many original playlist tracks should play before a suggested track can be inserted."
+          value={smartPlaylistSuggestionsCadence}
+          min={2}
+          max={10}
+          step={1}
+          displayValue={`Every ${smartPlaylistSuggestionsCadence} tracks`}
+          onChange={(value) => {
+            setSmartPlaylistSuggestionsCadence(value);
+            setSmartPlaylistSuggestionsCadencePreference(value);
           }}
         />
       </Section>

@@ -6,7 +6,7 @@
 
 ## Estado actual
 
-### Batch 1 en curso
+### Batch 1-5 completados
 
 Ya está arrancada una primera base técnica segura para esta iteración:
 
@@ -20,12 +20,11 @@ Ya está arrancada una primera base técnica segura para esta iteración:
 - `Album`, `Playlist` y `CuratedPlaylist` ya exponen acciones directas de radio
 - las sesiones de radio ya pueden hacer `queue refill` automático al acercarse al final de la cola
 - `album` y `playlist` ya soportan `infinite continuation` cuando la preferencia del player está activa
-
-### Aún no implementado
-
-Sigue pendiente para batches posteriores:
-
 - `smart track inclusion`
+  - solo durante reproducción de playlists
+  - configurable desde `Settings`
+  - efímera en cola, sin mutar la playlist guardada
+  - marcada visualmente como `Suggested` en las superficies de cola
 
 ## Resumen
 
@@ -491,6 +490,7 @@ Mi recomendación:
 ## Fase 4
 
 - `smart track inclusion`
+- estado: implementado como inserción de 1 sugerencia cada N temas originales de playlist
 
 ## Por Qué Este Orden
 

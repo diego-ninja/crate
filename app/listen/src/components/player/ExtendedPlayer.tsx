@@ -117,7 +117,14 @@ function QueueTab() {
               >
                 <span className="text-[10px] text-white/15 w-4 text-right tabular-nums shrink-0">{realIdx + 1}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[12px] text-white/50 truncate">{track.title}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="min-w-0 flex-1 truncate text-[12px] text-white/50">{track.title}</p>
+                    {track.isSuggested ? (
+                      <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-cyan-300">
+                        Suggested
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="text-[10px] text-white/25 truncate">{track.artist}</p>
                 </div>
               </button>
@@ -170,7 +177,14 @@ function QueueTab() {
               >
                 <span className="text-[10px] text-white/20 w-4 text-right tabular-nums shrink-0">{i + 1}</span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-[12px] text-white/80 truncate">{track.title}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="min-w-0 flex-1 truncate text-[12px] text-white/80">{track.title}</p>
+                    {track.isSuggested ? (
+                      <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-cyan-300">
+                        Suggested
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="text-[10px] text-white/40 truncate">{track.artist}</p>
                 </div>
                 <button

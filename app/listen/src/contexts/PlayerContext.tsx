@@ -11,6 +11,8 @@ import {
 import {
   getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
+  getSmartPlaylistSuggestionsCadencePreference,
+  getSmartPlaylistSuggestionsPreference,
   PLAYER_PLAYBACK_PREFS_EVENT,
 } from "@/lib/player-playback-prefs";
 import { fetchInfiniteContinuation, fetchRadioContinuation } from "@/lib/radio";
@@ -24,6 +26,8 @@ export interface Track {
   path?: string;
   navidromeId?: string;
   libraryTrackId?: number;
+  isSuggested?: boolean;
+  suggestionSource?: "playlist";
 }
 
 type RepeatMode = "off" | "one" | "all";
@@ -105,6 +109,7 @@ const MAX_RECENT = 10;
 const NEXT_TRACK_PRELOAD_WINDOW_SECONDS = 15;
 const RADIO_REFILL_THRESHOLD = 3;
 const RADIO_REFILL_BATCH_SIZE = 30;
+const SMART_PLAYLIST_SUGGESTION_BATCH_SIZE = 12;
 const PLAYER_AUDIO_KEY = "__listenPlayerAudio";
 const PLAYER_PRELOAD_AUDIO_KEY = "__listenPlayerPreloadAudio";
 
@@ -213,6 +218,18 @@ function isContinuousAlbumTransition(
   );
 }
 
+function isLikelyContinuousAlbumBlock(currentTrack: Track | undefined, nextTrack: Track | undefined): boolean {
+  if (!currentTrack || !nextTrack) return false;
+  return (
+    !!currentTrack.album &&
+    !!nextTrack.album &&
+    !!currentTrack.artist &&
+    !!nextTrack.artist &&
+    currentTrack.album === nextTrack.album &&
+    currentTrack.artist === nextTrack.artist
+  );
+}
+
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -232,6 +249,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>(getStoredRecentlyPlayed);
   const [crossfadeSeconds, setCrossfadeSeconds] = useState(getCrossfadeDurationPreference);
   const [infinitePlaybackEnabled, setInfinitePlaybackEnabled] = useState(getInfinitePlaybackPreference);
+  const [smartPlaylistSuggestionsEnabled, setSmartPlaylistSuggestionsEnabled] = useState(
+    getSmartPlaylistSuggestionsPreference,
+  );
+  const [smartPlaylistSuggestionsCadence, setSmartPlaylistSuggestionsCadence] = useState(
+    getSmartPlaylistSuggestionsCadencePreference,
+  );
   const restoredRef = useRef(stored.current.queue.length > 0);
   const shouldAutoplayRef = useRef(false);
   const lastNonZeroVolumeRef = useRef(Math.max(getStoredVolume(), 0.5));
@@ -239,6 +262,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const radioRefillSignatureRef = useRef<string | null>(null);
   const continuationInFlightRef = useRef(false);
   const continuationSignatureRef = useRef<string | null>(null);
+  const playlistSuggestionInFlightRef = useRef(false);
+  const playlistSuggestionSignatureRef = useRef<string | null>(null);
 
   if (!audioRef.current) {
     audioRef.current = getSharedAudio(PLAYER_AUDIO_KEY);
@@ -399,6 +424,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const detail = (event as CustomEvent<{
         crossfadeSeconds?: number;
         infinitePlaybackEnabled?: boolean;
+        smartPlaylistSuggestionsEnabled?: boolean;
+        smartPlaylistSuggestionsCadence?: number;
       }>).detail;
       if (typeof detail?.crossfadeSeconds === "number") {
         setCrossfadeSeconds(detail.crossfadeSeconds);
@@ -409,6 +436,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setInfinitePlaybackEnabled(detail.infinitePlaybackEnabled);
       } else {
         setInfinitePlaybackEnabled(getInfinitePlaybackPreference());
+      }
+      if (typeof detail?.smartPlaylistSuggestionsEnabled === "boolean") {
+        setSmartPlaylistSuggestionsEnabled(detail.smartPlaylistSuggestionsEnabled);
+      } else {
+        setSmartPlaylistSuggestionsEnabled(getSmartPlaylistSuggestionsPreference());
+      }
+      if (typeof detail?.smartPlaylistSuggestionsCadence === "number") {
+        setSmartPlaylistSuggestionsCadence(detail.smartPlaylistSuggestionsCadence);
+      } else {
+        setSmartPlaylistSuggestionsCadence(getSmartPlaylistSuggestionsCadencePreference());
       }
     };
 
@@ -525,6 +562,101 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         continuationInFlightRef.current = false;
       });
   }, [currentIndex, infinitePlaybackEnabled, playSource, queue, recentlyPlayed, shuffle]);
+
+  useEffect(() => {
+    const currentTrack = queue[currentIndex];
+    const nextTrack = queue[currentIndex + 1];
+    const supportsSmartInclusion =
+      smartPlaylistSuggestionsEnabled &&
+      !shuffle &&
+      !!currentTrack &&
+      playSource?.type === "playlist" &&
+      !!playSource?.radio?.seedId;
+
+    if (!supportsSmartInclusion) {
+      playlistSuggestionSignatureRef.current = null;
+      return;
+    }
+    if (currentTrack?.isSuggested) {
+      playlistSuggestionSignatureRef.current = null;
+      return;
+    }
+    if (isLikelyContinuousAlbumBlock(currentTrack, nextTrack)) {
+      playlistSuggestionSignatureRef.current = null;
+      return;
+    }
+
+    const playedOriginalCount = queue
+      .slice(0, currentIndex + 1)
+      .filter((track) => !track.isSuggested).length;
+
+    if (
+      playedOriginalCount === 0 ||
+      playedOriginalCount % smartPlaylistSuggestionsCadence !== 0
+    ) {
+      playlistSuggestionSignatureRef.current = null;
+      return;
+    }
+
+    if (nextTrack?.isSuggested) {
+      playlistSuggestionSignatureRef.current = [
+        playSource?.radio?.seedId ?? "",
+        playedOriginalCount,
+        currentTrack?.id ?? "",
+      ].join("::");
+      return;
+    }
+
+    if (playlistSuggestionInFlightRef.current) return;
+
+    const signature = [
+      playSource?.radio?.seedId ?? "",
+      playedOriginalCount,
+      currentTrack?.id ?? "",
+      queue.length,
+    ].join("::");
+    if (playlistSuggestionSignatureRef.current === signature) return;
+    playlistSuggestionSignatureRef.current = signature;
+    playlistSuggestionInFlightRef.current = true;
+
+    fetchInfiniteContinuation(playSource!, SMART_PLAYLIST_SUGGESTION_BATCH_SIZE)
+      .then((tracks) => {
+        if (!tracks.length) return;
+        setQueue((prev) => {
+          const existingKeys = new Set(
+            [...prev, ...recentlyPlayed].map((track) => getTrackCacheKey(track)),
+          );
+          const suggestion = tracks.find((track) => {
+            const key = getTrackCacheKey(track);
+            if (!key || existingKeys.has(key)) return false;
+            return true;
+          });
+          if (!suggestion) return prev;
+
+          const nextQueue = [...prev];
+          nextQueue.splice(currentIndex + 1, 0, {
+            ...suggestion,
+            isSuggested: true,
+            suggestionSource: "playlist",
+          });
+          return nextQueue;
+        });
+      })
+      .catch((error) => {
+        console.warn("[player] playlist suggestion failed:", error);
+      })
+      .finally(() => {
+        playlistSuggestionInFlightRef.current = false;
+      });
+  }, [
+    currentIndex,
+    playSource,
+    queue,
+    recentlyPlayed,
+    shuffle,
+    smartPlaylistSuggestionsCadence,
+    smartPlaylistSuggestionsEnabled,
+  ]);
 
   useEffect(() => {
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
@@ -701,6 +833,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     } catch { /* ok */ }
 
     restoredRef.current = false;
+    playlistSuggestionSignatureRef.current = null;
     clearPreloadedTrack();
     setQueue([track]);
     setCurrentIndex(0);
@@ -721,6 +854,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!track) return;
 
     restoredRef.current = false;
+    playlistSuggestionSignatureRef.current = null;
     clearPreloadedTrack();
     setQueue(tracks);
     setCurrentIndex(startIndex);
@@ -811,6 +945,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [audio]);
 
   const clearQueue = useCallback(() => {
+    playlistSuggestionSignatureRef.current = null;
     clearPreloadedTrack();
     audio.pause();
     audio.removeAttribute("src");
