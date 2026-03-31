@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2 } from "lucide-react";
+import { Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
@@ -12,6 +12,7 @@ import {
 } from "@/components/playlists/PlaylistCreateModal";
 import { AppModal, ModalBody, ModalFooter, ModalHeader, ModalCloseButton } from "@/components/ui/AppModal";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { encPath } from "@/lib/utils";
 
 interface PlaylistTrack {
@@ -68,7 +69,9 @@ export function Playlist() {
   const { data, loading, refetch } = useApi<PlaylistData>(
     id ? `/api/playlists/${id}` : null,
   );
+  const { data: playlistOptions } = useApi<Array<{ id: number; name: string }>>("/api/playlists");
   const { playAll } = usePlayerActions();
+  const { openCreatePlaylist } = usePlaylistComposer();
   const [editorOpen, setEditorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -116,6 +119,64 @@ export function Playlist() {
   function handleShuffle() {
     if (playerTracks.length === 0) return;
     playAll(shuffleArray(playerTracks), 0);
+  }
+
+  async function handleShare() {
+    if (!data) return;
+    const shareUrl = `${window.location.origin}/playlist/${data.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: data.name, text: data.name, url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Playlist link copied");
+      }
+    } catch {
+      toast.error("Failed to share playlist");
+    }
+  }
+
+  async function handleAddTrackToPlaylist(
+    playlistId: number,
+    track: { title: string; artist: string; album?: string; duration?: number; path?: string },
+  ) {
+    if (!track.path) return;
+    try {
+      await api(`/api/playlists/${playlistId}/tracks`, "POST", {
+        tracks: [{
+          path: track.path,
+          title: track.title,
+          artist: track.artist,
+          album: track.album || "",
+          duration: track.duration || 0,
+        }],
+      });
+      toast.success("Track added to playlist");
+    } catch {
+      toast.error("Failed to add track to playlist");
+    }
+  }
+
+  function handleCreatePlaylistFromTrack(track: {
+    title: string;
+    artist: string;
+    album?: string;
+    duration?: number;
+    path?: string;
+    library_track_id?: number;
+    navidrome_id?: string;
+  }) {
+    openCreatePlaylist({
+      tracks: track.path ? [{
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        duration: track.duration,
+        path: track.path,
+        libraryTrackId: track.library_track_id,
+        navidromeId: track.navidrome_id,
+      }] : [],
+    });
   }
 
   async function handleRegenerate() {
@@ -276,6 +337,13 @@ export function Playlist() {
             Edit
           </button>
           <button
+            onClick={handleShare}
+            className="flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
+          >
+            <Share2 size={16} />
+            Share
+          </button>
+          <button
             onClick={() => setDeleteOpen(true)}
             className="flex items-center gap-2 rounded-lg border border-red-500/25 px-4 py-2.5 text-sm font-medium text-red-300 hover:bg-red-500/10 transition-colors"
           >
@@ -319,6 +387,11 @@ export function Playlist() {
               index={i + 1}
               showArtist
               showAlbum
+              playlistOptions={(playlistOptions || [])
+                .filter((playlist) => playlist.id !== data.id)
+                .map((playlist) => ({ id: playlist.id, name: playlist.name }))}
+              onAddToPlaylist={handleAddTrackToPlaylist}
+              onCreatePlaylist={handleCreatePlaylistFromTrack}
             />
           ))}
         </div>

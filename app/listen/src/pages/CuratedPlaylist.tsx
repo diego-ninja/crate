@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Heart, Loader2, Play, Shuffle, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, Play, Shuffle, Share2, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { encPath } from "@/lib/utils";
 
 interface CuratedPlaylistTrack {
@@ -62,9 +63,11 @@ export function CuratedPlaylist() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const { playAll } = usePlayerActions();
+  const { openCreatePlaylist } = usePlaylistComposer();
   const { data, loading, refetch } = useApi<CuratedPlaylistData>(
     id ? `/api/curation/playlists/${id}` : null,
   );
+  const { data: playlistOptions } = useApi<Array<{ id: number; name: string }>>("/api/playlists");
   const [togglingFollow, setTogglingFollow] = useState(false);
 
   const playerTracks = useMemo(() => {
@@ -94,6 +97,64 @@ export function CuratedPlaylist() {
   function handleShuffle() {
     if (playerTracks.length === 0) return;
     playAll(shuffleArray(playerTracks), 0, { type: "playlist", name: data?.name || "Playlist" });
+  }
+
+  async function handleShare() {
+    if (!data) return;
+    const shareUrl = `${window.location.origin}/curation/playlist/${data.id}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: data.name, text: data.name, url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Playlist link copied");
+      }
+    } catch {
+      toast.error("Failed to share playlist");
+    }
+  }
+
+  async function handleAddTrackToPlaylist(
+    playlistId: number,
+    track: { title: string; artist: string; album?: string; duration?: number; path?: string },
+  ) {
+    if (!track.path) return;
+    try {
+      await api(`/api/playlists/${playlistId}/tracks`, "POST", {
+        tracks: [{
+          path: track.path,
+          title: track.title,
+          artist: track.artist,
+          album: track.album || "",
+          duration: track.duration || 0,
+        }],
+      });
+      toast.success("Track added to playlist");
+    } catch {
+      toast.error("Failed to add track to playlist");
+    }
+  }
+
+  function handleCreatePlaylistFromTrack(track: {
+    title: string;
+    artist: string;
+    album?: string;
+    duration?: number;
+    path?: string;
+    library_track_id?: number;
+    navidrome_id?: string;
+  }) {
+    openCreatePlaylist({
+      tracks: track.path ? [{
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        duration: track.duration,
+        path: track.path,
+        libraryTrackId: track.library_track_id,
+        navidromeId: track.navidrome_id,
+      }] : [],
+    });
   }
 
   async function handleToggleFollow() {
@@ -203,6 +264,13 @@ export function CuratedPlaylist() {
           {togglingFollow ? <Loader2 size={15} className="animate-spin" /> : <Heart size={15} className={data.is_followed ? "fill-current" : ""} />}
           {data.is_followed ? "Following" : "Follow"}
         </button>
+        <button
+          onClick={handleShare}
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+        >
+          <Share2 size={15} />
+          Share
+        </button>
       </div>
 
       <div className="space-y-1">
@@ -222,6 +290,9 @@ export function CuratedPlaylist() {
             index={index + 1}
             showArtist
             showAlbum
+            playlistOptions={(playlistOptions || []).map((playlist) => ({ id: playlist.id, name: playlist.name }))}
+            onAddToPlaylist={handleAddTrackToPlaylist}
+            onCreatePlaylist={handleCreatePlaylistFromTrack}
           />
         ))}
       </div>
