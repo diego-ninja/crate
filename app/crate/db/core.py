@@ -572,6 +572,35 @@ def init_db():
                 PRIMARY KEY (user_id, playlist_id)
             )
         """)
+        cur.execute("""
+            DO $$
+            DECLARE
+                target_table text;
+            BEGIN
+                SELECT ccu.table_name
+                INTO target_table
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.constraint_column_usage ccu
+                  ON tc.constraint_name = ccu.constraint_name
+                 AND tc.table_schema = ccu.table_schema
+                WHERE tc.table_name = 'user_followed_playlists'
+                  AND tc.constraint_name = 'user_followed_playlists_playlist_id_fkey'
+                LIMIT 1;
+
+                IF target_table IS DISTINCT FROM 'playlists' THEN
+                    BEGIN
+                        ALTER TABLE user_followed_playlists
+                        DROP CONSTRAINT IF EXISTS user_followed_playlists_playlist_id_fkey;
+                    EXCEPTION WHEN undefined_table THEN
+                        NULL;
+                    END;
+
+                    ALTER TABLE user_followed_playlists
+                    ADD CONSTRAINT user_followed_playlists_playlist_id_fkey
+                    FOREIGN KEY (playlist_id) REFERENCES playlists(id) ON DELETE CASCADE;
+                END IF;
+            END $$;
+        """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_followed_playlists_user ON user_followed_playlists(user_id, followed_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_followed_playlists_playlist ON user_followed_playlists(playlist_id)")
 

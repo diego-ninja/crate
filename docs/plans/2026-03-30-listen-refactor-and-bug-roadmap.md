@@ -387,6 +387,7 @@ Follow-up architectural decision:
   - example already present in dev: smart playlist `Hardcore` with 50 tracks
   - `listen` needs dedicated consumption surfaces for global smart/curated playlists
   - likely ties into the system-playlists roadmap and follow/public projection work
+  - follow/unfollow of system playlists must work locally in Crate even when Navidrome is offline; any later Navidrome sync should be treated as optional async projection, not as a prerequisite for the follow state itself
 - `Home` / main music view needs a full product rethink:
   - current quick-links + recent/new/playlists layout is too weak to act as the listening home
   - re-evaluate against TIDAL / Spotify patterns:
