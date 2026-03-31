@@ -199,27 +199,33 @@ Notes:
 ### Likely Backend Work Required
 
 - playlist cover
-- upload music
 - user sync with Navidrome
 - Apple signin/signup
 - possibly add-to-playlist affordances optimized for `listen`
 
-Upload direction now clarified:
+Upload first batch delivered:
 
-- upload should exist in `listen` for end users
-- upload should also surface in `admin`, most likely under acquisition / ingestion
-- uploaded files should land in the global library, not a user-private silo
-- the uploading user should automatically get:
+- `listen` now has a dedicated upload page
+- `admin` acquisition now surfaces upload too
+- uploaded files land in the global library, not a user-private silo
+- the uploading user automatically gets:
   - uploaded tracks liked
   - uploaded albums saved
   - uploaded artists followed
-- after ingest, the same enrichment / analysis / bliss / popularity / similarity pipeline should run as for other ingestion sources
+- after ingest, the same enrichment / analysis / bliss / popularity / similarity pipeline runs as for other ingestion sources
+
+Upload follow-up still pending:
+
+- richer progress / post-import feedback in `listen`
+- better handling for complex multi-album loose-file uploads
+- drag-and-drop polish and mobile UX refinement
+- regression coverage around upload ingest
 
 ### Current Frontend Risks
 
 - `TrackRow` / player interactions are now centralized, but row variants are starting to grow and may deserve a small component split
 - `gapless / crossfade` still need a second implementation pass if we want true dual-deck seamlessness; current player now preserves the safe single-audio architecture and makes better use of preloading
-- upload will cut across frontend, API, worker, and library ingest rules, so it should be implemented as a dedicated batch
+- upload now exists as a first dedicated batch, but still needs a second pass for robustness and richer UX
 
 ### Current Backend Risk Behind One Reported Bug
 

@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import {
   Search, Download, Disc3, Music, Users, Loader2,
   CheckCircle2, Heart, Clock, XCircle,
-  Trash2, ArrowUp, RotateCcw,
+  Trash2, ArrowUp, RotateCcw, Upload,
 } from "lucide-react";
 // encPath available if needed for navigation
 
@@ -105,6 +105,9 @@ export function DownloadPage() {
   const [, setSlskSearchId] = useState<string | null>(null);
   const slskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [resultTab, setResultTab] = useState<"tidal" | "soulseek">("tidal");
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadTaskId, setUploadTaskId] = useState<string | null>(null);
   const { data: tidalQueue, refetch: refetchTidalQueue } = useApi<QueueItem[]>("/api/tidal/queue");
   const { data: slskQueue, refetch: refetchSlskQueue } = useApi<{ source: string; artist: string; album: string; filename: string; fullPath?: string; status: string; progress: number; username: string; speed: number }[]>("/api/acquisition/queue");
   const { data: tidalStatus } = useApi<{ authenticated: boolean }>("/api/tidal/status");
@@ -227,6 +230,26 @@ export function DownloadPage() {
     }
   }
 
+  async function submitUpload() {
+    if (uploadFiles.length === 0) return;
+    const formData = new FormData();
+    for (const file of uploadFiles) {
+      formData.append("files", file);
+    }
+    setUploading(true);
+    try {
+      const response = await api<{ task_id: string }>("/api/acquisition/upload", "POST", formData);
+      setUploadTaskId(response.task_id);
+      toast.success("Upload queued");
+      setUploadFiles([]);
+      refetchQueue();
+    } catch {
+      toast.error("Failed to queue upload");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   const activeQueue = queue?.filter((q) => ["downloading", "queued", "processing"].includes(q.status)) ?? [];
   const wishlist = queue?.filter((q) => q.status === "wishlist") ?? [];
   const history = queue?.filter((q) => ["completed", "failed"].includes(q.status)) ?? [];
@@ -275,6 +298,7 @@ export function DownloadPage() {
       <Tabs defaultValue="search">
         <TabsList>
           <TabsTrigger value="search">Search Results</TabsTrigger>
+          <TabsTrigger value="upload">Upload</TabsTrigger>
           <TabsTrigger value="queue">Queue {(activeQueue.length + slskDownloads.length) > 0 && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{activeQueue.length + slskDownloads.length}</Badge>}</TabsTrigger>
           <TabsTrigger value="wishlist">Wishlist {wishlist.length > 0 && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{wishlist.length}</Badge>}</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
@@ -445,6 +469,65 @@ export function DownloadPage() {
             </div>
           )}
 
+        </TabsContent>
+
+        <TabsContent value="upload">
+          <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="rounded-xl border border-border bg-card p-5">
+              <h2 className="text-base font-semibold mb-2">Upload music into the library</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Upload individual tracks or zipped albums. Crate will import them into the global library and run the same enrichment pipeline as any other source.
+              </p>
+              <label className="flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-secondary/20 px-6 py-8 text-center hover:border-primary/40 transition-colors">
+                <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
+                  <Upload size={22} />
+                </div>
+                <div className="text-sm font-medium">Choose files or drop them here</div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  FLAC, MP3, AAC, WAV, OGG, OPUS, ALAC, or ZIP
+                </div>
+                <input
+                  type="file"
+                  multiple
+                  accept=".flac,.mp3,.m4a,.ogg,.opus,.wav,.aac,.alac,.zip,audio/*,.zip"
+                  className="hidden"
+                  onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
+                />
+              </label>
+              {uploadFiles.length > 0 && (
+                <div className="mt-4 rounded-xl border border-border bg-secondary/10 p-4">
+                  <div className="text-sm font-medium mb-2">{uploadFiles.length} file{uploadFiles.length === 1 ? "" : "s"} ready</div>
+                  <div className="max-h-56 overflow-y-auto space-y-1">
+                    {uploadFiles.map((file) => (
+                      <div key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-2 text-sm text-muted-foreground px-2 py-1.5 rounded-lg hover:bg-secondary/30">
+                        {file.name.toLowerCase().endsWith(".zip") ? <Disc3 size={14} className="text-primary" /> : <Music size={14} className="text-primary" />}
+                        <span className="truncate flex-1">{file.name}</span>
+                        <span className="text-[11px]">{Math.round(file.size / 1024 / 1024 * 10) / 10} MB</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Import behavior</h3>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li>Imports land in the shared library.</li>
+                <li>Library sync and enrichment run in the background.</li>
+                <li>The uploader gets the imported music added to their collection automatically.</li>
+              </ul>
+              <Button onClick={submitUpload} disabled={uploading || uploadFiles.length === 0} className="w-full">
+                {uploading ? <Loader2 size={14} className="animate-spin mr-2" /> : <Upload size={14} className="mr-2" />}
+                Import to library
+              </Button>
+              {uploadTaskId && (
+                <div className="rounded-lg border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-300">
+                  Upload queued as task <span className="font-mono">{uploadTaskId}</span>
+                </div>
+              )}
+            </div>
+          </div>
         </TabsContent>
 
         {/* Queue */}

@@ -1,16 +1,103 @@
 import json
 import logging
+import re
 import shutil
 import time
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from crate.audio import get_audio_files, read_tags
 from crate.db import create_task, create_task_dedup, emit_task_event, get_db_ctx, get_setting, get_task, update_task
+from crate.db.user_library import follow_artist, like_track, save_album
 
 log = logging.getLogger(__name__)
 
 TaskHandler = Callable[[str, dict, dict], dict]
+
+
+def _sanitize_import_name(name: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*]', "", (name or "").strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned or "Unknown"
+
+
+def _find_album_dirs_recursive(root: Path, extensions: set[str]) -> list[Path]:
+    album_dirs: list[Path] = []
+    seen: set[str] = set()
+    for directory in sorted([root, *root.rglob("*")]):
+        if not directory.is_dir():
+            continue
+        tracks = get_audio_files(directory, list(extensions))
+        if not tracks:
+            continue
+        key = str(directory.resolve())
+        if key not in seen:
+            seen.add(key)
+            album_dirs.append(directory)
+    return album_dirs
+
+
+def _safe_extract_zip(zip_path: Path, dest_dir: Path):
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        for member in archive.infolist():
+            member_path = (dest_dir / member.filename).resolve()
+            if not str(member_path).startswith(str(dest_dir.resolve())):
+                raise ValueError(f"Unsafe zip entry: {member.filename}")
+        archive.extractall(dest_dir)
+
+
+def _group_loose_audio_files(raw_dir: Path, grouped_dir: Path, extensions: set[str]) -> int:
+    moved = 0
+    grouped_dir.mkdir(parents=True, exist_ok=True)
+    for file_path in sorted(raw_dir.iterdir()):
+        if not file_path.is_file() or file_path.suffix.lower() not in extensions:
+            continue
+        tags = read_tags(file_path)
+        artist = _sanitize_import_name(tags.get("albumartist") or tags.get("artist") or "Unknown Artist")
+        album = _sanitize_import_name(tags.get("album") or "Singles")
+        target_dir = grouped_dir / artist / album
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(file_path), str(target_dir / file_path.name))
+        moved += 1
+    return moved
+
+
+def _seed_uploaded_library(user_id: int | None, imported_albums: list[dict]):
+    from crate.db import get_library_album, get_library_tracks
+
+    if not user_id:
+        return
+
+    seen_artists: set[str] = set()
+    seen_album_ids: set[int] = set()
+    seen_track_ids: set[int] = set()
+
+    for item in imported_albums:
+        artist = item.get("artist") or ""
+        album = item.get("album") or ""
+        if artist and artist not in seen_artists:
+            follow_artist(user_id, artist)
+            seen_artists.add(artist)
+
+        if not artist or not album:
+            continue
+
+        album_row = get_library_album(artist, album)
+        if not album_row:
+            continue
+
+        album_id = album_row["id"]
+        if album_id not in seen_album_ids:
+            save_album(user_id, album_id)
+            seen_album_ids.add(album_id)
+
+        for track in get_library_tracks(album_id):
+            track_id = track.get("id")
+            if track_id and track_id not in seen_track_ids:
+                like_track(user_id, track_id=track_id)
+                seen_track_ids.add(track_id)
 
 
 def _is_cancelled(task_id: str) -> bool:
@@ -683,9 +770,131 @@ def _handle_cleanup_incomplete_downloads(task_id: str, params: dict, config: dic
     return {"cleaned": cleaned, "details": details}
 
 
+def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
+    from crate.importer import ImportQueue
+    from crate.library_sync import LibrarySync
+
+    staging_dir = Path(params.get("staging_dir", ""))
+    uploader_user_id = params.get("uploader_user_id")
+    if not staging_dir.exists():
+        return {"error": "Upload staging not found"}
+
+    raw_dir = staging_dir / "raw"
+    extracted_dir = staging_dir / "extracted"
+    grouped_dir = staging_dir / "grouped"
+    extracted_dir.mkdir(parents=True, exist_ok=True)
+
+    extensions = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
+
+    emit_task_event(task_id, "info", {"message": "Preparing uploaded files"})
+    update_task(task_id, progress=json.dumps({"phase": "preparing"}))
+
+    zip_count = 0
+    for file_path in sorted(raw_dir.iterdir()):
+        if not file_path.is_file() or file_path.suffix.lower() != ".zip":
+            continue
+        zip_target = extracted_dir / file_path.stem
+        zip_target.mkdir(parents=True, exist_ok=True)
+        _safe_extract_zip(file_path, zip_target)
+        zip_count += 1
+
+    loose_audio_count = _group_loose_audio_files(raw_dir, grouped_dir, extensions)
+
+    candidate_roots = [path for path in [grouped_dir, extracted_dir] if path.exists()]
+    album_dirs: list[Path] = []
+    seen_album_dirs: set[str] = set()
+    for root in candidate_roots:
+        for album_dir in _find_album_dirs_recursive(root, extensions):
+            key = str(album_dir.resolve())
+            if key not in seen_album_dirs:
+                seen_album_dirs.add(key)
+                album_dirs.append(album_dir)
+
+    if not album_dirs:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        return {"error": "No supported audio files found in upload"}
+
+    queue = ImportQueue(config)
+    imported_albums: list[dict] = []
+
+    update_task(task_id, progress=json.dumps({"phase": "importing", "albums_total": len(album_dirs), "albums_done": 0}))
+    for index, album_dir in enumerate(album_dirs, start=1):
+        if _is_cancelled(task_id):
+            break
+
+        result = queue.import_item(str(album_dir))
+        if result.get("error"):
+            imported_albums.append({"source_path": str(album_dir), "error": result["error"]})
+            continue
+
+        dest = Path(result["dest"])
+        artist = dest.parent.name
+        album = dest.name
+        imported_albums.append(
+            {
+                "source_path": str(album_dir),
+                "dest": str(dest),
+                "artist": artist,
+                "album": album,
+                "status": result.get("status", "imported"),
+            }
+        )
+        emit_task_event(
+            task_id,
+            "info",
+            {"message": f"Imported {artist} — {album}", "artist": artist, "album": album},
+        )
+        update_task(
+            task_id,
+            progress=json.dumps(
+                {"phase": "importing", "albums_total": len(album_dirs), "albums_done": index, "artist": artist, "album": album}
+            ),
+        )
+
+    modified_artists = sorted({item["artist"] for item in imported_albums if item.get("artist")})
+    lib = Path(config["library_path"])
+    sync = LibrarySync(config)
+
+    emit_task_event(task_id, "info", {"message": "Syncing imported music to library", "artists": modified_artists})
+    update_task(task_id, progress=json.dumps({"phase": "syncing", "artists": modified_artists}))
+    for artist in modified_artists:
+        artist_dir = lib / artist
+        if artist_dir.is_dir():
+            try:
+                sync.sync_artist(artist_dir)
+            except Exception:
+                log.warning("Sync failed for uploaded artist %s", artist, exc_info=True)
+
+    _seed_uploaded_library(uploader_user_id, imported_albums)
+
+    for artist in modified_artists:
+        try:
+            create_task_dedup("process_new_content", {"artist": artist})
+        except Exception:
+            log.debug("Failed to queue process_new_content for uploaded artist %s", artist, exc_info=True)
+
+    try:
+        from crate.navidrome import start_scan
+
+        start_scan()
+    except Exception:
+        pass
+
+    shutil.rmtree(staging_dir, ignore_errors=True)
+    return {
+        "success": True,
+        "albums_imported": len([item for item in imported_albums if item.get("dest")]),
+        "artists": modified_artists,
+        "zip_archives": zip_count,
+        "loose_audio_files": loose_audio_count,
+        "imported_albums": imported_albums,
+    }
+
+
 ACQUISITION_TASK_HANDLERS: dict[str, TaskHandler] = {
     "tidal_download": _handle_tidal_download,
     "check_new_releases": _handle_check_new_releases,
     "soulseek_download": _handle_soulseek_download,
     "cleanup_incomplete_downloads": _handle_cleanup_incomplete_downloads,
+    "library_upload": _handle_library_upload,
 }

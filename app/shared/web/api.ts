@@ -38,8 +38,12 @@ export function createApiClient(options: ApiClientOptions = {}) {
     }
 
     if (body !== undefined) {
-      headers["Content-Type"] = "application/json";
-      requestOptions.body = JSON.stringify(body);
+      if (body instanceof FormData) {
+        requestOptions.body = body;
+      } else {
+        headers["Content-Type"] = "application/json";
+        requestOptions.body = JSON.stringify(body);
+      }
     }
 
     const res = await fetch(`${base}${url}`, requestOptions);

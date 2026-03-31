@@ -48,6 +48,7 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "fetch_cover":          ("fast",    0, 120, 2),
     "apply_cover":          ("fast",    0, 60, 0),
     "upload_image":         ("default", 0, 60, 0),
+    "library_upload":       ("default", 0, 7200, 1),
     "reset_enrichment":     ("fast",    1, 120, 0),
     "sync_playlist_navidrome": ("fast", 1, 120, 0),
     "sync_user_navidrome":  ("fast",    1, 120, 5),
