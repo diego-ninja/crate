@@ -24,3 +24,4 @@ __pycache__/
 .DS_Store
 Thumbs.db
 app/bin/grooveyard-bliss-linux-amd64
+*.tsbuildinfo
