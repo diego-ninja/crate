@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router";
-import { Search, Loader2, ArrowLeft } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router";
+import { Search, Loader2, ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { TrackRow } from "@/components/cards/TrackRow";
+import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 
 interface SearchArtist {
   name: string;
@@ -42,6 +43,19 @@ interface BrowseFilters {
   decades: string[];
 }
 
+interface SystemPlaylist {
+  id: number;
+  name: string;
+  description?: string;
+  category?: string | null;
+  cover_data_url?: string | null;
+  artwork_tracks?: PlaylistArtworkTrack[];
+  track_count: number;
+  follower_count: number;
+  is_followed: boolean;
+  is_smart: boolean;
+}
+
 function Pill({ label, count, onClick }: { label: string; count?: number; onClick: () => void }) {
   return (
     <button
@@ -50,6 +64,50 @@ function Pill({ label, count, onClick }: { label: string; count?: number; onClic
     >
       <span className="text-sm font-medium text-primary">{label}</span>
       {count != null && count > 0 && <span className="text-xs text-white/50">{count}</span>}
+    </button>
+  );
+}
+
+function PlaylistCard({
+  playlist,
+  onClick,
+}: {
+  playlist: SystemPlaylist;
+  onClick: () => void;
+}) {
+  const metaBits = [
+    playlist.category ? playlist.category : null,
+    `${playlist.track_count} tracks`,
+    playlist.follower_count > 0 ? `${playlist.follower_count} followers` : null,
+  ].filter(Boolean);
+
+  return (
+    <button onClick={onClick} className="group w-[180px] flex-shrink-0 text-left">
+      <div className="relative">
+        <PlaylistArtwork
+          name={playlist.name}
+          coverDataUrl={playlist.cover_data_url}
+          tracks={playlist.artwork_tracks}
+          className="aspect-square rounded-3xl shadow-xl transition-transform group-hover:scale-[1.02]"
+        />
+        <div className="absolute left-3 top-3 flex items-center gap-2">
+          {playlist.is_smart ? (
+            <div className="inline-flex items-center rounded-full border border-primary/25 bg-[#0a0a0f]/80 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-primary backdrop-blur-md">
+              <Sparkles size={10} className="mr-1" />
+              Smart
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <div className="px-1 pt-3">
+        <div className="truncate text-sm font-bold text-foreground">{playlist.name}</div>
+        <div className="mt-1 line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-muted-foreground">
+          {playlist.description || metaBits.join(" · ")}
+        </div>
+        <div className="mt-2 text-[11px] uppercase tracking-wider text-white/35">
+          {metaBits.join(" · ")}
+        </div>
+      </div>
     </button>
   );
 }
@@ -118,6 +176,44 @@ function SearchResultsView({ results }: { results: SearchResults }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SectionHeader({
+  title,
+  subtitle,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  subtitle?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="flex items-end justify-between gap-4">
+      <div>
+        <h2 className="text-lg font-bold text-foreground">{title}</h2>
+        {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
+      </div>
+      {actionLabel && onAction ? (
+        <button
+          onClick={onAction}
+          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {actionLabel}
+          <ArrowRight size={15} />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SectionRail({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex gap-4 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      {children}
     </div>
   );
 }
@@ -227,9 +323,54 @@ function DecadeDetailView({ decade, onBack }: { decade: string; onBack: () => vo
   );
 }
 
+function PlaylistCategoryView({ category, onBack }: { category: string; onBack: () => void }) {
+  const navigate = useNavigate();
+  const { data, loading } = useApi<SystemPlaylist[]>(`/api/curation/playlists/category/${encodeURIComponent(category)}`);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 size={24} className="text-primary animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="p-2 rounded-lg hover:bg-white/5 text-white/50 hover:text-white transition-colors">
+          <ArrowLeft size={20} />
+        </button>
+        <div>
+          <h1 className="text-2xl font-bold capitalize">{category}</h1>
+          <p className="text-sm text-muted-foreground">{data?.length ?? 0} playlists</p>
+        </div>
+      </div>
+
+      {data && data.length > 0 ? (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {data.map((playlist) => (
+            <PlaylistCard
+              key={playlist.id}
+              playlist={playlist}
+              onClick={() => navigate(`/curation/playlist/${playlist.id}`)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
+          No playlists found in this category yet.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Explore() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const genreSlug = searchParams.get("genre");
+  const playlistCategory = searchParams.get("playlistCategory");
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -237,6 +378,7 @@ export function Explore() {
   const [searching, setSearching] = useState(false);
 
   const { data: filters, loading: filtersLoading } = useApi<BrowseFilters>("/api/browse/filters");
+  const { data: systemPlaylists, loading: playlistsLoading } = useApi<SystemPlaylist[]>("/api/curation/playlists");
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300);
@@ -277,6 +419,14 @@ export function Explore() {
   if (decadeParam) {
     return <DecadeDetailView decade={decadeParam} onBack={() => setSearchParams({})} />;
   }
+  if (playlistCategory) {
+    return <PlaylistCategoryView category={playlistCategory} onBack={() => setSearchParams({})} />;
+  }
+
+  const playlistCategories = Array.from(
+    new Set((systemPlaylists || []).map((playlist) => playlist.category).filter(Boolean)),
+  ) as string[];
+  const featuredPlaylists = (systemPlaylists || []).slice(0, 8);
 
   return (
     <div className="space-y-6">
@@ -308,6 +458,46 @@ export function Explore() {
         ) : null
       ) : (
         <div className="space-y-6">
+          {playlistsLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 size={24} className="text-primary animate-spin" />
+            </div>
+          ) : featuredPlaylists.length > 0 ? (
+            <div className="space-y-4">
+              <SectionHeader
+                title="From Crate"
+                subtitle="Global playlists curated and generated for discovery."
+              />
+              <SectionRail>
+                {featuredPlaylists.map((playlist) => (
+                  <PlaylistCard
+                    key={playlist.id}
+                    playlist={playlist}
+                    onClick={() => navigate(`/curation/playlist/${playlist.id}`)}
+                  />
+                ))}
+              </SectionRail>
+            </div>
+          ) : null}
+
+          {playlistCategories.length > 0 ? (
+            <div className="space-y-3">
+              <SectionHeader
+                title="Playlist Categories"
+                subtitle="Browse system playlists by editorial lane."
+              />
+              <div className="flex flex-wrap gap-2">
+                {playlistCategories.map((category) => (
+                  <Pill
+                    key={category}
+                    label={category}
+                    onClick={() => setSearchParams({ playlistCategory: category })}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {filtersLoading ? (
             <div className="flex items-center justify-center py-16">
               <Loader2 size={24} className="text-primary animate-spin" />

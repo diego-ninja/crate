@@ -369,6 +369,12 @@ Follow-up architectural decision:
   - `app/crate/api/curation.py` now exposes active system playlists to `listen`, not only `is_curated = true`, so admin-created smart playlists can surface in the app
   - verified with `cd app/listen && npm run build`
   - rebuilt local dev API container so the new curation behavior is active
+- expanded `Explore` into a stronger editorial/discovery surface:
+  - `app/listen/src/pages/Explore.tsx` now shows `From Crate` playlists directly, including smart system playlists
+  - added playlist category browsing inside `Explore`
+  - added dedicated category detail view for system playlists via `/api/curation/playlists/category/{category}`
+  - `Explore` now connects genres/decades browsing with playlist-led discovery instead of acting only as a filter/search page
+  - verified with `cd app/listen && npm run build`
 
 ### In Progress
 
@@ -383,9 +389,8 @@ Follow-up architectural decision:
 - best API shape for upload music
 - safe approach for gapless/crossfade with current audio architecture
 - system playlists created in `admin` are not yet surfaced in `listen` discovery/library:
-  - example already present in dev: smart playlist `Hardcore` with 50 tracks
-  - `listen` needs dedicated consumption surfaces for global smart/curated playlists
-  - likely ties into the system-playlists roadmap and follow/public projection work
+  - most visible surfaces are now wired (`Home`, `Explore`, `Library`, playlist detail)
+  - still worth checking that discovery keeps a good editorial hierarchy as more system playlists appear
   - follow/unfollow of system playlists must work locally in Crate even when Navidrome is offline; any later Navidrome sync should be treated as optional async projection, not as a prerequisite for the follow state itself
 - `Home` / main music view needs a full product rethink:
   - current quick-links + recent/new/playlists layout is too weak to act as the listening home
