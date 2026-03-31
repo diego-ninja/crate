@@ -308,6 +308,18 @@ Follow-up architectural decision:
   - `app/listen/src/contexts/LikedTracksContext.tsx` now indexes likes by absolute path, relative path, and Navidrome id
   - `app/listen/src/pages/Library.tsx` now uses `relative_path || resolved_path || track_path` when building playable liked-track entries
   - verified with `cd app/listen && npm run build`
+- stabilized the audio/visualizer slice after playback regressions:
+  - `app/listen/src/contexts/PlayerContext.tsx` now keeps the main player audio element as a shared singleton, which restored the live mini-player bars and the visualizer signal chain
+  - `app/listen/src/hooks/use-audio-visualizer.ts` and `app/listen/src/components/player/visualizer/useMusicVisualizer.ts` are back on the stable single-player audio graph
+  - committed as checkpoint `fc97ff7`
+- refactored the visualizer to support multiple scenes:
+  - `app/listen/src/components/player/visualizer/MusicVisualizer.ts` now supports scene modes instead of only the original spheres scene
+  - added `app/listen/src/components/player/visualizer/geometry/Ring.ts`
+  - `app/listen/src/components/player/visualizer/rendering/OpenGLRenderer.ts` now supports arbitrary model matrices for scene rendering
+  - `app/listen/src/components/player/ExtendedPlayer.tsx` now exposes mode switching in visualizer settings
+  - `app/listen/src/lib/player-visualizer-prefs.ts` now persists the selected visualizer mode
+  - current modes: `spheres`, `halo`, `tunnel`
+  - committed as checkpoint `660f20c`
   - rebuilt local dev API container so the backend fix is active
 - refactored likes to use stable library ids instead of paths:
   - `app/crate/db/core.py` now defines `user_liked_tracks` as `user_id + track_id`
