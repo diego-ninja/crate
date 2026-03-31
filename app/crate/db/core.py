@@ -367,6 +367,24 @@ def init_db():
                 END $$
             """)
 
+        # Migration: add background analysis state columns
+        for col, default in [("analysis_state", "pending"), ("bliss_state", "pending")]:
+            cur.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE library_tracks ADD COLUMN {col} TEXT DEFAULT '{default}';
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
+        # Set existing analyzed tracks to 'done' so daemons don't re-process them
+        cur.execute("""
+            UPDATE library_tracks SET analysis_state = 'done'
+            WHERE bpm IS NOT NULL AND energy IS NOT NULL AND analysis_state = 'pending'
+        """)
+        cur.execute("""
+            UPDATE library_tracks SET bliss_state = 'done'
+            WHERE bliss_vector IS NOT NULL AND bliss_state = 'pending'
+        """)
+
         # Migration: add folder_name to library_artists (filesystem dir name, may differ from canonical name)
         cur.execute("""
             DO $$ BEGIN

@@ -576,83 +576,11 @@ def _process_new_content_inner(
         log.warning("Album MBID lookup failed", exc_info=True)
         result["steps"]["album_mbid"] = "failed"
 
-    update_task(task_id, progress=json.dumps({"step": "audio_analysis", "artist": artist_name}))
-    try:
-        from crate.audio_analysis import PANNS_BATCH_SIZE, analyze_batch
-
-        analyzed = 0
-        pending = []
-        for album in albums:
-            if album_folder and album["name"] != album_folder:
-                continue
-            tracks = get_library_tracks(album["id"])
-            for track in tracks:
-                if track.get("bpm") is not None and track.get("energy") is not None:
-                    continue
-                pending.append(track)
-
-        for batch_start in range(0, len(pending), PANNS_BATCH_SIZE):
-            if _is_cancelled(task_id):
-                break
-            batch = pending[batch_start : batch_start + PANNS_BATCH_SIZE]
-            try:
-                results_batch = analyze_batch([track["path"] for track in batch])
-                for track, analysis_result in zip(batch, results_batch):
-                    if analysis_result.get("bpm") is not None:
-                        update_track_audiomuse(
-                            track["path"],
-                            bpm=analysis_result["bpm"],
-                            key=analysis_result["key"],
-                            scale=analysis_result["scale"],
-                            energy=analysis_result["energy"],
-                            mood=analysis_result["mood"],
-                            danceability=analysis_result.get("danceability"),
-                            valence=analysis_result.get("valence"),
-                            acousticness=analysis_result.get("acousticness"),
-                            instrumentalness=analysis_result.get("instrumentalness"),
-                            loudness=analysis_result.get("loudness"),
-                            dynamic_range=analysis_result.get("dynamic_range"),
-                            spectral_complexity=analysis_result.get("spectral_complexity"),
-                        )
-                        analyzed += 1
-                        emit_task_event(
-                            task_id,
-                            "track_analyzed",
-                            {
-                                "message": (
-                                    f"Analyzed: {track.get('title', '')} - BPM "
-                                    f"{analysis_result.get('bpm')}, key {analysis_result.get('key')}"
-                                ),
-                                "title": track.get("title", ""),
-                                "bpm": analysis_result.get("bpm"),
-                                "key": analysis_result.get("key"),
-                            },
-                        )
-            except Exception:
-                log.debug("Batch analysis failed for %d tracks", len(batch), exc_info=True)
-        result["steps"]["audio_analysis"] = analyzed
-    except Exception:
-        log.warning("Audio analysis failed", exc_info=True)
-        result["steps"]["audio_analysis"] = "failed"
-
-    from crate.bliss import is_available as bliss_available
-
-    if bliss_available():
-        update_task(task_id, progress=json.dumps({"step": "bliss", "artist": artist_name}))
-        try:
-            from crate.bliss import analyze_directory, store_vectors
-
-            artist_data = get_library_artist(artist_name)
-            folder = (artist_data.get("folder_name") if artist_data else None) or artist_name
-            artist_dir = lib / folder
-            if artist_dir.is_dir():
-                vectors = analyze_directory(str(artist_dir))
-                if vectors:
-                    store_vectors(vectors)
-                result["steps"]["bliss"] = len(vectors) if vectors else 0
-        except Exception:
-            log.warning("Bliss failed for %s", artist_name, exc_info=True)
-            result["steps"]["bliss"] = "failed"
+    # Audio analysis and bliss are handled by background daemons (analysis_daemon.py).
+    # New tracks enter library_tracks with analysis_state='pending' and bliss_state='pending'
+    # and are picked up automatically. No need to enqueue anything here.
+    result["steps"]["audio_analysis"] = "background_daemon"
+    result["steps"]["bliss"] = "background_daemon"
 
     update_task(task_id, progress=json.dumps({"step": "popularity", "artist": artist_name}))
     try:

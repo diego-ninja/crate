@@ -489,12 +489,57 @@ def _handle_index_genres(task_id: str, params: dict, config: dict) -> dict:
     return result
 
 
+def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
+    """Reset analysis/bliss state to 'pending' so background daemons re-process tracks.
+    Accepts: artist, album (name), album_id, track_id, or scope='all'."""
+    from crate.db import get_db_ctx
+
+    scope = params.get("scope")
+    artist = params.get("artist")
+    album_id = params.get("album_id")
+    track_id = params.get("track_id")
+    what = params.get("what", "both")  # 'analysis', 'bliss', or 'both'
+
+    cols = []
+    if what in ("analysis", "both"):
+        cols.append("analysis_state = 'pending'")
+    if what in ("bliss", "both"):
+        cols.append("bliss_state = 'pending'")
+    if not cols:
+        return {"requeued": 0}
+
+    set_clause = ", ".join(cols)
+
+    with get_db_ctx() as cur:
+        if track_id:
+            cur.execute(f"UPDATE library_tracks SET {set_clause} WHERE id = %s", (track_id,))
+        elif album_id:
+            cur.execute(f"UPDATE library_tracks SET {set_clause} WHERE album_id = %s", (album_id,))
+        elif artist:
+            cur.execute(
+                f"UPDATE library_tracks SET {set_clause} WHERE album_id IN "
+                "(SELECT id FROM library_albums WHERE artist = %s)",
+                (artist,),
+            )
+        elif scope == "all":
+            cur.execute(f"UPDATE library_tracks SET {set_clause}")
+        else:
+            return {"requeued": 0, "error": "No scope specified"}
+
+        count = cur.rowcount
+
+    log.info("Requeued %d tracks for %s (scope: %s)", count, what,
+             track_id or album_id or artist or scope)
+    return {"requeued": count, "what": what}
+
+
 ANALYSIS_TASK_HANDLERS: dict[str, TaskHandler] = {
-    "analyze_tracks": _handle_analyze_tracks,
-    "analyze_all": _handle_analyze_tracks,
-    "analyze_album_full": _handle_analyze_album_full,
     "compute_analytics": _handle_compute_analytics,
     "index_genres": _handle_index_genres,
     "compute_popularity": _handle_compute_popularity,
-    "compute_bliss": _handle_compute_bliss,
+    # Re-analysis: just resets state, background daemons pick up the work
+    "analyze_tracks": _handle_requeue_analysis,
+    "analyze_all": _handle_requeue_analysis,
+    "analyze_album_full": _handle_requeue_analysis,
+    "compute_bliss": _handle_requeue_analysis,
 }

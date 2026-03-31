@@ -20,6 +20,7 @@ import {
   Settings,
   Sparkles,
   Calendar,
+  AudioWaveform,
 } from "lucide-react";
 import { cn, encPath } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -62,6 +63,7 @@ const navItems = [
   { to: "/missing-albums", icon: Disc3, label: "Missing Albums" },
   { to: "/quality", icon: ShieldCheck, label: "Quality" },
   { section: "System" },
+  { to: "/analysis", icon: AudioWaveform, label: "Analysis", adminOnly: true },
   { to: "/tasks", icon: ListTodo, label: "Tasks", badgeKey: "running_tasks" as const, adminOnly: true },
   { to: "/stack", icon: Server, label: "Stack", adminOnly: true },
   { to: "/users", icon: Users, label: "Users", adminOnly: true },

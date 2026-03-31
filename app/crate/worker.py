@@ -58,6 +58,18 @@ def run_worker(config: dict):
     service_thread.start()
     log.info("Service loop started (scheduler + watcher + zombie cleanup)")
 
+    # Start background analysis daemons (independent of Dramatiq tasks)
+    from crate.analysis_daemon import analysis_daemon, bliss_daemon
+    analysis_thread = threading.Thread(
+        target=analysis_daemon, args=(config,), daemon=True, name="analysis-daemon",
+    )
+    bliss_thread = threading.Thread(
+        target=bliss_daemon, args=(config,), daemon=True, name="bliss-daemon",
+    )
+    analysis_thread.start()
+    bliss_thread.start()
+    log.info("Background analysis daemons started")
+
     # Start Dramatiq workers via CLI (this manages its own process pool)
     dramatiq_cmd = [
         sys.executable, "-m", "dramatiq",

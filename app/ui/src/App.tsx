@@ -31,6 +31,7 @@ const Profile = lazy(() => import("@/pages/Profile").then(m => ({ default: m.Pro
 const NewReleases = lazy(() => import("@/pages/NewReleases").then(m => ({ default: m.NewReleases })));
 const Upcoming = lazy(() => import("@/pages/Upcoming").then(m => ({ default: m.Upcoming })));
 const Setup = lazy(() => import("@/pages/Setup").then(m => ({ default: m.Setup })));
+const Analysis = lazy(() => import("@/pages/Analysis").then(m => ({ default: m.Analysis })));
 
 function PageSpinner() {
   return (
@@ -88,6 +89,7 @@ export default function App() {
                   <Route path="insights" element={<Insights />} />
                   <Route path="missing-albums" element={<MissingAlbums />} />
                   <Route path="quality" element={<Quality />} />
+                  <Route path="analysis" element={<Analysis />} />
                   <Route path="tasks" element={<Tasks />} />
                   <Route path="playlists" element={<Playlists />} />
                   <Route path="stack" element={<Stack />} />

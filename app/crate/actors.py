@@ -57,7 +57,7 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     # New content processing (priority 1)
     "process_new_content":  ("default", 1, 14400, 0),
     "enrich_artist":        ("fast",    1, 180, 2),
-    "analyze_album_full":   ("heavy",   1, 7200, 1),
+    "analyze_album_full":   ("fast",    1, 60, 0),  # just resets state for background daemon
 
     # Scheduled recurring (priority 2)
     "library_sync":         ("default", 2, 3600, 0),
@@ -79,9 +79,9 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "enrich_artists":       ("fast",    3, 86400, 0),
     "enrich_mbids":         ("fast",    3, 86400, 0),
     "compute_popularity":   ("fast",    3, 3600, 0),
-    "compute_bliss":        ("heavy",   3, 7200, 0),
-    "analyze_tracks":       ("heavy",   2, 7200, 0),
-    "analyze_all":          ("heavy",   3, 14400, 0),
+    "compute_bliss":        ("fast",    3, 60, 0),   # just resets state for background daemon
+    "analyze_tracks":       ("fast",    2, 60, 0),   # just resets state for background daemon
+    "analyze_all":          ("fast",    3, 60, 0),    # just resets state for background daemon
     "index_genres":         ("fast",    3, 600, 0),
     "scan_missing_covers":  ("fast",    3, 3600, 0),
     "fetch_artwork_all":    ("fast",    3, 3600, 0),
