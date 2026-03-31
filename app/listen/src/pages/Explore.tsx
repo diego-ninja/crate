@@ -1,12 +1,16 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Search, Loader2, ArrowLeft, ArrowRight, Sparkles } from "lucide-react";
+import { Search, Loader2, ArrowLeft, ArrowRight } from "lucide-react";
+import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { TrackRow } from "@/components/cards/TrackRow";
-import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { PlaylistCard } from "@/components/playlists/PlaylistCard";
+import { type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { encPath } from "@/lib/utils";
 
 interface SearchArtist {
   name: string;
@@ -56,6 +60,24 @@ interface SystemPlaylist {
   is_smart: boolean;
 }
 
+interface PlaylistDetailTrack {
+  id?: number;
+  track_id?: number;
+  track_path: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  navidrome_id?: string;
+}
+
+interface PlaylistDetailData {
+  id: number;
+  name: string;
+  cover_data_url?: string | null;
+  tracks: PlaylistDetailTrack[];
+}
+
 function Pill({ label, count, onClick }: { label: string; count?: number; onClick: () => void }) {
   return (
     <button
@@ -64,50 +86,6 @@ function Pill({ label, count, onClick }: { label: string; count?: number; onClic
     >
       <span className="text-sm font-medium text-primary">{label}</span>
       {count != null && count > 0 && <span className="text-xs text-white/50">{count}</span>}
-    </button>
-  );
-}
-
-function PlaylistCard({
-  playlist,
-  onClick,
-}: {
-  playlist: SystemPlaylist;
-  onClick: () => void;
-}) {
-  const metaBits = [
-    playlist.category ? playlist.category : null,
-    `${playlist.track_count} tracks`,
-    playlist.follower_count > 0 ? `${playlist.follower_count} followers` : null,
-  ].filter(Boolean);
-
-  return (
-    <button onClick={onClick} className="group w-[180px] flex-shrink-0 text-left">
-      <div className="relative">
-        <PlaylistArtwork
-          name={playlist.name}
-          coverDataUrl={playlist.cover_data_url}
-          tracks={playlist.artwork_tracks}
-          className="aspect-square rounded-3xl shadow-xl transition-transform group-hover:scale-[1.02]"
-        />
-        <div className="absolute left-3 top-3 flex items-center gap-2">
-          {playlist.is_smart ? (
-            <div className="inline-flex items-center rounded-full border border-primary/25 bg-[#0a0a0f]/80 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-primary backdrop-blur-md">
-              <Sparkles size={10} className="mr-1" />
-              Smart
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <div className="px-1 pt-3">
-        <div className="truncate text-sm font-bold text-foreground">{playlist.name}</div>
-        <div className="mt-1 line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-muted-foreground">
-          {playlist.description || metaBits.join(" · ")}
-        </div>
-        <div className="mt-2 text-[11px] uppercase tracking-wider text-white/35">
-          {metaBits.join(" · ")}
-        </div>
-      </div>
     </button>
   );
 }
@@ -325,7 +303,42 @@ function DecadeDetailView({ decade, onBack }: { decade: string; onBack: () => vo
 
 function PlaylistCategoryView({ category, onBack }: { category: string; onBack: () => void }) {
   const navigate = useNavigate();
-  const { data, loading } = useApi<SystemPlaylist[]>(`/api/curation/playlists/category/${encodeURIComponent(category)}`);
+  const { playAll } = usePlayerActions();
+  const { data, loading, refetch } = useApi<SystemPlaylist[]>(`/api/curation/playlists/category/${encodeURIComponent(category)}`);
+
+  async function handlePlayPlaylist(playlistId: number, playlistName: string) {
+    try {
+      const data = await api<PlaylistDetailData>(`/api/curation/playlists/${playlistId}`);
+      const playerTracks: Track[] = (data.tracks || []).map((track) => ({
+        id: track.track_path || String(track.id || track.track_id || Math.random()),
+        title: track.title || "Unknown",
+        artist: track.artist || "",
+        album: track.album || "",
+        albumCover:
+          track.artist && track.album
+            ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+            : data.cover_data_url || undefined,
+        path: track.track_path,
+        libraryTrackId: track.track_id,
+        navidromeId: track.navidrome_id,
+      }));
+      if (playerTracks.length > 0) {
+        playAll(playerTracks, 0, { type: "playlist", name: playlistName });
+      }
+    } catch {
+      toast.error("Failed to play playlist");
+    }
+  }
+
+  async function handleToggleFollow(playlistId: number, isFollowed: boolean) {
+    try {
+      await api(`/api/curation/playlists/${playlistId}/follow`, isFollowed ? "DELETE" : "POST");
+      toast.success(isFollowed ? "Removed from your library" : "Added to your library");
+      refetch();
+    } catch {
+      toast.error("Failed to update playlist");
+    }
+  }
 
   if (loading) {
     return (
@@ -352,7 +365,20 @@ function PlaylistCategoryView({ category, onBack }: { category: string; onBack: 
           {data.map((playlist) => (
             <PlaylistCard
               key={playlist.id}
-              playlist={playlist}
+              name={playlist.name}
+              description={playlist.description}
+              tracks={playlist.artwork_tracks}
+              coverDataUrl={playlist.cover_data_url}
+              meta={[
+                playlist.category || null,
+                `${playlist.track_count} tracks`,
+                playlist.follower_count > 0 ? `${playlist.follower_count} followers` : null,
+              ].filter(Boolean).join(" · ")}
+              badge={playlist.is_smart ? "Smart" : "Curated"}
+              systemPlaylist
+              isFollowed={playlist.is_followed}
+              onPlay={() => handlePlayPlaylist(playlist.id, playlist.name)}
+              onToggleFollow={() => handleToggleFollow(playlist.id, playlist.is_followed)}
               onClick={() => navigate(`/curation/playlist/${playlist.id}`)}
             />
           ))}
@@ -368,6 +394,7 @@ function PlaylistCategoryView({ category, onBack }: { category: string; onBack: 
 
 export function Explore() {
   const navigate = useNavigate();
+  const { playAll } = usePlayerActions();
   const [searchParams, setSearchParams] = useSearchParams();
   const genreSlug = searchParams.get("genre");
   const playlistCategory = searchParams.get("playlistCategory");
@@ -378,7 +405,41 @@ export function Explore() {
   const [searching, setSearching] = useState(false);
 
   const { data: filters, loading: filtersLoading } = useApi<BrowseFilters>("/api/browse/filters");
-  const { data: systemPlaylists, loading: playlistsLoading } = useApi<SystemPlaylist[]>("/api/curation/playlists");
+  const { data: systemPlaylists, loading: playlistsLoading, refetch: refetchSystemPlaylists } = useApi<SystemPlaylist[]>("/api/curation/playlists");
+
+  async function handlePlayPlaylist(playlistId: number, playlistName: string) {
+    try {
+      const data = await api<PlaylistDetailData>(`/api/curation/playlists/${playlistId}`);
+      const playerTracks: Track[] = (data.tracks || []).map((track) => ({
+        id: track.track_path || String(track.id || track.track_id || Math.random()),
+        title: track.title || "Unknown",
+        artist: track.artist || "",
+        album: track.album || "",
+        albumCover:
+          track.artist && track.album
+            ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+            : data.cover_data_url || undefined,
+        path: track.track_path,
+        libraryTrackId: track.track_id,
+        navidromeId: track.navidrome_id,
+      }));
+      if (playerTracks.length > 0) {
+        playAll(playerTracks, 0, { type: "playlist", name: playlistName });
+      }
+    } catch {
+      toast.error("Failed to play playlist");
+    }
+  }
+
+  async function handleToggleFollow(playlistId: number, isFollowed: boolean) {
+    try {
+      await api(`/api/curation/playlists/${playlistId}/follow`, isFollowed ? "DELETE" : "POST");
+      toast.success(isFollowed ? "Removed from your library" : "Added to your library");
+      refetchSystemPlaylists();
+    } catch {
+      toast.error("Failed to update playlist");
+    }
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(query), 300);
@@ -472,7 +533,20 @@ export function Explore() {
                 {featuredPlaylists.map((playlist) => (
                   <PlaylistCard
                     key={playlist.id}
-                    playlist={playlist}
+                    name={playlist.name}
+                    description={playlist.description}
+                    tracks={playlist.artwork_tracks}
+                    coverDataUrl={playlist.cover_data_url}
+                    meta={[
+                      playlist.category || null,
+                      `${playlist.track_count} tracks`,
+                      playlist.follower_count > 0 ? `${playlist.follower_count} followers` : null,
+                    ].filter(Boolean).join(" · ")}
+                    badge={playlist.is_smart ? "Smart" : "Curated"}
+                    systemPlaylist
+                    isFollowed={playlist.is_followed}
+                    onPlay={() => handlePlayPlaylist(playlist.id, playlist.name)}
+                    onToggleFollow={() => handleToggleFollow(playlist.id, playlist.is_followed)}
                     onClick={() => navigate(`/curation/playlist/${playlist.id}`)}
                   />
                 ))}

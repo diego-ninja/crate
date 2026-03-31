@@ -562,7 +562,7 @@ def api_artist_setlist_playable(request: Request, name: str):
             FROM library_tracks t
             JOIN library_albums a ON a.id = t.album_id
             WHERE a.artist = %s
-            ORDER BY a.year NULLS LAST, a.name, t.track_no NULLS LAST, t.title
+            ORDER BY a.year NULLS LAST, a.name, t.track_number NULLS LAST, t.title
             """,
             (name,),
         )

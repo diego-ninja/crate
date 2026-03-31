@@ -3,25 +3,48 @@ import {
   ArrowRight,
   Calendar,
   Clock3,
-  Heart,
   ListMusic,
   Loader2,
   Play,
   RadioTower,
   Sparkles,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
+import { api } from "@/lib/api";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
+import { PlaylistCard } from "@/components/playlists/PlaylistCard";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { encPath } from "@/lib/utils";
 
-interface NewArtist {
+interface SavedAlbum {
+  id: number;
+  artist: string;
   name: string;
-  album_count: number;
-  track_count: number;
-  has_photo: boolean;
-  updated_at?: string;
+  year?: string;
+  has_cover?: boolean;
+  track_count?: number;
+  saved_at?: string;
+}
+
+interface LibraryAddition {
+  type: "album" | "playlist" | "system_playlist";
+  added_at: string;
+  album_id?: number;
+  album_name?: string;
+  album_artist?: string;
+  album_year?: string;
+  playlist_id?: number;
+  playlist_name?: string;
+  playlist_description?: string;
+  playlist_tracks?: PlaylistArtworkTrack[];
+  playlist_cover_data_url?: string | null;
+  playlist_track_count?: number;
+  playlist_follower_count?: number;
+  playlist_badge?: string;
 }
 
 interface UserPlaylist {
@@ -31,6 +54,8 @@ interface UserPlaylist {
   cover_data_url?: string | null;
   artwork_tracks?: PlaylistArtworkTrack[];
   track_count: number;
+  updated_at?: string;
+  created_at?: string;
 }
 
 interface CuratedPlaylist {
@@ -43,6 +68,24 @@ interface CuratedPlaylist {
   follower_count: number;
   is_followed: boolean;
   is_smart: boolean;
+  followed_at?: string;
+  updated_at?: string;
+}
+
+interface GlobalArtist {
+  name: string;
+  albums?: number;
+  tracks?: number;
+  album_count?: number;
+  track_count?: number;
+  has_photo: boolean;
+}
+
+interface PaginatedArtistsResponse {
+  items: GlobalArtist[];
+  total: number;
+  page: number;
+  per_page: number;
 }
 
 interface UpcomingItem {
@@ -63,6 +106,24 @@ interface UpcomingResponse {
     show_count: number;
     release_count: number;
   };
+}
+
+interface PlaylistDetailTrack {
+  id?: number;
+  track_id?: number;
+  track_path: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  navidrome_id?: string;
+}
+
+interface PlaylistDetailData {
+  id: number;
+  name: string;
+  cover_data_url?: string | null;
+  tracks: PlaylistDetailTrack[];
 }
 
 function getGreeting(): string {
@@ -171,7 +232,7 @@ function UpcomingPreviewRow({
   );
 }
 
-function PlaylistCard({
+function FeaturedPlaylistCard({
   name,
   description,
   tracks,
@@ -260,14 +321,16 @@ function ContinueListeningCard({
 export function Home() {
   const navigate = useNavigate();
   const { currentTrack, recentlyPlayed } = usePlayer();
-  const { play } = usePlayerActions();
+  const { play, playAll } = usePlayerActions();
 
   const { data: curatedPlaylists, loading: curatedLoading } =
     useApi<CuratedPlaylist[]>("/api/curation/playlists");
-  const { data: followedCurated, loading: followedLoading } =
+  const { data: followedCurated, loading: followedLoading, refetch: refetchFollowedCurated } =
     useApi<CuratedPlaylist[]>("/api/curation/followed");
-  const { data: newArtists, loading: artistsLoading } =
-    useApi<NewArtist[]>("/api/artists?sort=recent&limit=10");
+  const { data: recentGlobalArtists, loading: globalArtistsLoading } =
+    useApi<PaginatedArtistsResponse>("/api/artists?sort=recent&per_page=10");
+  const { data: savedAlbums, loading: savedAlbumsLoading } =
+    useApi<SavedAlbum[]>("/api/me/albums");
   const { data: playlists, loading: playlistsLoading } =
     useApi<UserPlaylist[]>("/api/playlists");
   const { data: upcoming } =
@@ -282,6 +345,79 @@ export function Home() {
     .filter((item) => item.is_upcoming)
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
     .slice(0, 3);
+  const libraryAdditions: LibraryAddition[] = [
+    ...((playlists || []).map((playlist) => ({
+      type: "playlist" as const,
+      added_at: playlist.updated_at || playlist.created_at || "",
+      playlist_id: playlist.id,
+      playlist_name: playlist.name,
+      playlist_description: playlist.description,
+      playlist_tracks: playlist.artwork_tracks,
+      playlist_cover_data_url: playlist.cover_data_url,
+      playlist_track_count: playlist.track_count,
+      playlist_badge: "Playlist",
+    }))),
+    ...((followedCurated || []).map((playlist) => ({
+      type: "system_playlist" as const,
+      added_at: playlist.followed_at || playlist.updated_at || "",
+      playlist_id: playlist.id,
+      playlist_name: playlist.name,
+      playlist_description: playlist.description,
+      playlist_tracks: playlist.artwork_tracks,
+      playlist_track_count: playlist.track_count,
+      playlist_follower_count: playlist.follower_count,
+      playlist_badge: playlist.is_smart ? "Smart" : "Curated",
+    }))),
+    ...((savedAlbums || []).map((album) => ({
+      type: "album" as const,
+      added_at: album.saved_at || "",
+      album_id: album.id,
+      album_name: album.name,
+      album_artist: album.artist,
+      album_year: album.year,
+      album_track_count: album.track_count,
+    }))),
+  ]
+    .sort((a, b) => b.added_at.localeCompare(a.added_at))
+    .slice(0, 14);
+  const libraryAdditionsLoading =
+    savedAlbumsLoading || playlistsLoading || followedLoading;
+
+  async function handlePlayPlaylist(playlistId: number, systemPlaylist: boolean, playlistName: string) {
+    try {
+      const data = await api<PlaylistDetailData>(
+        systemPlaylist ? `/api/curation/playlists/${playlistId}` : `/api/playlists/${playlistId}`,
+      );
+      const playerTracks: Track[] = (data.tracks || []).map((track) => ({
+        id: track.track_path || String(track.id || track.track_id || Math.random()),
+        title: track.title || "Unknown",
+        artist: track.artist || "",
+        album: track.album || "",
+        albumCover:
+          track.artist && track.album
+            ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+            : data.cover_data_url || undefined,
+        path: track.track_path,
+        libraryTrackId: track.track_id,
+        navidromeId: track.navidrome_id,
+      }));
+      if (playerTracks.length > 0) {
+        playAll(playerTracks, 0, { type: "playlist", name: playlistName });
+      }
+    } catch {
+      toast.error("Failed to play playlist");
+    }
+  }
+
+  async function handleToggleSystemPlaylistFollow(playlistId: number, isFollowed: boolean) {
+    try {
+      await api(`/api/curation/playlists/${playlistId}/follow`, isFollowed ? "DELETE" : "POST");
+      toast.success(isFollowed ? "Removed from your library" : "Added to your library");
+      refetchFollowedCurated();
+    } catch {
+      toast.error("Failed to update playlist");
+    }
+  }
 
   return (
     <div className="space-y-10">
@@ -411,7 +547,7 @@ export function Home() {
         ) : curatedPlaylists && curatedPlaylists.length > 0 ? (
           <SectionRail>
             {curatedPlaylists.map((playlist) => (
-              <PlaylistCard
+              <FeaturedPlaylistCard
                 key={playlist.id}
                 name={playlist.name}
                 description={playlist.description}
@@ -432,83 +568,93 @@ export function Home() {
       <section className="space-y-4">
         <SectionHeader
           title="In Your Library"
-          subtitle="Followed playlists, playlists you own, and new additions around your collection."
+          subtitle="Your latest playlists and saved albums in one place."
           actionLabel="Go to Library"
-          onAction={() => navigate("/library?tab=playlists")}
+          onAction={() => navigate("/library")}
         />
 
-        {followedLoading ? (
+        {libraryAdditionsLoading ? (
           <SectionLoading />
-        ) : followedCurated && followedCurated.length > 0 ? (
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] uppercase tracking-wider text-white/45">
-              <Heart size={12} />
-              Following
-            </div>
-            <SectionRail>
-              {followedCurated.map((playlist) => (
-                <PlaylistCard
-                  key={playlist.id}
-                  name={playlist.name}
-                  description={playlist.description}
-                  tracks={playlist.artwork_tracks}
-                  meta={`${playlist.track_count} tracks · ${playlist.follower_count} followers`}
-                  badge="Following"
-                  onClick={() => navigate(`/curation/playlist/${playlist.id}`)}
-                />
-              ))}
-            </SectionRail>
-          </div>
-        ) : null}
+        ) : libraryAdditions.length > 0 ? (
+          <SectionRail>
+            {libraryAdditions.map((item) => {
+              if (
+                (item.type === "playlist" || item.type === "system_playlist") &&
+                item.playlist_id &&
+                item.playlist_name
+              ) {
+                const isSystem = item.type === "system_playlist";
+                const playlistMeta = isSystem
+                  ? `${item.playlist_track_count || 0} tracks${item.playlist_follower_count != null ? ` · ${item.playlist_follower_count} followers` : ""}`
+                  : `${item.playlist_track_count || 0} tracks`;
+                return (
+                  <PlaylistCard
+                    key={`${item.type}-${item.playlist_id}-${item.added_at}`}
+                    name={item.playlist_name}
+                    description={item.playlist_description}
+                    tracks={item.playlist_tracks}
+                    coverDataUrl={item.playlist_cover_data_url}
+                    meta={playlistMeta}
+                    systemPlaylist={isSystem}
+                    isFollowed={isSystem}
+                    badge={item.playlist_badge}
+                    onPlay={() => handlePlayPlaylist(item.playlist_id!, isSystem, item.playlist_name!)}
+                    onToggleFollow={
+                      isSystem
+                        ? () => handleToggleSystemPlaylistFollow(item.playlist_id!, true)
+                        : undefined
+                    }
+                    onClick={() =>
+                      navigate(isSystem ? `/curation/playlist/${item.playlist_id}` : `/playlist/${item.playlist_id}`)
+                    }
+                  />
+                );
+              }
 
-        {playlistsLoading ? (
-          <SectionLoading />
-        ) : playlists && playlists.length > 0 ? (
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-[11px] uppercase tracking-wider text-white/45">
-              <ListMusic size={12} />
-              Your playlists
-            </div>
-            <SectionRail>
-              {playlists.map((playlist) => (
-                <PlaylistCard
-                  key={playlist.id}
-                  name={playlist.name}
-                  description={playlist.description}
-                  tracks={playlist.artwork_tracks}
-                  coverDataUrl={playlist.cover_data_url}
-                  meta={`${playlist.track_count} tracks`}
-                  badge={undefined}
-                  onClick={() => navigate(`/playlist/${playlist.id}`)}
-                />
-              ))}
-            </SectionRail>
+              if (item.album_id && item.album_name && item.album_artist) {
+                return (
+                  <AlbumCard
+                    key={`album-${item.album_id}-${item.added_at}`}
+                    artist={item.album_artist}
+                    album={item.album_name}
+                    albumId={item.album_id}
+                    year={item.album_year}
+                  />
+                );
+              }
+
+              return null;
+            })}
+          </SectionRail>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
+            Start saving albums or creating playlists and they will show up here.
           </div>
-        ) : null}
+        )}
       </section>
 
       <section className="space-y-4">
         <SectionHeader
-          title="New in Library"
-          subtitle="Recently added artists you may want to dive back into."
+          title="Just landed"
+          subtitle="Fresh additions arriving in the shared Crate library."
           actionLabel="Explore"
           onAction={() => navigate("/explore")}
         />
-        {artistsLoading ? (
+        {globalArtistsLoading ? (
           <SectionLoading />
-        ) : newArtists && newArtists.length > 0 ? (
+        ) : recentGlobalArtists?.items?.length ? (
           <SectionRail>
-            {newArtists.map((artist) => (
+            {recentGlobalArtists.items.map((artist) => (
               <ArtistCard
-                key={artist.name}
+                key={`just-landed-${artist.name}`}
                 name={artist.name}
-                subtitle={`${artist.album_count} album${artist.album_count !== 1 ? "s" : ""}`}
+                subtitle={`${artist.albums ?? artist.album_count ?? 0} album${(artist.albums ?? artist.album_count ?? 0) === 1 ? "" : "s"} · ${artist.tracks ?? artist.track_count ?? 0} tracks`}
               />
             ))}
           </SectionRail>
         ) : (
           <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
-            No recent library additions yet.
+            No recent global additions yet.
           </div>
         )}
       </section>
