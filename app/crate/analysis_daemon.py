@@ -49,10 +49,12 @@ def _claim_track(state_column: str):
 
 
 def _mark_done(track_id: int, state_column: str):
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
         cur.execute(
-            f"UPDATE library_tracks SET {state_column} = 'done' WHERE id = %s",
-            (track_id,),
+            f"UPDATE library_tracks SET {state_column} = 'done', updated_at = %s WHERE id = %s",
+            (now, track_id),
         )
 
 
