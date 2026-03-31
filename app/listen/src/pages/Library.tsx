@@ -1,13 +1,16 @@
-import { useNavigate, useSearchParams } from "react-router";
-import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play, Sparkles } from "lucide-react";
+import { useSearchParams } from "react-router";
+import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play } from "lucide-react";
+import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { TrackRow } from "@/components/cards/TrackRow";
-import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { PlaylistListRow } from "@/components/playlists/PlaylistListRow";
+import { type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 
 type Tab = "playlists" | "artists" | "albums" | "liked";
@@ -108,12 +111,26 @@ function StatBox({ value, label }: { value: number; label: string }) {
 }
 
 function PlaylistsTab() {
-  const navigate = useNavigate();
   const { data: playlists, loading } = useApi<Playlist[]>("/api/playlists");
-  const { data: followedCurated, loading: followedLoading } = useApi<CuratedPlaylist[]>("/api/curation/followed");
+  const {
+    data: followedCurated,
+    loading: followedLoading,
+    refetch: refetchFollowedCurated,
+  } = useApi<CuratedPlaylist[]>("/api/curation/followed");
   const { openCreatePlaylist } = usePlaylistComposer();
 
   if (loading || followedLoading) return <Spinner />;
+
+  async function toggleSystemPlaylistFollow(playlist: CuratedPlaylist) {
+    try {
+      const method = "DELETE";
+      await api(`/api/curation/playlists/${playlist.id}/follow`, method);
+      toast.success(`Removed ${playlist.name} from your library`);
+      refetchFollowedCurated();
+    } catch {
+      toast.error("Failed to update playlist");
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -131,32 +148,22 @@ function PlaylistsTab() {
             From Crate
           </div>
           {followedCurated.map((playlist) => (
-            <button
+            <PlaylistListRow
               key={`curated-${playlist.id}`}
-              onClick={() => navigate(`/curation/playlist/${playlist.id}`)}
-              className="flex items-center gap-3 w-full rounded-lg px-3 py-3 hover:bg-white/5 transition-colors text-left"
-            >
-              <PlaylistArtwork
-                name={playlist.name}
-                coverDataUrl={playlist.cover_data_url}
-                tracks={playlist.artwork_tracks}
-                className="w-10 h-10 rounded-md flex-shrink-0"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-foreground truncate">{playlist.name}</span>
-                  <span className="inline-flex items-center rounded-md border border-primary/30 text-primary text-[10px] px-1.5 py-0 font-medium">
-                    <Sparkles size={10} className="mr-0.5" />
-                    {playlist.is_smart ? "Smart" : "Curated"}
-                  </span>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {playlist.track_count} track{playlist.track_count !== 1 ? "s" : ""}
-                  {playlist.category ? ` · ${playlist.category}` : ""}
-                  {playlist.follower_count > 0 ? ` · ${playlist.follower_count} follower${playlist.follower_count !== 1 ? "s" : ""}` : ""}
-                </div>
-              </div>
-            </button>
+              name={playlist.name}
+              description={playlist.description}
+              coverDataUrl={playlist.cover_data_url}
+              artworkTracks={playlist.artwork_tracks}
+              trackCount={playlist.track_count}
+              meta={[playlist.category, playlist.follower_count > 0 ? `${playlist.follower_count} followers` : null].filter(Boolean).join(" · ")}
+              href={`/curation/playlist/${playlist.id}`}
+              detailEndpoint={`/api/curation/playlists/${playlist.id}`}
+              badge={playlist.is_smart ? "smart" : "curated"}
+              followState={{
+                isFollowed: true,
+                onToggle: async () => toggleSystemPlaylistFollow(playlist),
+              }}
+            />
           ))}
         </div>
       ) : null}
@@ -171,33 +178,18 @@ function PlaylistsTab() {
             Your Playlists
           </div>
           {playlists.map((pl) => (
-            <button
+            <PlaylistListRow
               key={pl.id}
-              onClick={() => navigate(`/playlist/${pl.id}`)}
-              className="flex items-center gap-3 w-full rounded-lg px-3 py-3 hover:bg-white/5 transition-colors text-left"
-            >
-              <PlaylistArtwork
-                name={pl.name}
-                coverDataUrl={pl.cover_data_url}
-                tracks={pl.artwork_tracks}
-                className="w-10 h-10 rounded-md flex-shrink-0"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-foreground truncate">{pl.name}</span>
-                  {pl.is_smart && (
-                    <span className="inline-flex items-center rounded-md border border-primary/30 text-primary text-[10px] px-1.5 py-0 font-medium">
-                      <Sparkles size={10} className="mr-0.5" />
-                      Smart
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {pl.track_count} track{pl.track_count !== 1 ? "s" : ""}
-                  {pl.total_duration > 0 && ` · ${formatTotalDuration(pl.total_duration)}`}
-                </div>
-              </div>
-            </button>
+              name={pl.name}
+              description={pl.description}
+              coverDataUrl={pl.cover_data_url}
+              artworkTracks={pl.artwork_tracks}
+              trackCount={pl.track_count}
+              meta={pl.total_duration > 0 ? formatTotalDuration(pl.total_duration) : undefined}
+              href={`/playlist/${pl.id}`}
+              detailEndpoint={`/api/playlists/${pl.id}`}
+              badge={pl.is_smart ? "smart" : "personal"}
+            />
           ))}
         </div>
       )}
