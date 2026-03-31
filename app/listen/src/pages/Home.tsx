@@ -204,7 +204,7 @@ function UpcomingPreviewRow({
   return (
     <button
       onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5"
+      className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/5"
     >
       <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]">
         <span className="text-[10px] uppercase tracking-wide text-white/35">{dateLabel.split(" ")[0]}</span>
@@ -225,8 +225,8 @@ function UpcomingPreviewRow({
           {item.type === "show" ? `${item.title} · ${item.subtitle}` : `${item.artist} · ${item.title}`}
         </div>
       </div>
-      <div className="shrink-0 text-[10px] uppercase tracking-wider text-white/30">
-        {item.type}
+      <div className="shrink-0 rounded-full border border-primary/15 bg-primary/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+        {item.type === "show" ? "Show" : "Release"}
       </div>
     </button>
   );
@@ -345,6 +345,13 @@ export function Home() {
     .filter((item) => item.is_upcoming)
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
     .slice(0, 3);
+  const nextUpcoming = upcomingPreview[0] || null;
+  const nextUpcomingDate = nextUpcoming?.date
+    ? new Date(`${nextUpcoming.date}T12:00:00`).toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+      })
+    : null;
   const libraryAdditions: LibraryAddition[] = [
     ...((playlists || []).map((playlist) => ({
       type: "playlist" as const,
@@ -496,26 +503,56 @@ export function Home() {
           />
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.16),transparent_45%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-5">
+            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5">
               <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
                 <RadioTower size={12} />
                 From your artists
               </div>
-              <h2 className="text-2xl font-bold text-foreground">
-                {upcomingPreview[0]?.type === "show" ? upcomingPreview[0]?.artist : upcomingPreview[0]?.title}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                {upcomingPreview[0]?.type === "show"
-                  ? `${upcomingPreview[0]?.title} · ${upcomingPreview[0]?.subtitle}`
-                  : `${upcomingPreview[0]?.artist} · ${upcomingPreview[0]?.subtitle}`}
-              </p>
-              <button
-                onClick={() => navigate("/upcoming")}
-                className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <Calendar size={15} />
-                View details
-              </button>
+              {nextUpcoming ? (
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-white/55">
+                      {nextUpcoming.type === "show" ? "Next show" : "Next release"}
+                    </div>
+                    {nextUpcoming.user_attending && nextUpcoming.type === "show" ? (
+                      <div className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-primary">
+                        Going
+                      </div>
+                    ) : null}
+                  </div>
+                  <h2 className="mt-4 text-2xl font-bold text-foreground">
+                    {nextUpcoming.type === "show" ? nextUpcoming.artist : nextUpcoming.title}
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    {nextUpcoming.type === "show"
+                      ? `${nextUpcoming.title} · ${nextUpcoming.subtitle}`
+                      : `${nextUpcoming.artist} · ${nextUpcoming.subtitle}`}
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {nextUpcomingDate ? (
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Date</div>
+                        <div className="mt-1 text-sm font-semibold text-foreground">{nextUpcomingDate}</div>
+                      </div>
+                    ) : null}
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Shows</div>
+                      <div className="mt-1 text-sm font-semibold text-foreground">{upcoming?.summary.show_count ?? 0}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                      <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Releases</div>
+                      <div className="mt-1 text-sm font-semibold text-foreground">{upcoming?.summary.release_count ?? 0}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => navigate("/upcoming")}
+                    className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                  >
+                    <Calendar size={15} />
+                    View details
+                  </button>
+                </>
+              ) : null}
             </div>
 
             <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-4">

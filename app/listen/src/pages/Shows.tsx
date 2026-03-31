@@ -47,6 +47,16 @@ export function Shows() {
 
   const today = new Date().toISOString().slice(0, 10);
   const comingUp = filtered.filter((item) => item.is_upcoming || item.date >= today);
+  const attendingShows = items.filter((item) => item.type === "show" && item.user_attending);
+  const nextAttendingShow = attendingShows
+    .filter((item) => item.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  const nextAttendingDate = nextAttendingShow?.date
+    ? new Date(`${nextAttendingShow.date}T12:00:00`).toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+      })
+    : null;
   const recentlyReleased = filtered
     .filter((item) => item.type === "release" && !item.is_upcoming && item.date < today)
     .sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -57,7 +67,7 @@ export function Shows() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-white/45">
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
             <RadioTower size={12} className="text-primary" />
             Upcoming
           </div>
@@ -73,10 +83,40 @@ export function Shows() {
               <SummaryPill label="Followed artists" value={summary.followed_artists} />
               <SummaryPill label="Shows" value={summary.show_count} accent="cyan" />
               <SummaryPill label="Releases" value={summary.release_count} accent="cyan" />
+              <SummaryPill label="Attending" value={attendingShows.length} accent="cyan" />
             </>
           ) : null}
         </div>
       </div>
+
+      {nextAttendingShow ? (
+        <div className="overflow-hidden rounded-[1.5rem] border border-primary/15 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.16),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-primary">
+                <Calendar size={12} />
+                Attending soon
+              </div>
+              <h2 className="mt-4 text-2xl font-bold text-foreground">{nextAttendingShow.artist}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {nextAttendingShow.title} · {nextAttendingShow.subtitle}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              {nextAttendingDate ? (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Date</div>
+                  <div className="mt-1 text-sm font-semibold text-foreground">{nextAttendingDate}</div>
+                </div>
+              ) : null}
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Venue</div>
+                <div className="mt-1 text-sm font-semibold text-foreground">{nextAttendingShow.title}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-3 rounded-[1.25rem] border border-white/5 bg-white/[0.02] p-4 md:flex-row md:items-center md:justify-between">
         <div className="flex flex-wrap items-center gap-2">
