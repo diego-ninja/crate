@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-30
 **Status**: Active
-**Scope**: executable roadmap for radio, smart playlists, curated playlists, and user follow
+**Scope**: executable roadmap for system playlists, curated playlists, user follow, and their relation to the broader playback-intelligence roadmap
 
 ## Purpose
 
@@ -10,8 +10,7 @@ Turn the updated design into a practical delivery sequence that can be resumed b
 
 Related docs:
 
-- `docs/plans/2026-03-29-radio-curated-playlists-design.md`
-- `docs/plans/2026-03-29-radio-curated-playlists-implementation.md`
+- `docs/plans/2026-03-31-radio-and-playlist-intelligence-design.md`
 
 ## Product Rules
 
@@ -164,14 +163,17 @@ Expose curated playlists in `listen` as public editorial objects.
 
 ### Goal
 
-Support `track`, `album`, and `artist` radio under one player model.
+Support `track`, `album`, `artist`, and `playlist` radio under one player model.
 
 ### Deliverables
 
 - `/api/radio/track/{track_id}`
 - `/api/radio/album/{album_id}`
 - `/api/radio/artist/{name}`
+- `/api/radio/playlist/{playlist_id}`
 - PlayerContext radio state and refill logic
+
+This batch should follow the consolidated design in `2026-03-31-radio-and-playlist-intelligence-design.md`.
 
 ### Files
 
@@ -182,6 +184,30 @@ Support `track`, `album`, and `artist` radio under one player model.
 ### Depends On
 
 - independent of curation batches
+
+## Batch 6B - Infinite Continuation and Playlist Suggestions
+
+### Goal
+
+Add intelligent continuation when an album or playlist ends in infinite mode, and prepare smart playlist-track inclusion as a player capability.
+
+### Deliverables
+
+- continuation flow for finished albums/playlists
+- suggested tracks after queue completion in infinite mode
+- playlist suggestion model that does not mutate the stored playlist by default
+- player settings / flags for suggestion cadence and enablement
+
+### Files
+
+- `app/crate/api/radio.py` or shared recommendation service
+- `app/listen/src/contexts/PlayerContext.tsx`
+- relevant playlist / album listen surfaces
+
+### Depends On
+
+- Batch 6
+- consolidated behavior rules in `2026-03-31-radio-and-playlist-intelligence-design.md`
 
 ## Batch 7 - Smart Regeneration
 
