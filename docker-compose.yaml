@@ -277,6 +277,7 @@ services:
 
   # MusicDock — Music stack management
   crate-api:
+    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
     build: ./app
     container_name: crate-api
     restart: unless-stopped
@@ -337,6 +338,7 @@ services:
     command: ["api"]
 
   crate-worker:
+    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
     build: ./app
     container_name: crate-worker
     restart: unless-stopped
@@ -386,6 +388,7 @@ services:
     command: ["worker"]
 
   crate-ui:
+    image: ghcr.io/diego-ninja/crate-ui:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       dockerfile: ui/Dockerfile
@@ -405,6 +408,7 @@ services:
       traefik.http.routers.admin.tls.certresolver: letsencrypt
 
   crate-listen:
+    image: ghcr.io/diego-ninja/crate-listen:${CRATE_IMAGE_TAG:-latest}
     build:
       context: ./app
       dockerfile: listen/Dockerfile

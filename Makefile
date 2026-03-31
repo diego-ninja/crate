@@ -205,7 +205,24 @@ _create-dirs:
 # ===========================================================================
 
 .PHONY: deploy
-deploy: ## Deploy completo al servidor: sync + build + restart
+deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
+	@echo "$(YELLOW)Sincronizando config...$(NC)"
+	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
+	@rsync -az \
+		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+		--exclude='.vite' --exclude='*.tsbuildinfo' \
+		--exclude='bin/' --exclude='crate/' --exclude='ui/' --exclude='listen/' \
+		--exclude='requirements.txt' --exclude='Dockerfile' --exclude='tests/' \
+		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
+	@echo "$(YELLOW)Pulling imagenes (GHCR + externas)...$(NC)"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-pull-failures" || true
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable" || true
+	@echo "$(YELLOW)Reiniciando servicios...$(NC)"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml up -d --remove-orphans"
+	@echo "$(GREEN)Deploy completado$(NC)"
+
+.PHONY: deploy-build
+deploy-build: ## Deploy con build en servidor (sin GHCR, fallback)
 	@echo "$(YELLOW)Sincronizando ficheros...$(NC)"
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az --delete \
@@ -213,7 +230,7 @@ deploy: ## Deploy completo al servidor: sync + build + restart
 		--exclude='.vite' --exclude='*.tsbuildinfo' \
 		--exclude='bin/' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
-	@echo "$(YELLOW)Building servicios (api + worker + ui + listen)...$(NC)"
+	@echo "$(YELLOW)Building servicios en servidor...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build crate-api crate-worker crate-ui crate-listen"
 	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
