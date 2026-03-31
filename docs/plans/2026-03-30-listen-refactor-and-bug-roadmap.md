@@ -369,6 +369,10 @@ Follow-up architectural decision:
 - playlist cover data model and storage path
 - best API shape for upload music
 - safe approach for gapless/crossfade with current audio architecture
+- reusable overlay primitives for `listen`:
+  - extract consistent `Dropdown` / `Popover` / `Menu` components
+  - unify `Escape`, click-outside, z-index, animation, and focus behavior
+  - apply first to `TopBar`, `PlayerBar`, `Album`, playlist actions, and future settings surfaces
 
 ## Validation Checklist
 
@@ -386,6 +390,7 @@ If another agent picks this up next:
 
 - preserve the product boundary between `app/listen` and `app/ui`
 - prefer extracting small reusable `listen`-local components before introducing new shared abstractions
+- prioritize reusable overlay primitives once the next visible UX batch is closed; repeated ad-hoc popovers are already creating enough debt to justify a dedicated pass
 - treat `PlayerContext` changes carefully; many UI surfaces depend on it
 - when fixing likes/collection issues, inspect both frontend IDs and backend `track_path` persistence
 - if modifying docs beyond this file and the change affects app boundaries, also update `README.md` and `AGENTS.md`
