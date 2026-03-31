@@ -5,9 +5,12 @@ import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisua
 import { api } from "@/lib/api";
 import { extractPalette } from "@/lib/palette";
 import {
+  getVisualizerModePreference,
   getUseAlbumPalettePreference,
   PLAYER_VIZ_PREFS_EVENT,
   setUseAlbumPalettePreference,
+  setVisualizerModePreference,
+  type VisualizerMode,
 } from "@/lib/player-visualizer-prefs";
 import { formatDuration, formatCompact } from "@/lib/utils";
 
@@ -573,6 +576,11 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 const VIZ_DEFAULTS = { separation: 0.15, glow: 6.0, scale: 1.4, persistence: 0.8, octaves: 2 };
+const VISUALIZER_MODES: Array<{ id: VisualizerMode; label: string }> = [
+  { id: "spheres", label: "Spheres" },
+  { id: "halo", label: "Halo" },
+  { id: "tunnel", label: "Tunnel" },
+];
 
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   usePlayer(); // subscribe to state updates for child components
@@ -581,13 +589,17 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const [showVizSettings, setShowVizSettings] = useState(false);
   const [vizConfig, setVizConfig] = useState(VIZ_DEFAULTS);
   const [useAlbumPalette, setUseAlbumPalette] = useState(getUseAlbumPalettePreference);
+  const [visualizerMode, setVisualizerMode] = useState<VisualizerMode>(getVisualizerModePreference);
   const [vizEnabled, setVizEnabled] = useState(true);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const vizRef = useMusicVisualizer(canvasRef, audioElement, open && vizEnabled);
+  const vizRef = useMusicVisualizer(canvasRef, audioElement, open && vizEnabled, visualizerMode);
 
   useEffect(() => {
-    const syncPreference = () => setUseAlbumPalette(getUseAlbumPalettePreference());
+    const syncPreference = () => {
+      setUseAlbumPalette(getUseAlbumPalettePreference());
+      setVisualizerMode(getVisualizerModePreference());
+    };
     window.addEventListener("storage", syncPreference);
     window.addEventListener(PLAYER_VIZ_PREFS_EVENT, syncPreference as EventListener);
     return () => {
@@ -724,6 +736,27 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
               >
                 <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${useAlbumPalette ? "translate-x-4.5" : "translate-x-0.5"}`} />
               </button>
+            </div>
+            <div>
+              <div className="mb-2 text-[11px] text-white/50">Mode</div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {VISUALIZER_MODES.map((mode) => (
+                  <button
+                    key={mode.id}
+                    onClick={() => {
+                      setVisualizerMode(mode.id);
+                      setVisualizerModePreference(mode.id);
+                    }}
+                    className={`rounded-lg px-2 py-1.5 text-[11px] transition-colors ${
+                      visualizerMode === mode.id
+                        ? "bg-primary/15 text-primary"
+                        : "bg-white/5 text-white/55 hover:bg-white/10 hover:text-white/80"
+                    }`}
+                  >
+                    {mode.label}
+                  </button>
+                ))}
+              </div>
             </div>
             {([
               { key: "separation" as const, label: "Separation", min: 0, max: 0.5, step: 0.01 },

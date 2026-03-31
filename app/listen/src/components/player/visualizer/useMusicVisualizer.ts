@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { MusicVisualizer } from './MusicVisualizer';
 import { createAnalyserNode } from '@/hooks/use-audio-visualizer';
+import type { VisualizerMode } from '@/lib/player-visualizer-prefs';
 
 function dbg(msg: string) {
   const d = document.getElementById('viz-debug');
@@ -11,6 +12,7 @@ export function useMusicVisualizer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   audioElement: HTMLAudioElement | null,
   active: boolean,
+  mode: VisualizerMode,
 ) {
   const vizRef = useRef<MusicVisualizer | null>(null);
 
@@ -66,7 +68,7 @@ export function useMusicVisualizer(
       };
 
       try {
-        const viz = new MusicVisualizer(canvas, node);
+        const viz = new MusicVisualizer(canvas, node, mode);
         vizRef.current = viz;
         viz.start();
         setTimeout(() => forceResize(viz), 100);
@@ -86,7 +88,7 @@ export function useMusicVisualizer(
         vizRef.current.stop();
       }
     };
-  }, [canvasRef, audioElement, active]);
+  }, [canvasRef, audioElement, active, mode]);
 
   return vizRef;
 }
