@@ -396,6 +396,25 @@ Follow-up architectural decision:
     - editorial + system curated playlists
     - library pulse (new releases, recently played, new from followed artists)
   - once direction is chosen, redesign `app/listen/src/pages/Home.tsx` around 1-2 primary rails and stronger personalized/system surfaces
+- playlist rows in `listen` still need action buttons / context actions:
+  - current rows in `Library > Playlists` are mostly navigational and too passive
+  - personal playlists should expose at least:
+    - play
+    - shuffle
+    - edit
+    - delete
+    - share
+    - sync to Navidrome (when user sync allows it)
+  - system playlists should expose at least:
+    - play
+    - shuffle
+    - follow / unfollow
+    - share
+    - maybe `add to library` wording instead of only row click-through
+  - likely implementation shape:
+    - row-level primary play affordance
+    - compact secondary action cluster on hover / desktop
+    - shared menu for lower-priority actions on mobile
 - reusable overlay primitives for `listen`:
   - extract consistent `Dropdown` / `Popover` / `Menu` components
   - unify `Escape`, click-outside, z-index, animation, and focus behavior
