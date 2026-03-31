@@ -92,19 +92,33 @@ const STATUS_COLORS: Record<string, string> = {
   wishlist: "text-pink-500", completed: "text-green-500", failed: "text-red-500",
 };
 
+// Session persistence helpers — survive navigation, cleared on tab close
+const STORE_KEY = "crate:acquisition:search";
+function loadSession(): { query: string; results: SearchResult | null; soulseek: SoulseekResult[] | null; tab: "tidal" | "soulseek" } {
+  try {
+    const raw = sessionStorage.getItem(STORE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  return { query: "", results: null, soulseek: null, tab: "tidal" };
+}
+function saveSession(data: { query: string; results: SearchResult | null; soulseek: SoulseekResult[] | null; tab: "tidal" | "soulseek" }) {
+  try { sessionStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch { /* ignore */ }
+}
+
 export function DownloadPage() {
   const [searchParams] = useSearchParams();
   const initialQ = searchParams.get("q") ?? "";
-  const [query, setQuery] = useState(initialQ);
-  const [results, setResults] = useState<SearchResult | null>(null);
+  const session = loadSession();
+  const [query, setQuery] = useState(initialQ || session.query);
+  const [results, setResults] = useState<SearchResult | null>(session.results);
   const [searching, setSearching] = useState(false);
   const [quality, setQuality] = useState("max");
   const [activeDownloads, setActiveDownloads] = useState<Set<string>>(new Set());
-  const [soulseekResults, setSoulseekResults] = useState<SoulseekResult[] | null>(null);
+  const [soulseekResults, setSoulseekResults] = useState<SoulseekResult[] | null>(session.soulseek);
   const [searchingSlsk, setSearchingSlsk] = useState(false);
   const [, setSlskSearchId] = useState<string | null>(null);
   const slskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [resultTab, setResultTab] = useState<"tidal" | "soulseek">("tidal");
+  const [resultTab, setResultTab] = useState<"tidal" | "soulseek">(session.tab);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadTaskId, setUploadTaskId] = useState<string | null>(null);
@@ -116,6 +130,11 @@ export function DownloadPage() {
   const queue = tidalQueue;
   const slskDownloads = slskQueue?.filter((d) => d.source === "soulseek") ?? [];
   function refetchQueue() { refetchTidalQueue(); refetchSlskQueue(); }
+
+  // Persist search state across navigation
+  useEffect(() => {
+    saveSession({ query, results, soulseek: soulseekResults, tab: resultTab });
+  }, [query, results, soulseekResults, resultTab]);
 
   // Auto-refresh queue
   useEffect(() => {
