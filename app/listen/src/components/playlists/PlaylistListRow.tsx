@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Heart, Loader2, Play, Share2, Shuffle, Sparkles } from "lucide-react";
+import { Heart, Loader2, Play, Share2, Shuffle, Sparkles, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
@@ -36,6 +36,14 @@ interface PlaylistListRowProps {
     isFollowed: boolean;
     onToggle: () => Promise<void>;
   };
+  extraActions?: Array<{
+    key: string;
+    icon: LucideIcon;
+    title: string;
+    onClick: () => void | Promise<void>;
+    loading?: boolean;
+    tone?: "default" | "danger" | "primary";
+  }>;
 }
 
 function shuffleArray<T>(arr: T[]): T[] {
@@ -76,6 +84,7 @@ export function PlaylistListRow({
   detailEndpoint,
   badge,
   followState,
+  extraActions,
 }: PlaylistListRowProps) {
   const navigate = useNavigate();
   const { playAll } = usePlayerActions();
@@ -204,6 +213,29 @@ export function PlaylistListRow({
             {togglingFollow ? <Loader2 size={15} className="animate-spin" /> : <Heart size={15} className={followState.isFollowed ? "fill-current" : ""} />}
           </button>
         ) : null}
+        {extraActions?.map((action) => {
+          const Icon = action.icon;
+          const toneClass =
+            action.tone === "danger"
+              ? "text-red-300/80 hover:bg-red-500/10 hover:text-red-300"
+              : action.tone === "primary"
+                ? "text-cyan-200/80 hover:bg-cyan-400/10 hover:text-cyan-100"
+                : "text-white/45 hover:bg-white/10 hover:text-white";
+
+          return (
+            <button
+              key={action.key}
+              onClick={async (event) => {
+                event.stopPropagation();
+                await action.onClick();
+              }}
+              className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${toneClass}`}
+              title={action.title}
+            >
+              {action.loading ? <Loader2 size={15} className="animate-spin" /> : <Icon size={15} />}
+            </button>
+          );
+        })}
         <button
           onClick={handleShare}
           className="flex h-8 w-8 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"

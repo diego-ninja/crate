@@ -341,10 +341,9 @@ Follow-up architectural decision:
 - added explicit Navidrome user-sync state and gating:
   - `app/listen/src/contexts/UserSyncContext.tsx` now fetches `/api/me/sync` and exposes mutation-safe status flags
   - `app/listen/src/App.tsx` now wraps `listen` with `UserSyncProvider`
-  - `app/listen/src/components/layout/TopBar.tsx` now shows current Navidrome link/server status in the user menu
-  - `app/listen/src/pages/Playlist.tsx` now disables `Sync to Navidrome` when the user is unlinked, pending, errored, or when Navidrome is offline, and explains why
   - `app/crate/api/playlists.py` now requires the playlist owner to have a synced Navidrome identity before queueing sync
   - `app/crate/worker_handlers/integrations.py` now creates Navidrome playlists as the linked external username instead of the shared service identity
+  - `listen` should treat this as invisible infrastructure; user-facing UI must not mention Navidrome directly
   - verified with `cd app/listen && npm run build`
   - rebuilt local dev API/worker containers so the user-scoped sync is active
 - added album collection/play affordances:
@@ -375,7 +374,7 @@ Follow-up architectural decision:
 
 - Batch 6
   - user sync to Navidrome
-  - next step: add a self-service link/retry surface in `listen`, not just admin
+  - keep the linkage/admin workflow out of `listen` UI; the playback/sync backend should stay transparent to end users
 
 ### Pending Investigation
 
@@ -404,7 +403,6 @@ Follow-up architectural decision:
     - edit
     - delete
     - share
-    - sync to Navidrome (when user sync allows it)
   - system playlists should expose at least:
     - play
     - shuffle

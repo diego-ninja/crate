@@ -3,7 +3,6 @@ import { useNavigate } from "react-router";
 import { Search, Loader2, User, LogOut, Settings, X, Disc, Music } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
-import { useUserSync } from "@/contexts/UserSyncContext";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
 import { encPath } from "@/lib/utils";
@@ -84,13 +83,6 @@ function ResultThumb({ item }: { item: FlatItem }) {
 export function TopBar() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const {
-    loading: syncLoading,
-    navidromeConnected,
-    navidromeStatus,
-    navidromeUsername,
-    navidromeLastError,
-  } = useUserSync();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FlatItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -190,25 +182,6 @@ export function TopBar() {
 
   const userName = user?.name || user?.email || null;
   const userInitial = userName ? userName.charAt(0).toUpperCase() : null;
-  const navidromeStatusLabel = (() => {
-    if (syncLoading) return "Checking Navidrome";
-    if (!navidromeConnected) return "Navidrome offline";
-    if (navidromeStatus === "synced") {
-      return navidromeUsername ? `Linked to ${navidromeUsername}` : "Navidrome linked";
-    }
-    if (navidromeStatus === "pending") return "Navidrome sync pending";
-    if (navidromeStatus === "errored") return "Navidrome sync error";
-    return "Navidrome not linked";
-  })();
-  const navidromeStatusTone = !navidromeConnected
-    ? "border-red-400/20 bg-red-400/10 text-red-200/80"
-    : navidromeStatus === "synced"
-      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200/80"
-      : navidromeStatus === "pending"
-        ? "border-amber-400/20 bg-amber-400/10 text-amber-100/80"
-        : navidromeStatus === "errored"
-          ? "border-red-400/20 bg-red-400/10 text-red-200/80"
-          : "border-white/10 bg-white/5 text-white/65";
 
   return (
     <div className="flex items-center gap-4 px-4 py-3 pointer-events-none">
@@ -291,11 +264,11 @@ export function TopBar() {
         {showUserMenu && (
           <AppPopover ref={userMenuRef} className="absolute top-full right-0 mt-2 z-50 w-60 py-1">
             <div className="px-3 pb-2 pt-2">
-              <div className={`rounded-lg border px-2.5 py-2 text-[11px] ${navidromeStatusTone}`}>
-                <p className="font-medium">{navidromeStatusLabel}</p>
-                {navidromeStatus === "errored" && navidromeLastError && (
-                  <p className="mt-1 line-clamp-2 text-[10px] opacity-80">{navidromeLastError}</p>
-                )}
+              <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-[11px] text-white/65">
+                <p className="font-medium text-white/85">{userName || "Signed in"}</p>
+                {user?.email ? (
+                  <p className="mt-1 truncate text-[10px] opacity-80">{user.email}</p>
+                ) : null}
               </div>
             </div>
             <AppPopoverDivider />

@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play } from "lucide-react";
+import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
@@ -8,6 +9,8 @@ import { ArtistCard } from "@/components/cards/ArtistCard";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { PlaylistListRow } from "@/components/playlists/PlaylistListRow";
+import { PlaylistCreateModal, type PlaylistComposerTrack } from "@/components/playlists/PlaylistCreateModal";
+import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from "@/components/ui/AppModal";
 import { type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
@@ -32,6 +35,22 @@ interface Playlist {
   is_smart: boolean;
   total_duration: number;
   created_at: string;
+}
+
+interface PlaylistTrack {
+  id: number;
+  track_id?: number;
+  track_path: string;
+  title: string;
+  artist: string;
+  album: string;
+  duration: number;
+  position: number;
+  navidrome_id?: string;
+}
+
+interface PlaylistDetail extends Playlist {
+  tracks: PlaylistTrack[];
 }
 
 interface CuratedPlaylist {
@@ -111,13 +130,17 @@ function StatBox({ value, label }: { value: number; label: string }) {
 }
 
 function PlaylistsTab() {
-  const { data: playlists, loading } = useApi<Playlist[]>("/api/playlists");
+  const { data: playlists, loading, refetch: refetchPlaylists } = useApi<Playlist[]>("/api/playlists");
   const {
     data: followedCurated,
     loading: followedLoading,
     refetch: refetchFollowedCurated,
   } = useApi<CuratedPlaylist[]>("/api/curation/followed");
   const { openCreatePlaylist } = usePlaylistComposer();
+  const [editingPlaylist, setEditingPlaylist] = useState<PlaylistDetail | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [deletingPlaylist, setDeletingPlaylist] = useState<Playlist | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   if (loading || followedLoading) return <Spinner />;
 
@@ -129,6 +152,90 @@ function PlaylistsTab() {
       refetchFollowedCurated();
     } catch {
       toast.error("Failed to update playlist");
+    }
+  }
+
+  async function openPlaylistEditor(playlistId: number) {
+    try {
+      const detail = await api<PlaylistDetail>(`/api/playlists/${playlistId}`);
+      setEditingPlaylist(detail);
+    } catch {
+      toast.error("Failed to load playlist");
+    }
+  }
+
+  async function handleSavePlaylist(payload: {
+    name: string;
+    description: string;
+    coverDataUrl: string | null;
+    tracks: PlaylistComposerTrack[];
+  }) {
+    if (!editingPlaylist) return;
+    setSaving(true);
+    try {
+      await api(`/api/playlists/${editingPlaylist.id}`, "PUT", {
+        name: payload.name,
+        description: payload.description,
+        cover_data_url: payload.coverDataUrl,
+      });
+
+      const originalByEntryId = new Map(
+        editableTracks(editingPlaylist)
+          .filter((track) => track.playlistEntryId != null)
+          .map((track) => [track.playlistEntryId as number, track]),
+      );
+
+      const nextEntryIds = new Set(
+        payload.tracks
+          .map((track) => track.playlistEntryId)
+          .filter((value): value is number => value != null),
+      );
+
+      const removedTracks = [...originalByEntryId.values()]
+        .filter((track) => !nextEntryIds.has(track.playlistEntryId as number))
+        .sort((a, b) => (b.playlistPosition || 0) - (a.playlistPosition || 0));
+
+      for (const track of removedTracks) {
+        if (track.playlistPosition != null) {
+          await api(`/api/playlists/${editingPlaylist.id}/tracks/${track.playlistPosition}`, "DELETE");
+        }
+      }
+
+      const newTracks = payload.tracks.filter((track) => track.playlistEntryId == null && track.path);
+      if (newTracks.length > 0) {
+        await api(`/api/playlists/${editingPlaylist.id}/tracks`, "POST", {
+          tracks: newTracks.map((track) => ({
+            path: track.path,
+            title: track.title,
+            artist: track.artist,
+            album: track.album || "",
+            duration: track.duration || 0,
+          })),
+        });
+      }
+
+      toast.success("Playlist updated");
+      setEditingPlaylist(null);
+      refetchPlaylists();
+    } catch {
+      toast.error("Failed to update playlist");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeletePlaylist() {
+    if (!deletingPlaylist) return;
+    setDeleting(true);
+    try {
+      await api(`/api/playlists/${deletingPlaylist.id}`, "DELETE");
+      toast.success("Playlist deleted");
+      setDeletingPlaylist(null);
+      refetchPlaylists();
+    } catch {
+      toast.error("Failed to delete playlist");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -189,12 +296,87 @@ function PlaylistsTab() {
               href={`/playlist/${pl.id}`}
               detailEndpoint={`/api/playlists/${pl.id}`}
               badge={pl.is_smart ? "smart" : "personal"}
+              extraActions={[
+                {
+                  key: "edit",
+                  icon: Pencil,
+                  title: "Edit",
+                  onClick: async () => openPlaylistEditor(pl.id),
+                },
+                {
+                  key: "delete",
+                  icon: Trash2,
+                  title: "Delete",
+                  onClick: async () => setDeletingPlaylist(pl),
+                  tone: "danger",
+                },
+              ]}
             />
           ))}
         </div>
       )}
+
+      <PlaylistCreateModal
+        open={!!editingPlaylist}
+        mode="edit"
+        initialName={editingPlaylist?.name}
+        initialDescription={editingPlaylist?.description}
+        initialCoverDataUrl={editingPlaylist?.cover_data_url}
+        initialTracks={editingPlaylist ? editableTracks(editingPlaylist) : []}
+        submitting={saving}
+        onClose={() => setEditingPlaylist(null)}
+        onSubmit={handleSavePlaylist}
+      />
+
+      <AppModal open={!!deletingPlaylist} onClose={() => !deleting && setDeletingPlaylist(null)} maxWidthClassName="sm:max-w-md">
+        <ModalHeader className="flex items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Delete playlist</h2>
+            <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
+          </div>
+          <ModalCloseButton onClick={() => setDeletingPlaylist(null)} disabled={deleting} />
+        </ModalHeader>
+        <ModalBody className="px-5 py-5">
+          <p className="text-sm text-muted-foreground">
+            Delete <span className="font-medium text-foreground">{deletingPlaylist?.name}</span> and remove all its track entries?
+          </p>
+        </ModalBody>
+        <ModalFooter className="flex items-center justify-end gap-3 px-5 py-4">
+          <button
+            type="button"
+            className="rounded-xl px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+            onClick={() => setDeletingPlaylist(null)}
+            disabled={deleting}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-500/90 transition-colors disabled:opacity-50"
+            onClick={handleDeletePlaylist}
+            disabled={deleting}
+          >
+            {deleting ? <Loader2 size={15} className="animate-spin" /> : null}
+            Delete playlist
+          </button>
+        </ModalFooter>
+      </AppModal>
     </div>
   );
+}
+
+function editableTracks(playlist: PlaylistDetail): PlaylistComposerTrack[] {
+  return playlist.tracks.map((track) => ({
+    title: track.title || "Unknown",
+    artist: track.artist || "",
+    album: track.album,
+    duration: track.duration,
+    path: track.track_path,
+    libraryTrackId: track.track_id,
+    navidromeId: track.navidrome_id,
+    playlistEntryId: track.id,
+    playlistPosition: track.position,
+  }));
 }
 
 function ArtistsTab() {

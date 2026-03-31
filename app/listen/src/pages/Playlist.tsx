@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowUpToLine, Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2 } from "lucide-react";
+import { Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
-import { ApiError, api } from "@/lib/api";
+import { api } from "@/lib/api";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import {
@@ -12,7 +12,6 @@ import {
 } from "@/components/playlists/PlaylistCreateModal";
 import { AppModal, ModalBody, ModalFooter, ModalHeader, ModalCloseButton } from "@/components/ui/AppModal";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
-import { useUserSync } from "@/contexts/UserSyncContext";
 import { encPath } from "@/lib/utils";
 
 interface PlaylistTrack {
@@ -70,19 +69,10 @@ export function Playlist() {
     id ? `/api/playlists/${id}` : null,
   );
   const { playAll } = usePlayerActions();
-  const {
-    loading: syncLoading,
-    navidromeConnected,
-    navidromeStatus,
-    navidromeUsername,
-    navidromeLastError,
-    canSyncToNavidrome,
-  } = useUserSync();
   const [editorOpen, setEditorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
 
   const playerTracks = useMemo(() => {
     if (!data?.tracks?.length) return [];
@@ -214,67 +204,6 @@ export function Playlist() {
     }
   }
 
-  async function handleSyncToNavidrome() {
-    if (!id) return;
-    if (!canSyncToNavidrome) {
-      if (syncLoading) {
-        toast.message("Checking Navidrome sync status...");
-        return;
-      }
-      if (!navidromeConnected) {
-        toast.error("Navidrome is offline right now");
-        return;
-      }
-      if (navidromeStatus === "pending") {
-        toast.message("Your Navidrome account is still syncing");
-        return;
-      }
-      if (navidromeStatus === "errored") {
-        toast.error(navidromeLastError || "Your Navidrome sync needs attention");
-        return;
-      }
-      toast.error("Link your Navidrome user before syncing playlists");
-      return;
-    }
-    setSyncing(true);
-    try {
-      const result = await api<{ task_id: string }>(`/api/playlists/${id}/sync-navidrome`, "POST");
-      toast.success(`Sync started${result.task_id ? ` · task ${result.task_id.slice(0, 8)}` : ""}`);
-    } catch (error) {
-      if (error instanceof ApiError) {
-        toast.error(error.message || "Failed to start Navidrome sync");
-      } else {
-        toast.error("Failed to start Navidrome sync");
-      }
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  const syncHint = useMemo(() => {
-    if (syncLoading) return "Checking Navidrome sync status...";
-    if (!navidromeConnected) return "Navidrome is offline. Playlist sync will be available when it comes back.";
-    if (navidromeStatus === "pending") {
-      return `Your Navidrome user${navidromeUsername ? ` (${navidromeUsername})` : ""} is still syncing.`;
-    }
-    if (navidromeStatus === "errored") {
-      return navidromeLastError || "Navidrome sync needs attention before playlists can be pushed.";
-    }
-    if (navidromeStatus === "unlinked") {
-      return "Link this user with Navidrome before syncing playlists.";
-    }
-    if (navidromeUsername) {
-      return `This playlist will sync as ${navidromeUsername}.`;
-    }
-    return null;
-  }, [
-    navidromeConnected,
-    navidromeLastError,
-    navidromeStatus,
-    navidromeUsername,
-    syncLoading,
-  ]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -347,14 +276,6 @@ export function Playlist() {
             Edit
           </button>
           <button
-            onClick={handleSyncToNavidrome}
-            disabled={syncing || data.tracks.length === 0 || !canSyncToNavidrome}
-            className="flex items-center gap-2 rounded-lg border border-cyan-400/25 px-4 py-2.5 text-sm font-medium text-cyan-200 hover:bg-cyan-400/10 transition-colors disabled:opacity-50"
-          >
-            {syncing ? <Loader2 size={16} className="animate-spin" /> : <ArrowUpToLine size={16} />}
-            Sync to Navidrome
-          </button>
-          <button
             onClick={() => setDeleteOpen(true)}
             className="flex items-center gap-2 rounded-lg border border-red-500/25 px-4 py-2.5 text-sm font-medium text-red-300 hover:bg-red-500/10 transition-colors"
           >
@@ -371,11 +292,6 @@ export function Playlist() {
             </button>
           )}
         </div>
-        {syncHint && (
-          <p className="mt-3 text-xs text-cyan-100/70">
-            {syncHint}
-          </p>
-        )}
       </div>
 
       {/* Track list */}
