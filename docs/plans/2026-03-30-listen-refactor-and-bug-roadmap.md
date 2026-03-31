@@ -114,6 +114,7 @@ Notes:
 - gapless / crossfade / buffering are playback-engine tasks
 - new visualizers are medium-size frontend tasks
 - keyboard shortcuts should be designed to avoid conflicting with inputs/search
+- visualizer controls should stay inside the player / visualizer surface, not in global settings
 
 ### Artist View
 
@@ -203,13 +204,22 @@ Notes:
 - Apple signin/signup
 - possibly add-to-playlist affordances optimized for `listen`
 
+Upload direction now clarified:
+
+- upload should exist in `listen` for end users
+- upload should also surface in `admin`, most likely under acquisition / ingestion
+- uploaded files should land in the global library, not a user-private silo
+- the uploading user should automatically get:
+  - uploaded tracks liked
+  - uploaded albums saved
+  - uploaded artists followed
+- after ingest, the same enrichment / analysis / bliss / popularity / similarity pipeline should run as for other ingestion sources
+
 ### Current Frontend Risks
 
 - `TrackRow` / player interactions are now centralized, but row variants are starting to grow and may deserve a small component split
-- `TopBar` still has placeholder actions (`Coming soon`)
-- `ExtendedPlayer` and visualizer code still contain debug leftovers (`viz-debug`)
-- route-level auth in `listen` is still loose
-- user-sync status now exists in `listen`, but there is still no dedicated self-service link/retry screen yet
+- `gapless / crossfade` still need a second implementation pass if we want true dual-deck seamlessness; current player now preserves the safe single-audio architecture and makes better use of preloading
+- upload will cut across frontend, API, worker, and library ingest rules, so it should be implemented as a dedicated batch
 
 ### Current Backend Risk Behind One Reported Bug
 

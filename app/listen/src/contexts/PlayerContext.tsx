@@ -8,6 +8,10 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
+import {
+  getCrossfadeDurationPreference,
+  PLAYER_PLAYBACK_PREFS_EVENT,
+} from "@/lib/player-playback-prefs";
 
 export interface Track {
   id: string;
@@ -178,10 +182,30 @@ function getPredictableNextTrack(
   return null;
 }
 
+function isContinuousAlbumTransition(
+  currentTrack: Track | undefined,
+  nextTrack: Track | null,
+  playSource: PlaySource | null,
+  shuffle: boolean,
+): boolean {
+  if (!currentTrack || !nextTrack) return false;
+  if (shuffle) return false;
+  if (playSource?.type !== "album") return false;
+  return (
+    !!currentTrack.album &&
+    !!nextTrack.album &&
+    !!currentTrack.artist &&
+    !!nextTrack.artist &&
+    currentTrack.album === nextTrack.album &&
+    currentTrack.artist === nextTrack.artist
+  );
+}
+
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
   const preloadedTrackKeyRef = useRef<string | null>(null);
+  const preloadedTrackReadyRef = useRef(false);
   const stored = useRef(getStoredQueue());
   const [queue, setQueue] = useState<Track[]>(stored.current.queue);
   const [currentIndex, setCurrentIndex] = useState(stored.current.currentIndex);
@@ -194,6 +218,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [playSource, setPlaySource] = useState<PlaySource | null>(null);
   const [repeat, setRepeat] = useState<RepeatMode>("off");
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>(getStoredRecentlyPlayed);
+  const [crossfadeSeconds, setCrossfadeSeconds] = useState(getCrossfadeDurationPreference);
   const restoredRef = useRef(stored.current.queue.length > 0);
   const shouldAutoplayRef = useRef(false);
   const lastNonZeroVolumeRef = useRef(Math.max(getStoredVolume(), 0.5));
@@ -232,6 +257,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       preloadAudio.load();
     }
     preloadedTrackKeyRef.current = null;
+    preloadedTrackReadyRef.current = false;
   }, []);
 
   const preloadTrack = useCallback((track: Track) => {
@@ -246,12 +272,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     preloadAudio.preload = "auto";
     preloadAudio.load();
     preloadedTrackKeyRef.current = trackKey;
+    preloadedTrackReadyRef.current = false;
+  }, []);
+
+  const consumePreloadedSource = useCallback((track: Track): string | null => {
+    const preloadAudio = preloadAudioRef.current;
+    const trackKey = getTrackCacheKey(track);
+    if (!preloadAudio) return null;
+    if (preloadedTrackKeyRef.current !== trackKey) return null;
+    if (!preloadedTrackReadyRef.current) return null;
+    return preloadAudio.currentSrc || preloadAudio.src || null;
   }, []);
 
   useEffect(() => {
     const track = queue[currentIndex];
     if (!track) return;
-    const streamUrl = getStreamUrl(track);
+    const preloadedSrc = consumePreloadedSource(track);
+    const streamUrl = preloadedSrc || getStreamUrl(track);
 
     if (restoredRef.current) {
       restoredRef.current = false;
@@ -268,12 +305,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.play().catch((e) => console.warn("[player] autoplay failed:", e));
       setIsPlaying(true);
       addToRecentlyPlayed(track);
+      clearPreloadedTrack();
     }
-  }, [addToRecentlyPlayed, audio, currentIndex, queue]);
+  }, [addToRecentlyPlayed, audio, clearPreloadedTrack, consumePreloadedSource, currentIndex, queue]);
 
   useEffect(() => {
     clearPreloadedTrack();
-  }, [clearPreloadedTrack, currentIndex, queue, repeat, shuffle]);
+  }, [clearPreloadedTrack, queue, repeat, shuffle]);
 
   useEffect(() => {
     const nextTrack = getPredictableNextTrack(queue, currentIndex, repeat, shuffle);
@@ -283,6 +321,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
 
     const nextTrackKey = getTrackCacheKey(nextTrack);
+    const transitionWindowSeconds = Math.max(
+      NEXT_TRACK_PRELOAD_WINDOW_SECONDS,
+      crossfadeSeconds > 0 ? crossfadeSeconds + 3 : NEXT_TRACK_PRELOAD_WINDOW_SECONDS,
+    );
     const maybePreloadNextTrack = () => {
       const totalDuration =
         Number.isFinite(audio.duration) && audio.duration > 0
@@ -293,7 +335,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
       const remaining = totalDuration - audio.currentTime;
       if (
-        remaining <= NEXT_TRACK_PRELOAD_WINDOW_SECONDS &&
+        remaining <= transitionWindowSeconds &&
         preloadedTrackKeyRef.current !== nextTrackKey
       ) {
         preloadTrack(nextTrack);
@@ -305,7 +347,51 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => {
       audio.removeEventListener("timeupdate", maybePreloadNextTrack);
     };
-  }, [audio, clearPreloadedTrack, currentIndex, duration, isPlaying, preloadTrack, queue, repeat, shuffle]);
+  }, [audio, clearPreloadedTrack, crossfadeSeconds, currentIndex, duration, isPlaying, preloadTrack, queue, repeat, shuffle]);
+
+  useEffect(() => {
+    const preloadAudio = preloadAudioRef.current;
+    if (!preloadAudio) return;
+
+    const markReady = () => {
+      preloadedTrackReadyRef.current = true;
+    };
+    const markNotReady = () => {
+      preloadedTrackReadyRef.current = false;
+    };
+
+    preloadAudio.addEventListener("loadeddata", markReady);
+    preloadAudio.addEventListener("canplay", markReady);
+    preloadAudio.addEventListener("canplaythrough", markReady);
+    preloadAudio.addEventListener("loadstart", markNotReady);
+    preloadAudio.addEventListener("emptied", markNotReady);
+    preloadAudio.addEventListener("error", markNotReady);
+
+    return () => {
+      preloadAudio.removeEventListener("loadeddata", markReady);
+      preloadAudio.removeEventListener("canplay", markReady);
+      preloadAudio.removeEventListener("canplaythrough", markReady);
+      preloadAudio.removeEventListener("loadstart", markNotReady);
+      preloadAudio.removeEventListener("emptied", markNotReady);
+      preloadAudio.removeEventListener("error", markNotReady);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onPrefsChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ crossfadeSeconds?: number }>).detail;
+      if (typeof detail?.crossfadeSeconds === "number") {
+        setCrossfadeSeconds(detail.crossfadeSeconds);
+      } else {
+        setCrossfadeSeconds(getCrossfadeDurationPreference());
+      }
+    };
+
+    window.addEventListener(PLAYER_PLAYBACK_PREFS_EVENT, onPrefsChanged as EventListener);
+    return () => {
+      window.removeEventListener(PLAYER_PLAYBACK_PREFS_EVENT, onPrefsChanged as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -343,6 +429,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         }).catch(() => {});
       }
 
+      const nextTrack = getPredictableNextTrack(queue, currentIndex, repeat, shuffle);
+      const continuousAlbum = isContinuousAlbumTransition(endedTrack, nextTrack, playSource, shuffle);
+
       if (repeat === "one") {
         audio.currentTime = 0;
         audio.play().catch(() => {});
@@ -350,6 +439,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
 
       shouldAutoplayRef.current = true;
+      if (crossfadeSeconds > 0 && nextTrack && !continuousAlbum) {
+        setIsBuffering(false);
+      }
       if (shuffle) {
         if (queue.length > 1) {
           let nextIdx: number;
@@ -421,7 +513,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener("seeked", onSeeked);
       audio.removeEventListener("error", onError);
     };
-  }, [audio, currentIndex, queue, repeat, shuffle]);
+  }, [audio, crossfadeSeconds, currentIndex, playSource, queue, repeat, shuffle]);
 
   const play = useCallback((track: Track, source?: PlaySource) => {
     try {
