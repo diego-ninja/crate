@@ -101,6 +101,7 @@ export function PlayerBar() {
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const pseudoBars = useMemo(() => currentTrack ? generateBars(currentTrack.id, 80) : [], [currentTrack?.id]);
   const fmt = currentTrack ? formatBadge(currentTrack) : null;
+  const hasFloatingOverlayOpen = showVolume || showMenu;
 
   if (!currentTrack) return null;
 
@@ -121,7 +122,7 @@ export function PlayerBar() {
 
   return (
     <>
-      <div className={`fixed bottom-0 left-0 right-0 h-[72px] bg-[#0c0c14] border-t border-white/5 ${showVolume ? "z-[90]" : "z-50"}`}>
+      <div className={`fixed bottom-0 left-0 right-0 h-[72px] bg-[#0c0c14] border-t border-white/5 ${hasFloatingOverlayOpen ? "z-[90]" : "z-50"}`}>
         <div className="h-full flex items-center px-4 gap-2">
 
           {/* ── Block 1: Track Info ── */}
