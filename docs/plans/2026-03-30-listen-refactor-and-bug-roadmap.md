@@ -379,6 +379,14 @@ Follow-up architectural decision:
   - example already present in dev: smart playlist `Hardcore` with 50 tracks
   - `listen` needs dedicated consumption surfaces for global smart/curated playlists
   - likely ties into the system-playlists roadmap and follow/public projection work
+- `Home` / main music view needs a full product rethink:
+  - current quick-links + recent/new/playlists layout is too weak to act as the listening home
+  - re-evaluate against TIDAL / Spotify patterns:
+    - continue listening
+    - mixes for you / daily discovery / history mixes
+    - editorial + system curated playlists
+    - library pulse (new releases, recently played, new from followed artists)
+  - once direction is chosen, redesign `app/listen/src/pages/Home.tsx` around 1-2 primary rails and stronger personalized/system surfaces
 - reusable overlay primitives for `listen`:
   - extract consistent `Dropdown` / `Popover` / `Menu` components
   - unify `Escape`, click-outside, z-index, animation, and focus behavior
