@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
-import { Search, Loader2, User, LogOut, Settings, X, Disc, Music } from "lucide-react";
+import { Search, Loader2, User, LogOut, Settings, X, Disc, Music, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
@@ -185,7 +185,25 @@ export function TopBar() {
 
   return (
     <div className="flex items-center gap-4 px-4 py-3 pointer-events-none">
-      {/* Spacer pushes search + avatar to the right */}
+      <div className="pointer-events-auto flex items-center gap-2">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+          aria-label="Go back"
+          title="Go back"
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <button
+          onClick={() => navigate(1)}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+          aria-label="Go forward"
+          title="Go forward"
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
       <div className="flex-1" />
 
       {/* Search */}
