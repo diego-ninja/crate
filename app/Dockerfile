@@ -22,12 +22,10 @@ RUN if [ "$(uname -m)" = "x86_64" ]; then \
 COPY . .
 
 # Download Essentia ML models + PANNs CNN14 checkpoint (x86_64 only)
-# Then export PANNs to ONNX for use by crate-cli Rust binary
 RUN if [ "$(uname -m)" = "x86_64" ]; then \
         apt-get update && apt-get install -y --no-install-recommends curl && \
         bash scripts/download_models.sh /app/models && \
         chmod -R 755 /app/models /app/panns_data && \
-        python scripts/export_panns_onnx.py /app/models/panns_cnn14.onnx || true && \
         rm -rf /var/lib/apt/lists/*; \
     fi
 
