@@ -19,12 +19,12 @@ Ya está arrancada una primera base técnica segura para esta iteración:
 - el `Suggested` del player ya puede arrancar `track radio`
 - `Album`, `Playlist` y `CuratedPlaylist` ya exponen acciones directas de radio
 - las sesiones de radio ya pueden hacer `queue refill` automático al acercarse al final de la cola
+- `album` y `playlist` ya soportan `infinite continuation` cuando la preferencia del player está activa
 
 ### Aún no implementado
 
 Sigue pendiente para batches posteriores:
 
-- `infinite continuation` al final de álbum/playlist
 - `smart track inclusion`
 
 ## Resumen

@@ -1,5 +1,7 @@
 import {
   getCrossfadeDurationPreference,
+  getInfinitePlaybackPreference,
+  setInfinitePlaybackPreference,
   setCrossfadeDurationPreference,
 } from "@/lib/player-playback-prefs";
 import { useState } from "react";
@@ -67,8 +69,46 @@ function RangeRow({
   );
 }
 
+function ToggleRow({
+  label,
+  description,
+  checked,
+  onChange,
+}: {
+  label: string;
+  description?: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        {description ? <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p> : null}
+      </div>
+      <button
+        type="button"
+        aria-pressed={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full border transition-colors ${
+          checked
+            ? "border-cyan-400/50 bg-cyan-400/25"
+            : "border-white/10 bg-white/[0.03]"
+        }`}
+      >
+        <span
+          className={`inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+            checked ? "translate-x-6" : "translate-x-1"
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
 export function Settings() {
   const [crossfadeSeconds, setCrossfadeSeconds] = useState(getCrossfadeDurationPreference);
+  const [infinitePlaybackEnabled, setInfinitePlaybackEnabled] = useState(getInfinitePlaybackPreference);
 
   return (
     <div className="space-y-8">
@@ -83,6 +123,15 @@ export function Settings() {
         title="Playback"
         description="These preferences shape how the player behaves between tracks."
       >
+        <ToggleRow
+          label="Infinite playback"
+          description="When an album or playlist ends, keep the session going with context-aware continuation."
+          checked={infinitePlaybackEnabled}
+          onChange={(value) => {
+            setInfinitePlaybackEnabled(value);
+            setInfinitePlaybackPreference(value);
+          }}
+        />
         <RangeRow
           label="Crossfade"
           description="Set a preferred crossfade length for compatible transitions. Continuous album playback should still favor the most seamless handoff available."

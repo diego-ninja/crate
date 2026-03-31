@@ -92,12 +92,20 @@ export function CuratedPlaylist() {
 
   function handlePlay() {
     if (playerTracks.length === 0) return;
-    playAll(playerTracks, 0, { type: "playlist", name: data?.name || "Playlist" });
+    playAll(playerTracks, 0, {
+      type: "playlist",
+      name: data?.name || "Playlist",
+      radio: data ? { seedType: "playlist", seedId: data.id } : undefined,
+    });
   }
 
   function handleShuffle() {
     if (playerTracks.length === 0) return;
-    playAll(shuffleArray(playerTracks), 0, { type: "playlist", name: data?.name || "Playlist" });
+    playAll(shuffleArray(playerTracks), 0, {
+      type: "playlist",
+      name: data?.name || "Playlist",
+      radio: data ? { seedType: "playlist", seedId: data.id } : undefined,
+    });
   }
 
   async function handlePlaylistRadio() {

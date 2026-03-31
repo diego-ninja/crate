@@ -175,3 +175,20 @@ export async function fetchRadioContinuation(source: PlaySource, limit = 30): Pr
 
   return [];
 }
+
+export async function fetchInfiniteContinuation(source: PlaySource, limit = 30): Promise<Track[]> {
+  const seed = source.radio;
+  if (!seed) return [];
+
+  if (source.type === "album" && seed.seedType === "album" && seed.seedId != null) {
+    const data = await api<RadioResponse>(`/api/radio/album/${seed.seedId}?limit=${limit}`);
+    return (data.tracks || []).map(toTrack);
+  }
+
+  if (source.type === "playlist" && seed.seedType === "playlist" && seed.seedId != null) {
+    const data = await api<RadioResponse>(`/api/radio/playlist/${seed.seedId}?limit=${limit}`);
+    return (data.tracks || []).map(toTrack);
+  }
+
+  return [];
+}

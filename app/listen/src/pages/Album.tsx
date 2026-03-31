@@ -147,13 +147,29 @@ export function Album() {
   );
 
   const handlePlay = (startIndex = 0) => {
-    if (playerTracks.length > 0) playAll(playerTracks, startIndex);
+    if (playerTracks.length > 0) {
+      playAll(playerTracks, startIndex, {
+        type: "album",
+        name: `${artistName} — ${displayName}`,
+        radio: {
+          seedType: "album",
+          seedId: albumId,
+        },
+      });
+    }
   };
 
   const handleShuffle = () => {
     if (playerTracks.length === 0) return;
     const shuffled = [...playerTracks].sort(() => Math.random() - 0.5);
-    playAll(shuffled);
+    playAll(shuffled, 0, {
+      type: "album",
+      name: `${artistName} — ${displayName}`,
+      radio: {
+        seedType: "album",
+        seedId: albumId,
+      },
+    });
   };
 
   async function handleAlbumRadio() {

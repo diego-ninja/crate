@@ -102,7 +102,12 @@ export function PlaylistListRow({
         return;
       }
       const queue = mode === "shuffle" ? shuffleArray(tracks) : tracks;
-      playAll(queue, 0, { type: "playlist", name });
+      const playlistId = detailEndpoint.match(/\/(\d+)(?:\?.*)?$/)?.[1];
+      playAll(queue, 0, {
+        type: "playlist",
+        name,
+        radio: playlistId ? { seedType: "playlist", seedId: Number(playlistId) } : undefined,
+      });
     } catch {
       toast.error("Failed to load playlist");
     } finally {
