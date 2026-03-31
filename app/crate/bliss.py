@@ -210,6 +210,23 @@ def store_vectors(vectors: dict[str, list[float]]):
             )
 
 
+def _radio_track_payload(track: dict) -> dict:
+    track_path = track.get("path") or ""
+    if track_path.startswith("/music/"):
+        track_path = track_path[len("/music/") :]
+
+    return {
+        "track_id": track.get("track_id") or track.get("id"),
+        "navidrome_id": track.get("navidrome_id"),
+        "track_path": track_path,
+        "title": track.get("title"),
+        "artist": track.get("artist"),
+        "album": track.get("album"),
+        "duration": track.get("duration", 0),
+        "score": track.get("score") if track.get("score") is not None else track.get("_score"),
+    }
+
+
 def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 0.4) -> list[dict]:
     """Generate an Artist Radio playlist using multi-signal scoring.
 
@@ -218,8 +235,8 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
     with get_db_ctx() as cur:
         # Fetch artist tracks (with or without bliss vectors)
         cur.execute("""
-            SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
             WHERE a.artist = %s
@@ -250,8 +267,8 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
         candidate_limit = 2000
         if similar_artist_names:
             cur.execute("""
-                SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                       t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+                SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                       t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
                 WHERE t.bliss_vector IS NOT NULL
@@ -265,8 +282,8 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
             """, (artist_name, list(similar_artist_names), candidate_limit))
         else:
             cur.execute("""
-                SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                       t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+                SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                       t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
                 WHERE t.bliss_vector IS NOT NULL AND a.artist != %s
@@ -317,17 +334,7 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
             s_idx += 1
         else:
             break
-        track_path = t["path"]
-        if track_path.startswith("/music/"):
-            track_path = track_path[len("/music/"):]
-        playlist.append({
-            "path": track_path,
-            "title": t["title"],
-            "artist": t["artist"],
-            "album": t["album"],
-            "duration": t.get("duration", 0),
-            "score": t.get("_score"),
-        })
+        playlist.append(_radio_track_payload(t))
 
     return playlist
 
@@ -336,8 +343,8 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
     """Find similar tracks using pre-computed vectors stored in DB (multi-signal scoring)."""
     with get_db_ctx() as cur:
         cur.execute("""
-            SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
             WHERE t.path = %s
@@ -356,8 +363,8 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
 
         # Get candidates via broad bliss distance (top 200), then re-rank in Python
         cur.execute("""
-            SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy,
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy,
                    SQRT(
                        (SELECT SUM(POW(x - y, 2))
                         FROM UNNEST(t.bliss_vector, %s::float8[]) AS v(x, y))
@@ -421,15 +428,76 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
 
     result = []
     for score, t in scored[:limit]:
-        track_path_out = t["path"]
-        if track_path_out.startswith("/music/"):
-            track_path_out = track_path_out[len("/music/"):]
         result.append({
-            "path": track_path_out,
-            "title": t["title"],
-            "artist": t["artist"],
-            "album": t["album"],
-            "duration": t.get("duration", 0),
+            **_radio_track_payload(t),
             "score": round(score, 4),
         })
     return result
+
+
+def generate_track_radio(track_path: str, limit: int = 50, mix_ratio: float = 0.25) -> list[dict]:
+    """Generate a Track Radio queue based on a source track."""
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE t.path = %s
+        """, (track_path,))
+        row = cur.fetchone()
+        if not row:
+            return []
+
+        seed = dict(row)
+        cur.execute("""
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration, t.navidrome_id
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.artist = %s AND t.path != %s
+            ORDER BY RANDOM()
+            LIMIT %s
+        """, (seed["artist"], track_path, max(limit, 24)))
+        same_artist_tracks = [dict(r) for r in cur.fetchall()]
+
+    similar_tracks = get_similar_from_db(track_path, limit=max(limit * 3, 60))
+    seen_paths = {seed["path"]}
+    unique_similar: list[dict] = []
+    for track in similar_tracks:
+        relative_path = track.get("track_path")
+        if not relative_path or relative_path in seen_paths:
+            continue
+        seen_paths.add(relative_path)
+        unique_similar.append(track)
+
+    same_artist_count = max(1, int(limit * mix_ratio))
+    picked_same_artist = same_artist_tracks[:same_artist_count]
+
+    playlist = [_radio_track_payload(seed)]
+    playlist_paths = {playlist[0]["track_path"]}
+    artist_index = 0
+    similar_index = 0
+    max_items = max(limit, 1)
+
+    while len(playlist) < max_items:
+        should_insert_artist = (
+            artist_index < len(picked_same_artist)
+            and (similar_index >= len(unique_similar) or len(playlist) % 4 == 0)
+        )
+        if should_insert_artist:
+            candidate = _radio_track_payload(picked_same_artist[artist_index])
+            artist_index += 1
+        elif similar_index < len(unique_similar):
+            candidate = unique_similar[similar_index]
+            similar_index += 1
+        else:
+            break
+
+        candidate_path = candidate.get("track_path")
+        if not candidate_path or candidate_path in playlist_paths:
+            continue
+
+        playlist_paths.add(candidate_path)
+        playlist.append(candidate)
+
+    return playlist[:limit]

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ChevronDown, X, Loader2, Star, Settings } from "lucide-react";
+import { toast } from "sonner";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { api } from "@/lib/api";
@@ -16,6 +17,7 @@ import {
 } from "@/lib/player-visualizer-prefs";
 import { AppPopover } from "@/components/ui/AppPopover";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
+import { fetchTrackRadio } from "@/lib/radio";
 import { formatDuration, formatCompact } from "@/lib/utils";
 import { useEscapeKey } from "@/hooks/use-escape-key";
 
@@ -192,19 +194,48 @@ function QueueTab() {
 }
 
 function SuggestedTab() {
-  const { currentTrack, play } = usePlayerActions();
+  const { currentTrack, play, playAll } = usePlayerActions();
   const [tracks, setTracks] = useState<SimilarTrack[]>([]);
   const [loading, setLoading] = useState(false);
+  const [startingRadio, setStartingRadio] = useState(false);
 
   useEffect(() => {
     if (!currentTrack) return;
     setLoading(true);
     setTracks([]);
-    api<{ tracks: SimilarTrack[] }>(`/api/similar-tracks?path=${encodeURIComponent(currentTrack.id)}&limit=15`)
+    const params = new URLSearchParams({ limit: "15" });
+    if (currentTrack.libraryTrackId != null) {
+      params.set("track_id", String(currentTrack.libraryTrackId));
+    } else if (currentTrack.path) {
+      params.set("path", currentTrack.path);
+    } else {
+      setTracks([]);
+      setLoading(false);
+      return;
+    }
+    api<{ tracks: SimilarTrack[] }>(`/api/similar-tracks?${params.toString()}`)
       .then((data) => setTracks(data.tracks || []))
       .catch(() => setTracks([]))
       .finally(() => setLoading(false));
-  }, [currentTrack?.id]);
+  }, [currentTrack?.id, currentTrack?.libraryTrackId, currentTrack?.path]);
+
+  async function handleStartTrackRadio() {
+    if (!currentTrack) return;
+    try {
+      setStartingRadio(true);
+      const radio = await fetchTrackRadio({
+        libraryTrackId: currentTrack.libraryTrackId ?? null,
+        path: currentTrack.path ?? null,
+        title: currentTrack.title,
+      });
+      if (!radio.tracks.length) return;
+      playAll(radio.tracks, 0, radio.source);
+    } catch {
+      toast.error("Failed to start track radio");
+    } finally {
+      setStartingRadio(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -224,6 +255,16 @@ function SuggestedTab() {
 
   return (
     <div className="flex-1 overflow-y-auto pr-1">
+      <div className="mb-3 px-1">
+        <button
+          onClick={handleStartTrackRadio}
+          disabled={startingRadio || (!currentTrack?.libraryTrackId && !currentTrack?.path)}
+          className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white/80 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {startingRadio ? <Loader2 size={12} className="animate-spin" /> : <Star size={12} />}
+          Start track radio
+        </button>
+      </div>
       {tracks.map((t, i) => (
         <button
           key={`${t.path}-${i}`}

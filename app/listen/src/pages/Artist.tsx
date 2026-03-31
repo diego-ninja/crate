@@ -25,6 +25,7 @@ import { AppModal, ModalBody, ModalCloseButton, ModalHeader } from "@/components
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
+import { fetchArtistRadio } from "@/lib/radio";
 import { encPath, formatCompact } from "@/lib/utils";
 
 interface ArtistAlbum {
@@ -166,25 +167,18 @@ export function Artist() {
   async function handleArtistRadio() {
     if (!decodedName) return;
     try {
-      const radioTracks = await api<ArtistTopTrack[]>(`/api/artist-radio/${encPath(decodedName)}?limit=50`);
-      if (!radioTracks?.length) {
+      const radio = await fetchArtistRadio(decodedName);
+      if (!radio.tracks.length) {
         toast.info("Artist radio is not available yet");
         return;
       }
 
-      const queue: Track[] = radioTracks.map((track) => ({
-        id: track.id,
-        title: track.title || "Unknown",
-        artist: track.artist || decodedName,
-        album: track.album,
-        albumCover: track.artist && track.album
-          ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
-          : coverFallback,
-        path: track.id.includes("/") ? track.id : undefined,
-        navidromeId: track.id.includes("/") ? undefined : track.id,
+      const queue: Track[] = radio.tracks.map((track) => ({
+        ...track,
+        albumCover: track.albumCover || coverFallback,
       }));
 
-      playAll(queue, 0, { type: "radio", name: `${decodedName} Radio` });
+      playAll(queue, 0, radio.source);
     } catch {
       toast.error("Failed to start artist radio");
     }
