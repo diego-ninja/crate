@@ -15,6 +15,12 @@ import { toast } from "sonner";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
+import {
+  artistShowToUpcomingItem,
+  groupByMonth,
+  UpcomingMonthGroup,
+  type ArtistShowEvent,
+} from "@/components/upcoming/UpcomingRows";
 import { AppModal, ModalBody, ModalCloseButton, ModalHeader } from "@/components/ui/AppModal";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
@@ -76,6 +82,7 @@ export function Artist() {
   const { name } = useParams<{ name: string }>();
   const decodedName = decodeURIComponent(name || "");
   const [bioModalOpen, setBioModalOpen] = useState(false);
+  const [expandedShowId, setExpandedShowId] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
   const { playAll } = usePlayerActions();
 
@@ -126,6 +133,9 @@ export function Artist() {
   );
   const { data: topTracks } = useApi<ArtistTopTrack[]>(
     decodedName ? `/api/navidrome/artist/${encPath(decodedName)}/top-tracks?count=12` : null,
+  );
+  const { data: showsData } = useApi<{ events: ArtistShowEvent[] }>(
+    decodedName ? `/api/artist/${encPath(decodedName)}/shows?limit=12` : null,
   );
 
   const coverFallback = data?.albums?.[0]
@@ -208,6 +218,7 @@ export function Artist() {
   const tags = data.genres.length > 0 ? data.genres : (info?.tags ?? []);
   const similarArtists = info?.similar ?? [];
   const bio = info?.bio ?? "";
+  const artistShowItems = (showsData?.events ?? []).map(artistShowToUpcomingItem);
 
   const albumsSorted = [...data.albums].sort((a, b) => {
     const ya = parseInt(a.year) || 0;
@@ -377,6 +388,23 @@ export function Artist() {
                   albumId={album.id}
                   year={album.year?.slice(0, 4)}
                   cover={`/api/cover/${encPath(data.name)}/${encPath(album.name)}`}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {artistShowItems.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-foreground mb-4">Upcoming Shows</h2>
+            <div className="space-y-3">
+              {groupByMonth(artistShowItems).map(([month, monthItems]) => (
+                <UpcomingMonthGroup
+                  key={month}
+                  month={month}
+                  items={monthItems}
+                  expandedId={expandedShowId}
+                  onToggleExpand={setExpandedShowId}
                 />
               ))}
             </div>

@@ -320,13 +320,91 @@ def api_artist_info(request: Request, name: str):
 
 @router.get("/api/artist/{name}/shows")
 def api_artist_shows(request: Request, name: str, limit: int = Query(10), country: str = Query("")):
-    _require_auth(request)
+    user = _require_auth(request)
+    from crate.db import get_upcoming_shows as db_get_shows
+    from crate.db import get_attending_show_ids
     from crate.ticketmaster import get_upcoming_shows, is_configured
+    from crate import setlistfm
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT g.name
+            FROM artist_genres ag
+            JOIN genres g ON g.id = ag.genre_id
+            WHERE ag.artist_name = %s
+            ORDER BY ag.weight DESC
+            LIMIT 5
+            """,
+            (name,),
+        )
+        artist_genres = [row["name"] for row in cur.fetchall()]
+
+    cached = db_get_shows(artist_name=name, country=country or None, limit=limit)
+    probable_setlist = []
+    try:
+        probable_setlist = (setlistfm.get_probable_setlist(name) or [])[:10]
+    except Exception:
+        probable_setlist = []
+    if cached:
+        attending_show_ids = get_attending_show_ids(
+            user["id"],
+            [show["id"] for show in cached if show.get("id") is not None],
+        )
+        events = [
+            {
+                "id": str(show.get("id") or show.get("external_id") or f"{name}-{show.get('date', '')}"),
+                "show_id": show.get("id"),
+                "artist_name": show.get("artist_name", name),
+                "date": show.get("date"),
+                "local_time": show.get("local_time"),
+                "venue": show.get("venue"),
+                "city": show.get("city"),
+                "country": show.get("country"),
+                "country_code": show.get("country_code"),
+                "url": show.get("url"),
+                "image_url": show.get("image_url"),
+                "lineup": show.get("lineup"),
+                "latitude": show.get("latitude"),
+                "longitude": show.get("longitude"),
+                "artist_genres": artist_genres[:3],
+                "probable_setlist": probable_setlist,
+                "user_attending": show.get("id") in attending_show_ids,
+                "artist_listeners": 0,
+            }
+            for show in cached
+        ]
+        return {"events": events, "configured": is_configured(), "source": "cache"}
 
     if not is_configured():
-        return {"events": [], "configured": False}
+        return {"events": [], "configured": False, "source": "none"}
+
     events = get_upcoming_shows(name, country_code=country, limit=limit)
-    return {"events": events, "configured": True}
+    normalized = []
+    for show in events:
+        normalized.append(
+            {
+                "id": str(show.get("id") or show.get("external_id") or f"{name}-{show.get('date', '')}"),
+                "show_id": show.get("id"),
+                "artist_name": show.get("artist_name", name),
+                "date": show.get("date"),
+                "local_time": show.get("local_time"),
+                "venue": show.get("venue"),
+                "city": show.get("city"),
+                "country": show.get("country"),
+                "country_code": show.get("country_code"),
+                "url": show.get("url"),
+                "image_url": show.get("image_url"),
+                "lineup": show.get("lineup"),
+                "latitude": show.get("latitude"),
+                "longitude": show.get("longitude"),
+                "artist_genres": artist_genres[:3],
+                "probable_setlist": probable_setlist,
+                "user_attending": False,
+                "artist_listeners": 0,
+            }
+        )
+    return {"events": normalized, "configured": True, "source": "live"}
 
 
 @router.get("/api/shows/artists-with-shows")

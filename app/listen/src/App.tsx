@@ -76,7 +76,8 @@ export function App() {
                     <Route path="library" element={<Library />} />
                     <Route path="upload" element={<Upload />} />
                     <Route path="settings" element={<Settings />} />
-                    <Route path="shows" element={<Shows />} />
+                    <Route path="shows" element={<Navigate to="/upcoming" replace />} />
+                    <Route path="upcoming" element={<Shows />} />
                     <Route
                       path="artist/:name"
                       element={

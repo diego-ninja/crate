@@ -1,5 +1,7 @@
 """User personal library: follows, saved albums, likes, play history, feed."""
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
@@ -26,6 +28,20 @@ class RecordPlayRequest(BaseModel):
     title: str = ""
     artist: str = ""
     album: str = ""
+
+
+def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
+    from crate import setlistfm
+
+    result: dict[str, list[dict]] = {}
+    for artist_name in artist_names:
+        try:
+            probable = setlistfm.get_probable_setlist(artist_name)
+            if probable:
+                result[artist_name] = probable
+        except Exception:
+            continue
+    return result
 
 
 # ── Library Summary ──────────────────────────────────────────
@@ -236,3 +252,162 @@ def feed(request: Request, limit: int = 30):
 
     items.sort(key=lambda x: x.get("date", ""), reverse=True)
     return items[:limit]
+
+
+@router.get("/upcoming")
+def upcoming(request: Request, limit: int = 120):
+    """Upcoming releases and shows for followed artists."""
+    user = _require_auth(request)
+    from crate.db.user_library import get_followed_artists
+    from crate.db.core import get_db_ctx
+    from crate.db import get_attending_show_ids
+
+    followed = get_followed_artists(user["id"])
+    followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
+    if not followed_names:
+        return {
+            "items": [],
+            "summary": {
+                "followed_artists": 0,
+                "show_count": 0,
+                "release_count": 0,
+            },
+        }
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
+    placeholders = ",".join(["%s"] * len(followed_names))
+
+    items: list[dict] = []
+    setlist_map: dict[str, list[dict]] = {}
+    with get_db_ctx() as cur:
+        cur.execute(
+            f"""
+            SELECT
+                nr.id,
+                nr.artist_name,
+                nr.album_title,
+                nr.cover_url,
+                nr.status,
+                nr.tidal_url,
+                nr.release_type,
+                nr.release_date,
+                nr.detected_at
+            FROM new_releases nr
+            WHERE nr.artist_name IN ({placeholders})
+              AND nr.status != 'dismissed'
+              AND (
+                (nr.release_date IS NOT NULL AND nr.release_date >= %s)
+                OR nr.detected_at >= %s
+              )
+            ORDER BY COALESCE(nr.release_date, substring(nr.detected_at, 1, 10)) ASC
+            LIMIT %s
+            """,
+            followed_names + [today, recent_cutoff, limit],
+        )
+        for release in cur.fetchall():
+            release_date = release.get("release_date") or (release.get("detected_at") or "")[:10]
+            items.append(
+                {
+                    "type": "release",
+                    "date": release_date,
+                    "artist": release.get("artist_name", ""),
+                    "title": release.get("album_title", ""),
+                    "subtitle": release.get("release_type") or "Album",
+                    "cover_url": release.get("cover_url"),
+                    "status": release.get("status", "detected"),
+                    "tidal_url": release.get("tidal_url"),
+                    "release_id": release.get("id"),
+                    "is_upcoming": bool(release.get("release_date") and release["release_date"] >= today),
+                }
+            )
+
+        cur.execute(
+            f"""
+            SELECT id, artist_name, venue, city, country, country_code, date, local_time,
+                   url, image_url, lineup, latitude, longitude
+            FROM shows
+            WHERE artist_name IN ({placeholders})
+              AND date >= %s
+              AND status != 'cancelled'
+            ORDER BY date ASC
+            LIMIT %s
+            """,
+            followed_names + [today, limit],
+        )
+        shows = cur.fetchall()
+        attending_show_ids = get_attending_show_ids(
+            user["id"],
+            [show["id"] for show in shows if show.get("id") is not None],
+        )
+
+        cur.execute(
+            f"""
+            SELECT ag.artist_name, g.name
+            FROM artist_genres ag
+            JOIN genres g ON g.id = ag.genre_id
+            WHERE ag.artist_name IN ({placeholders})
+            ORDER BY ag.weight DESC
+            """,
+            followed_names,
+        )
+        genre_map: dict[str, list[str]] = {}
+        for row in cur.fetchall():
+            genre_map.setdefault(row["artist_name"], []).append(row["name"])
+
+    show_artists = sorted({show["artist_name"] for show in shows if show.get("artist_name")})
+    if show_artists:
+        setlist_map = _probable_setlists_for_artists(show_artists)
+
+    for show in shows:
+        artist_name = show.get("artist_name", "")
+        items.append(
+            {
+                "id": show.get("id"),
+                "type": "show",
+                "date": show.get("date"),
+                "time": show.get("local_time"),
+                "artist": artist_name,
+                "title": show.get("venue") or "",
+                "subtitle": f"{show.get('city', '')}, {show.get('country', '')}".strip(", "),
+                "cover_url": show.get("image_url"),
+                "status": "onsale",
+                "url": show.get("url"),
+                "venue": show.get("venue"),
+                "city": show.get("city"),
+                "country": show.get("country"),
+                "country_code": show.get("country_code"),
+                "latitude": show.get("latitude"),
+                "longitude": show.get("longitude"),
+                "lineup": show.get("lineup"),
+                "genres": genre_map.get(artist_name, [])[:3],
+                "probable_setlist": (setlist_map.get(artist_name) or [])[:8],
+                "user_attending": show.get("id") in attending_show_ids,
+                "is_upcoming": True,
+            }
+        )
+
+    return {
+        "items": items,
+        "summary": {
+            "followed_artists": len(followed_names),
+            "show_count": len([item for item in items if item["type"] == "show"]),
+            "release_count": len([item for item in items if item["type"] == "release"]),
+        },
+    }
+
+
+@router.post("/shows/{show_id}/attendance")
+def attend_show_endpoint(request: Request, show_id: int):
+    user = _require_auth(request)
+    from crate.db import attend_show
+
+    return {"ok": True, "added": attend_show(user["id"], show_id)}
+
+
+@router.delete("/shows/{show_id}/attendance")
+def unattend_show_endpoint(request: Request, show_id: int):
+    user = _require_auth(request)
+    from crate.db import unattend_show
+
+    return {"ok": True, "removed": unattend_show(user["id"], show_id)}

@@ -102,16 +102,16 @@ function Sidebar() {
           {expanded && <span className="text-[13px] font-medium">Explore</span>}
         </NavLink>
 
-        {/* Feed / Upcoming */}
+        {/* Upcoming */}
         <NavLink
-          to="/shows"
-          title="Feed"
+          to="/upcoming"
+          title="Upcoming"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
           }
         >
           <Rss size={20} />
-          {expanded && <span className="text-[13px] font-medium">Feed</span>}
+          {expanded && <span className="text-[13px] font-medium">Upcoming</span>}
         </NavLink>
 
         {/* Collection with popup */}
@@ -170,7 +170,7 @@ const MOBILE_NAV = [
   { to: "/", icon: Home, label: "Home" },
   { to: "/explore", icon: Compass, label: "Explore" },
   { to: "/library", icon: Library, label: "Library" },
-  { to: "/shows", icon: Rss, label: "Feed" },
+  { to: "/upcoming", icon: Rss, label: "Upcoming" },
 ] as const;
 
 // ── Shell ───────────────────────────────────────────────────────

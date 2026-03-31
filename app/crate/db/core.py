@@ -680,6 +680,17 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_date ON shows(date)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_artist ON shows(artist_name)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_city ON shows(city)")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_show_attendance (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                show_id INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, show_id)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_attendance_user ON user_show_attendance(user_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_attendance_show ON user_show_attendance(show_id)")
 
         # Migration: track rating (0-5 stars)
         cur.execute("""

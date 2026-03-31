@@ -1,184 +1,221 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router";
-import { Loader2, ExternalLink, Calendar } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
+import { Calendar, Loader2, RadioTower, Sparkles } from "lucide-react";
+
 import { useApi } from "@/hooks/use-api";
+import { cn } from "@/lib/utils";
+import {
+  groupByMonth,
+  UpcomingMonthGroup,
+  type UpcomingItem,
+} from "@/components/upcoming/UpcomingRows";
 
-interface ShowEvent {
-  id: string;
-  artist_name: string;
-  date: string;
-  local_time?: string;
-  venue: string;
-  city: string;
-  country: string;
-  country_code: string;
-  url?: string;
-  image_url?: string;
-  lineup?: string[];
-  artist_genres?: string[];
-  artist_listeners?: number;
-}
-
-interface ShowsResponse {
-  shows: ShowEvent[];
-  filters: {
-    cities: string[];
-    countries: string[];
+interface UpcomingResponse {
+  items: UpcomingItem[];
+  summary: {
+    followed_artists: number;
+    show_count: number;
+    release_count: number;
   };
 }
 
+type Filter = "all" | "shows" | "releases";
+
 export function Shows() {
-  const navigate = useNavigate();
-  const [city, setCity] = useState<string>("all");
-  const { data, loading } = useApi<ShowsResponse>("/api/shows");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { data, loading } = useApi<UpcomingResponse>("/api/me/upcoming");
 
-  const shows = useMemo(() => {
-    if (!data?.shows) return [];
-    if (city === "all") return data.shows;
-    return data.shows.filter((s) => s.city === city);
-  }, [data, city]);
+  const items = data?.items ?? [];
+  const summary = data?.summary;
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, ShowEvent[]>();
-    for (const s of shows) {
-      const month = new Date(s.date).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-      });
-      if (!map.has(month)) map.set(month, []);
-      map.get(month)!.push(s);
+  const filtered = useMemo(() => {
+    let next = items;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      next = next.filter(
+        (item) =>
+          item.artist.toLowerCase().includes(q) ||
+          item.title.toLowerCase().includes(q) ||
+          item.subtitle.toLowerCase().includes(q),
+      );
     }
-    return map;
-  }, [shows]);
+    if (filter === "shows") next = next.filter((item) => item.type === "show");
+    if (filter === "releases") next = next.filter((item) => item.type === "release");
+    return next;
+  }, [filter, items, search]);
 
-  const cities = data?.filters?.cities ?? [];
+  const today = new Date().toISOString().slice(0, 10);
+  const comingUp = filtered.filter((item) => item.is_upcoming || item.date >= today);
+  const recentlyReleased = filtered
+    .filter((item) => item.type === "release" && !item.is_upcoming && item.date < today)
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  const hasFollowedArtists = (summary?.followed_artists ?? 0) > 0;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Shows</h1>
+      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-white/45">
+            <RadioTower size={12} className="text-primary" />
+            Upcoming
+          </div>
+          <h1 className="mt-3 text-3xl font-bold text-foreground">Shows & Upcoming Releases</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
+            Everything coming up from the artists you follow: upcoming shows, future releases, and the latest releases you might have missed.
+          </p>
+        </div>
 
-      {/* City filter pills */}
-      {cities.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setCity("all")}
-            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-              city === "all"
-                ? "bg-primary text-primary-foreground"
-                : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
-            }`}
-          >
-            All
-          </button>
-          {cities.map((c) => (
+        <div className="flex flex-wrap items-center gap-2">
+          {summary ? (
+            <>
+              <SummaryPill label="Followed artists" value={summary.followed_artists} />
+              <SummaryPill label="Shows" value={summary.show_count} accent="amber" />
+              <SummaryPill label="Releases" value={summary.release_count} accent="cyan" />
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-[1.25rem] border border-white/5 bg-white/[0.02] p-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          {(["all", "shows", "releases"] as const).map((value) => (
             <button
-              key={c}
-              onClick={() => setCity(c)}
-              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                city === c
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
-              }`}
+              key={value}
+              onClick={() => setFilter(value)}
+              className={cn(
+                "rounded-full border px-4 py-2 text-sm transition-colors",
+                filter === value
+                  ? "border-primary/40 bg-primary/15 text-primary"
+                  : "border-white/10 text-white/50 hover:border-white/20 hover:text-foreground",
+              )}
             >
-              {c}
+              {value === "all" ? "All" : value === "shows" ? "Shows" : "Releases"}
             </button>
           ))}
         </div>
-      )}
 
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 size={24} className="text-primary animate-spin" />
+        <div className="relative w-full md:w-[280px]">
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Filter by artist, venue, city..."
+            className="h-11 w-full rounded-2xl border border-white/10 bg-[#0f1016] px-4 text-sm text-foreground placeholder:text-white/25 focus:border-primary/40 focus:outline-none"
+          />
         </div>
-      )}
+      </div>
 
-      {/* Empty state */}
-      {!loading && shows.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <Calendar size={32} className="text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            No upcoming shows found
-          </p>
+      {loading ? (
+        <div className="flex items-center justify-center py-24">
+          <Loader2 size={24} className="animate-spin text-primary" />
         </div>
-      )}
+      ) : null}
 
-      {/* Grouped by month */}
-      {!loading &&
-        Array.from(grouped.entries()).map(([month, events]) => (
-          <div key={month} className="space-y-2">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-              {month}
-            </h2>
-            <div className="space-y-1">
-              {events.map((show) => {
-                const d = new Date(show.date);
-                const day = d.getDate();
-                const monthShort = d.toLocaleDateString("en-US", {
-                  month: "short",
-                });
+      {!loading && !hasFollowedArtists ? (
+        <EmptyState
+          icon={<Sparkles size={22} className="text-primary" />}
+          title="Follow some artists to unlock Upcoming"
+          body="As soon as you follow artists, you'll see their upcoming shows and new releases here."
+        />
+      ) : null}
 
-                return (
-                  <div
-                    key={show.id}
-                    onClick={() =>
-                      navigate(`/artist/${encodeURIComponent(show.artist_name)}`)
-                    }
-                    className="flex items-center gap-4 rounded-lg px-3 py-3 hover:bg-white/5 transition-colors cursor-pointer"
-                  >
-                    {/* Date block */}
-                    <div className="w-12 flex-shrink-0 text-center">
-                      <div className="text-xl font-bold text-foreground leading-tight">
-                        {day}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground uppercase">
-                        {monthShort}
-                      </div>
-                    </div>
+      {!loading && hasFollowedArtists && filtered.length === 0 ? (
+        <EmptyState
+          icon={<Calendar size={22} className="text-primary" />}
+          title="Nothing matches your filters"
+          body="Try another search or switch between shows and releases."
+        />
+      ) : null}
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-foreground truncate">
-                        {show.artist_name}
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {show.venue} · {show.city}
-                        {show.country_code ? `, ${show.country_code}` : ""}
-                      </div>
-                      {/* Genre pills */}
-                      {show.artist_genres && show.artist_genres.length > 0 && (
-                        <div className="flex gap-1 mt-1">
-                          {show.artist_genres.slice(0, 2).map((g) => (
-                            <span
-                              key={g}
-                              className="inline-flex items-center rounded-md border border-white/10 text-[10px] px-1.5 py-0 text-muted-foreground"
-                            >
-                              {g}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+      {!loading && hasFollowedArtists && filtered.length > 0 ? (
+        <div className="space-y-10">
+          {comingUp.length > 0 ? (
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Sparkles size={15} className="text-primary" />
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-primary">Coming up</h2>
+              </div>
+              <div className="space-y-8">
+                {groupByMonth(comingUp).map(([month, monthItems]) => (
+                  <UpcomingMonthGroup
+                    key={month}
+                    month={month}
+                    items={monthItems}
+                    expandedId={expandedId}
+                    onToggleExpand={setExpandedId}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
 
-                    {/* Tickets link */}
-                    {show.url && (
-                      <a
-                        href={show.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="flex items-center gap-1 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-white/20 transition-colors flex-shrink-0"
-                      >
-                        Tickets
-                        <ExternalLink size={12} />
-                      </a>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+          {recentlyReleased.length > 0 ? (
+            <section className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Calendar size={15} className="text-white/45" />
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-white/45">Recently released</h2>
+              </div>
+              <div className="space-y-8">
+                {groupByMonth(recentlyReleased).map(([month, monthItems]) => (
+                  <UpcomingMonthGroup
+                    key={month}
+                    month={month}
+                    items={monthItems}
+                    expandedId={expandedId}
+                    onToggleExpand={setExpandedId}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SummaryPill({
+  label,
+  value,
+  accent = "neutral",
+}: {
+  label: string;
+  value: number;
+  accent?: "neutral" | "amber" | "cyan";
+}) {
+  const accentClass =
+    accent === "amber"
+      ? "border-amber-500/20 text-amber-300"
+      : accent === "cyan"
+        ? "border-primary/20 text-primary"
+        : "border-white/10 text-white/60";
+
+  return (
+    <div className={cn("rounded-2xl border bg-white/[0.03] px-3 py-2", accentClass)}>
+      <div className="text-[10px] uppercase tracking-[0.16em] opacity-70">{label}</div>
+      <div className="mt-1 text-sm font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function EmptyState({
+  icon,
+  title,
+  body,
+}: {
+  icon: ReactNode;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-[1.5rem] border border-white/5 bg-white/[0.02] px-6 py-16 text-center">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5">
+        {icon}
+      </div>
+      <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+      <p className="mt-2 max-w-md text-sm leading-6 text-white/50">{body}</p>
     </div>
   );
 }

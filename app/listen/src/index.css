@@ -79,3 +79,22 @@ body {
 
 /* Lyric line gradient mask */
 .lyrics-mask { mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); }
+
+/* Leaflet */
+.leaflet-popup-content-wrapper {
+  background: rgba(18, 18, 26, 0.96) !important;
+  color: var(--color-foreground) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45) !important;
+  border-radius: 16px !important;
+}
+.leaflet-popup-content {
+  margin: 10px 12px !important;
+  line-height: 1.35 !important;
+}
+.leaflet-popup-tip {
+  background: rgba(18, 18, 26, 0.96) !important;
+}
+.leaflet-popup-close-button {
+  color: rgba(255, 255, 255, 0.5) !important;
+}

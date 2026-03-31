@@ -96,6 +96,23 @@ Notes:
 
 - top navigation previous/next pages
 
+### Upcoming
+
+- bring `Upcoming` from admin into `listen` as a first-class surface
+- show only upcoming shows and releases for followed artists
+- use the expandable show row with map as the primary show presentation
+- surface upcoming shows inside the artist page as well
+- allow the user to mark a show as attended / going
+- include probable setlist in show surfaces where it adds value
+
+Next layer after the current batch:
+
+- reminders for attended shows
+- “show prep” listening nudges before the event
+  - one month before
+  - one week before
+- probable setlist playback entry points tied to those reminders
+
 ### Expanded Player
 
 - cover shadow
@@ -226,6 +243,7 @@ Upload follow-up still pending:
 - `TrackRow` / player interactions are now centralized, but row variants are starting to grow and may deserve a small component split
 - `gapless / crossfade` still need a second implementation pass if we want true dual-deck seamlessness; current player now preserves the safe single-audio architecture and makes better use of preloading
 - upload now exists as a first dedicated batch, but still needs a second pass for robustness and richer UX
+- `Upcoming` is now becoming its own product surface in `listen` and may deserve its own component/domain split if reminders, attendance, setlist previews, and post-ticket flows keep growing
 - playlist covers are now moving away from DB-embedded data URLs toward stored assets served by the API; frontend contract remains compatible, but a second pass should remove the remaining legacy `cover_data_url` persistence path entirely
 
 ### Current Backend Risk Behind One Reported Bug
