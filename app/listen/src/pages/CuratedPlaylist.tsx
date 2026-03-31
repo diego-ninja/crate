@@ -131,6 +131,8 @@ export function CuratedPlaylist() {
     );
   }
 
+  const badgeLabel = data.is_curated ? "Curated Playlist" : data.is_smart ? "Smart Playlist" : "System Playlist";
+
   return (
     <div className="space-y-6">
       <button
@@ -154,7 +156,7 @@ export function CuratedPlaylist() {
         <div className="flex flex-col justify-end gap-3 text-left">
           <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary">
             <Sparkles size={12} />
-            Curated Playlist
+            {badgeLabel}
           </div>
           <div>
             <h1 className="text-3xl font-bold text-foreground">{data.name}</h1>

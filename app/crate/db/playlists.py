@@ -294,7 +294,6 @@ def follow_playlist(user_id: int, playlist_id: int) -> bool:
             FROM playlists
             WHERE id = %s
               AND scope = 'system'
-              AND is_curated = TRUE
               AND is_active = TRUE
             """,
             (playlist_id,),
@@ -340,7 +339,6 @@ def get_followed_system_playlists(user_id: int) -> list[dict]:
             JOIN playlists p ON p.id = ufp.playlist_id
             WHERE ufp.user_id = %s
               AND p.scope = 'system'
-              AND p.is_curated = TRUE
               AND p.is_active = TRUE
             ORDER BY ufp.followed_at DESC
             """,
