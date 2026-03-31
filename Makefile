@@ -4,7 +4,7 @@
 # Servidor remoto
 SERVER_HOST   := 104.152.210.73
 SERVER_USER   := root
-SERVER_PATH   := /home/musicdock/musicdock
+SERVER_PATH   := /home/crate/crate
 SSH           := ssh $(SERVER_USER)@$(SERVER_HOST)
 SCP           := scp
 
@@ -208,9 +208,12 @@ _create-dirs:
 deploy: ## Deploy completo al servidor: sync + build + restart
 	@echo "$(YELLOW)Sincronizando ficheros...$(NC)"
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
-	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+	@rsync -az --delete \
+		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+		--exclude='.vite' --exclude='*.tsbuildinfo' \
+		--exclude='bin/' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
-	@echo "$(YELLOW)Building servicios (api + worker + ui)...$(NC)"
+	@echo "$(YELLOW)Building servicios (api + worker + ui + listen)...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build crate-api crate-worker crate-ui crate-listen"
 	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
@@ -221,7 +224,10 @@ deploy: ## Deploy completo al servidor: sync + build + restart
 .PHONY: deploy-sync
 deploy-sync: ## Solo sincronizar ficheros al servidor (sin restart)
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
-	@rsync -az --delete --exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+	@rsync -az --delete \
+		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
+		--exclude='.vite' --exclude='*.tsbuildinfo' \
+		--exclude='bin/' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
 
 .PHONY: deploy-restart

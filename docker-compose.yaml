@@ -252,20 +252,24 @@ services:
       - crate
 
   # MusicDock — PostgreSQL database
+  # POSTGRES_USER/PASSWORD/DB only take effect on first volume init.
+  # The app connects using CRATE_POSTGRES_* vars from .env.
+  # These MUST match an existing role in the volume, or the init script
+  # must create one. See app/scripts/init-postgres.sh for provisioning.
   crate-postgres:
     image: postgres:15-alpine
     container_name: crate-postgres
     restart: unless-stopped
     mem_limit: 1g
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${CRATE_POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${MUSICDOCK_POSTGRES_USER:-musicdock}"]
       interval: 30s
       timeout: 5s
       retries: 3
     environment:
-      - POSTGRES_USER=${CRATE_POSTGRES_USER}
-      - POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
-      - POSTGRES_DB=${CRATE_POSTGRES_DB}
+      - POSTGRES_USER=${MUSICDOCK_POSTGRES_USER:-musicdock}
+      - POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD:-musicdock}
+      - POSTGRES_DB=${MUSICDOCK_POSTGRES_DB:-musicdock}
     volumes:
       - crate_postgres:/var/lib/postgresql/data
     networks:
@@ -301,6 +305,9 @@ services:
       - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
       - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
       - CRATE_POSTGRES_HOST=crate-postgres
+      - MUSICDOCK_POSTGRES_USER=${MUSICDOCK_POSTGRES_USER:-musicdock}
+      - MUSICDOCK_POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD:-musicdock}
+      - MUSICDOCK_POSTGRES_DB=${MUSICDOCK_POSTGRES_DB:-musicdock}
       - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
@@ -351,6 +358,9 @@ services:
       - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
       - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
       - CRATE_POSTGRES_HOST=crate-postgres
+      - MUSICDOCK_POSTGRES_USER=${MUSICDOCK_POSTGRES_USER:-musicdock}
+      - MUSICDOCK_POSTGRES_PASSWORD=${MUSICDOCK_POSTGRES_PASSWORD:-musicdock}
+      - MUSICDOCK_POSTGRES_DB=${MUSICDOCK_POSTGRES_DB:-musicdock}
       - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
@@ -376,7 +386,9 @@ services:
     command: ["worker"]
 
   crate-ui:
-    build: ./app/ui
+    build:
+      context: ./app
+      dockerfile: ui/Dockerfile
     container_name: crate-ui
     restart: unless-stopped
     depends_on:
@@ -393,7 +405,9 @@ services:
       traefik.http.routers.admin.tls.certresolver: letsencrypt
 
   crate-listen:
-    build: ./app/listen
+    build:
+      context: ./app
+      dockerfile: listen/Dockerfile
     container_name: crate-listen
     restart: unless-stopped
     depends_on:
@@ -515,11 +529,9 @@ services:
 
 volumes:
   crate_redis:
-    name: musicdock_musicdock_redis
-    external: true
+    driver: local
   crate_postgres:
-    name: musicdock_musicdock_postgres
-    external: true
+    driver: local
   audiomuse_redis:
     driver: local
   audiomuse_postgres:

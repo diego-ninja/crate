@@ -343,10 +343,22 @@ class LibraryRepair:
                               details=result["details"], task_id=task_id)
                     return result
 
-            # Not a residue — trigger reindex
+            # Not a residue — sync files into DB, then enrich
             if artist_name:
+                try:
+                    from crate.library_sync import LibrarySync
+                    from crate.utils import load_config
+                    syncer = LibrarySync(load_config())
+                    artist_dir = self.library_path / artist_name
+                    if artist_dir.is_dir():
+                        syncer.sync_artist(artist_dir)
+                        result["action"] = "reindex_unindexed"
+                        result["details"]["synced"] = True
+                except Exception:
+                    log.warning("Failed to sync unindexed dir %s", dir_path, exc_info=True)
+                    result["details"]["sync_error"] = True
                 create_task_dedup("process_new_content", {"artist": artist_name})
-            log_audit("flag_unindexed", "directory", dir_path,
+            log_audit("reindex_unindexed", "directory", dir_path,
                       details={"count": details.get("count", 0)}, task_id=task_id)
 
         return result

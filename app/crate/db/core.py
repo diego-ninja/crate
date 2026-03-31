@@ -1,3 +1,4 @@
+import logging
 import json
 import os
 import time
@@ -9,7 +10,10 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 
+log = logging.getLogger(__name__)
+
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
+_db_provisioned = False
 
 
 def _reset_pool():
@@ -28,9 +32,63 @@ def _get_dsn() -> str:
     return f"postgresql://{user}:{password}@{host}:{port}/{db}"
 
 
+def _ensure_database():
+    """Create the app user and database if they don't exist.
+    Connects as the Postgres superuser (MUSICDOCK_POSTGRES_*) to provision
+    the app-level role (CRATE_POSTGRES_*). Idempotent and safe to call on
+    every startup. Skips silently if superuser creds are not available."""
+    global _db_provisioned
+    if _db_provisioned:
+        return
+    _db_provisioned = True
+
+    su_user = os.environ.get("MUSICDOCK_POSTGRES_USER")
+    su_pass = os.environ.get("MUSICDOCK_POSTGRES_PASSWORD")
+    if not su_user:
+        return  # No superuser creds — assume app user already exists
+
+    app_user = os.environ.get("CRATE_POSTGRES_USER", "crate")
+    app_pass = os.environ.get("CRATE_POSTGRES_PASSWORD", "crate")
+    app_db = os.environ.get("CRATE_POSTGRES_DB", "crate")
+    host = os.environ.get("CRATE_POSTGRES_HOST", "crate-postgres")
+    port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
+
+    if su_user == app_user:
+        return  # Same user, nothing to provision
+
+    try:
+        conn = psycopg2.connect(
+            host=host, port=port, user=su_user, password=su_pass,
+            dbname=os.environ.get("MUSICDOCK_POSTGRES_DB", "musicdock"),
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+
+        # Create app role if missing
+        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (app_user,))
+        if not cur.fetchone():
+            cur.execute(f"CREATE ROLE {app_user} WITH LOGIN PASSWORD %s", (app_pass,))
+            log.info("Created database role: %s", app_user)
+
+        # Create app database if missing
+        cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (app_db,))
+        if not cur.fetchone():
+            cur.execute(f"CREATE DATABASE {app_db} OWNER {app_user}")
+            log.info("Created database: %s", app_db)
+
+        # Ensure ownership
+        cur.execute(f"ALTER DATABASE {app_db} OWNER TO {app_user}")
+
+        cur.close()
+        conn.close()
+    except Exception:
+        log.debug("Could not provision app database (superuser may not be available)", exc_info=True)
+
+
 def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
     global _pool
     if _pool is None or _pool.closed:
+        _ensure_database()
         for attempt in range(10):
             try:
                 _pool = psycopg2.pool.ThreadedConnectionPool(
