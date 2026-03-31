@@ -501,3 +501,137 @@ def generate_track_radio(track_path: str, limit: int = 50, mix_ratio: float = 0.
         playlist.append(candidate)
 
     return playlist[:limit]
+
+
+def _aggregate_similar_candidates(seed_paths: list[str], *, per_seed_limit: int = 40) -> list[dict]:
+    aggregated: dict[str, dict] = {}
+    for seed_path in seed_paths:
+        for index, track in enumerate(get_similar_from_db(seed_path, limit=per_seed_limit)):
+            track_path = track.get("track_path")
+            if not track_path:
+                continue
+            entry = aggregated.setdefault(track_path, {**track, "_aggregate_score": 0.0, "_hits": 0})
+            score = float(track.get("score") or 0.0)
+            # Small position bias so earlier matches win ties more often.
+            entry["_aggregate_score"] += score + max(0.0, (per_seed_limit - index) / (per_seed_limit * 100))
+            entry["_hits"] += 1
+
+    ranked = sorted(
+        aggregated.values(),
+        key=lambda item: (item["_aggregate_score"], item["_hits"]),
+        reverse=True,
+    )
+    return ranked
+
+
+def _interleave_radio_queue(
+    source_tracks: list[dict],
+    recommended_tracks: list[dict],
+    *,
+    limit: int,
+    source_mix_ratio: float,
+) -> list[dict]:
+    source_count = max(1, int(limit * source_mix_ratio)) if source_tracks else 0
+    picked_source = source_tracks[:source_count]
+
+    playlist: list[dict] = []
+    seen_paths: set[str] = set()
+    source_index = 0
+    recommended_index = 0
+
+    while len(playlist) < limit:
+        should_insert_source = (
+            source_index < len(picked_source)
+            and (recommended_index >= len(recommended_tracks) or len(playlist) % 4 == 0)
+        )
+        if should_insert_source:
+            candidate = _radio_track_payload(picked_source[source_index])
+            source_index += 1
+        elif recommended_index < len(recommended_tracks):
+            candidate = recommended_tracks[recommended_index]
+            recommended_index += 1
+        else:
+            break
+
+        candidate_path = candidate.get("track_path")
+        if not candidate_path or candidate_path in seen_paths:
+            continue
+
+        seen_paths.add(candidate_path)
+        playlist.append(candidate)
+
+    return playlist[:limit]
+
+
+def generate_album_radio(album_id: int, limit: int = 50, source_mix_ratio: float = 0.25) -> list[dict]:
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.id = %s
+            ORDER BY t.disc_number, t.track_number
+        """, (album_id,))
+        album_tracks = [dict(row) for row in cur.fetchall()]
+
+    if not album_tracks:
+        return []
+
+    source_tracks = [_radio_track_payload(track) for track in album_tracks]
+    seed_paths = [track["path"] for track in album_tracks if track.get("path") and track.get("bliss_vector")]
+    if not seed_paths:
+        seed_paths = [track["path"] for track in album_tracks if track.get("path")]
+    seed_paths = seed_paths[: min(4, len(seed_paths))]
+    recommended_tracks = _aggregate_similar_candidates(seed_paths, per_seed_limit=max(limit, 40))
+
+    return _interleave_radio_queue(
+        source_tracks,
+        recommended_tracks,
+        limit=limit,
+        source_mix_ratio=source_mix_ratio,
+    )
+
+
+def generate_playlist_radio(playlist_id: int, limit: int = 50, source_mix_ratio: float = 0.3) -> list[dict]:
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT
+                lt.id AS track_id,
+                lt.path,
+                COALESCE(pt.title, lt.title) AS title,
+                COALESCE(pt.artist, lt.artist) AS artist,
+                COALESCE(pt.album, lt.album) AS album,
+                COALESCE(pt.duration, lt.duration, 0) AS duration,
+                lt.navidrome_id,
+                lt.bliss_vector
+            FROM playlist_tracks pt
+            LEFT JOIN LATERAL (
+                SELECT id, path, title, artist, album, duration, navidrome_id, bliss_vector
+                FROM library_tracks lt
+                WHERE lt.path = pt.track_path
+                   OR lt.path LIKE ('%%/' || pt.track_path)
+                ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
+                LIMIT 1
+            ) lt ON TRUE
+            WHERE pt.playlist_id = %s
+            ORDER BY pt.position
+        """, (playlist_id,))
+        playlist_tracks = [dict(row) for row in cur.fetchall()]
+
+    source_tracks = [_radio_track_payload(track) for track in playlist_tracks if track.get("path")]
+    if not source_tracks:
+        return []
+
+    seed_paths = [track["path"] for track in playlist_tracks if track.get("path") and track.get("bliss_vector")]
+    if not seed_paths:
+        seed_paths = [track["path"] for track in playlist_tracks if track.get("path")]
+    seed_paths = seed_paths[: min(5, len(seed_paths))]
+    recommended_tracks = _aggregate_similar_candidates(seed_paths, per_seed_limit=max(limit, 40))
+
+    return _interleave_radio_queue(
+        source_tracks,
+        recommended_tracks,
+        limit=limit,
+        source_mix_ratio=source_mix_ratio,
+    )

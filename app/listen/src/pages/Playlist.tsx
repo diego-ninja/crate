@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2, Share2 } from "lucide-react";
+import { Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2, Share2, Radio } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
@@ -13,6 +13,7 @@ import {
 import { AppModal, ModalBody, ModalFooter, ModalHeader, ModalCloseButton } from "@/components/ui/AppModal";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
+import { fetchPlaylistRadio } from "@/lib/radio";
 import { encPath } from "@/lib/utils";
 
 interface PlaylistTrack {
@@ -119,6 +120,23 @@ export function Playlist() {
   function handleShuffle() {
     if (playerTracks.length === 0) return;
     playAll(shuffleArray(playerTracks), 0);
+  }
+
+  async function handlePlaylistRadio() {
+    if (!data) return;
+    try {
+      const radio = await fetchPlaylistRadio({
+        playlistId: data.id,
+        playlistName: data.name,
+      });
+      if (!radio.tracks.length) {
+        toast.info("Playlist radio is not available yet");
+        return;
+      }
+      playAll(radio.tracks, 0, radio.source);
+    } catch {
+      toast.error("Failed to start playlist radio");
+    }
   }
 
   async function handleShare() {
@@ -321,18 +339,26 @@ export function Playlist() {
             <Play size={16} fill="currentColor" />
             Play
           </button>
-          <button
-            onClick={handleShuffle}
-            disabled={playerTracks.length === 0}
-            className="flex items-center gap-2 rounded-lg border border-white/20 px-5 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors disabled:opacity-50"
-          >
-            <Shuffle size={16} />
-            Shuffle
-          </button>
-          <button
-            onClick={() => setEditorOpen(true)}
-            className="flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
-          >
+        <button
+          onClick={handleShuffle}
+          disabled={playerTracks.length === 0}
+          className="flex items-center gap-2 rounded-lg border border-white/20 px-5 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors disabled:opacity-50"
+        >
+          <Shuffle size={16} />
+          Shuffle
+        </button>
+        <button
+          onClick={handlePlaylistRadio}
+          disabled={playerTracks.length === 0}
+          className="flex items-center gap-2 rounded-lg border border-white/20 px-5 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors disabled:opacity-50"
+        >
+          <Radio size={16} />
+          Playlist Radio
+        </button>
+        <button
+          onClick={() => setEditorOpen(true)}
+          className="flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
+        >
             <Pencil size={16} />
             Edit
           </button>

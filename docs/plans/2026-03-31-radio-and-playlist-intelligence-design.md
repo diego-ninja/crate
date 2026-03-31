@@ -13,15 +13,16 @@ Ya está arrancada una primera base técnica segura para esta iteración:
 - API unificada de radio en `/api/radio/*`
 - `artist radio` migrada desde el endpoint legacy a contrato nuevo
 - `track radio` disponible como primera semilla adicional
+- `album radio` disponible como primera semilla multi-track
+- `playlist radio` disponible para playlists personales y del sistema
 - `listen` ya modela una sesión mínima de radio en `playSource.radio`
 - el `Suggested` del player ya puede arrancar `track radio`
+- `Album`, `Playlist` y `CuratedPlaylist` ya exponen acciones directas de radio
 
 ### Aún no implementado
 
 Sigue pendiente para batches posteriores:
 
-- `album radio`
-- `playlist radio`
 - auto-refill de cola para sesiones de radio
 - `infinite continuation` al final de álbum/playlist
 - `smart track inclusion`

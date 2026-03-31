@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { Clock, Disc, Heart, ListPlus, MoreHorizontal, Play, Share2, Shuffle, User } from "lucide-react";
+import { Clock, Disc, Heart, ListPlus, MoreHorizontal, Play, Radio, Share2, Shuffle, User } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
@@ -11,6 +11,7 @@ import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
+import { fetchAlbumRadio } from "@/lib/radio";
 import { encPath, formatBadgeClass } from "@/lib/utils";
 
 interface AlbumTrack {
@@ -154,6 +155,23 @@ export function Album() {
     const shuffled = [...playerTracks].sort(() => Math.random() - 0.5);
     playAll(shuffled);
   };
+
+  async function handleAlbumRadio() {
+    try {
+      const radio = await fetchAlbumRadio({
+        albumId,
+        artistName,
+        albumName: displayName,
+      });
+      if (!radio.tracks.length) {
+        toast.info("Album radio is not available yet");
+        return;
+      }
+      playAll(radio.tracks, 0, radio.source);
+    } catch {
+      toast.error("Failed to start album radio");
+    }
+  }
 
   const handleAddToQueue = () => {
     playerTracks.forEach((t) => addToQueue(t));
@@ -344,6 +362,13 @@ export function Album() {
         >
           <Shuffle size={15} />
           Shuffle
+        </button>
+        <button
+          className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"
+          onClick={handleAlbumRadio}
+        >
+          <Radio size={15} />
+          Album Radio
         </button>
         <button
           className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"

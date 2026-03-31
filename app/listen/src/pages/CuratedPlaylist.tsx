@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Heart, Loader2, Play, Shuffle, Share2, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, Play, Radio, Shuffle, Share2, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
@@ -9,6 +9,7 @@ import { TrackRow } from "@/components/cards/TrackRow";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
+import { fetchPlaylistRadio } from "@/lib/radio";
 import { encPath } from "@/lib/utils";
 
 interface CuratedPlaylistTrack {
@@ -97,6 +98,23 @@ export function CuratedPlaylist() {
   function handleShuffle() {
     if (playerTracks.length === 0) return;
     playAll(shuffleArray(playerTracks), 0, { type: "playlist", name: data?.name || "Playlist" });
+  }
+
+  async function handlePlaylistRadio() {
+    if (!data) return;
+    try {
+      const radio = await fetchPlaylistRadio({
+        playlistId: data.id,
+        playlistName: data.name,
+      });
+      if (!radio.tracks.length) {
+        toast.info("Playlist radio is not available yet");
+        return;
+      }
+      playAll(radio.tracks, 0, radio.source);
+    } catch {
+      toast.error("Failed to start playlist radio");
+    }
   }
 
   async function handleShare() {
@@ -251,6 +269,14 @@ export function CuratedPlaylist() {
         >
           <Shuffle size={15} />
           Shuffle
+        </button>
+        <button
+          onClick={handlePlaylistRadio}
+          disabled={playerTracks.length === 0}
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+        >
+          <Radio size={15} />
+          Playlist Radio
         </button>
         <button
           onClick={handleToggleFollow}

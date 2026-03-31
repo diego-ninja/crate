@@ -64,3 +64,65 @@ class TestRadioApiContracts:
         assert data["session"]["seed"]["track_id"] == 99
         assert data["session"]["seed"]["track_path"] == "Converge/Jane Doe/01 - Concubine.flac"
         assert data["tracks"][1]["artist"] == "Botch"
+
+    def test_album_radio_returns_session_and_tracks(self, test_app):
+        tracks = [
+            {
+                "track_id": 10,
+                "navidrome_id": "nd-10",
+                "track_path": "Converge/Jane Doe/01 - Concubine.flac",
+                "title": "Concubine",
+                "artist": "Converge",
+                "album": "Jane Doe",
+                "duration": 94.0,
+                "score": None,
+            }
+        ]
+
+        with patch("crate.api.radio.get_db_ctx") as mock_ctx, \
+             patch("crate.api.radio.generate_album_radio", return_value=tracks):
+            mock_ctx.return_value.__enter__.return_value.fetchone.return_value = {
+                "artist": "Converge",
+                "name": "Jane Doe",
+            }
+            mock_ctx.return_value.__exit__.return_value = False
+
+            resp = test_app.get("/api/radio/album/5?limit=50")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session"]["type"] == "album"
+        assert data["session"]["seed"]["album_id"] == 5
+        assert data["tracks"][0]["album"] == "Jane Doe"
+
+    def test_playlist_radio_returns_session_and_tracks(self, test_app):
+        tracks = [
+            {
+                "track_id": 77,
+                "navidrome_id": "nd-77",
+                "track_path": "Converge/Jane Doe/11 - Jane Doe.flac",
+                "title": "Jane Doe",
+                "artist": "Converge",
+                "album": "Jane Doe",
+                "duration": 690.0,
+                "score": 0.84,
+            }
+        ]
+
+        with patch("crate.api.radio.get_db_ctx") as mock_ctx, \
+             patch("crate.api.radio.generate_playlist_radio", return_value=tracks):
+            mock_ctx.return_value.__enter__.return_value.fetchone.return_value = {
+                "id": 7,
+                "name": "Hardcore",
+                "scope": "system",
+                "user_id": None,
+            }
+            mock_ctx.return_value.__exit__.return_value = False
+
+            resp = test_app.get("/api/radio/playlist/7?limit=50")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session"]["type"] == "playlist"
+        assert data["session"]["seed"]["playlist_id"] == 7
+        assert data["tracks"][0]["title"] == "Jane Doe"

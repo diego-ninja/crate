@@ -21,6 +21,8 @@ interface RadioResponse {
       track_id?: number | null;
       track_path?: string | null;
       artist_name?: string | null;
+      album_id?: number | null;
+      playlist_id?: number | null;
     };
   };
   tracks: RadioTrackPayload[];
@@ -91,6 +93,49 @@ export async function fetchTrackRadio(seed: {
         seedType: "track",
         seedId: data.session?.seed?.track_id ?? seed.libraryTrackId ?? null,
         seedPath: data.session?.seed?.track_path ?? seed.path ?? null,
+      },
+    },
+  };
+}
+
+export async function fetchAlbumRadio(seed: {
+  albumId: number;
+  artistName: string;
+  albumName: string;
+}): Promise<{
+  tracks: Track[];
+  source: PlaySource;
+}> {
+  const data = await api<RadioResponse>(`/api/radio/album/${seed.albumId}?limit=50`);
+  return {
+    tracks: (data.tracks || []).map(toTrack),
+    source: {
+      type: "radio",
+      name: data.session?.name || `${seed.albumName} Radio`,
+      radio: {
+        seedType: "album",
+        seedId: data.session?.seed?.album_id ?? seed.albumId,
+      },
+    },
+  };
+}
+
+export async function fetchPlaylistRadio(seed: {
+  playlistId: number;
+  playlistName: string;
+}): Promise<{
+  tracks: Track[];
+  source: PlaySource;
+}> {
+  const data = await api<RadioResponse>(`/api/radio/playlist/${seed.playlistId}?limit=50`);
+  return {
+    tracks: (data.tracks || []).map(toTrack),
+    source: {
+      type: "radio",
+      name: data.session?.name || `${seed.playlistName} Radio`,
+      radio: {
+        seedType: "playlist",
+        seedId: data.session?.seed?.playlist_id ?? seed.playlistId,
       },
     },
   };
