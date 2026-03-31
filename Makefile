@@ -215,10 +215,9 @@ deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
 		--exclude='requirements.txt' --exclude='Dockerfile' --exclude='tests/' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
 	@echo "$(YELLOW)Pulling imagenes (GHCR + externas)...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-pull-failures" || true
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable" || true
-	@echo "$(YELLOW)Reiniciando servicios...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml up -d --remove-orphans"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-pull-failures"
+	@echo "$(YELLOW)Reiniciando servicios (sin build local)...$(NC)"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml up -d --no-build --remove-orphans"
 	@echo "$(GREEN)Deploy completado$(NC)"
 
 .PHONY: deploy-build
