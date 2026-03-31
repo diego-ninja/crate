@@ -40,10 +40,15 @@ Initial contract set:
 - `/api/search`
   - always returns `artists`, `albums`, `tracks`
   - shape includes fields actually consumed by `listen`
+- `/api/acquisition/upload`
+  - accepts multipart uploads for supported audio/zip types
+  - rejects unsupported extensions
+  - queues `library_upload` with staging metadata instead of trying to ingest inline
 
 Current entry point:
 
 - `app/tests/test_explore_contracts.py`
+- `app/tests/test_upload_contracts.py`
 
 Command:
 
@@ -112,6 +117,11 @@ If a change touches playlist, auth, or playback infra, also run:
 
 4. `cd app/ui && npm run build`
 5. rebuild `api` and `worker` in dev if backend changed
+
+If a change touches upload/import/ingest, also run:
+
+6. `make regression-api`
+7. rebuild `api` and `worker` in dev before manual upload checks
 
 ## Notes
 

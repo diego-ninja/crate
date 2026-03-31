@@ -99,7 +99,7 @@ dev-test: ## Correr tests en el contenedor dev
 
 .PHONY: regression-api
 regression-api: ## Contratos backend criticos (Explore/search/system playlists)
-	@$(DC_DEV) exec worker pytest tests/test_explore_contracts.py -q
+	@$(DC_DEV) exec worker pytest tests/test_explore_contracts.py tests/test_upload_contracts.py -q
 
 .PHONY: regression-smoke
 regression-smoke: ## Smoke real contra el entorno dev autenticado
