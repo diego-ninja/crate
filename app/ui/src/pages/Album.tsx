@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Trash2 } from "lucide-react";
+import { AudioWaveform, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/contexts/AuthContext";
@@ -227,6 +227,21 @@ export function Album() {
             ) : (
               "Sync MusicBrainz"
             )}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+            onClick={async () => {
+              try {
+                await api(`/api/analyze/album/${encPath(data?.artist ?? "")}/${encPath(data?.name ?? "")}`, "POST");
+                toast.success("Analysis queued", { description: "Background daemons will process the tracks." });
+              } catch {
+                toast.error("Failed to queue analysis");
+              }
+            }}
+          >
+            <AudioWaveform size={14} className="mr-1" /> Analyze
           </Button>
           {isAdmin && (
             <Button

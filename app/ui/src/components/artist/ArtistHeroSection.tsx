@@ -13,6 +13,7 @@ import {
   Music,
   Play,
   Radio,
+  AudioWaveform,
   RefreshCw,
   Trash2,
   Users,
@@ -57,6 +58,7 @@ interface ArtistHeroSectionProps {
   onPlayTopTracks: () => void;
   onPlayRadio: () => void;
   onEnrich: () => void;
+  onAnalyze: () => void;
   onRepair: () => void;
   onDelete: () => void;
 }
@@ -90,6 +92,7 @@ export function ArtistHeroSection({
   onPlayTopTracks,
   onPlayRadio,
   onEnrich,
+  onAnalyze,
   onRepair,
   onDelete,
 }: ArtistHeroSectionProps) {
@@ -266,6 +269,14 @@ export function ArtistHeroSection({
                 onClick={onEnrich}
               >
                 <RefreshCw size={14} className={`mr-1 ${enriching ? "animate-spin" : ""}`} /> {enriching ? "Enriching..." : "Enrich"}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                onClick={onAnalyze}
+              >
+                <AudioWaveform size={14} className="mr-1" /> Analyze
               </Button>
               {(issueCount ?? 0) > 0 && (
                 <Button

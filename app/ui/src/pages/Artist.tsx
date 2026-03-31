@@ -204,6 +204,15 @@ export function Artist() {
     }
   }
 
+  async function analyzeArtist() {
+    try {
+      await api(`/api/analyze/artist/${encPath(artistName)}`, "POST");
+      toast.success("Analysis queued", { description: "Background daemons will process the tracks." });
+    } catch {
+      toast.error("Failed to queue analysis");
+    }
+  }
+
   async function repairArtist() {
     try {
       await api(`/api/manage/repair-artist/${encPath(artistName)}`, "POST");
@@ -271,6 +280,9 @@ export function Artist() {
         }}
         onEnrich={() => {
           void enrichArtist();
+        }}
+        onAnalyze={() => {
+          void analyzeArtist();
         }}
         onRepair={() => {
           void repairArtist();

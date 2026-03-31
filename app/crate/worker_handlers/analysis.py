@@ -496,6 +496,7 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
 
     scope = params.get("scope")
     artist = params.get("artist")
+    album_name = params.get("album") or params.get("album_folder")
     album_id = params.get("album_id")
     track_id = params.get("track_id")
     what = params.get("what", "both")  # 'analysis', 'bliss', or 'both'
@@ -515,6 +516,12 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
             cur.execute(f"UPDATE library_tracks SET {set_clause} WHERE id = %s", (track_id,))
         elif album_id:
             cur.execute(f"UPDATE library_tracks SET {set_clause} WHERE album_id = %s", (album_id,))
+        elif artist and album_name:
+            cur.execute(
+                f"UPDATE library_tracks SET {set_clause} WHERE album_id IN "
+                "(SELECT id FROM library_albums WHERE artist = %s AND name = %s)",
+                (artist, album_name),
+            )
         elif artist:
             cur.execute(
                 f"UPDATE library_tracks SET {set_clause} WHERE album_id IN "
