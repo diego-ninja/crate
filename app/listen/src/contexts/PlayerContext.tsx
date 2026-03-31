@@ -12,6 +12,7 @@ import {
   getCrossfadeDurationPreference,
   PLAYER_PLAYBACK_PREFS_EVENT,
 } from "@/lib/player-playback-prefs";
+import { fetchRadioContinuation } from "@/lib/radio";
 
 export interface Track {
   id: string;
@@ -101,6 +102,8 @@ const STORAGE_KEY = "listen-player-state";
 const RECENTLY_PLAYED_KEY = "listen-recently-played";
 const MAX_RECENT = 10;
 const NEXT_TRACK_PRELOAD_WINDOW_SECONDS = 15;
+const RADIO_REFILL_THRESHOLD = 3;
+const RADIO_REFILL_BATCH_SIZE = 30;
 const PLAYER_AUDIO_KEY = "__listenPlayerAudio";
 const PLAYER_PRELOAD_AUDIO_KEY = "__listenPlayerPreloadAudio";
 
@@ -230,6 +233,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const restoredRef = useRef(stored.current.queue.length > 0);
   const shouldAutoplayRef = useRef(false);
   const lastNonZeroVolumeRef = useRef(Math.max(getStoredVolume(), 0.5));
+  const radioRefillInFlightRef = useRef(false);
+  const radioRefillSignatureRef = useRef<string | null>(null);
 
   if (!audioRef.current) {
     audioRef.current = getSharedAudio(PLAYER_AUDIO_KEY);
@@ -406,6 +411,54 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       clearPreloadedTrack();
     };
   }, [audio, clearPreloadedTrack]);
+
+  useEffect(() => {
+    const currentTrack = queue[currentIndex];
+    if (!isPlaying || !currentTrack) return;
+    if (playSource?.type !== "radio" || !playSource.radio) return;
+
+    const remainingUpcoming = queue.length - currentIndex - 1;
+    if (remainingUpcoming > RADIO_REFILL_THRESHOLD) {
+      radioRefillSignatureRef.current = null;
+      return;
+    }
+    if (radioRefillInFlightRef.current) return;
+
+    const signature = [
+      playSource.name,
+      playSource.radio.seedType,
+      playSource.radio.seedId ?? "",
+      playSource.radio.seedPath ?? "",
+      currentTrack.id,
+      queue.length,
+    ].join("::");
+    if (radioRefillSignatureRef.current === signature) return;
+    radioRefillSignatureRef.current = signature;
+    radioRefillInFlightRef.current = true;
+
+    const existingKeys = new Set(
+      [...queue, ...recentlyPlayed].map((track) => getTrackCacheKey(track)),
+    );
+
+    fetchRadioContinuation(playSource, RADIO_REFILL_BATCH_SIZE)
+      .then((tracks) => {
+        const uniqueTracks = tracks.filter((track) => {
+          const key = getTrackCacheKey(track);
+          if (!key || existingKeys.has(key)) return false;
+          existingKeys.add(key);
+          return true;
+        });
+        if (uniqueTracks.length > 0) {
+          setQueue((prev) => [...prev, ...uniqueTracks]);
+        }
+      })
+      .catch((error) => {
+        console.warn("[player] radio refill failed:", error);
+      })
+      .finally(() => {
+        radioRefillInFlightRef.current = false;
+      });
+  }, [currentIndex, isPlaying, playSource, queue, recentlyPlayed]);
 
   useEffect(() => {
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);

@@ -140,3 +140,38 @@ export async function fetchPlaylistRadio(seed: {
     },
   };
 }
+
+export async function fetchRadioContinuation(source: PlaySource, limit = 30): Promise<Track[]> {
+  const radio = source.radio;
+  if (!radio) return [];
+
+  if (radio.seedType === "artist" && radio.seedId) {
+    const data = await api<RadioResponse>(`/api/radio/artist/${encPath(String(radio.seedId))}?limit=${limit}`);
+    return (data.tracks || []).map(toTrack);
+  }
+
+  if (radio.seedType === "track") {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (radio.seedId != null) {
+      params.set("track_id", String(radio.seedId));
+    } else if (radio.seedPath) {
+      params.set("path", radio.seedPath);
+    } else {
+      return [];
+    }
+    const data = await api<RadioResponse>(`/api/radio/track?${params.toString()}`);
+    return (data.tracks || []).map(toTrack);
+  }
+
+  if (radio.seedType === "album" && radio.seedId != null) {
+    const data = await api<RadioResponse>(`/api/radio/album/${radio.seedId}?limit=${limit}`);
+    return (data.tracks || []).map(toTrack);
+  }
+
+  if (radio.seedType === "playlist" && radio.seedId != null) {
+    const data = await api<RadioResponse>(`/api/radio/playlist/${radio.seedId}?limit=${limit}`);
+    return (data.tracks || []).map(toTrack);
+  }
+
+  return [];
+}

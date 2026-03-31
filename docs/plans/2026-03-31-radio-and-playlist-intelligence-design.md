@@ -18,12 +18,12 @@ Ya está arrancada una primera base técnica segura para esta iteración:
 - `listen` ya modela una sesión mínima de radio en `playSource.radio`
 - el `Suggested` del player ya puede arrancar `track radio`
 - `Album`, `Playlist` y `CuratedPlaylist` ya exponen acciones directas de radio
+- las sesiones de radio ya pueden hacer `queue refill` automático al acercarse al final de la cola
 
 ### Aún no implementado
 
 Sigue pendiente para batches posteriores:
 
-- auto-refill de cola para sesiones de radio
 - `infinite continuation` al final de álbum/playlist
 - `smart track inclusion`
 
