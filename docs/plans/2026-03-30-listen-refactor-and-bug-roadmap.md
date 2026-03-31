@@ -398,6 +398,10 @@ Follow-up architectural decision:
 - playlist cover data model and storage path
 - best API shape for upload music
 - safe approach for gapless/crossfade with current audio architecture
+- listening intelligence / stats foundation:
+  - current `play_history` is too thin for a serious stats, Wrapped, or personalization surface
+  - future work should move toward richer per-user playback events with played seconds, completion/skip state, and playback source context
+  - see `docs/plans/2026-03-31-listen-user-stats-and-wrapped-design.md`
 - system playlists created in `admin` are not yet surfaced in `listen` discovery/library:
   - most visible surfaces are now wired (`Home`, `Explore`, `Library`, playlist detail)
   - still worth checking that discovery keeps a good editorial hierarchy as more system playlists appear
@@ -431,6 +435,10 @@ Follow-up architectural decision:
 - settings surface should keep growing as player features stabilize:
   - playback preferences now have a first home
   - future iterations should likely add infinite playback, suggestion cadence, and other player intelligence controls there
+- future business reanalysis vs Spotify / TIDAL should include:
+  - stats / Wrapped / Replay surfaces
+  - what Crate can uniquely do with self-hosted full-history listening data
+  - where personalized utility beats pure catalog parity
 - reusable overlay primitives for `listen`:
   - extract consistent `Dropdown` / `Popover` / `Menu` components
   - unify `Escape`, click-outside, z-index, animation, and focus behavior
