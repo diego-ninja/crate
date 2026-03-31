@@ -478,6 +478,7 @@ def init_db():
                 name TEXT NOT NULL,
                 description TEXT DEFAULT '',
                 cover_data_url TEXT,
+                cover_path TEXT,
                 user_id INTEGER REFERENCES users(id),
                 is_smart BOOLEAN DEFAULT FALSE,
                 smart_rules_json JSONB,
@@ -503,6 +504,12 @@ def init_db():
         cur.execute("""
             DO $$ BEGIN
                 ALTER TABLE playlists ADD COLUMN cover_data_url TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE playlists ADD COLUMN cover_path TEXT;
             EXCEPTION WHEN duplicate_column THEN NULL;
             END $$
         """)

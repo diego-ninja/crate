@@ -226,6 +226,7 @@ Upload follow-up still pending:
 - `TrackRow` / player interactions are now centralized, but row variants are starting to grow and may deserve a small component split
 - `gapless / crossfade` still need a second implementation pass if we want true dual-deck seamlessness; current player now preserves the safe single-audio architecture and makes better use of preloading
 - upload now exists as a first dedicated batch, but still needs a second pass for robustness and richer UX
+- playlist covers are now moving away from DB-embedded data URLs toward stored assets served by the API; frontend contract remains compatible, but a second pass should remove the remaining legacy `cover_data_url` persistence path entirely
 
 ### Current Backend Risk Behind One Reported Bug
 

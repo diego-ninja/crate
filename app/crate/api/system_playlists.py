@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
-from crate.api.playlists import _execute_smart_rules
+from crate.api.playlists import _apply_playlist_cover_payload, _execute_smart_rules
+from crate.playlist_covers import delete_playlist_cover
 from crate.db import (
     add_playlist_tracks,
     create_playlist,
@@ -91,7 +92,6 @@ def admin_create_system_playlist(request: Request, body: CreateSystemPlaylistReq
     playlist_id = create_playlist(
         name=body.name.strip(),
         description=body.description,
-        cover_data_url=body.cover_data_url,
         user_id=None,
         is_smart=mode == "smart",
         smart_rules=body.smart_rules if mode == "smart" else None,
@@ -104,6 +104,9 @@ def admin_create_system_playlist(request: Request, body: CreateSystemPlaylistReq
         featured_rank=body.featured_rank,
         category=body.category,
     )
+    cover_update = _apply_playlist_cover_payload(playlist_id, body.cover_data_url)
+    if cover_update:
+        update_playlist(playlist_id, **cover_update)
     playlist = _require_system_playlist(playlist_id)
     return _serialize_admin_playlist(playlist)
 
@@ -135,7 +138,7 @@ def admin_update_system_playlist(request: Request, playlist_id: int, body: Updat
     if body.description is not None:
         kwargs["description"] = body.description
     if body.cover_data_url is not None:
-        kwargs["cover_data_url"] = body.cover_data_url
+        kwargs.update(_apply_playlist_cover_payload(playlist_id, body.cover_data_url, playlist.get("cover_path")) or {})
     if body.smart_rules is not None or mode == "static":
         kwargs["smart_rules"] = next_rules if mode == "smart" else None
     if body.is_curated is not None:
@@ -157,7 +160,8 @@ def admin_update_system_playlist(request: Request, playlist_id: int, body: Updat
 @router.delete("/{playlist_id}")
 def admin_delete_system_playlist(request: Request, playlist_id: int):
     _require_admin(request)
-    _require_system_playlist(playlist_id)
+    playlist = _require_system_playlist(playlist_id)
+    delete_playlist_cover(playlist.get("cover_path"))
     delete_playlist(playlist_id)
     return {"ok": True}
 

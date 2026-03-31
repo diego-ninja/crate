@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from crate.api.auth import _require_auth
+from crate.playlist_covers import delete_playlist_cover, persist_playlist_cover_data, playlist_cover_abspath
 from crate.db import (
     create_playlist, get_playlists, get_playlist, update_playlist,
     delete_playlist, get_playlist_tracks, add_playlist_tracks,
@@ -37,6 +39,20 @@ class ReorderRequest(BaseModel):
 
 class SyncNavidromeRequest(BaseModel):
     playlist_id: int
+
+
+def _apply_playlist_cover_payload(playlist_id: int, cover_data_url: str | None, existing_cover_path: str | None = None):
+    if cover_data_url is None:
+        return None
+    if cover_data_url == "":
+        delete_playlist_cover(existing_cover_path)
+        return {"cover_data_url": None, "cover_path": None}
+    if cover_data_url.startswith("data:image/"):
+        new_cover_path = persist_playlist_cover_data(playlist_id, cover_data_url)
+        if existing_cover_path and existing_cover_path != new_cover_path:
+            delete_playlist_cover(existing_cover_path)
+        return {"cover_data_url": None, "cover_path": new_cover_path}
+    return {"cover_data_url": cover_data_url}
 
 
 # ── Filter options ───────────────────────────────────────────────
@@ -94,11 +110,13 @@ def create(request: Request, body: CreatePlaylistRequest):
     playlist_id = create_playlist(
         name=body.name.strip(),
         description=body.description,
-        cover_data_url=body.cover_data_url,
         user_id=user["id"],
         is_smart=body.is_smart,
         smart_rules=body.smart_rules,
     )
+    cover_update = _apply_playlist_cover_payload(playlist_id, body.cover_data_url)
+    if cover_update:
+        update_playlist(playlist_id, **cover_update)
     return {"id": playlist_id}
 
 
@@ -129,7 +147,7 @@ def update(request: Request, playlist_id: int, body: UpdatePlaylistRequest):
     if body.description is not None:
         kwargs["description"] = body.description
     if body.cover_data_url is not None:
-        kwargs["cover_data_url"] = body.cover_data_url
+        kwargs.update(_apply_playlist_cover_payload(playlist_id, body.cover_data_url, pl.get("cover_path")) or {})
     if body.smart_rules is not None:
         kwargs["smart_rules"] = body.smart_rules
     if kwargs:
@@ -145,8 +163,23 @@ def delete(request: Request, playlist_id: int):
         raise HTTPException(status_code=404, detail="Playlist not found")
     if pl.get("user_id") != user["id"] and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Not your playlist")
+    delete_playlist_cover(pl.get("cover_path"))
     delete_playlist(playlist_id)
     return {"ok": True}
+
+
+@router.get("/{playlist_id}/cover")
+def get_cover(request: Request, playlist_id: int):
+    user = _require_auth(request)
+    pl = get_playlist(playlist_id)
+    if not pl:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    if pl.get("scope") != "system" and pl.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
+    cover_path = playlist_cover_abspath(pl.get("cover_path"))
+    if not cover_path or not cover_path.exists():
+        raise HTTPException(status_code=404, detail="Cover not found")
+    return FileResponse(cover_path)
 
 
 # ── Tracks ───────────────────────────────────────────────────────

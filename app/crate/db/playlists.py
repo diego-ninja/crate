@@ -16,6 +16,8 @@ def _normalize_playlist_row(row: dict) -> dict:
     d["navidrome_public"] = bool(d.get("navidrome_public"))
     d["navidrome_projection_status"] = d.get("navidrome_projection_status") or "unprojected"
     d["is_system"] = d["scope"] == "system"
+    if d.get("cover_path"):
+        d["cover_data_url"] = f"/api/playlists/{d['id']}/cover"
     return d
 
 
@@ -38,6 +40,7 @@ def _fetch_artwork_tracks(cur, playlist_id: int) -> list[dict]:
 def create_playlist(name: str, description: str = "", user_id: int | None = None,
                     is_smart: bool = False, smart_rules: dict | None = None,
                     cover_data_url: str | None = None,
+                    cover_path: str | None = None,
                     scope: str | None = None,
                     generation_mode: str | None = None,
                     is_curated: bool = False,
@@ -54,10 +57,10 @@ def create_playlist(name: str, description: str = "", user_id: int | None = None
             """
             INSERT INTO playlists (
                 name, description, cover_data_url, user_id, is_smart, smart_rules_json,
-                scope, generation_mode, is_curated, is_active, managed_by_user_id,
+                cover_path, scope, generation_mode, is_curated, is_active, managed_by_user_id,
                 curation_key, featured_rank, category, created_at, updated_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -67,6 +70,7 @@ def create_playlist(name: str, description: str = "", user_id: int | None = None
                 user_id,
                 is_smart,
                 json.dumps(smart_rules) if smart_rules else None,
+                cover_path,
                 final_scope,
                 final_generation_mode,
                 is_curated,
@@ -150,7 +154,7 @@ def update_playlist(playlist_id: int, **kwargs):
     fields = ["updated_at = %s"]
     values: list = [now]
     for key in (
-        "name", "description", "cover_data_url", "scope", "generation_mode",
+        "name", "description", "cover_data_url", "cover_path", "scope", "generation_mode",
         "is_curated", "is_active", "managed_by_user_id", "curation_key",
         "featured_rank", "category", "navidrome_playlist_id",
         "navidrome_public", "navidrome_projection_status",
