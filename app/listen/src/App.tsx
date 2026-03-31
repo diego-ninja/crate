@@ -20,6 +20,9 @@ import { Register } from "@/pages/Register";
 const Artist = React.lazy(() =>
   import("@/pages/Artist").then((m) => ({ default: m.Artist })),
 );
+const ArtistTopTracks = React.lazy(() =>
+  import("@/pages/ArtistTopTracks").then((m) => ({ default: m.ArtistTopTracks })),
+);
 const Album = React.lazy(() =>
   import("@/pages/Album").then((m) => ({ default: m.Album })),
 );
@@ -83,6 +86,14 @@ export function App() {
                       element={
                         <Suspense fallback={<Spinner />}>
                           <Artist />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="artist/:name/top-tracks"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <ArtistTopTracks />
                         </Suspense>
                       }
                     />

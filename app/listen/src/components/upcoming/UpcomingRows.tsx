@@ -1,21 +1,23 @@
-import { useEffect, useMemo, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import {
   Calendar,
+  Check,
   Clock,
-  ExternalLink,
   Loader2,
   MapPin,
-  Music4,
+  Play,
   Ticket,
+  X,
 } from "lucide-react";
-import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { cn, encPath } from "@/lib/utils";
+import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -119,6 +121,94 @@ function monthLabel(month: string) {
   });
 }
 
+function rowActionClassName(tone: "default" | "primary" = "default", disabled = false) {
+  if (disabled) {
+    return "pointer-events-none text-white/20";
+  }
+
+  return tone === "primary"
+    ? "text-primary hover:bg-primary/10"
+    : "text-white/45 hover:bg-white/10 hover:text-white";
+}
+
+function RowActionButton({
+  title,
+  onClick,
+  disabled = false,
+  active = false,
+  children,
+}: {
+  title: string;
+  onClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  disabled?: boolean;
+  active?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+        rowActionClassName(active ? "primary" : "default", disabled),
+      )}
+      title={title}
+    >
+      {children}
+    </button>
+  );
+}
+
+function RowActionLink({
+  title,
+  href,
+  disabled = false,
+  active = false,
+  onClick,
+  children,
+}: {
+  title: string;
+  href?: string;
+  disabled?: boolean;
+  active?: boolean;
+  onClick?: (event: ReactMouseEvent<HTMLAnchorElement>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <a
+      href={href || "#"}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onClick}
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+        rowActionClassName(active ? "primary" : "default", disabled || !href),
+      )}
+      title={title}
+    >
+      {children}
+    </a>
+  );
+}
+
+function MapSizeFixer() {
+  const map = useMap();
+
+  useEffect(() => {
+    const timers = [
+      window.setTimeout(() => map.invalidateSize(), 0),
+      window.setTimeout(() => map.invalidateSize(), 120),
+      window.setTimeout(() => map.invalidateSize(), 320),
+    ];
+
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
+  }, [map]);
+
+  return null;
+}
+
 export function UpcomingMonthGroup({
   month,
   items,
@@ -143,21 +233,26 @@ export function UpcomingMonthGroup({
           const itemWithOverrides = attendanceOverrides[key] == null
             ? item
             : { ...item, user_attending: attendanceOverrides[key] };
-          const isExpanded = item.type === "show" && expandedId === key;
-          return isExpanded ? (
-            <ShowDetailPanel
+          if (item.type === "show") {
+            return (
+              <UpcomingShowCard
               key={key}
               item={itemWithOverrides}
-              onClose={() => onToggleExpand(null)}
+              expanded={expandedId === key}
+              onToggle={() => onToggleExpand(expandedId === key ? null : key)}
               onAttendanceChange={(attending) => {
                 setAttendanceOverrides((current) => ({ ...current, [key]: attending }));
               }}
             />
-          ) : (
+            );
+          }
+          return (
             <UpcomingEventRow
               key={key}
               item={itemWithOverrides}
-              onClick={item.type === "show" ? () => onToggleExpand(key) : undefined}
+              onAttendanceChange={(attending) => {
+                setAttendanceOverrides((current) => ({ ...current, [key]: attending }));
+              }}
             />
           );
         })}
@@ -166,26 +261,105 @@ export function UpcomingMonthGroup({
   );
 }
 
+async function fetchPlayableSetlist(artist: string): Promise<Track[]> {
+  const response = await api<{
+    tracks: {
+      library_track_id: number;
+      title: string;
+      artist: string;
+      album: string;
+      path: string;
+      duration?: number;
+      navidrome_id?: string;
+    }[];
+  }>(`/api/artist/${encPath(artist)}/setlist-playable`);
+
+  return (response.tracks || []).map((track) => ({
+    id: track.path || track.navidrome_id || String(track.library_track_id),
+    title: track.title,
+    artist: track.artist,
+    album: track.album,
+    albumCover: track.album
+      ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+      : `/api/artist/${encPath(track.artist)}/photo`,
+    path: track.path || undefined,
+    navidromeId: track.navidrome_id || undefined,
+    libraryTrackId: track.library_track_id,
+  }));
+}
+
 export function UpcomingEventRow({
   item,
+  onAttendanceChange,
   onClick,
 }: {
   item: UpcomingItem;
+  onAttendanceChange?: (attending: boolean) => void;
   onClick?: () => void;
 }) {
   const isShow = item.type === "show";
+  const { playAll } = usePlayerActions();
+  const [attending, setAttending] = useState(Boolean(item.user_attending));
+  const [savingAttendance, setSavingAttendance] = useState(false);
+  const [playingSetlist, setPlayingSetlist] = useState(false);
   const dateObj = item.date ? new Date(`${item.date}T12:00:00`) : null;
   const dateStr = dateObj
     ? dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" })
     : "";
   const timeStr = item.time ? item.time.slice(0, 5) : "";
 
+  useEffect(() => {
+    setAttending(Boolean(item.user_attending));
+  }, [item.user_attending]);
+
+  async function toggleAttendance(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (!item.id) return;
+    setSavingAttendance(true);
+    try {
+      if (attending) {
+        await api(`/api/me/shows/${item.id}/attendance`, "DELETE");
+        setAttending(false);
+        onAttendanceChange?.(false);
+        toast.success("Removed from your concert plan");
+      } else {
+        await api(`/api/me/shows/${item.id}/attendance`, "POST");
+        setAttending(true);
+        onAttendanceChange?.(true);
+        toast.success("Marked as attending");
+      }
+    } catch {
+      toast.error("Failed to update attendance");
+    } finally {
+      setSavingAttendance(false);
+    }
+  }
+
+  async function playProbableSetlist(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (!isShow || !item.probable_setlist?.length) return;
+    setPlayingSetlist(true);
+    try {
+      const queue = await fetchPlayableSetlist(item.artist);
+      if (!queue.length) {
+        toast.info("No probable setlist tracks matched your library");
+        return;
+      }
+      playAll(queue, 0, { type: "playlist", name: `${item.artist} Probable Setlist` });
+      toast.success(`Playing probable setlist: ${queue.length} tracks`);
+    } catch {
+      toast.error("Failed to load probable setlist");
+    } finally {
+      setPlayingSetlist(false);
+    }
+  }
+
   return (
     <div
       className={cn(
         "group flex items-center gap-4 rounded-2xl border p-3 transition-all",
         isShow
-          ? "cursor-pointer border-amber-500/10 bg-white/[0.02] hover:border-amber-500/20 hover:bg-white/[0.04]"
+          ? "cursor-pointer border-primary/10 bg-white/[0.02] hover:border-primary/25 hover:bg-white/[0.04]"
           : "border-primary/10 bg-white/[0.02] hover:border-primary/20 hover:bg-white/[0.04]",
       )}
       onClick={onClick}
@@ -203,13 +377,6 @@ export function UpcomingEventRow({
             (e.target as HTMLImageElement).style.display = "none";
           }}
         />
-        {item.type === "release" && (
-          <div className="absolute inset-x-0 bottom-0 flex items-center justify-center bg-gradient-to-t from-black/80 to-transparent pb-1 pt-4">
-            <span className="rounded-full border border-primary/30 bg-black/50 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
-              Release
-            </span>
-          </div>
-        )}
       </div>
 
       <div className="min-w-0 flex-1">
@@ -217,21 +384,18 @@ export function UpcomingEventRow({
           <span className="truncate text-sm font-semibold text-foreground">
             {isShow ? item.artist : item.title}
           </span>
-          {item.genres?.slice(0, 2).map((genre) => (
-            <span
-              key={genre}
-              className="hidden rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-white/50 sm:inline-flex"
-            >
-              {genre}
+          {attending && isShow ? (
+            <span className="rounded-full border border-primary/20 bg-primary/12 px-2 py-0.5 text-[10px] font-medium text-primary">
+              Going
             </span>
-          ))}
+          ) : null}
         </div>
 
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/45">
           {isShow ? (
             <>
               <span className="inline-flex items-center gap-1 truncate">
-                <MapPin size={11} className="text-amber-400/70" />
+                <MapPin size={11} className="text-primary/80" />
                 <span className="truncate">{item.venue}</span>
               </span>
               <span className="text-white/20">&middot;</span>
@@ -250,63 +414,68 @@ export function UpcomingEventRow({
             </>
           )}
         </div>
-
-        {isShow && item.probable_setlist?.length ? (
-          <div className="mt-2 flex items-center gap-2 overflow-hidden">
-            <span className="text-[10px] uppercase tracking-[0.16em] text-white/30">Probable setlist</span>
-            <div className="flex min-w-0 gap-1 overflow-hidden">
-              {item.probable_setlist.slice(0, 3).map((song) => (
-                <span
-                  key={song.title}
-                  className="truncate rounded-full border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] text-white/50"
-                >
-                  {song.title}
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
-        {isShow && item.user_attending ? (
-          <div className="mt-2">
-            <span className="inline-flex rounded-full border border-primary/20 bg-primary/12 px-2 py-0.5 text-[10px] font-medium text-primary">
-              You&apos;re going
-            </span>
-          </div>
-        ) : null}
       </div>
 
-      <div className={cn("text-right flex-shrink-0", isShow ? "text-amber-400" : "text-primary")}>
-        <div className="text-xs font-semibold">{dateStr}</div>
-        {timeStr ? <div className="text-[10px] text-white/35">{timeStr}</div> : null}
-      </div>
+      <div className="flex flex-shrink-0 items-center gap-2">
+        <div className="text-right text-primary">
+          <div className="text-xs font-semibold">{dateStr}</div>
+          {timeStr ? <div className="text-[10px] text-white/35">{timeStr}</div> : null}
+        </div>
+        {isShow ? (
+          <>
+            <RowActionButton
+              onClick={playProbableSetlist}
+              disabled={!item.probable_setlist?.length || playingSetlist}
+              title="Play probable setlist"
+            >
+              {playingSetlist ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} className="fill-current" />}
+            </RowActionButton>
 
-      {isShow && item.url ? (
-        <a
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(event) => event.stopPropagation()}
-          className="rounded-xl border border-amber-500/20 p-2 text-amber-400 transition-colors hover:bg-amber-500/10"
-        >
-          <ExternalLink size={14} />
-        </a>
-      ) : null}
+            <RowActionButton
+              onClick={toggleAttendance}
+              disabled={!item.id || savingAttendance}
+              title={attending ? "Attending" : "Mark as attending"}
+              active={attending}
+            >
+              {savingAttendance ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            </RowActionButton>
+
+            <RowActionLink
+              href={item.url}
+              onClick={(event) => {
+                if (!item.url) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                } else {
+                  event.stopPropagation();
+                }
+              }}
+              title="Tickets"
+            >
+              <Ticket size={14} />
+            </RowActionLink>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-export function ShowDetailPanel({
+export function UpcomingShowCard({
   item,
-  onClose,
+  expanded,
+  onToggle,
   onAttendanceChange,
 }: {
   item: UpcomingItem;
-  onClose: () => void;
+  expanded: boolean;
+  onToggle: () => void;
   onAttendanceChange?: (attending: boolean) => void;
 }) {
+  const { playAll } = usePlayerActions();
   const [attending, setAttending] = useState(Boolean(item.user_attending));
   const [savingAttendance, setSavingAttendance] = useState(false);
+  const [playingSetlist, setPlayingSetlist] = useState(false);
   const position = useMemo<[number, number] | null>(() => {
     if (item.latitude == null || item.longitude == null) return null;
     return [item.latitude, item.longitude];
@@ -349,23 +518,61 @@ export function ShowDetailPanel({
     }
   }
 
+  async function playProbableSetlist() {
+    if (!item.probable_setlist?.length) return;
+    try {
+      setPlayingSetlist(true);
+      const queue = await fetchPlayableSetlist(item.artist);
+      if (!queue.length) {
+        toast.info("No probable setlist tracks matched your library");
+        return;
+      }
+      playAll(queue, 0, { type: "playlist", name: `${item.artist} Probable Setlist` });
+      toast.success(`Playing probable setlist: ${queue.length} tracks`);
+    } catch {
+      toast.error("Failed to load probable setlist");
+    } finally {
+      setPlayingSetlist(false);
+    }
+  }
+
   return (
-    <div className="relative overflow-hidden rounded-[1.4rem] border border-amber-500/20">
+    <div
+      className={cn(
+        "relative overflow-hidden rounded-xl border transition-[height,transform,border-color,background-color,box-shadow] duration-300 ease-out",
+        expanded
+          ? "animate-upcoming-expand border-primary/20 shadow-[0_18px_60px_rgba(6,182,212,0.14)]"
+          : "border-primary/10 bg-white/[0.02] hover:border-primary/25 hover:bg-white/[0.04]",
+      )}
+      style={{ height: expanded ? 320 : 92 }}
+      onClick={!expanded ? onToggle : undefined}
+    >
       <div className="absolute inset-0 bg-[#11131a]" />
-      {position ? (
-        <div className="absolute inset-0">
+
+      <div
+        className={cn(
+          "upcoming-map absolute inset-0 z-0 transition-opacity duration-300",
+          expanded ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+      >
+        {expanded && position ? (
           <MapContainer
             center={position}
-            zoom={13}
+            zoom={14}
             style={{ width: "100%", height: "100%" }}
-            zoomControl={false}
+            zoomControl
             attributionControl={false}
-            scrollWheelZoom={false}
             dragging
+            scrollWheelZoom
+            doubleClickZoom
+            touchZoom
+            boxZoom={false}
+            keyboard={false}
           >
+            <MapSizeFixer />
             <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
             <Marker position={position}>
-              <Popup>
+              <Popup className="upcoming-marker-popup">
                 <div className="space-y-2 text-xs">
                   <div>
                     <div className="font-semibold text-foreground">{item.venue || item.artist}</div>
@@ -376,163 +583,201 @@ export function ShowDetailPanel({
                     {timeStr ? <div>Doors / time: {timeStr}</div> : null}
                     {item.lineup?.length ? <div>Lineup: {item.lineup.slice(0, 6).join(" · ")}</div> : null}
                   </div>
-                  {item.probable_setlist?.length ? (
-                    <div>
-                      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Probable setlist
-                      </div>
-                      <div className="space-y-1">
-                        {item.probable_setlist.slice(0, 6).map((song, index) => (
-                          <div key={song.title} className="truncate text-foreground">
-                            {song.position ?? index + 1}. {song.title}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               </Popup>
             </Marker>
           </MapContainer>
+        ) : null}
+      </div>
+
+      {!expanded ? (
+        <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-4 p-3">
+        <div className="relative h-14 w-14 overflow-hidden rounded-xl bg-white/5 flex-shrink-0">
+          <img
+            src={`/api/artist/${encPath(item.artist)}/photo`}
+            alt=""
+            className="h-full w-full object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = "none";
+            }}
+          />
         </div>
-      ) : null}
-      <div className="absolute inset-0 bg-gradient-to-t from-[#05070d] via-[#05070d]/72 to-[#05070d]/25" />
-
-      <button
-        onClick={onClose}
-        className="absolute right-3 top-3 z-10 rounded-full border border-white/10 bg-black/50 px-3 py-1 text-xs text-white/70 transition-colors hover:bg-black/70 hover:text-white"
-      >
-        Close
-      </button>
-
-      {item.venue ? (
-        <div className="absolute left-3 top-3 z-10 max-w-[240px] rounded-2xl border border-white/10 bg-black/55 px-3 py-2 backdrop-blur-md">
-          <div className="flex items-center gap-1.5">
-            <MapPin size={12} className="text-amber-400 flex-shrink-0" />
-            <div className="truncate text-xs font-semibold text-white">{item.venue}</div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-semibold text-foreground">{item.artist}</span>
+            {attending ? (
+              <span className="rounded-full border border-primary/20 bg-primary/12 px-2 py-0.5 text-[10px] font-medium text-primary">
+                Going
+              </span>
+            ) : null}
           </div>
-          <div className="ml-[18px] mt-0.5 text-[10px] text-white/45">{location}</div>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/45">
+            <span className="inline-flex items-center gap-1 truncate">
+              <MapPin size={11} className="text-primary/80" />
+              <span className="truncate">{item.venue}</span>
+            </span>
+            <span className="text-white/20">&middot;</span>
+            <span className="truncate">{item.city}, {item.country}</span>
+          </div>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <div className="text-right text-primary">
+            <div className="text-xs font-semibold">{dateStr}</div>
+            {timeStr ? <div className="text-[10px] text-white/35">{timeStr}</div> : null}
+          </div>
+          <RowActionButton
+            onClick={(event) => {
+              event.stopPropagation();
+              void playProbableSetlist();
+            }}
+            disabled={!item.probable_setlist?.length || playingSetlist}
+            title="Play probable setlist"
+          >
+            {playingSetlist ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} className="fill-current" />}
+          </RowActionButton>
+          <RowActionButton
+            onClick={(event) => {
+              void toggleAttendance();
+              event.stopPropagation();
+            }}
+            disabled={!item.id || savingAttendance}
+            title={attending ? "Attending" : "Mark as attending"}
+            active={attending}
+          >
+            {savingAttendance ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+          </RowActionButton>
+          <RowActionLink
+            href={item.url}
+            onClick={(event) => {
+              if (!item.url) {
+                event.preventDefault();
+              }
+              event.stopPropagation();
+            }}
+            title="Tickets"
+          >
+            <Ticket size={14} />
+          </RowActionLink>
+        </div>
         </div>
       ) : null}
 
-      <div className="relative z-10 flex min-h-[310px] items-end px-4 pb-4 pt-24">
-        <div className="flex w-full items-end gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="mb-3 flex items-center gap-3">
-              <img
-                src={`/api/artist/${encPath(item.artist)}/photo`}
-                alt=""
-                className="h-12 w-12 rounded-full object-cover ring-2 ring-amber-500/30"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
-              <div className="min-w-0">
-                <Link
-                  to={`/artist/${encPath(item.artist)}`}
-                  className="block truncate text-xl font-bold text-white transition-colors hover:text-amber-300"
-                >
-                  {item.artist}
-                </Link>
-                {item.genres?.length ? (
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {item.genres.slice(0, 4).map((genre) => (
-                      <span
-                        key={genre}
-                        className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/55"
+      {expanded ? (
+        <>
+          <button
+            onClick={onToggle}
+            className="absolute top-3 right-3 z-[1000] rounded-full bg-black/60 p-1.5 transition-colors hover:bg-black/80"
+          >
+            <X size={14} className="text-white" />
+          </button>
+
+          {item.venue ? (
+            <div className="absolute top-3 left-3 z-[1000] max-w-[220px] rounded-lg bg-black/70 px-3 py-2 backdrop-blur-sm">
+              <div className="flex items-center gap-1.5">
+                <MapPin size={12} className="text-primary flex-shrink-0" />
+                <div className="truncate text-xs font-semibold text-white">{item.venue}</div>
+              </div>
+              <div className="ml-[18px] text-[10px] text-white/50">{location}</div>
+            </div>
+          ) : null}
+
+          <div className="absolute top-12 right-3 z-[1000] flex flex-col gap-2">
+            <RowActionButton
+              onClick={() => {
+                void playProbableSetlist();
+              }}
+              disabled={!item.probable_setlist?.length || playingSetlist}
+              title="Play probable setlist"
+            >
+              {playingSetlist ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} className="fill-current" />}
+            </RowActionButton>
+            <RowActionButton
+              onClick={toggleAttendance}
+              disabled={!item.id || savingAttendance}
+              title={attending ? "Attending" : "Mark as attending"}
+              active={attending}
+            >
+              {savingAttendance ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />}
+            </RowActionButton>
+            <RowActionLink
+              href={item.url}
+              onClick={(event) => {
+                if (!item.url) event.preventDefault();
+              }}
+              title="Tickets"
+            >
+              <Ticket size={15} />
+            </RowActionLink>
+          </div>
+
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-[1000] bg-gradient-to-t from-black/90 via-black/70 to-transparent pt-16 pb-4 px-4">
+            <div className="pointer-events-none flex items-end gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2.5 mb-1">
+                  <img
+                    src={`/api/artist/${encPath(item.artist)}/photo`}
+                    alt=""
+                    className="w-10 h-10 rounded-full object-cover ring-2 ring-primary/30 flex-shrink-0"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                  <Link
+                    to={`/artist/${encPath(item.artist)}`}
+                    className="pointer-events-auto text-xl font-bold text-white transition-colors hover:text-primary"
+                  >
+                    {item.artist}
+                  </Link>
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                  {item.genres?.slice(0, 3).map((genre) => (
+                    <span
+                      key={genre}
+                      className="rounded-full border border-white/20 px-2 py-0.5 text-[9px] text-white/70"
+                    >
+                      {genre}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="mt-2 flex items-center gap-4 text-xs text-white/70">
+                  <span className="flex items-center gap-1">
+                    <Calendar size={12} className="text-primary" /> {dateStr}
+                  </span>
+                  {timeStr ? (
+                    <span className="flex items-center gap-1">
+                      <Clock size={12} className="text-primary" /> {timeStr}
+                    </span>
+                  ) : null}
+                </div>
+
+                {item.lineup && item.lineup.length > 1 ? (
+                  <div className="mt-2 flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] text-white/40">Lineup:</span>
+                    {item.lineup.slice(0, 5).map((name) => (
+                      <Link
+                        key={name}
+                        to={`/artist/${encPath(name)}`}
+                        className="pointer-events-auto flex items-center gap-1 text-[11px] text-white/80 transition-colors hover:text-primary"
                       >
-                        {genre}
-                      </span>
+                        <img
+                          src={`/api/artist/${encPath(name)}/photo`}
+                          alt=""
+                          className="w-4 h-4 rounded-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none";
+                          }}
+                        />
+                        {name}
+                      </Link>
                     ))}
                   </div>
                 ) : null}
               </div>
             </div>
-
-            <div className="flex flex-wrap items-center gap-4 text-xs text-white/70">
-              <span className="inline-flex items-center gap-1">
-                <Calendar size={12} className="text-amber-400" />
-                {dateStr}
-              </span>
-              {timeStr ? (
-                <span className="inline-flex items-center gap-1">
-                  <Clock size={12} className="text-amber-400" />
-                  {timeStr}
-                </span>
-              ) : null}
-              {location ? (
-                <span className="inline-flex items-center gap-1">
-                  <MapPin size={12} className="text-amber-400" />
-                  {location}
-                </span>
-              ) : null}
-            </div>
-
-            {item.lineup && item.lineup.length > 1 ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-[10px] uppercase tracking-wide text-white/35">Lineup</span>
-                {item.lineup.slice(0, 6).map((name) => (
-                  <Link
-                    key={name}
-                    to={`/artist/${encPath(name)}`}
-                    className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/75 transition-colors hover:text-white"
-                  >
-                    <Music4 size={11} className="text-amber-400/80" />
-                    {name}
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-
-            {item.probable_setlist?.length ? (
-              <div className="mt-4">
-                <div className="mb-2 text-[10px] uppercase tracking-[0.18em] text-white/35">
-                  Probable setlist
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {item.probable_setlist.slice(0, 8).map((song, index) => (
-                    <span
-                      key={song.title}
-                      className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] text-white/75"
-                    >
-                      {song.position ?? index + 1}. {song.title}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
-
-          <div className="flex flex-shrink-0 flex-col items-stretch gap-2">
-            {item.id ? (
-              <button
-                onClick={toggleAttendance}
-                disabled={savingAttendance}
-                className={cn(
-                  "inline-flex items-center justify-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-colors",
-                  attending
-                    ? "border-primary/30 bg-primary/15 text-primary hover:bg-primary/20"
-                    : "border-white/15 bg-black/35 text-white hover:bg-black/55",
-                )}
-              >
-                {savingAttendance ? <Loader2 size={15} className="animate-spin" /> : null}
-                {attending ? "You're going" : "I'm going"}
-              </button>
-            ) : null}
-            {item.url ? (
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-amber-400"
-              >
-                <Ticket size={15} />
-                Tickets
-              </a>
-            ) : null}
-          </div>
-        </div>
-      </div>
+        </>
+      ) : null}
     </div>
   );
 }

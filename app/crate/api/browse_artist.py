@@ -22,6 +22,74 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _normalize_song_title(value: str) -> str:
+    return (
+        (value or "")
+        .lower()
+        .replace("’", "'")
+        .replace("`", "'")
+        .replace("\"", "")
+        .replace("(", " ")
+        .replace(")", " ")
+        .replace("[", " ")
+        .replace("]", " ")
+        .replace("-", " ")
+        .replace("_", " ")
+        .strip()
+    )
+
+
+def _match_setlist_track(
+    song_title: str,
+    tracks: list[dict],
+    used_ids: set[int],
+) -> dict | None:
+    normalized_target = " ".join(_normalize_song_title(song_title).split())
+    if not normalized_target:
+        return None
+
+    def unused(track: dict) -> bool:
+        return track.get("id") not in used_ids
+
+    exact = next(
+        (
+            track
+            for track in tracks
+            if unused(track) and (track.get("title") or "").lower() == song_title.lower()
+        ),
+        None,
+    )
+    if exact:
+        return exact
+
+    normalized = next(
+        (
+            track
+            for track in tracks
+            if unused(track)
+            and " ".join(_normalize_song_title(track.get("title") or "").split()) == normalized_target
+        ),
+        None,
+    )
+    if normalized:
+        return normalized
+
+    contains = next(
+        (
+            track
+            for track in tracks
+            if unused(track)
+            and (
+                " ".join(_normalize_song_title(track.get("title") or "").split()).startswith(normalized_target)
+                or normalized_target.startswith(" ".join(_normalize_song_title(track.get("title") or "").split()))
+                or normalized_target in " ".join(_normalize_song_title(track.get("title") or "").split())
+            )
+        ),
+        None,
+    )
+    return contains
+
+
 @router.get("/api/browse/filters")
 def api_browse_filters(request: Request):
     """Available filter options for the browse page."""
@@ -470,6 +538,58 @@ def api_artist_track_titles(request: Request, name: str):
         )
         rows = cur.fetchall()
     return [{"title": row["title"], "album": row["album"], "path": row["path"]} for row in rows]
+
+
+@router.get("/api/artist/{name}/setlist-playable")
+def api_artist_setlist_playable(request: Request, name: str):
+    _require_auth(request)
+    from crate import setlistfm
+
+    probable_setlist = setlistfm.get_probable_setlist(name) or []
+    if not probable_setlist:
+        return {"tracks": []}
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                t.id,
+                t.title,
+                t.path,
+                t.album,
+                t.duration,
+                t.navidrome_id
+            FROM library_tracks t
+            JOIN library_albums a ON a.id = t.album_id
+            WHERE a.artist = %s
+            ORDER BY a.year NULLS LAST, a.name, t.track_no NULLS LAST, t.title
+            """,
+            (name,),
+        )
+        library_tracks = [dict(row) for row in cur.fetchall()]
+
+    used_ids: set[int] = set()
+    matched_tracks: list[dict] = []
+    for song in probable_setlist:
+        match = _match_setlist_track(song.get("title", ""), library_tracks, used_ids)
+        if not match:
+            continue
+        used_ids.add(match["id"])
+        matched_tracks.append(
+            {
+                "library_track_id": match["id"],
+                "title": match.get("title", ""),
+                "artist": name,
+                "album": match.get("album", ""),
+                "path": match.get("path", ""),
+                "duration": match.get("duration"),
+                "navidrome_id": match.get("navidrome_id"),
+                "setlist_title": song.get("title", ""),
+                "position": song.get("position"),
+            }
+        )
+
+    return {"tracks": matched_tracks}
 
 
 @router.get("/api/upcoming")

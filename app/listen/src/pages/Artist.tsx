@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import {
   ChevronDown,
   Play,
@@ -79,11 +79,13 @@ function shuffleArray<T>(items: T[]): T[] {
 }
 
 export function Artist() {
+  const navigate = useNavigate();
   const { name } = useParams<{ name: string }>();
   const decodedName = decodeURIComponent(name || "");
   const [bioModalOpen, setBioModalOpen] = useState(false);
   const [expandedShowId, setExpandedShowId] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
+  const [localSimilarArtists, setLocalSimilarArtists] = useState<Record<string, boolean>>({});
   const { playAll } = usePlayerActions();
 
   useEffect(() => {
@@ -198,6 +200,63 @@ export function Artist() {
     playAll(queue, shuffle ? 0 : startIndex, { type: "album", name: `${decodedName} Top Tracks` });
   }
 
+  function genreSlug(name: string) {
+    return name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/[\s-]+/g, "-");
+  }
+
+  const similarArtists = info?.similar ?? [];
+  const artistShowItems = (showsData?.events ?? []).map(artistShowToUpcomingItem);
+  const albumsSorted = [...(data?.albums ?? [])].sort((a, b) => {
+    const ya = parseInt(a.year) || 0;
+    const yb = parseInt(b.year) || 0;
+    return yb - ya;
+  });
+  const hasTopTracks = Boolean(topTracks && topTracks.length > 0);
+  const previewTopTracks = (topTracks ?? []).slice(0, 5);
+  const hasAlbums = albumsSorted.length > 0;
+  const visibleShowItems = [...artistShowItems]
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
+    .slice(0, 5);
+  const hasShows = visibleShowItems.length > 0;
+  const hasRelated = similarArtists.length > 0;
+
+  useEffect(() => {
+    if (!similarArtists.length) {
+      setLocalSimilarArtists({});
+      return;
+    }
+
+    let cancelled = false;
+    const artistsToCheck = similarArtists.slice(0, 18);
+
+    Promise.all(
+      artistsToCheck.map(async (artist) => {
+        try {
+          const response = await api<{ items?: { name: string }[] }>(
+            `/api/artists?q=${encodeURIComponent(artist.name)}&per_page=10&view=list`,
+          );
+          const exists = Boolean(
+            response.items?.some((item) => item.name.toLowerCase() === artist.name.toLowerCase()),
+          );
+          return [artist.name, exists] as const;
+        } catch {
+          return [artist.name, false] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (cancelled) return;
+      setLocalSimilarArtists(Object.fromEntries(entries));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [similarArtists]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -216,15 +275,7 @@ export function Artist() {
 
   const photoUrl = `/api/artist/${encPath(data.name)}/photo`;
   const tags = data.genres.length > 0 ? data.genres : (info?.tags ?? []);
-  const similarArtists = info?.similar ?? [];
   const bio = info?.bio ?? "";
-  const artistShowItems = (showsData?.events ?? []).map(artistShowToUpcomingItem);
-
-  const albumsSorted = [...data.albums].sort((a, b) => {
-    const ya = parseInt(a.year) || 0;
-    const yb = parseInt(b.year) || 0;
-    return yb - ya;
-  });
 
   return (
     <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6">
@@ -283,12 +334,13 @@ export function Artist() {
               {tags.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-4">
                   {tags.slice(0, 8).map((tag) => (
-                    <span
+                    <button
                       key={tag}
-                      className="px-2 py-0.5 text-xs rounded-full bg-white/8 text-muted-foreground border border-white/10"
+                      className="px-2 py-0.5 text-xs rounded-full bg-white/8 text-muted-foreground border border-white/10 transition-colors hover:bg-white/12 hover:text-white"
+                      onClick={() => navigate(`/explore?genre=${encodeURIComponent(genreSlug(tag))}`)}
                     >
                       {tag}
-                    </span>
+                    </button>
                   ))}
                 </div>
               )}
@@ -340,19 +392,19 @@ export function Artist() {
       </div>
 
       <div className="px-4 sm:px-6 pb-8 space-y-8">
-        {topTracks && topTracks.length > 0 && (
+        {hasTopTracks && (
           <section>
             <div className="flex items-center justify-between gap-4 mb-4">
               <h2 className="text-lg font-semibold text-foreground">Top Tracks</h2>
               <button
                 className="text-sm text-primary hover:underline"
-                onClick={() => handlePlayTopTracks()}
+                onClick={() => navigate(`/artist/${encPath(decodedName)}/top-tracks`)}
               >
-                Play Top Tracks
+                View all
               </button>
             </div>
             <div className="rounded-xl bg-white/[0.02] border border-white/5">
-              {topTracks.map((track, index) => (
+              {previewTopTracks.map((track, index) => (
                 <TrackRow
                   key={`${track.id}-${index}`}
                   track={{
@@ -376,7 +428,7 @@ export function Artist() {
           </section>
         )}
 
-        {albumsSorted.length > 0 && (
+        {hasAlbums && (
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-4">Albums</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
@@ -394,11 +446,11 @@ export function Artist() {
           </section>
         )}
 
-        {artistShowItems.length > 0 && (
+        {hasShows && (
           <section>
-            <h2 className="text-lg font-semibold text-foreground mb-4">Upcoming Shows</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-4">Shows</h2>
             <div className="space-y-3">
-              {groupByMonth(artistShowItems).map(([month, monthItems]) => (
+              {groupByMonth(visibleShowItems).map(([month, monthItems]) => (
                 <UpcomingMonthGroup
                   key={month}
                   month={month}
@@ -411,12 +463,23 @@ export function Artist() {
           </section>
         )}
 
-        {similarArtists.length > 0 && (
+        {hasRelated && (
           <section>
             <h2 className="text-lg font-semibold text-foreground mb-4">Related Artists</h2>
-            <div className="flex gap-4 overflow-x-auto pb-2 -mx-4 px-4 sm:-mx-6 sm:px-6 scrollbar-hide">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {similarArtists.slice(0, 15).map((artist) => (
-                <ArtistCard key={artist.name} name={artist.name} compact />
+                <ArtistCard
+                  key={artist.name}
+                  name={artist.name}
+                  subtitle={artist.match ? `${Math.round(artist.match * 100)}% match` : undefined}
+                  href={
+                    localSimilarArtists[artist.name]
+                      ? `/artist/${encPath(artist.name)}`
+                      : `https://www.last.fm/music/${encodeURIComponent(artist.name)}`
+                  }
+                  external={!localSimilarArtists[artist.name]}
+                  large
+                />
               ))}
             </div>
           </section>
@@ -444,12 +507,13 @@ export function Artist() {
                 {tags.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-3">
                     {tags.map((tag) => (
-                      <span
+                      <button
                         key={tag}
-                        className="px-2 py-0.5 text-xs rounded-full bg-white/8 text-muted-foreground border border-white/10"
+                        className="px-2 py-0.5 text-xs rounded-full bg-white/8 text-muted-foreground border border-white/10 transition-colors hover:bg-white/12 hover:text-white"
+                        onClick={() => navigate(`/explore?genre=${encodeURIComponent(genreSlug(tag))}`)}
                       >
                         {tag}
-                      </span>
+                      </button>
                     ))}
                   </div>
                 )}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
 import {
   Home, Compass, Rss, Library, Music, Disc, Heart, Users,
   ListMusic, PanelLeftClose, PanelLeftOpen, ChevronRight,
@@ -177,9 +177,16 @@ const MOBILE_NAV = [
 
 export function Shell() {
   const isDesktop = useIsDesktop();
+  const location = useLocation();
   const { currentTrack } = usePlayerActions();
   const hasTrack = !!currentTrack;
   const [sidebarExpanded, setSidebarExpanded] = useState(getStoredExpanded);
+  const overlayHeader =
+    /^\/artist\/[^/]+$/.test(location.pathname) ||
+    /^\/artist\/[^/]+\/top-tracks$/.test(location.pathname) ||
+    /^\/album\/[^/]+\/[^/]+$/.test(location.pathname);
+  const headerOffsetClass = overlayHeader ? "" : "pt-16";
+  const headerChromeClass = "bg-transparent border-transparent border-b-0 shadow-none backdrop-blur-0";
 
   // Sync with sidebar toggle (Sidebar writes to localStorage, we poll)
   useEffect(() => {
@@ -191,18 +198,18 @@ export function Shell() {
   const sidebarW = sidebarExpanded ? "ml-52" : "ml-14";
 
   if (isDesktop) {
-    return (
+      return (
       <div className="flex min-h-screen bg-[#0a0a0f]">
         <Sidebar />
 
-        {/* TopBar floating over content */}
-        <div className={`fixed top-0 ${sidebarW} right-0 z-30 transition-all duration-200`}>
+        <div
+          className={`fixed top-0 ${sidebarW} right-0 z-30 transition-all duration-200 ${headerChromeClass}`}
+        >
           <TopBar />
         </div>
 
-        {/* Main content */}
         <main className={`flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[80px]" : ""}`}>
-          <div className="p-6">
+          <div className={`p-6 ${headerOffsetClass}`}>
             <Outlet />
           </div>
         </main>
@@ -215,12 +222,12 @@ export function Shell() {
   // Mobile layout
   return (
     <div className="flex flex-col min-h-screen bg-[#0a0a0f]">
-      <div className="fixed top-0 left-0 right-0 z-30">
+      <div className={`fixed top-0 left-0 right-0 z-30 ${headerChromeClass}`}>
         <TopBar />
       </div>
 
       <main className={`flex-1 overflow-x-hidden ${hasTrack ? "pb-[116px]" : "pb-16"}`}>
-        <div className="p-4">
+        <div className={`p-4 ${headerOffsetClass}`}>
           <Outlet />
         </div>
       </main>

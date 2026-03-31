@@ -71,7 +71,7 @@ export function Shows() {
           {summary ? (
             <>
               <SummaryPill label="Followed artists" value={summary.followed_artists} />
-              <SummaryPill label="Shows" value={summary.show_count} accent="amber" />
+              <SummaryPill label="Shows" value={summary.show_count} accent="cyan" />
               <SummaryPill label="Releases" value={summary.release_count} accent="cyan" />
             </>
           ) : null}
@@ -183,14 +183,12 @@ function SummaryPill({
 }: {
   label: string;
   value: number;
-  accent?: "neutral" | "amber" | "cyan";
+  accent?: "neutral" | "cyan";
 }) {
   const accentClass =
-    accent === "amber"
-      ? "border-amber-500/20 text-amber-300"
-      : accent === "cyan"
-        ? "border-primary/20 text-primary"
-        : "border-white/10 text-white/60";
+    accent === "cyan"
+      ? "border-primary/20 text-primary"
+      : "border-white/10 text-white/60";
 
   return (
     <div className={cn("rounded-2xl border bg-white/[0.03] px-3 py-2", accentClass)}>

@@ -183,7 +183,7 @@ export function TopBar() {
   const userInitial = userName ? userName.charAt(0).toUpperCase() : null;
 
   return (
-    <div className="flex items-center gap-4 px-4 py-3 pointer-events-none">
+    <div className="flex h-16 items-center gap-4 px-4 pointer-events-none">
       <div className="pointer-events-auto flex items-center gap-2">
         <button
           onClick={() => navigate(-1)}
