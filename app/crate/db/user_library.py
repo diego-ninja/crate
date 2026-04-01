@@ -780,6 +780,51 @@ def get_top_genres(user_id: int, window: str = "30d", limit: int = 20) -> list[d
         return [dict(row) for row in cur.fetchall()]
 
 
+def get_replay_mix(user_id: int, window: str = "30d", limit: int = 30) -> dict:
+    normalized = _normalize_stats_window(window)
+    candidate_limit = max(limit * 4, 60)
+    candidates = get_top_tracks(user_id, window=normalized, limit=candidate_limit)
+
+    items: list[dict] = []
+    artist_counts: dict[str, int] = {}
+    for row in candidates:
+        artist_name = row.get("artist") or ""
+        if artist_name and artist_counts.get(artist_name, 0) >= 4:
+            continue
+        items.append(row)
+        if artist_name:
+            artist_counts[artist_name] = artist_counts.get(artist_name, 0) + 1
+        if len(items) >= limit:
+            break
+
+    if normalized == "7d":
+        title = "Your last 7 days"
+        subtitle = "A quick replay of the week so far."
+    elif normalized == "30d":
+        title = "Replay this month"
+        subtitle = "The tracks that defined your last 30 days."
+    elif normalized == "90d":
+        title = "Replay this season"
+        subtitle = "The songs you've kept coming back to lately."
+    elif normalized == "365d":
+        title = "Replay this year"
+        subtitle = "A long-view mix from your past year."
+    else:
+        title = "All-time replay"
+        subtitle = "Your enduring favorites across the whole library."
+
+    total_minutes = round(sum(float(item.get("minutes_listened") or 0) for item in items), 1)
+
+    return {
+        "window": normalized,
+        "title": title,
+        "subtitle": subtitle,
+        "track_count": len(items),
+        "minutes_listened": total_minutes,
+        "items": items,
+    }
+
+
 # ── User Library Summary ─────────────────────────────────────
 
 def get_user_library_counts(user_id: int) -> dict:

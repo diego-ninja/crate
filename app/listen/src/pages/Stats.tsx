@@ -1,6 +1,6 @@
 import { Children, type ReactNode, useMemo, useState } from "react";
 import { ResponsiveLine } from "@nivo/line";
-import { BarChart3, Clock3, Disc3, Music2, SkipForward, TrendingUp, User2 } from "lucide-react";
+import { BarChart3, Clock3, Disc3, Music2, Play, SkipForward, TrendingUp, User2 } from "lucide-react";
 import { Link } from "react-router";
 
 import { useApi } from "@/hooks/use-api";
@@ -72,6 +72,15 @@ interface StatsGenre {
 interface StatsListResponse<T> {
   window: StatsWindow;
   items: T[];
+}
+
+interface ReplayMix {
+  window: StatsWindow;
+  title: string;
+  subtitle: string;
+  track_count: number;
+  minutes_listened: number;
+  items: StatsTrack[];
 }
 
 const WINDOW_OPTIONS: { value: StatsWindow; label: string }[] = [
@@ -265,32 +274,45 @@ function TrendChart({ points }: { points: StatsTrendPoint[] }) {
 
 export function Stats() {
   const [window, setWindow] = useState<StatsWindow>("30d");
-  const { play } = usePlayerActions();
+  const { play, playAll } = usePlayerActions();
   const { data: overview, loading: overviewLoading } = useApi<StatsOverview>(`/api/me/stats/overview?window=${window}`);
   const { data: trends, loading: trendsLoading } = useApi<StatsTrends>(`/api/me/stats/trends?window=${window}`);
   const { data: topTracks, loading: tracksLoading } = useApi<StatsListResponse<StatsTrack>>(`/api/me/stats/top-tracks?window=${window}&limit=10`);
   const { data: topArtists, loading: artistsLoading } = useApi<StatsListResponse<StatsArtist>>(`/api/me/stats/top-artists?window=${window}&limit=8`);
   const { data: topAlbums, loading: albumsLoading } = useApi<StatsListResponse<StatsAlbum>>(`/api/me/stats/top-albums?window=${window}&limit=8`);
   const { data: topGenres, loading: genresLoading } = useApi<StatsListResponse<StatsGenre>>(`/api/me/stats/top-genres?window=${window}&limit=8`);
+  const { data: replay, loading: replayLoading } = useApi<ReplayMix>(`/api/me/stats/replay?window=${window}&limit=30`);
 
   const topTrackItems = topTracks?.items ?? [];
   const topArtistItems = topArtists?.items ?? [];
   const topAlbumItems = topAlbums?.items ?? [];
   const topGenreItems = topGenres?.items ?? [];
+  const replayItems = replay?.items ?? [];
+
+  const toPlayerTrack = (item: StatsTrack): Track => ({
+    id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
+    title: item.title,
+    artist: item.artist,
+    album: item.album,
+    path: item.track_path || undefined,
+    libraryTrackId: item.track_id || undefined,
+  });
 
   const playTopTrack = (item: StatsTrack) => {
-    const track: Track = {
-      id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
-      title: item.title,
-      artist: item.artist,
-      album: item.album,
-      path: item.track_path || undefined,
-      libraryTrackId: item.track_id || undefined,
-    };
+    const track = toPlayerTrack(item);
     play(track, { type: "track", name: item.title, id: item.track_id ?? item.track_path });
   };
 
-  const loading = overviewLoading || trendsLoading || tracksLoading || artistsLoading || albumsLoading || genresLoading;
+  const playReplay = () => {
+    if (!replayItems.length) return;
+    playAll(
+      replayItems.map(toPlayerTrack),
+      0,
+      { type: "playlist", name: replay?.title || "Replay" },
+    );
+  };
+
+  const loading = overviewLoading || trendsLoading || tracksLoading || artistsLoading || albumsLoading || genresLoading || replayLoading;
 
   return (
     <div className="space-y-8">
@@ -334,6 +356,61 @@ export function Stats() {
           hint={overview?.top_artist ? `${overview.top_artist.play_count} plays` : "No artist data yet"}
         />
       </div>
+
+      <Section
+        title={replay?.title || "Replay"}
+        subtitle={replay?.subtitle || "Turn this listening window into a playable recap."}
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Tracks</div>
+              <div className="mt-1 text-lg font-semibold text-foreground">{replay?.track_count ?? 0}</div>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Minutes</div>
+              <div className="mt-1 text-lg font-semibold text-foreground">{formatMinutes(replay?.minutes_listened ?? 0)}</div>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Window</div>
+              <div className="mt-1 text-lg font-semibold text-foreground">{WINDOW_OPTIONS.find((item) => item.value === window)?.label ?? window}</div>
+            </div>
+          </div>
+
+          <button
+            onClick={playReplay}
+            disabled={!replayItems.length}
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          >
+            <Play size={14} fill="currentColor" />
+            Play replay
+          </button>
+        </div>
+
+        {replayItems.length > 0 ? (
+          <div className="mt-5 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {replayItems.slice(0, 6).map((item, index) => (
+              <button
+                key={`${item.track_id ?? item.track_path ?? item.title}-${index}`}
+                onClick={() => playTopTrack(item)}
+                className="flex items-center gap-3 rounded-xl border border-transparent bg-black/10 px-3 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/5"
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
+                  {index + 1}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
+                  <div className="truncate text-xs text-muted-foreground">{item.artist}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-muted-foreground">
+            Keep listening and your replay object will start to take shape.
+          </div>
+        )}
+      </Section>
 
       <Section
         title="Daily trend"

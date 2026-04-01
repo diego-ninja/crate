@@ -372,6 +372,17 @@ def stats_top_genres(request: Request, window: str = Query("30d"), limit: int = 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/stats/replay")
+def stats_replay(request: Request, window: str = Query("30d"), limit: int = Query(30, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_replay_mix
+
+    try:
+        return get_replay_mix(user["id"], window=window, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/play-events")
 def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
     user = _require_auth(request)

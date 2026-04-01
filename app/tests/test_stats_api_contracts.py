@@ -53,3 +53,29 @@ class TestStatsApiContracts:
 
         assert resp.status_code == 400
         assert resp.json()["detail"] == "Unsupported stats window: banana"
+
+    def test_stats_replay_returns_playable_payload(self, test_app):
+        payload = {
+            "window": "30d",
+            "title": "Replay this month",
+            "subtitle": "The tracks that defined your last 30 days.",
+            "track_count": 2,
+            "minutes_listened": 42.5,
+            "items": [{
+                "track_id": 99,
+                "track_path": "/music/Converge/Jane Doe/01 - Concubine.flac",
+                "title": "Concubine",
+                "artist": "Converge",
+                "album": "Jane Doe",
+                "play_count": 7,
+                "complete_play_count": 3,
+                "minutes_listened": 8.2,
+            }],
+        }
+
+        with patch("crate.db.user_library.get_replay_mix", return_value=payload) as mock_get:
+            resp = test_app.get("/api/me/stats/replay?window=30d&limit=25")
+
+        assert resp.status_code == 200
+        assert resp.json() == payload
+        mock_get.assert_called_once_with(1, window="30d", limit=25)

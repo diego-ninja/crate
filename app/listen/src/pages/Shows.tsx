@@ -5,12 +5,12 @@ import { usePlayerActions } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
 import { cn } from "@/lib/utils";
 import {
-  fetchPlayableSetlist,
   groupByMonth,
   UpcomingMonthGroup,
   type UpcomingItem,
 } from "@/components/upcoming/UpcomingRows";
 import { api } from "@/lib/api";
+import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { toast } from "sonner";
 
 interface UpcomingInsight {

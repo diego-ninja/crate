@@ -16,8 +16,9 @@ import "leaflet/dist/leaflet.css";
 import { toast } from "sonner";
 
 import { api } from "@/lib/api";
+import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { cn, encPath } from "@/lib/utils";
-import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { usePlayerActions } from "@/contexts/PlayerContext";
 
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -259,33 +260,6 @@ export function UpcomingMonthGroup({
       </div>
     </div>
   );
-}
-
-export async function fetchPlayableSetlist(artist: string): Promise<Track[]> {
-  const response = await api<{
-    tracks: {
-      library_track_id: number;
-      title: string;
-      artist: string;
-      album: string;
-      path: string;
-      duration?: number;
-      navidrome_id?: string;
-    }[];
-  }>(`/api/artist/${encPath(artist)}/setlist-playable`);
-
-  return (response.tracks || []).map((track) => ({
-    id: track.path || track.navidrome_id || String(track.library_track_id),
-    title: track.title,
-    artist: track.artist,
-    album: track.album,
-    albumCover: track.album
-      ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
-      : `/api/artist/${encPath(track.artist)}/photo`,
-    path: track.path || undefined,
-    navidromeId: track.navidrome_id || undefined,
-    libraryTrackId: track.library_track_id,
-  }));
 }
 
 export function UpcomingEventRow({

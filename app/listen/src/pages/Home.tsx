@@ -13,6 +13,7 @@ import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
+import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
@@ -99,12 +100,27 @@ interface UpcomingItem {
   user_attending?: boolean;
 }
 
+interface UpcomingInsight {
+  type: "one_month" | "one_week" | "show_prep";
+  show_id: number;
+  artist: string;
+  date: string;
+  title: string;
+  subtitle: string;
+  message: string;
+  has_setlist?: boolean;
+  weight?: "normal" | "high";
+}
+
 interface UpcomingResponse {
   items: UpcomingItem[];
+  insights: UpcomingInsight[];
   summary: {
     followed_artists: number;
     show_count: number;
     release_count: number;
+    attending_count: number;
+    insight_count: number;
   };
 }
 
@@ -352,6 +368,7 @@ export function Home() {
         day: "numeric",
       })
     : null;
+  const homeInsights = (upcoming?.insights || []).slice(0, 2);
   const libraryAdditions: LibraryAddition[] = [
     ...((playlists || []).map((playlist) => ({
       type: "playlist" as const,
@@ -427,6 +444,35 @@ export function Home() {
       refetchFollowedCurated();
     } catch {
       toast.error("Failed to update playlist");
+    }
+  }
+
+  async function acknowledgeInsight(insight: UpcomingInsight) {
+    try {
+      await api(`/api/me/shows/${insight.show_id}/reminders`, "POST", {
+        reminder_type: insight.type,
+      });
+      toast.success("Saved for later");
+      navigate("/upcoming");
+    } catch {
+      toast.error("Failed to save reminder");
+    }
+  }
+
+  async function playInsightSetlist(insight: UpcomingInsight) {
+    try {
+      const queue = await fetchPlayableSetlist(insight.artist);
+      if (!queue.length) {
+        toast.info("No probable setlist tracks matched your library");
+        return;
+      }
+      playAll(queue, 0, { type: "playlist", name: `${insight.artist} Probable Setlist` });
+      await api(`/api/me/shows/${insight.show_id}/reminders`, "POST", {
+        reminder_type: insight.type,
+      });
+      toast.success(`Playing probable setlist: ${queue.length} tracks`);
+    } catch {
+      toast.error("Failed to load probable setlist");
     }
   }
 
@@ -574,6 +620,63 @@ export function Home() {
                 ))}
               </div>
             </div>
+          </div>
+        </section>
+      ) : null}
+
+      {homeInsights.length > 0 ? (
+        <section className="space-y-4">
+          <SectionHeader
+            title="Show prep"
+            subtitle="A couple of timely prompts from the shows you're planning to attend."
+            actionLabel="Open Upcoming"
+            onAction={() => navigate("/upcoming")}
+          />
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {homeInsights.map((insight) => (
+              <div
+                key={`${insight.type}:${insight.show_id}`}
+                className="rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.16),transparent_42%),rgba(255,255,255,0.03)] p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-primary">
+                      <Sparkles size={12} />
+                      {insight.type === "show_prep" ? "Show prep" : insight.type === "one_week" ? "This week" : "One month"}
+                    </div>
+                    <h3 className="mt-3 text-lg font-bold text-foreground">{insight.title}</h3>
+                    <p className="mt-1 text-sm text-white/60">{insight.subtitle}</p>
+                  </div>
+                  {insight.weight === "high" ? (
+                    <div className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-primary">
+                      Heavy rotation
+                    </div>
+                  ) : null}
+                </div>
+
+                <p className="mt-4 text-sm leading-6 text-muted-foreground">{insight.message}</p>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {insight.has_setlist ? (
+                    <button
+                      onClick={() => void playInsightSetlist(insight)}
+                      className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                      <Play size={14} fill="currentColor" />
+                      Play probable setlist
+                    </button>
+                  ) : null}
+                  <button
+                    onClick={() => void acknowledgeInsight(insight)}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-white/65 transition-colors hover:border-white/20 hover:text-foreground"
+                  >
+                    <Calendar size={14} />
+                    Save for later
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       ) : null}
