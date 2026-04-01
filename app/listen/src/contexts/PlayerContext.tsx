@@ -36,7 +36,6 @@ import {
   getSmartPlaylistSuggestionsPreference,
   PLAYER_PLAYBACK_PREFS_EVENT,
 } from "@/lib/player-playback-prefs";
-import { fetchInfiniteContinuation, fetchRadioContinuation } from "@/lib/radio";
 export type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
 
 interface PlayerStateValue {
