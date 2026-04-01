@@ -1,8 +1,16 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from crate.config import load_config
 from crate.db.core import get_db_ctx
+
+_STATS_WINDOWS: dict[str, int | None] = {
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+    "365d": 365,
+    "all_time": None,
+}
 
 
 def _library_root() -> Path:
@@ -313,7 +321,211 @@ def record_play_event(
                 created_at,
             ),
         )
-        return cur.fetchone()["id"]
+        event_id = cur.fetchone()["id"]
+        _recompute_user_listening_aggregates(cur, user_id)
+        return event_id
+
+
+def _window_cutoff(days: int | None) -> str | None:
+    if days is None:
+        return None
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+
+def _recompute_user_listening_aggregates(cur, user_id: int):
+    _recompute_user_daily_listening(cur, user_id)
+    for window, days in _STATS_WINDOWS.items():
+        cutoff = _window_cutoff(days)
+        _recompute_user_track_stats(cur, user_id, window, cutoff)
+        _recompute_user_artist_stats(cur, user_id, window, cutoff)
+        _recompute_user_album_stats(cur, user_id, window, cutoff)
+        _recompute_user_genre_stats(cur, user_id, window, cutoff)
+
+
+def _recompute_user_daily_listening(cur, user_id: int):
+    cur.execute("DELETE FROM user_daily_listening WHERE user_id = %s", (user_id,))
+    cur.execute(
+        """
+        INSERT INTO user_daily_listening (
+            user_id,
+            day,
+            play_count,
+            complete_play_count,
+            skip_count,
+            minutes_listened,
+            unique_tracks,
+            unique_artists,
+            unique_albums
+        )
+        SELECT
+            user_id,
+            substring(ended_at, 1, 10) AS day,
+            COUNT(*)::INTEGER AS play_count,
+            SUM(CASE WHEN was_completed THEN 1 ELSE 0 END)::INTEGER AS complete_play_count,
+            SUM(CASE WHEN was_skipped THEN 1 ELSE 0 END)::INTEGER AS skip_count,
+            COALESCE(SUM(played_seconds), 0) / 60.0 AS minutes_listened,
+            COUNT(DISTINCT COALESCE(track_id::text, NULLIF(track_path, ''), 'unknown-track'))::INTEGER AS unique_tracks,
+            COUNT(DISTINCT NULLIF(artist, ''))::INTEGER AS unique_artists,
+            COUNT(DISTINCT NULLIF(CONCAT(COALESCE(artist, ''), '||', COALESCE(album, '')), '||'))::INTEGER AS unique_albums
+        FROM user_play_events
+        WHERE user_id = %s
+        GROUP BY user_id, substring(ended_at, 1, 10)
+        """,
+        (user_id,),
+    )
+
+
+def _window_filter_sql(cutoff: str | None) -> tuple[str, tuple]:
+    if cutoff is None:
+        return "upe.user_id = %s", ()
+    return "upe.user_id = %s AND upe.ended_at >= %s", (cutoff,)
+
+
+def _recompute_user_track_stats(cur, user_id: int, window: str, cutoff: str | None):
+    cur.execute("DELETE FROM user_track_stats WHERE user_id = %s AND window = %s", (user_id, window))
+    where_sql, extra_params = _window_filter_sql(cutoff)
+    cur.execute(
+        f"""
+        INSERT INTO user_track_stats (
+            user_id,
+            window,
+            entity_key,
+            track_id,
+            track_path,
+            title,
+            artist,
+            album,
+            play_count,
+            complete_play_count,
+            minutes_listened,
+            first_played_at,
+            last_played_at
+        )
+        SELECT
+            %s,
+            %s,
+            COALESCE(upe.track_id::text, NULLIF(upe.track_path, ''), 'unknown-track') AS entity_key,
+            MAX(upe.track_id) AS track_id,
+            MAX(upe.track_path) AS track_path,
+            MAX(upe.title) AS title,
+            MAX(upe.artist) AS artist,
+            MAX(upe.album) AS album,
+            COUNT(*)::INTEGER AS play_count,
+            SUM(CASE WHEN upe.was_completed THEN 1 ELSE 0 END)::INTEGER AS complete_play_count,
+            COALESCE(SUM(upe.played_seconds), 0) / 60.0 AS minutes_listened,
+            MIN(upe.started_at) AS first_played_at,
+            MAX(upe.ended_at) AS last_played_at
+        FROM user_play_events upe
+        WHERE {where_sql}
+          AND (upe.track_id IS NOT NULL OR COALESCE(upe.track_path, '') != '')
+        GROUP BY COALESCE(upe.track_id::text, NULLIF(upe.track_path, ''), 'unknown-track')
+        """,
+        (user_id, window, user_id, *extra_params),
+    )
+
+
+def _recompute_user_artist_stats(cur, user_id: int, window: str, cutoff: str | None):
+    cur.execute("DELETE FROM user_artist_stats WHERE user_id = %s AND window = %s", (user_id, window))
+    where_sql, extra_params = _window_filter_sql(cutoff)
+    cur.execute(
+        f"""
+        INSERT INTO user_artist_stats (
+            user_id,
+            window,
+            artist_name,
+            play_count,
+            complete_play_count,
+            minutes_listened,
+            first_played_at,
+            last_played_at
+        )
+        SELECT
+            %s,
+            %s,
+            upe.artist AS artist_name,
+            COUNT(*)::INTEGER AS play_count,
+            SUM(CASE WHEN upe.was_completed THEN 1 ELSE 0 END)::INTEGER AS complete_play_count,
+            COALESCE(SUM(upe.played_seconds), 0) / 60.0 AS minutes_listened,
+            MIN(upe.started_at) AS first_played_at,
+            MAX(upe.ended_at) AS last_played_at
+        FROM user_play_events upe
+        WHERE {where_sql}
+          AND COALESCE(upe.artist, '') != ''
+        GROUP BY upe.artist
+        """,
+        (user_id, window, user_id, *extra_params),
+    )
+
+
+def _recompute_user_album_stats(cur, user_id: int, window: str, cutoff: str | None):
+    cur.execute("DELETE FROM user_album_stats WHERE user_id = %s AND window = %s", (user_id, window))
+    where_sql, extra_params = _window_filter_sql(cutoff)
+    cur.execute(
+        f"""
+        INSERT INTO user_album_stats (
+            user_id,
+            window,
+            entity_key,
+            artist,
+            album,
+            play_count,
+            complete_play_count,
+            minutes_listened,
+            first_played_at,
+            last_played_at
+        )
+        SELECT
+            %s,
+            %s,
+            CONCAT(COALESCE(upe.artist, ''), '||', COALESCE(upe.album, '')) AS entity_key,
+            MAX(upe.artist) AS artist,
+            MAX(upe.album) AS album,
+            COUNT(*)::INTEGER AS play_count,
+            SUM(CASE WHEN upe.was_completed THEN 1 ELSE 0 END)::INTEGER AS complete_play_count,
+            COALESCE(SUM(upe.played_seconds), 0) / 60.0 AS minutes_listened,
+            MIN(upe.started_at) AS first_played_at,
+            MAX(upe.ended_at) AS last_played_at
+        FROM user_play_events upe
+        WHERE {where_sql}
+          AND COALESCE(upe.album, '') != ''
+        GROUP BY CONCAT(COALESCE(upe.artist, ''), '||', COALESCE(upe.album, ''))
+        """,
+        (user_id, window, user_id, *extra_params),
+    )
+
+
+def _recompute_user_genre_stats(cur, user_id: int, window: str, cutoff: str | None):
+    cur.execute("DELETE FROM user_genre_stats WHERE user_id = %s AND window = %s", (user_id, window))
+    where_sql, extra_params = _window_filter_sql(cutoff)
+    cur.execute(
+        f"""
+        INSERT INTO user_genre_stats (
+            user_id,
+            window,
+            genre_name,
+            play_count,
+            complete_play_count,
+            minutes_listened,
+            first_played_at,
+            last_played_at
+        )
+        SELECT
+            %s,
+            %s,
+            lt.genre AS genre_name,
+            COUNT(*)::INTEGER AS play_count,
+            SUM(CASE WHEN upe.was_completed THEN 1 ELSE 0 END)::INTEGER AS complete_play_count,
+            COALESCE(SUM(upe.played_seconds), 0) / 60.0 AS minutes_listened,
+            MIN(upe.started_at) AS first_played_at,
+            MAX(upe.ended_at) AS last_played_at
+        FROM user_play_events upe
+        JOIN library_tracks lt ON lt.id = upe.track_id
+        WHERE {where_sql}
+          AND COALESCE(lt.genre, '') != ''
+        GROUP BY lt.genre
+        """,
+        (user_id, window, user_id, *extra_params),
+    )
 
 
 def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
@@ -343,13 +555,32 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
 def get_play_stats(user_id: int) -> dict:
     """Get listening stats for a user."""
     with get_db_ctx() as cur:
-        cur.execute("SELECT COUNT(*) AS total_plays FROM play_history WHERE user_id = %s", (user_id,))
+        cur.execute(
+            "SELECT COALESCE(SUM(play_count), 0) AS total_plays FROM user_daily_listening WHERE user_id = %s",
+            (user_id,),
+        )
         total = cur.fetchone()["total_plays"]
-        cur.execute("""
-            SELECT artist, COUNT(*) AS plays FROM play_history
-            WHERE user_id = %s GROUP BY artist ORDER BY plays DESC LIMIT 10
-        """, (user_id,))
+        cur.execute(
+            """
+            SELECT artist_name AS artist, play_count AS plays
+            FROM user_artist_stats
+            WHERE user_id = %s AND window = 'all_time'
+            ORDER BY play_count DESC, minutes_listened DESC, artist_name ASC
+            LIMIT 10
+            """,
+            (user_id,),
+        )
         top_artists = [dict(r) for r in cur.fetchall()]
+
+        if not total and not top_artists:
+            cur.execute("SELECT COUNT(*) AS total_plays FROM play_history WHERE user_id = %s", (user_id,))
+            total = cur.fetchone()["total_plays"]
+            cur.execute("""
+                SELECT artist, COUNT(*) AS plays FROM play_history
+                WHERE user_id = %s GROUP BY artist ORDER BY plays DESC LIMIT 10
+            """, (user_id,))
+            top_artists = [dict(r) for r in cur.fetchall()]
+
     return {"total_plays": total, "top_artists": top_artists}
 
 

@@ -86,6 +86,8 @@ A show reminder is more valuable if it knows:
 
 ## Batch 1 - Rich Play Event Tracking
 
+**Current status**: first implementation batch delivered
+
 ### Goal
 
 Replace the current thin play history model with an event model that can support real stats.
@@ -131,6 +133,8 @@ Replace the current thin play history model with an event model that can support
 
 ## Batch 2 - Daily And Windowed Aggregates
 
+**Current status**: first implementation batch delivered
+
 ### Goal
 
 Create fast derived data for overview and trends.
@@ -146,6 +150,13 @@ Create fast derived data for overview and trends.
 - define update strategy:
   - synchronous lightweight update for daily counters where safe
   - background task/materialization refresh for heavier windows
+
+Current implementation notes:
+
+- aggregate tables now exist in the schema
+- aggregates are recomputed per user when a new play event is recorded
+- `GET /api/me/stats` already benefits from aggregate data for all-time totals/top artists
+- this is intentionally synchronous for the first batch and may move to a task/materialization strategy later
 
 ### Windows
 
