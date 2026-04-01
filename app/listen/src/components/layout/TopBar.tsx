@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
-import { Search, Loader2, User, LogOut, Settings, X, Disc, Music, ChevronLeft, ChevronRight, Upload } from "lucide-react";
+import { Search, Loader2, User, LogOut, Settings, X, Disc, Music, ChevronLeft, ChevronRight, Upload, BarChart3 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
@@ -302,6 +302,13 @@ export function TopBar() {
             >
               <Upload size={14} />
               Upload music
+            </AppMenuButton>
+            <AppMenuButton
+              onClick={() => { setShowUserMenu(false); navigate("/stats"); }}
+              className="gap-2.5 px-3 py-2 text-[13px] text-white/70 hover:text-white"
+            >
+              <BarChart3 size={14} />
+              Stats
             </AppMenuButton>
             <AppMenuButton
               onClick={() => { setShowUserMenu(false); navigate("/settings"); }}

@@ -32,6 +32,9 @@ const Playlist = React.lazy(() =>
 const CuratedPlaylist = React.lazy(() =>
   import("@/pages/CuratedPlaylist").then((m) => ({ default: m.CuratedPlaylist })),
 );
+const Stats = React.lazy(() =>
+  import("@/pages/Stats").then((m) => ({ default: m.Stats })),
+);
 
 function Spinner() {
   return (
@@ -77,6 +80,14 @@ export function App() {
                     <Route index element={<Home />} />
                     <Route path="explore" element={<Explore />} />
                     <Route path="library" element={<Library />} />
+                    <Route
+                      path="stats"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <Stats />
+                        </Suspense>
+                      }
+                    />
                     <Route path="upload" element={<Upload />} />
                     <Route path="settings" element={<Settings />} />
                     <Route path="shows" element={<Navigate to="/upcoming" replace />} />

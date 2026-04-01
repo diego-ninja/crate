@@ -230,6 +230,8 @@ Current implementation notes:
 
 ## Batch 4 - Stats UI MVP In Listen
 
+**Current status**: first implementation batch delivered
+
 ### Goal
 
 Ship a first useful stats surface before Wrapped.
@@ -245,6 +247,19 @@ Ship a first useful stats surface before Wrapped.
   - trend chart
   - time-window selector
 - keep the first version functional, not overly narrative
+
+Current implementation notes:
+
+- `listen` now has a first `Stats` page wired to the MVP stats API
+- the first version includes:
+  - overview cards
+  - daily trend chart
+  - top tracks
+  - top artists
+  - top albums
+  - top genres
+  - time-window switching
+- replay objects and narrative recap surfaces are still deferred to later batches
 
 ### Notes
 

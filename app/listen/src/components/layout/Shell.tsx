@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
 import {
   Home, Compass, Rss, Library, Music, Disc, Heart, Users,
-  ListMusic, PanelLeftClose, PanelLeftOpen, ChevronRight,
+  ListMusic, PanelLeftClose, PanelLeftOpen, ChevronRight, BarChart3,
 } from "lucide-react";
 import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { usePlayerActions } from "@/contexts/PlayerContext";
@@ -112,6 +112,17 @@ function Sidebar() {
         >
           <Rss size={20} />
           {expanded && <span className="text-[13px] font-medium">Upcoming</span>}
+        </NavLink>
+
+        <NavLink
+          to="/stats"
+          title="Stats"
+          className={({ isActive }) =>
+            `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
+          }
+        >
+          <BarChart3 size={20} />
+          {expanded && <span className="text-[13px] font-medium">Stats</span>}
         </NavLink>
 
         {/* Collection with popup */}
