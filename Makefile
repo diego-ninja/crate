@@ -101,6 +101,11 @@ dev-test: ## Correr tests en el contenedor dev
 regression-api: ## Contratos backend criticos (Explore/search/system playlists)
 	@$(DC_DEV) exec worker pytest tests/test_explore_contracts.py tests/test_upload_contracts.py -q
 
+.PHONY: regression-radio
+regression-radio: ## Contratos de radio usando una imagen efimera del backend del branch actual
+	@docker build -t crate-radio-tests ./app
+	@docker run --rm --entrypoint pytest crate-radio-tests tests/test_radio_contracts.py -q
+
 .PHONY: regression-smoke
 regression-smoke: ## Smoke real contra el entorno dev autenticado
 	@python3 scripts/regression_smoke.py
