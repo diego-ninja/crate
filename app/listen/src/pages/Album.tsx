@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { Clock, Disc, Heart, ListPlus, MoreHorizontal, Play, Share2, Shuffle, User } from "lucide-react";
+import { Clock, Disc, Heart, ListPlus, MoreHorizontal, Play, Radio, Share2, Shuffle, User } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
@@ -11,6 +11,7 @@ import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
+import { fetchAlbumRadio } from "@/lib/radio";
 import { encPath, formatBadgeClass } from "@/lib/utils";
 
 interface AlbumTrack {
@@ -61,6 +62,17 @@ interface AlbumData {
 interface Playlist {
   id: number;
   name: string;
+}
+
+function shuffleArray<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = copy[i]!;
+    copy[i] = copy[j]!;
+    copy[j] = tmp;
+  }
+  return copy;
 }
 
 function buildPlayerTracks(data: AlbumData): Track[] {
@@ -146,14 +158,47 @@ export function Album() {
   );
 
   const handlePlay = (startIndex = 0) => {
-    if (playerTracks.length > 0) playAll(playerTracks, startIndex);
+    if (playerTracks.length > 0) {
+      playAll(playerTracks, startIndex, {
+        type: "album",
+        name: `${artistName} — ${displayName}`,
+        radio: {
+          seedType: "album",
+          seedId: albumId,
+        },
+      });
+    }
   };
 
   const handleShuffle = () => {
     if (playerTracks.length === 0) return;
-    const shuffled = [...playerTracks].sort(() => Math.random() - 0.5);
-    playAll(shuffled);
+    const shuffled = shuffleArray(playerTracks);
+    playAll(shuffled, 0, {
+      type: "album",
+      name: `${artistName} — ${displayName}`,
+      radio: {
+        seedType: "album",
+        seedId: albumId,
+      },
+    });
   };
+
+  async function handleAlbumRadio() {
+    try {
+      const radio = await fetchAlbumRadio({
+        albumId,
+        artistName,
+        albumName: displayName,
+      });
+      if (!radio.tracks.length) {
+        toast.info("Album radio is not available yet");
+        return;
+      }
+      playAll(radio.tracks, 0, radio.source);
+    } catch {
+      toast.error("Failed to start album radio");
+    }
+  }
 
   const handleAddToQueue = () => {
     playerTracks.forEach((t) => addToQueue(t));
@@ -344,6 +389,13 @@ export function Album() {
         >
           <Shuffle size={15} />
           Shuffle
+        </button>
+        <button
+          className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"
+          onClick={handleAlbumRadio}
+        >
+          <Radio size={15} />
+          Album Radio
         </button>
         <button
           className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"

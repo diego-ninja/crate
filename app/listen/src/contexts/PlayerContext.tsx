@@ -10,8 +10,12 @@ import {
 } from "react";
 import {
   getCrossfadeDurationPreference,
+  getInfinitePlaybackPreference,
+  getSmartPlaylistSuggestionsCadencePreference,
+  getSmartPlaylistSuggestionsPreference,
   PLAYER_PLAYBACK_PREFS_EVENT,
 } from "@/lib/player-playback-prefs";
+import { fetchInfiniteContinuation, fetchRadioContinuation } from "@/lib/radio";
 
 export interface Track {
   id: string;
@@ -22,13 +26,23 @@ export interface Track {
   path?: string;
   navidromeId?: string;
   libraryTrackId?: number;
+  isSuggested?: boolean;
+  suggestionSource?: "playlist";
 }
 
 type RepeatMode = "off" | "one" | "all";
+type RadioSeedType = "track" | "album" | "artist" | "playlist";
+
+interface RadioSession {
+  seedType: RadioSeedType;
+  seedId?: string | number | null;
+  seedPath?: string | null;
+}
 
 export interface PlaySource {
   type: "album" | "playlist" | "radio" | "track" | "queue";
   name: string;
+  radio?: RadioSession;
 }
 
 interface PlayerStateValue {
@@ -93,6 +107,9 @@ const STORAGE_KEY = "listen-player-state";
 const RECENTLY_PLAYED_KEY = "listen-recently-played";
 const MAX_RECENT = 10;
 const NEXT_TRACK_PRELOAD_WINDOW_SECONDS = 15;
+const RADIO_REFILL_THRESHOLD = 3;
+const RADIO_REFILL_BATCH_SIZE = 30;
+const SMART_PLAYLIST_SUGGESTION_BATCH_SIZE = 12;
 const PLAYER_AUDIO_KEY = "__listenPlayerAudio";
 const PLAYER_PRELOAD_AUDIO_KEY = "__listenPlayerPreloadAudio";
 
@@ -162,6 +179,31 @@ function getTrackCacheKey(track: Track): string {
   return [track.libraryTrackId ?? "", track.navidromeId ?? "", track.path ?? "", track.id].join("::");
 }
 
+function getPlaySourceSignature(source: PlaySource | null): string | null {
+  if (!source) return null;
+  return [
+    source.type,
+    source.name,
+    source.radio?.seedType ?? "",
+    source.radio?.seedId ?? "",
+    source.radio?.seedPath ?? "",
+  ].join("::");
+}
+
+function collectUniqueTracks(candidates: Track[], queue: Track[], recent: Track[]): Track[] {
+  const existingKeys = new Set(
+    [...queue, ...recent].map((track) => getTrackCacheKey(track)),
+  );
+  const uniqueTracks: Track[] = [];
+  for (const track of candidates) {
+    const key = getTrackCacheKey(track);
+    if (!key || existingKeys.has(key)) continue;
+    existingKeys.add(key);
+    uniqueTracks.push(track);
+  }
+  return uniqueTracks;
+}
+
 function getPredictableNextTrack(
   queue: Track[],
   currentIndex: number,
@@ -201,6 +243,18 @@ function isContinuousAlbumTransition(
   );
 }
 
+function isLikelyContinuousAlbumBlock(currentTrack: Track | undefined, nextTrack: Track | undefined): boolean {
+  if (!currentTrack || !nextTrack) return false;
+  return (
+    !!currentTrack.album &&
+    !!nextTrack.album &&
+    !!currentTrack.artist &&
+    !!nextTrack.artist &&
+    currentTrack.album === nextTrack.album &&
+    currentTrack.artist === nextTrack.artist
+  );
+}
+
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -219,9 +273,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [repeat, setRepeat] = useState<RepeatMode>("off");
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>(getStoredRecentlyPlayed);
   const [crossfadeSeconds, setCrossfadeSeconds] = useState(getCrossfadeDurationPreference);
+  const [infinitePlaybackEnabled, setInfinitePlaybackEnabled] = useState(getInfinitePlaybackPreference);
+  const [smartPlaylistSuggestionsEnabled, setSmartPlaylistSuggestionsEnabled] = useState(
+    getSmartPlaylistSuggestionsPreference,
+  );
+  const [smartPlaylistSuggestionsCadence, setSmartPlaylistSuggestionsCadence] = useState(
+    getSmartPlaylistSuggestionsCadencePreference,
+  );
   const restoredRef = useRef(stored.current.queue.length > 0);
   const shouldAutoplayRef = useRef(false);
   const lastNonZeroVolumeRef = useRef(Math.max(getStoredVolume(), 0.5));
+  const radioRefillInFlightRef = useRef(false);
+  const radioRefillSignatureRef = useRef<string | null>(null);
+  const continuationInFlightRef = useRef(false);
+  const continuationSignatureRef = useRef<string | null>(null);
+  const playlistSuggestionInFlightRef = useRef(false);
+  const playlistSuggestionSignatureRef = useRef<string | null>(null);
+  const currentIndexRef = useRef(currentIndex);
+  const playSourceRef = useRef(playSource);
+  const queueRef = useRef(queue);
+  const recentlyPlayedRef = useRef(recentlyPlayed);
 
   if (!audioRef.current) {
     audioRef.current = getSharedAudio(PLAYER_AUDIO_KEY);
@@ -233,6 +304,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     preloadAudioRef.current.preload = "auto";
   }
   const audio = audioRef.current;
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+    playSourceRef.current = playSource;
+    queueRef.current = queue;
+    recentlyPlayedRef.current = recentlyPlayed;
+  }, [currentIndex, playSource, queue, recentlyPlayed]);
 
   useEffect(() => {
     saveQueue(queue, currentIndex);
@@ -379,11 +457,31 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const onPrefsChanged = (event: Event) => {
-      const detail = (event as CustomEvent<{ crossfadeSeconds?: number }>).detail;
+      const detail = (event as CustomEvent<{
+        crossfadeSeconds?: number;
+        infinitePlaybackEnabled?: boolean;
+        smartPlaylistSuggestionsEnabled?: boolean;
+        smartPlaylistSuggestionsCadence?: number;
+      }>).detail;
       if (typeof detail?.crossfadeSeconds === "number") {
         setCrossfadeSeconds(detail.crossfadeSeconds);
       } else {
         setCrossfadeSeconds(getCrossfadeDurationPreference());
+      }
+      if (typeof detail?.infinitePlaybackEnabled === "boolean") {
+        setInfinitePlaybackEnabled(detail.infinitePlaybackEnabled);
+      } else {
+        setInfinitePlaybackEnabled(getInfinitePlaybackPreference());
+      }
+      if (typeof detail?.smartPlaylistSuggestionsEnabled === "boolean") {
+        setSmartPlaylistSuggestionsEnabled(detail.smartPlaylistSuggestionsEnabled);
+      } else {
+        setSmartPlaylistSuggestionsEnabled(getSmartPlaylistSuggestionsPreference());
+      }
+      if (typeof detail?.smartPlaylistSuggestionsCadence === "number") {
+        setSmartPlaylistSuggestionsCadence(detail.smartPlaylistSuggestionsCadence);
+      } else {
+        setSmartPlaylistSuggestionsCadence(getSmartPlaylistSuggestionsCadencePreference());
       }
     };
 
@@ -398,6 +496,301 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       clearPreloadedTrack();
     };
   }, [audio, clearPreloadedTrack]);
+
+  useEffect(() => {
+    const currentTrack = queue[currentIndex];
+    if (!isPlaying || !currentTrack) return;
+    if (playSource?.type !== "radio" || !playSource.radio) return;
+
+    const remainingUpcoming = queue.length - currentIndex - 1;
+    if (remainingUpcoming > RADIO_REFILL_THRESHOLD) {
+      radioRefillSignatureRef.current = null;
+      return;
+    }
+    if (radioRefillInFlightRef.current) return;
+
+    const signature = [
+      getPlaySourceSignature(playSource),
+      currentTrack.id,
+      queue.length,
+    ].join("::");
+    if (radioRefillSignatureRef.current === signature) return;
+    radioRefillSignatureRef.current = signature;
+    radioRefillInFlightRef.current = true;
+    const controller = new AbortController();
+
+    fetchRadioContinuation(playSource, RADIO_REFILL_BATCH_SIZE, { signal: controller.signal })
+      .then((tracks) => {
+        if (controller.signal.aborted) return;
+        if (radioRefillSignatureRef.current !== signature) return;
+        if (getPlaySourceSignature(playSourceRef.current) !== getPlaySourceSignature(playSource)) return;
+        setQueue((prev) => {
+          if (radioRefillSignatureRef.current !== signature) return prev;
+          if (getPlaySourceSignature(playSourceRef.current) !== getPlaySourceSignature(playSource)) return prev;
+          const uniqueTracks = collectUniqueTracks(tracks, prev, recentlyPlayedRef.current);
+          return uniqueTracks.length > 0 ? [...prev, ...uniqueTracks] : prev;
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        console.warn("[player] radio refill failed:", error);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          radioRefillInFlightRef.current = false;
+        }
+      });
+    return () => {
+      controller.abort();
+      radioRefillInFlightRef.current = false;
+    };
+  }, [currentIndex, isPlaying, playSource, queue.length]);
+
+  useEffect(() => {
+    const currentTrack = queue[currentIndex];
+    const supportsContinuation =
+      infinitePlaybackEnabled &&
+      !shuffle &&
+      !!currentTrack &&
+      (playSource?.type === "album" || playSource?.type === "playlist") &&
+      !!playSource?.radio?.seedId;
+
+    if (!supportsContinuation) return;
+
+    const remainingUpcoming = queue.length - currentIndex - 1;
+    if (remainingUpcoming > RADIO_REFILL_THRESHOLD) {
+      continuationSignatureRef.current = null;
+      return;
+    }
+    if (continuationInFlightRef.current) return;
+
+    const sessionSignature = getPlaySourceSignature(playSource);
+    const signature = [sessionSignature, currentTrack?.id ?? "", queue.length].join("::");
+    if (continuationSignatureRef.current === signature) return;
+    continuationSignatureRef.current = signature;
+    continuationInFlightRef.current = true;
+    const controller = new AbortController();
+
+    fetchInfiniteContinuation(playSource!, RADIO_REFILL_BATCH_SIZE, { signal: controller.signal })
+      .then((tracks) => {
+        if (controller.signal.aborted) return;
+        if (!tracks.length) return;
+        if (continuationSignatureRef.current !== signature) return;
+        if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return;
+        setQueue((prev) => {
+          if (continuationSignatureRef.current !== signature) return prev;
+          if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return prev;
+          const uniqueTracks = collectUniqueTracks(tracks, prev, recentlyPlayedRef.current);
+          return uniqueTracks.length > 0 ? [...prev, ...uniqueTracks] : prev;
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        console.warn("[player] continuation refill failed:", error);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          continuationInFlightRef.current = false;
+        }
+      });
+    return () => {
+      controller.abort();
+      continuationInFlightRef.current = false;
+    };
+  }, [currentIndex, infinitePlaybackEnabled, playSource, queue.length, shuffle]);
+
+  useEffect(() => {
+    const currentTrack = queue[currentIndex];
+    const nextTrack = queue[currentIndex + 1];
+    const supportsSmartInclusion =
+      smartPlaylistSuggestionsEnabled &&
+      !shuffle &&
+      !!currentTrack &&
+      playSource?.type === "playlist" &&
+      !!playSource?.radio?.seedId;
+
+    if (!supportsSmartInclusion) {
+      playlistSuggestionSignatureRef.current = null;
+      return;
+    }
+    if (currentTrack?.isSuggested) {
+      playlistSuggestionSignatureRef.current = null;
+      return;
+    }
+    if (isLikelyContinuousAlbumBlock(currentTrack, nextTrack)) {
+      playlistSuggestionSignatureRef.current = null;
+      return;
+    }
+
+    const playedOriginalCount = queue
+      .slice(0, currentIndex + 1)
+      .filter((track) => !track.isSuggested).length;
+
+    if (
+      playedOriginalCount === 0 ||
+      playedOriginalCount % smartPlaylistSuggestionsCadence !== 0
+    ) {
+      playlistSuggestionSignatureRef.current = null;
+      return;
+    }
+
+    if (nextTrack?.isSuggested) {
+      playlistSuggestionSignatureRef.current = [
+        playSource?.radio?.seedId ?? "",
+        playedOriginalCount,
+        currentTrack?.id ?? "",
+      ].join("::");
+      return;
+    }
+
+    if (playlistSuggestionInFlightRef.current) return;
+
+    const signature = [
+      playSource?.radio?.seedId ?? "",
+      playedOriginalCount,
+      currentTrack?.id ?? "",
+      queue.length,
+    ].join("::");
+    if (playlistSuggestionSignatureRef.current === signature) return;
+    playlistSuggestionSignatureRef.current = signature;
+    playlistSuggestionInFlightRef.current = true;
+    const controller = new AbortController();
+
+    fetchInfiniteContinuation(playSource!, SMART_PLAYLIST_SUGGESTION_BATCH_SIZE, { signal: controller.signal })
+      .then((tracks) => {
+        if (controller.signal.aborted) return;
+        if (!tracks.length) return;
+        if (playlistSuggestionSignatureRef.current !== signature) return;
+        const expectedSeedId = playSource?.radio?.seedId ?? null;
+        setQueue((prev) => {
+          if (playlistSuggestionSignatureRef.current !== signature) return prev;
+          const latestSource = playSourceRef.current;
+          const insertionIndex = currentIndexRef.current + 1;
+          if (
+            latestSource?.type !== "playlist" ||
+            latestSource?.radio?.seedId !== expectedSeedId ||
+            insertionIndex <= 0 ||
+            insertionIndex > prev.length
+          ) {
+            return prev;
+          }
+
+          const existingKeys = new Set(
+            [...prev, ...recentlyPlayedRef.current].map((track) => getTrackCacheKey(track)),
+          );
+          const suggestion = tracks.find((track) => {
+            const key = getTrackCacheKey(track);
+            if (!key || existingKeys.has(key)) return false;
+            return true;
+          });
+          if (!suggestion) return prev;
+          if (prev[insertionIndex]?.isSuggested) return prev;
+
+          const nextQueue = [...prev];
+          nextQueue.splice(insertionIndex, 0, {
+            ...suggestion,
+            isSuggested: true,
+            suggestionSource: "playlist",
+          });
+          return nextQueue;
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        console.warn("[player] playlist suggestion failed:", error);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          playlistSuggestionInFlightRef.current = false;
+        }
+      });
+    return () => {
+      controller.abort();
+      playlistSuggestionInFlightRef.current = false;
+    };
+  }, [
+    currentIndex,
+    playSource,
+    queue,
+    shuffle,
+    smartPlaylistSuggestionsCadence,
+    smartPlaylistSuggestionsEnabled,
+  ]);
+
+  const continueInfinitePlayback = useCallback(() => {
+    if (
+      !infinitePlaybackEnabled ||
+      shuffle ||
+      (playSource?.type !== "album" && playSource?.type !== "playlist") ||
+      !playSource?.radio?.seedId
+    ) {
+      return false;
+    }
+    if (continuationInFlightRef.current) {
+      return false;
+    }
+
+    const sessionSignature = getPlaySourceSignature(playSource);
+    const requestSignature = [sessionSignature, currentIndexRef.current, queueRef.current.length, "manual"].join("::");
+
+    shouldAutoplayRef.current = false;
+    setIsPlaying(false);
+    setIsBuffering(true);
+    continuationSignatureRef.current = requestSignature;
+    continuationInFlightRef.current = true;
+
+    fetchInfiniteContinuation(playSource, RADIO_REFILL_BATCH_SIZE)
+      .then((tracks) => {
+        if (continuationSignatureRef.current !== requestSignature) {
+          setIsBuffering(false);
+          return;
+        }
+        if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) {
+          setIsBuffering(false);
+          return;
+        }
+        if (!tracks.length) {
+          setIsBuffering(false);
+          return;
+        }
+
+        const uniqueTracks = collectUniqueTracks(tracks, queueRef.current, recentlyPlayedRef.current);
+        if (uniqueTracks.length === 0) {
+          setIsBuffering(false);
+          return;
+        }
+
+        setQueue((prev) => {
+          if (continuationSignatureRef.current !== requestSignature) return prev;
+          if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return prev;
+          const stillUnique = collectUniqueTracks(uniqueTracks, prev, recentlyPlayedRef.current);
+          return stillUnique.length > 0 ? [...prev, ...stillUnique] : prev;
+        });
+
+        shouldAutoplayRef.current = true;
+        setCurrentIndex((index) => {
+          if (continuationSignatureRef.current !== requestSignature) return index;
+          if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return index;
+          return index + 1;
+        });
+        setCurrentTime(0);
+        setDuration(0);
+      })
+      .catch((error) => {
+        console.warn("[player] continuation after end failed:", error);
+        if (continuationSignatureRef.current === requestSignature) {
+          setIsBuffering(false);
+        }
+      })
+      .finally(() => {
+        continuationInFlightRef.current = false;
+        if (continuationSignatureRef.current === requestSignature) {
+          continuationSignatureRef.current = null;
+        }
+      });
+
+    return true;
+  }, [infinitePlaybackEnabled, playSource, shuffle]);
 
   useEffect(() => {
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
@@ -461,6 +854,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setCurrentIndex((i) => i + 1);
       } else if (repeat === "all") {
         setCurrentIndex(0);
+      } else if (continueInfinitePlayback()) {
+        return;
       } else {
         shouldAutoplayRef.current = false;
         setIsPlaying(false);
@@ -514,7 +909,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener("seeked", onSeeked);
       audio.removeEventListener("error", onError);
     };
-  }, [audio, crossfadeSeconds, currentIndex, playSource, queue, repeat, shuffle]);
+  }, [audio, continueInfinitePlayback, crossfadeSeconds, currentIndex, queue, repeat, shuffle]);
 
   const play = useCallback((track: Track, source?: PlaySource) => {
     try {
@@ -524,6 +919,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     } catch { /* ok */ }
 
     restoredRef.current = false;
+    playlistSuggestionSignatureRef.current = null;
     clearPreloadedTrack();
     setQueue([track]);
     setCurrentIndex(0);
@@ -544,6 +940,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!track) return;
 
     restoredRef.current = false;
+    playlistSuggestionSignatureRef.current = null;
     clearPreloadedTrack();
     setQueue(tracks);
     setCurrentIndex(startIndex);
@@ -597,8 +994,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setCurrentIndex(0);
       setCurrentTime(0);
       setDuration(0);
+    } else if (!continueInfinitePlayback()) {
+      shouldAutoplayRef.current = false;
+      setIsPlaying(false);
+      setIsBuffering(false);
     }
-  }, [clearPreloadedTrack, currentIndex, queue.length, repeat, shuffle]);
+  }, [clearPreloadedTrack, continueInfinitePlayback, currentIndex, queue.length, repeat, shuffle]);
 
   const prev = useCallback(() => {
     if (audio.currentTime > 3) {
@@ -634,6 +1035,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [audio]);
 
   const clearQueue = useCallback(() => {
+    playlistSuggestionSignatureRef.current = null;
     clearPreloadedTrack();
     audio.pause();
     audio.removeAttribute("src");

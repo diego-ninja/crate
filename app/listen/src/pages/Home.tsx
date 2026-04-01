@@ -409,7 +409,11 @@ export function Home() {
         navidromeId: track.navidrome_id,
       }));
       if (playerTracks.length > 0) {
-        playAll(playerTracks, 0, { type: "playlist", name: playlistName });
+        playAll(playerTracks, 0, {
+          type: "playlist",
+          name: playlistName,
+          radio: { seedType: "playlist", seedId: playlistId },
+        });
       }
     } catch {
       toast.error("Failed to play playlist");

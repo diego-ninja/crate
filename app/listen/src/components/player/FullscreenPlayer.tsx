@@ -316,7 +316,14 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                     <div className="w-8 h-8 rounded bg-white/10 shrink-0" />
                   )}
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm text-white truncate">{track.title}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="min-w-0 flex-1 truncate text-sm text-white">{track.title}</p>
+                      {track.isSuggested ? (
+                        <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-cyan-300">
+                          Suggested
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="text-xs text-white/40 truncate">
                       {track.artist}
                     </p>

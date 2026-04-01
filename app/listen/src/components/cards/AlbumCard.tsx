@@ -54,7 +54,11 @@ export function AlbumCard({ artist, album, albumId, year, cover, compact }: Albu
         libraryTrackId: track.id,
       }));
       if (playerTracks.length > 0) {
-        playAll(playerTracks, 0, { type: "album", name: `${artist} - ${album}` });
+        playAll(playerTracks, 0, {
+          type: "album",
+          name: `${artist} - ${album}`,
+          radio: albumId != null ? { seedType: "album", seedId: albumId } : undefined,
+        });
       }
     } finally {
       setPlaying(false);

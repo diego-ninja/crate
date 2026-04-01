@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { Search, Loader2, ArrowLeft, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { TrackRow } from "@/components/cards/TrackRow";
@@ -76,6 +76,37 @@ interface PlaylistDetailData {
   name: string;
   cover_data_url?: string | null;
   tracks: PlaylistDetailTrack[];
+}
+
+async function loadSystemPlaylistTracks(playlistId: number): Promise<{
+  tracks: Track[];
+  source: {
+    type: "playlist";
+    name: string;
+    radio: { seedType: "playlist"; seedId: number };
+  };
+}> {
+  const data = await api<PlaylistDetailData>(`/api/curation/playlists/${playlistId}`);
+  return {
+    tracks: (data.tracks || []).map((track) => ({
+      id: track.track_path || String(track.id || track.track_id || Math.random()),
+      title: track.title || "Unknown",
+      artist: track.artist || "",
+      album: track.album || "",
+      albumCover:
+        track.artist && track.album
+          ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+          : data.cover_data_url || undefined,
+      path: track.track_path,
+      libraryTrackId: track.track_id,
+      navidromeId: track.navidrome_id,
+    })),
+    source: {
+      type: "playlist",
+      name: data.name,
+      radio: { seedType: "playlist", seedId: playlistId },
+    },
+  };
 }
 
 function Pill({ label, count, onClick }: { label: string; count?: number; onClick: () => void }) {
@@ -308,22 +339,9 @@ function PlaylistCategoryView({ category, onBack }: { category: string; onBack: 
 
   async function handlePlayPlaylist(playlistId: number, playlistName: string) {
     try {
-      const data = await api<PlaylistDetailData>(`/api/curation/playlists/${playlistId}`);
-      const playerTracks: Track[] = (data.tracks || []).map((track) => ({
-        id: track.track_path || String(track.id || track.track_id || Math.random()),
-        title: track.title || "Unknown",
-        artist: track.artist || "",
-        album: track.album || "",
-        albumCover:
-          track.artist && track.album
-            ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
-            : data.cover_data_url || undefined,
-        path: track.track_path,
-        libraryTrackId: track.track_id,
-        navidromeId: track.navidrome_id,
-      }));
-      if (playerTracks.length > 0) {
-        playAll(playerTracks, 0, { type: "playlist", name: playlistName });
+      const playlist = await loadSystemPlaylistTracks(playlistId);
+      if (playlist.tracks.length > 0) {
+        playAll(playlist.tracks, 0, { ...playlist.source, name: playlistName });
       }
     } catch {
       toast.error("Failed to play playlist");
@@ -409,22 +427,9 @@ export function Explore() {
 
   async function handlePlayPlaylist(playlistId: number, playlistName: string) {
     try {
-      const data = await api<PlaylistDetailData>(`/api/curation/playlists/${playlistId}`);
-      const playerTracks: Track[] = (data.tracks || []).map((track) => ({
-        id: track.track_path || String(track.id || track.track_id || Math.random()),
-        title: track.title || "Unknown",
-        artist: track.artist || "",
-        album: track.album || "",
-        albumCover:
-          track.artist && track.album
-            ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
-            : data.cover_data_url || undefined,
-        path: track.track_path,
-        libraryTrackId: track.track_id,
-        navidromeId: track.navidrome_id,
-      }));
-      if (playerTracks.length > 0) {
-        playAll(playerTracks, 0, { type: "playlist", name: playlistName });
+      const playlist = await loadSystemPlaylistTracks(playlistId);
+      if (playlist.tracks.length > 0) {
+        playAll(playlist.tracks, 0, { ...playlist.source, name: playlistName });
       }
     } catch {
       toast.error("Failed to play playlist");
@@ -453,21 +458,30 @@ export function Explore() {
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setSearching(true);
 
-    api<SearchResults>(`/api/search?q=${encodeURIComponent(debouncedQuery)}&limit=20`)
+    api<SearchResults>(`/api/search?q=${encodeURIComponent(debouncedQuery)}&limit=20`, "GET", undefined, {
+      signal: controller.signal,
+    })
       .then((data) => {
-        if (!cancelled) setSearchResults(data);
+        if (!controller.signal.aborted) setSearchResults(data);
       })
-      .catch(() => {
-        if (!cancelled) setSearchResults({ artists: [], albums: [], tracks: [] });
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        if (error instanceof ApiError && error.status === 404) {
+          setSearchResults({ artists: [], albums: [], tracks: [] });
+          return;
+        }
+        setSearchResults({ artists: [], albums: [], tracks: [] });
       })
       .finally(() => {
-        if (!cancelled) setSearching(false);
+        if (!controller.signal.aborted) setSearching(false);
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      controller.abort();
+    };
   }, [debouncedQuery]);
 
   const isSearching = debouncedQuery.trim().length > 0;

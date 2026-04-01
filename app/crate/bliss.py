@@ -146,6 +146,25 @@ def _get_artist_genre_ids(cur, artist_name: str) -> set[str]:
     return {r["name"] for r in cur.fetchall()}
 
 
+def _get_artist_genre_map(cur, artist_names: set[str]) -> dict[str, set[str]]:
+    if not artist_names:
+        return {}
+
+    cur.execute(
+        """
+        SELECT ag.artist_name, g.name
+        FROM artist_genres ag
+        JOIN genres g ON ag.genre_id = g.id
+        WHERE ag.artist_name = ANY(%s)
+        """,
+        (list(artist_names),),
+    )
+    genre_map: dict[str, set[str]] = {name: set() for name in artist_names}
+    for row in cur.fetchall():
+        genre_map.setdefault(row["artist_name"], set()).add(row["name"])
+    return genre_map
+
+
 def _apply_diversity(scored: list[tuple[float, dict]], max_consecutive: int = 3) -> list[dict]:
     """Sort by score and ensure no more than max_consecutive tracks from same artist."""
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -210,6 +229,23 @@ def store_vectors(vectors: dict[str, list[float]]):
             )
 
 
+def _radio_track_payload(track: dict) -> dict:
+    track_path = track.get("track_path") or track.get("path") or ""
+    if track_path.startswith("/music/"):
+        track_path = track_path[len("/music/") :]
+
+    return {
+        "track_id": track.get("track_id") or track.get("id"),
+        "navidrome_id": track.get("navidrome_id"),
+        "track_path": track_path,
+        "title": track.get("title"),
+        "artist": track.get("artist"),
+        "album": track.get("album"),
+        "duration": track.get("duration", 0),
+        "score": track.get("score"),
+    }
+
+
 def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 0.4) -> list[dict]:
     """Generate an Artist Radio playlist using multi-signal scoring.
 
@@ -218,8 +254,8 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
     with get_db_ctx() as cur:
         # Fetch artist tracks (with or without bliss vectors)
         cur.execute("""
-            SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
             WHERE a.artist = %s
@@ -250,8 +286,8 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
         candidate_limit = 2000
         if similar_artist_names:
             cur.execute("""
-                SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                       t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+                SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                       t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
                 WHERE t.bliss_vector IS NOT NULL
@@ -265,8 +301,8 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
             """, (artist_name, list(similar_artist_names), candidate_limit))
         else:
             cur.execute("""
-                SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                       t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+                SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                       t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
                 WHERE t.bliss_vector IS NOT NULL AND a.artist != %s
@@ -281,9 +317,7 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
 
         # Fetch genre names for each unique candidate artist
         candidate_artists = {c["artist"] for c in candidates}
-        artist_genre_map: dict[str, set[str]] = {}
-        for ca in candidate_artists:
-            artist_genre_map[ca] = _get_artist_genre_ids(cur, ca)
+        artist_genre_map = _get_artist_genre_map(cur, candidate_artists)
 
     # Attach genres to candidates
     for c in candidates:
@@ -317,17 +351,7 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
             s_idx += 1
         else:
             break
-        track_path = t["path"]
-        if track_path.startswith("/music/"):
-            track_path = track_path[len("/music/"):]
-        playlist.append({
-            "path": track_path,
-            "title": t["title"],
-            "artist": t["artist"],
-            "album": t["album"],
-            "duration": t.get("duration", 0),
-            "score": t.get("_score"),
-        })
+        playlist.append(_radio_track_payload(t))
 
     return playlist
 
@@ -336,8 +360,8 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
     """Find similar tracks using pre-computed vectors stored in DB (multi-signal scoring)."""
     with get_db_ctx() as cur:
         cur.execute("""
-            SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
             WHERE t.path = %s
@@ -356,8 +380,8 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
 
         # Get candidates via broad bliss distance (top 200), then re-rank in Python
         cur.execute("""
-            SELECT t.path, t.title, t.artist, a.name AS album, t.duration,
-                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy,
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy,
                    SQRT(
                        (SELECT SUM(POW(x - y, 2))
                         FROM UNNEST(t.bliss_vector, %s::float8[]) AS v(x, y))
@@ -375,9 +399,7 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
 
         # Fetch genres for unique candidate artists
         candidate_artists = {c["artist"] for c in candidates}
-        artist_genre_map: dict[str, set[str]] = {}
-        for ca in candidate_artists:
-            artist_genre_map[ca] = _get_artist_genre_ids(cur, ca)
+        artist_genre_map = _get_artist_genre_map(cur, candidate_artists)
 
         # Get similar artist names for source artist
         similar_artist_names = _get_similar_artist_names(cur, source["artist"])
@@ -386,50 +408,338 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
     for c in candidates:
         c["_genres"] = list(artist_genre_map.get(c["artist"], set()))
 
-    scored = []
-    for c in candidates:
-        score = 0.0
-
-        # Bliss cosine similarity (weight 0.3)
-        score += 0.3 * _cosine_similarity(source["bliss_vector"], c["bliss_vector"])
-
-        # BPM proximity (weight 0.15)
-        if source.get("bpm") and c.get("bpm"):
-            diff = abs(source["bpm"] - c["bpm"])
-            score += 0.15 * max(0.0, 1.0 - diff / 40.0)
-
-        # Key compatibility (weight 0.1)
-        score += 0.1 * _key_compatibility(
-            source.get("audio_key"), source.get("audio_scale"),
-            c.get("audio_key"), c.get("audio_scale"),
-        )
-
-        # Energy proximity (weight 0.1)
-        if source.get("energy") is not None and c.get("energy") is not None:
-            score += 0.1 * (1.0 - abs(source["energy"] - c["energy"]))
-
-        # Genre overlap (weight 0.15)
-        score += 0.15 * _genre_jaccard(source_genres, set(c["_genres"]))
-
-        # Similar artist bonus (weight 0.2)
-        if c.get("artist") in similar_artist_names:
-            score += 0.2
-
-        scored.append((score, c))
+    scored = [
+        (_score_candidate(c, [source], source_genres, similar_artist_names), c)
+        for c in candidates
+    ]
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
     result = []
     for score, t in scored[:limit]:
-        track_path_out = t["path"]
-        if track_path_out.startswith("/music/"):
-            track_path_out = track_path_out[len("/music/"):]
         result.append({
-            "path": track_path_out,
-            "title": t["title"],
-            "artist": t["artist"],
-            "album": t["album"],
-            "duration": t.get("duration", 0),
+            **_radio_track_payload(t),
             "score": round(score, 4),
         })
     return result
+
+
+def generate_track_radio(track_path: str, limit: int = 50, mix_ratio: float = 0.25) -> list[dict]:
+    """Generate a Track Radio queue based on a source track."""
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE t.path = %s
+        """, (track_path,))
+        row = cur.fetchone()
+        if not row:
+            return []
+
+        seed = dict(row)
+        cur.execute("""
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration, t.navidrome_id
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.artist = %s AND t.path != %s
+            ORDER BY RANDOM()
+            LIMIT %s
+        """, (seed["artist"], track_path, max(limit, 24)))
+        same_artist_tracks = [dict(r) for r in cur.fetchall()]
+
+    seed_payload = _radio_track_payload(seed)
+    similar_tracks = get_similar_from_db(track_path, limit=max(limit * 3, 60))
+    seen_paths = {seed_payload["track_path"]}
+    unique_similar: list[dict] = []
+    for track in similar_tracks:
+        relative_path = track.get("track_path")
+        if not relative_path or relative_path in seen_paths:
+            continue
+        seen_paths.add(relative_path)
+        unique_similar.append(track)
+
+    same_artist_count = max(1, int(limit * mix_ratio))
+    picked_same_artist = same_artist_tracks[:same_artist_count]
+
+    playlist = [seed_payload]
+    playlist_paths = {playlist[0]["track_path"]}
+    artist_index = 0
+    similar_index = 0
+    max_items = max(limit, 1)
+
+    while len(playlist) < max_items:
+        should_insert_artist = (
+            artist_index < len(picked_same_artist)
+            and (similar_index >= len(unique_similar) or len(playlist) % 4 == 0)
+        )
+        if should_insert_artist:
+            candidate = _radio_track_payload(picked_same_artist[artist_index])
+            artist_index += 1
+        elif similar_index < len(unique_similar):
+            candidate = unique_similar[similar_index]
+            similar_index += 1
+        else:
+            break
+
+        candidate_path = candidate.get("track_path")
+        if not candidate_path or candidate_path in playlist_paths:
+            continue
+
+        playlist_paths.add(candidate_path)
+        playlist.append(candidate)
+
+    return playlist[:limit]
+
+
+def _aggregate_similar_candidates(seed_paths: list[str], *, per_seed_limit: int = 40) -> list[dict]:
+    if not seed_paths:
+        return []
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                t.id AS track_id,
+                t.path,
+                t.title,
+                t.artist,
+                a.name AS album,
+                t.duration,
+                t.navidrome_id,
+                t.bliss_vector,
+                t.bpm,
+                t.audio_key,
+                t.audio_scale,
+                t.energy
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE t.path = ANY(%s) AND t.bliss_vector IS NOT NULL
+            """,
+            (seed_paths,),
+        )
+        seeds = [dict(row) for row in cur.fetchall()]
+
+        if not seeds:
+            return []
+
+        cur.execute(
+            """
+            WITH seeds AS (
+                SELECT
+                    t.path AS seed_path,
+                    t.bliss_vector AS seed_bliss_vector
+                FROM library_tracks t
+                WHERE t.path = ANY(%s) AND t.bliss_vector IS NOT NULL
+            ),
+            ranked AS (
+                SELECT
+                    s.seed_path,
+                    t.id AS track_id,
+                    t.path,
+                    t.title,
+                    t.artist,
+                    a.name AS album,
+                    t.duration,
+                    t.navidrome_id,
+                    t.bliss_vector,
+                    t.bpm,
+                    t.audio_key,
+                    t.audio_scale,
+                    t.energy,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY s.seed_path
+                        ORDER BY SQRT(
+                            (
+                                SELECT SUM(POW(x - y, 2))
+                                FROM UNNEST(t.bliss_vector, s.seed_bliss_vector) AS v(x, y)
+                            )
+                        ) ASC
+                    ) AS seed_rank
+                FROM seeds s
+                JOIN library_tracks t
+                  ON t.bliss_vector IS NOT NULL
+                 AND t.path <> s.seed_path
+                 AND t.path <> ALL(%s)
+                JOIN library_albums a ON t.album_id = a.id
+            )
+            SELECT *
+            FROM ranked
+            WHERE seed_rank <= %s
+            """,
+            (seed_paths, seed_paths, per_seed_limit),
+        )
+        candidate_rows = [dict(row) for row in cur.fetchall()]
+
+        seed_artists = {seed["artist"] for seed in seeds}
+        candidate_artists = {row["artist"] for row in candidate_rows}
+        seed_genre_map = _get_artist_genre_map(cur, seed_artists)
+        candidate_genre_map = _get_artist_genre_map(cur, candidate_artists)
+        similar_artist_map = {
+            artist_name: _get_similar_artist_names(cur, artist_name)
+            for artist_name in seed_artists
+        }
+
+    if not candidate_rows:
+        return []
+
+    seed_map = {seed["path"]: {**seed, "_genres": list(seed_genre_map.get(seed["artist"], set()))} for seed in seeds}
+
+    aggregated: dict[str, dict] = {}
+    for candidate_row in candidate_rows:
+        seed = seed_map.get(candidate_row["seed_path"])
+        if not seed:
+            continue
+
+        candidate = {
+            key: value
+            for key, value in candidate_row.items()
+            if key not in {"seed_path", "seed_rank"}
+        }
+        candidate["_genres"] = list(candidate_genre_map.get(candidate["artist"], set()))
+
+        score = _score_candidate(
+            candidate,
+            [seed],
+            set(seed.get("_genres") or []),
+            similar_artist_map.get(seed["artist"], set()),
+        )
+
+        track_path = candidate.get("path")
+        if not track_path:
+            continue
+
+        entry = aggregated.setdefault(
+            track_path,
+            {
+                **_radio_track_payload(candidate),
+                "_aggregate_score": 0.0,
+                "_hits": 0,
+            },
+        )
+        rank = int(candidate_row.get("seed_rank") or per_seed_limit)
+        entry["_aggregate_score"] += score + max(0.0, (per_seed_limit - rank) / (per_seed_limit * 100))
+        entry["_hits"] += 1
+
+    ranked = sorted(
+        aggregated.values(),
+        key=lambda item: (item["_aggregate_score"], item["_hits"]),
+        reverse=True,
+    )
+    return ranked
+
+
+def _interleave_radio_queue(
+    source_tracks: list[dict],
+    recommended_tracks: list[dict],
+    *,
+    limit: int,
+    source_mix_ratio: float,
+) -> list[dict]:
+    source_count = max(1, int(limit * source_mix_ratio)) if source_tracks else 0
+    picked_source = source_tracks[:source_count]
+
+    playlist: list[dict] = []
+    seen_paths: set[str] = set()
+    source_index = 0
+    recommended_index = 0
+
+    while len(playlist) < limit:
+        should_insert_source = (
+            source_index < len(picked_source)
+            and (recommended_index >= len(recommended_tracks) or len(playlist) % 4 == 0)
+        )
+        if should_insert_source:
+            candidate = picked_source[source_index]
+            if not candidate.get("track_path"):
+                candidate = _radio_track_payload(candidate)
+            source_index += 1
+        elif recommended_index < len(recommended_tracks):
+            candidate = recommended_tracks[recommended_index]
+            recommended_index += 1
+        else:
+            break
+
+        candidate_path = candidate.get("track_path") or candidate.get("path")
+        if not candidate_path or candidate_path in seen_paths:
+            continue
+
+        seen_paths.add(candidate_path)
+        playlist.append(candidate)
+
+    return playlist[:limit]
+
+
+def generate_album_radio(album_id: int, limit: int = 50, source_mix_ratio: float = 0.25) -> list[dict]:
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT t.id AS track_id, t.path, t.title, t.artist, a.name AS album, t.duration,
+                   t.navidrome_id, t.bliss_vector
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.id = %s
+            ORDER BY t.disc_number, t.track_number
+        """, (album_id,))
+        album_tracks = [dict(row) for row in cur.fetchall()]
+
+    if not album_tracks:
+        return []
+
+    source_tracks = [_radio_track_payload(track) for track in album_tracks]
+    seed_paths = [track["path"] for track in album_tracks if track.get("path") and track.get("bliss_vector")]
+    if not seed_paths:
+        seed_paths = [track["path"] for track in album_tracks if track.get("path")]
+    seed_paths = seed_paths[: min(4, len(seed_paths))]
+    recommended_tracks = _aggregate_similar_candidates(seed_paths, per_seed_limit=max(limit, 40))
+
+    return _interleave_radio_queue(
+        source_tracks,
+        recommended_tracks,
+        limit=limit,
+        source_mix_ratio=source_mix_ratio,
+    )
+
+
+def generate_playlist_radio(playlist_id: int, limit: int = 50, source_mix_ratio: float = 0.3) -> list[dict]:
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT
+                lt.id AS track_id,
+                lt.path,
+                COALESCE(pt.title, lt.title) AS title,
+                COALESCE(pt.artist, lt.artist) AS artist,
+                COALESCE(pt.album, lt.album) AS album,
+                COALESCE(pt.duration, lt.duration, 0) AS duration,
+                lt.navidrome_id,
+                lt.bliss_vector
+            FROM playlist_tracks pt
+            LEFT JOIN LATERAL (
+                SELECT id, path, title, artist, album, duration, navidrome_id, bliss_vector
+                FROM library_tracks lt
+                WHERE lt.path = pt.track_path
+                   OR lt.path LIKE ('%%/' || pt.track_path)
+                ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
+                LIMIT 1
+            ) lt ON TRUE
+            WHERE pt.playlist_id = %s
+            ORDER BY pt.position
+        """, (playlist_id,))
+        playlist_tracks = [dict(row) for row in cur.fetchall()]
+
+    source_tracks = [_radio_track_payload(track) for track in playlist_tracks if track.get("path")]
+    if not source_tracks:
+        return []
+
+    seed_paths = [track["path"] for track in playlist_tracks if track.get("path") and track.get("bliss_vector")]
+    if not seed_paths:
+        seed_paths = [track["path"] for track in playlist_tracks if track.get("path")]
+    seed_paths = seed_paths[: min(5, len(seed_paths))]
+    recommended_tracks = _aggregate_similar_candidates(seed_paths, per_seed_limit=max(limit, 40))
+
+    return _interleave_radio_queue(
+        source_tracks,
+        recommended_tracks,
+        limit=limit,
+        source_mix_ratio=source_mix_ratio,
+    )

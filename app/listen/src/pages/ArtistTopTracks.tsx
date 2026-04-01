@@ -45,7 +45,7 @@ export function ArtistTopTracks() {
       toast.info("No top tracks available for this artist yet");
       return;
     }
-    playAll(queue, 0, { type: "album", name: `${decodedName} Top Tracks` });
+    playAll(queue, 0, { type: "queue", name: `${decodedName} Top Tracks` });
   }
 
   if (loading) {

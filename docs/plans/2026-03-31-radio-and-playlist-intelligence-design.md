@@ -4,6 +4,28 @@
 **Estado**: Activo
 **Scope**: radio por `track` / `album` / `artist` / `playlist`, reproducción infinita con suggested tracks, e inclusión inteligente de pistas en playlists
 
+## Estado actual
+
+### Batch 1-5 completados
+
+Ya está arrancada una primera base técnica segura para esta iteración:
+
+- API unificada de radio en `/api/radio/*`
+- `artist radio` migrada desde el endpoint legacy a contrato nuevo
+- `track radio` disponible como primera semilla adicional
+- `album radio` disponible como primera semilla multi-track
+- `playlist radio` disponible para playlists personales y del sistema
+- `listen` ya modela una sesión mínima de radio en `playSource.radio`
+- el `Suggested` del player ya puede arrancar `track radio`
+- `Album`, `Playlist` y `CuratedPlaylist` ya exponen acciones directas de radio
+- las sesiones de radio ya pueden hacer `queue refill` automático al acercarse al final de la cola
+- `album` y `playlist` ya soportan `infinite continuation` cuando la preferencia del player está activa
+- `smart track inclusion`
+  - solo durante reproducción de playlists
+  - configurable desde `Settings`
+  - efímera en cola, sin mutar la playlist guardada
+  - marcada visualmente como `Suggested` en las superficies de cola
+
 ## Resumen
 
 Este documento consolida la estrategia de Crate para toda la reproducción “inteligente” en `listen`.
@@ -468,6 +490,7 @@ Mi recomendación:
 ## Fase 4
 
 - `smart track inclusion`
+- estado: implementado como inserción de 1 sugerencia cada N temas originales de playlist
 
 ## Por Qué Este Orden
 

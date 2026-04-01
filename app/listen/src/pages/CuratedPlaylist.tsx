@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Heart, Loader2, Play, Shuffle, Share2, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, Play, Radio, Shuffle, Share2, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
@@ -9,6 +9,7 @@ import { TrackRow } from "@/components/cards/TrackRow";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
+import { fetchPlaylistRadio } from "@/lib/radio";
 import { encPath } from "@/lib/utils";
 
 interface CuratedPlaylistTrack {
@@ -91,12 +92,37 @@ export function CuratedPlaylist() {
 
   function handlePlay() {
     if (playerTracks.length === 0) return;
-    playAll(playerTracks, 0, { type: "playlist", name: data?.name || "Playlist" });
+    playAll(playerTracks, 0, {
+      type: "playlist",
+      name: data?.name || "Playlist",
+      radio: data ? { seedType: "playlist", seedId: data.id } : undefined,
+    });
   }
 
   function handleShuffle() {
     if (playerTracks.length === 0) return;
-    playAll(shuffleArray(playerTracks), 0, { type: "playlist", name: data?.name || "Playlist" });
+    playAll(shuffleArray(playerTracks), 0, {
+      type: "playlist",
+      name: data?.name || "Playlist",
+      radio: data ? { seedType: "playlist", seedId: data.id } : undefined,
+    });
+  }
+
+  async function handlePlaylistRadio() {
+    if (!data) return;
+    try {
+      const radio = await fetchPlaylistRadio({
+        playlistId: data.id,
+        playlistName: data.name,
+      });
+      if (!radio.tracks.length) {
+        toast.info("Playlist radio is not available yet");
+        return;
+      }
+      playAll(radio.tracks, 0, radio.source);
+    } catch {
+      toast.error("Failed to start playlist radio");
+    }
   }
 
   async function handleShare() {
@@ -240,17 +266,27 @@ export function CuratedPlaylist() {
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handlePlay}
-          className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          disabled={playerTracks.length === 0}
+          className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           <Play size={16} fill="currentColor" />
           Play
         </button>
         <button
           onClick={handleShuffle}
-          className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+          disabled={playerTracks.length === 0}
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
         >
           <Shuffle size={15} />
           Shuffle
+        </button>
+        <button
+          onClick={handlePlaylistRadio}
+          disabled={playerTracks.length === 0}
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
+        >
+          <Radio size={15} />
+          Playlist Radio
         </button>
         <button
           onClick={handleToggleFollow}
