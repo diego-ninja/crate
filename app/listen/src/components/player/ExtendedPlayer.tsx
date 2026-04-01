@@ -242,7 +242,10 @@ function SuggestedTab() {
         path: currentTrack.path ?? null,
         title: currentTrack.title,
       });
-      if (!radio.tracks.length) return;
+      if (!radio.tracks.length) {
+        toast.info("Track radio is not available yet");
+        return;
+      }
       playAll(radio.tracks, 0, radio.source);
     } catch {
       toast.error("Failed to start track radio");
@@ -284,7 +287,7 @@ function SuggestedTab() {
           key={`${t.path}-${i}`}
           onClick={() =>
             play(
-              { id: t.path, title: t.title, artist: t.artist, album: t.album },
+              { id: t.path, path: t.path, title: t.title, artist: t.artist, album: t.album },
               { type: "radio", name: `Similar to ${currentTrack?.title}` },
             )
           }
@@ -638,7 +641,6 @@ const TABS: { id: TabId; label: string }[] = [
 const VIZ_DEFAULTS = DEFAULT_VISUALIZER_SETTINGS;
 
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
-  usePlayer(); // subscribe to state updates for child components
   const { currentTrack, audioElement } = usePlayerActions();
   const [tab, setTab] = useState<TabId>("queue");
   const [showVizSettings, setShowVizSettings] = useState(false);

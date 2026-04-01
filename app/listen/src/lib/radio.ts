@@ -31,7 +31,12 @@ interface RadioResponse {
 function toTrack(payload: RadioTrackPayload): Track {
   const trackPath = payload.track_path || "";
   const navidromeId = payload.navidrome_id || undefined;
-  const playbackId = trackPath || navidromeId || String(payload.track_id || "");
+  const playbackId =
+    trackPath ||
+    navidromeId ||
+    (payload.track_id != null
+      ? String(payload.track_id)
+      : `radio:${payload.artist || "unknown"}:${payload.album || "unknown"}:${payload.title || "unknown"}`);
 
   return {
     id: playbackId,

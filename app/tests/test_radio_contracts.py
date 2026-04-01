@@ -116,6 +116,7 @@ class TestRadioApiContracts:
                 "name": "Hardcore",
                 "scope": "system",
                 "user_id": None,
+                "is_active": True,
             }
             mock_ctx.return_value.__exit__.return_value = False
 
@@ -141,3 +142,7 @@ class TestRadioApiContracts:
             resp = test_app.get("/api/radio/playlist/12?limit=50")
 
         assert resp.status_code == 404
+
+    def test_radio_endpoints_clamp_limit(self, test_app):
+        resp = test_app.get("/api/radio/artist/Converge?limit=101")
+        assert resp.status_code == 422

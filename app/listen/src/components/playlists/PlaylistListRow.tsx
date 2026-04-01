@@ -23,6 +23,7 @@ interface PlaylistDetailResponse {
 }
 
 interface PlaylistListRowProps {
+  playlistId?: number;
   name: string;
   description?: string;
   coverDataUrl?: string | null;
@@ -74,6 +75,7 @@ function toPlayerTracks(tracks: PlaylistTrackResponse[]): Track[] {
 }
 
 export function PlaylistListRow({
+  playlistId,
   name,
   description,
   coverDataUrl,
@@ -102,11 +104,10 @@ export function PlaylistListRow({
         return;
       }
       const queue = mode === "shuffle" ? shuffleArray(tracks) : tracks;
-      const playlistId = detailEndpoint.match(/\/(\d+)(?:\?.*)?$/)?.[1];
       playAll(queue, 0, {
         type: "playlist",
         name,
-        radio: playlistId ? { seedType: "playlist", seedId: Number(playlistId) } : undefined,
+        radio: playlistId != null ? { seedType: "playlist", seedId: playlistId } : undefined,
       });
     } catch {
       toast.error("Failed to load playlist");

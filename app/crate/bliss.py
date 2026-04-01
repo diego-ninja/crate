@@ -146,6 +146,25 @@ def _get_artist_genre_ids(cur, artist_name: str) -> set[str]:
     return {r["name"] for r in cur.fetchall()}
 
 
+def _get_artist_genre_map(cur, artist_names: set[str]) -> dict[str, set[str]]:
+    if not artist_names:
+        return {}
+
+    cur.execute(
+        """
+        SELECT ag.artist_name, g.name
+        FROM artist_genres ag
+        JOIN genres g ON ag.genre_id = g.id
+        WHERE ag.artist_name = ANY(%s)
+        """,
+        (list(artist_names),),
+    )
+    genre_map: dict[str, set[str]] = {name: set() for name in artist_names}
+    for row in cur.fetchall():
+        genre_map.setdefault(row["artist_name"], set()).add(row["name"])
+    return genre_map
+
+
 def _apply_diversity(scored: list[tuple[float, dict]], max_consecutive: int = 3) -> list[dict]:
     """Sort by score and ensure no more than max_consecutive tracks from same artist."""
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -211,7 +230,7 @@ def store_vectors(vectors: dict[str, list[float]]):
 
 
 def _radio_track_payload(track: dict) -> dict:
-    track_path = track.get("path") or ""
+    track_path = track.get("track_path") or track.get("path") or ""
     if track_path.startswith("/music/"):
         track_path = track_path[len("/music/") :]
 
@@ -298,9 +317,7 @@ def generate_artist_radio(artist_name: str, limit: int = 50, mix_ratio: float = 
 
         # Fetch genre names for each unique candidate artist
         candidate_artists = {c["artist"] for c in candidates}
-        artist_genre_map: dict[str, set[str]] = {}
-        for ca in candidate_artists:
-            artist_genre_map[ca] = _get_artist_genre_ids(cur, ca)
+        artist_genre_map = _get_artist_genre_map(cur, candidate_artists)
 
     # Attach genres to candidates
     for c in candidates:
@@ -382,9 +399,7 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
 
         # Fetch genres for unique candidate artists
         candidate_artists = {c["artist"] for c in candidates}
-        artist_genre_map: dict[str, set[str]] = {}
-        for ca in candidate_artists:
-            artist_genre_map[ca] = _get_artist_genre_ids(cur, ca)
+        artist_genre_map = _get_artist_genre_map(cur, candidate_artists)
 
         # Get similar artist names for source artist
         similar_artist_names = _get_similar_artist_names(cur, source["artist"])
@@ -460,8 +475,9 @@ def generate_track_radio(track_path: str, limit: int = 50, mix_ratio: float = 0.
         """, (seed["artist"], track_path, max(limit, 24)))
         same_artist_tracks = [dict(r) for r in cur.fetchall()]
 
+    seed_payload = _radio_track_payload(seed)
     similar_tracks = get_similar_from_db(track_path, limit=max(limit * 3, 60))
-    seen_paths = {seed["path"]}
+    seen_paths = {seed_payload["track_path"]}
     unique_similar: list[dict] = []
     for track in similar_tracks:
         relative_path = track.get("track_path")
@@ -473,7 +489,7 @@ def generate_track_radio(track_path: str, limit: int = 50, mix_ratio: float = 0.
     same_artist_count = max(1, int(limit * mix_ratio))
     picked_same_artist = same_artist_tracks[:same_artist_count]
 
-    playlist = [_radio_track_payload(seed)]
+    playlist = [seed_payload]
     playlist_paths = {playlist[0]["track_path"]}
     artist_index = 0
     similar_index = 0
@@ -545,7 +561,9 @@ def _interleave_radio_queue(
             and (recommended_index >= len(recommended_tracks) or len(playlist) % 4 == 0)
         )
         if should_insert_source:
-            candidate = _radio_track_payload(picked_source[source_index])
+            candidate = picked_source[source_index]
+            if not candidate.get("track_path"):
+                candidate = _radio_track_payload(candidate)
             source_index += 1
         elif recommended_index < len(recommended_tracks):
             candidate = recommended_tracks[recommended_index]
@@ -553,7 +571,7 @@ def _interleave_radio_queue(
         else:
             break
 
-        candidate_path = candidate.get("track_path")
+        candidate_path = candidate.get("track_path") or candidate.get("path")
         if not candidate_path or candidate_path in seen_paths:
             continue
 

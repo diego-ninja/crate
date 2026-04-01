@@ -64,6 +64,17 @@ interface Playlist {
   name: string;
 }
 
+function shuffleArray<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = copy[i]!;
+    copy[i] = copy[j]!;
+    copy[j] = tmp;
+  }
+  return copy;
+}
+
 function buildPlayerTracks(data: AlbumData): Track[] {
   const cover = `/api/cover/${encPath(data.artist)}/${encPath(data.name)}`;
   return data.tracks.map((t) => ({
@@ -161,7 +172,7 @@ export function Album() {
 
   const handleShuffle = () => {
     if (playerTracks.length === 0) return;
-    const shuffled = [...playerTracks].sort(() => Math.random() - 0.5);
+    const shuffled = shuffleArray(playerTracks);
     playAll(shuffled, 0, {
       type: "album",
       name: `${artistName} — ${displayName}`,

@@ -257,6 +257,7 @@ function PlaylistsTab() {
           {followedCurated.map((playlist) => (
             <PlaylistListRow
               key={`curated-${playlist.id}`}
+              playlistId={playlist.id}
               name={playlist.name}
               description={playlist.description}
               coverDataUrl={playlist.cover_data_url}
@@ -287,6 +288,7 @@ function PlaylistsTab() {
           {playlists.map((pl) => (
             <PlaylistListRow
               key={pl.id}
+              playlistId={pl.id}
               name={pl.name}
               description={pl.description}
               coverDataUrl={pl.cover_data_url}

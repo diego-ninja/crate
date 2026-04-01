@@ -281,7 +281,7 @@ export function CuratedPlaylist() {
         <button
           onClick={handlePlaylistRadio}
           disabled={playerTracks.length === 0}
-          className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
         >
           <Radio size={15} />
           Playlist Radio

@@ -179,6 +179,31 @@ function getTrackCacheKey(track: Track): string {
   return [track.libraryTrackId ?? "", track.navidromeId ?? "", track.path ?? "", track.id].join("::");
 }
 
+function getPlaySourceSignature(source: PlaySource | null): string | null {
+  if (!source) return null;
+  return [
+    source.type,
+    source.name,
+    source.radio?.seedType ?? "",
+    source.radio?.seedId ?? "",
+    source.radio?.seedPath ?? "",
+  ].join("::");
+}
+
+function collectUniqueTracks(candidates: Track[], queue: Track[], recent: Track[]): Track[] {
+  const existingKeys = new Set(
+    [...queue, ...recent].map((track) => getTrackCacheKey(track)),
+  );
+  const uniqueTracks: Track[] = [];
+  for (const track of candidates) {
+    const key = getTrackCacheKey(track);
+    if (!key || existingKeys.has(key)) continue;
+    existingKeys.add(key);
+    uniqueTracks.push(track);
+  }
+  return uniqueTracks;
+}
+
 function getPredictableNextTrack(
   queue: Track[],
   currentIndex: number,
@@ -266,6 +291,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const playlistSuggestionSignatureRef = useRef<string | null>(null);
   const currentIndexRef = useRef(currentIndex);
   const playSourceRef = useRef(playSource);
+  const queueRef = useRef(queue);
+  const recentlyPlayedRef = useRef(recentlyPlayed);
 
   if (!audioRef.current) {
     audioRef.current = getSharedAudio(PLAYER_AUDIO_KEY);
@@ -281,7 +308,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     currentIndexRef.current = currentIndex;
     playSourceRef.current = playSource;
-  }, [currentIndex, playSource]);
+    queueRef.current = queue;
+    recentlyPlayedRef.current = recentlyPlayed;
+  }, [currentIndex, playSource, queue, recentlyPlayed]);
 
   useEffect(() => {
     saveQueue(queue, currentIndex);
@@ -481,10 +510,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (radioRefillInFlightRef.current) return;
 
     const signature = [
-      playSource.name,
-      playSource.radio.seedType,
-      playSource.radio.seedId ?? "",
-      playSource.radio.seedPath ?? "",
+      getPlaySourceSignature(playSource),
       currentTrack.id,
       queue.length,
     ].join("::");
@@ -492,21 +518,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     radioRefillSignatureRef.current = signature;
     radioRefillInFlightRef.current = true;
 
-    const existingKeys = new Set(
-      [...queue, ...recentlyPlayed].map((track) => getTrackCacheKey(track)),
-    );
-
     fetchRadioContinuation(playSource, RADIO_REFILL_BATCH_SIZE)
       .then((tracks) => {
-        const uniqueTracks = tracks.filter((track) => {
-          const key = getTrackCacheKey(track);
-          if (!key || existingKeys.has(key)) return false;
-          existingKeys.add(key);
-          return true;
+        if (radioRefillSignatureRef.current !== signature) return;
+        if (getPlaySourceSignature(playSourceRef.current) !== getPlaySourceSignature(playSource)) return;
+        setQueue((prev) => {
+          if (radioRefillSignatureRef.current !== signature) return prev;
+          if (getPlaySourceSignature(playSourceRef.current) !== getPlaySourceSignature(playSource)) return prev;
+          const uniqueTracks = collectUniqueTracks(tracks, prev, recentlyPlayedRef.current);
+          return uniqueTracks.length > 0 ? [...prev, ...uniqueTracks] : prev;
         });
-        if (uniqueTracks.length > 0) {
-          setQueue((prev) => [...prev, ...uniqueTracks]);
-        }
       })
       .catch((error) => {
         console.warn("[player] radio refill failed:", error);
@@ -514,7 +535,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         radioRefillInFlightRef.current = false;
       });
-  }, [currentIndex, isPlaying, playSource, queue, recentlyPlayed]);
+  }, [currentIndex, isPlaying, playSource, queue.length]);
 
   useEffect(() => {
     const currentTrack = queue[currentIndex];
@@ -534,14 +555,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     if (continuationInFlightRef.current) return;
 
-    const signature = [
-      playSource?.type ?? "",
-      playSource?.name ?? "",
-      playSource?.radio?.seedType ?? "",
-      playSource?.radio?.seedId ?? "",
-      currentTrack?.id ?? "",
-      queue.length,
-    ].join("::");
+    const sessionSignature = getPlaySourceSignature(playSource);
+    const signature = [sessionSignature, currentTrack?.id ?? "", queue.length].join("::");
     if (continuationSignatureRef.current === signature) return;
     continuationSignatureRef.current = signature;
     continuationInFlightRef.current = true;
@@ -549,16 +564,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     fetchInfiniteContinuation(playSource!, RADIO_REFILL_BATCH_SIZE)
       .then((tracks) => {
         if (!tracks.length) return;
+        if (continuationSignatureRef.current !== signature) return;
+        if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return;
         setQueue((prev) => {
-          const existingKeys = new Set(
-            [...prev, ...recentlyPlayed].map((track) => getTrackCacheKey(track)),
-          );
-          const uniqueTracks = tracks.filter((track) => {
-            const key = getTrackCacheKey(track);
-            if (!key || existingKeys.has(key)) return false;
-            existingKeys.add(key);
-            return true;
-          });
+          if (continuationSignatureRef.current !== signature) return prev;
+          if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return prev;
+          const uniqueTracks = collectUniqueTracks(tracks, prev, recentlyPlayedRef.current);
           return uniqueTracks.length > 0 ? [...prev, ...uniqueTracks] : prev;
         });
       })
@@ -568,7 +579,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       .finally(() => {
         continuationInFlightRef.current = false;
       });
-  }, [currentIndex, infinitePlaybackEnabled, playSource, queue, recentlyPlayed, shuffle]);
+  }, [currentIndex, infinitePlaybackEnabled, playSource, queue.length, shuffle]);
 
   useEffect(() => {
     const currentTrack = queue[currentIndex];
@@ -629,8 +640,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     fetchInfiniteContinuation(playSource!, SMART_PLAYLIST_SUGGESTION_BATCH_SIZE)
       .then((tracks) => {
         if (!tracks.length) return;
+        if (playlistSuggestionSignatureRef.current !== signature) return;
         const expectedSeedId = playSource?.radio?.seedId ?? null;
         setQueue((prev) => {
+          if (playlistSuggestionSignatureRef.current !== signature) return prev;
           const latestSource = playSourceRef.current;
           const insertionIndex = currentIndexRef.current + 1;
           if (
@@ -643,7 +656,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           }
 
           const existingKeys = new Set(
-            [...prev, ...recentlyPlayed].map((track) => getTrackCacheKey(track)),
+            [...prev, ...recentlyPlayedRef.current].map((track) => getTrackCacheKey(track)),
           );
           const suggestion = tracks.find((track) => {
             const key = getTrackCacheKey(track);
@@ -672,7 +685,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     currentIndex,
     playSource,
     queue,
-    recentlyPlayed,
     shuffle,
     smartPlaylistSuggestionsCadence,
     smartPlaylistSuggestionsEnabled,
@@ -687,54 +699,71 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     ) {
       return false;
     }
+    if (continuationInFlightRef.current) {
+      return false;
+    }
+
+    const sessionSignature = getPlaySourceSignature(playSource);
+    const requestSignature = [sessionSignature, currentIndexRef.current, queueRef.current.length, "manual"].join("::");
 
     shouldAutoplayRef.current = false;
     setIsPlaying(false);
     setIsBuffering(true);
+    continuationSignatureRef.current = requestSignature;
     continuationInFlightRef.current = true;
 
     fetchInfiniteContinuation(playSource, RADIO_REFILL_BATCH_SIZE)
       .then((tracks) => {
+        if (continuationSignatureRef.current !== requestSignature) {
+          setIsBuffering(false);
+          return;
+        }
+        if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) {
+          setIsBuffering(false);
+          return;
+        }
         if (!tracks.length) {
           setIsBuffering(false);
           return;
         }
 
-        let appended = false;
+        const uniqueTracks = collectUniqueTracks(tracks, queueRef.current, recentlyPlayedRef.current);
+        if (uniqueTracks.length === 0) {
+          setIsBuffering(false);
+          return;
+        }
+
         setQueue((prev) => {
-          const existingKeys = new Set(
-            [...prev, ...recentlyPlayed].map((track) => getTrackCacheKey(track)),
-          );
-          const uniqueTracks = tracks.filter((track) => {
-            const key = getTrackCacheKey(track);
-            if (!key || existingKeys.has(key)) return false;
-            existingKeys.add(key);
-            return true;
-          });
-          if (uniqueTracks.length === 0) return prev;
-          appended = true;
-          return [...prev, ...uniqueTracks];
+          if (continuationSignatureRef.current !== requestSignature) return prev;
+          if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return prev;
+          const stillUnique = collectUniqueTracks(uniqueTracks, prev, recentlyPlayedRef.current);
+          return stillUnique.length > 0 ? [...prev, ...stillUnique] : prev;
         });
 
-        if (appended) {
-          shouldAutoplayRef.current = true;
-          setCurrentIndex((i) => i + 1);
-          setCurrentTime(0);
-          setDuration(0);
-        } else {
-          setIsBuffering(false);
-        }
+        shouldAutoplayRef.current = true;
+        setCurrentIndex((index) => {
+          if (continuationSignatureRef.current !== requestSignature) return index;
+          if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return index;
+          return index + 1;
+        });
+        setCurrentTime(0);
+        setDuration(0);
       })
       .catch((error) => {
         console.warn("[player] continuation after end failed:", error);
-        setIsBuffering(false);
+        if (continuationSignatureRef.current === requestSignature) {
+          setIsBuffering(false);
+        }
       })
       .finally(() => {
         continuationInFlightRef.current = false;
+        if (continuationSignatureRef.current === requestSignature) {
+          continuationSignatureRef.current = null;
+        }
       });
 
     return true;
-  }, [infinitePlaybackEnabled, playSource, recentlyPlayed, shuffle]);
+  }, [infinitePlaybackEnabled, playSource, shuffle]);
 
   useEffect(() => {
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
