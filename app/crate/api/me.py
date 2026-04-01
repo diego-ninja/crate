@@ -30,6 +30,29 @@ class RecordPlayRequest(BaseModel):
     album: str = ""
 
 
+class RecordPlayEventRequest(BaseModel):
+    track_id: int | None = None
+    track_path: str | None = None
+    title: str = ""
+    artist: str = ""
+    album: str = ""
+    started_at: str
+    ended_at: str
+    played_seconds: float = 0
+    track_duration_seconds: float | None = None
+    completion_ratio: float | None = None
+    was_skipped: bool = False
+    was_completed: bool = False
+    play_source_type: str | None = None
+    play_source_id: str | None = None
+    play_source_name: str | None = None
+    context_artist: str | None = None
+    context_album: str | None = None
+    context_playlist_id: int | None = None
+    device_type: str | None = None
+    app_platform: str | None = None
+
+
 def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
     from crate import setlistfm
 
@@ -197,6 +220,37 @@ def stats(request: Request):
     user = _require_auth(request)
     from crate.db.user_library import get_play_stats
     return get_play_stats(user["id"])
+
+
+@router.post("/play-events")
+def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
+    user = _require_auth(request)
+    from crate.db.user_library import record_play_event
+
+    event_id = record_play_event(
+        user["id"],
+        track_id=body.track_id,
+        track_path=body.track_path,
+        title=body.title,
+        artist=body.artist,
+        album=body.album,
+        started_at=body.started_at,
+        ended_at=body.ended_at,
+        played_seconds=body.played_seconds,
+        track_duration_seconds=body.track_duration_seconds,
+        completion_ratio=body.completion_ratio,
+        was_skipped=body.was_skipped,
+        was_completed=body.was_completed,
+        play_source_type=body.play_source_type,
+        play_source_id=body.play_source_id,
+        play_source_name=body.play_source_name,
+        context_artist=body.context_artist,
+        context_album=body.context_album,
+        context_playlist_id=body.context_playlist_id,
+        device_type=body.device_type,
+        app_platform=body.app_platform,
+    )
+    return {"ok": True, "id": event_id}
 
 
 # ── Feed ─────────────────────────────────────────────────────

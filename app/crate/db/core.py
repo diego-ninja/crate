@@ -914,6 +914,37 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_user ON play_history(user_id, played_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_track ON play_history(track_id)")
 
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_play_events (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
+                track_path TEXT,
+                title TEXT,
+                artist TEXT,
+                album TEXT,
+                started_at TEXT NOT NULL,
+                ended_at TEXT NOT NULL,
+                played_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+                track_duration_seconds DOUBLE PRECISION,
+                completion_ratio DOUBLE PRECISION,
+                was_skipped BOOLEAN NOT NULL DEFAULT FALSE,
+                was_completed BOOLEAN NOT NULL DEFAULT FALSE,
+                play_source_type TEXT,
+                play_source_id TEXT,
+                play_source_name TEXT,
+                context_artist TEXT,
+                context_album TEXT,
+                context_playlist_id INTEGER,
+                device_type TEXT,
+                app_platform TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user ON user_play_events(user_id, ended_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_track ON user_play_events(track_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_source ON user_play_events(user_id, play_source_type, ended_at DESC)")
+
         # Migration: add user_id to favorites table if missing
         cur.execute("""
             DO $$ BEGIN

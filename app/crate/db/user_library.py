@@ -230,6 +230,92 @@ def record_play(
         )
 
 
+def record_play_event(
+    user_id: int,
+    *,
+    track_id: int | None = None,
+    track_path: str | None = None,
+    title: str = "",
+    artist: str = "",
+    album: str = "",
+    started_at: str,
+    ended_at: str,
+    played_seconds: float,
+    track_duration_seconds: float | None = None,
+    completion_ratio: float | None = None,
+    was_skipped: bool = False,
+    was_completed: bool = False,
+    play_source_type: str | None = None,
+    play_source_id: str | None = None,
+    play_source_name: str | None = None,
+    context_artist: str | None = None,
+    context_album: str | None = None,
+    context_playlist_id: int | None = None,
+    device_type: str | None = None,
+    app_platform: str | None = None,
+) -> int:
+    created_at = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
+        cur.execute(
+            """
+            INSERT INTO user_play_events (
+                user_id,
+                track_id,
+                track_path,
+                title,
+                artist,
+                album,
+                started_at,
+                ended_at,
+                played_seconds,
+                track_duration_seconds,
+                completion_ratio,
+                was_skipped,
+                was_completed,
+                play_source_type,
+                play_source_id,
+                play_source_name,
+                context_artist,
+                context_album,
+                context_playlist_id,
+                device_type,
+                app_platform,
+                created_at
+            )
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
+            RETURNING id
+            """,
+            (
+                user_id,
+                resolved_track_id,
+                track_path,
+                title,
+                artist,
+                album,
+                started_at,
+                ended_at,
+                played_seconds,
+                track_duration_seconds,
+                completion_ratio,
+                was_skipped,
+                was_completed,
+                play_source_type,
+                play_source_id,
+                play_source_name,
+                context_artist,
+                context_album,
+                context_playlist_id,
+                device_type,
+                app_platform,
+                created_at,
+            ),
+        )
+        return cur.fetchone()["id"]
+
+
 def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute("""
