@@ -13,6 +13,7 @@ import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
+import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
@@ -99,13 +100,48 @@ interface UpcomingItem {
   user_attending?: boolean;
 }
 
+interface UpcomingInsight {
+  type: "one_month" | "one_week" | "show_prep";
+  show_id: number;
+  artist: string;
+  date: string;
+  title: string;
+  subtitle: string;
+  message: string;
+  has_setlist?: boolean;
+  weight?: "normal" | "high";
+}
+
 interface UpcomingResponse {
   items: UpcomingItem[];
+  insights: UpcomingInsight[];
   summary: {
     followed_artists: number;
     show_count: number;
     release_count: number;
+    attending_count: number;
+    insight_count: number;
   };
+}
+
+interface ReplayTrack {
+  track_id: number | null;
+  track_path: string | null;
+  title: string;
+  artist: string;
+  album: string;
+  play_count: number;
+  complete_play_count: number;
+  minutes_listened: number;
+}
+
+interface ReplayMix {
+  window: string;
+  title: string;
+  subtitle: string;
+  track_count: number;
+  minutes_listened: number;
+  items: ReplayTrack[];
 }
 
 interface PlaylistDetailTrack {
@@ -335,6 +371,8 @@ export function Home() {
     useApi<UserPlaylist[]>("/api/playlists");
   const { data: upcoming } =
     useApi<UpcomingResponse>("/api/me/upcoming");
+  const { data: replay } =
+    useApi<ReplayMix>("/api/me/stats/replay?window=30d&limit=18");
 
   const continueItems = currentTrack
     ? [currentTrack, ...recentlyPlayed.filter((track) => track.id !== currentTrack.id)]
@@ -352,6 +390,8 @@ export function Home() {
         day: "numeric",
       })
     : null;
+  const homeInsights = (upcoming?.insights || []).slice(0, 2);
+  const replayPreview = (replay?.items || []).slice(0, 4);
   const libraryAdditions: LibraryAddition[] = [
     ...((playlists || []).map((playlist) => ({
       type: "playlist" as const,
@@ -428,6 +468,51 @@ export function Home() {
     } catch {
       toast.error("Failed to update playlist");
     }
+  }
+
+  async function acknowledgeInsight(insight: UpcomingInsight) {
+    try {
+      await api(`/api/me/shows/${insight.show_id}/reminders`, "POST", {
+        reminder_type: insight.type,
+      });
+      toast.success("Saved for later");
+      navigate("/upcoming");
+    } catch {
+      toast.error("Failed to save reminder");
+    }
+  }
+
+  async function playInsightSetlist(insight: UpcomingInsight) {
+    try {
+      const queue = await fetchPlayableSetlist(insight.artist);
+      if (!queue.length) {
+        toast.info("No probable setlist tracks matched your library");
+        return;
+      }
+      playAll(queue, 0, { type: "playlist", name: `${insight.artist} Probable Setlist` });
+      await api(`/api/me/shows/${insight.show_id}/reminders`, "POST", {
+        reminder_type: insight.type,
+      });
+      toast.success(`Playing probable setlist: ${queue.length} tracks`);
+    } catch {
+      toast.error("Failed to load probable setlist");
+    }
+  }
+
+  function playReplayMix() {
+    if (!replay?.items?.length) return;
+    const queue: Track[] = replay.items.map((item) => ({
+      id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
+      title: item.title,
+      artist: item.artist,
+      album: item.album,
+      path: item.track_path || undefined,
+      libraryTrackId: item.track_id || undefined,
+      albumCover: item.artist && item.album
+        ? `/api/cover/${encPath(item.artist)}/${encPath(item.album)}`
+        : undefined,
+    }));
+    playAll(queue, 0, { type: "playlist", name: replay.title });
   }
 
   return (
@@ -571,6 +656,144 @@ export function Home() {
                     item={item}
                     onClick={() => navigate("/upcoming")}
                   />
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {homeInsights.length > 0 ? (
+        <section className="space-y-4">
+          <SectionHeader
+            title="Show prep"
+            subtitle="A couple of timely prompts from the shows you're planning to attend."
+            actionLabel="Open Upcoming"
+            onAction={() => navigate("/upcoming")}
+          />
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            {homeInsights.map((insight) => (
+              <div
+                key={`${insight.type}:${insight.show_id}`}
+                className="rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.16),transparent_42%),rgba(255,255,255,0.03)] p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-primary">
+                      <Sparkles size={12} />
+                      {insight.type === "show_prep" ? "Show prep" : insight.type === "one_week" ? "This week" : "One month"}
+                    </div>
+                    <h3 className="mt-3 text-lg font-bold text-foreground">{insight.title}</h3>
+                    <p className="mt-1 text-sm text-white/60">{insight.subtitle}</p>
+                  </div>
+                  {insight.weight === "high" ? (
+                    <div className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-primary">
+                      Heavy rotation
+                    </div>
+                  ) : null}
+                </div>
+
+                <p className="mt-4 text-sm leading-6 text-muted-foreground">{insight.message}</p>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {insight.has_setlist ? (
+                    <button
+                      onClick={() => void playInsightSetlist(insight)}
+                      className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                      <Play size={14} fill="currentColor" />
+                      Play probable setlist
+                    </button>
+                  ) : null}
+                  <button
+                    onClick={() => void acknowledgeInsight(insight)}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-white/65 transition-colors hover:border-white/20 hover:text-foreground"
+                  >
+                    <Calendar size={14} />
+                    Save for later
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {replayPreview.length > 0 ? (
+        <section className="space-y-4">
+          <SectionHeader
+            title={replay?.title || "Replay this month"}
+            subtitle={replay?.subtitle || "A playable recap of your current listening window."}
+            actionLabel="Open Stats"
+            onAction={() => navigate("/stats")}
+          />
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
+            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.14),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
+                <Sparkles size={12} />
+                Replay
+              </div>
+              <h2 className="mt-4 text-2xl font-bold text-foreground">{replay?.title}</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">{replay?.subtitle}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Tracks</div>
+                  <div className="mt-1 text-sm font-semibold text-foreground">{replay?.track_count ?? 0}</div>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Time listened</div>
+                  <div className="mt-1 text-sm font-semibold text-foreground">
+                    {Math.round(replay?.minutes_listened ?? 0)}m
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={playReplayMix}
+                className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Play size={15} fill="currentColor" />
+                Play replay
+              </button>
+            </div>
+
+            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
+              <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/40">
+                <Clock3 size={12} />
+                Replay picks
+              </div>
+              <div className="space-y-1">
+                {replayPreview.map((item) => (
+                  <button
+                    key={`${item.track_id ?? item.track_path ?? item.title}`}
+                    onClick={() =>
+                      play(
+                        {
+                          id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
+                          title: item.title,
+                          artist: item.artist,
+                          album: item.album,
+                          path: item.track_path || undefined,
+                          libraryTrackId: item.track_id || undefined,
+                          albumCover: item.artist && item.album
+                            ? `/api/cover/${encPath(item.artist)}/${encPath(item.album)}`
+                            : undefined,
+                        },
+                        { type: "track", name: item.title },
+                      )
+                    }
+                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5"
+                  >
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white/45">
+                      {item.play_count}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
+                      <div className="truncate text-xs text-muted-foreground">{item.artist}</div>
+                    </div>
+                    <Play size={15} className="shrink-0 text-white/30" />
+                  </button>
                 ))}
               </div>
             </div>

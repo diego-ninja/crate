@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
+  Calendar,
   ChevronDown,
   Play,
   Radio,
@@ -18,6 +19,7 @@ import { ArtistCard } from "@/components/cards/ArtistCard";
 import {
   artistShowToUpcomingItem,
   groupByMonth,
+  itemKey,
   UpcomingMonthGroup,
   type ArtistShowEvent,
 } from "@/components/upcoming/UpcomingRows";
@@ -25,6 +27,7 @@ import { AppModal, ModalBody, ModalCloseButton, ModalHeader } from "@/components
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
+import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchArtistRadio } from "@/lib/radio";
 import { encPath, formatCompact } from "@/lib/utils";
 
@@ -66,6 +69,18 @@ interface ArtistTopTrack {
   album: string;
   duration: number;
   track: number;
+}
+
+interface StatsArtist {
+  artist_name: string;
+  play_count: number;
+  complete_play_count: number;
+  minutes_listened: number;
+}
+
+interface StatsListResponse<T> {
+  window: string;
+  items: T[];
 }
 
 function shuffleArray<T>(items: T[]): T[] {
@@ -139,6 +154,9 @@ export function Artist() {
   );
   const { data: showsData } = useApi<{ events: ArtistShowEvent[] }>(
     decodedName ? `/api/artist/${encPath(decodedName)}/shows?limit=12` : null,
+  );
+  const { data: topArtistsStats } = useApi<StatsListResponse<StatsArtist>>(
+    decodedName ? "/api/me/stats/top-artists?window=30d&limit=12" : null,
   );
 
   const coverFallback = data?.albums?.[0]
@@ -217,6 +235,25 @@ export function Artist() {
     .slice(0, 5);
   const hasShows = visibleShowItems.length > 0;
   const hasRelated = similarArtists.length > 0;
+  const attendingArtistShows = visibleShowItems.filter((item) => item.user_attending);
+  const nextAttendingArtistShow = attendingArtistShows[0];
+  const artistHotNow = Boolean(
+    topArtistsStats?.items?.some((item) => item.artist_name.toLowerCase() === decodedName.toLowerCase()),
+  );
+
+  async function handlePlayArtistSetlist() {
+    try {
+      const queue = await fetchPlayableSetlist(decodedName);
+      if (!queue.length) {
+        toast.info("No probable setlist tracks matched your library");
+        return;
+      }
+      playAll(queue, 0, { type: "playlist", name: `${decodedName} Probable Setlist` });
+      toast.success(`Playing probable setlist: ${queue.length} tracks`);
+    } catch {
+      toast.error("Failed to load probable setlist");
+    }
+  }
 
   useEffect(() => {
     if (!similarArtists.length) {
@@ -442,7 +479,61 @@ export function Artist() {
 
         {hasShows && (
           <section>
-            <h2 className="text-lg font-semibold text-foreground mb-4">Shows</h2>
+            <div className="space-y-4 mb-4">
+              <div className="flex items-center justify-between gap-4">
+                <h2 className="text-lg font-semibold text-foreground">Shows</h2>
+                {artistHotNow ? (
+                  <div className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-primary">
+                    Heavy rotation
+                  </div>
+                ) : null}
+              </div>
+
+              {nextAttendingArtistShow ? (
+                <div className="rounded-[24px] border border-primary/15 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.14),transparent_40%),rgba(255,255,255,0.03)] p-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-primary">
+                        <Calendar size={12} />
+                        Show prep
+                      </div>
+                      <h3 className="mt-3 text-xl font-bold text-foreground">{nextAttendingArtistShow.title}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {nextAttendingArtistShow.subtitle} · {new Date(`${nextAttendingArtistShow.date}T12:00:00`).toLocaleDateString("en-US", {
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </p>
+                      <p className="mt-3 text-sm leading-6 text-white/70">
+                        {nextAttendingArtistShow.probable_setlist?.length
+                          ? "You’re going to this show and we already have a probable setlist ready."
+                          : "You’re going to this show. As soon as a probable setlist is available, this becomes an instant prep surface."}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {nextAttendingArtistShow.probable_setlist?.length ? (
+                        <button
+                          onClick={() => void handlePlayArtistSetlist()}
+                          className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                        >
+                          <Play size={14} fill="currentColor" />
+                          Play probable setlist
+                        </button>
+                      ) : null}
+                      <button
+                        onClick={() => setExpandedShowId(itemKey(nextAttendingArtistShow, 0))}
+                        className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-white/65 transition-colors hover:border-white/20 hover:text-foreground"
+                      >
+                        View show details
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
             <div className="space-y-3">
               {groupByMonth(visibleShowItems).map(([month, monthItems]) => (
                 <UpcomingMonthGroup

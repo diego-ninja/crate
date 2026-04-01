@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
+from psycopg2 import sql
 
 log = logging.getLogger(__name__)
 
@@ -67,17 +68,30 @@ def _ensure_database():
         # Create app role if missing
         cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (app_user,))
         if not cur.fetchone():
-            cur.execute(f"CREATE ROLE {app_user} WITH LOGIN PASSWORD %s", (app_pass,))
+            cur.execute(
+                sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(app_user)),
+                (app_pass,),
+            )
             log.info("Created database role: %s", app_user)
 
         # Create app database if missing
         cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (app_db,))
         if not cur.fetchone():
-            cur.execute(f"CREATE DATABASE {app_db} OWNER {app_user}")
+            cur.execute(
+                sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                    sql.Identifier(app_db),
+                    sql.Identifier(app_user),
+                )
+            )
             log.info("Created database: %s", app_db)
 
         # Ensure ownership
-        cur.execute(f"ALTER DATABASE {app_db} OWNER TO {app_user}")
+        cur.execute(
+            sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
+                sql.Identifier(app_db),
+                sql.Identifier(app_user),
+            )
+        )
 
         cur.close()
         conn.close()
@@ -770,6 +784,19 @@ def init_db():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_attendance_user ON user_show_attendance(user_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_attendance_show ON user_show_attendance(show_id)")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_show_reminders (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                show_id INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
+                reminder_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                triggered_at TEXT,
+                UNIQUE(user_id, show_id, reminder_type)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_reminders_user ON user_show_reminders(user_id, show_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_reminders_type ON user_show_reminders(user_id, reminder_type)")
 
         # Migration: track rating (0-5 stars)
         cur.execute("""
@@ -873,15 +900,27 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_saved_albums_user ON user_saved_albums(user_id)")
 
         cur.execute("""
-            DO $$ BEGIN
-                IF EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_name = 'user_liked_tracks' AND column_name = 'track_path'
+            DO $$
+            BEGIN
+                -- One-shot migration: the old user_liked_tracks shape used track_path and is incompatible
+                -- with the current track_id PK. Guard with a settings flag so we never re-run a destructive
+                -- check silently on every startup.
+                IF NOT EXISTS (
+                    SELECT 1 FROM settings WHERE key = 'migration:user_liked_tracks_v2_applied'
                 ) THEN
-                    DROP TABLE user_liked_tracks;
+                    IF EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'user_liked_tracks' AND column_name = 'track_path'
+                    ) THEN
+                        DROP TABLE user_liked_tracks;
+                    END IF;
+                    INSERT INTO settings (key, value)
+                    VALUES ('migration:user_liked_tracks_v2_applied', 'true')
+                    ON CONFLICT (key) DO NOTHING;
                 END IF;
-            END $$
+            END
+            $$
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS user_liked_tracks (
@@ -913,6 +952,123 @@ def init_db():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_user ON play_history(user_id, played_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_track ON play_history(track_id)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_play_events (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
+                track_path TEXT,
+                title TEXT,
+                artist TEXT,
+                album TEXT,
+                started_at TEXT NOT NULL,
+                ended_at TEXT NOT NULL,
+                played_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
+                track_duration_seconds DOUBLE PRECISION,
+                completion_ratio DOUBLE PRECISION,
+                was_skipped BOOLEAN NOT NULL DEFAULT FALSE,
+                was_completed BOOLEAN NOT NULL DEFAULT FALSE,
+                play_source_type TEXT,
+                play_source_id TEXT,
+                play_source_name TEXT,
+                context_artist TEXT,
+                context_album TEXT,
+                context_playlist_id INTEGER,
+                device_type TEXT,
+                app_platform TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user ON user_play_events(user_id, ended_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_track ON user_play_events(track_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_source ON user_play_events(user_id, play_source_type, ended_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_artist ON user_play_events(user_id, artist, ended_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_album ON user_play_events(user_id, album, ended_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_day ON user_play_events(user_id, (substring(ended_at, 1, 10)))")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_daily_listening (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                day TEXT NOT NULL,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                complete_play_count INTEGER NOT NULL DEFAULT 0,
+                skip_count INTEGER NOT NULL DEFAULT 0,
+                minutes_listened DOUBLE PRECISION NOT NULL DEFAULT 0,
+                unique_tracks INTEGER NOT NULL DEFAULT 0,
+                unique_artists INTEGER NOT NULL DEFAULT 0,
+                unique_albums INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_id, day)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_daily_listening_user ON user_daily_listening(user_id, day DESC)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_track_stats (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                window TEXT NOT NULL,
+                entity_key TEXT NOT NULL,
+                track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
+                track_path TEXT,
+                title TEXT,
+                artist TEXT,
+                album TEXT,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                complete_play_count INTEGER NOT NULL DEFAULT 0,
+                minutes_listened DOUBLE PRECISION NOT NULL DEFAULT 0,
+                first_played_at TEXT,
+                last_played_at TEXT,
+                PRIMARY KEY (user_id, window, entity_key)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_track_stats_lookup ON user_track_stats(user_id, window, play_count DESC)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_artist_stats (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                window TEXT NOT NULL,
+                artist_name TEXT NOT NULL,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                complete_play_count INTEGER NOT NULL DEFAULT 0,
+                minutes_listened DOUBLE PRECISION NOT NULL DEFAULT 0,
+                first_played_at TEXT,
+                last_played_at TEXT,
+                PRIMARY KEY (user_id, window, artist_name)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_artist_stats_lookup ON user_artist_stats(user_id, window, play_count DESC)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_album_stats (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                window TEXT NOT NULL,
+                entity_key TEXT NOT NULL,
+                artist TEXT,
+                album TEXT,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                complete_play_count INTEGER NOT NULL DEFAULT 0,
+                minutes_listened DOUBLE PRECISION NOT NULL DEFAULT 0,
+                first_played_at TEXT,
+                last_played_at TEXT,
+                PRIMARY KEY (user_id, window, entity_key)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_album_stats_lookup ON user_album_stats(user_id, window, play_count DESC)")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_genre_stats (
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                window TEXT NOT NULL,
+                genre_name TEXT NOT NULL,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                complete_play_count INTEGER NOT NULL DEFAULT 0,
+                minutes_listened DOUBLE PRECISION NOT NULL DEFAULT 0,
+                first_played_at TEXT,
+                last_played_at TEXT,
+                PRIMARY KEY (user_id, window, genre_name)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_genre_stats_lookup ON user_genre_stats(user_id, window, play_count DESC)")
 
         # Migration: add user_id to favorites table if missing
         cur.execute("""

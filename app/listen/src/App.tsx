@@ -12,7 +12,6 @@ import { Home } from "@/pages/Home";
 import { Explore } from "@/pages/Explore";
 import { Library } from "@/pages/Library";
 import { Settings } from "@/pages/Settings";
-import { Shows } from "@/pages/Shows";
 import { Upload } from "@/pages/Upload";
 import { Login } from "@/pages/Login";
 import { Register } from "@/pages/Register";
@@ -31,6 +30,12 @@ const Playlist = React.lazy(() =>
 );
 const CuratedPlaylist = React.lazy(() =>
   import("@/pages/CuratedPlaylist").then((m) => ({ default: m.CuratedPlaylist })),
+);
+const Stats = React.lazy(() =>
+  import("@/pages/Stats").then((m) => ({ default: m.Stats })),
+);
+const Shows = React.lazy(() =>
+  import("@/pages/Shows").then((m) => ({ default: m.Shows })),
 );
 
 function Spinner() {
@@ -77,10 +82,25 @@ export function App() {
                     <Route index element={<Home />} />
                     <Route path="explore" element={<Explore />} />
                     <Route path="library" element={<Library />} />
+                    <Route
+                      path="stats"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <Stats />
+                        </Suspense>
+                      }
+                    />
                     <Route path="upload" element={<Upload />} />
                     <Route path="settings" element={<Settings />} />
                     <Route path="shows" element={<Navigate to="/upcoming" replace />} />
-                    <Route path="upcoming" element={<Shows />} />
+                    <Route
+                      path="upcoming"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <Shows />
+                        </Suspense>
+                      }
+                    />
                     <Route
                       path="artist/:name"
                       element={

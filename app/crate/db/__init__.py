@@ -102,6 +102,7 @@ from crate.db.shows import (
     upsert_show, get_upcoming_shows, get_all_shows,
     get_show_cities, get_show_countries, delete_past_shows,
     attend_show, unattend_show, get_attending_show_ids,
+    get_show_reminders, create_show_reminder,
 )
 
 # Task Events (SSE)
@@ -120,6 +121,6 @@ from crate.db.user_library import (
     follow_artist, unfollow_artist, get_followed_artists, is_following,
     save_album, unsave_album, get_saved_albums, is_album_saved,
     like_track, unlike_track, get_liked_tracks, is_track_liked,
-    record_play, get_play_history, get_play_stats,
+    record_play, record_play_event, recompute_user_listening_aggregates, get_play_history, get_play_stats,
     get_user_library_counts,
 )

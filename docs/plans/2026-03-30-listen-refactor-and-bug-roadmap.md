@@ -437,6 +437,7 @@ Follow-up architectural decision:
   - current `play_history` is too thin for a serious stats, Wrapped, or personalization surface
   - future work should move toward richer per-user playback events with played seconds, completion/skip state, and playback source context
   - see `docs/plans/2026-03-31-listen-user-stats-and-wrapped-design.md`
+  - execution roadmap for stats + upcoming intelligence now lives in `docs/plans/2026-04-01-stats-and-upcoming-intelligence-roadmap.md`
 - system playlists created in `admin` are not yet surfaced in `listen` discovery/library:
   - most visible surfaces are now wired (`Home`, `Explore`, `Library`, playlist detail)
   - still worth checking that discovery keeps a good editorial hierarchy as more system playlists appear

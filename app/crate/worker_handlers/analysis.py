@@ -81,6 +81,18 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
     return {"artists": artists, "albums": albums, "tracks": tracks}
 
 
+def _handle_refresh_user_listening_stats(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.user_library import recompute_user_listening_aggregates
+
+    user_id = int(params.get("user_id") or 0)
+    if user_id <= 0:
+        return {"ok": False, "error": "Missing user_id"}
+
+    update_task(task_id, progress=json.dumps({"phase": "stats", "user_id": user_id}))
+    recompute_user_listening_aggregates(user_id)
+    return {"ok": True, "user_id": user_id}
+
+
 def _handle_analyze_album_full(task_id: str, params: dict, config: dict) -> dict:
     """Analyze audio + compute bliss vectors for a single album."""
     from crate.db import get_library_album
@@ -542,6 +554,7 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
 
 ANALYSIS_TASK_HANDLERS: dict[str, TaskHandler] = {
     "compute_analytics": _handle_compute_analytics,
+    "refresh_user_listening_stats": _handle_refresh_user_listening_stats,
     "index_genres": _handle_index_genres,
     "compute_popularity": _handle_compute_popularity,
     # Re-analysis: just resets state, background daemons pick up the work

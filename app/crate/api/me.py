@@ -2,8 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Request, HTTPException, Query
+from pydantic import BaseModel, field_validator, model_validator
 
 from crate.api.auth import _require_auth
 
@@ -30,18 +30,156 @@ class RecordPlayRequest(BaseModel):
     album: str = ""
 
 
+class RecordPlayEventRequest(BaseModel):
+    track_id: int | None = None
+    track_path: str | None = None
+    title: str = ""
+    artist: str = ""
+    album: str = ""
+    started_at: datetime
+    ended_at: datetime
+    played_seconds: float = 0
+    track_duration_seconds: float | None = None
+    completion_ratio: float | None = None
+    was_skipped: bool = False
+    was_completed: bool = False
+    play_source_type: str | None = None
+    play_source_id: str | None = None
+    play_source_name: str | None = None
+    context_artist: str | None = None
+    context_album: str | None = None
+    context_playlist_id: int | None = None
+    device_type: str | None = None
+    app_platform: str | None = None
+
+    @field_validator("played_seconds")
+    @classmethod
+    def _validate_played_seconds(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("played_seconds must be >= 0")
+        return value
+
+    @field_validator("track_duration_seconds")
+    @classmethod
+    def _validate_track_duration(cls, value: float | None) -> float | None:
+        if value is not None and value <= 0:
+            raise ValueError("track_duration_seconds must be > 0")
+        return value
+
+    @field_validator("completion_ratio")
+    @classmethod
+    def _validate_completion_ratio(cls, value: float | None) -> float | None:
+        if value is not None and not 0 <= value <= 1:
+            raise ValueError("completion_ratio must be between 0 and 1")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_consistency(self):
+        if self.started_at > self.ended_at:
+            raise ValueError("started_at must be <= ended_at")
+        if self.was_skipped and self.was_completed:
+            raise ValueError("was_skipped and was_completed cannot both be true")
+        if self.track_duration_seconds and self.completion_ratio is not None:
+            derived = min(1.0, max(0.0, self.played_seconds / self.track_duration_seconds))
+            if abs(derived - self.completion_ratio) > 0.15:
+                raise ValueError("completion_ratio does not match played_seconds and track_duration_seconds")
+        return self
+
+
+class ShowReminderRequest(BaseModel):
+    reminder_type: str
+
+
 def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
-    from crate import setlistfm
+    from crate.db import get_cache
 
     result: dict[str, list[dict]] = {}
     for artist_name in artist_names:
-        try:
-            probable = setlistfm.get_probable_setlist(artist_name)
-            if probable:
-                result[artist_name] = probable
-        except Exception:
-            continue
+        cached = get_cache(f"setlistfm:probable:{artist_name.lower()}", max_age_seconds=86400 * 7)
+        songs = cached.get("songs") if isinstance(cached, dict) else None
+        if songs:
+            result[artist_name] = songs
     return result
+
+
+def _build_upcoming_insights(
+    user_id: int,
+    shows: list[dict],
+    attending_show_ids: set[int],
+) -> list[dict]:
+    from crate.db import get_show_reminders
+    from crate.db.user_library import get_top_artists
+
+    if not shows:
+        return []
+
+    reminders = get_show_reminders(user_id, [show["id"] for show in shows if show.get("id") is not None])
+    reminder_keys = {(row["show_id"], row["reminder_type"]) for row in reminders}
+    hot_artists = {
+        row["artist_name"]
+        for row in get_top_artists(user_id, window="30d", limit=12)
+        if row.get("artist_name")
+    }
+
+    today = datetime.now(timezone.utc).date()
+    insights: list[dict] = []
+    for show in sorted(shows, key=lambda item: item.get("date", "")):
+        show_id = show.get("id")
+        if not show_id or show_id not in attending_show_ids:
+            continue
+
+        date_str = show.get("date")
+        if not date_str:
+            continue
+        try:
+            show_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+
+        days_until = (show_date - today).days
+        artist_name = show.get("artist_name") or ""
+        has_setlist = bool(show.get("probable_setlist"))
+
+        if 7 < days_until <= 30 and (show_id, "one_month") not in reminder_keys:
+            insights.append({
+                "type": "one_month",
+                "show_id": show_id,
+                "artist": artist_name,
+                "date": date_str,
+                "title": show.get("venue") or artist_name,
+                "subtitle": f"{days_until} days to go",
+                "message": f"{artist_name} is coming up in about a month.",
+                "has_setlist": has_setlist,
+            })
+
+        if 1 < days_until <= 7 and (show_id, "one_week") not in reminder_keys:
+            insights.append({
+                "type": "one_week",
+                "show_id": show_id,
+                "artist": artist_name,
+                "date": date_str,
+                "title": show.get("venue") or artist_name,
+                "subtitle": f"{days_until} days to go",
+                "message": f"{artist_name} is coming up this week.",
+                "has_setlist": has_setlist,
+            })
+
+        if has_setlist and days_until <= 30 and (show_id, "show_prep") not in reminder_keys:
+            weight = "high" if artist_name in hot_artists else "normal"
+            insights.append({
+                "type": "show_prep",
+                "show_id": show_id,
+                "artist": artist_name,
+                "date": date_str,
+                "title": f"{artist_name} probable setlist",
+                "subtitle": "Show prep",
+                "message": "Warm up with the likely setlist before the show.",
+                "has_setlist": True,
+                "weight": weight,
+            })
+
+    insights.sort(key=lambda item: (item.get("date", ""), item.get("type", "")))
+    return insights[:8]
 
 
 # ── Library Summary ──────────────────────────────────────────
@@ -182,6 +320,8 @@ def history(request: Request, limit: int = 50):
 def record(request: Request, body: RecordPlayRequest):
     user = _require_auth(request)
     from crate.db.user_library import record_play
+    # Legacy endpoint kept for recently-played surfaces while /play-events becomes the
+    # canonical telemetry path. Remove once remaining callers are migrated.
     record_play(
         user["id"],
         track_path=body.track_path,
@@ -199,6 +339,116 @@ def stats(request: Request):
     return get_play_stats(user["id"])
 
 
+@router.get("/stats/overview")
+def stats_overview(request: Request, window: str = Query("30d")):
+    user = _require_auth(request)
+    from crate.db.user_library import get_stats_overview
+
+    try:
+        return get_stats_overview(user["id"], window=window)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/trends")
+def stats_trends(request: Request, window: str = Query("30d")):
+    user = _require_auth(request)
+    from crate.db.user_library import get_stats_trends
+
+    try:
+        return get_stats_trends(user["id"], window=window)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/top-tracks")
+def stats_top_tracks(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_top_tracks
+
+    try:
+        return {"window": window, "items": get_top_tracks(user["id"], window=window, limit=limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/top-artists")
+def stats_top_artists(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_top_artists
+
+    try:
+        return {"window": window, "items": get_top_artists(user["id"], window=window, limit=limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/top-albums")
+def stats_top_albums(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_top_albums
+
+    try:
+        return {"window": window, "items": get_top_albums(user["id"], window=window, limit=limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/top-genres")
+def stats_top_genres(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_top_genres
+
+    try:
+        return {"window": window, "items": get_top_genres(user["id"], window=window, limit=limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/replay")
+def stats_replay(request: Request, window: str = Query("30d"), limit: int = Query(30, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_replay_mix
+
+    try:
+        return get_replay_mix(user["id"], window=window, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/play-events")
+def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
+    user = _require_auth(request)
+    from crate.db import create_task_dedup
+    from crate.db.user_library import record_play_event
+
+    event_id = record_play_event(
+        user["id"],
+        track_id=body.track_id,
+        track_path=body.track_path,
+        title=body.title,
+        artist=body.artist,
+        album=body.album,
+        started_at=body.started_at.isoformat(),
+        ended_at=body.ended_at.isoformat(),
+        played_seconds=body.played_seconds,
+        track_duration_seconds=body.track_duration_seconds,
+        completion_ratio=body.completion_ratio,
+        was_skipped=body.was_skipped,
+        was_completed=body.was_completed,
+        play_source_type=body.play_source_type,
+        play_source_id=body.play_source_id,
+        play_source_name=body.play_source_name,
+        context_artist=body.context_artist,
+        context_album=body.context_album,
+        context_playlist_id=body.context_playlist_id,
+        device_type=body.device_type,
+        app_platform=body.app_platform,
+    )
+    create_task_dedup("refresh_user_listening_stats", {"user_id": user["id"]})
+    return {"ok": True, "id": event_id}
+
+
 # ── Feed ─────────────────────────────────────────────────────
 
 @router.get("/feed")
@@ -209,9 +459,11 @@ def feed(request: Request, limit: int = 30):
     from crate.db.core import get_db_ctx
 
     followed = get_followed_artists(user["id"])
-    followed_names = {f["artist_name"] for f in followed}
+    followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
 
     items = []
+    recent_day_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with get_db_ctx() as cur:
         if followed_names:
             placeholders = ",".join(["%s"] * len(followed_names))
@@ -220,10 +472,10 @@ def feed(request: Request, limit: int = 30):
                        la.updated_at AS date
                 FROM library_albums la
                 WHERE la.artist IN ({placeholders})
-                AND la.updated_at > (NOW() AT TIME ZONE 'UTC' - INTERVAL '30 days')::text
+                AND substring(COALESCE(la.updated_at, ''), 1, 10) >= %s
                 ORDER BY la.updated_at DESC
                 LIMIT %s
-            """, list(followed_names) + [limit])
+            """, list(followed_names) + [recent_day_cutoff, limit])
             for r in cur.fetchall():
                 items.append(dict(r))
 
@@ -232,10 +484,10 @@ def feed(request: Request, limit: int = 30):
                        s.city, s.country, s.date, s.url, s.image_url
                 FROM shows s
                 WHERE s.artist_name IN ({placeholders})
-                AND s.date >= CURRENT_DATE::text
+                AND s.date >= %s
                 ORDER BY s.date
                 LIMIT %s
-            """, list(followed_names) + [limit])
+            """, list(followed_names) + [today, limit])
             for r in cur.fetchall():
                 items.append(dict(r))
 
@@ -267,10 +519,13 @@ def upcoming(request: Request, limit: int = 120):
     if not followed_names:
         return {
             "items": [],
+            "insights": [],
             "summary": {
                 "followed_artists": 0,
                 "show_count": 0,
                 "release_count": 0,
+                "attending_count": 0,
+                "insight_count": 0,
             },
         }
 
@@ -387,12 +642,24 @@ def upcoming(request: Request, limit: int = 120):
             }
         )
 
+    enriched_shows = [
+        {
+            **dict(show),
+            "probable_setlist": (setlist_map.get(show.get("artist_name", "")) or [])[:8],
+        }
+        for show in shows
+    ]
+    insights = _build_upcoming_insights(user["id"], enriched_shows, attending_show_ids)
+
     return {
         "items": items,
+        "insights": insights,
         "summary": {
             "followed_artists": len(followed_names),
             "show_count": len([item for item in items if item["type"] == "show"]),
             "release_count": len([item for item in items if item["type"] == "release"]),
+            "attending_count": len(attending_show_ids),
+            "insight_count": len(insights),
         },
     }
 
@@ -411,3 +678,14 @@ def unattend_show_endpoint(request: Request, show_id: int):
     from crate.db import unattend_show
 
     return {"ok": True, "removed": unattend_show(user["id"], show_id)}
+
+
+@router.post("/shows/{show_id}/reminders")
+def create_show_reminder_endpoint(request: Request, show_id: int, body: ShowReminderRequest):
+    user = _require_auth(request)
+    from crate.db import create_show_reminder
+
+    if body.reminder_type not in {"one_month", "one_week", "show_prep"}:
+        raise HTTPException(status_code=400, detail="Unsupported reminder type")
+
+    return {"ok": True, "added": create_show_reminder(user["id"], show_id, body.reminder_type)}
