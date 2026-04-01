@@ -375,15 +375,7 @@ def init_db():
                 EXCEPTION WHEN duplicate_column THEN NULL;
                 END $$
             """)
-        # Set existing analyzed tracks to 'done' so daemons don't re-process them
-        cur.execute("""
-            UPDATE library_tracks SET analysis_state = 'done'
-            WHERE bpm IS NOT NULL AND energy IS NOT NULL AND analysis_state = 'pending'
-        """)
-        cur.execute("""
-            UPDATE library_tracks SET bliss_state = 'done'
-            WHERE bliss_vector IS NOT NULL AND bliss_state = 'pending'
-        """)
+        # NOTE: existing tracks are marked 'done' later, after bliss_vector column is created
 
         # Migration: add folder_name to library_artists (filesystem dir name, may differ from canonical name)
         cur.execute("""
@@ -420,6 +412,17 @@ def init_db():
                 ALTER TABLE library_tracks ADD COLUMN bliss_vector DOUBLE PRECISION[];
             EXCEPTION WHEN duplicate_column THEN NULL;
             END $$
+        """)
+
+        # Mark existing analyzed tracks as 'done' so daemons don't re-process them
+        # (must run after both analysis_state/bliss_state AND bliss_vector columns exist)
+        cur.execute("""
+            UPDATE library_tracks SET analysis_state = 'done'
+            WHERE bpm IS NOT NULL AND energy IS NOT NULL AND analysis_state = 'pending'
+        """)
+        cur.execute("""
+            UPDATE library_tracks SET bliss_state = 'done'
+            WHERE bliss_vector IS NOT NULL AND bliss_state = 'pending'
         """)
 
         # Migration: popularity columns
