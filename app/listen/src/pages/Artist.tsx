@@ -191,7 +191,7 @@ export function Artist() {
     }
 
     const queue = shuffle ? shuffleArray(playerTracks) : playerTracks;
-    playAll(queue, shuffle ? 0 : startIndex, { type: "album", name: `${decodedName} Top Tracks` });
+    playAll(queue, shuffle ? 0 : startIndex, { type: "queue", name: `${decodedName} Top Tracks` });
   }
 
   function genreSlug(name: string) {

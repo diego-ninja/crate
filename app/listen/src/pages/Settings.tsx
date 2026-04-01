@@ -38,6 +38,7 @@ function RangeRow({
   max,
   step,
   displayValue,
+  disabled = false,
   onChange,
 }: {
   label: string;
@@ -47,10 +48,11 @@ function RangeRow({
   max: number;
   step: number;
   displayValue?: string;
+  disabled?: boolean;
   onChange: (value: number) => void;
 }) {
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 ${disabled ? "opacity-50" : ""}`}>
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="text-sm font-medium text-foreground">{label}</div>
@@ -66,8 +68,9 @@ function RangeRow({
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(Number(event.target.value))}
-        className="w-full accent-cyan-400"
+        className="w-full accent-cyan-400 disabled:cursor-not-allowed"
       />
     </div>
   );
@@ -172,6 +175,7 @@ export function Settings() {
           max={10}
           step={1}
           displayValue={`Every ${smartPlaylistSuggestionsCadence} tracks`}
+          disabled={!smartPlaylistSuggestionsEnabled}
           onChange={(value) => {
             setSmartPlaylistSuggestionsCadence(value);
             setSmartPlaylistSuggestionsCadencePreference(value);

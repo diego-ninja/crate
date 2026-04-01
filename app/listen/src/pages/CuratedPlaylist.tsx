@@ -266,14 +266,16 @@ export function CuratedPlaylist() {
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handlePlay}
-          className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+          disabled={playerTracks.length === 0}
+          className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
         >
           <Play size={16} fill="currentColor" />
           Play
         </button>
         <button
           onClick={handleShuffle}
-          className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors"
+          disabled={playerTracks.length === 0}
+          className="inline-flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground hover:bg-white/5 transition-colors disabled:opacity-50"
         >
           <Shuffle size={15} />
           Shuffle

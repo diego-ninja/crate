@@ -242,7 +242,7 @@ def _radio_track_payload(track: dict) -> dict:
         "artist": track.get("artist"),
         "album": track.get("album"),
         "duration": track.get("duration", 0),
-        "score": track.get("score") if track.get("score") is not None else track.get("_score"),
+        "score": track.get("score"),
     }
 
 
@@ -408,36 +408,10 @@ def get_similar_from_db(track_path: str, limit: int = 20) -> list[dict]:
     for c in candidates:
         c["_genres"] = list(artist_genre_map.get(c["artist"], set()))
 
-    scored = []
-    for c in candidates:
-        score = 0.0
-
-        # Bliss cosine similarity (weight 0.3)
-        score += 0.3 * _cosine_similarity(source["bliss_vector"], c["bliss_vector"])
-
-        # BPM proximity (weight 0.15)
-        if source.get("bpm") and c.get("bpm"):
-            diff = abs(source["bpm"] - c["bpm"])
-            score += 0.15 * max(0.0, 1.0 - diff / 40.0)
-
-        # Key compatibility (weight 0.1)
-        score += 0.1 * _key_compatibility(
-            source.get("audio_key"), source.get("audio_scale"),
-            c.get("audio_key"), c.get("audio_scale"),
-        )
-
-        # Energy proximity (weight 0.1)
-        if source.get("energy") is not None and c.get("energy") is not None:
-            score += 0.1 * (1.0 - abs(source["energy"] - c["energy"]))
-
-        # Genre overlap (weight 0.15)
-        score += 0.15 * _genre_jaccard(source_genres, set(c["_genres"]))
-
-        # Similar artist bonus (weight 0.2)
-        if c.get("artist") in similar_artist_names:
-            score += 0.2
-
-        scored.append((score, c))
+    scored = [
+        (_score_candidate(c, [source], source_genres, similar_artist_names), c)
+        for c in candidates
+    ]
 
     scored.sort(key=lambda x: x[0], reverse=True)
 
@@ -520,17 +494,133 @@ def generate_track_radio(track_path: str, limit: int = 50, mix_ratio: float = 0.
 
 
 def _aggregate_similar_candidates(seed_paths: list[str], *, per_seed_limit: int = 40) -> list[dict]:
+    if not seed_paths:
+        return []
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                t.id AS track_id,
+                t.path,
+                t.title,
+                t.artist,
+                a.name AS album,
+                t.duration,
+                t.navidrome_id,
+                t.bliss_vector,
+                t.bpm,
+                t.audio_key,
+                t.audio_scale,
+                t.energy
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE t.path = ANY(%s) AND t.bliss_vector IS NOT NULL
+            """,
+            (seed_paths,),
+        )
+        seeds = [dict(row) for row in cur.fetchall()]
+
+        if not seeds:
+            return []
+
+        cur.execute(
+            """
+            WITH seeds AS (
+                SELECT
+                    t.path AS seed_path,
+                    t.bliss_vector AS seed_bliss_vector
+                FROM library_tracks t
+                WHERE t.path = ANY(%s) AND t.bliss_vector IS NOT NULL
+            ),
+            ranked AS (
+                SELECT
+                    s.seed_path,
+                    t.id AS track_id,
+                    t.path,
+                    t.title,
+                    t.artist,
+                    a.name AS album,
+                    t.duration,
+                    t.navidrome_id,
+                    t.bliss_vector,
+                    t.bpm,
+                    t.audio_key,
+                    t.audio_scale,
+                    t.energy,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY s.seed_path
+                        ORDER BY SQRT(
+                            (
+                                SELECT SUM(POW(x - y, 2))
+                                FROM UNNEST(t.bliss_vector, s.seed_bliss_vector) AS v(x, y)
+                            )
+                        ) ASC
+                    ) AS seed_rank
+                FROM seeds s
+                JOIN library_tracks t
+                  ON t.bliss_vector IS NOT NULL
+                 AND t.path <> s.seed_path
+                 AND t.path <> ALL(%s)
+                JOIN library_albums a ON t.album_id = a.id
+            )
+            SELECT *
+            FROM ranked
+            WHERE seed_rank <= %s
+            """,
+            (seed_paths, seed_paths, per_seed_limit),
+        )
+        candidate_rows = [dict(row) for row in cur.fetchall()]
+
+        seed_artists = {seed["artist"] for seed in seeds}
+        candidate_artists = {row["artist"] for row in candidate_rows}
+        seed_genre_map = _get_artist_genre_map(cur, seed_artists)
+        candidate_genre_map = _get_artist_genre_map(cur, candidate_artists)
+        similar_artist_map = {
+            artist_name: _get_similar_artist_names(cur, artist_name)
+            for artist_name in seed_artists
+        }
+
+    if not candidate_rows:
+        return []
+
+    seed_map = {seed["path"]: {**seed, "_genres": list(seed_genre_map.get(seed["artist"], set()))} for seed in seeds}
+
     aggregated: dict[str, dict] = {}
-    for seed_path in seed_paths:
-        for index, track in enumerate(get_similar_from_db(seed_path, limit=per_seed_limit)):
-            track_path = track.get("track_path")
-            if not track_path:
-                continue
-            entry = aggregated.setdefault(track_path, {**track, "_aggregate_score": 0.0, "_hits": 0})
-            score = float(track.get("score") or 0.0)
-            # Small position bias so earlier matches win ties more often.
-            entry["_aggregate_score"] += score + max(0.0, (per_seed_limit - index) / (per_seed_limit * 100))
-            entry["_hits"] += 1
+    for candidate_row in candidate_rows:
+        seed = seed_map.get(candidate_row["seed_path"])
+        if not seed:
+            continue
+
+        candidate = {
+            key: value
+            for key, value in candidate_row.items()
+            if key not in {"seed_path", "seed_rank"}
+        }
+        candidate["_genres"] = list(candidate_genre_map.get(candidate["artist"], set()))
+
+        score = _score_candidate(
+            candidate,
+            [seed],
+            set(seed.get("_genres") or []),
+            similar_artist_map.get(seed["artist"], set()),
+        )
+
+        track_path = candidate.get("path")
+        if not track_path:
+            continue
+
+        entry = aggregated.setdefault(
+            track_path,
+            {
+                **_radio_track_payload(candidate),
+                "_aggregate_score": 0.0,
+                "_hits": 0,
+            },
+        )
+        rank = int(candidate_row.get("seed_rank") or per_seed_limit)
+        entry["_aggregate_score"] += score + max(0.0, (per_seed_limit - rank) / (per_seed_limit * 100))
+        entry["_hits"] += 1
 
     ranked = sorted(
         aggregated.values(),
