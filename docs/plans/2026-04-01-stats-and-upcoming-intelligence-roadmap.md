@@ -174,6 +174,8 @@ Current implementation notes:
 
 ## Batch 3 - Stats API MVP
 
+**Current status**: first implementation batch delivered
+
 ### Goal
 
 Expose useful, stable stats endpoints before building visual surfaces.
@@ -187,6 +189,23 @@ Expose useful, stable stats endpoints before building visual surfaces.
 - `GET /api/me/stats/top-albums`
 - `GET /api/me/stats/top-genres`
 - `GET /api/me/stats/recent-wins` or similar lightweight summary endpoint
+
+Current implementation notes:
+
+- the MVP API now ships:
+  - `GET /api/me/stats/overview`
+  - `GET /api/me/stats/trends`
+  - `GET /api/me/stats/top-tracks`
+  - `GET /api/me/stats/top-artists`
+  - `GET /api/me/stats/top-albums`
+  - `GET /api/me/stats/top-genres`
+- supported windows currently are:
+  - `7d`
+  - `30d`
+  - `90d`
+  - `365d`
+  - `all_time`
+- `recent-wins` is still deferred
 
 ### Output expectations
 

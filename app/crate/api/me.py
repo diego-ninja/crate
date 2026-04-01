@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Query
 from pydantic import BaseModel
 
 from crate.api.auth import _require_auth
@@ -220,6 +220,72 @@ def stats(request: Request):
     user = _require_auth(request)
     from crate.db.user_library import get_play_stats
     return get_play_stats(user["id"])
+
+
+@router.get("/stats/overview")
+def stats_overview(request: Request, window: str = Query("30d")):
+    user = _require_auth(request)
+    from crate.db.user_library import get_stats_overview
+
+    try:
+        return get_stats_overview(user["id"], window=window)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/trends")
+def stats_trends(request: Request, window: str = Query("30d")):
+    user = _require_auth(request)
+    from crate.db.user_library import get_stats_trends
+
+    try:
+        return get_stats_trends(user["id"], window=window)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/top-tracks")
+def stats_top_tracks(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_top_tracks
+
+    try:
+        return {"window": window, "items": get_top_tracks(user["id"], window=window, limit=limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/top-artists")
+def stats_top_artists(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_top_artists
+
+    try:
+        return {"window": window, "items": get_top_artists(user["id"], window=window, limit=limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/top-albums")
+def stats_top_albums(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_top_albums
+
+    try:
+        return {"window": window, "items": get_top_albums(user["id"], window=window, limit=limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/stats/top-genres")
+def stats_top_genres(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
+    user = _require_auth(request)
+    from crate.db.user_library import get_top_genres
+
+    try:
+        return {"window": window, "items": get_top_genres(user["id"], window=window, limit=limit)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/play-events")

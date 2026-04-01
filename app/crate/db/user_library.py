@@ -13,6 +13,13 @@ _STATS_WINDOWS: dict[str, int | None] = {
 }
 
 
+def _normalize_stats_window(window: str) -> str:
+    candidate = (window or "30d").strip().lower()
+    if candidate not in _STATS_WINDOWS:
+        raise ValueError(f"Unsupported stats window: {window}")
+    return candidate
+
+
 def _library_root() -> Path:
     try:
         return Path(load_config()["library_path"])
@@ -332,6 +339,14 @@ def _window_cutoff(days: int | None) -> str | None:
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
 
+def _window_day_cutoff(window: str) -> str | None:
+    normalized = _normalize_stats_window(window)
+    days = _STATS_WINDOWS[normalized]
+    if days is None:
+        return None
+    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+
 def _recompute_user_listening_aggregates(cur, user_id: int):
     _recompute_user_daily_listening(cur, user_id)
     for window, days in _STATS_WINDOWS.items():
@@ -582,6 +597,187 @@ def get_play_stats(user_id: int) -> dict:
             top_artists = [dict(r) for r in cur.fetchall()]
 
     return {"total_plays": total, "top_artists": top_artists}
+
+
+def get_stats_overview(user_id: int, window: str = "30d") -> dict:
+    normalized = _normalize_stats_window(window)
+    day_cutoff = _window_day_cutoff(normalized)
+    with get_db_ctx() as cur:
+        if day_cutoff is None:
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(SUM(play_count), 0) AS play_count,
+                    COALESCE(SUM(complete_play_count), 0) AS complete_play_count,
+                    COALESCE(SUM(skip_count), 0) AS skip_count,
+                    COALESCE(SUM(minutes_listened), 0) AS minutes_listened,
+                    COUNT(*)::INTEGER AS active_days
+                FROM user_daily_listening
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(SUM(play_count), 0) AS play_count,
+                    COALESCE(SUM(complete_play_count), 0) AS complete_play_count,
+                    COALESCE(SUM(skip_count), 0) AS skip_count,
+                    COALESCE(SUM(minutes_listened), 0) AS minutes_listened,
+                    COUNT(*)::INTEGER AS active_days
+                FROM user_daily_listening
+                WHERE user_id = %s AND day >= %s
+                """,
+                (user_id, day_cutoff),
+            )
+        overview = dict(cur.fetchone() or {})
+
+        cur.execute(
+            """
+            SELECT artist_name, play_count, minutes_listened
+            FROM user_artist_stats
+            WHERE user_id = %s AND window = %s
+            ORDER BY play_count DESC, minutes_listened DESC, artist_name ASC
+            LIMIT 1
+            """,
+            (user_id, normalized),
+        )
+        top_artist = cur.fetchone()
+
+    play_count = overview.get("play_count", 0) or 0
+    skip_count = overview.get("skip_count", 0) or 0
+    return {
+        "window": normalized,
+        "play_count": play_count,
+        "complete_play_count": overview.get("complete_play_count", 0) or 0,
+        "skip_count": skip_count,
+        "minutes_listened": overview.get("minutes_listened", 0) or 0,
+        "active_days": overview.get("active_days", 0) or 0,
+        "skip_rate": (skip_count / play_count) if play_count else 0,
+        "top_artist": dict(top_artist) if top_artist else None,
+    }
+
+
+def get_stats_trends(user_id: int, window: str = "30d") -> dict:
+    normalized = _normalize_stats_window(window)
+    day_cutoff = _window_day_cutoff(normalized)
+    with get_db_ctx() as cur:
+        if day_cutoff is None:
+            cur.execute(
+                """
+                SELECT day, play_count, complete_play_count, skip_count, minutes_listened
+                FROM user_daily_listening
+                WHERE user_id = %s
+                ORDER BY day ASC
+                """,
+                (user_id,),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT day, play_count, complete_play_count, skip_count, minutes_listened
+                FROM user_daily_listening
+                WHERE user_id = %s AND day >= %s
+                ORDER BY day ASC
+                """,
+                (user_id, day_cutoff),
+            )
+        rows = [dict(row) for row in cur.fetchall()]
+    return {"window": normalized, "points": rows}
+
+
+def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[dict]:
+    normalized = _normalize_stats_window(window)
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                track_id,
+                track_path,
+                title,
+                artist,
+                album,
+                play_count,
+                complete_play_count,
+                minutes_listened,
+                first_played_at,
+                last_played_at
+            FROM user_track_stats
+            WHERE user_id = %s AND window = %s
+            ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
+            LIMIT %s
+            """,
+            (user_id, normalized, limit),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_top_artists(user_id: int, window: str = "30d", limit: int = 20) -> list[dict]:
+    normalized = _normalize_stats_window(window)
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                artist_name,
+                play_count,
+                complete_play_count,
+                minutes_listened,
+                first_played_at,
+                last_played_at
+            FROM user_artist_stats
+            WHERE user_id = %s AND window = %s
+            ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
+            LIMIT %s
+            """,
+            (user_id, normalized, limit),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_top_albums(user_id: int, window: str = "30d", limit: int = 20) -> list[dict]:
+    normalized = _normalize_stats_window(window)
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                artist,
+                album,
+                play_count,
+                complete_play_count,
+                minutes_listened,
+                first_played_at,
+                last_played_at
+            FROM user_album_stats
+            WHERE user_id = %s AND window = %s
+            ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
+            LIMIT %s
+            """,
+            (user_id, normalized, limit),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_top_genres(user_id: int, window: str = "30d", limit: int = 20) -> list[dict]:
+    normalized = _normalize_stats_window(window)
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                genre_name,
+                play_count,
+                complete_play_count,
+                minutes_listened,
+                first_played_at,
+                last_played_at
+            FROM user_genre_stats
+            WHERE user_id = %s AND window = %s
+            ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
+            LIMIT %s
+            """,
+            (user_id, normalized, limit),
+        )
+        return [dict(row) for row in cur.fetchall()]
 
 
 # ── User Library Summary ─────────────────────────────────────
