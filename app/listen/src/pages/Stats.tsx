@@ -83,6 +83,11 @@ interface ReplayMix {
   items: StatsTrack[];
 }
 
+interface RecapHighlight {
+  title: string;
+  body: string;
+}
+
 const WINDOW_OPTIONS: { value: StatsWindow; label: string }[] = [
   { value: "7d", label: "7D" },
   { value: "30d", label: "30D" },
@@ -272,6 +277,51 @@ function TrendChart({ points }: { points: StatsTrendPoint[] }) {
   );
 }
 
+function buildRecapHighlights(
+  overview: StatsOverview | undefined,
+  replay: ReplayMix | undefined,
+  topArtists: StatsArtist[],
+  topTracks: StatsTrack[],
+): RecapHighlight[] {
+  const highlights: RecapHighlight[] = [];
+
+  if (overview?.top_artist?.artist_name) {
+    highlights.push({
+      title: `${overview.top_artist.artist_name} led this window`,
+      body: `${overview.top_artist.play_count} plays and ${formatMinutes(overview.top_artist.minutes_listened)} listened.`,
+    });
+  }
+
+  if (topTracks[0]) {
+    highlights.push({
+      title: `"${topTracks[0].title}" kept coming back`,
+      body: `${topTracks[0].artist} · ${topTracks[0].play_count} plays in this window.`,
+    });
+  }
+
+  if (overview) {
+    const cadence =
+      overview.active_days >= 20
+        ? "You've been listening almost every day."
+        : overview.active_days >= 10
+          ? "This window has had a steady rhythm."
+          : "This window is still taking shape.";
+    highlights.push({
+      title: `${formatMinutes(overview.minutes_listened)} listened`,
+      body: `${cadence} ${overview.complete_play_count} completed plays so far.`,
+    });
+  }
+
+  if (replay?.track_count) {
+    highlights.push({
+      title: `${replay.track_count} tracks define this replay`,
+      body: `${topArtists.length ? `Spread across ${Math.min(topArtists.length, 8)} key artists.` : "A first replay object is ready to play."}`,
+    });
+  }
+
+  return highlights.slice(0, 3);
+}
+
 export function Stats() {
   const [window, setWindow] = useState<StatsWindow>("30d");
   const { play, playAll } = usePlayerActions();
@@ -288,6 +338,10 @@ export function Stats() {
   const topAlbumItems = topAlbums?.items ?? [];
   const topGenreItems = topGenres?.items ?? [];
   const replayItems = replay?.items ?? [];
+  const recapHighlights = useMemo(
+    () => buildRecapHighlights(overview ?? undefined, replay ?? undefined, topArtistItems, topTrackItems),
+    [overview, replay, topArtistItems, topTrackItems],
+  );
 
   const toPlayerTrack = (item: StatsTrack): Track => ({
     id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
@@ -410,6 +464,27 @@ export function Stats() {
             Keep listening and your replay object will start to take shape.
           </div>
         )}
+      </Section>
+
+      <Section
+        title="Your window so far"
+        subtitle="A more readable summary of what this period says about your listening."
+      >
+        <div className="grid gap-3 lg:grid-cols-3">
+          {recapHighlights.length > 0 ? recapHighlights.map((item) => (
+            <div
+              key={item.title}
+              className="rounded-2xl border border-white/10 bg-black/10 p-4"
+            >
+              <div className="text-sm font-semibold text-foreground">{item.title}</div>
+              <div className="mt-2 text-sm leading-6 text-muted-foreground">{item.body}</div>
+            </div>
+          )) : (
+            <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 p-4 text-sm text-muted-foreground lg:col-span-3">
+              Keep listening and this window will start to tell a clearer story.
+            </div>
+          )}
+        </div>
       </Section>
 
       <Section
