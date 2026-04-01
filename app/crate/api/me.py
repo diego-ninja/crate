@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 
 from crate.api.auth import _require_auth
 
@@ -36,8 +36,8 @@ class RecordPlayEventRequest(BaseModel):
     title: str = ""
     artist: str = ""
     album: str = ""
-    started_at: str
-    ended_at: str
+    started_at: datetime
+    ended_at: datetime
     played_seconds: float = 0
     track_duration_seconds: float | None = None
     completion_ratio: float | None = None
@@ -52,22 +52,53 @@ class RecordPlayEventRequest(BaseModel):
     device_type: str | None = None
     app_platform: str | None = None
 
+    @field_validator("played_seconds")
+    @classmethod
+    def _validate_played_seconds(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("played_seconds must be >= 0")
+        return value
+
+    @field_validator("track_duration_seconds")
+    @classmethod
+    def _validate_track_duration(cls, value: float | None) -> float | None:
+        if value is not None and value <= 0:
+            raise ValueError("track_duration_seconds must be > 0")
+        return value
+
+    @field_validator("completion_ratio")
+    @classmethod
+    def _validate_completion_ratio(cls, value: float | None) -> float | None:
+        if value is not None and not 0 <= value <= 1:
+            raise ValueError("completion_ratio must be between 0 and 1")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_consistency(self):
+        if self.started_at > self.ended_at:
+            raise ValueError("started_at must be <= ended_at")
+        if self.was_skipped and self.was_completed:
+            raise ValueError("was_skipped and was_completed cannot both be true")
+        if self.track_duration_seconds and self.completion_ratio is not None:
+            derived = min(1.0, max(0.0, self.played_seconds / self.track_duration_seconds))
+            if abs(derived - self.completion_ratio) > 0.15:
+                raise ValueError("completion_ratio does not match played_seconds and track_duration_seconds")
+        return self
+
 
 class ShowReminderRequest(BaseModel):
     reminder_type: str
 
 
 def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
-    from crate import setlistfm
+    from crate.db import get_cache
 
     result: dict[str, list[dict]] = {}
     for artist_name in artist_names:
-        try:
-            probable = setlistfm.get_probable_setlist(artist_name)
-            if probable:
-                result[artist_name] = probable
-        except Exception:
-            continue
+        cached = get_cache(f"setlistfm:probable:{artist_name.lower()}", max_age_seconds=86400 * 7)
+        songs = cached.get("songs") if isinstance(cached, dict) else None
+        if songs:
+            result[artist_name] = songs
     return result
 
 
@@ -289,6 +320,8 @@ def history(request: Request, limit: int = 50):
 def record(request: Request, body: RecordPlayRequest):
     user = _require_auth(request)
     from crate.db.user_library import record_play
+    # Legacy endpoint kept for recently-played surfaces while /play-events becomes the
+    # canonical telemetry path. Remove once remaining callers are migrated.
     record_play(
         user["id"],
         track_path=body.track_path,
@@ -386,6 +419,7 @@ def stats_replay(request: Request, window: str = Query("30d"), limit: int = Quer
 @router.post("/play-events")
 def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
     user = _require_auth(request)
+    from crate.db import create_task_dedup
     from crate.db.user_library import record_play_event
 
     event_id = record_play_event(
@@ -395,8 +429,8 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
         title=body.title,
         artist=body.artist,
         album=body.album,
-        started_at=body.started_at,
-        ended_at=body.ended_at,
+        started_at=body.started_at.isoformat(),
+        ended_at=body.ended_at.isoformat(),
         played_seconds=body.played_seconds,
         track_duration_seconds=body.track_duration_seconds,
         completion_ratio=body.completion_ratio,
@@ -411,6 +445,7 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
         device_type=body.device_type,
         app_platform=body.app_platform,
     )
+    create_task_dedup("refresh_user_listening_stats", {"user_id": user["id"]})
     return {"ok": True, "id": event_id}
 
 
@@ -424,9 +459,11 @@ def feed(request: Request, limit: int = 30):
     from crate.db.core import get_db_ctx
 
     followed = get_followed_artists(user["id"])
-    followed_names = {f["artist_name"] for f in followed}
+    followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
 
     items = []
+    recent_day_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with get_db_ctx() as cur:
         if followed_names:
             placeholders = ",".join(["%s"] * len(followed_names))
@@ -435,10 +472,10 @@ def feed(request: Request, limit: int = 30):
                        la.updated_at AS date
                 FROM library_albums la
                 WHERE la.artist IN ({placeholders})
-                AND la.updated_at > (NOW() AT TIME ZONE 'UTC' - INTERVAL '30 days')::text
+                AND substring(COALESCE(la.updated_at, ''), 1, 10) >= %s
                 ORDER BY la.updated_at DESC
                 LIMIT %s
-            """, list(followed_names) + [limit])
+            """, list(followed_names) + [recent_day_cutoff, limit])
             for r in cur.fetchall():
                 items.append(dict(r))
 
@@ -447,10 +484,10 @@ def feed(request: Request, limit: int = 30):
                        s.city, s.country, s.date, s.url, s.image_url
                 FROM shows s
                 WHERE s.artist_name IN ({placeholders})
-                AND s.date >= CURRENT_DATE::text
+                AND s.date >= %s
                 ORDER BY s.date
                 LIMIT %s
-            """, list(followed_names) + [limit])
+            """, list(followed_names) + [today, limit])
             for r in cur.fetchall():
                 items.append(dict(r))
 

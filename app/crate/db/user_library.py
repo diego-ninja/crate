@@ -1,8 +1,11 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from crate.config import load_config
 from crate.db.core import get_db_ctx
+
+log = logging.getLogger(__name__)
 
 _STATS_WINDOWS: dict[str, int | None] = {
     "7d": 7,
@@ -56,8 +59,6 @@ def _resolve_track_id(cur, track_id: int | None = None, track_path: str | None =
     library_root = str(_library_root()).rstrip("/")
     absolute_candidate = f"{library_root}/{relative_path}" if library_root and relative_path else track_path
     music_candidate = f"/music/{relative_path}" if relative_path else track_path
-    suffix_candidate = f"%/{relative_path}" if relative_path else ""
-
     cur.execute(
         """
         SELECT id
@@ -66,7 +67,6 @@ def _resolve_track_id(cur, track_id: int | None = None, track_path: str | None =
            OR path = %s
            OR path = %s
            OR navidrome_id = %s
-           OR (%s != '' AND path LIKE %s)
         ORDER BY CASE
             WHEN path = %s THEN 0
             WHEN path = %s THEN 1
@@ -80,8 +80,6 @@ def _resolve_track_id(cur, track_id: int | None = None, track_path: str | None =
             absolute_candidate,
             music_candidate,
             track_path,
-            suffix_candidate,
-            suffix_candidate,
             track_path,
             absolute_candidate,
             music_candidate,
@@ -329,7 +327,6 @@ def record_play_event(
             ),
         )
         event_id = cur.fetchone()["id"]
-        _recompute_user_listening_aggregates(cur, user_id)
         return event_id
 
 
@@ -348,6 +345,8 @@ def _window_day_cutoff(window: str) -> str | None:
 
 
 def _recompute_user_listening_aggregates(cur, user_id: int):
+    # Full-window recompute is intentionally centralized here so the worker can own the
+    # expensive path. The API request only writes the raw play event and enqueues this work.
     _recompute_user_daily_listening(cur, user_id)
     for window, days in _STATS_WINDOWS.items():
         cutoff = _window_cutoff(days)
@@ -355,6 +354,11 @@ def _recompute_user_listening_aggregates(cur, user_id: int):
         _recompute_user_artist_stats(cur, user_id, window, cutoff)
         _recompute_user_album_stats(cur, user_id, window, cutoff)
         _recompute_user_genre_stats(cur, user_id, window, cutoff)
+
+
+def recompute_user_listening_aggregates(user_id: int) -> None:
+    with get_db_ctx() as cur:
+        _recompute_user_listening_aggregates(cur, user_id)
 
 
 def _recompute_user_daily_listening(cur, user_id: int):
@@ -534,7 +538,9 @@ def _recompute_user_genre_stats(cur, user_id: int, window: str, cutoff: str | No
             MIN(upe.started_at) AS first_played_at,
             MAX(upe.ended_at) AS last_played_at
         FROM user_play_events upe
-        JOIN library_tracks lt ON lt.id = upe.track_id
+        LEFT JOIN library_tracks lt
+          ON lt.id = upe.track_id
+          OR (upe.track_id IS NULL AND COALESCE(upe.track_path, '') != '' AND lt.path = upe.track_path)
         WHERE {where_sql}
           AND COALESCE(lt.genre, '') != ''
         GROUP BY lt.genre
@@ -588,6 +594,7 @@ def get_play_stats(user_id: int) -> dict:
         top_artists = [dict(r) for r in cur.fetchall()]
 
         if not total and not top_artists:
+            log.info("Falling back to legacy play_history for user %s stats", user_id)
             cur.execute("SELECT COUNT(*) AS total_plays FROM play_history WHERE user_id = %s", (user_id,))
             total = cur.fetchone()["total_plays"]
             cur.execute("""
@@ -693,19 +700,21 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
         cur.execute(
             """
             SELECT
-                track_id,
-                track_path,
-                title,
-                artist,
-                album,
-                play_count,
-                complete_play_count,
-                minutes_listened,
-                first_played_at,
-                last_played_at
-            FROM user_track_stats
-            WHERE user_id = %s AND window = %s
-            ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
+                uts.track_id,
+                COALESCE(lt.path, uts.track_path) AS track_path,
+                COALESCE(lt.title, uts.title) AS title,
+                COALESCE(lt.artist, uts.artist) AS artist,
+                COALESCE(lt.album, uts.album) AS album,
+                lt.navidrome_id,
+                uts.play_count,
+                uts.complete_play_count,
+                uts.minutes_listened,
+                uts.first_played_at,
+                uts.last_played_at
+            FROM user_track_stats uts
+            LEFT JOIN library_tracks lt ON lt.id = uts.track_id
+            WHERE uts.user_id = %s AND uts.window = %s
+            ORDER BY uts.play_count DESC, uts.minutes_listened DESC, uts.last_played_at DESC
             LIMIT %s
             """,
             (user_id, normalized, limit),

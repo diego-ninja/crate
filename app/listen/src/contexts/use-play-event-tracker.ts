@@ -8,6 +8,7 @@ interface PlayEventSession {
   track: Track;
   playSource: PlaySource | null;
   startedAt: string;
+  trackDurationSeconds: number | null;
   lastKnownTime: number;
   listenedSeconds: number;
   maxProgressSeconds: number;
@@ -47,6 +48,7 @@ export function usePlayEventTracker(
       track,
       playSource: source,
       startedAt: nowIso(),
+      trackDurationSeconds: Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null,
       lastKnownTime: audio.currentTime || 0,
       listenedSeconds: 0,
       maxProgressSeconds: audio.currentTime || 0,
@@ -58,9 +60,7 @@ export function usePlayEventTracker(
     if (!session) return;
     sessionRef.current = null;
 
-    const trackDurationSeconds = Number.isFinite(audio.duration) && audio.duration > 0
-      ? audio.duration
-      : null;
+    const trackDurationSeconds = session.trackDurationSeconds;
     const playedSeconds = Math.max(0, session.listenedSeconds);
 
     if (playedSeconds < PLAY_EVENT_MIN_SECONDS && reason !== "completed") {
@@ -71,7 +71,7 @@ export function usePlayEventTracker(
       ? Math.min(1, playedSeconds / trackDurationSeconds)
       : null;
     const wasCompleted = reason === "completed" || (completionRatio !== null && completionRatio >= 0.9);
-    const wasSkipped = reason === "skipped" || (!wasCompleted && playedSeconds >= PLAY_EVENT_MIN_SECONDS);
+    const wasSkipped = reason === "skipped" && playedSeconds >= PLAY_EVENT_MIN_SECONDS;
 
     fetch("/api/me/play-events", {
       method: "POST",
@@ -103,11 +103,14 @@ export function usePlayEventTracker(
         app_platform: "listen-web",
       }),
     }).catch(() => {});
-  }, [audio.duration]);
+  }, []);
 
   const recordProgress = useCallback((nextTime: number) => {
     const session = sessionRef.current;
     if (!session) return;
+    if (session.trackDurationSeconds === null && Number.isFinite(audio.duration) && audio.duration > 0) {
+      session.trackDurationSeconds = audio.duration;
+    }
 
     const delta = nextTime - session.lastKnownTime;
     if (delta > 0 && delta <= PLAY_EVENT_DELTA_CAP_SECONDS) {
@@ -115,14 +118,17 @@ export function usePlayEventTracker(
     }
     session.lastKnownTime = nextTime;
     session.maxProgressSeconds = Math.max(session.maxProgressSeconds, nextTime);
-  }, []);
+  }, [audio]);
 
   const markSeekPosition = useCallback((nextTime: number) => {
     const session = sessionRef.current;
     if (!session) return;
+    if (session.trackDurationSeconds === null && Number.isFinite(audio.duration) && audio.duration > 0) {
+      session.trackDurationSeconds = audio.duration;
+    }
     session.lastKnownTime = nextTime;
     session.maxProgressSeconds = Math.max(session.maxProgressSeconds, nextTime);
-  }, []);
+  }, [audio]);
 
   useEffect(() => {
     syncSession(currentTrack, playSource);
@@ -132,6 +138,5 @@ export function usePlayEventTracker(
     flushCurrentPlayEvent,
     markSeekPosition,
     recordProgress,
-    syncSession,
   };
 }

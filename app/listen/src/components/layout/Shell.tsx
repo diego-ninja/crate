@@ -11,6 +11,7 @@ import { MiniPlayer } from "@/components/player/MiniPlayer";
 import { TopBar } from "@/components/layout/TopBar";
 
 const SIDEBAR_KEY = "listen-sidebar-expanded";
+const SIDEBAR_EVENT = "listen-sidebar-changed";
 
 function getStoredExpanded(): boolean {
   try { return localStorage.getItem(SIDEBAR_KEY) !== "false"; } catch { return true; }
@@ -28,6 +29,7 @@ function Sidebar() {
     const next = !expanded;
     setExpanded(next);
     localStorage.setItem(SIDEBAR_KEY, String(next));
+    window.dispatchEvent(new CustomEvent(SIDEBAR_EVENT, { detail: { expanded: next } }));
   }
 
   // Close collection popup on outside click
@@ -180,6 +182,7 @@ function Sidebar() {
 const MOBILE_NAV = [
   { to: "/", icon: Home, label: "Home" },
   { to: "/explore", icon: Compass, label: "Explore" },
+  { to: "/stats", icon: BarChart3, label: "Stats" },
   { to: "/library", icon: Library, label: "Library" },
   { to: "/upcoming", icon: Rss, label: "Upcoming" },
 ] as const;
@@ -199,11 +202,18 @@ export function Shell() {
   const headerOffsetClass = overlayHeader ? "" : "pt-16";
   const headerChromeClass = "bg-transparent border-transparent border-b-0 shadow-none backdrop-blur-0";
 
-  // Sync with sidebar toggle (Sidebar writes to localStorage, we poll)
+  // Sync with sidebar toggle without polling localStorage.
   useEffect(() => {
-    const check = () => setSidebarExpanded(getStoredExpanded());
-    const id = setInterval(check, 300);
-    return () => clearInterval(id);
+    const sync = () => setSidebarExpanded(getStoredExpanded());
+    const onStorage = (event: StorageEvent) => {
+      if (!event.key || event.key === SIDEBAR_KEY) sync();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(SIDEBAR_EVENT, sync as EventListener);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(SIDEBAR_EVENT, sync as EventListener);
+    };
   }, []);
 
   const sidebarW = sidebarExpanded ? "ml-52" : "ml-14";

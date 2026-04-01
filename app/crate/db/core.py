@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
+from psycopg2 import sql
 
 log = logging.getLogger(__name__)
 
@@ -67,17 +68,30 @@ def _ensure_database():
         # Create app role if missing
         cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (app_user,))
         if not cur.fetchone():
-            cur.execute(f"CREATE ROLE {app_user} WITH LOGIN PASSWORD %s", (app_pass,))
+            cur.execute(
+                sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD %s").format(sql.Identifier(app_user)),
+                (app_pass,),
+            )
             log.info("Created database role: %s", app_user)
 
         # Create app database if missing
         cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (app_db,))
         if not cur.fetchone():
-            cur.execute(f"CREATE DATABASE {app_db} OWNER {app_user}")
+            cur.execute(
+                sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                    sql.Identifier(app_db),
+                    sql.Identifier(app_user),
+                )
+            )
             log.info("Created database: %s", app_db)
 
         # Ensure ownership
-        cur.execute(f"ALTER DATABASE {app_db} OWNER TO {app_user}")
+        cur.execute(
+            sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
+                sql.Identifier(app_db),
+                sql.Identifier(app_user),
+            )
+        )
 
         cur.close()
         conn.close()
@@ -886,15 +900,27 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_saved_albums_user ON user_saved_albums(user_id)")
 
         cur.execute("""
-            DO $$ BEGIN
-                IF EXISTS (
-                    SELECT 1
-                    FROM information_schema.columns
-                    WHERE table_name = 'user_liked_tracks' AND column_name = 'track_path'
+            DO $$
+            BEGIN
+                -- One-shot migration: the old user_liked_tracks shape used track_path and is incompatible
+                -- with the current track_id PK. Guard with a settings flag so we never re-run a destructive
+                -- check silently on every startup.
+                IF NOT EXISTS (
+                    SELECT 1 FROM settings WHERE key = 'migration:user_liked_tracks_v2_applied'
                 ) THEN
-                    DROP TABLE user_liked_tracks;
+                    IF EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'user_liked_tracks' AND column_name = 'track_path'
+                    ) THEN
+                        DROP TABLE user_liked_tracks;
+                    END IF;
+                    INSERT INTO settings (key, value)
+                    VALUES ('migration:user_liked_tracks_v2_applied', 'true')
+                    ON CONFLICT (key) DO NOTHING;
                 END IF;
-            END $$
+            END
+            $$
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS user_liked_tracks (
@@ -957,6 +983,9 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user ON user_play_events(user_id, ended_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_track ON user_play_events(track_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_source ON user_play_events(user_id, play_source_type, ended_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_artist ON user_play_events(user_id, artist, ended_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_album ON user_play_events(user_id, album, ended_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_day ON user_play_events(user_id, (substring(ended_at, 1, 10)))")
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS user_daily_listening (

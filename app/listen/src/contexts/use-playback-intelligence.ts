@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 
 import type { PlaySource, Track } from "@/contexts/player-types";
-import { getTrackCacheKey } from "@/contexts/player-utils";
+import { areTracksFromSameAlbum, getTrackCacheKey } from "@/contexts/player-utils";
 import { fetchInfiniteContinuation, fetchRadioContinuation } from "@/lib/radio";
 
 const RADIO_REFILL_THRESHOLD = 3;
@@ -36,15 +36,7 @@ function collectUniqueTracks(candidates: Track[], queue: Track[], recent: Track[
 }
 
 function isLikelyContinuousAlbumBlock(currentTrack: Track | undefined, nextTrack: Track | undefined): boolean {
-  if (!currentTrack || !nextTrack) return false;
-  return (
-    !!currentTrack.album &&
-    !!nextTrack.album &&
-    !!currentTrack.artist &&
-    !!nextTrack.artist &&
-    currentTrack.album === nextTrack.album &&
-    currentTrack.artist === nextTrack.artist
-  );
+  return areTracksFromSameAlbum(currentTrack, nextTrack);
 }
 
 interface UsePlaybackIntelligenceOptions {
@@ -90,6 +82,10 @@ export function usePlaybackIntelligence({
   const continuationSignatureRef = useRef<string | null>(null);
   const playlistSuggestionInFlightRef = useRef(false);
   const playlistSuggestionSignatureRef = useRef<string | null>(null);
+  const radioRefillAbortRef = useRef<AbortController | null>(null);
+  const continuationPrefetchAbortRef = useRef<AbortController | null>(null);
+  const continuationManualAbortRef = useRef<AbortController | null>(null);
+  const playlistSuggestionAbortRef = useRef<AbortController | null>(null);
   const currentIndexRef = useRef(currentIndex);
   const playSourceRef = useRef(playSource);
   const queueRef = useRef(queue);
@@ -103,9 +99,21 @@ export function usePlaybackIntelligence({
   }, [currentIndex, playSource, queue, recentlyPlayed]);
 
   const resetPlaybackIntelligence = useCallback(() => {
+    radioRefillAbortRef.current?.abort();
+    continuationPrefetchAbortRef.current?.abort();
+    continuationManualAbortRef.current?.abort();
+    playlistSuggestionAbortRef.current?.abort();
+    radioRefillAbortRef.current = null;
+    continuationPrefetchAbortRef.current = null;
+    continuationManualAbortRef.current = null;
+    playlistSuggestionAbortRef.current = null;
+    radioRefillInFlightRef.current = false;
+    continuationInFlightRef.current = false;
+    playlistSuggestionInFlightRef.current = false;
     radioRefillSignatureRef.current = null;
     continuationSignatureRef.current = null;
     playlistSuggestionSignatureRef.current = null;
+    shouldAutoplayRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -129,6 +137,7 @@ export function usePlaybackIntelligence({
     radioRefillSignatureRef.current = signature;
     radioRefillInFlightRef.current = true;
     const controller = new AbortController();
+    radioRefillAbortRef.current = controller;
 
     fetchRadioContinuation(playSource, RADIO_REFILL_BATCH_SIZE, { signal: controller.signal })
       .then((tracks) => {
@@ -150,10 +159,16 @@ export function usePlaybackIntelligence({
         if (!controller.signal.aborted) {
           radioRefillInFlightRef.current = false;
         }
+        if (radioRefillAbortRef.current === controller) {
+          radioRefillAbortRef.current = null;
+        }
       });
 
     return () => {
       controller.abort();
+      if (radioRefillAbortRef.current === controller) {
+        radioRefillAbortRef.current = null;
+      }
       radioRefillInFlightRef.current = false;
     };
   }, [currentIndex, isPlaying, playSource, queue.length, setQueue]);
@@ -182,6 +197,7 @@ export function usePlaybackIntelligence({
     continuationSignatureRef.current = signature;
     continuationInFlightRef.current = true;
     const controller = new AbortController();
+    continuationPrefetchAbortRef.current = controller;
 
     fetchInfiniteContinuation(playSource!, RADIO_REFILL_BATCH_SIZE, { signal: controller.signal })
       .then((tracks) => {
@@ -204,10 +220,16 @@ export function usePlaybackIntelligence({
         if (!controller.signal.aborted) {
           continuationInFlightRef.current = false;
         }
+        if (continuationPrefetchAbortRef.current === controller) {
+          continuationPrefetchAbortRef.current = null;
+        }
       });
 
     return () => {
       controller.abort();
+      if (continuationPrefetchAbortRef.current === controller) {
+        continuationPrefetchAbortRef.current = null;
+      }
       continuationInFlightRef.current = false;
     };
   }, [currentIndex, infinitePlaybackEnabled, playSource, queue.length, setQueue, shuffle]);
@@ -268,6 +290,7 @@ export function usePlaybackIntelligence({
     playlistSuggestionSignatureRef.current = signature;
     playlistSuggestionInFlightRef.current = true;
     const controller = new AbortController();
+    playlistSuggestionAbortRef.current = controller;
 
     fetchInfiniteContinuation(playSource!, SMART_PLAYLIST_SUGGESTION_BATCH_SIZE, { signal: controller.signal })
       .then((tracks) => {
@@ -316,10 +339,16 @@ export function usePlaybackIntelligence({
         if (!controller.signal.aborted) {
           playlistSuggestionInFlightRef.current = false;
         }
+        if (playlistSuggestionAbortRef.current === controller) {
+          playlistSuggestionAbortRef.current = null;
+        }
       });
 
     return () => {
       controller.abort();
+      if (playlistSuggestionAbortRef.current === controller) {
+        playlistSuggestionAbortRef.current = null;
+      }
       playlistSuggestionInFlightRef.current = false;
     };
   }, [
@@ -353,25 +382,33 @@ export function usePlaybackIntelligence({
     setIsBuffering(true);
     continuationSignatureRef.current = requestSignature;
     continuationInFlightRef.current = true;
+    continuationManualAbortRef.current?.abort();
+    const controller = new AbortController();
+    continuationManualAbortRef.current = controller;
 
-    fetchInfiniteContinuation(playSource, RADIO_REFILL_BATCH_SIZE)
+    fetchInfiniteContinuation(playSource, RADIO_REFILL_BATCH_SIZE, { signal: controller.signal })
       .then((tracks) => {
+        if (controller.signal.aborted) return;
         if (continuationSignatureRef.current !== requestSignature) {
           setIsBuffering(false);
+          shouldAutoplayRef.current = false;
           return;
         }
         if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) {
           setIsBuffering(false);
+          shouldAutoplayRef.current = false;
           return;
         }
         if (!tracks.length) {
           setIsBuffering(false);
+          shouldAutoplayRef.current = false;
           return;
         }
 
         const uniqueTracks = collectUniqueTracks(tracks, queueRef.current, recentlyPlayedRef.current);
         if (uniqueTracks.length === 0) {
           setIsBuffering(false);
+          shouldAutoplayRef.current = false;
           return;
         }
 
@@ -392,13 +429,20 @@ export function usePlaybackIntelligence({
         setDuration(0);
       })
       .catch((error) => {
+        if (controller.signal.aborted) return;
         console.warn("[player] continuation after end failed:", error);
         if (continuationSignatureRef.current === requestSignature) {
           setIsBuffering(false);
+          shouldAutoplayRef.current = false;
         }
       })
       .finally(() => {
-        continuationInFlightRef.current = false;
+        if (continuationManualAbortRef.current === controller) {
+          continuationManualAbortRef.current = null;
+        }
+        if (!controller.signal.aborted) {
+          continuationInFlightRef.current = false;
+        }
         if (continuationSignatureRef.current === requestSignature) {
           continuationSignatureRef.current = null;
         }
@@ -408,7 +452,6 @@ export function usePlaybackIntelligence({
   }, [
     infinitePlaybackEnabled,
     playSource,
-    queue.length,
     setCurrentIndex,
     setCurrentTime,
     setDuration,

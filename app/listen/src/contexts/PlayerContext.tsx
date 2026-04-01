@@ -136,6 +136,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
   const audio = audioRef.current;
   const currentTrack = queue[currentIndex];
+  const queueRef = useRef(queue);
+  const currentIndexRef = useRef(currentIndex);
+  const currentTrackRef = useRef(currentTrack);
+  const repeatRef = useRef(repeat);
+  const shuffleRef = useRef(shuffle);
+  const playSourceRef = useRef(playSource);
+  const crossfadeSecondsRef = useRef(crossfadeSeconds);
+
+  useEffect(() => {
+    queueRef.current = queue;
+    currentIndexRef.current = currentIndex;
+    currentTrackRef.current = currentTrack;
+    repeatRef.current = repeat;
+    shuffleRef.current = shuffle;
+    playSourceRef.current = playSource;
+    crossfadeSecondsRef.current = crossfadeSeconds;
+  }, [crossfadeSeconds, currentIndex, currentTrack, playSource, queue, repeat, shuffle]);
 
   useEffect(() => {
     saveQueue(queue, currentIndex);
@@ -357,7 +374,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
     const onDurationChange = () => setDuration(audio.duration || 0);
     const onEnded = () => {
-      const endedTrack = currentTrack;
+      const endedTrack = currentTrackRef.current;
       if (endedTrack) {
         flushCurrentPlayEvent("completed");
         fetch("/api/navidrome/scrobble", {
@@ -385,25 +402,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         }).catch(() => {});
       }
 
-      const nextTrack = getPredictableNextTrack(queue, currentIndex, repeat, shuffle);
-      const continuousAlbum = isContinuousAlbumTransition(endedTrack, nextTrack, playSource, shuffle);
+      const liveQueue = queueRef.current;
+      const liveCurrentIndex = currentIndexRef.current;
+      const liveRepeat = repeatRef.current;
+      const liveShuffle = shuffleRef.current;
+      const livePlaySource = playSourceRef.current;
+      const nextTrack = getPredictableNextTrack(liveQueue, liveCurrentIndex, liveRepeat, liveShuffle);
+      const continuousAlbum = isContinuousAlbumTransition(endedTrack, nextTrack, livePlaySource, liveShuffle);
 
-      if (repeat === "one") {
+      if (liveRepeat === "one") {
         audio.currentTime = 0;
         audio.play().catch(() => {});
         return;
       }
 
       shouldAutoplayRef.current = true;
-      if (crossfadeSeconds > 0 && nextTrack && !continuousAlbum) {
+      if (crossfadeSecondsRef.current > 0 && nextTrack && !continuousAlbum) {
         setIsBuffering(false);
       }
-      if (shuffle) {
-        if (queue.length > 1) {
+      if (liveShuffle) {
+        if (liveQueue.length > 1) {
           let nextIdx: number;
           do {
-            nextIdx = Math.floor(Math.random() * queue.length);
-          } while (nextIdx === currentIndex && queue.length > 1);
+            nextIdx = Math.floor(Math.random() * liveQueue.length);
+          } while (nextIdx === liveCurrentIndex && liveQueue.length > 1);
           setCurrentIndex(nextIdx);
         } else {
           shouldAutoplayRef.current = false;
@@ -412,9 +434,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (currentIndex < queue.length - 1) {
+      if (liveCurrentIndex < liveQueue.length - 1) {
         setCurrentIndex((i) => i + 1);
-      } else if (repeat === "all") {
+      } else if (liveRepeat === "all") {
         setCurrentIndex(0);
       } else if (continueInfinitePlayback()) {
         return;
@@ -477,16 +499,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [
     audio,
     continueInfinitePlayback,
-    crossfadeSeconds,
-    currentIndex,
-    currentTrack,
     flushCurrentPlayEvent,
     markSeekPosition,
-    playSource,
-    queue,
     recordProgress,
-    repeat,
-    shuffle,
   ]);
 
   const play = useCallback((track: Track, source?: PlaySource) => {

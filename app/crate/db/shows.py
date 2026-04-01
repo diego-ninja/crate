@@ -1,36 +1,115 @@
 """Shows — persistent storage for upcoming concerts/events."""
 
 from datetime import datetime, timezone
+
 from crate.db.core import get_db_ctx
 
 
 def upsert_show(external_id: str, artist_name: str, date: str, **kwargs) -> int | None:
     """Insert or update a show. Deduplicates by (artist, date, venue)."""
     now = datetime.now(timezone.utc).isoformat()
-    venue = kwargs.get("venue") or ""
+    normalized_external_id = (external_id or "").strip() or None
+    venue = (kwargs.get("venue") or "").strip() or None
     with get_db_ctx() as cur:
-        # Skip if same artist+date+venue already exists (Ticketmaster returns dupes)
+        if normalized_external_id:
+            cur.execute("""
+                INSERT INTO shows (external_id, artist_name, date, local_time, venue, city, region,
+                    country, country_code, latitude, longitude, url, image_url, lineup,
+                    price_range, status, source, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (external_id) DO UPDATE SET
+                    artist_name = EXCLUDED.artist_name,
+                    date = EXCLUDED.date,
+                    local_time = EXCLUDED.local_time,
+                    venue = EXCLUDED.venue,
+                    city = EXCLUDED.city,
+                    region = EXCLUDED.region,
+                    country = EXCLUDED.country,
+                    country_code = EXCLUDED.country_code,
+                    latitude = EXCLUDED.latitude,
+                    longitude = EXCLUDED.longitude,
+                    url = EXCLUDED.url,
+                    image_url = EXCLUDED.image_url,
+                    lineup = EXCLUDED.lineup,
+                    price_range = EXCLUDED.price_range,
+                    status = EXCLUDED.status,
+                    source = EXCLUDED.source,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING id
+            """, (
+                normalized_external_id, artist_name, date,
+                kwargs.get("local_time"), venue, kwargs.get("city"),
+                kwargs.get("region"), kwargs.get("country"), kwargs.get("country_code"),
+                kwargs.get("latitude"), kwargs.get("longitude"),
+                kwargs.get("url"), kwargs.get("image_url"),
+                kwargs.get("lineup"), kwargs.get("price_range"),
+                kwargs.get("status", "onsale"), kwargs.get("source", "ticketmaster"),
+                now, now,
+            ))
+            return cur.fetchone()["id"]
+
         cur.execute(
-            "SELECT id FROM shows WHERE artist_name = %s AND date = %s AND venue = %s LIMIT 1",
+            """
+            SELECT id
+            FROM shows
+            WHERE external_id IS NULL
+              AND artist_name = %s
+              AND date = %s
+              AND COALESCE(venue, '') = COALESCE(%s, '')
+            LIMIT 1
+            """,
             (artist_name, date, venue),
         )
         existing = cur.fetchone()
         if existing:
+            cur.execute(
+                """
+                UPDATE shows
+                SET local_time = %s,
+                    city = %s,
+                    region = %s,
+                    country = %s,
+                    country_code = %s,
+                    latitude = %s,
+                    longitude = %s,
+                    url = %s,
+                    image_url = %s,
+                    lineup = %s,
+                    price_range = %s,
+                    status = %s,
+                    source = %s,
+                    updated_at = %s
+                WHERE id = %s
+                """,
+                (
+                    kwargs.get("local_time"),
+                    kwargs.get("city"),
+                    kwargs.get("region"),
+                    kwargs.get("country"),
+                    kwargs.get("country_code"),
+                    kwargs.get("latitude"),
+                    kwargs.get("longitude"),
+                    kwargs.get("url"),
+                    kwargs.get("image_url"),
+                    kwargs.get("lineup"),
+                    kwargs.get("price_range"),
+                    kwargs.get("status", "onsale"),
+                    kwargs.get("source", "ticketmaster"),
+                    now,
+                    existing["id"],
+                ),
+            )
             return existing["id"]
+
         cur.execute("""
             INSERT INTO shows (external_id, artist_name, date, local_time, venue, city, region,
                 country, country_code, latitude, longitude, url, image_url, lineup,
                 price_range, status, source, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (external_id) DO UPDATE SET
-                date = EXCLUDED.date, local_time = EXCLUDED.local_time,
-                venue = EXCLUDED.venue, city = EXCLUDED.city,
-                status = EXCLUDED.status, price_range = EXCLUDED.price_range,
-                updated_at = EXCLUDED.updated_at
             RETURNING id
         """, (
-            external_id, artist_name, date,
-            kwargs.get("local_time"), kwargs.get("venue"), kwargs.get("city"),
+            None, artist_name, date,
+            kwargs.get("local_time"), venue, kwargs.get("city"),
             kwargs.get("region"), kwargs.get("country"), kwargs.get("country_code"),
             kwargs.get("latitude"), kwargs.get("longitude"),
             kwargs.get("url"), kwargs.get("image_url"),
@@ -175,6 +254,6 @@ def create_show_reminder(user_id: int, show_id: int, reminder_type: str) -> bool
             VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (user_id, show_id, reminder_type) DO NOTHING
             """,
-            (user_id, show_id, reminder_type, now, now),
+            (user_id, show_id, reminder_type, now, None),
         )
         return cur.rowcount > 0

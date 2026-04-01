@@ -8,7 +8,7 @@ pytestmark = pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not availab
 
 
 class TestUserListeningAggregates:
-    def test_record_play_event_recomputes_daily_and_entity_stats(self, pg_db):
+    def test_recompute_user_listening_aggregates_populates_daily_and_entity_stats(self, pg_db):
         pg_db.upsert_artist({"name": "Converge"})
         album_id = pg_db.upsert_album({
             "artist": "Converge",
@@ -54,6 +54,7 @@ class TestUserListeningAggregates:
         )
 
         assert event_id is not None
+        pg_db.recompute_user_listening_aggregates(1)
 
         with pg_db.get_db_ctx() as cur:
             cur.execute(

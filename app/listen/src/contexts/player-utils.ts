@@ -83,6 +83,18 @@ export function getTrackCacheKey(track: Track): string {
   return [track.libraryTrackId ?? "", track.navidromeId ?? "", track.path ?? "", track.id].join("::");
 }
 
+export function areTracksFromSameAlbum(currentTrack: Track | undefined, nextTrack: Track | null | undefined): boolean {
+  if (!currentTrack || !nextTrack) return false;
+  return (
+    !!currentTrack.album &&
+    !!nextTrack.album &&
+    !!currentTrack.artist &&
+    !!nextTrack.artist &&
+    currentTrack.album === nextTrack.album &&
+    currentTrack.artist === nextTrack.artist
+  );
+}
+
 export function getPredictableNextTrack(
   queue: Track[],
   currentIndex: number,
@@ -112,12 +124,5 @@ export function isContinuousAlbumTransition(
   if (!currentTrack || !nextTrack) return false;
   if (shuffle) return false;
   if (playSource?.type !== "album") return false;
-  return (
-    !!currentTrack.album &&
-    !!nextTrack.album &&
-    !!currentTrack.artist &&
-    !!nextTrack.artist &&
-    currentTrack.album === nextTrack.album &&
-    currentTrack.artist === nextTrack.artist
-  );
+  return areTracksFromSameAlbum(currentTrack, nextTrack);
 }

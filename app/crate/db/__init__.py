@@ -121,6 +121,6 @@ from crate.db.user_library import (
     follow_artist, unfollow_artist, get_followed_artists, is_following,
     save_album, unsave_album, get_saved_albums, is_album_saved,
     like_track, unlike_track, get_liked_tracks, is_track_liked,
-    record_play, record_play_event, get_play_history, get_play_stats,
+    record_play, record_play_event, recompute_user_listening_aggregates, get_play_history, get_play_stats,
     get_user_library_counts,
 )

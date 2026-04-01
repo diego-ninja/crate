@@ -68,7 +68,7 @@ export function Shows() {
     return next;
   }, [filter, items, search]);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const comingUp = filtered.filter((item) => item.is_upcoming || item.date >= today);
   const attendingShows = items.filter((item) => item.type === "show" && item.user_attending);
   const nextAttendingShow = attendingShows
@@ -109,14 +109,14 @@ export function Shows() {
       const queue = await fetchPlayableSetlist(insight.artist);
       if (!queue.length) {
         toast.info("No probable setlist tracks matched your library");
-        return;
+      } else {
+        playAll(queue, 0, { type: "playlist", name: `${insight.artist} Probable Setlist` });
+        await api(`/api/me/shows/${insight.show_id}/reminders`, "POST", {
+          reminder_type: insight.type,
+        });
+        setDismissedInsights((current) => ({ ...current, [key]: true }));
+        toast.success(`Playing probable setlist: ${queue.length} tracks`);
       }
-      playAll(queue, 0, { type: "playlist", name: `${insight.artist} Probable Setlist` });
-      await api(`/api/me/shows/${insight.show_id}/reminders`, "POST", {
-        reminder_type: insight.type,
-      });
-      setDismissedInsights((current) => ({ ...current, [key]: true }));
-      toast.success(`Playing probable setlist: ${queue.length} tracks`);
     } catch {
       toast.error("Failed to load probable setlist");
     } finally {

@@ -1,4 +1,5 @@
 import type { ApiMethod } from "./api";
+import type { ApiRequestOptions } from "./api";
 
 export interface UseApiState<T> {
   data: T | null;
@@ -11,6 +12,7 @@ type ApiFn = <T = unknown>(
   url: string,
   method?: ApiMethod,
   body?: unknown,
+  options?: ApiRequestOptions,
 ) => Promise<T>;
 
 interface ReactHookDeps {
@@ -46,6 +48,7 @@ export function createUseApi(reactHooks: ReactHookDeps, apiFn: ApiFn) {
 
     useEffect(() => {
       if (!url) return;
+      const controller = new AbortController();
       let cancelled = false;
 
       if (!hasFetched.current) {
@@ -53,7 +56,7 @@ export function createUseApi(reactHooks: ReactHookDeps, apiFn: ApiFn) {
       }
       setError(null);
 
-      apiFn<T>(url, method, body)
+      apiFn<T>(url, method, body, { signal: controller.signal })
         .then((nextData) => {
           if (!cancelled) {
             setData(nextData);
@@ -61,7 +64,7 @@ export function createUseApi(reactHooks: ReactHookDeps, apiFn: ApiFn) {
           }
         })
         .catch((e: Error) => {
-          if (!cancelled) {
+          if (!cancelled && controller.signal.aborted !== true) {
             setError(e.message);
           }
         })
@@ -73,6 +76,7 @@ export function createUseApi(reactHooks: ReactHookDeps, apiFn: ApiFn) {
 
       return () => {
         cancelled = true;
+        controller.abort();
       };
     }, [url, method, trigger]);
 

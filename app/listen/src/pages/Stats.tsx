@@ -1,10 +1,11 @@
 import { Children, type ReactNode, useMemo, useState } from "react";
 import { ResponsiveLine } from "@nivo/line";
-import { BarChart3, Clock3, Disc3, Music2, Play, SkipForward, TrendingUp, User2 } from "lucide-react";
+import { BarChart3, Clock3, Disc3, Music2, Play, SkipForward, Tag, TrendingUp } from "lucide-react";
 import { Link } from "react-router";
 
 import { useApi } from "@/hooks/use-api";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { encPath } from "../../../shared/web/utils";
 
 type StatsWindow = "7d" | "30d" | "90d" | "365d" | "all_time";
 
@@ -39,6 +40,7 @@ interface StatsTrends {
 interface StatsTrack {
   track_id: number | null;
   track_path: string | null;
+  navidrome_id?: string | null;
   title: string;
   artist: string;
   album: string;
@@ -186,10 +188,12 @@ function WindowPicker({
 function TopList({
   title,
   emptyText,
+  loading = false,
   children,
 }: {
   title: string;
   emptyText: string;
+  loading?: boolean;
   children: ReactNode;
 }) {
   const hasVisibleItems = Children.count(children) > 0;
@@ -198,13 +202,13 @@ function TopList({
     <div className="rounded-2xl border border-white/10 bg-black/10 p-4">
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       <div className="mt-3 space-y-2">
-        {hasVisibleItems ? children : <p className="text-sm text-muted-foreground">{emptyText}</p>}
+        {loading ? <p className="text-sm text-muted-foreground">Loading...</p> : hasVisibleItems ? children : <p className="text-sm text-muted-foreground">{emptyText}</p>}
       </div>
     </div>
   );
 }
 
-function TrendChart({ points }: { points: StatsTrendPoint[] }) {
+function TrendChart({ points, loading }: { points: StatsTrendPoint[]; loading?: boolean }) {
   const data = useMemo(() => [
     {
       id: "Minutes",
@@ -214,6 +218,14 @@ function TrendChart({ points }: { points: StatsTrendPoint[] }) {
       })),
     },
   ], [points]);
+
+  if (loading) {
+    return (
+      <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/10 text-sm text-muted-foreground">
+        Loading trend data...
+      </div>
+    );
+  }
 
   if (points.length === 0) {
     return (
@@ -292,14 +304,14 @@ function buildRecapHighlights(
     });
   }
 
-  if (topTracks[0]) {
+  if (topTracks[0] && topTracks[0].play_count > 0) {
     highlights.push({
       title: `"${topTracks[0].title}" kept coming back`,
       body: `${topTracks[0].artist} · ${topTracks[0].play_count} plays in this window.`,
     });
   }
 
-  if (overview) {
+  if (overview && overview.play_count > 0) {
     const cadence =
       overview.active_days >= 20
         ? "You've been listening almost every day."
@@ -312,7 +324,7 @@ function buildRecapHighlights(
     });
   }
 
-  if (replay?.track_count) {
+  if (replay?.track_count && replay.track_count > 0) {
     highlights.push({
       title: `${replay.track_count} tracks define this replay`,
       body: `${topArtists.length ? `Spread across ${Math.min(topArtists.length, 8)} key artists.` : "A first replay object is ready to play."}`,
@@ -323,15 +335,15 @@ function buildRecapHighlights(
 }
 
 export function Stats() {
-  const [window, setWindow] = useState<StatsWindow>("30d");
+  const [selectedWindow, setSelectedWindow] = useState<StatsWindow>("30d");
   const { play, playAll } = usePlayerActions();
-  const { data: overview, loading: overviewLoading } = useApi<StatsOverview>(`/api/me/stats/overview?window=${window}`);
-  const { data: trends, loading: trendsLoading } = useApi<StatsTrends>(`/api/me/stats/trends?window=${window}`);
-  const { data: topTracks, loading: tracksLoading } = useApi<StatsListResponse<StatsTrack>>(`/api/me/stats/top-tracks?window=${window}&limit=10`);
-  const { data: topArtists, loading: artistsLoading } = useApi<StatsListResponse<StatsArtist>>(`/api/me/stats/top-artists?window=${window}&limit=8`);
-  const { data: topAlbums, loading: albumsLoading } = useApi<StatsListResponse<StatsAlbum>>(`/api/me/stats/top-albums?window=${window}&limit=8`);
-  const { data: topGenres, loading: genresLoading } = useApi<StatsListResponse<StatsGenre>>(`/api/me/stats/top-genres?window=${window}&limit=8`);
-  const { data: replay, loading: replayLoading } = useApi<ReplayMix>(`/api/me/stats/replay?window=${window}&limit=30`);
+  const { data: overview, loading: overviewLoading } = useApi<StatsOverview>(`/api/me/stats/overview?window=${selectedWindow}`);
+  const { data: trends, loading: trendsLoading } = useApi<StatsTrends>(`/api/me/stats/trends?window=${selectedWindow}`);
+  const { data: topTracks, loading: tracksLoading } = useApi<StatsListResponse<StatsTrack>>(`/api/me/stats/top-tracks?window=${selectedWindow}&limit=10`);
+  const { data: topArtists, loading: artistsLoading } = useApi<StatsListResponse<StatsArtist>>(`/api/me/stats/top-artists?window=${selectedWindow}&limit=8`);
+  const { data: topAlbums, loading: albumsLoading } = useApi<StatsListResponse<StatsAlbum>>(`/api/me/stats/top-albums?window=${selectedWindow}&limit=8`);
+  const { data: topGenres, loading: genresLoading } = useApi<StatsListResponse<StatsGenre>>(`/api/me/stats/top-genres?window=${selectedWindow}&limit=8`);
+  const { data: replay, loading: replayLoading } = useApi<ReplayMix>(`/api/me/stats/replay?window=${selectedWindow}&limit=30`);
 
   const topTrackItems = topTracks?.items ?? [];
   const topArtistItems = topArtists?.items ?? [];
@@ -350,6 +362,7 @@ export function Stats() {
     album: item.album,
     path: item.track_path || undefined,
     libraryTrackId: item.track_id || undefined,
+    navidromeId: item.navidrome_id || undefined,
   });
 
   const playTopTrack = (item: StatsTrack) => {
@@ -366,7 +379,7 @@ export function Stats() {
     );
   };
 
-  const loading = overviewLoading || trendsLoading || tracksLoading || artistsLoading || albumsLoading || genresLoading || replayLoading;
+  const allSectionsLoaded = !overviewLoading && !trendsLoading && !tracksLoading && !artistsLoading && !albumsLoading && !genresLoading && !replayLoading;
 
   return (
     <div className="space-y-8">
@@ -381,32 +394,32 @@ export function Stats() {
             A first look at your listening profile across minutes, trends, artists, albums, and tracks.
           </p>
         </div>
-        <WindowPicker value={window} onChange={setWindow} />
+        <WindowPicker value={selectedWindow} onChange={setSelectedWindow} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <OverviewCard
           icon={Clock3}
           label="Time listened"
-          value={overview ? formatMinutes(overview.minutes_listened) : loading ? "..." : "0m"}
+          value={overview ? formatMinutes(overview.minutes_listened) : overviewLoading ? "..." : "0m"}
           hint={overview ? `${overview.active_days} active days` : "Listening time in the selected window"}
         />
         <OverviewCard
           icon={Music2}
           label="Qualified plays"
-          value={overview ? String(overview.play_count) : loading ? "..." : "0"}
+          value={overview ? String(overview.play_count) : overviewLoading ? "..." : "0"}
           hint={overview ? `${overview.complete_play_count} completed plays` : "Valid plays recorded"}
         />
         <OverviewCard
           icon={SkipForward}
           label="Skip rate"
-          value={overview ? formatPercent(overview.skip_rate) : loading ? "..." : "0%"}
+          value={overview ? formatPercent(overview.skip_rate) : overviewLoading ? "..." : "0%"}
           hint={overview ? `${overview.skip_count} skips` : "Tracks you moved on from"}
         />
         <OverviewCard
           icon={TrendingUp}
           label="Top artist"
-          value={overview?.top_artist?.artist_name ?? (loading ? "..." : "—")}
+          value={overview?.top_artist?.artist_name ?? (overviewLoading ? "..." : "—")}
           hint={overview?.top_artist ? `${overview.top_artist.play_count} plays` : "No artist data yet"}
         />
       </div>
@@ -427,7 +440,7 @@ export function Stats() {
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
               <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Window</div>
-              <div className="mt-1 text-lg font-semibold text-foreground">{WINDOW_OPTIONS.find((item) => item.value === window)?.label ?? window}</div>
+              <div className="mt-1 text-lg font-semibold text-foreground">{WINDOW_OPTIONS.find((item) => item.value === selectedWindow)?.label ?? selectedWindow}</div>
             </div>
           </div>
 
@@ -441,7 +454,11 @@ export function Stats() {
           </button>
         </div>
 
-        {replayItems.length > 0 ? (
+        {replayLoading ? (
+          <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-muted-foreground">
+            Loading replay...
+          </div>
+        ) : replayItems.length > 0 ? (
           <div className="mt-5 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {replayItems.slice(0, 6).map((item, index) => (
               <button
@@ -491,7 +508,7 @@ export function Stats() {
         title="Daily trend"
         subtitle="Your listening curve across the selected time window."
       >
-        <TrendChart points={trends?.points ?? []} />
+        <TrendChart points={trends?.points ?? []} loading={trendsLoading} />
       </Section>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -499,7 +516,7 @@ export function Stats() {
           title="Top tracks"
           subtitle="The songs that defined this window."
         >
-          <TopList title="Tracks" emptyText="No top tracks yet.">
+          <TopList title="Tracks" emptyText="No top tracks yet." loading={tracksLoading}>
             {topTrackItems.map((item, index) => (
               <button
                 key={`${item.track_id ?? item.track_path ?? item.title}-${index}`}
@@ -526,11 +543,11 @@ export function Stats() {
           title="Top artists"
           subtitle="Who you kept coming back to."
         >
-          <TopList title="Artists" emptyText="No top artists yet.">
+          <TopList title="Artists" emptyText="No top artists yet." loading={artistsLoading}>
             {topArtistItems.map((item, index) => (
               <Link
                 key={`${item.artist_name}-${index}`}
-                to={`/artist/${encodeURIComponent(item.artist_name)}`}
+                to={`/artist/${encPath(item.artist_name)}`}
                 className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-white/10 hover:bg-white/5"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
@@ -552,11 +569,11 @@ export function Stats() {
           title="Top albums"
           subtitle="Records that shaped the window."
         >
-          <TopList title="Albums" emptyText="No top albums yet.">
+          <TopList title="Albums" emptyText="No top albums yet." loading={albumsLoading}>
             {topAlbumItems.map((item, index) => (
               <Link
                 key={`${item.artist}-${item.album}-${index}`}
-                to={`/album/${encodeURIComponent(item.artist)}/${encodeURIComponent(item.album)}`}
+                to={`/album/${encPath(item.artist)}/${encPath(item.album)}`}
                 className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-white/10 hover:bg-white/5"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
@@ -579,14 +596,14 @@ export function Stats() {
           title="Top genres"
           subtitle="Your strongest stylistic pull in this window."
         >
-          <TopList title="Genres" emptyText="No top genres yet.">
+          <TopList title="Genres" emptyText="No top genres yet." loading={genresLoading}>
             {topGenreItems.map((item, index) => (
               <div
                 key={`${item.genre_name}-${index}`}
                 className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
-                  <User2 size={14} />
+                  <Tag size={14} />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-foreground">{item.genre_name}</div>
@@ -599,7 +616,7 @@ export function Stats() {
         </Section>
       </div>
 
-      {!loading && !overview?.play_count ? (
+      {allSectionsLoaded && !overview?.play_count ? (
         <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
           <h2 className="text-lg font-semibold text-foreground">Your stats are waiting for you</h2>
           <p className="mt-2 text-sm text-muted-foreground">
