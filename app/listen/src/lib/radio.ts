@@ -1,5 +1,5 @@
 import type { PlaySource, Track } from "@/contexts/PlayerContext";
-import { api } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 
 export interface RadioTrackPayload {
@@ -28,6 +28,10 @@ interface RadioResponse {
   tracks: RadioTrackPayload[];
 }
 
+interface RadioRequestOptions {
+  signal?: AbortSignal;
+}
+
 function toTrack(payload: RadioTrackPayload): Track {
   const trackPath = payload.track_path || "";
   const navidromeId = payload.navidrome_id || undefined;
@@ -52,11 +56,22 @@ function toTrack(payload: RadioTrackPayload): Track {
   };
 }
 
-export async function fetchArtistRadio(artistName: string, limit = 50): Promise<{
+async function requestRadio(url: string, options: RadioRequestOptions = {}): Promise<RadioResponse> {
+  try {
+    return await api<RadioResponse>(url, "GET", undefined, { signal: options.signal });
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return { tracks: [] };
+    }
+    throw error;
+  }
+}
+
+export async function fetchArtistRadio(artistName: string, limit = 50, options: RadioRequestOptions = {}): Promise<{
   tracks: Track[];
   source: PlaySource;
 }> {
-  const data = await api<RadioResponse>(`/api/radio/artist/${encPath(artistName)}?limit=${limit}`);
+  const data = await requestRadio(`/api/radio/artist/${encPath(artistName)}?limit=${limit}`, options);
   return {
     tracks: (data.tracks || []).map(toTrack),
     source: {
@@ -74,7 +89,7 @@ export async function fetchTrackRadio(seed: {
   libraryTrackId?: number | null;
   path?: string | null;
   title: string;
-}): Promise<{
+}, options: RadioRequestOptions = {}): Promise<{
   tracks: Track[];
   source: PlaySource;
 }> {
@@ -88,7 +103,7 @@ export async function fetchTrackRadio(seed: {
   }
   params.set("limit", "50");
 
-  const data = await api<RadioResponse>(`/api/radio/track?${params.toString()}`);
+  const data = await requestRadio(`/api/radio/track?${params.toString()}`, options);
   return {
     tracks: (data.tracks || []).map(toTrack),
     source: {
@@ -107,11 +122,11 @@ export async function fetchAlbumRadio(seed: {
   albumId: number;
   artistName: string;
   albumName: string;
-}): Promise<{
+}, options: RadioRequestOptions = {}): Promise<{
   tracks: Track[];
   source: PlaySource;
 }> {
-  const data = await api<RadioResponse>(`/api/radio/album/${seed.albumId}?limit=50`);
+  const data = await requestRadio(`/api/radio/album/${seed.albumId}?limit=50`, options);
   return {
     tracks: (data.tracks || []).map(toTrack),
     source: {
@@ -128,11 +143,11 @@ export async function fetchAlbumRadio(seed: {
 export async function fetchPlaylistRadio(seed: {
   playlistId: number;
   playlistName: string;
-}): Promise<{
+}, options: RadioRequestOptions = {}): Promise<{
   tracks: Track[];
   source: PlaySource;
 }> {
-  const data = await api<RadioResponse>(`/api/radio/playlist/${seed.playlistId}?limit=50`);
+  const data = await requestRadio(`/api/radio/playlist/${seed.playlistId}?limit=50`, options);
   return {
     tracks: (data.tracks || []).map(toTrack),
     source: {
@@ -146,12 +161,16 @@ export async function fetchPlaylistRadio(seed: {
   };
 }
 
-export async function fetchRadioContinuation(source: PlaySource, limit = 30): Promise<Track[]> {
+export async function fetchRadioContinuation(
+  source: PlaySource,
+  limit = 30,
+  options: RadioRequestOptions = {},
+): Promise<Track[]> {
   const radio = source.radio;
   if (!radio) return [];
 
   if (radio.seedType === "artist" && radio.seedId) {
-    const data = await api<RadioResponse>(`/api/radio/artist/${encPath(String(radio.seedId))}?limit=${limit}`);
+    const data = await requestRadio(`/api/radio/artist/${encPath(String(radio.seedId))}?limit=${limit}`, options);
     return (data.tracks || []).map(toTrack);
   }
 
@@ -164,34 +183,38 @@ export async function fetchRadioContinuation(source: PlaySource, limit = 30): Pr
     } else {
       return [];
     }
-    const data = await api<RadioResponse>(`/api/radio/track?${params.toString()}`);
+    const data = await requestRadio(`/api/radio/track?${params.toString()}`, options);
     return (data.tracks || []).map(toTrack);
   }
 
   if (radio.seedType === "album" && radio.seedId != null) {
-    const data = await api<RadioResponse>(`/api/radio/album/${radio.seedId}?limit=${limit}`);
+    const data = await requestRadio(`/api/radio/album/${radio.seedId}?limit=${limit}`, options);
     return (data.tracks || []).map(toTrack);
   }
 
   if (radio.seedType === "playlist" && radio.seedId != null) {
-    const data = await api<RadioResponse>(`/api/radio/playlist/${radio.seedId}?limit=${limit}`);
+    const data = await requestRadio(`/api/radio/playlist/${radio.seedId}?limit=${limit}`, options);
     return (data.tracks || []).map(toTrack);
   }
 
   return [];
 }
 
-export async function fetchInfiniteContinuation(source: PlaySource, limit = 30): Promise<Track[]> {
+export async function fetchInfiniteContinuation(
+  source: PlaySource,
+  limit = 30,
+  options: RadioRequestOptions = {},
+): Promise<Track[]> {
   const seed = source.radio;
   if (!seed) return [];
 
   if (source.type === "album" && seed.seedType === "album" && seed.seedId != null) {
-    const data = await api<RadioResponse>(`/api/radio/album/${seed.seedId}?limit=${limit}`);
+    const data = await requestRadio(`/api/radio/album/${seed.seedId}?limit=${limit}`, options);
     return (data.tracks || []).map(toTrack);
   }
 
   if (source.type === "playlist" && seed.seedType === "playlist" && seed.seedId != null) {
-    const data = await api<RadioResponse>(`/api/radio/playlist/${seed.seedId}?limit=${limit}`);
+    const data = await requestRadio(`/api/radio/playlist/${seed.seedId}?limit=${limit}`, options);
     return (data.tracks || []).map(toTrack);
   }
 

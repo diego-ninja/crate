@@ -517,9 +517,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (radioRefillSignatureRef.current === signature) return;
     radioRefillSignatureRef.current = signature;
     radioRefillInFlightRef.current = true;
+    const controller = new AbortController();
 
-    fetchRadioContinuation(playSource, RADIO_REFILL_BATCH_SIZE)
+    fetchRadioContinuation(playSource, RADIO_REFILL_BATCH_SIZE, { signal: controller.signal })
       .then((tracks) => {
+        if (controller.signal.aborted) return;
         if (radioRefillSignatureRef.current !== signature) return;
         if (getPlaySourceSignature(playSourceRef.current) !== getPlaySourceSignature(playSource)) return;
         setQueue((prev) => {
@@ -530,11 +532,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         });
       })
       .catch((error) => {
+        if (controller.signal.aborted) return;
         console.warn("[player] radio refill failed:", error);
       })
       .finally(() => {
-        radioRefillInFlightRef.current = false;
+        if (!controller.signal.aborted) {
+          radioRefillInFlightRef.current = false;
+        }
       });
+    return () => {
+      controller.abort();
+      radioRefillInFlightRef.current = false;
+    };
   }, [currentIndex, isPlaying, playSource, queue.length]);
 
   useEffect(() => {
@@ -560,9 +569,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (continuationSignatureRef.current === signature) return;
     continuationSignatureRef.current = signature;
     continuationInFlightRef.current = true;
+    const controller = new AbortController();
 
-    fetchInfiniteContinuation(playSource!, RADIO_REFILL_BATCH_SIZE)
+    fetchInfiniteContinuation(playSource!, RADIO_REFILL_BATCH_SIZE, { signal: controller.signal })
       .then((tracks) => {
+        if (controller.signal.aborted) return;
         if (!tracks.length) return;
         if (continuationSignatureRef.current !== signature) return;
         if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return;
@@ -574,11 +585,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         });
       })
       .catch((error) => {
+        if (controller.signal.aborted) return;
         console.warn("[player] continuation refill failed:", error);
       })
       .finally(() => {
-        continuationInFlightRef.current = false;
+        if (!controller.signal.aborted) {
+          continuationInFlightRef.current = false;
+        }
       });
+    return () => {
+      controller.abort();
+      continuationInFlightRef.current = false;
+    };
   }, [currentIndex, infinitePlaybackEnabled, playSource, queue.length, shuffle]);
 
   useEffect(() => {
@@ -636,9 +654,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (playlistSuggestionSignatureRef.current === signature) return;
     playlistSuggestionSignatureRef.current = signature;
     playlistSuggestionInFlightRef.current = true;
+    const controller = new AbortController();
 
-    fetchInfiniteContinuation(playSource!, SMART_PLAYLIST_SUGGESTION_BATCH_SIZE)
+    fetchInfiniteContinuation(playSource!, SMART_PLAYLIST_SUGGESTION_BATCH_SIZE, { signal: controller.signal })
       .then((tracks) => {
+        if (controller.signal.aborted) return;
         if (!tracks.length) return;
         if (playlistSuggestionSignatureRef.current !== signature) return;
         const expectedSeedId = playSource?.radio?.seedId ?? null;
@@ -676,11 +696,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         });
       })
       .catch((error) => {
+        if (controller.signal.aborted) return;
         console.warn("[player] playlist suggestion failed:", error);
       })
       .finally(() => {
-        playlistSuggestionInFlightRef.current = false;
+        if (!controller.signal.aborted) {
+          playlistSuggestionInFlightRef.current = false;
+        }
       });
+    return () => {
+      controller.abort();
+      playlistSuggestionInFlightRef.current = false;
+    };
   }, [
     currentIndex,
     playSource,

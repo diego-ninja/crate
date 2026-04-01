@@ -6,6 +6,10 @@ export interface ApiClientOptions {
   defaultHeaders?: Record<string, string>;
 }
 
+export interface ApiRequestOptions {
+  signal?: AbortSignal;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -26,11 +30,13 @@ export function createApiClient(options: ApiClientOptions = {}) {
     url: string,
     method: ApiMethod = "GET",
     body?: unknown,
+    options: ApiRequestOptions = {},
   ): Promise<T> {
     const headers: Record<string, string> = { ...defaultHeaders };
     const requestOptions: RequestInit = {
       method,
       headers,
+      signal: options.signal,
     };
 
     if (credentials) {
