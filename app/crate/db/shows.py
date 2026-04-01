@@ -140,3 +140,41 @@ def get_attending_show_ids(user_id: int, show_ids: list[int]) -> set[int]:
             [user_id, *show_ids],
         )
         return {row["show_id"] for row in cur.fetchall()}
+
+
+def get_show_reminders(user_id: int, show_ids: list[int] | None = None) -> list[dict]:
+    with get_db_ctx() as cur:
+        if show_ids:
+            placeholders = ",".join(["%s"] * len(show_ids))
+            cur.execute(
+                f"""
+                SELECT id, user_id, show_id, reminder_type, created_at, triggered_at
+                FROM user_show_reminders
+                WHERE user_id = %s AND show_id IN ({placeholders})
+                """,
+                [user_id, *show_ids],
+            )
+        else:
+            cur.execute(
+                """
+                SELECT id, user_id, show_id, reminder_type, created_at, triggered_at
+                FROM user_show_reminders
+                WHERE user_id = %s
+                """,
+                (user_id,),
+            )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def create_show_reminder(user_id: int, show_id: int, reminder_type: str) -> bool:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            INSERT INTO user_show_reminders (user_id, show_id, reminder_type, created_at, triggered_at)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, show_id, reminder_type) DO NOTHING
+            """,
+            (user_id, show_id, reminder_type, now, now),
+        )
+        return cur.rowcount > 0

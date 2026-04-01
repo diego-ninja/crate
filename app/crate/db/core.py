@@ -770,6 +770,19 @@ def init_db():
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_attendance_user ON user_show_attendance(user_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_attendance_show ON user_show_attendance(show_id)")
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_show_reminders (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                show_id INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
+                reminder_type TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                triggered_at TEXT,
+                UNIQUE(user_id, show_id, reminder_type)
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_reminders_user ON user_show_reminders(user_id, show_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_show_reminders_type ON user_show_reminders(user_id, reminder_type)")
 
         # Migration: track rating (0-5 stars)
         cur.execute("""

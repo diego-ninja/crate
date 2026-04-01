@@ -53,6 +53,10 @@ class RecordPlayEventRequest(BaseModel):
     app_platform: str | None = None
 
 
+class ShowReminderRequest(BaseModel):
+    reminder_type: str
+
+
 def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
     from crate import setlistfm
 
@@ -65,6 +69,86 @@ def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[di
         except Exception:
             continue
     return result
+
+
+def _build_upcoming_insights(
+    user_id: int,
+    shows: list[dict],
+    attending_show_ids: set[int],
+) -> list[dict]:
+    from crate.db import get_show_reminders
+    from crate.db.user_library import get_top_artists
+
+    if not shows:
+        return []
+
+    reminders = get_show_reminders(user_id, [show["id"] for show in shows if show.get("id") is not None])
+    reminder_keys = {(row["show_id"], row["reminder_type"]) for row in reminders}
+    hot_artists = {
+        row["artist_name"]
+        for row in get_top_artists(user_id, window="30d", limit=12)
+        if row.get("artist_name")
+    }
+
+    today = datetime.now(timezone.utc).date()
+    insights: list[dict] = []
+    for show in sorted(shows, key=lambda item: item.get("date", "")):
+        show_id = show.get("id")
+        if not show_id or show_id not in attending_show_ids:
+            continue
+
+        date_str = show.get("date")
+        if not date_str:
+            continue
+        try:
+            show_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+
+        days_until = (show_date - today).days
+        artist_name = show.get("artist_name") or ""
+        has_setlist = bool(show.get("probable_setlist"))
+
+        if 7 < days_until <= 30 and (show_id, "one_month") not in reminder_keys:
+            insights.append({
+                "type": "one_month",
+                "show_id": show_id,
+                "artist": artist_name,
+                "date": date_str,
+                "title": show.get("venue") or artist_name,
+                "subtitle": f"{days_until} days to go",
+                "message": f"{artist_name} is coming up in about a month.",
+                "has_setlist": has_setlist,
+            })
+
+        if 1 < days_until <= 7 and (show_id, "one_week") not in reminder_keys:
+            insights.append({
+                "type": "one_week",
+                "show_id": show_id,
+                "artist": artist_name,
+                "date": date_str,
+                "title": show.get("venue") or artist_name,
+                "subtitle": f"{days_until} days to go",
+                "message": f"{artist_name} is coming up this week.",
+                "has_setlist": has_setlist,
+            })
+
+        if has_setlist and days_until <= 30 and (show_id, "show_prep") not in reminder_keys:
+            weight = "high" if artist_name in hot_artists else "normal"
+            insights.append({
+                "type": "show_prep",
+                "show_id": show_id,
+                "artist": artist_name,
+                "date": date_str,
+                "title": f"{artist_name} probable setlist",
+                "subtitle": "Show prep",
+                "message": "Warm up with the likely setlist before the show.",
+                "has_setlist": True,
+                "weight": weight,
+            })
+
+    insights.sort(key=lambda item: (item.get("date", ""), item.get("type", "")))
+    return insights[:8]
 
 
 # ── Library Summary ──────────────────────────────────────────
@@ -387,10 +471,13 @@ def upcoming(request: Request, limit: int = 120):
     if not followed_names:
         return {
             "items": [],
+            "insights": [],
             "summary": {
                 "followed_artists": 0,
                 "show_count": 0,
                 "release_count": 0,
+                "attending_count": 0,
+                "insight_count": 0,
             },
         }
 
@@ -507,12 +594,24 @@ def upcoming(request: Request, limit: int = 120):
             }
         )
 
+    enriched_shows = [
+        {
+            **dict(show),
+            "probable_setlist": (setlist_map.get(show.get("artist_name", "")) or [])[:8],
+        }
+        for show in shows
+    ]
+    insights = _build_upcoming_insights(user["id"], enriched_shows, attending_show_ids)
+
     return {
         "items": items,
+        "insights": insights,
         "summary": {
             "followed_artists": len(followed_names),
             "show_count": len([item for item in items if item["type"] == "show"]),
             "release_count": len([item for item in items if item["type"] == "release"]),
+            "attending_count": len(attending_show_ids),
+            "insight_count": len(insights),
         },
     }
 
@@ -531,3 +630,14 @@ def unattend_show_endpoint(request: Request, show_id: int):
     from crate.db import unattend_show
 
     return {"ok": True, "removed": unattend_show(user["id"], show_id)}
+
+
+@router.post("/shows/{show_id}/reminders")
+def create_show_reminder_endpoint(request: Request, show_id: int, body: ShowReminderRequest):
+    user = _require_auth(request)
+    from crate.db import create_show_reminder
+
+    if body.reminder_type not in {"one_month", "one_week", "show_prep"}:
+        raise HTTPException(status_code=400, detail="Unsupported reminder type")
+
+    return {"ok": True, "added": create_show_reminder(user["id"], show_id, body.reminder_type)}
