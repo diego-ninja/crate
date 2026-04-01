@@ -264,6 +264,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const continuationSignatureRef = useRef<string | null>(null);
   const playlistSuggestionInFlightRef = useRef(false);
   const playlistSuggestionSignatureRef = useRef<string | null>(null);
+  const currentIndexRef = useRef(currentIndex);
+  const playSourceRef = useRef(playSource);
 
   if (!audioRef.current) {
     audioRef.current = getSharedAudio(PLAYER_AUDIO_KEY);
@@ -275,6 +277,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     preloadAudioRef.current.preload = "auto";
   }
   const audio = audioRef.current;
+
+  useEffect(() => {
+    currentIndexRef.current = currentIndex;
+    playSourceRef.current = playSource;
+  }, [currentIndex, playSource]);
 
   useEffect(() => {
     saveQueue(queue, currentIndex);
@@ -622,7 +629,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     fetchInfiniteContinuation(playSource!, SMART_PLAYLIST_SUGGESTION_BATCH_SIZE)
       .then((tracks) => {
         if (!tracks.length) return;
+        const expectedSeedId = playSource?.radio?.seedId ?? null;
         setQueue((prev) => {
+          const latestSource = playSourceRef.current;
+          const insertionIndex = currentIndexRef.current + 1;
+          if (
+            latestSource?.type !== "playlist" ||
+            latestSource?.radio?.seedId !== expectedSeedId ||
+            insertionIndex <= 0 ||
+            insertionIndex > prev.length
+          ) {
+            return prev;
+          }
+
           const existingKeys = new Set(
             [...prev, ...recentlyPlayed].map((track) => getTrackCacheKey(track)),
           );
@@ -632,9 +651,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             return true;
           });
           if (!suggestion) return prev;
+          if (prev[insertionIndex]?.isSuggested) return prev;
 
           const nextQueue = [...prev];
-          nextQueue.splice(currentIndex + 1, 0, {
+          nextQueue.splice(insertionIndex, 0, {
             ...suggestion,
             isSuggested: true,
             suggestionSource: "playlist",
@@ -657,6 +677,64 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     smartPlaylistSuggestionsCadence,
     smartPlaylistSuggestionsEnabled,
   ]);
+
+  const continueInfinitePlayback = useCallback(() => {
+    if (
+      !infinitePlaybackEnabled ||
+      shuffle ||
+      (playSource?.type !== "album" && playSource?.type !== "playlist") ||
+      !playSource?.radio?.seedId
+    ) {
+      return false;
+    }
+
+    shouldAutoplayRef.current = false;
+    setIsPlaying(false);
+    setIsBuffering(true);
+    continuationInFlightRef.current = true;
+
+    fetchInfiniteContinuation(playSource, RADIO_REFILL_BATCH_SIZE)
+      .then((tracks) => {
+        if (!tracks.length) {
+          setIsBuffering(false);
+          return;
+        }
+
+        let appended = false;
+        setQueue((prev) => {
+          const existingKeys = new Set(
+            [...prev, ...recentlyPlayed].map((track) => getTrackCacheKey(track)),
+          );
+          const uniqueTracks = tracks.filter((track) => {
+            const key = getTrackCacheKey(track);
+            if (!key || existingKeys.has(key)) return false;
+            existingKeys.add(key);
+            return true;
+          });
+          if (uniqueTracks.length === 0) return prev;
+          appended = true;
+          return [...prev, ...uniqueTracks];
+        });
+
+        if (appended) {
+          shouldAutoplayRef.current = true;
+          setCurrentIndex((i) => i + 1);
+          setCurrentTime(0);
+          setDuration(0);
+        } else {
+          setIsBuffering(false);
+        }
+      })
+      .catch((error) => {
+        console.warn("[player] continuation after end failed:", error);
+        setIsBuffering(false);
+      })
+      .finally(() => {
+        continuationInFlightRef.current = false;
+      });
+
+    return true;
+  }, [infinitePlaybackEnabled, playSource, recentlyPlayed, shuffle]);
 
   useEffect(() => {
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
@@ -720,56 +798,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setCurrentIndex((i) => i + 1);
       } else if (repeat === "all") {
         setCurrentIndex(0);
-      } else if (
-        infinitePlaybackEnabled &&
-        !shuffle &&
-        (playSource?.type === "album" || playSource?.type === "playlist") &&
-        playSource?.radio?.seedId
-      ) {
-        shouldAutoplayRef.current = false;
-        setIsPlaying(false);
-        setIsBuffering(true);
-        continuationInFlightRef.current = true;
-
-        fetchInfiniteContinuation(playSource, RADIO_REFILL_BATCH_SIZE)
-          .then((tracks) => {
-            if (!tracks.length) {
-              setIsBuffering(false);
-              return;
-            }
-
-            let appended = false;
-            setQueue((prev) => {
-              const existingKeys = new Set(
-                [...prev, ...recentlyPlayed].map((track) => getTrackCacheKey(track)),
-              );
-              const uniqueTracks = tracks.filter((track) => {
-                const key = getTrackCacheKey(track);
-                if (!key || existingKeys.has(key)) return false;
-                existingKeys.add(key);
-                return true;
-              });
-              if (uniqueTracks.length === 0) return prev;
-              appended = true;
-              return [...prev, ...uniqueTracks];
-            });
-
-            if (appended) {
-              shouldAutoplayRef.current = true;
-              setCurrentIndex((i) => i + 1);
-              setCurrentTime(0);
-              setDuration(0);
-            } else {
-              setIsBuffering(false);
-            }
-          })
-          .catch((error) => {
-            console.warn("[player] continuation after end failed:", error);
-            setIsBuffering(false);
-          })
-          .finally(() => {
-            continuationInFlightRef.current = false;
-          });
+      } else if (continueInfinitePlayback()) {
+        return;
       } else {
         shouldAutoplayRef.current = false;
         setIsPlaying(false);
@@ -823,7 +853,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       audio.removeEventListener("seeked", onSeeked);
       audio.removeEventListener("error", onError);
     };
-  }, [audio, crossfadeSeconds, currentIndex, infinitePlaybackEnabled, playSource, queue, recentlyPlayed, repeat, shuffle]);
+  }, [audio, continueInfinitePlayback, crossfadeSeconds, currentIndex, queue, repeat, shuffle]);
 
   const play = useCallback((track: Track, source?: PlaySource) => {
     try {
@@ -908,8 +938,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setCurrentIndex(0);
       setCurrentTime(0);
       setDuration(0);
+    } else if (!continueInfinitePlayback()) {
+      shouldAutoplayRef.current = false;
+      setIsPlaying(false);
+      setIsBuffering(false);
     }
-  }, [clearPreloadedTrack, currentIndex, queue.length, repeat, shuffle]);
+  }, [clearPreloadedTrack, continueInfinitePlayback, currentIndex, queue.length, repeat, shuffle]);
 
   const prev = useCallback(() => {
     if (audio.currentTime > 3) {

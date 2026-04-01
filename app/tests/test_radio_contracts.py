@@ -126,3 +126,18 @@ class TestRadioApiContracts:
         assert data["session"]["type"] == "playlist"
         assert data["session"]["seed"]["playlist_id"] == 7
         assert data["tracks"][0]["title"] == "Jane Doe"
+
+    def test_playlist_radio_hides_inactive_system_playlists(self, test_app):
+        with patch("crate.api.radio.get_db_ctx") as mock_ctx:
+            mock_ctx.return_value.__enter__.return_value.fetchone.return_value = {
+                "id": 12,
+                "name": "Hidden Editorial",
+                "scope": "system",
+                "user_id": None,
+                "is_active": False,
+            }
+            mock_ctx.return_value.__exit__.return_value = False
+
+            resp = test_app.get("/api/radio/playlist/12?limit=50")
+
+        assert resp.status_code == 404

@@ -112,9 +112,11 @@ def api_album_radio(request: Request, album_id: int, limit: int = 50):
 def api_playlist_radio(request: Request, playlist_id: int, limit: int = 50):
     user = _require_auth(request)
     with get_db_ctx() as cur:
-        cur.execute("SELECT id, name, scope, user_id FROM playlists WHERE id = %s", (playlist_id,))
+        cur.execute("SELECT id, name, scope, user_id, is_active FROM playlists WHERE id = %s", (playlist_id,))
         row = cur.fetchone()
     if not row:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    if row.get("scope") == "system" and not row.get("is_active", True):
         raise HTTPException(status_code=404, detail="Playlist not found")
     if row.get("scope") != "system" and row.get("user_id") != user["id"] and user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Not your playlist")
