@@ -302,6 +302,8 @@ Turn stats into playable objects.
 
 ## Batch 6 - Upcoming Intelligence Foundation
 
+**Current status**: first implementation batch delivered
+
 ### Goal
 
 Turn `Upcoming` from a useful page into an active assistant around attended shows.
@@ -314,6 +316,25 @@ Turn `Upcoming` from a useful page into an active assistant around attended show
   - `one_week_sent_at`
   - `day_before_sent_at`
 - define a background task that scans future attended shows and emits reminder candidates
+
+Current implementation notes:
+
+- schema now includes `user_show_reminders`
+- `GET /api/me/upcoming` now returns:
+  - `insights`
+  - `summary.attending_count`
+  - `summary.insight_count`
+- `POST /api/me/shows/{show_id}/reminders` persists reminder consumption / acknowledgement
+- insight generation currently uses:
+  - attendance state
+  - show proximity
+  - probable setlist availability
+  - a lightweight `top artists in last 30d` signal from stats aggregates
+- `listen` now renders a first `Show prep` section in `Upcoming` with:
+  - one-month reminders
+  - one-week reminders
+  - show-prep prompts
+  - direct probable setlist playback when available
 
 ### Candidate API
 
@@ -332,6 +353,8 @@ Turn `Upcoming` from a useful page into an active assistant around attended show
 - reminder state is persisted and not re-sent repeatedly
 
 ## Batch 7 - Show Prep And Setlist Prompts
+
+**Current status**: partially delivered on top of Batch 6
 
 ### Goal
 

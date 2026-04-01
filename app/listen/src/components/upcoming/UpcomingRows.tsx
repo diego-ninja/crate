@@ -261,7 +261,7 @@ export function UpcomingMonthGroup({
   );
 }
 
-async function fetchPlayableSetlist(artist: string): Promise<Track[]> {
+export async function fetchPlayableSetlist(artist: string): Promise<Track[]> {
   const response = await api<{
     tracks: {
       library_track_id: number;
