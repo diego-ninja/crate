@@ -14,7 +14,7 @@ import { AppModal, ModalBody, ModalFooter, ModalHeader, ModalCloseButton } from 
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { fetchPlaylistRadio } from "@/lib/radio";
-import { encPath } from "@/lib/utils";
+import { encPath, shuffleArray, formatTotalDuration } from "@/lib/utils";
 
 interface PlaylistTrack {
   id: number;
@@ -46,23 +46,8 @@ interface PlaylistData {
   tracks: PlaylistTrack[];
 }
 
-function fmtTotalDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h} hr ${m} min`;
-  return `${m} min`;
-}
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = copy[i]!;
-    copy[i] = copy[j]!;
-    copy[j] = tmp;
-  }
-  return copy;
-}
+
 
 export function Playlist() {
   const navigate = useNavigate();
@@ -333,7 +318,7 @@ export function Playlist() {
             <div className="text-xs text-muted-foreground">
               {data.track_count} track{data.track_count !== 1 ? "s" : ""}
               {data.total_duration > 0 &&
-                ` · ${fmtTotalDuration(data.total_duration)}`}
+                ` · ${formatTotalDuration(data.total_duration)}`}
             </div>
           </div>
         </div>

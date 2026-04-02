@@ -16,7 +16,6 @@ import { AppMenuButton, AppPopover } from "@/components/ui/AppPopover";
 import { type PlaylistComposerTrack } from "@/components/playlists/PlaylistCreateModal";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
-import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
 import { QueuePanel } from "@/components/player/QueuePanel";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
 import { ExtendedPlayer } from "@/components/player/ExtendedPlayer";
@@ -69,7 +68,6 @@ export function PlayerBar() {
   const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
 
   const navigate = useNavigate();
-  const [fsOpen, setFsOpen] = useState(false);
   const [extendedOpen, setExtendedOpen] = useState(false);
   const [showVolume, setShowVolume] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
@@ -472,7 +470,6 @@ export function PlayerBar() {
       <QueuePanel open={showQueue} onClose={() => setShowQueue(false)} />
       <LyricsPanel open={showLyrics} onClose={() => setShowLyrics(false)} />
       <ExtendedPlayer open={extendedOpen} onClose={() => setExtendedOpen(false)} />
-      <FullscreenPlayer open={fsOpen} onClose={() => setFsOpen(false)} />
     </>
   );
 }

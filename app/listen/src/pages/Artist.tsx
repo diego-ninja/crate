@@ -29,7 +29,7 @@ import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchArtistRadio } from "@/lib/radio";
-import { encPath, formatCompact } from "@/lib/utils";
+import { encPath, formatCompact, shuffleArray } from "@/lib/utils";
 
 interface ArtistAlbum {
   id: number;
@@ -83,16 +83,6 @@ interface StatsListResponse<T> {
   items: T[];
 }
 
-function shuffleArray<T>(items: T[]): T[] {
-  const copy = [...items];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = copy[i]!;
-    copy[i] = copy[j]!;
-    copy[j] = tmp;
-  }
-  return copy;
-}
 
 export function Artist() {
   const navigate = useNavigate();

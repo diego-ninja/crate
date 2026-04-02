@@ -14,7 +14,7 @@ import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from 
 import { type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { encPath, formatTotalDuration } from "@/lib/utils";
 
 type Tab = "playlists" | "artists" | "albums" | "liked";
 
@@ -96,13 +96,6 @@ function parseTab(value: string | null): Tab {
   return "playlists";
 }
 
-function formatTotalDuration(seconds: number): string {
-  if (!seconds) return "";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
-}
 
 function Spinner() {
   return (

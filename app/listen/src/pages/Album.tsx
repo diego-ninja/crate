@@ -12,7 +12,7 @@ import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { fetchAlbumRadio } from "@/lib/radio";
-import { encPath, formatBadgeClass } from "@/lib/utils";
+import { encPath, formatBadgeClass, shuffleArray, formatTotalDuration } from "@/lib/utils";
 
 interface AlbumTrack {
   id: number;
@@ -64,16 +64,6 @@ interface Playlist {
   name: string;
 }
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = copy[i]!;
-    copy[i] = copy[j]!;
-    copy[j] = tmp;
-  }
-  return copy;
-}
 
 function buildPlayerTracks(data: AlbumData): Track[] {
   const cover = `/api/cover/${encPath(data.artist)}/${encPath(data.name)}`;
@@ -88,12 +78,6 @@ function buildPlayerTracks(data: AlbumData): Track[] {
   }));
 }
 
-function formatTotalDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h} hr ${m} min`;
-  return `${m} min`;
-}
 
 export function Album() {
   const { artist, album } = useParams<{ artist: string; album: string }>();
