@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@nivo/core": "^0.99.0",
     "@nivo/line": "^0.99.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

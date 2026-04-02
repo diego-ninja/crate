@@ -155,7 +155,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 }
 
         if not user:
-            remote_user = request.headers.get("Remote-User")
+            # Only trust Remote-User from reverse proxy (Traefik).
+            # Validate the request comes from a Docker network peer, not external.
+            client_ip = request.client.host if request.client else ""
+            is_trusted_proxy = client_ip.startswith("172.") or client_ip.startswith("10.") or client_ip == "127.0.0.1"
+            remote_user = request.headers.get("Remote-User") if is_trusted_proxy else None
             if remote_user:
                 groups_raw = request.headers.get("Remote-Groups", "")
                 groups = [g.strip() for g in groups_raw.split(",") if g.strip()]
@@ -252,8 +256,12 @@ async def auth_verify(request: Request):
     user = getattr(request.state, "user", None)
     if not user:
         domain = os.environ.get("DOMAIN", "localhost")
-        original_url = request.headers.get("X-Forwarded-Uri", "/")
+        # Validate X-Forwarded-Host against allowed domains to prevent open redirect
+        allowed_hosts = {f"admin.{domain}", f"listen.{domain}", f"play.{domain}", domain}
         original_host = request.headers.get("X-Forwarded-Host", f"admin.{domain}")
+        if original_host not in allowed_hosts:
+            original_host = f"admin.{domain}"
+        original_url = request.headers.get("X-Forwarded-Uri", "/")
         original_proto = request.headers.get("X-Forwarded-Proto", "https")
         redirect_to = f"{original_proto}://{original_host}{original_url}"
         login_url = f"https://admin.{domain}/login?redirect={redirect_to}"

@@ -186,10 +186,12 @@ def get_cover(request: Request, playlist_id: int):
 
 @router.post("/{playlist_id}/tracks")
 def add_tracks(request: Request, playlist_id: int, body: AddTracksRequest):
-    _require_auth(request)
+    user = _require_auth(request)
     pl = get_playlist(playlist_id)
     if not pl:
         raise HTTPException(status_code=404, detail="Playlist not found")
+    if pl.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
     if not body.tracks:
         raise HTTPException(status_code=422, detail="No tracks provided")
     add_playlist_tracks(playlist_id, body.tracks)
@@ -198,14 +200,24 @@ def add_tracks(request: Request, playlist_id: int, body: AddTracksRequest):
 
 @router.delete("/{playlist_id}/tracks/{position}")
 def remove_track(request: Request, playlist_id: int, position: int):
-    _require_auth(request)
+    user = _require_auth(request)
+    pl = get_playlist(playlist_id)
+    if not pl:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    if pl.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
     remove_playlist_track(playlist_id, position)
     return {"ok": True}
 
 
 @router.post("/{playlist_id}/reorder")
 def reorder(request: Request, playlist_id: int, body: ReorderRequest):
-    _require_auth(request)
+    user = _require_auth(request)
+    pl = get_playlist(playlist_id)
+    if not pl:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    if pl.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
     reorder_playlist(playlist_id, body.track_ids)
     return {"ok": True}
 

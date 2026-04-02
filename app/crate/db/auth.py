@@ -117,9 +117,17 @@ def list_users() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+_USER_UPDATABLE_FIELDS = frozenset({
+    "email", "name", "username", "role", "password_hash", "google_id",
+})
+
+
 def update_user(user_id: int, **fields) -> dict | None:
     if not fields:
         return get_user_by_id(user_id)
+    invalid = set(fields) - _USER_UPDATABLE_FIELDS
+    if invalid:
+        raise ValueError(f"Invalid fields for user update: {invalid}")
     sets = ", ".join(f"{k} = %s" for k in fields)
     vals = list(fields.values()) + [user_id]
     with get_db_ctx() as cur:

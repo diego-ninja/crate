@@ -38,8 +38,7 @@ export function usePlayerShortcuts({
         el.isContentEditable ||
         tag === "INPUT" ||
         tag === "TEXTAREA" ||
-        tag === "SELECT" ||
-        tag === "BUTTON"
+        tag === "SELECT"
       );
     };
 

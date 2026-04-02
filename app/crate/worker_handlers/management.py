@@ -4,6 +4,12 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
+
+def _escape_like(value: str) -> str:
+    """Escape SQL LIKE metacharacters and prepend wildcard for year-prefix matching."""
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"% - {escaped}"
+
 from crate.db import (
     create_task,
     create_task_dedup,
@@ -265,8 +271,8 @@ def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
         row = cur.fetchone()
         if not row:
             cur.execute(
-                "SELECT path FROM library_albums WHERE artist = %s AND name LIKE %s LIMIT 1",
-                (artist_name, f"% - {album_name}"),
+                "SELECT path FROM library_albums WHERE artist = %s AND name LIKE %s ESCAPE '\\' LIMIT 1",
+                (artist_name, _escape_like(album_name)),
             )
             row = cur.fetchone()
         if row:
@@ -519,8 +525,8 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
                 row = cur.fetchone()
                 if not row:
                     cur.execute(
-                        "SELECT path FROM library_albums WHERE artist = %s AND (name = %s OR name LIKE %s) LIMIT 1",
-                        (artist_folder, album_folder, f"% - {album_folder}"),
+                        "SELECT path FROM library_albums WHERE artist = %s AND (name = %s OR name LIKE %s ESCAPE '\\') LIMIT 1",
+                        (artist_folder, album_folder, _escape_like(album_folder)),
                     )
                     row = cur.fetchone()
                 if row:

@@ -439,6 +439,10 @@ def init_db():
             WHERE bliss_vector IS NOT NULL AND bliss_state = 'pending'
         """)
 
+        # Partial indexes for analysis daemon claim queries
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tracks_analysis_pending ON library_tracks(updated_at DESC) WHERE analysis_state = 'pending'")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tracks_bliss_pending ON library_tracks(updated_at DESC) WHERE bliss_state = 'pending'")
+
         # Migration: popularity columns
         for table, cols in [
             ("library_artists", [("lastfm_playcount", "BIGINT"), ("spotify_followers", "INTEGER")]),
