@@ -135,7 +135,7 @@ function SearchResultsView({ results }: { results: SearchResults }) {
       {hasArtists && (
         <div className="space-y-3">
           <h2 className="text-lg font-bold px-1">Artists</h2>
-          <div className="flex gap-4 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {results.artists.map((a) => (
               <ArtistCard
                 key={a.name}
@@ -150,7 +150,7 @@ function SearchResultsView({ results }: { results: SearchResults }) {
       {hasAlbums && (
         <div className="space-y-3">
           <h2 className="text-lg font-bold px-1">Albums</h2>
-          <div className="flex gap-4 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {results.albums.map((a) => (
               <AlbumCard
                 key={a.id || `${a.artist}-${a.name}`}
@@ -221,7 +221,7 @@ function SectionHeader({
 
 function SectionRail({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex gap-4 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       {children}
     </div>
   );

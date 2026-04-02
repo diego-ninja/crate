@@ -5,12 +5,13 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
+import { usePlayerActions } from "@/contexts/PlayerContext";
 import { encPath } from "@/lib/utils";
 
 interface SearchResult {
   artists: { name: string }[];
   albums: { artist: string; name: string }[];
-  tracks: { title: string; artist: string; album: string }[];
+  tracks: { id?: number; title: string; artist: string; album: string; path?: string; navidrome_id?: string }[];
 }
 
 const RECENTS_KEY = "listen-search-recents";
@@ -36,6 +37,7 @@ interface FlatItem {
   sublabel?: string;
   navigateTo?: string;
   imageUrl?: string;
+  trackData?: { id: string; path?: string; title: string; artist: string; album: string; navidromeId?: string };
 }
 
 function flattenResults(data: SearchResult): FlatItem[] {
@@ -58,6 +60,7 @@ function flattenResults(data: SearchResult): FlatItem[] {
     items.push({
       type: "track", label: t.title, sublabel: `${t.artist} - ${t.album}`,
       imageUrl: t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : undefined,
+      trackData: { id: t.path || String(t.id), path: t.path, title: t.title, artist: t.artist, album: t.album, navidromeId: t.navidrome_id },
     });
   }
   return items;
@@ -82,6 +85,7 @@ function ResultThumb({ item }: { item: FlatItem }) {
 export function TopBar() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { play } = usePlayerActions();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FlatItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -135,15 +139,21 @@ export function TopBar() {
 
   const selectItem = useCallback(
     (item: FlatItem) => {
-      if (item.navigateTo) {
-        addRecent(item.label);
-        setRecents(getRecents());
+      addRecent(item.label);
+      setRecents(getRecents());
+      if (item.trackData) {
+        const t = item.trackData;
+        play(
+          { id: t.id, path: t.path, title: t.title, artist: t.artist, album: t.album, navidromeId: t.navidromeId, albumCover: item.imageUrl },
+          { type: "queue", name: "Search" },
+        );
+      } else if (item.navigateTo) {
         navigate(item.navigateTo);
       }
       setShowDropdown(false);
       setQuery("");
     },
-    [navigate],
+    [navigate, play],
   );
 
   const selectRecent = useCallback(

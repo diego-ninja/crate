@@ -209,7 +209,7 @@ function SectionHeader({
 
 function SectionRail({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex gap-4 overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
       {children}
     </div>
   );

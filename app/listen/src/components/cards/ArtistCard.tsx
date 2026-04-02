@@ -43,7 +43,7 @@ export function ArtistCard({ name, photo, subtitle, compact, href, external = fa
         href={targetHref}
         target="_blank"
         rel="noopener noreferrer"
-        className={`group text-left flex-shrink-0 ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`}
+        className={`group text-left flex-shrink-0 snap-start ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`}
       >
         {content}
       </a>
@@ -52,7 +52,7 @@ export function ArtistCard({ name, photo, subtitle, compact, href, external = fa
 
   return (
     <button
-      className={`group text-left flex-shrink-0 ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`}
+      className={`group text-left flex-shrink-0 snap-start ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`}
       onClick={() => navigate(targetHref)}
     >
       {content}

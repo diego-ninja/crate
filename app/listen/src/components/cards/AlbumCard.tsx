@@ -69,7 +69,7 @@ export const AlbumCard = memo(function AlbumCard({ artist, album, albumId, year,
     <div
       role="button"
       tabIndex={0}
-      className={`group text-left flex-shrink-0 ${compact ? "w-[120px]" : "w-[160px]"}`}
+      className={`group text-left flex-shrink-0 snap-start ${compact ? "w-[120px]" : "w-[160px]"}`}
       onClick={() => navigate(`/album/${encPath(artist)}/${encPath(album)}`)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
