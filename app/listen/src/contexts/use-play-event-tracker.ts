@@ -70,7 +70,7 @@ export function usePlayEventTracker(
     const completionRatio = trackDurationSeconds && trackDurationSeconds > 0
       ? Math.min(1, playedSeconds / trackDurationSeconds)
       : null;
-    const wasCompleted = reason === "completed" || (completionRatio !== null && completionRatio >= 0.9);
+    const wasCompleted = reason === "completed";
     const wasSkipped = reason === "skipped" && playedSeconds >= PLAY_EVENT_MIN_SECONDS;
 
     fetch("/api/me/play-events", {
