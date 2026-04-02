@@ -255,7 +255,7 @@ export function Shell() {
 
       <div className="fixed bottom-0 left-0 right-0 z-50">
         <MiniPlayer />
-        <nav className="h-16 bg-[#0a0a0f] border-t border-white/5 flex items-center justify-around px-2">
+        <nav className="bg-[#0a0a0f] border-t border-white/5 flex items-center justify-around px-2" style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))", height: "calc(64px + env(safe-area-inset-bottom, 0px))" }}>
           {MOBILE_NAV.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}

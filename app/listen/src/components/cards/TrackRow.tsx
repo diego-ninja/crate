@@ -111,7 +111,7 @@ export const TrackRow = memo(function TrackRow({
             ) : (
               <Play
                 size={16}
-                className={`text-white transition-opacity ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                className={`text-white transition-opacity ${isActive ? "opacity-100" : "opacity-0 md:group-hover:opacity-100"}`}
                 fill="currentColor"
               />
             )}
@@ -155,8 +155,8 @@ export const TrackRow = memo(function TrackRow({
 
       {/* Like + Actions */}
       <button
-        className={`flex-shrink-0 p-1 transition-opacity ${
-          liked ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        className={`flex-shrink-0 p-2 transition-opacity ${
+          liked ? "opacity-100" : "md:opacity-0 md:group-hover:opacity-100"
         }`}
         title={liked ? "Unlike" : "Like"}
         onClick={async (e) => {
@@ -177,8 +177,8 @@ export const TrackRow = memo(function TrackRow({
         />
       </button>
 
-      {/* Actions (on hover) */}
-      <div className="flex-shrink-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Actions (visible on mobile, hover-reveal on desktop) */}
+      <div className="flex-shrink-0 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
         {onAddToPlaylist && (
           <div className="relative" ref={playlistMenuRef}>
             <button

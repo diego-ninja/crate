@@ -45,7 +45,15 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
+
+/* Allow text selection in content areas */
+p, article, .selectable { -webkit-user-select: text; user-select: text; }
+input, textarea { -webkit-user-select: auto; user-select: auto; }
 
 * {
   border-color: var(--color-border);
