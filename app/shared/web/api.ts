@@ -4,6 +4,7 @@ export interface ApiClientOptions {
   base?: string;
   credentials?: RequestCredentials;
   defaultHeaders?: Record<string, string>;
+  onUnauthorized?: () => void;
 }
 
 export interface ApiRequestOptions {
@@ -24,6 +25,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
     base = "",
     credentials,
     defaultHeaders = {},
+    onUnauthorized,
   } = options;
 
   return async function api<T = unknown>(
@@ -54,6 +56,9 @@ export function createApiClient(options: ApiClientOptions = {}) {
 
     const res = await fetch(`${base}${url}`, requestOptions);
     if (!res.ok) {
+      if (res.status === 401 && onUnauthorized && !url.includes("/auth/login")) {
+        onUnauthorized();
+      }
       const text = await res.text().catch(() => "Request failed");
       throw new ApiError(res.status, text);
     }

@@ -26,3 +26,4 @@ Thumbs.db
 app/bin/grooveyard-bliss-linux-amd64
 *.tsbuildinfo
 worktrees/
+.vite/

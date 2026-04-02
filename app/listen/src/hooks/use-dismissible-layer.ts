@@ -1,4 +1,4 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 type LayerRef = RefObject<HTMLElement | null>;
 
@@ -17,23 +17,29 @@ export function useDismissibleLayer({
   closeOnEscape = true,
   closeOnPointerDownOutside = true,
 }: UseDismissibleLayerOptions) {
+  // Store callbacks and refs in stable refs to avoid re-registering listeners
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+  const refsRef = useRef(refs);
+  refsRef.current = refs;
+
   useEffect(() => {
     if (!active) return;
 
     const isInside = (target: Node | null) =>
-      refs.some((ref) => ref.current && target && ref.current.contains(target));
+      refsRef.current.some((ref) => ref.current && target && ref.current.contains(target));
 
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
       if (!closeOnPointerDownOutside) return;
       if (isInside(event.target as Node | null)) return;
-      onDismiss();
+      onDismissRef.current();
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!closeOnEscape || event.key !== "Escape") return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      onDismiss();
+      onDismissRef.current();
     };
 
     document.addEventListener("mousedown", handlePointerDown);
@@ -45,5 +51,5 @@ export function useDismissibleLayer({
       document.removeEventListener("touchstart", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [active, closeOnEscape, closeOnPointerDownOutside, onDismiss, refs]);
+  }, [active, closeOnEscape, closeOnPointerDownOutside]);
 }
