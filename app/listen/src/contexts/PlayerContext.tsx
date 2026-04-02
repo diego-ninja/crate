@@ -29,6 +29,7 @@ import {
 import { usePlayEventTracker } from "@/contexts/use-play-event-tracker";
 import { usePlaybackIntelligence } from "@/contexts/use-playback-intelligence";
 import { usePlayerShortcuts } from "@/contexts/use-player-shortcuts";
+import { useMediaSession } from "@/contexts/use-media-session";
 import {
   getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
@@ -726,6 +727,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     seek,
     setVolume,
   });
+
+  useMediaSession({ currentTrack, isPlaying, currentTime, duration, pause, resume, next, prev, seek });
 
   const stateValue = useMemo<PlayerStateValue>(
     () => ({ currentTime, duration, isPlaying, isBuffering, volume }),
