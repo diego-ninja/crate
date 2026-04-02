@@ -401,13 +401,13 @@ def _window_filter_sql(cutoff: str | None) -> tuple[str, tuple]:
 
 
 def _recompute_user_track_stats(cur, user_id: int, window: str, cutoff: str | None):
-    cur.execute("DELETE FROM user_track_stats WHERE user_id = %s AND window = %s", (user_id, window))
+    cur.execute("DELETE FROM user_track_stats WHERE user_id = %s AND stat_window = %s", (user_id, window))
     where_sql, extra_params = _window_filter_sql(cutoff)
     cur.execute(
         f"""
         INSERT INTO user_track_stats (
             user_id,
-            window,
+            stat_window,
             entity_key,
             track_id,
             track_path,
@@ -444,13 +444,13 @@ def _recompute_user_track_stats(cur, user_id: int, window: str, cutoff: str | No
 
 
 def _recompute_user_artist_stats(cur, user_id: int, window: str, cutoff: str | None):
-    cur.execute("DELETE FROM user_artist_stats WHERE user_id = %s AND window = %s", (user_id, window))
+    cur.execute("DELETE FROM user_artist_stats WHERE user_id = %s AND stat_window = %s", (user_id, window))
     where_sql, extra_params = _window_filter_sql(cutoff)
     cur.execute(
         f"""
         INSERT INTO user_artist_stats (
             user_id,
-            window,
+            stat_window,
             artist_name,
             play_count,
             complete_play_count,
@@ -477,13 +477,13 @@ def _recompute_user_artist_stats(cur, user_id: int, window: str, cutoff: str | N
 
 
 def _recompute_user_album_stats(cur, user_id: int, window: str, cutoff: str | None):
-    cur.execute("DELETE FROM user_album_stats WHERE user_id = %s AND window = %s", (user_id, window))
+    cur.execute("DELETE FROM user_album_stats WHERE user_id = %s AND stat_window = %s", (user_id, window))
     where_sql, extra_params = _window_filter_sql(cutoff)
     cur.execute(
         f"""
         INSERT INTO user_album_stats (
             user_id,
-            window,
+            stat_window,
             entity_key,
             artist,
             album,
@@ -514,13 +514,13 @@ def _recompute_user_album_stats(cur, user_id: int, window: str, cutoff: str | No
 
 
 def _recompute_user_genre_stats(cur, user_id: int, window: str, cutoff: str | None):
-    cur.execute("DELETE FROM user_genre_stats WHERE user_id = %s AND window = %s", (user_id, window))
+    cur.execute("DELETE FROM user_genre_stats WHERE user_id = %s AND stat_window = %s", (user_id, window))
     where_sql, extra_params = _window_filter_sql(cutoff)
     cur.execute(
         f"""
         INSERT INTO user_genre_stats (
             user_id,
-            window,
+            stat_window,
             genre_name,
             play_count,
             complete_play_count,
@@ -585,7 +585,7 @@ def get_play_stats(user_id: int) -> dict:
             """
             SELECT artist_name AS artist, play_count AS plays
             FROM user_artist_stats
-            WHERE user_id = %s AND window = 'all_time'
+            WHERE user_id = %s AND stat_window = 'all_time'
             ORDER BY play_count DESC, minutes_listened DESC, artist_name ASC
             LIMIT 10
             """,
@@ -644,7 +644,7 @@ def get_stats_overview(user_id: int, window: str = "30d") -> dict:
             """
             SELECT artist_name, play_count, minutes_listened
             FROM user_artist_stats
-            WHERE user_id = %s AND window = %s
+            WHERE user_id = %s AND stat_window = %s
             ORDER BY play_count DESC, minutes_listened DESC, artist_name ASC
             LIMIT 1
             """,
@@ -713,7 +713,7 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
                 uts.last_played_at
             FROM user_track_stats uts
             LEFT JOIN library_tracks lt ON lt.id = uts.track_id
-            WHERE uts.user_id = %s AND uts.window = %s
+            WHERE uts.user_id = %s AND uts.stat_window = %s
             ORDER BY uts.play_count DESC, uts.minutes_listened DESC, uts.last_played_at DESC
             LIMIT %s
             """,
@@ -735,7 +735,7 @@ def get_top_artists(user_id: int, window: str = "30d", limit: int = 20) -> list[
                 first_played_at,
                 last_played_at
             FROM user_artist_stats
-            WHERE user_id = %s AND window = %s
+            WHERE user_id = %s AND stat_window = %s
             ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
             LIMIT %s
             """,
@@ -758,7 +758,7 @@ def get_top_albums(user_id: int, window: str = "30d", limit: int = 20) -> list[d
                 first_played_at,
                 last_played_at
             FROM user_album_stats
-            WHERE user_id = %s AND window = %s
+            WHERE user_id = %s AND stat_window = %s
             ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
             LIMIT %s
             """,
@@ -780,7 +780,7 @@ def get_top_genres(user_id: int, window: str = "30d", limit: int = 20) -> list[d
                 first_played_at,
                 last_played_at
             FROM user_genre_stats
-            WHERE user_id = %s AND window = %s
+            WHERE user_id = %s AND stat_window = %s
             ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
             LIMIT %s
             """,
