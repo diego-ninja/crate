@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Heart, Loader2, Play } from "lucide-react";
 
@@ -31,7 +31,7 @@ interface AlbumData {
   }>;
 }
 
-export function AlbumCard({ artist, album, albumId, year, cover, compact }: AlbumCardProps) {
+export const AlbumCard = memo(function AlbumCard({ artist, album, albumId, year, cover, compact }: AlbumCardProps) {
   const navigate = useNavigate();
   const { playAll } = usePlayerActions();
   const { isSaved, toggleAlbumSaved } = useSavedAlbums();
@@ -120,4 +120,4 @@ export function AlbumCard({ artist, album, albumId, year, cover, compact }: Albu
       </div>
     </div>
   );
-}
+});

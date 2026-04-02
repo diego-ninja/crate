@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Play, Pause, Plus, ListPlus, Heart, ListMusic } from "lucide-react";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
@@ -34,7 +34,7 @@ interface TrackRowProps {
   onCreatePlaylist?: (track: TrackRowData) => void | Promise<void>;
 }
 
-export function TrackRow({
+export const TrackRow = memo(function TrackRow({
   track,
   index,
   showArtist = false,
@@ -246,4 +246,4 @@ export function TrackRow({
       </div>
     </div>
   );
-}
+});

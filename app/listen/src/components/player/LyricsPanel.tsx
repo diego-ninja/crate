@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { X, Loader2 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { extractPalette } from "@/lib/palette";
@@ -117,25 +117,23 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
     };
   }, [open, currentTrack?.albumCover, useAlbumPalette]);
 
-  // Auto-scroll to active line
+  // Find active line index
+  const activeIndex = useMemo(() => {
+    if (!lyrics?.synced) return -1;
+    for (let i = lyrics.synced.length - 1; i >= 0; i--) {
+      if (currentTime >= lyrics.synced[i]!.time) return i;
+    }
+    return -1;
+  }, [currentTime, lyrics?.synced]);
+
+  // Auto-scroll only when active line changes (not every currentTime tick)
   useEffect(() => {
     if (activeRef.current && containerRef.current) {
       activeRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [currentTime]);
+  }, [activeIndex]);
 
   if (!open) return null;
-
-  // Find active line index
-  let activeIndex = -1;
-  if (lyrics?.synced) {
-    for (let i = lyrics.synced.length - 1; i >= 0; i--) {
-      if (currentTime >= lyrics.synced[i]!.time) {
-        activeIndex = i;
-        break;
-      }
-    }
-  }
 
   const primary = palette?.primary ?? [0.024, 0.714, 0.831];
   const secondary = palette?.secondary ?? [0.4, 0.9, 1.0];

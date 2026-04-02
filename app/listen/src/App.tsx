@@ -64,21 +64,26 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 export function App() {
   return (
     <AuthProvider>
-      <PlayerProvider>
-        <LikedTracksProvider>
-          <UserSyncProvider>
-            <SavedAlbumsProvider>
-              <PlaylistComposerProvider>
-                <Routes>
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/register" element={<Register />} />
-                  <Route
-                    element={
-                      <ProtectedRoute>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route
+          element={
+            <ProtectedRoute>
+              <PlayerProvider>
+                <LikedTracksProvider>
+                  <UserSyncProvider>
+                    <SavedAlbumsProvider>
+                      <PlaylistComposerProvider>
                         <Shell />
-                      </ProtectedRoute>
-                    }
-                  >
+                      </PlaylistComposerProvider>
+                    </SavedAlbumsProvider>
+                  </UserSyncProvider>
+                </LikedTracksProvider>
+              </PlayerProvider>
+            </ProtectedRoute>
+          }
+        >
                     <Route index element={<Home />} />
                     <Route path="explore" element={<Explore />} />
                     <Route path="library" element={<Library />} />
@@ -143,11 +148,6 @@ export function App() {
                     />
                   </Route>
                 </Routes>
-              </PlaylistComposerProvider>
-            </SavedAlbumsProvider>
-          </UserSyncProvider>
-        </LikedTracksProvider>
-      </PlayerProvider>
     </AuthProvider>
   );
 }
