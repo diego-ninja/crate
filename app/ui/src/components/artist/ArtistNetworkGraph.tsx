@@ -5,6 +5,10 @@ import ForceGraph2D from "react-force-graph-2d";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 interface NetworkNode {
   id: string;
   group: number;
@@ -214,7 +218,7 @@ export function ArtistNetworkGraph({ centerArtist }: ArtistNetworkGraphProps) {
             <div style="display:flex;align-items:center;gap:8px;padding:10px 12px">
               <img src="${photoUrl}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;background:#1c1c28" onerror="this.style.display='none'" />
               <div style="min-width:0;flex:1">
-                <div style="font-weight:600;color:var(--color-foreground)">${node.id}</div>
+                <div style="font-weight:600;color:var(--color-foreground)">${escapeHtml(node.id)}</div>
               </div>
             </div>
             ${score > 0 ? `<div style="padding:0 12px 8px">
