@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { memo, useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
@@ -54,6 +54,52 @@ function generateBars(seed: string, count: number): number[] {
   }
   return bars;
 }
+
+const WaveformCanvas = memo(function WaveformCanvas({
+  bars, progress, frequencies, isPlaying,
+}: {
+  bars: number[]; progress: number; frequencies: number[]; isPlaying: boolean;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+
+    const n = bars.length;
+    const gap = 1;
+    const barW = Math.max(1, (w - gap * (n - 1)) / n);
+
+    for (let i = 0; i < n; i++) {
+      const base = bars[i]!;
+      const freqIdx = Math.floor((i / n) * frequencies.length);
+      const freq = frequencies[freqIdx] ?? 0;
+      const val = isPlaying ? Math.max(base * 0.3, base * 0.4 + freq * 0.6) : base;
+      const barH = Math.max(1, val * h);
+      const x = i * (barW + gap);
+      const y = h - barH;
+      const barPct = ((i + 0.5) / n) * 100;
+      ctx.fillStyle = barPct <= progress ? "rgba(6,182,212,0.6)" : "rgba(255,255,255,0.08)";
+      ctx.beginPath();
+      ctx.roundRect(x, y, barW, barH, 1);
+      ctx.fill();
+    }
+  }, [bars, progress, frequencies, isPlaying, dpr]);
+
+  useEffect(() => { draw(); }, [draw]);
+
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />;
+});
 
 export function PlayerBar() {
   const { currentTime, duration, isPlaying, isBuffering, volume } = usePlayer();
@@ -355,32 +401,7 @@ export function PlayerBar() {
                   seek(pct * duration);
                 }}
               >
-                {/* Waveform bars — blend real frequencies with pseudo-random base */}
-                {pseudoBars.map((base, i) => {
-                  const barPct = ((i + 0.5) / pseudoBars.length) * 100;
-                  const played = barPct <= progress;
-                  // Map bar index to frequency bin
-                  const freqIdx = Math.floor((i / pseudoBars.length) * frequencies.length);
-                  const freq = frequencies[freqIdx] ?? 0;
-                  // Blend: base shape + real audio reactivity
-                  const h = isPlaying ? Math.max(base * 0.3, base * 0.4 + freq * 0.6) : base;
-                  return (
-                    <div
-                      key={i}
-                      className="flex-1 mx-px rounded-sm"
-                      style={{
-                        height: `${h * 100}%`,
-                        backgroundColor: played ? "rgba(6,182,212,0.6)" : "rgba(255,255,255,0.08)",
-                        transition: "height 0.1s ease-out",
-                      }}
-                    />
-                  );
-                })}
-                {/* Progress line overlay */}
-                <div
-                  className="absolute top-0 bottom-0 left-0 pointer-events-none"
-                  style={{ width: `${progress}%` }}
-                />
+                <WaveformCanvas bars={pseudoBars} progress={progress} frequencies={frequencies} isPlaying={isPlaying} />
               </div>
               <span className="text-[10px] text-white/40 w-9 tabular-nums font-mono">
                 {formatTime(duration)}
