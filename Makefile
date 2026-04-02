@@ -211,6 +211,8 @@ _create-dirs:
 
 .PHONY: deploy
 deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
+	@echo "$(YELLOW)Asegurando directorios...$(NC)"
+	@$(SSH) "mkdir -p $(SERVER_PATH)/media/downloads/soulseek/incomplete $(SERVER_PATH)/media/downloads/tidal/incomplete && chown -R $(shell grep PUID .env 2>/dev/null | cut -d= -f2 || echo 1000):$(shell grep PGID .env 2>/dev/null | cut -d= -f2 || echo 1000) $(SERVER_PATH)/media/downloads"
 	@echo "$(YELLOW)Sincronizando config...$(NC)"
 	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az \
