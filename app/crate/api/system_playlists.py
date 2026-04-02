@@ -192,10 +192,8 @@ def admin_generate_system_playlist(request: Request, playlist_id: int):
         raise HTTPException(status_code=400, detail="Not a smart system playlist")
 
     tracks = _execute_smart_rules(playlist["smart_rules"])
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM playlist_tracks WHERE playlist_id = %s", (playlist_id,))
-    if tracks:
-        add_playlist_tracks(playlist_id, tracks)
+    from crate.db.playlists import replace_playlist_tracks
+    replace_playlist_tracks(playlist_id, tracks or [])
 
     playlist = _require_system_playlist(playlist_id)
     item = _serialize_admin_playlist(playlist, include_tracks=True)

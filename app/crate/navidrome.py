@@ -14,11 +14,18 @@ def _base_url() -> str:
 
 
 def _auth_params() -> dict:
+    import hashlib
+    import secrets
+    user = os.environ.get("NAVIDROME_USER", "admin")
+    password = os.environ.get("NAVIDROME_PASSWORD", "")
+    salt = secrets.token_hex(8)
+    token = hashlib.md5((password + salt).encode()).hexdigest()
     return {
-        "u": os.environ.get("NAVIDROME_USER", "admin"),
-        "p": os.environ.get("NAVIDROME_PASSWORD", ""),
+        "u": user,
+        "t": token,
+        "s": salt,
         "v": "1.16.1",
-        "c": "librarian",
+        "c": "crate",
         "f": "json",
     }
 

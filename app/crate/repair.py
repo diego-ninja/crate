@@ -467,7 +467,7 @@ class LibraryRepair:
                     )
                     cur.execute(
                         "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
-                        (old_path_str, new_path_str, old_path_str + "%"),
+                        (old_path_str + "/", new_path_str + "/", old_path_str + "/%"),
                     )
                     # Remove duplicate album DB entry if both paths existed
                     cur.execute(
@@ -497,7 +497,7 @@ class LibraryRepair:
                     )
                     cur.execute(
                         "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
-                        (old_path_str, new_path_str, old_path_str + "%"),
+                        (old_path_str + "/", new_path_str + "/", old_path_str + "/%"),
                     )
                 log_audit("reorganize_album_folder", "album", f"{artist}/{year}/{clean_name}",
                           details=result["details"], task_id=task_id)
