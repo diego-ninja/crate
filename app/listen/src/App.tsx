@@ -38,6 +38,29 @@ const Shows = React.lazy(() =>
   import("@/pages/Shows").then((m) => ({ default: m.Shows })),
 );
 
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return this.props.fallback ?? (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#0a0a0f] text-white">
+          <p className="text-lg font-medium">Something went wrong</p>
+          <p className="text-sm text-muted-foreground max-w-md text-center">{this.state.error.message}</p>
+          <button onClick={() => { this.setState({ error: null }); window.location.href = "/"; }}
+            className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm text-white">
+            Go home
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function Spinner() {
   return (
     <div className="flex items-center justify-center py-20">
@@ -63,6 +86,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export function App() {
   return (
+    <ErrorBoundary>
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -149,5 +173,6 @@ export function App() {
                   </Route>
                 </Routes>
     </AuthProvider>
+    </ErrorBoundary>
   );
 }
