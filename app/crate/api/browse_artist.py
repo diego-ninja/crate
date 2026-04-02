@@ -252,6 +252,22 @@ def api_artists(
     return {"items": items, "total": total, "page": page, "per_page": per_page}
 
 
+@router.post("/api/artists/check-library")
+def api_check_artists_in_library(request: Request, body: dict):
+    """Check which artists from a list exist in the local library. Returns a dict of name → boolean."""
+    _require_auth(request)
+    names = body.get("names", [])
+    if not names or not isinstance(names, list):
+        return {}
+    from crate.db import get_db_ctx
+    with get_db_ctx() as cur:
+        placeholders = ",".join(["%s"] * len(names))
+        cur.execute(f"SELECT name FROM library_artists WHERE LOWER(name) IN ({placeholders})",
+                    [n.lower() for n in names])
+        found = {r["name"].lower() for r in cur.fetchall()}
+    return {name: name.lower() in found for name in names}
+
+
 @router.get("/api/artist/{name}/background")
 def api_artist_background(request: Request, name: str, random_pick: bool = Query(False, alias="random")):
     """Return artist background image."""

@@ -252,30 +252,17 @@ export function Artist() {
     }
 
     let cancelled = false;
-    const artistsToCheck = similarArtists.slice(0, 18);
+    const names = similarArtists.slice(0, 18).map((a) => a.name);
 
-    Promise.all(
-      artistsToCheck.map(async (artist) => {
-        try {
-          const response = await api<{ items?: { name: string }[] }>(
-            `/api/artists?q=${encodeURIComponent(artist.name)}&per_page=10&view=list`,
-          );
-          const exists = Boolean(
-            response.items?.some((item) => item.name.toLowerCase() === artist.name.toLowerCase()),
-          );
-          return [artist.name, exists] as const;
-        } catch {
-          return [artist.name, false] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setLocalSimilarArtists(Object.fromEntries(entries));
-    });
+    api<Record<string, boolean>>("/api/artists/check-library", "POST", { names })
+      .then((result) => {
+        if (!cancelled) setLocalSimilarArtists(result);
+      })
+      .catch(() => {
+        if (!cancelled) setLocalSimilarArtists({});
+      });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [similarArtists]);
 
   if (loading) {
