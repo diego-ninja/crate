@@ -35,9 +35,6 @@ function collectUniqueTracks(candidates: Track[], queue: Track[], recent: Track[
   return uniqueTracks;
 }
 
-function isLikelyContinuousAlbumBlock(currentTrack: Track | undefined, nextTrack: Track | undefined): boolean {
-  return areTracksFromSameAlbum(currentTrack, nextTrack);
-}
 
 interface UsePlaybackIntelligenceOptions {
   queue: Track[];
@@ -252,7 +249,7 @@ export function usePlaybackIntelligence({
       playlistSuggestionSignatureRef.current = null;
       return;
     }
-    if (isLikelyContinuousAlbumBlock(currentTrack, nextTrack)) {
+    if (areTracksFromSameAlbum(currentTrack, nextTrack)) {
       playlistSuggestionSignatureRef.current = null;
       return;
     }
