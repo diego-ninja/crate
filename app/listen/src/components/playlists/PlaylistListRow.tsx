@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
-import { encPath } from "@/lib/utils";
+import { encPath, shuffleArray } from "@/lib/utils";
 
 interface PlaylistTrackResponse {
   track_id?: number;
@@ -47,16 +47,6 @@ interface PlaylistListRowProps {
   }>;
 }
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = copy[i]!;
-    copy[i] = copy[j]!;
-    copy[j] = tmp;
-  }
-  return copy;
-}
 
 function toPlayerTracks(tracks: PlaylistTrackResponse[]): Track[] {
   return tracks.map((track) => ({

@@ -10,7 +10,7 @@ import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlis
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { fetchPlaylistRadio } from "@/lib/radio";
-import { encPath } from "@/lib/utils";
+import { encPath, shuffleArray, formatTotalDuration } from "@/lib/utils";
 
 interface CuratedPlaylistTrack {
   id: number;
@@ -42,23 +42,8 @@ interface CuratedPlaylistData {
   tracks: CuratedPlaylistTrack[];
 }
 
-function fmtTotalDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h} hr ${m} min`;
-  return `${m} min`;
-}
 
-function shuffleArray<T>(arr: T[]): T[] {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const tmp = copy[i]!;
-    copy[i] = copy[j]!;
-    copy[j] = tmp;
-  }
-  return copy;
-}
+
 
 export function CuratedPlaylist() {
   const navigate = useNavigate();
@@ -253,7 +238,7 @@ export function CuratedPlaylist() {
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>{data.track_count} tracks</span>
-            {data.total_duration > 0 ? <span>{fmtTotalDuration(data.total_duration)}</span> : null}
+            {data.total_duration > 0 ? <span>{formatTotalDuration(data.total_duration)}</span> : null}
             <span className="inline-flex items-center gap-1">
               <Users size={12} />
               {data.follower_count} follower{data.follower_count !== 1 ? "s" : ""}
