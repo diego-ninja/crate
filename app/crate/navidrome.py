@@ -8,6 +8,9 @@ from crate.db import get_cache, set_cache
 
 log = logging.getLogger(__name__)
 
+# Reuse HTTP connections to Navidrome via session (keep-alive)
+_session = requests.Session()
+
 
 def _base_url() -> str:
     return os.environ.get("NAVIDROME_URL", "http://navidrome:4533")
@@ -37,7 +40,7 @@ def _extauth_headers(username: str) -> dict[str, str]:
 def _request(endpoint: str, **params) -> dict:
     url = f"{_base_url()}/rest/{endpoint}"
     all_params = {**_auth_params(), **params}
-    resp = requests.get(url, params=all_params, timeout=10)
+    resp = _session.get(url, params=all_params, timeout=10)
     resp.raise_for_status()
     data = resp.json()
     sr = data.get("subsonic-response", {})
@@ -49,7 +52,7 @@ def _request(endpoint: str, **params) -> dict:
 def _request_with_headers(endpoint: str, headers: dict[str, str] | None = None, **params) -> dict:
     url = f"{_base_url()}/rest/{endpoint}"
     all_params = {**_auth_params(), **params}
-    resp = requests.get(url, params=all_params, timeout=10, headers=headers or {})
+    resp = _session.get(url, params=all_params, timeout=10, headers=headers or {})
     resp.raise_for_status()
     data = resp.json()
     sr = data.get("subsonic-response", {})
