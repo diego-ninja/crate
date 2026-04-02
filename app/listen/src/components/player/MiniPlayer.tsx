@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Play, Pause, Loader2 } from "lucide-react";
-import { usePlayer } from "@/contexts/PlayerContext";
+import { Play, Pause, SkipForward, Loader2 } from "lucide-react";
+import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
 
 export function MiniPlayer() {
-  const { currentTrack, isPlaying, isBuffering, currentTime, duration, pause, resume } = usePlayer();
+  const { currentTrack, isPlaying, isBuffering, currentTime, duration } = usePlayer();
+  const { pause, resume, next } = usePlayerActions();
   const [fsOpen, setFsOpen] = useState(false);
 
   if (!currentTrack) return null;
@@ -43,21 +44,32 @@ export function MiniPlayer() {
             <p className="text-xs text-white/50 truncate">{currentTrack.artist}</p>
           </div>
 
-          {/* Play/pause */}
+          {/* Play/pause + skip */}
           <button
             onClick={(e) => {
               e.stopPropagation();
               isPlaying ? pause() : resume();
             }}
-            className="w-8 h-8 flex items-center justify-center text-white"
+            className="w-11 h-11 flex items-center justify-center text-white"
+            aria-label={isPlaying ? "Pause" : "Play"}
           >
             {isBuffering ? (
-              <Loader2 size={18} className="animate-spin" />
+              <Loader2 size={20} className="animate-spin" />
             ) : isPlaying ? (
-              <Pause size={20} />
+              <Pause size={22} />
             ) : (
-              <Play size={20} className="ml-0.5" />
+              <Play size={22} className="ml-0.5" />
             )}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              next();
+            }}
+            className="w-11 h-11 flex items-center justify-center text-white/60"
+            aria-label="Next track"
+          >
+            <SkipForward size={20} />
           </button>
         </div>
       </div>
