@@ -150,7 +150,8 @@ def _acquire_db_heavy_lock(task_id: str, timeout: int = 60) -> bool:
         from crate.db.cache import _get_redis
         r = _get_redis()
         if not r:
-            return True  # no Redis → proceed without lock
+            log.warning("Redis unavailable — DB-heavy lock cannot be acquired, proceeding without lock")
+            return True  # no Redis → proceed with warning
         deadline = time.time() + timeout
         while time.time() < deadline:
             if r.set(_DB_HEAVY_REDIS_KEY, task_id, nx=True, ex=_DB_HEAVY_LOCK_TTL):
@@ -158,6 +159,7 @@ def _acquire_db_heavy_lock(task_id: str, timeout: int = 60) -> bool:
             time.sleep(5)
         return False
     except Exception:
+        log.warning("Failed to acquire DB-heavy lock, proceeding without lock", exc_info=True)
         return True
 
 

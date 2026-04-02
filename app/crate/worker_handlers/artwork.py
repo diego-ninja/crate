@@ -439,7 +439,13 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
 
     raw = base64.b64decode(data_b64)
     img = Image.open(_io.BytesIO(raw)).convert("RGB")
-    lib = Path(config["library_path"])
+    lib = Path(config["library_path"]).resolve()
+
+    def _safe_dest(path: Path) -> Path:
+        resolved = path.resolve()
+        if not resolved.is_relative_to(lib):
+            raise ValueError(f"Path traversal blocked: {resolved} is outside {lib}")
+        return resolved
 
     if img_type == "cover":
         from crate.db import get_library_album
@@ -447,10 +453,10 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
         album_data = get_library_album(artist, album)
         if not album_data:
             return {"error": "Album not found"}
-        dest = Path(album_data["path"]) / "cover.jpg"
+        dest = _safe_dest(Path(album_data["path"]) / "cover.jpg")
         img.save(str(dest), "JPEG", quality=92)
     elif img_type == "artist_photo":
-        dest = lib / artist / "artist.jpg"
+        dest = _safe_dest(lib / artist / "artist.jpg")
         img.save(str(dest), "JPEG", quality=92)
         with get_db_ctx() as cur:
             cur.execute("UPDATE library_artists SET has_photo = 1 WHERE name = %s", (artist,))

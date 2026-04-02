@@ -57,6 +57,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
       const text = await res.text().catch(() => "Request failed");
       throw new ApiError(res.status, text);
     }
-    return res.json();
+    const text = await res.text();
+    return text ? JSON.parse(text) : (null as T);
   };
 }

@@ -25,9 +25,10 @@ interface AppMenuButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   danger?: boolean;
 }
 
-export function AppMenuButton({ className, danger = false, ...props }: AppMenuButtonProps) {
+export function AppMenuButton({ className, danger = false, type = "button", ...props }: AppMenuButtonProps) {
   return (
     <button
+      type={type}
       className={cn(
         "w-full text-left transition-colors",
         "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm",
