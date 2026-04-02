@@ -28,7 +28,7 @@ def _require_public_system_playlist(playlist_id: int) -> dict:
     playlist = get_playlist(playlist_id)
     if not playlist:
         raise HTTPException(status_code=404, detail="Playlist not found")
-    if playlist.get("scope") != "system" or not playlist.get("is_active", True):
+    if playlist.get("scope") != "system" or not playlist.get("is_active", False):
         raise HTTPException(status_code=404, detail="System playlist not found")
     return playlist
 

@@ -251,6 +251,28 @@ def add_playlist_tracks(playlist_id: int, tracks: list[dict]):
         )
 
 
+def replace_playlist_tracks(playlist_id: int, tracks: list[dict]):
+    """Atomically replace all tracks in a playlist (DELETE + INSERT in one transaction)."""
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute("DELETE FROM playlist_tracks WHERE playlist_id = %s", (playlist_id,))
+        pos = 0
+        for t in tracks:
+            pos += 1
+            cur.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_path, title, artist, album, duration, position, added_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (playlist_id, t["path"], t.get("title", ""), t.get("artist", ""),
+                 t.get("album", ""), t.get("duration", 0), pos, now),
+            )
+        cur.execute(
+            "UPDATE playlists SET track_count = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = %s), "
+            "total_duration = (SELECT COALESCE(SUM(duration), 0) FROM playlist_tracks WHERE playlist_id = %s), "
+            "updated_at = %s WHERE id = %s",
+            (playlist_id, playlist_id, now, playlist_id),
+        )
+
+
 def remove_playlist_track(playlist_id: int, position: int):
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
