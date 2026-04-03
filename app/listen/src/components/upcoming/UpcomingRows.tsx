@@ -150,7 +150,7 @@ function RowActionButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+        "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
         rowActionClassName(active ? "primary" : "default", disabled),
       )}
       title={title}
@@ -182,7 +182,7 @@ function RowActionLink({
       rel="noopener noreferrer"
       onClick={onClick}
       className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+        "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
         rowActionClassName(active ? "primary" : "default", disabled || !href),
       )}
       title={title}
