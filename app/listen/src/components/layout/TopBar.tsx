@@ -197,7 +197,7 @@ export function TopBar() {
       <div className="pointer-events-auto hidden md:flex items-center gap-2">
         <button
           onClick={() => navigate(-1)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.04] text-white/45 transition-colors hover:bg-white/10 hover:text-white"
           aria-label="Go back"
           title="Go back"
         >
@@ -205,7 +205,7 @@ export function TopBar() {
         </button>
         <button
           onClick={() => navigate(1)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.04] text-white/45 transition-colors hover:bg-white/10 hover:text-white"
           aria-label="Go forward"
           title="Go forward"
         >
@@ -213,10 +213,10 @@ export function TopBar() {
         </button>
       </div>
 
-      <div className="flex-1" />
+      <div className="hidden md:block flex-1" />
 
       {/* Search */}
-      <div className="relative w-full max-w-md pointer-events-auto">
+      <div className="relative flex-1 md:flex-none w-full md:max-w-md pointer-events-auto">
         <div className="relative flex items-center">
           <Search size={16} className="absolute left-3 text-white/30 pointer-events-none" />
           {loading && <Loader2 size={14} className="absolute right-3 text-white/30 animate-spin" />}
@@ -236,7 +236,7 @@ export function TopBar() {
             onFocus={() => setShowDropdown(true)}
             onKeyDown={handleKeyDown}
             placeholder="Search artists, albums, tracks..."
-            className="w-full h-11 pl-9 pr-9 rounded-lg bg-white/5 border border-white/5 text-sm text-white placeholder:text-white/25 outline-none focus:border-white/15 transition-colors"
+            className="w-full h-11 pl-9 pr-9 rounded-lg bg-white/5 text-sm text-white placeholder:text-white/25 outline-none focus:bg-white/8 transition-colors"
           />
         </div>
 

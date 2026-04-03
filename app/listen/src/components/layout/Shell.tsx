@@ -203,7 +203,7 @@ export function Shell() {
   const headerOffsetClass = overlayHeader ? "" : "pt-16";
   const headerChromeClass = overlayHeader
     ? "bg-transparent border-transparent border-b-0 shadow-none"
-    : "bg-[#0a0a0f]/95 backdrop-blur-md border-b border-white/5";
+    : "bg-[#0a0a0f]/95 backdrop-blur-md border-b-0";
 
   // Sync with sidebar toggle without polling localStorage.
   useEffect(() => {
