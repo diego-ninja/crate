@@ -11,11 +11,25 @@ import {
   Repeat1,
   Heart,
   ListMusic,
+  AlignLeft,
+  Disc3,
 } from "lucide-react";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useEscapeKey } from "@/hooks/use-escape-key";
 import { formatDuration } from "@/lib/utils";
+
+type FSTab = "player" | "queue" | "lyrics";
+
+interface LyricLine { time: number; text: string; }
+
+function parseSyncedLyrics(raw: string): LyricLine[] {
+  return raw.split("\n").reduce<LyricLine[]>((acc, line) => {
+    const m = line.match(/^\[(\d+):(\d+)\.(\d+)\](.*)/);
+    if (m) acc.push({ time: +m[1]! * 60 + +m[2]! + +m[3]! / 100, text: m[4]!.trim() });
+    return acc;
+  }, []);
+}
 
 interface FullscreenPlayerProps {
   open: boolean;
@@ -43,7 +57,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   } = usePlayer();
   const navigate = useNavigate();
 
-  const [showQueue, setShowQueue] = useState(false);
+  const [activeTab, setActiveTab] = useState<FSTab>("player");
+  const [lyrics, setLyrics] = useState<{ synced: LyricLine[] | null; plain: string | null } | null>(null);
+  const lyricsContainerRef = useRef<HTMLDivElement>(null);
+  const activeLyricRef = useRef<HTMLButtonElement>(null);
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -67,8 +84,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   useEscapeKey(visible, (event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (showQueue) {
-      setShowQueue(false);
+    if (activeTab !== "player") {
+      setActiveTab("player");
       return;
     }
     onClose();
@@ -136,8 +153,40 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   if (!visible || !currentTrack) return null;
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 6);
+  const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 20);
   const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
+
+  // Lyrics fetch
+  useEffect(() => {
+    if (!visible || !currentTrack) { setLyrics(null); return; }
+    let cancelled = false;
+    setLyrics(null);
+    fetch(`https://lrclib.net/api/get?artist_name=${encodeURIComponent(currentTrack.artist || "")}&track_name=${encodeURIComponent(currentTrack.title || "")}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (cancelled || !d) return;
+        setLyrics({
+          synced: d.syncedLyrics ? parseSyncedLyrics(d.syncedLyrics) : null,
+          plain: d.plainLyrics || null,
+        });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [visible, currentTrack?.id]);
+
+  // Active lyric index
+  const activeLyricIndex = lyrics?.synced
+    ? (() => { for (let i = (lyrics.synced?.length ?? 0) - 1; i >= 0; i--) { if (currentTime >= lyrics.synced![i]!.time) return i; } return -1; })()
+    : -1;
+
+  // Auto-scroll lyrics
+  useEffect(() => {
+    if (activeTab !== "lyrics" || !activeLyricRef.current) return;
+    activeLyricRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [activeLyricIndex, activeTab]);
+
+  // Reset tab when player closes
+  useEffect(() => { if (!visible) setActiveTab("player"); }, [visible]);
 
   return (
     <div
@@ -158,13 +207,22 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
         >
           <ChevronDown size={28} />
         </button>
-        <p className="text-xs text-white/40 uppercase tracking-widest font-medium">
-          Now Playing
-        </p>
+        <div className="flex gap-4">
+          {(["player", "queue", "lyrics"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setActiveTab(t)}
+              className={`text-xs uppercase tracking-widest font-medium transition-colors ${activeTab === t ? "text-white" : "text-white/30 active:text-white/60"}`}
+            >
+              {t === "player" ? <Disc3 size={14} /> : t === "queue" ? <ListMusic size={14} /> : <AlignLeft size={14} />}
+            </button>
+          ))}
+        </div>
         <div className="w-11" />
       </div>
 
-      {/* Scrollable body */}
+      {/* Tab content */}
+      {activeTab === "player" && (
       <div className="flex-1 flex flex-col items-center justify-center px-6 overflow-y-auto">
         {/* Album Cover */}
         <div className="w-[280px] h-[280px] rounded-xl overflow-hidden shadow-2xl shadow-black/60 shrink-0">
@@ -266,12 +324,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             <Heart size={20} fill={liked ? "currentColor" : "none"} />
           </button>
           <button
-            onClick={() => setShowQueue((q) => !q)}
-            className={`w-11 h-11 flex items-center justify-center transition-colors ${
-              showQueue
-                ? "text-cyan-400"
-                : "text-white/40 active:text-white/70"
-            }`}
+            onClick={() => setActiveTab("queue")}
+            className="w-11 h-11 flex items-center justify-center transition-colors text-white/40 active:text-white/70"
           >
             <ListMusic size={20} />
           </button>
@@ -287,13 +341,14 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           </button>
         </div>
       </div>
+      )}
 
-      {/* Queue section */}
-      {showQueue && (
-        <div className="border-t border-white/10 bg-black/30 max-h-52 overflow-y-auto">
+      {/* Queue tab */}
+      {activeTab === "queue" && (
+        <div className="flex-1 overflow-y-auto">
           <div className="px-4 py-3">
             <p className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2">
-              Up Next
+              Up Next · {upcomingTracks.length} tracks
             </p>
             {upcomingTracks.length === 0 && (
               <p className="text-sm text-white/20 py-2">Nothing queued</p>
@@ -332,6 +387,38 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Lyrics tab */}
+      {activeTab === "lyrics" && (
+        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4">
+          {!lyrics ? (
+            <p className="text-center text-white/30 text-sm mt-20">Loading lyrics...</p>
+          ) : lyrics.synced ? (
+            <div className="flex flex-col items-center gap-2 py-8">
+              {lyrics.synced.map((line, i) => (
+                <button
+                  key={i}
+                  ref={i === activeLyricIndex ? activeLyricRef : null}
+                  onClick={() => seek(line.time)}
+                  className={`text-center text-lg font-medium transition-all duration-300 ${
+                    i === activeLyricIndex
+                      ? "text-white scale-105"
+                      : i < activeLyricIndex
+                        ? "text-white/25"
+                        : "text-white/40"
+                  }`}
+                >
+                  {line.text || "♪"}
+                </button>
+              ))}
+            </div>
+          ) : lyrics.plain ? (
+            <pre className="text-sm text-white/50 whitespace-pre-wrap text-center leading-relaxed py-8">{lyrics.plain}</pre>
+          ) : (
+            <p className="text-center text-white/30 text-sm mt-20">No lyrics available</p>
+          )}
         </div>
       )}
     </div>
