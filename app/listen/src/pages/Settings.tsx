@@ -9,6 +9,9 @@ import {
   setSmartPlaylistSuggestionsPreference,
 } from "@/lib/player-playback-prefs";
 import { useState } from "react";
+import { Link } from "react-router";
+import { Upload, BarChart3, LogOut } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 function Section({
   title,
@@ -114,6 +117,7 @@ function ToggleRow({
 }
 
 export function Settings() {
+  const { logout } = useAuth();
   const [crossfadeSeconds, setCrossfadeSeconds] = useState(getCrossfadeDurationPreference);
   const [infinitePlaybackEnabled, setInfinitePlaybackEnabled] = useState(getInfinitePlaybackPreference);
   const [smartPlaylistSuggestionsEnabled, setSmartPlaylistSuggestionsEnabled] = useState(
@@ -181,6 +185,20 @@ export function Settings() {
             setSmartPlaylistSuggestionsCadencePreference(value);
           }}
         />
+      </Section>
+
+      <Section title="Quick links">
+        <div className="flex flex-col gap-2">
+          <Link to="/upload" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-foreground hover:bg-white/5 transition-colors">
+            <Upload size={18} className="text-muted-foreground" /> Upload music
+          </Link>
+          <Link to="/stats" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-foreground hover:bg-white/5 transition-colors">
+            <BarChart3 size={18} className="text-muted-foreground" /> Listening stats
+          </Link>
+          <button onClick={logout} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-red-400 hover:bg-white/5 transition-colors w-full text-left">
+            <LogOut size={18} /> Sign out
+          </button>
+        </div>
       </Section>
     </div>
   );

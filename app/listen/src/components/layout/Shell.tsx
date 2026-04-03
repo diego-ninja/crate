@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
 import {
-  Home, Compass, Rss, Library, Music, Disc, Heart, Users,
+  Home, Compass, Rss, Library, Music, Disc, Heart, Users, User,
   ListMusic, PanelLeftClose, PanelLeftOpen, ChevronRight, BarChart3,
 } from "lucide-react";
 import { useIsDesktop } from "@/hooks/use-breakpoint";
@@ -182,9 +182,10 @@ function Sidebar() {
 const MOBILE_NAV = [
   { to: "/", icon: Home, label: "Home" },
   { to: "/explore", icon: Compass, label: "Explore" },
-  { to: "/stats", icon: BarChart3, label: "Stats" },
   { to: "/library", icon: Library, label: "Library" },
+  { to: "/stats", icon: BarChart3, label: "Stats" },
   { to: "/upcoming", icon: Rss, label: "Upcoming" },
+  { to: "/settings", icon: User, label: "Profile" },
 ] as const;
 
 // ── Shell ───────────────────────────────────────────────────────
