@@ -1,4 +1,4 @@
-import { useEffect, type HTMLAttributes, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 interface AppModalProps {
@@ -55,6 +55,22 @@ export function AppModal({
     };
   }, [closeOnEscape, lockBodyScroll, onClose, open]);
 
+  // Swipe-to-dismiss (mobile bottom sheet)
+  const [swipeY, setSwipeY] = useState(0);
+  const swipeStartRef = useRef<number | null>(null);
+  const onSwipeStart = useCallback((e: React.TouchEvent) => {
+    swipeStartRef.current = e.touches[0]!.clientY;
+  }, []);
+  const onSwipeMove = useCallback((e: React.TouchEvent) => {
+    if (swipeStartRef.current === null) return;
+    setSwipeY(Math.max(0, e.touches[0]!.clientY - swipeStartRef.current));
+  }, []);
+  const onSwipeEnd = useCallback(() => {
+    if (swipeY > 100) onClose();
+    setSwipeY(0);
+    swipeStartRef.current = null;
+  }, [swipeY, onClose]);
+
   if (!open) return null;
 
   return (
@@ -75,8 +91,19 @@ export function AppModal({
           maxWidthClassName,
           panelClassName,
         )}
+        style={{
+          transform: swipeY > 0 ? `translateY(${swipeY}px)` : undefined,
+          transition: swipeY > 0 ? "none" : undefined,
+        }}
         onClick={(event) => event.stopPropagation()}
+        onTouchStart={onSwipeStart}
+        onTouchMove={onSwipeMove}
+        onTouchEnd={onSwipeEnd}
       >
+        {/* Drag handle — visible on mobile only */}
+        <div className="flex justify-center pt-2 pb-1 sm:hidden">
+          <div className="w-8 h-1 rounded-full bg-white/20" />
+        </div>
         {children}
       </div>
     </div>

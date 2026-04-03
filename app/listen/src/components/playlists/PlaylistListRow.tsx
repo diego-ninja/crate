@@ -181,7 +181,7 @@ export function PlaylistListRow({
             event.stopPropagation();
             void loadAndPlay("play");
           }}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
           title="Play"
         >
           {playingMode === "play" ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} fill="currentColor" className="ml-0.5" />}
@@ -191,7 +191,7 @@ export function PlaylistListRow({
             event.stopPropagation();
             void loadAndPlay("shuffle");
           }}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
           title="Shuffle"
         >
           {playingMode === "shuffle" ? <Loader2 size={15} className="animate-spin" /> : <Shuffle size={15} />}
@@ -199,7 +199,7 @@ export function PlaylistListRow({
         {followState ? (
           <button
             onClick={handleToggleFollow}
-            className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
               followState.isFollowed
                 ? "text-primary hover:bg-primary/10"
                 : "text-white/45 hover:bg-white/10 hover:text-white"
@@ -225,7 +225,7 @@ export function PlaylistListRow({
                 event.stopPropagation();
                 await action.onClick();
               }}
-              className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${toneClass}`}
+              className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${toneClass}`}
               title={action.title}
             >
               {action.loading ? <Loader2 size={15} className="animate-spin" /> : <Icon size={15} />}
@@ -234,7 +234,7 @@ export function PlaylistListRow({
         })}
         <button
           onClick={handleShare}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
           title="Share"
         >
           {sharing ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />}
