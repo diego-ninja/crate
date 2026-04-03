@@ -88,7 +88,7 @@ export const AlbumCard = memo(function AlbumCard({ artist, album, albumId, year,
         />
         {albumId != null && (
           <button
-            className="absolute top-2 right-2 z-10 w-9 h-9 rounded-full bg-black/55 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/75 hover:text-white hover:bg-black/70 transition-colors opacity-0 group-hover:opacity-100"
+            className={`absolute top-2 right-2 z-10 w-9 h-9 rounded-full bg-black/55 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/75 hover:text-white hover:bg-black/70 transition-colors ${saved ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
             onClick={async (event) => {
               event.stopPropagation();
               try {
@@ -101,9 +101,9 @@ export const AlbumCard = memo(function AlbumCard({ artist, album, albumId, year,
             <Heart size={16} className={saved ? "text-primary fill-primary" : ""} />
           </button>
         )}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end justify-end p-2 md:items-center md:justify-center md:p-0">
           <button
-            className="w-10 h-10 rounded-full bg-primary flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity translate-y-2 group-hover:translate-y-0 shadow-lg"
+            className="w-10 h-10 rounded-full bg-primary flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity md:translate-y-2 md:group-hover:translate-y-0 shadow-lg"
             onClick={handlePlayOverlay}
           >
             {playing ? (
