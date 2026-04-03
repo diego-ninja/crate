@@ -198,7 +198,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
         <div className="w-full mt-8">
           <div
             ref={progressRef}
-            className="w-full h-2 bg-white/10 rounded-full cursor-pointer relative group"
+            className="w-full h-3 bg-white/10 rounded-full cursor-pointer relative group"
             onClick={onProgressClick}
             onTouchStart={onProgressTouchStart}
             onTouchMove={onProgressTouchMove}
@@ -208,7 +208,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
               className="h-full bg-cyan-400 rounded-full relative"
               style={{ width: `${progress}%` }}
             >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity" />
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-md" />
             </div>
           </div>
           <div className="flex justify-between mt-2">

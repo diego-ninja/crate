@@ -200,7 +200,9 @@ export function Shell() {
     /^\/artist\/[^/]+\/top-tracks$/.test(location.pathname) ||
     /^\/album\/[^/]+\/[^/]+$/.test(location.pathname);
   const headerOffsetClass = overlayHeader ? "" : "pt-16";
-  const headerChromeClass = "bg-transparent border-transparent border-b-0 shadow-none backdrop-blur-0";
+  const headerChromeClass = overlayHeader
+    ? "bg-transparent border-transparent border-b-0 shadow-none"
+    : "bg-[#0a0a0f]/95 backdrop-blur-md border-b border-white/5";
 
   // Sync with sidebar toggle without polling localStorage.
   useEffect(() => {
