@@ -194,7 +194,7 @@ export function TopBar() {
 
   return (
     <div className="flex h-16 items-center gap-4 px-4 pointer-events-none">
-      <div className="pointer-events-auto flex items-center gap-2">
+      <div className="pointer-events-auto hidden md:flex items-center gap-2">
         <button
           onClick={() => navigate(-1)}
           className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/45 transition-colors hover:bg-white/10 hover:text-white"
@@ -236,7 +236,7 @@ export function TopBar() {
             onFocus={() => setShowDropdown(true)}
             onKeyDown={handleKeyDown}
             placeholder="Search artists, albums, tracks..."
-            className="w-full h-9 pl-9 pr-9 rounded-lg bg-white/5 border border-white/5 text-sm text-white placeholder:text-white/25 outline-none focus:border-white/15 transition-colors"
+            className="w-full h-11 pl-9 pr-9 rounded-lg bg-white/5 border border-white/5 text-sm text-white placeholder:text-white/25 outline-none focus:border-white/15 transition-colors"
           />
         </div>
 
@@ -283,7 +283,7 @@ export function TopBar() {
         <button
           ref={userMenuButtonRef}
           onClick={() => setShowUserMenu(!showUserMenu)}
-          className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/15 transition-colors text-sm font-medium"
+          className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/15 transition-colors text-sm font-medium"
         >
           {userInitial || <User size={16} />}
         </button>

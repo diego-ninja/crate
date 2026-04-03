@@ -534,12 +534,12 @@ export function UpcomingShowCard({
             center={position}
             zoom={14}
             style={{ width: "100%", height: "100%" }}
-            zoomControl
+            zoomControl={false}
             attributionControl={false}
-            dragging
-            scrollWheelZoom
-            doubleClickZoom
-            touchZoom
+            dragging={false}
+            scrollWheelZoom={false}
+            doubleClickZoom={false}
+            touchZoom={false}
             boxZoom={false}
             keyboard={false}
           >

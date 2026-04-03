@@ -506,12 +506,12 @@ export function Library() {
       )}
 
       {/* Tab bar */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {tabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 ${
               tab === key
                 ? "bg-primary text-primary-foreground"
                 : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
