@@ -63,6 +63,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const activeLyricRef = useRef<HTMLButtonElement>(null);
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
+  const [swipeY, setSwipeY] = useState(0);
+  const swipeStartRef = useRef<number | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
@@ -150,12 +152,6 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     navigate(`/artist/${encodeURIComponent(currentTrack.artist)}`);
   }
 
-  if (!visible || !currentTrack) return null;
-
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 20);
-  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
-
   // Lyrics fetch
   useEffect(() => {
     if (!visible || !currentTrack) { setLyrics(null); return; }
@@ -186,18 +182,48 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   }, [activeLyricIndex, activeTab]);
 
   // Reset tab when player closes
-  useEffect(() => { if (!visible) setActiveTab("player"); }, [visible]);
+  useEffect(() => { if (!visible) { setActiveTab("player"); setSwipeY(0); } }, [visible]);
+
+  // Swipe-down to dismiss
+  const onSwipeStart = useCallback((e: React.TouchEvent) => {
+    if (draggingRef.current) return;
+    swipeStartRef.current = e.touches[0]!.clientY;
+  }, []);
+  const onSwipeMove = useCallback((e: React.TouchEvent) => {
+    if (swipeStartRef.current === null || draggingRef.current) return;
+    const dy = e.touches[0]!.clientY - swipeStartRef.current;
+    setSwipeY(Math.max(0, dy));
+  }, []);
+  const onSwipeEnd = useCallback(() => {
+    if (swipeY > 120) {
+      onClose();
+    }
+    setSwipeY(0);
+    swipeStartRef.current = null;
+  }, [swipeY, onClose]);
+
+  if (!visible || !currentTrack) return null;
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 20);
+  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex flex-col transition-all duration-300 ease-out ${
+      className={`fixed inset-0 z-[100] flex flex-col ease-out ${
         animating
-          ? "opacity-100 translate-y-0"
+          ? "opacity-100"
           : "opacity-0 translate-y-full"
       }`}
       style={{
         background: "linear-gradient(180deg, #1a2030 0%, #0a0a0f 100%)",
+        transform: swipeY > 0 ? `translateY(${swipeY}px)` : undefined,
+        transition: swipeY > 0 ? "none" : "all 300ms ease-out",
+        opacity: swipeY > 0 ? Math.max(0.3, 1 - swipeY / 400) : undefined,
       }}
+      onTouchStart={onSwipeStart}
+      onTouchMove={onSwipeMove}
+      onTouchEnd={onSwipeEnd}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-[env(safe-area-inset-top,12px)] pb-2">
