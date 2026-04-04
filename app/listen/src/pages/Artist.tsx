@@ -448,6 +448,7 @@ export function Artist() {
                   albumId={album.id}
                   year={album.year?.slice(0, 4)}
                   cover={`/api/cover/${encPath(data.name)}/${encPath(album.name)}`}
+                  layout="grid"
                 />
               ))}
             </div>
@@ -541,6 +542,7 @@ export function Artist() {
                   }
                   external={!localSimilarArtists[artist.name]}
                   large
+                  layout="grid"
                 />
               ))}
             </div>

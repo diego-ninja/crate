@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Heart, Loader2, Play } from "lucide-react";
 
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { cn } from "@/lib/utils";
 
 interface PlaylistCardProps {
   name: string;
@@ -12,6 +14,7 @@ interface PlaylistCardProps {
   badge?: string;
   systemPlaylist?: boolean;
   isFollowed?: boolean;
+  layout?: "rail" | "grid";
   onClick: () => void;
   onPlay?: () => Promise<void> | void;
   onToggleFollow?: () => Promise<void> | void;
@@ -26,6 +29,7 @@ export function PlaylistCard({
   badge,
   systemPlaylist = false,
   isFollowed = false,
+  layout = "rail",
   onClick,
   onPlay,
   onToggleFollow,
@@ -36,7 +40,10 @@ export function PlaylistCard({
   return (
     <button
       onClick={onClick}
-      className="group w-[160px] flex-shrink-0 text-left"
+      className={cn(
+        "group text-left",
+        layout === "grid" ? "w-full min-w-0" : "w-[160px] flex-shrink-0",
+      )}
     >
       <div className="relative mb-2 overflow-hidden rounded-lg bg-white/5">
         <PlaylistArtwork
@@ -46,8 +53,10 @@ export function PlaylistCard({
           className="aspect-square rounded-lg transition-transform group-hover:scale-[1.02]"
         />
         {systemPlaylist && onToggleFollow ? (
-          <button
-            className="absolute top-2 right-2 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-black/55 text-white/75 backdrop-blur-md opacity-0 transition-colors group-hover:opacity-100 hover:bg-black/70 hover:text-white"
+          <ActionIconButton
+            variant="card"
+            active={isFollowed}
+            className="absolute top-2 right-2 z-10 opacity-0 group-hover:opacity-100"
             onClick={async (event) => {
               event.stopPropagation();
               setTogglingFollow(true);
@@ -61,9 +70,9 @@ export function PlaylistCard({
             {togglingFollow ? (
               <Loader2 size={16} className="animate-spin" />
             ) : (
-              <Heart size={16} className={isFollowed ? "fill-primary text-primary" : ""} />
+              <Heart size={16} className={isFollowed ? "fill-current" : ""} />
             )}
-          </button>
+          </ActionIconButton>
         ) : null}
         {onPlay ? (
           <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/40">

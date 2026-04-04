@@ -389,6 +389,7 @@ function ArtistsTab() {
           key={a.artist_name}
           name={a.artist_name}
           subtitle={`${a.album_count} album${a.album_count !== 1 ? "s" : ""}`}
+          layout="grid"
         />
       ))}
     </div>
@@ -412,6 +413,7 @@ function AlbumsTab() {
           album={a.name}
           albumId={a.id}
           year={a.year}
+          layout="grid"
         />
       ))}
     </div>

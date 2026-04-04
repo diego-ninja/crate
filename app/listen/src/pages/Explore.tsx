@@ -269,7 +269,7 @@ function GenreDetailView({ slug, onBack }: { slug: string; onBack: () => void })
           <h2 className="text-lg font-bold px-1">Artists</h2>
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
             {data.artists.map((a) => (
-              <ArtistCard key={a.artist_name} name={a.artist_name} subtitle={`${a.album_count} albums`} compact />
+              <ArtistCard key={a.artist_name} name={a.artist_name} subtitle={`${a.album_count} albums`} compact layout="grid" />
             ))}
           </div>
         </div>
@@ -280,7 +280,7 @@ function GenreDetailView({ slug, onBack }: { slug: string; onBack: () => void })
           <h2 className="text-lg font-bold px-1">Albums</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {data.albums.map((a) => (
-              <AlbumCard key={a.album_id || `${a.artist}-${a.name}`} artist={a.artist} album={a.name} albumId={a.album_id} year={a.year} />
+              <AlbumCard key={a.album_id || `${a.artist}-${a.name}`} artist={a.artist} album={a.name} albumId={a.album_id} year={a.year} layout="grid" />
             ))}
           </div>
         </div>
@@ -322,7 +322,7 @@ function DecadeDetailView({ decade, onBack }: { decade: string; onBack: () => vo
       {data && data.items.length > 0 ? (
         <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
           {data.items.map((a) => (
-            <ArtistCard key={a.name} name={a.name} subtitle={`${a.albums} albums`} compact />
+            <ArtistCard key={a.name} name={a.name} subtitle={`${a.albums} albums`} compact layout="grid" />
           ))}
         </div>
       ) : (
@@ -381,7 +381,7 @@ function PlaylistCategoryView({ category, onBack }: { category: string; onBack: 
       {data && data.length > 0 ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {data.map((playlist) => (
-            <PlaylistCard
+              <PlaylistCard
               key={playlist.id}
               name={playlist.name}
               description={playlist.description}
@@ -394,8 +394,9 @@ function PlaylistCategoryView({ category, onBack }: { category: string; onBack: 
               ].filter(Boolean).join(" · ")}
               badge={playlist.is_smart ? "Smart" : "Curated"}
               systemPlaylist
-              isFollowed={playlist.is_followed}
-              onPlay={() => handlePlayPlaylist(playlist.id, playlist.name)}
+                isFollowed={playlist.is_followed}
+                layout="grid"
+                onPlay={() => handlePlayPlaylist(playlist.id, playlist.name)}
               onToggleFollow={() => handleToggleFollow(playlist.id, playlist.is_followed)}
               onClick={() => navigate(`/curation/playlist/${playlist.id}`)}
             />

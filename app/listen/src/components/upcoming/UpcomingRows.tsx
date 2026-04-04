@@ -17,6 +17,7 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
+import { ActionIconButton, ActionIconLink } from "@/components/ui/ActionIconButton";
 import { cn, encPath } from "@/lib/utils";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 
@@ -122,16 +123,6 @@ function monthLabel(month: string) {
   });
 }
 
-function rowActionClassName(tone: "default" | "primary" = "default", disabled = false) {
-  if (disabled) {
-    return "pointer-events-none text-white/20";
-  }
-
-  return tone === "primary"
-    ? "text-primary hover:bg-primary/10"
-    : "text-white/45 hover:bg-white/10 hover:text-white";
-}
-
 function RowActionButton({
   title,
   onClick,
@@ -146,17 +137,14 @@ function RowActionButton({
   children: ReactNode;
 }) {
   return (
-    <button
+    <ActionIconButton
       onClick={onClick}
       disabled={disabled}
-      className={cn(
-        "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
-        rowActionClassName(active ? "primary" : "default", disabled),
-      )}
+      active={active}
       title={title}
     >
       {children}
-    </button>
+    </ActionIconButton>
   );
 }
 
@@ -176,19 +164,17 @@ function RowActionLink({
   children: ReactNode;
 }) {
   return (
-    <a
+    <ActionIconLink
       href={href || "#"}
       target="_blank"
       rel="noopener noreferrer"
       onClick={onClick}
-      className={cn(
-        "flex h-10 w-10 items-center justify-center rounded-full transition-colors",
-        rowActionClassName(active ? "primary" : "default", disabled || !href),
-      )}
+      active={active}
+      disabled={disabled}
       title={title}
     >
       {children}
-    </a>
+    </ActionIconLink>
   );
 }
 
