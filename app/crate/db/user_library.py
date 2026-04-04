@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from pathlib import Path
 
 from crate.config import load_config
@@ -23,6 +24,7 @@ def _normalize_stats_window(window: str) -> str:
     return candidate
 
 
+@lru_cache(maxsize=1)
 def _library_root() -> Path:
     try:
         return Path(load_config()["library_path"])
@@ -59,6 +61,8 @@ def _resolve_track_id(cur, track_id: int | None = None, track_path: str | None =
     library_root = str(_library_root()).rstrip("/")
     absolute_candidate = f"{library_root}/{relative_path}" if library_root and relative_path else track_path
     music_candidate = f"/music/{relative_path}" if relative_path else track_path
+
+    should_match_external_id = "/" not in track_path and "\\" not in track_path
     cur.execute(
         """
         SELECT id
@@ -66,7 +70,7 @@ def _resolve_track_id(cur, track_id: int | None = None, track_path: str | None =
         WHERE path = %s
            OR path = %s
            OR path = %s
-           OR navidrome_id = %s
+           OR (%s AND navidrome_id = %s)
         ORDER BY CASE
             WHEN path = %s THEN 0
             WHEN path = %s THEN 1
@@ -79,6 +83,7 @@ def _resolve_track_id(cur, track_id: int | None = None, track_path: str | None =
             track_path,
             absolute_candidate,
             music_candidate,
+            should_match_external_id,
             track_path,
             track_path,
             absolute_candidate,
