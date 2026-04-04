@@ -1,98 +1,18 @@
-import { type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { Calendar, Check, Clock, Loader2, MapPin, Play, Ticket, X } from "lucide-react";
-import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
-import L from "leaflet";
+import { MapContainer } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { toast } from "sonner";
 
-import { ActionIconButton, ActionIconLink } from "@/components/ui/ActionIconButton";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { cn, encPath } from "@/lib/utils";
 
+import { UpcomingActionButton, UpcomingActionLink } from "./UpcomingActionButtons";
+import { UpcomingShowMap } from "./UpcomingShowMap";
 import type { UpcomingItem } from "./upcoming-model";
-
-delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
-
-function RowActionButton({
-  title,
-  onClick,
-  disabled = false,
-  active = false,
-  children,
-}: {
-  title: string;
-  onClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-  disabled?: boolean;
-  active?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <ActionIconButton
-      onClick={onClick}
-      disabled={disabled}
-      active={active}
-      title={title}
-    >
-      {children}
-    </ActionIconButton>
-  );
-}
-
-function RowActionLink({
-  title,
-  href,
-  disabled = false,
-  active = false,
-  onClick,
-  children,
-}: {
-  title: string;
-  href?: string;
-  disabled?: boolean;
-  active?: boolean;
-  onClick?: (event: ReactMouseEvent<HTMLAnchorElement>) => void;
-  children: ReactNode;
-}) {
-  return (
-    <ActionIconLink
-      href={href || "#"}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={onClick}
-      active={active}
-      disabled={disabled}
-      title={title}
-    >
-      {children}
-    </ActionIconLink>
-  );
-}
-
-function MapSizeFixer() {
-  const map = useMap();
-
-  useEffect(() => {
-    const timers = [
-      window.setTimeout(() => map.invalidateSize(), 0),
-      window.setTimeout(() => map.invalidateSize(), 120),
-      window.setTimeout(() => map.invalidateSize(), 320),
-    ];
-
-    return () => {
-      for (const timer of timers) window.clearTimeout(timer);
-    };
-  }, [map]);
-
-  return null;
-}
 
 export function UpcomingShowCard({
   item,
@@ -202,23 +122,13 @@ export function UpcomingShowCard({
             boxZoom={false}
             keyboard={false}
           >
-            <MapSizeFixer />
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-            <Marker position={position}>
-              <Popup className="upcoming-marker-popup">
-                <div className="space-y-2 text-xs">
-                  <div>
-                    <div className="font-semibold text-foreground">{item.venue || item.artist}</div>
-                    <div className="text-muted-foreground">{location || item.subtitle}</div>
-                  </div>
-                  <div className="space-y-1 text-muted-foreground">
-                    <div>{dateStr}</div>
-                    {timeStr ? <div>Doors / time: {timeStr}</div> : null}
-                    {item.lineup?.length ? <div>Lineup: {item.lineup.slice(0, 6).join(" · ")}</div> : null}
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
+            <UpcomingShowMap
+              item={item}
+              position={position}
+              dateLabel={dateStr}
+              timeLabel={timeStr}
+              locationLabel={location}
+            />
           </MapContainer>
         ) : null}
       </div>
@@ -258,7 +168,7 @@ export function UpcomingShowCard({
               <div className="text-xs font-semibold">{dateStr}</div>
               {timeStr ? <div className="text-[10px] text-white/35">{timeStr}</div> : null}
             </div>
-            <RowActionButton
+            <UpcomingActionButton
               onClick={(event) => {
                 event.stopPropagation();
                 void playProbableSetlist();
@@ -271,8 +181,8 @@ export function UpcomingShowCard({
               ) : (
                 <Play size={14} className="fill-current" />
               )}
-            </RowActionButton>
-            <RowActionButton
+            </UpcomingActionButton>
+            <UpcomingActionButton
               onClick={(event) => {
                 void toggleAttendance();
                 event.stopPropagation();
@@ -286,8 +196,8 @@ export function UpcomingShowCard({
               ) : (
                 <Check size={14} />
               )}
-            </RowActionButton>
-            <RowActionLink
+            </UpcomingActionButton>
+            <UpcomingActionLink
               href={item.url}
               onClick={(event) => {
                 if (!item.url) {
@@ -298,7 +208,7 @@ export function UpcomingShowCard({
               title="Tickets"
             >
               <Ticket size={14} />
-            </RowActionLink>
+            </UpcomingActionLink>
           </div>
         </div>
       ) : null}
@@ -323,7 +233,7 @@ export function UpcomingShowCard({
           ) : null}
 
           <div className="z-app-upcoming-overlay absolute top-12 right-3 flex flex-col gap-2">
-            <RowActionButton
+            <UpcomingActionButton
               onClick={() => {
                 void playProbableSetlist();
               }}
@@ -335,8 +245,8 @@ export function UpcomingShowCard({
               ) : (
                 <Play size={15} className="fill-current" />
               )}
-            </RowActionButton>
-            <RowActionButton
+            </UpcomingActionButton>
+            <UpcomingActionButton
               onClick={toggleAttendance}
               disabled={!item.id || savingAttendance}
               title={attending ? "Attending" : "Mark as attending"}
@@ -347,8 +257,8 @@ export function UpcomingShowCard({
               ) : (
                 <Check size={15} />
               )}
-            </RowActionButton>
-            <RowActionLink
+            </UpcomingActionButton>
+            <UpcomingActionLink
               href={item.url}
               onClick={(event) => {
                 if (!item.url) event.preventDefault();
@@ -356,7 +266,7 @@ export function UpcomingShowCard({
               title="Tickets"
             >
               <Ticket size={15} />
-            </RowActionLink>
+            </UpcomingActionLink>
           </div>
 
           <div className="z-app-upcoming-overlay pointer-events-none absolute right-0 bottom-0 left-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent px-4 pt-16 pb-4">

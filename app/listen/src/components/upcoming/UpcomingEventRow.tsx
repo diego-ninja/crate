@@ -1,70 +1,15 @@
-import { type MouseEvent as ReactMouseEvent, type ReactNode, useEffect, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Check, Loader2, MapPin, Play, Ticket } from "lucide-react";
 import { toast } from "sonner";
 
-import { ActionIconButton, ActionIconLink } from "@/components/ui/ActionIconButton";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { cn, encPath } from "@/lib/utils";
 
+import { UpcomingActionButton, UpcomingActionLink } from "./UpcomingActionButtons";
 import type { UpcomingItem } from "./upcoming-model";
-
-function RowActionButton({
-  title,
-  onClick,
-  disabled = false,
-  active = false,
-  children,
-}: {
-  title: string;
-  onClick?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-  disabled?: boolean;
-  active?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <ActionIconButton
-      onClick={onClick}
-      disabled={disabled}
-      active={active}
-      title={title}
-    >
-      {children}
-    </ActionIconButton>
-  );
-}
-
-function RowActionLink({
-  title,
-  href,
-  disabled = false,
-  active = false,
-  onClick,
-  children,
-}: {
-  title: string;
-  href?: string;
-  disabled?: boolean;
-  active?: boolean;
-  onClick?: (event: ReactMouseEvent<HTMLAnchorElement>) => void;
-  children: ReactNode;
-}) {
-  return (
-    <ActionIconLink
-      href={href || "#"}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={onClick}
-      active={active}
-      disabled={disabled}
-      title={title}
-    >
-      {children}
-    </ActionIconLink>
-  );
-}
 
 export function UpcomingEventRow({
   item,
@@ -201,7 +146,7 @@ export function UpcomingEventRow({
         </div>
         {isShow ? (
           <>
-            <RowActionButton
+            <UpcomingActionButton
               onClick={playProbableSetlist}
               disabled={!item.probable_setlist?.length || playingSetlist}
               title="Play probable setlist"
@@ -211,9 +156,9 @@ export function UpcomingEventRow({
               ) : (
                 <Play size={14} className="fill-current" />
               )}
-            </RowActionButton>
+            </UpcomingActionButton>
 
-            <RowActionButton
+            <UpcomingActionButton
               onClick={toggleAttendance}
               disabled={!item.id || savingAttendance}
               title={attending ? "Attending" : "Mark as attending"}
@@ -224,9 +169,9 @@ export function UpcomingEventRow({
               ) : (
                 <Check size={14} />
               )}
-            </RowActionButton>
+            </UpcomingActionButton>
 
-            <RowActionLink
+            <UpcomingActionLink
               href={item.url}
               onClick={(event) => {
                 if (!item.url) {
@@ -239,7 +184,7 @@ export function UpcomingEventRow({
               title="Tickets"
             >
               <Ticket size={14} />
-            </RowActionLink>
+            </UpcomingActionLink>
           </>
         ) : null}
       </div>
