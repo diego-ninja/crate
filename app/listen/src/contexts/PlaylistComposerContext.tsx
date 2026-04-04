@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -25,19 +25,19 @@ export function PlaylistComposerProvider({ children }: { children: ReactNode }) 
   const [initialDescription, setInitialDescription] = useState("");
   const [initialTracks, setInitialTracks] = useState<PlaylistComposerTrack[]>([]);
 
-  function openCreatePlaylist(options?: OpenPlaylistComposerOptions) {
+  const openCreatePlaylist = useCallback((options?: OpenPlaylistComposerOptions) => {
     setInitialName(options?.name ?? "");
     setInitialDescription(options?.description ?? "");
     setInitialTracks(options?.tracks ?? []);
     setOpen(true);
-  }
+  }, []);
 
-  async function handleSubmit(payload: {
+  const handleSubmit = useCallback(async (payload: {
     name: string;
     description: string;
     coverDataUrl: string | null;
     tracks: PlaylistComposerTrack[];
-  }) {
+  }) => {
     setSubmitting(true);
     try {
       const created = await api<{ id: number }>("/api/playlists", "POST", {
@@ -68,10 +68,19 @@ export function PlaylistComposerProvider({ children }: { children: ReactNode }) 
     } finally {
       setSubmitting(false);
     }
-  }
+  }, [navigate]);
+
+  const handleClose = useCallback(() => {
+    if (!submitting) setOpen(false);
+  }, [submitting]);
+
+  const contextValue = useMemo(
+    () => ({ openCreatePlaylist }),
+    [openCreatePlaylist],
+  );
 
   return (
-    <PlaylistComposerContext.Provider value={{ openCreatePlaylist }}>
+    <PlaylistComposerContext.Provider value={contextValue}>
       {children}
       <PlaylistCreateModal
         open={open}
@@ -79,9 +88,7 @@ export function PlaylistComposerProvider({ children }: { children: ReactNode }) 
         initialDescription={initialDescription}
         initialTracks={initialTracks}
         submitting={submitting}
-        onClose={() => {
-          if (!submitting) setOpen(false);
-        }}
+        onClose={handleClose}
         onSubmit={handleSubmit}
       />
     </PlaylistComposerContext.Provider>

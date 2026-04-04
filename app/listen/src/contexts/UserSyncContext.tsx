@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -52,21 +53,37 @@ const FALLBACK_PAYLOAD: UserSyncPayload = {
 export function UserSyncProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [payload, setPayload] = useState<UserSyncPayload>(FALLBACK_PAYLOAD);
+  const userSyncRequestRef = useRef<AbortController | null>(null);
 
   const refetch = useCallback(async () => {
+    userSyncRequestRef.current?.abort();
+    const controller = new AbortController();
+    userSyncRequestRef.current = controller;
     setLoading(true);
     try {
-      const data = await api<UserSyncPayload>("/api/me/sync");
+      const data = await api<UserSyncPayload>("/api/me/sync", "GET", undefined, {
+        signal: controller.signal,
+      });
       setPayload(data || FALLBACK_PAYLOAD);
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted || (error as Error).name === "AbortError") {
+        return;
+      }
       setPayload(FALLBACK_PAYLOAD);
     } finally {
-      setLoading(false);
+      if (userSyncRequestRef.current === controller) {
+        userSyncRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void refetch();
+    return () => {
+      userSyncRequestRef.current?.abort();
+      userSyncRequestRef.current = null;
+    };
   }, [refetch]);
 
   const value = useMemo<UserSyncContextValue>(() => {

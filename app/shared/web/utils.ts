@@ -37,7 +37,10 @@ export function encPath(s: string): string {
   return encodeURIComponent(s);
 }
 
-export function formatBadgeClass(_format?: string): string {
+export function formatBadgeClass(format?: string): string {
+  if (format?.toLowerCase() === "flac") {
+    return "inline-flex items-center rounded-md border border-primary/30 text-primary text-[10px] px-1 py-0 font-medium";
+  }
   return "inline-flex items-center rounded-md border border-primary/30 text-primary text-[10px] px-1 py-0 font-medium";
 }
 

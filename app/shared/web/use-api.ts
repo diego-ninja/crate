@@ -1,5 +1,5 @@
 import type { ApiMethod } from "./api";
-import type { ApiRequestOptions } from "./api";
+import { createApiClient } from "./api";
 
 export interface UseApiState<T> {
   data: T | null;
@@ -8,12 +8,7 @@ export interface UseApiState<T> {
   refetch: () => void;
 }
 
-type ApiFn = <T = unknown>(
-  url: string,
-  method?: ApiMethod,
-  body?: unknown,
-  options?: ApiRequestOptions,
-) => Promise<T>;
+type ApiFn = ReturnType<typeof createApiClient>;
 
 interface ReactHookDeps {
   useState: <T>(
@@ -38,6 +33,7 @@ export function createUseApi(reactHooks: ReactHookDeps, apiFn: ApiFn) {
     method: ApiMethod = "GET",
     body?: unknown,
   ): UseApiState<T> {
+    const bodyKey = serializeBodyKey(body);
     const [data, setData] = useState<T | null>(null);
     const [loading, setLoading] = useState(!!url);
     const [error, setError] = useState<string | null>(null);
@@ -78,7 +74,7 @@ export function createUseApi(reactHooks: ReactHookDeps, apiFn: ApiFn) {
         cancelled = true;
         controller.abort();
       };
-    }, [url, method, trigger]);
+    }, [apiFn, body, bodyKey, method, trigger, url]);
 
     useEffect(() => {
       hasFetched.current = false;
@@ -86,4 +82,18 @@ export function createUseApi(reactHooks: ReactHookDeps, apiFn: ApiFn) {
 
     return { data, loading, error, refetch };
   };
+}
+
+function serializeBodyKey(body: unknown): string {
+  if (body == null) return "";
+  if (body instanceof FormData) {
+    return Array.from(body.entries())
+      .map(([key, value]) => `${key}:${typeof value === "string" ? value : value.name}`)
+      .join("&");
+  }
+  try {
+    return JSON.stringify(body);
+  } catch {
+    return String(body);
+  }
 }

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
-from crate.api.playlists import _apply_playlist_cover_payload, _execute_smart_rules
+from crate.api.playlist_utils import apply_playlist_cover_payload, execute_smart_rules
 from crate.playlist_covers import delete_playlist_cover
 from crate.db import (
     add_playlist_tracks,
@@ -104,7 +104,7 @@ def admin_create_system_playlist(request: Request, body: CreateSystemPlaylistReq
         featured_rank=body.featured_rank,
         category=body.category,
     )
-    cover_update = _apply_playlist_cover_payload(playlist_id, body.cover_data_url)
+    cover_update = apply_playlist_cover_payload(playlist_id, body.cover_data_url)
     if cover_update:
         update_playlist(playlist_id, **cover_update)
     playlist = _require_system_playlist(playlist_id)
@@ -138,7 +138,7 @@ def admin_update_system_playlist(request: Request, playlist_id: int, body: Updat
     if body.description is not None:
         kwargs["description"] = body.description
     if body.cover_data_url is not None:
-        kwargs.update(_apply_playlist_cover_payload(playlist_id, body.cover_data_url, playlist.get("cover_path")) or {})
+        kwargs.update(apply_playlist_cover_payload(playlist_id, body.cover_data_url, playlist.get("cover_path")) or {})
     if body.smart_rules is not None or mode == "static":
         kwargs["smart_rules"] = next_rules if mode == "smart" else None
     if body.is_curated is not None:
@@ -191,7 +191,7 @@ def admin_generate_system_playlist(request: Request, playlist_id: int):
     if playlist.get("generation_mode") != "smart" or not playlist.get("smart_rules"):
         raise HTTPException(status_code=400, detail="Not a smart system playlist")
 
-    tracks = _execute_smart_rules(playlist["smart_rules"])
+    tracks = execute_smart_rules(playlist["smart_rules"])
     from crate.db.playlists import replace_playlist_tracks
     replace_playlist_tracks(playlist_id, tracks or [])
 
