@@ -1,8 +1,6 @@
 import { useNavigate } from "react-router";
 import {
   Calendar,
-  Clock3,
-  ListMusic,
   Play,
   RadioTower,
   Sparkles,
@@ -17,7 +15,11 @@ import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { PlaylistCard } from "@/components/playlists/PlaylistCard";
 import {
-  ContinueListeningCard,
+  ContinueListeningSection,
+  HomeReplaySection,
+  KeepQueueMovingSection,
+} from "@/components/home/HomePlaybackSections";
+import {
   FeaturedPlaylistCard,
   SectionHeader,
   SectionLoading,
@@ -208,63 +210,11 @@ export function Home() {
           <p className="mt-1 text-sm text-muted-foreground">{getHomeDateString()}</p>
         </div>
 
-        {continueLead ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.85fr)]">
-            <ContinueListeningCard
-              track={continueLead}
-              onPlay={() => play(continueLead, { type: "track", name: "Continue Listening" })}
-            />
-
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
-              <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/40">
-                <Clock3 size={12} />
-                Recent listens
-              </div>
-              <div className="space-y-1">
-                {continueRail.length > 0 ? continueRail.slice(0, 4).map((track) => (
-                  <button
-                    key={track.id}
-                    onClick={() => play(track, { type: "track", name: "Recent Listening" })}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5"
-                  >
-                    <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-white/5">
-                      {track.albumCover ? (
-                        <img src={track.albumCover} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-white/5">
-                          <ListMusic size={16} className="text-white/20" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">{track.title}</div>
-                      <div className="truncate text-xs text-muted-foreground">{track.artist}</div>
-                    </div>
-                    <Play size={15} className="shrink-0 text-white/30" />
-                  </button>
-                )) : (
-                  <div className="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-sm text-muted-foreground">
-                    Start playing music and your listening history will show up here.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_50%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-6">
-            <div className="max-w-2xl space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary">
-                <Sparkles size={12} />
-                Start listening
-              </div>
-              <h2 className="text-2xl font-bold text-foreground">Your home should feel alive as soon as playback starts.</h2>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Play an album, a playlist, or a curated mix and this screen will turn into your real listening surface:
-                continuity, smart picks, and system playlists from Crate.
-              </p>
-            </div>
-          </div>
-        )}
+        <ContinueListeningSection
+          continueLead={continueLead}
+          continueRail={continueRail}
+          onPlayTrack={(track, sourceName) => play(track, { type: "track", name: sourceName })}
+        />
       </div>
 
       {upcomingPreview.length > 0 ? (
@@ -405,86 +355,28 @@ export function Home() {
         </section>
       ) : null}
 
-      {replayPreview.length > 0 ? (
-        <section className="space-y-4">
-          <SectionHeader
-            title={replay?.title || "Replay this month"}
-            subtitle={replay?.subtitle || "A playable recap of your current listening window."}
-            actionLabel="Open Stats"
-            onAction={() => navigate("/stats")}
-          />
-
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.14),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5">
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
-                <Sparkles size={12} />
-                Replay
-              </div>
-              <h2 className="mt-4 text-2xl font-bold text-foreground">{replay?.title}</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{replay?.subtitle}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Tracks</div>
-                  <div className="mt-1 text-sm font-semibold text-foreground">{replay?.track_count ?? 0}</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Time listened</div>
-                  <div className="mt-1 text-sm font-semibold text-foreground">
-                    {Math.round(replay?.minutes_listened ?? 0)}m
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={playReplayMix}
-                className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <Play size={15} fill="currentColor" />
-                Play replay
-              </button>
-            </div>
-
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
-              <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/40">
-                <Clock3 size={12} />
-                Replay picks
-              </div>
-              <div className="space-y-1">
-                {replayPreview.map((item) => (
-                  <button
-                    key={`${item.track_id ?? item.track_path ?? item.title}`}
-                    onClick={() =>
-                      play(
-                        {
-                          id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
-                          title: item.title,
-                          artist: item.artist,
-                          album: item.album,
-                          path: item.track_path || undefined,
-                          libraryTrackId: item.track_id || undefined,
-                          albumCover: item.artist && item.album
-                            ? `/api/cover/${encPath(item.artist)}/${encPath(item.album)}`
-                            : undefined,
-                        },
-                        { type: "track", name: item.title },
-                      )
-                    }
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5"
-                  >
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white/45">
-                      {item.play_count}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
-                      <div className="truncate text-xs text-muted-foreground">{item.artist}</div>
-                    </div>
-                    <Play size={15} className="shrink-0 text-white/30" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
+      <HomeReplaySection
+        replay={replay || undefined}
+        replayPreview={replayPreview}
+        onOpenStats={() => navigate("/stats")}
+        onPlayReplay={playReplayMix}
+        onPlayTrack={(item) =>
+          play(
+            {
+              id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
+              title: item.title,
+              artist: item.artist,
+              album: item.album,
+              path: item.track_path || undefined,
+              libraryTrackId: item.track_id || undefined,
+              albumCover: item.artist && item.album
+                ? `/api/cover/${encPath(item.artist)}/${encPath(item.album)}`
+                : undefined,
+            },
+            { type: "track", name: item.title },
+          )
+        }
+      />
 
       <section className="space-y-4">
         <SectionHeader
@@ -608,40 +500,10 @@ export function Home() {
         )}
       </section>
 
-      {continueRail.length > 0 ? (
-        <section className="space-y-4">
-          <SectionHeader
-            title="Keep the queue moving"
-            subtitle="Quick picks from your own recent listening."
-          />
-          <SectionRail>
-            {continueRail.map((track) => (
-              <button
-                key={track.id}
-                onClick={() => play(track, { type: "track", name: "Quick Pick" })}
-                className="group w-[220px] flex-shrink-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] text-left"
-              >
-                <div className="flex items-center gap-3 p-3">
-                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-white/5">
-                    {track.albumCover ? (
-                      <img src={track.albumCover} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-white/5">
-                        <ListMusic size={18} className="text-white/20" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-foreground">{track.title}</div>
-                    <div className="mt-1 truncate text-xs text-muted-foreground">{track.artist}</div>
-                    {track.album ? <div className="mt-1 truncate text-[11px] text-white/35">{track.album}</div> : null}
-                  </div>
-                </div>
-              </button>
-            ))}
-          </SectionRail>
-        </section>
-      ) : null}
+      <KeepQueueMovingSection
+        tracks={continueRail}
+        onPlayTrack={(track) => play(track, { type: "track", name: "Quick Pick" })}
+      />
     </div>
   );
 }
