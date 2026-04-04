@@ -64,6 +64,180 @@ def _audio_extensions(config: dict) -> set[str]:
     return set(config.get("audio_extensions", DEFAULT_AUDIO_EXTENSIONS))
 
 
+def _clean_album_lookup_name(album_name: str) -> str:
+    import re
+
+    return re.sub(r"^\d{4}\s*-\s*", "", album_name)
+
+
+def _build_album_match_local_info(
+    album: dict,
+    artist_name: str,
+    clean_album: str,
+    tracks_db: list[dict],
+    exts: set[str],
+) -> dict:
+    from crate.audio import get_audio_files
+    from crate.matcher import _gather_local_info
+
+    album_path = album.get("path", "")
+    album_dir = Path(album_path) if album_path else None
+    if album_dir and album_dir.is_dir():
+        return _gather_local_info(get_audio_files(album_dir, list(exts)))
+
+    return {
+        "artist": artist_name,
+        "album": clean_album,
+        "track_count": len(tracks_db) or album.get("track_count", 0),
+        "tracks": [
+            {
+                "title": track.get("title", ""),
+                "length_sec": int(track.get("duration", 0)),
+                "tracknumber": str(track.get("track_number", "")),
+                "filename": track.get("filename", ""),
+            }
+            for track in tracks_db
+        ],
+        "total_length": sum(int(track.get("duration", 0)) for track in tracks_db),
+    }
+
+
+def _find_best_album_release(
+    artist_name: str,
+    clean_album: str,
+    track_count: int,
+    local_info: dict,
+    max_candidates: int,
+) -> tuple[dict | None, int]:
+    from crate.matcher import _get_release_detail, _score_match, _search_musicbrainz
+
+    candidates = _search_musicbrainz(artist_name, clean_album, track_count)
+    if not candidates:
+        return None, 0
+
+    best_release = None
+    best_score = 0
+    for candidate in candidates[:max_candidates]:
+        release = _get_release_detail(candidate["mbid"])
+        if not release:
+            continue
+        score = _score_match(local_info, release)
+        if score > best_score:
+            best_score = score
+            best_release = release
+        time.sleep(0.5)
+
+    return best_release, best_score
+
+
+def _auto_apply_album_release(
+    task_id: str,
+    album_dir: Path | None,
+    artist_name: str,
+    clean_album: str,
+    exts: set[str],
+    release: dict,
+    score: int,
+) -> bool:
+    if not album_dir or not album_dir.is_dir():
+        return False
+
+    try:
+        from crate.matcher import apply_match
+
+        apply_result = apply_match(album_dir, exts, release)
+        log.info(
+            "Auto-applied MB tags for %s/%s (score=%d, updated=%d)",
+            artist_name,
+            clean_album,
+            score,
+            apply_result.get("updated", 0),
+        )
+        emit_task_event(
+            task_id,
+            "info",
+            {"message": f"Auto-applied tags: {artist_name}/{clean_album} (score {score}%)"},
+        )
+        return True
+    except Exception:
+        log.warning("Auto-apply failed for %s/%s", artist_name, clean_album, exc_info=True)
+        return False
+
+
+def _persist_album_release_mbids(album_id: int, tracks_db: list[dict], release: dict) -> None:
+    release_mbid = release["mbid"]
+    release_group_id = release.get("release_group_id", "")
+    mb_tracks = release.get("tracks", [])
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            "UPDATE library_albums SET musicbrainz_albumid = %s WHERE id = %s",
+            (release_mbid, album_id),
+        )
+        if release_group_id:
+            cur.execute(
+                "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE id = %s",
+                (release_group_id, album_id),
+            )
+        for index, db_track in enumerate(tracks_db):
+            if index >= len(mb_tracks):
+                break
+            track_mbid = mb_tracks[index].get("mbid", "")
+            if track_mbid:
+                cur.execute(
+                    "UPDATE library_tracks SET musicbrainz_albumid = %s, musicbrainz_trackid = %s "
+                    "WHERE id = %s",
+                    (release_mbid, track_mbid, db_track["id"]),
+                )
+
+
+def _write_album_release_tags(tracks_db: list[dict], release: dict) -> None:
+    import mutagen
+
+    release_mbid = release["mbid"]
+    release_group_id = release.get("release_group_id", "")
+    mb_tracks = release.get("tracks", [])
+
+    for index, db_track in enumerate(tracks_db):
+        if index >= len(mb_tracks):
+            break
+        mb_track = mb_tracks[index]
+        track_mbid = mb_track.get("mbid", "")
+        track_path = db_track.get("path", "")
+        if not track_path or not Path(track_path).is_file():
+            continue
+        try:
+            audio = mutagen.File(track_path, easy=True)
+            if audio is None:
+                continue
+            changed = False
+            if release_mbid:
+                audio["musicbrainz_albumid"] = release_mbid
+                changed = True
+            if track_mbid:
+                audio["musicbrainz_trackid"] = track_mbid
+                changed = True
+            if release_group_id:
+                audio["musicbrainz_releasegroupid"] = release_group_id
+                changed = True
+            if changed:
+                audio.save()
+        except Exception:
+            log.warning("Failed to write MBID tags to %s", track_path)
+
+
+def _sync_album_after_auto_apply(album_name: str, artist_name: str, album_dir: Path | None, config: dict) -> None:
+    if not album_dir or not album_dir.is_dir():
+        return
+    try:
+        from crate.library_sync import LibrarySync
+
+        syncer = LibrarySync(config)
+        syncer.sync_album(album_dir, artist_name)
+    except Exception:
+        log.warning("Re-sync after auto-apply failed for %s", album_name, exc_info=True)
+
+
 def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
     from crate.db import get_library_artists
     from crate.enrichment import enrich_artist
@@ -149,13 +323,7 @@ def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     """Enrich albums and tracks with MusicBrainz IDs."""
-    import re
-
-    import mutagen
-    import musicbrainzngs
-    from crate.audio import get_audio_files
     from crate.db import get_library_albums, get_library_tracks
-    from crate.matcher import _gather_local_info, _get_release_detail, _score_match, _search_musicbrainz
 
     lib = Path(config["library_path"])
     exts = _audio_extensions(config)
@@ -204,48 +372,25 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
                 ),
             )
 
-        clean_album = re.sub(r"^\d{4}\s*-\s*", "", album_name)
+        clean_album = _clean_album_lookup_name(album_name)
         tracks_db = get_library_tracks(album["id"]) if "id" in album else []
         track_count = len(tracks_db) or album.get("track_count", 0)
 
-        candidates = _search_musicbrainz(artist_name, clean_album, track_count)
-        if not candidates:
-            failed += 1
-            time.sleep(1)
-            continue
-
-        best_release = None
-        best_score = 0
-
         album_dir = Path(album_path) if album_path else None
-        if album_dir and album_dir.is_dir():
-            local_info = _gather_local_info(get_audio_files(album_dir, list(exts)))
-        else:
-            local_info = {
-                "artist": artist_name,
-                "album": clean_album,
-                "track_count": track_count,
-                "tracks": [
-                    {
-                        "title": track.get("title", ""),
-                        "length_sec": int(track.get("duration", 0)),
-                        "tracknumber": str(track.get("track_number", "")),
-                        "filename": track.get("filename", ""),
-                    }
-                    for track in tracks_db
-                ],
-                "total_length": sum(int(track.get("duration", 0)) for track in tracks_db),
-            }
-
-        for candidate in candidates[:3]:
-            release = _get_release_detail(candidate["mbid"])
-            if not release:
-                continue
-            score = _score_match(local_info, release)
-            if score > best_score:
-                best_score = score
-                best_release = release
-            time.sleep(0.5)
+        local_info = _build_album_match_local_info(
+            album,
+            artist_name,
+            clean_album,
+            tracks_db,
+            exts,
+        )
+        best_release, best_score = _find_best_album_release(
+            artist_name,
+            clean_album,
+            track_count,
+            local_info,
+            max_candidates=3,
+        )
 
         if not best_release or best_score < min_score:
             failed += 1
@@ -254,84 +399,23 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
 
         auto_apply_threshold = int(get_setting("mb_auto_apply_threshold", "95"))
         if best_score >= auto_apply_threshold and album_dir and album_dir.is_dir():
-            try:
-                from crate.matcher import apply_match
-
-                apply_result = apply_match(album_dir, exts, best_release)
-                log.info(
-                    "Auto-applied MB tags for %s/%s (score=%d, updated=%d)",
-                    artist_name,
-                    clean_album,
-                    best_score,
-                    apply_result.get("updated", 0),
-                )
-                emit_task_event(
-                    task_id,
-                    "info",
-                    {"message": f"Auto-applied tags: {artist_name}/{clean_album} (score {best_score}%)"},
-                )
-            except Exception:
-                log.warning("Auto-apply failed for %s/%s", artist_name, clean_album, exc_info=True)
-
-        release_mbid = best_release["mbid"]
-        release_group_id = best_release.get("release_group_id", "")
-        mb_tracks = best_release.get("tracks", [])
-
-        with get_db_ctx() as cur:
-            cur.execute(
-                "UPDATE library_albums SET musicbrainz_albumid = %s WHERE id = %s",
-                (release_mbid, album["id"]),
+            _auto_apply_album_release(
+                task_id,
+                album_dir,
+                artist_name,
+                clean_album,
+                exts,
+                best_release,
+                best_score,
             )
-            if release_group_id:
-                cur.execute(
-                    "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE id = %s",
-                    (release_group_id, album["id"]),
-                )
-            for index, db_track in enumerate(tracks_db):
-                if index >= len(mb_tracks):
-                    break
-                track_mbid = mb_tracks[index].get("mbid", "")
-                if track_mbid:
-                    cur.execute(
-                        "UPDATE library_tracks SET musicbrainz_albumid = %s, musicbrainz_trackid = %s "
-                        "WHERE id = %s",
-                        (release_mbid, track_mbid, db_track["id"]),
-                    )
+
+        _persist_album_release_mbids(album["id"], tracks_db, best_release)
 
         if best_score < auto_apply_threshold:
-            for index, db_track in enumerate(tracks_db):
-                if index >= len(mb_tracks):
-                    break
-                mb_track = mb_tracks[index]
-                track_mbid = mb_track.get("mbid", "")
-                track_path = db_track.get("path", "")
-                if track_path and Path(track_path).is_file():
-                    try:
-                        audio = mutagen.File(track_path, easy=True)
-                        if audio is not None:
-                            changed = False
-                            if release_mbid:
-                                audio["musicbrainz_albumid"] = release_mbid
-                                changed = True
-                            if track_mbid:
-                                audio["musicbrainz_trackid"] = track_mbid
-                                changed = True
-                            if release_group_id:
-                                audio["musicbrainz_releasegroupid"] = release_group_id
-                                changed = True
-                            if changed:
-                                audio.save()
-                    except Exception:
-                        log.warning("Failed to write MBID tags to %s", track_path)
+            _write_album_release_tags(tracks_db, best_release)
 
         if best_score >= auto_apply_threshold and album_dir and album_dir.is_dir():
-            try:
-                from crate.library_sync import LibrarySync
-
-                syncer = LibrarySync(config)
-                syncer.sync_album(album_dir, artist_name)
-            except Exception:
-                log.warning("Re-sync after auto-apply failed for %s", album_name, exc_info=True)
+            _sync_album_after_auto_apply(album_name, artist_name, album_dir, config)
 
         enriched += 1
         emit_task_event(
@@ -341,7 +425,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
                 "message": f"Matched: {artist_name} / {clean_album} (score {best_score}%)",
                 "artist": artist_name,
                 "album": clean_album,
-                "mbid": release_mbid,
+                "mbid": best_release["mbid"],
                 "score": best_score,
             },
         )
@@ -350,7 +434,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
             artist_name,
             clean_album,
             best_score,
-            release_mbid,
+            best_release["mbid"],
         )
         time.sleep(1)
 
@@ -425,40 +509,13 @@ def _reorganize_artist_folders(
         log.info("Reorganized %d album folders for %s", moved, artist_name)
 
 
-def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dict:
-    """Full pipeline for new content: enrich artist + index genres + analyze audio + bliss."""
-    artist_name = params.get("artist", "")
-    album_folder = params.get("album", "")
-
-    _mark_processing(artist_name)
-    try:
-        return _process_new_content_inner(task_id, params, config, artist_name, album_folder)
-    finally:
-        _unmark_processing(artist_name)
-
-
-def _process_new_content_inner(
-    task_id: str, params: dict, config: dict, artist_name: str, album_folder: str
-) -> dict:
-    import re as _re
-
-    from crate.db import get_library_albums, get_library_artist, get_library_tracks, set_album_genres, update_track_audiomuse
-    from crate.enrichment import enrich_artist
-    from crate.popularity import _lastfm_get, _parse_int
-
-    lib = Path(config["library_path"])
-    result = {"artist": artist_name, "album": album_folder, "steps": {}}
-
-    artist_row = get_library_artist(artist_name)
-    folder = (artist_row.get("folder_name") if artist_row else None) or artist_name
-    artist_dir = lib / folder
-    if artist_dir.is_dir():
-        new_hash = _compute_dir_hash(artist_dir)
-        old_hash = artist_row.get("content_hash") if artist_row else None
-        if old_hash and new_hash == old_hash:
-            log.info("Skipping %s - content unchanged (hash: %s)", artist_name, new_hash[:12])
-            return {"artist": artist_name, "skipped": True, "reason": "content_unchanged"}
-
+def _process_new_content_organize_folders(
+    task_id: str,
+    result: dict,
+    artist_name: str,
+    lib: Path,
+    config: dict,
+) -> None:
     update_task(task_id, progress=json.dumps({"step": "organize_folders", "artist": artist_name}))
     try:
         _reorganize_artist_folders(artist_name, lib, config, task_id)
@@ -466,6 +523,15 @@ def _process_new_content_inner(
     except Exception:
         log.warning("Folder reorganization failed for %s", artist_name, exc_info=True)
         result["steps"]["organize_folders"] = "failed"
+
+
+def _process_new_content_enrich_artist(
+    task_id: str,
+    result: dict,
+    artist_name: str,
+    config: dict,
+) -> None:
+    from crate.enrichment import enrich_artist
 
     update_task(task_id, progress=json.dumps({"step": "enrich_artist", "artist": artist_name}))
     try:
@@ -479,6 +545,15 @@ def _process_new_content_inner(
     except Exception:
         log.warning("Enrich artist failed for %s", artist_name, exc_info=True)
         result["steps"]["enrich_artist"] = "failed"
+
+
+def _process_new_content_album_genres(
+    task_id: str,
+    result: dict,
+    artist_name: str,
+    album_folder: str,
+) -> list[dict]:
+    from crate.db import get_library_albums, get_library_tracks, set_album_genres
 
     albums = []
     update_task(task_id, progress=json.dumps({"step": "album_genres", "artist": artist_name}))
@@ -507,12 +582,21 @@ def _process_new_content_inner(
     except Exception:
         log.warning("Album genre indexing failed", exc_info=True)
         result["steps"]["album_genres"] = "failed"
+    return albums
+
+
+def _process_new_content_album_mbids(
+    task_id: str,
+    result: dict,
+    albums: list[dict],
+    artist_name: str,
+    album_folder: str,
+    config: dict,
+) -> None:
+    from crate.db import get_library_tracks
 
     update_task(task_id, progress=json.dumps({"step": "album_mbid", "artist": artist_name}))
     try:
-        from crate.audio import get_audio_files
-        from crate.matcher import _gather_local_info, _get_release_detail, _score_match, _search_musicbrainz
-
         exts = _audio_extensions(config)
         mbid_count = 0
         for album in albums:
@@ -522,45 +606,23 @@ def _process_new_content_inner(
             if existing_mbid and existing_mbid.strip():
                 continue
 
-            clean_name = _re.sub(r"^\d{4}\s*-\s*", "", album.get("tag_album") or album["name"])
+            clean_name = _clean_album_lookup_name(album.get("tag_album") or album["name"])
+            tracks_db = get_library_tracks(album["id"])
             track_count = album.get("track_count", 0)
-            candidates = _search_musicbrainz(artist_name, clean_name, track_count)
-            if not candidates:
-                time.sleep(1)
-                continue
-
-            album_dir = Path(album["path"]) if album.get("path") else None
-            if album_dir and album_dir.is_dir():
-                local_info = _gather_local_info(get_audio_files(album_dir, list(exts)))
-            else:
-                db_tracks = get_library_tracks(album["id"])
-                local_info = {
-                    "artist": artist_name,
-                    "album": clean_name,
-                    "track_count": track_count,
-                    "tracks": [
-                        {
-                            "title": track.get("title", ""),
-                            "length_sec": int(track.get("duration", 0)),
-                            "tracknumber": "",
-                            "filename": "",
-                        }
-                        for track in db_tracks
-                    ],
-                    "total_length": sum(int(track.get("duration", 0)) for track in db_tracks),
-                }
-
-            best_release = None
-            best_score = 0
-            for candidate in candidates[:2]:
-                release = _get_release_detail(candidate["mbid"])
-                if not release:
-                    continue
-                score = _score_match(local_info, release)
-                if score > best_score:
-                    best_score = score
-                    best_release = release
-                time.sleep(0.5)
+            local_info = _build_album_match_local_info(
+                album,
+                artist_name,
+                clean_name,
+                tracks_db,
+                exts,
+            )
+            best_release, best_score = _find_best_album_release(
+                artist_name,
+                clean_name,
+                track_count,
+                local_info,
+                max_candidates=2,
+            )
 
             if best_release and best_score >= 70:
                 with get_db_ctx() as cur:
@@ -576,11 +638,16 @@ def _process_new_content_inner(
         log.warning("Album MBID lookup failed", exc_info=True)
         result["steps"]["album_mbid"] = "failed"
 
-    # Audio analysis and bliss are handled by background daemons (analysis_daemon.py).
-    # New tracks enter library_tracks with analysis_state='pending' and bliss_state='pending'
-    # and are picked up automatically. No need to enqueue anything here.
-    result["steps"]["audio_analysis"] = "background_daemon"
-    result["steps"]["bliss"] = "background_daemon"
+
+def _process_new_content_popularity(
+    task_id: str,
+    result: dict,
+    albums: list[dict],
+    artist_name: str,
+    album_folder: str,
+) -> None:
+    from crate.db import get_library_tracks
+    from crate.popularity import _lastfm_get, _normalize_popularity, _parse_int
 
     update_task(task_id, progress=json.dumps({"step": "popularity", "artist": artist_name}))
     try:
@@ -588,7 +655,7 @@ def _process_new_content_inner(
         for album in albums:
             if album_folder and album["name"] != album_folder:
                 continue
-            album_name = _re.sub(r"^\d{4}\s*-\s*", "", album.get("tag_album") or album["name"])
+            album_name = _clean_album_lookup_name(album.get("tag_album") or album["name"])
             data = _lastfm_get("album.getinfo", artist=artist_name, album=album_name, autocorrect="1")
             if data and "album" in data:
                 info = data["album"]
@@ -637,20 +704,26 @@ def _process_new_content_inner(
                     pass
                 time.sleep(0.2)
 
-        from crate.popularity import _normalize_popularity
-
         _normalize_popularity()
         result["steps"]["popularity"] = {"albums": pop_count, "tracks": track_pop}
     except Exception:
         log.warning("Popularity failed", exc_info=True)
         result["steps"]["popularity"] = "failed"
 
+
+def _process_new_content_missing_covers(
+    task_id: str,
+    result: dict,
+    albums: list[dict],
+    artist_name: str,
+    album_folder: str,
+) -> None:
+    import requests as _requests
+
+    from crate.artwork import fetch_cover_from_caa, save_cover
+
     update_task(task_id, progress=json.dumps({"step": "covers", "artist": artist_name}))
     try:
-        import requests as _requests
-
-        from crate.artwork import fetch_cover_from_caa, save_cover
-
         covers_fetched = 0
         for album in albums:
             if album_folder and album["name"] != album_folder:
@@ -668,7 +741,7 @@ def _process_new_content_inner(
 
             if not cover_data:
                 try:
-                    album_name = _re.sub(r"^\d{4}\s*-\s*", "", album.get("tag_album") or album["name"])
+                    album_name = _clean_album_lookup_name(album.get("tag_album") or album["name"])
                     resp = _requests.get(
                         "https://api.deezer.com/search/album",
                         params={"q": f"{artist_name} {album_name}", "limit": 1},
@@ -695,13 +768,63 @@ def _process_new_content_inner(
         log.warning("Cover fetching failed", exc_info=True)
         result["steps"]["covers"] = "failed"
 
+
+def _process_new_content_update_artist_hash(artist_dir: Path, artist_name: str) -> None:
+    if not artist_dir.is_dir():
+        return
+
+    final_hash = _compute_dir_hash(artist_dir)
+    with get_db_ctx() as cur:
+        cur.execute(
+            "UPDATE library_artists SET content_hash = %s WHERE name = %s",
+            (final_hash, artist_name),
+        )
+
+
+def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dict:
+    """Full pipeline for new content: enrich artist + index genres + analyze audio + bliss."""
+    artist_name = params.get("artist", "")
+    album_folder = params.get("album", "")
+
+    _mark_processing(artist_name)
+    try:
+        return _process_new_content_inner(task_id, params, config, artist_name, album_folder)
+    finally:
+        _unmark_processing(artist_name)
+
+
+def _process_new_content_inner(
+    task_id: str, params: dict, config: dict, artist_name: str, album_folder: str
+) -> dict:
+    from crate.db import get_library_artist
+
+    lib = Path(config["library_path"])
+    result = {"artist": artist_name, "album": album_folder, "steps": {}}
+
+    artist_row = get_library_artist(artist_name)
+    folder = (artist_row.get("folder_name") if artist_row else None) or artist_name
+    artist_dir = lib / folder
     if artist_dir.is_dir():
-        final_hash = _compute_dir_hash(artist_dir)
-        with get_db_ctx() as cur:
-            cur.execute(
-                "UPDATE library_artists SET content_hash = %s WHERE name = %s",
-                (final_hash, artist_name),
-            )
+        new_hash = _compute_dir_hash(artist_dir)
+        old_hash = artist_row.get("content_hash") if artist_row else None
+        if old_hash and new_hash == old_hash:
+            log.info("Skipping %s - content unchanged (hash: %s)", artist_name, new_hash[:12])
+            return {"artist": artist_name, "skipped": True, "reason": "content_unchanged"}
+
+    _process_new_content_organize_folders(task_id, result, artist_name, lib, config)
+    _process_new_content_enrich_artist(task_id, result, artist_name, config)
+    albums = _process_new_content_album_genres(task_id, result, artist_name, album_folder)
+    _process_new_content_album_mbids(task_id, result, albums, artist_name, album_folder, config)
+
+    # Audio analysis and bliss are handled by background daemons (analysis_daemon.py).
+    # New tracks enter library_tracks with analysis_state='pending' and bliss_state='pending'
+    # and are picked up automatically. No need to enqueue anything here.
+    result["steps"]["audio_analysis"] = "background_daemon"
+    result["steps"]["bliss"] = "background_daemon"
+
+    _process_new_content_popularity(task_id, result, albums, artist_name, album_folder)
+    _process_new_content_missing_covers(task_id, result, albums, artist_name, album_folder)
+    _process_new_content_update_artist_hash(artist_dir, artist_name)
 
     return result
 

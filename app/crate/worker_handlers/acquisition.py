@@ -296,9 +296,114 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
         raise
 
 
-def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict:
+def _update_new_releases_progress(
+    task_id: str,
+    artist_name: str,
+    done: int,
+    total: int,
+    new_count: int,
+) -> None:
+    update_task(
+        task_id,
+        progress=json.dumps(
+            {
+                "phase": "checking",
+                "artist": artist_name,
+                "done": done,
+                "total": total,
+                "new_releases": new_count,
+            }
+        ),
+    )
+
+
+def _find_tidal_release_match(artist_name: str, title: str) -> dict:
     from crate import tidal as tidal_mod
-    from crate.db import get_library_artists, mark_release_downloading, upsert_new_release
+
+    try:
+        tidal_results = tidal_mod.search(f"{artist_name} {title}", content_type="albums", limit=3)
+        for tidal_album in tidal_results.get("albums", []):
+            title_match = tidal_album.get("title", "").lower()
+            if title.lower() in title_match or title_match in title.lower():
+                return {
+                    "tidal_url": tidal_album.get("url", ""),
+                    "tidal_id": str(tidal_album.get("id", "")),
+                    "cover_url": tidal_album.get("cover", ""),
+                    "tracks": tidal_album.get("tracks", 0),
+                    "quality": tidal_album.get("quality", ""),
+                }
+    except Exception:
+        pass
+
+    return {"tidal_url": "", "tidal_id": "", "cover_url": "", "tracks": 0, "quality": ""}
+
+
+def _register_new_release(
+    task_id: str,
+    artist_name: str,
+    release: dict,
+    today: str,
+    known_date: str,
+    auto_download: bool,
+) -> tuple[int, bool]:
+    from crate.db import mark_release_downloading, upsert_new_release
+
+    release_date = release.get("first_release_date", "")
+    if not release_date:
+        return 0, False
+
+    is_future = release_date >= today
+    is_new = release_date > known_date
+    if not is_future and not is_new:
+        return 0, True
+
+    title = release.get("title", "")
+    year = release.get("year", "")
+    if not title:
+        return 0, False
+
+    artist_credit = release.get("artist-credit", "")
+    if isinstance(artist_credit, str) and "various" in artist_credit.lower():
+        return 0, False
+
+    tidal_data = _find_tidal_release_match(artist_name, title)
+    release_id = upsert_new_release(
+        artist_name=artist_name,
+        album_title=title,
+        tidal_id=tidal_data["tidal_id"],
+        tidal_url=tidal_data["tidal_url"],
+        cover_url=tidal_data["cover_url"],
+        year=year,
+        tracks=tidal_data["tracks"],
+        quality=tidal_data["quality"],
+        release_date=release_date,
+        release_type=release.get("type", "Album"),
+        mb_release_group_id=release.get("mbid", ""),
+    )
+    emit_task_event(
+        task_id,
+        "new_release_found",
+        {"message": f"New: {artist_name} - {title} ({year})", "artist": artist_name, "album": title},
+    )
+
+    if auto_download and tidal_data["tidal_url"] and not is_future:
+        mark_release_downloading(release_id)
+        create_task(
+            "tidal_download",
+            {
+                "url": tidal_data["tidal_url"],
+                "artist": artist_name,
+                "album": title,
+                "quality": get_setting("tidal_quality", "max"),
+                "new_release_id": release_id,
+            },
+        )
+
+    return 1, False
+
+
+def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db import get_library_artists
     from crate.musicbrainz_ext import get_artist_releases as mb_get_releases
 
     auto_download = get_setting("auto_download_new_releases", "false").lower() == "true"
@@ -318,18 +423,7 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
         mbid = artist.get("mbid")
 
         if i % 5 == 0:
-            update_task(
-                task_id,
-                progress=json.dumps(
-                    {
-                        "phase": "checking",
-                        "artist": name,
-                        "done": i,
-                        "total": total,
-                        "new_releases": new_count,
-                    }
-                ),
-            )
+            _update_new_releases_progress(task_id, name, i, total, new_count)
 
         if not mbid:
             continue
@@ -359,70 +453,19 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
 
             has_new = False
             for release in mb_releases:
-                release_date = release.get("first_release_date", "")
-                if not release_date:
-                    continue
-                is_future = release_date >= today
-                is_new = release_date > known_date
-                if not is_future and not is_new:
-                    break
-                title = release.get("title", "")
-                year = release.get("year", "")
-                if not title:
-                    continue
-                artist_credit = release.get("artist-credit", "")
-                if isinstance(artist_credit, str) and "various" in artist_credit.lower():
-                    continue
-
-                tidal_url = tidal_id = cover_url = quality = ""
-                tracks = 0
-                try:
-                    tidal_results = tidal_mod.search(f"{name} {title}", content_type="albums", limit=3)
-                    for tidal_album in tidal_results.get("albums", []):
-                        title_match = tidal_album.get("title", "").lower()
-                        if title.lower() in title_match or title_match in title.lower():
-                            tidal_url = tidal_album.get("url", "")
-                            tidal_id = str(tidal_album.get("id", ""))
-                            cover_url = tidal_album.get("cover", "")
-                            tracks = tidal_album.get("tracks", 0)
-                            quality = tidal_album.get("quality", "")
-                            break
-                except Exception:
-                    pass
-
-                release_id = upsert_new_release(
-                    artist_name=name,
-                    album_title=title,
-                    tidal_id=tidal_id,
-                    tidal_url=tidal_url,
-                    cover_url=cover_url,
-                    year=year,
-                    tracks=tracks,
-                    quality=quality,
-                    release_date=release_date,
-                    release_type=release.get("type", "Album"),
-                    mb_release_group_id=release.get("mbid", ""),
-                )
-                new_count += 1
-                has_new = True
-                emit_task_event(
+                added_count, should_stop = _register_new_release(
                     task_id,
-                    "new_release_found",
-                    {"message": f"New: {name} - {title} ({year})", "artist": name, "album": title},
+                    name,
+                    release,
+                    today,
+                    known_date,
+                    auto_download,
                 )
-
-                if auto_download and tidal_url and not is_future:
-                    mark_release_downloading(release_id)
-                    create_task(
-                        "tidal_download",
-                        {
-                            "url": tidal_url,
-                            "artist": name,
-                            "album": title,
-                            "quality": get_setting("tidal_quality", "max"),
-                            "new_release_id": release_id,
-                        },
-                    )
+                if should_stop:
+                    break
+                if added_count:
+                    new_count += added_count
+                    has_new = True
 
             if has_new or latest_mb_date > known_date:
                 with get_db_ctx() as cur:
@@ -501,9 +544,175 @@ def _search_alternate_peers(task_id: str, artist: str, skip_username: str, faile
             break
 
 
+def _soulseek_download_completed(download: dict) -> bool:
+    state = download.get("state", "")
+    return "Completed" in state and "Errored" not in state and "Rejected" not in state
+
+
+def _soulseek_download_failed(download: dict) -> bool:
+    state = download.get("state", "")
+    return "Errored" in state or "Rejected" in state
+
+
+def _soulseek_download_active(download: dict) -> bool:
+    state = download.get("state", "")
+    return "Completed" not in state and "Errored" not in state and "Rejected" not in state
+
+
+def _infer_soulseek_artist_name(artist: str, original_files: list[str]) -> str:
+    if artist and len(artist) > 2:
+        return artist
+
+    for file_path in original_files:
+        parts = file_path.replace("\\", "/").split("/")
+        for part in parts:
+            if " - " in part and len(part) > 5:
+                candidate = part.split(" - ")[0].strip()
+                if len(candidate) > 2:
+                    return candidate
+
+    return artist
+
+
+def _poll_soulseek_download_completion(
+    task_id: str,
+    artist: str,
+    username: str,
+    file_count: int,
+    config: dict,
+) -> list[dict] | dict:
+    from crate import soulseek
+
+    max_wait = 900
+    max_retries = 3
+    elapsed = 0
+    retries_done = 0
+    completed_files: list[dict] = []
+
+    while elapsed < max_wait:
+        if _is_cancelled(task_id):
+            return {"status": "cancelled"}
+
+        time.sleep(5)
+        elapsed += 5
+        downloads = soulseek.get_downloads()
+        user_downloads = [download for download in downloads if download.get("username") == username]
+        if not user_downloads:
+            break
+
+        completed = sum(1 for download in user_downloads if _soulseek_download_completed(download))
+        failed = [download for download in user_downloads if _soulseek_download_failed(download)]
+        in_progress = sum(1 for download in user_downloads if _soulseek_download_active(download))
+        update_task(
+            task_id,
+            progress=json.dumps(
+                {
+                    "completed": completed,
+                    "errored": len(failed),
+                    "in_progress": in_progress,
+                    "total": file_count,
+                    "artist": artist,
+                }
+            ),
+        )
+
+        if completed >= file_count:
+            return [download for download in user_downloads if _soulseek_download_completed(download)]
+
+        if failed and in_progress == 0 and retries_done < max_retries:
+            retryable = [download for download in failed if "Rejected" not in download.get("state", "")]
+            if retryable:
+                retries_done += 1
+                emit_task_event(
+                    task_id,
+                    "info",
+                    {
+                        "message": f"Retrying {len(retryable)} errored files (attempt {retries_done}/{max_retries})"
+                    },
+                )
+                for download in retryable:
+                    full_path = download.get("fullPath", "")
+                    if not full_path:
+                        continue
+                    try:
+                        soulseek.download_files(
+                            username,
+                            [{"filename": full_path, "size": download.get("size", 0)}],
+                        )
+                    except Exception:
+                        pass
+                time.sleep(5)
+            else:
+                retries_done = max_retries
+            continue
+
+        if failed and in_progress == 0 and retries_done >= max_retries:
+            emit_task_event(
+                task_id,
+                "info",
+                {"message": f"{len(failed)} files failed. Searching alternate peers..."},
+            )
+            _search_alternate_peers(task_id, artist, username, failed, config)
+            all_downloads = soulseek.get_downloads()
+            return [download for download in all_downloads if _soulseek_download_completed(download)]
+
+    return completed_files
+
+
+def _move_soulseek_completed_files(
+    config: dict,
+    artist: str,
+    album: str,
+    completed_files: list[dict],
+) -> int:
+    import re
+
+    lib = Path(config["library_path"])
+    slsk_download_dir = Path("/downloads/soulseek")
+    moved = 0
+
+    year = ""
+    year_match = re.search(r"(\d{4})", album)
+    if year_match:
+        year = year_match.group(1)
+
+    clean_album = re.sub(r"^\d{4}\s*[-–]\s*", "", album).strip()
+    clean_album = re.sub(r"\s*[\[\(](?:FLAC|flac|MP3|320).*?[\]\)]", "", clean_album).strip()
+    if not clean_album:
+        clean_album = album
+
+    target_dir = lib / artist / year / clean_album if year else lib / artist / clean_album
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    if not slsk_download_dir.is_dir():
+        return 0
+
+    for download in completed_files:
+        full_path = download.get("fullPath", "")
+        local_name = full_path.replace("\\", "/").split("/")[-1] if full_path else download.get(
+            "filename", ""
+        )
+
+        found = None
+        for file_path in slsk_download_dir.rglob(local_name):
+            if file_path.is_file():
+                found = file_path
+                break
+
+        if found:
+            dest = target_dir / found.name
+            try:
+                shutil.move(str(found), str(dest))
+                moved += 1
+                log.info("Moved %s -> %s", found.name, dest)
+            except Exception as exc:
+                log.warning("Failed to move %s: %s", found.name, exc)
+
+    return moved
+
+
 def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     from crate import soulseek
-    import re
 
     artist = params.get("artist", "")
     album = params.get("album", "")
@@ -525,15 +734,7 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
             {"message": f"Searching alternate peers for {len(original_files)} file(s)..."},
         )
 
-        if artist and len(artist) <= 2:
-            for file_path in original_files:
-                parts = file_path.replace("\\", "/").split("/")
-                for part in parts:
-                    if " - " in part and len(part) > 5:
-                        artist = part.split(" - ")[0].strip()
-                        break
-                if len(artist) > 2:
-                    break
+        artist = _infer_soulseek_artist_name(artist, original_files)
 
         fake_failed = [
             {"filename": file_path.replace("\\", "/").split("/")[-1], "fullPath": file_path}
@@ -545,111 +746,22 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         completed_files = [
             download
             for download in all_downloads
-            if "Completed" in download.get("state", "")
-            and "Errored" not in download.get("state", "")
-            and "Rejected" not in download.get("state", "")
+            if _soulseek_download_completed(download)
         ]
 
     if not find_alternate:
-        max_wait = 900
-        max_retries = 3
-        elapsed = 0
-        retries_done = 0
-        completed_files = []
-        while elapsed < max_wait:
-            if _is_cancelled(task_id):
-                return {"status": "cancelled"}
-            time.sleep(5)
-            elapsed += 5
-            downloads = soulseek.get_downloads()
-            user_downloads = [download for download in downloads if download.get("username") == username]
-            if not user_downloads:
-                break
-            completed = sum(
-                1
-                for download in user_downloads
-                if "Completed" in download.get("state", "")
-                and "Errored" not in download.get("state", "")
-                and "Rejected" not in download.get("state", "")
-            )
-            failed = [
-                download
-                for download in user_downloads
-                if "Errored" in download.get("state", "") or "Rejected" in download.get("state", "")
-            ]
-            in_progress = sum(
-                1
-                for download in user_downloads
-                if "Completed" not in download.get("state", "")
-                and "Errored" not in download.get("state", "")
-                and "Rejected" not in download.get("state", "")
-            )
-            update_task(
-                task_id,
-                progress=json.dumps(
-                    {
-                        "completed": completed,
-                        "errored": len(failed),
-                        "in_progress": in_progress,
-                        "total": file_count,
-                        "artist": artist,
-                    }
-                ),
-            )
-            if completed >= file_count:
-                completed_files = [
-                    download
-                    for download in user_downloads
-                    if "Completed" in download.get("state", "")
-                    and "Errored" not in download.get("state", "")
-                    and "Rejected" not in download.get("state", "")
-                ]
-                break
-            if failed and in_progress == 0 and retries_done < max_retries:
-                retryable = [download for download in failed if "Rejected" not in download.get("state", "")]
-                if retryable:
-                    retries_done += 1
-                    emit_task_event(
-                        task_id,
-                        "info",
-                        {
-                            "message": f"Retrying {len(retryable)} errored files (attempt {retries_done}/{max_retries})"
-                        },
-                    )
-                    for download in retryable:
-                        full_path = download.get("fullPath", "")
-                        if full_path:
-                            try:
-                                soulseek.download_files(
-                                    username,
-                                    [{"filename": full_path, "size": download.get("size", 0)}],
-                                )
-                            except Exception:
-                                pass
-                    time.sleep(5)
-                else:
-                    retries_done = max_retries
-                continue
-            if failed and in_progress == 0 and retries_done >= max_retries:
-                emit_task_event(
-                    task_id,
-                    "info",
-                    {"message": f"{len(failed)} files failed. Searching alternate peers..."},
-                )
-                _search_alternate_peers(task_id, artist, username, failed, config)
-                all_downloads = soulseek.get_downloads()
-                completed_files = [
-                    download
-                    for download in all_downloads
-                    if "Completed" in download.get("state", "")
-                    and "Errored" not in download.get("state", "")
-                    and "Rejected" not in download.get("state", "")
-                ]
-                break
+        poll_result = _poll_soulseek_download_completion(
+            task_id,
+            artist,
+            username,
+            file_count,
+            config,
+        )
+        if isinstance(poll_result, dict):
+            return poll_result
+        completed_files = poll_result
 
     all_complete = len(completed_files) >= file_count
-    lib = Path(config["library_path"])
-    slsk_download_dir = Path("/downloads/soulseek")
     moved = 0
 
     if not all_complete:
@@ -670,41 +782,16 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         }
 
     if completed_files and artist:
-        year = ""
-        year_match = re.search(r"(\d{4})", album)
-        if year_match:
-            year = year_match.group(1)
+        moved = _move_soulseek_completed_files(config, artist, album, completed_files)
 
+        import re
+
+        year_match = re.search(r"(\d{4})", album)
+        year = year_match.group(1) if year_match else ""
         clean_album = re.sub(r"^\d{4}\s*[-–]\s*", "", album).strip()
         clean_album = re.sub(r"\s*[\[\(](?:FLAC|flac|MP3|320).*?[\]\)]", "", clean_album).strip()
         if not clean_album:
             clean_album = album
-
-        target_dir = lib / artist / year / clean_album if year else lib / artist / clean_album
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        if slsk_download_dir.is_dir():
-            for download in completed_files:
-                full_path = download.get("fullPath", "")
-                local_name = full_path.replace("\\", "/").split("/")[-1] if full_path else download.get(
-                    "filename", ""
-                )
-
-                found = None
-                for file_path in slsk_download_dir.rglob(local_name):
-                    if file_path.is_file():
-                        found = file_path
-                        break
-
-                if found:
-                    dest = target_dir / found.name
-                    try:
-                        shutil.move(str(found), str(dest))
-                        moved += 1
-                        log.info("Moved %s -> %s", found.name, dest)
-                    except Exception as exc:
-                        log.warning("Failed to move %s: %s", found.name, exc)
-
         emit_task_event(
             task_id,
             "info",
