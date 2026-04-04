@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from "react";
 import { X } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+
 interface AppModalProps {
   open: boolean;
   onClose: () => void;
@@ -15,10 +17,6 @@ interface AppModalProps {
 
 interface ModalSectionProps extends HTMLAttributes<HTMLDivElement> {
   children: ReactNode;
-}
-
-function joinClasses(...values: Array<string | undefined | false>): string {
-  return values.filter(Boolean).join(" ");
 }
 
 export function AppModal({
@@ -77,8 +75,8 @@ export function AppModal({
     <div
       role="dialog"
       aria-modal="true"
-      className={joinClasses(
-        "fixed inset-0 z-[95] bg-black/72 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-6",
+      className={cn(
+        "z-app-modal fixed inset-0 flex items-end justify-center bg-black/72 p-0 backdrop-blur-md sm:items-center sm:p-6",
         overlayClassName,
       )}
       onClick={() => {
@@ -86,8 +84,8 @@ export function AppModal({
       }}
     >
       <div
-        className={joinClasses(
-          "w-full max-h-[92vh] overflow-hidden rounded-t-3xl sm:rounded-3xl border border-white/10 bg-[#101018]/95 shadow-2xl",
+        className={cn(
+          "bg-modal-surface max-h-[92vh] w-full overflow-hidden rounded-t-3xl border border-white/10 shadow-2xl sm:rounded-3xl",
           maxWidthClassName,
           panelClassName,
         )}
@@ -114,8 +112,8 @@ export function ModalHeader({ children, className, ...props }: ModalSectionProps
   return (
     <div
       {...props}
-      className={joinClasses(
-        "sticky top-0 z-10 border-b border-white/10 bg-[#101018]/95 backdrop-blur-xl",
+      className={cn(
+        "sticky top-0 z-10 border-b border-white/10 bg-modal-surface backdrop-blur-xl",
         className,
       )}
     >
@@ -128,7 +126,7 @@ export function ModalBody({ children, className, ...props }: ModalSectionProps) 
   return (
     <div
       {...props}
-      className={joinClasses("overflow-y-auto", className)}
+      className={cn("overflow-y-auto", className)}
     >
       {children}
     </div>
@@ -139,8 +137,8 @@ export function ModalFooter({ children, className, ...props }: ModalSectionProps
   return (
     <div
       {...props}
-      className={joinClasses(
-        "sticky bottom-0 z-10 border-t border-white/10 bg-[#101018]/95 backdrop-blur-xl",
+      className={cn(
+        "sticky bottom-0 z-10 border-t border-white/10 bg-modal-surface backdrop-blur-xl",
         className,
       )}
     >
@@ -159,7 +157,7 @@ export function ModalCloseButton({ onClick, disabled = false, className }: Modal
   return (
     <button
       type="button"
-      className={joinClasses(
+      className={cn(
         "rounded-full p-2 text-white/60 hover:text-white hover:bg-white/5 transition-colors",
         className,
       )}

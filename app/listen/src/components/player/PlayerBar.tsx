@@ -218,7 +218,7 @@ export function PlayerBar() {
 
   return (
     <>
-      <div className={`fixed bottom-0 left-0 right-0 h-[72px] bg-[#0c0c14] border-t border-white/5 ${hasFloatingOverlayOpen ? "z-[90]" : "z-50"}`}>
+      <div className={`fixed bottom-0 left-0 right-0 h-[72px] border-t border-white/5 bg-panel-surface ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}>
         <div className="h-full flex items-center px-4 gap-2">
 
           {/* ── Block 1: Track Info ── */}
@@ -270,7 +270,7 @@ export function PlayerBar() {
                 <MoreHorizontal size={16} />
               </button>
               {showMenu && currentTrack && (
-                <AppPopover ref={menuRef} className="absolute bottom-full left-0 z-[60] mb-2 w-52 py-1.5">
+                <AppPopover ref={menuRef} className="absolute bottom-full left-0 mb-2 w-52 py-1.5">
                   {showPlaylistPicker ? (
                     <>
                       <AppMenuButton
@@ -428,13 +428,13 @@ export function PlayerBar() {
                 {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
               {showVolume && (
-                <AppPopover ref={volumeRef} className="absolute bottom-full left-1/2 z-[90] -translate-x-1/2 mb-2 rounded-lg p-2">
+                <AppPopover ref={volumeRef} className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-lg p-2">
                   <input
                     type="range"
                     min={0} max={1} step={0.01}
                     value={volume}
                     onChange={(e) => setVolume(parseFloat(e.target.value))}
-                    className="w-24 accent-cyan-400 h-1"
+                    className="h-1 w-24 accent-primary"
                     style={{ writingMode: "horizontal-tb" }}
                   />
                 </AppPopover>

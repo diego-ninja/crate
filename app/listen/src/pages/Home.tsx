@@ -298,7 +298,7 @@ function FeaturedPlaylistCard({
           className="aspect-square rounded-3xl shadow-xl transition-transform group-hover:scale-[1.02]"
         />
         {badge ? (
-          <div className="absolute left-3 top-3 rounded-full border border-primary/25 bg-[#0a0a0f]/80 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-primary backdrop-blur-md">
+          <div className="absolute left-3 top-3 rounded-full border border-primary/25 bg-[var(--gradient-bg-85)] px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-primary backdrop-blur-md">
             {badge}
           </div>
         ) : null}

@@ -88,7 +88,7 @@ export function PlaylistCard({
           </div>
         ) : null}
         {badge ? (
-          <div className="absolute left-2 top-2 rounded-full border border-primary/20 bg-[#0a0a0f]/80 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary backdrop-blur-md">
+          <div className="absolute left-2 top-2 rounded-full border border-primary/20 bg-[var(--gradient-bg-85)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary backdrop-blur-md">
             {badge}
           </div>
         ) : null}

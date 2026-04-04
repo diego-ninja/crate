@@ -53,7 +53,7 @@ function Sidebar() {
   }
 
   return (
-    <aside className={`fixed top-0 left-0 bottom-0 ${w} flex flex-col bg-[#0a0a0f] border-r border-white/5 z-50 transition-all duration-200`}>
+    <aside className={`z-app-sidebar fixed top-0 left-0 bottom-0 ${w} flex flex-col border-r border-white/5 bg-app-surface transition-all duration-200`}>
       {/* App icon / toggle */}
       <div className={`flex items-center ${expanded ? "px-4 py-5 gap-3" : "justify-center py-5"}`}>
         {expanded ? (
@@ -144,7 +144,7 @@ function Sidebar() {
           </button>
 
           {collectionOpen && (
-            <div className={`${expanded ? "mt-1 ml-3 border-l border-white/5 pl-3" : "absolute left-full top-0 ml-2 bg-[#12121a] border border-white/10 rounded-xl shadow-2xl py-2 w-44"}`}>
+            <div className={`${expanded ? "mt-1 ml-3 border-l border-white/5 pl-3" : "absolute left-full top-0 ml-2 w-44 rounded-xl border border-white/10 bg-raised-surface py-2 shadow-2xl"}`}>
               {[
                 { to: "/library?tab=playlists", icon: ListMusic, label: "Playlists" },
                 { to: "/library?tab=albums", icon: Disc, label: "Albums" },
@@ -203,7 +203,7 @@ export function Shell() {
   const headerOffsetClass = overlayHeader ? "" : "pt-16";
   const headerChromeClass = overlayHeader
     ? "bg-transparent border-transparent border-b-0 shadow-none"
-    : "bg-[#0a0a0f]/95 backdrop-blur-md border-b-0";
+    : "bg-[var(--gradient-bg-90)] backdrop-blur-md border-b-0";
 
   // Sync with sidebar toggle without polling localStorage.
   useEffect(() => {
@@ -223,11 +223,11 @@ export function Shell() {
 
   if (isDesktop) {
       return (
-      <div className="flex min-h-screen bg-[#0a0a0f]">
+      <div className="flex min-h-screen bg-app-surface">
         <Sidebar />
 
         <div
-          className={`fixed top-0 ${sidebarW} right-0 z-30 transition-all duration-200 ${headerChromeClass}`}
+          className={`z-app-header fixed top-0 ${sidebarW} right-0 transition-all duration-200 ${headerChromeClass}`}
         >
           <TopBar />
         </div>
@@ -245,8 +245,8 @@ export function Shell() {
 
   // Mobile layout
   return (
-    <div className="flex flex-col min-h-screen bg-[#0a0a0f]">
-      <div className={`fixed top-0 left-0 right-0 z-30 ${headerChromeClass}`}>
+    <div className="flex min-h-screen flex-col bg-app-surface">
+      <div className={`z-app-header fixed top-0 left-0 right-0 ${headerChromeClass}`}>
         <TopBar />
       </div>
 
@@ -256,16 +256,16 @@ export function Shell() {
         </div>
       </main>
 
-      <div className="fixed bottom-0 left-0 right-0 z-50">
+      <div className="z-app-player fixed bottom-0 left-0 right-0">
         <MiniPlayer />
-        <nav className="bg-[#0a0a0f] border-t border-white/5 flex items-center justify-around px-2" style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))", height: "calc(64px + env(safe-area-inset-bottom, 0px))" }}>
+        <nav className="flex items-center justify-around border-t border-white/5 bg-app-surface px-2" style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))", height: "calc(64px + env(safe-area-inset-bottom, 0px))" }}>
           {MOBILE_NAV.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
               end={to === "/"}
               className={({ isActive }) =>
-                `flex flex-col items-center gap-1 py-1 px-3 transition-colors ${isActive ? "text-cyan-400" : "text-white/40 hover:text-white/70"}`
+                `flex flex-col items-center gap-1 py-1 px-3 transition-colors ${isActive ? "text-primary" : "text-white/40 hover:text-white/70"}`
               }
             >
               <Icon size={20} />

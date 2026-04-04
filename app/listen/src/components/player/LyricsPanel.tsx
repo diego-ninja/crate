@@ -140,9 +140,9 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
 
   return (
     <div
-      className="fixed right-0 top-0 bottom-[72px] z-50 flex w-[360px] flex-col overflow-hidden border-l border-white/5 shadow-2xl"
+      className="z-app-player-drawer fixed right-0 top-0 bottom-[72px] flex w-[360px] flex-col overflow-hidden border-l border-white/5 shadow-2xl"
       style={{
-        background: `linear-gradient(180deg, ${cssColor(primary, useAlbumPalette ? 0.2 : 0.12)} 0%, rgba(12,12,20,0.96) 22%, rgba(12,12,20,1) 100%)`,
+        background: `linear-gradient(180deg, ${cssColor(primary, useAlbumPalette ? 0.2 : 0.12)} 0%, rgba(12,12,20,0.96) 22%, var(--surface-panel) 100%)`,
       }}
     >
       <div

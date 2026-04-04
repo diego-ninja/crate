@@ -757,16 +757,16 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
 
   return (
     <div
-      className={`fixed inset-0 bottom-[72px] z-[60] bg-[#0a0a0f] flex transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+      className={`z-app-extended-player fixed inset-0 bottom-[72px] flex bg-app-surface transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] ${
         open
           ? "top-0 opacity-100"
           : "top-[100vh] opacity-0 pointer-events-none"
       }`}
     >
       {/* ── Left Panel: Cover + Visualizer + Track Info ── */}
-      <div className="relative w-1/2 flex flex-col items-center justify-center overflow-hidden bg-[#0a0a0f]">
+      <div className="relative flex w-1/2 flex-col items-center justify-center overflow-hidden bg-app-surface">
         {/* Top buttons */}
-        <div className="absolute top-4 left-4 right-4 z-30 flex justify-between">
+        <div className="z-app-header absolute top-4 left-4 right-4 flex justify-between">
           <button
             onClick={onClose}
             className="p-2 rounded-full bg-black/30 backdrop-blur-sm text-white/60 hover:text-white hover:bg-black/50 transition-colors"
@@ -784,7 +784,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
 
         {/* Visualizer settings popup */}
         {showVizSettings && (
-          <AppPopover ref={vizSettingsRef} className="absolute top-14 right-4 z-40 w-56 p-4 space-y-3">
+          <AppPopover ref={vizSettingsRef} className="absolute top-14 right-4 w-56 space-y-3 p-4">
             <div className="flex items-center justify-between mb-1">
               <span className="text-[11px] font-bold text-white/50 uppercase tracking-wider">Visualizer</span>
               <button
@@ -837,7 +837,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
                   min={min} max={max} step={step}
                   value={vizConfig[key]}
                   onChange={(e) => updateVizConfig({ ...vizConfig, [key]: parseFloat(e.target.value) })}
-                  className="w-full h-1 accent-cyan-400"
+                  className="h-1 w-full accent-primary"
                 />
               </div>
             ))}
@@ -884,7 +884,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
       </div>
 
       {/* ── Right Panel: Tabs ── */}
-      <div className="w-1/2 flex flex-col bg-[#0a0a0f]">
+      <div className="flex w-1/2 flex-col bg-app-surface">
         {/* Tab bar */}
         <div className="flex items-center gap-1.5 px-5 pt-5 pb-3">
           {TABS.map((t) => (

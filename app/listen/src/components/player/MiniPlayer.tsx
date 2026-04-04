@@ -15,7 +15,7 @@ export function MiniPlayer() {
   return (
     <>
       <div
-        className="relative h-[52px] bg-[#0f0f17] border-t border-white/5 cursor-pointer"
+        className="relative h-[52px] cursor-pointer border-t border-white/5 bg-panel-surface"
         onClick={() => setFsOpen(true)}
       >
         {/* Progress bar at top edge */}

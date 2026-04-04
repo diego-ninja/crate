@@ -242,7 +242,7 @@ export function TopBar() {
 
         {/* Results dropdown */}
         {showResults && (
-          <AppPopover ref={dropdownRef} className="absolute top-full left-0 right-0 mt-1 z-50 max-h-80 overflow-y-auto py-1">
+          <AppPopover ref={dropdownRef} className="absolute top-full left-0 right-0 mt-1 max-h-80 overflow-y-auto py-1">
             {results.map((item, i) => (
               <button
                 key={`${item.type}-${item.label}-${i}`}
@@ -262,7 +262,7 @@ export function TopBar() {
 
         {/* Recent searches dropdown */}
         {showRecents && (
-          <AppPopover ref={dropdownRef} className="absolute top-full left-0 right-0 mt-1 z-50 py-1">
+          <AppPopover ref={dropdownRef} className="absolute top-full left-0 right-0 mt-1 py-1">
             <p className="px-3 py-1.5 text-[10px] text-white/25 uppercase tracking-wider font-bold">Recent</p>
             {recents.map((term, i) => (
               <button
@@ -289,7 +289,7 @@ export function TopBar() {
         </button>
 
         {showUserMenu && (
-          <AppPopover ref={userMenuRef} className="absolute top-full right-0 mt-2 z-50 w-60 py-1">
+          <AppPopover ref={userMenuRef} className="absolute top-full right-0 mt-2 w-60 py-1">
             <div className="px-3 pb-2 pt-2">
               <div className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-[11px] text-white/65">
                 <p className="font-medium text-white/85">{userName || "Signed in"}</p>

@@ -192,7 +192,7 @@ export const TrackRow = memo(function TrackRow({
               <ListMusic size={14} />
             </button>
             {playlistMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-white/10 bg-[#12121a]/95 backdrop-blur-xl shadow-2xl py-1 z-30">
+              <div className="z-app-popover absolute right-0 top-full mt-2 w-52 rounded-xl border border-white/10 bg-popover-surface py-1 shadow-2xl backdrop-blur-xl">
                 {onCreatePlaylist ? (
                   <button
                     className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-white/5 transition-colors"

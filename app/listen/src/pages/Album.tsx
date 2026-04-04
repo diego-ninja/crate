@@ -415,7 +415,7 @@ export function Album() {
             More
           </button>
           {menuOpen && (
-            <AppPopover className="absolute top-full left-0 z-30 mt-2 w-72 overflow-hidden rounded-2xl">
+            <AppPopover className="absolute top-full left-0 mt-2 w-72 overflow-hidden rounded-2xl">
               <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
                 <div className="w-12 h-12 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
                   {data.has_cover ? (

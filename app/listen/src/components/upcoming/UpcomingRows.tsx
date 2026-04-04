@@ -521,7 +521,7 @@ export function UpcomingShowCard({
       style={{ height: expanded ? 320 : 92 }}
       onClick={!expanded ? onToggle : undefined}
     >
-      <div className="absolute inset-0 bg-[#11131a]" />
+      <div className="absolute inset-0 bg-raised-surface" />
 
       <div
         className={cn(
@@ -640,13 +640,13 @@ export function UpcomingShowCard({
         <>
           <button
             onClick={onToggle}
-            className="absolute top-3 right-3 z-[1000] rounded-full bg-black/60 p-1.5 transition-colors hover:bg-black/80"
+            className="z-app-upcoming-overlay absolute top-3 right-3 rounded-full bg-black/60 p-1.5 transition-colors hover:bg-black/80"
           >
             <X size={14} className="text-white" />
           </button>
 
           {item.venue ? (
-            <div className="absolute top-3 left-3 z-[1000] max-w-[220px] rounded-lg bg-black/70 px-3 py-2 backdrop-blur-sm">
+            <div className="z-app-upcoming-overlay absolute top-3 left-3 max-w-[220px] rounded-lg bg-black/70 px-3 py-2 backdrop-blur-sm">
               <div className="flex items-center gap-1.5">
                 <MapPin size={12} className="text-primary flex-shrink-0" />
                 <div className="truncate text-xs font-semibold text-white">{item.venue}</div>
@@ -655,7 +655,7 @@ export function UpcomingShowCard({
             </div>
           ) : null}
 
-          <div className="absolute top-12 right-3 z-[1000] flex flex-col gap-2">
+          <div className="z-app-upcoming-overlay absolute top-12 right-3 flex flex-col gap-2">
             <RowActionButton
               onClick={() => {
                 void playProbableSetlist();
@@ -684,7 +684,7 @@ export function UpcomingShowCard({
             </RowActionLink>
           </div>
 
-          <div className="pointer-events-none absolute bottom-0 left-0 right-0 z-[1000] bg-gradient-to-t from-black/90 via-black/70 to-transparent pt-16 pb-4 px-4">
+          <div className="z-app-upcoming-overlay pointer-events-none absolute right-0 bottom-0 left-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent px-4 pt-16 pb-4">
             <div className="pointer-events-none flex items-end gap-4">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2.5 mb-1">
