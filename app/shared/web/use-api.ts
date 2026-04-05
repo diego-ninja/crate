@@ -74,7 +74,7 @@ export function createUseApi(reactHooks: ReactHookDeps, apiFn: ApiFn) {
         cancelled = true;
         controller.abort();
       };
-    }, [apiFn, body, bodyKey, method, trigger, url]);
+    }, [apiFn, bodyKey, method, trigger, url]);
 
     useEffect(() => {
       hasFetched.current = false;

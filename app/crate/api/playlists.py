@@ -214,20 +214,18 @@ def reorder(request: Request, playlist_id: int, body: ReorderRequest):
 @router.post("/{playlist_id}/generate")
 def generate_smart(request: Request, playlist_id: int):
     """Re-generate tracks for a smart playlist based on its rules."""
-    _require_auth(request)
+    user = _require_auth(request)
     pl = get_playlist(playlist_id)
     if not pl or not pl.get("is_smart") or not pl.get("smart_rules"):
         raise HTTPException(status_code=400, detail="Not a smart playlist or no rules defined")
+    if pl.get("user_id") != user["id"] and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Not your playlist")
 
     rules = pl["smart_rules"]
     tracks = execute_smart_rules(rules)
 
-    # Replace existing tracks
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM playlist_tracks WHERE playlist_id = %s", (playlist_id,))
-
-    if tracks:
-        add_playlist_tracks(playlist_id, tracks)
+    from crate.db.playlists import replace_playlist_tracks
+    replace_playlist_tracks(playlist_id, tracks or [])
 
     return {"ok": True, "track_count": len(tracks)}
 # ── Navidrome sync ───────────────────────────────────────────────

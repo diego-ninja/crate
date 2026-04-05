@@ -82,7 +82,7 @@ export function QueueTab() {
           {upcoming.map((track, i) => {
             const idx = currentIndex + 1 + i;
             return (
-              <div
+              <button
                 key={`next-${track.id}-${idx}`}
                 onClick={() => jumpTo(idx)}
                 className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/5"
@@ -111,7 +111,7 @@ export function QueueTab() {
                 >
                   <X size={12} />
                 </button>
-              </div>
+              </button>
             );
           })}
         </div>

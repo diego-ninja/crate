@@ -564,7 +564,7 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
                 COALESCE(lt.artist, ph.artist) AS artist,
                 COALESCE(lt.album, ph.album) AS album,
                 ph.played_at
-            FROM play_history
+            FROM play_history ph
             LEFT JOIN library_tracks lt ON lt.id = ph.track_id
             WHERE ph.user_id = %s
             ORDER BY ph.played_at DESC
@@ -603,7 +603,7 @@ def get_play_stats(user_id: int) -> dict:
             cur.execute("SELECT COUNT(*) AS total_plays FROM play_history WHERE user_id = %s", (user_id,))
             total = cur.fetchone()["total_plays"]
             cur.execute("""
-                SELECT artist, COUNT(*) AS plays FROM play_history
+                SELECT artist, COUNT(*) AS plays FROM play_history ph
                 WHERE user_id = %s GROUP BY artist ORDER BY plays DESC LIMIT 10
             """, (user_id,))
             top_artists = [dict(r) for r in cur.fetchall()]

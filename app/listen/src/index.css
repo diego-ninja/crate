@@ -123,7 +123,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .animate-pulse-subtle { animation: pulse-subtle 3s ease-in-out infinite; }
 
 /* Lyric line gradient mask */
-.lyrics-mask { mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); }
+.lyrics-mask { -webkit-mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); }
 
 /* Leaflet */
 .leaflet-popup-content-wrapper {
