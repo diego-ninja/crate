@@ -235,22 +235,32 @@ def find_album_row(artist: str, album: str) -> dict | None:
 
 
 def find_album_dir(lib: Path, artist: str, album: str) -> Path | None:
-    """Find album directory, supporting both 2-level and 3-level structures."""
-    direct = safe_path(lib, f"{artist}/{album}")
-    if direct and direct.is_dir():
-        return direct
+    """Find album directory, supporting both 2-level and 3-level structures.
+    Tries multiple album name variants (e.g. '...' → '.') for resilient matching."""
+    import re
+    album_variants = [album]
+    normalized = re.sub(r'\.{2,}', '.', album)
+    if normalized != album:
+        album_variants.append(normalized)
+
+    for name in album_variants:
+        direct = safe_path(lib, f"{artist}/{name}")
+        if direct and direct.is_dir():
+            return direct
 
     artist_dir = safe_path(lib, artist)
     if artist_dir and artist_dir.is_dir():
         for subdir in artist_dir.iterdir():
             if subdir.is_dir() and subdir.name.isdigit() and len(subdir.name) == 4:
-                candidate = subdir / album
-                if candidate.is_dir():
-                    return candidate
+                for name in album_variants:
+                    candidate = subdir / name
+                    if candidate.is_dir():
+                        return candidate
 
-    album_data = get_library_album(artist, album)
-    if album_data and album_data.get("path"):
-        path = Path(album_data["path"])
-        if path.is_dir():
-            return path
+    for name in album_variants:
+        album_data = get_library_album(artist, name)
+        if album_data and album_data.get("path"):
+            path = Path(album_data["path"])
+            if path.is_dir():
+                return path
     return None
