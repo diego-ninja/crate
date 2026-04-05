@@ -10,8 +10,10 @@ import {
 } from "@/lib/player-playback-prefs";
 import { useState } from "react";
 import { Link } from "react-router";
-import { Upload, BarChart3, LogOut } from "lucide-react";
+import { Upload, BarChart3, LogOut, Lock } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { api } from "@/lib/api";
 
 function Section({
   title,
@@ -187,6 +189,8 @@ export function Settings() {
         />
       </Section>
 
+      <AccountSection />
+
       <Section title="Quick links">
         <div className="flex flex-col gap-2">
           <Link to="/upload" className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-foreground hover:bg-white/5 transition-colors">
@@ -201,5 +205,128 @@ export function Settings() {
         </div>
       </Section>
     </div>
+  );
+}
+
+function AccountSection() {
+  const { user, refetch } = useAuth();
+  const [name, setName] = useState(user?.name || "");
+  const [saving, setSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  async function handleSaveName() {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await api("/api/me/profile", "PUT", { name: name.trim() });
+      toast.success("Name updated");
+      refetch();
+    } catch {
+      toast.error("Failed to update name");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleChangePassword() {
+    if (!newPassword || newPassword.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("Passwords don't match");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api("/api/me/password", "PUT", { current_password: currentPassword, new_password: newPassword });
+      toast.success("Password changed");
+      setShowPassword(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch {
+      toast.error("Failed to change password — check your current password");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section title="Account" description="Manage your profile and credentials.">
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-xs text-muted-foreground">Display name</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="flex-1 h-10 px-3 rounded-lg bg-white/5 text-sm text-white outline-none focus:bg-white/8"
+              placeholder="Your name"
+            />
+            <button
+              onClick={handleSaveName}
+              disabled={saving || name.trim() === (user?.name || "")}
+              className="h-10 px-4 rounded-lg bg-primary text-sm font-medium text-white disabled:opacity-40 transition-opacity"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs text-muted-foreground">Email</label>
+          <p className="text-sm text-white/60 px-1">{user?.email || "—"}</p>
+        </div>
+
+        {!showPassword ? (
+          <button
+            onClick={() => setShowPassword(true)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Lock size={14} /> Change password
+          </button>
+        ) : (
+          <div className="space-y-2 rounded-xl bg-white/5 p-4">
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="Current password"
+              className="w-full h-10 px-3 rounded-lg bg-white/5 text-sm text-white outline-none focus:bg-white/8"
+              autoComplete="current-password"
+            />
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="New password"
+              className="w-full h-10 px-3 rounded-lg bg-white/5 text-sm text-white outline-none focus:bg-white/8"
+              autoComplete="new-password"
+            />
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Confirm new password"
+              className="w-full h-10 px-3 rounded-lg bg-white/5 text-sm text-white outline-none focus:bg-white/8"
+              autoComplete="new-password"
+            />
+            <div className="flex gap-2 pt-1">
+              <button onClick={handleChangePassword} disabled={saving} className="h-9 px-4 rounded-lg bg-primary text-sm font-medium text-white disabled:opacity-40">
+                Change
+              </button>
+              <button onClick={() => { setShowPassword(false); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); }} className="h-9 px-4 rounded-lg bg-white/5 text-sm text-white/60">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
   );
 }

@@ -689,3 +689,39 @@ def create_show_reminder_endpoint(request: Request, show_id: int, body: ShowRemi
         raise HTTPException(status_code=400, detail="Unsupported reminder type")
 
     return {"ok": True, "added": create_show_reminder(user["id"], show_id, body.reminder_type)}
+
+
+# ── Profile ─────────────────────────────────────────────────────
+
+@router.put("/profile")
+def update_profile(request: Request, body: dict):
+    _require_auth(request)
+    user = request.state.user
+    from crate.db.auth import update_user
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Name cannot be empty")
+    updated = update_user(user["id"], name=name)
+    return {"ok": True, "name": updated["name"] if updated else name}
+
+
+@router.put("/password")
+def change_password(request: Request, body: dict):
+    user = _require_auth(request)
+    current = body.get("current_password", "")
+    new_pw = body.get("new_password", "")
+    if not new_pw or len(new_pw) < 6:
+        raise HTTPException(status_code=422, detail="Password must be at least 6 characters")
+
+    from crate.db.auth import get_user_by_id
+    import bcrypt
+    db_user = get_user_by_id(user["id"])
+    if not db_user or not db_user.get("password_hash"):
+        raise HTTPException(status_code=400, detail="Cannot change password for this account")
+    if not bcrypt.checkpw(current.encode(), db_user["password_hash"].encode()):
+        raise HTTPException(status_code=403, detail="Current password is incorrect")
+
+    new_hash = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode()
+    from crate.db.auth import update_user
+    update_user(user["id"], password_hash=new_hash)
+    return {"ok": True}

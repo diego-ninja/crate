@@ -186,6 +186,14 @@ export function TopBarSearch() {
               <span className="shrink-0 text-[10px] capitalize text-white/20">{item.type}</span>
             </button>
           ))}
+          {query.trim() && (
+            <button
+              onClick={() => { navigate(`/search?q=${encodeURIComponent(query.trim())}`); setShowDropdown(false); setQuery(""); }}
+              className="w-full px-3 py-2 text-xs text-primary hover:bg-white/5 transition-colors text-center border-t border-white/5 mt-1"
+            >
+              See all results for "{query.trim()}"
+            </button>
+          )}
         </AppPopover>
       ) : null}
 
