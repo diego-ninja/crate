@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { ImagePlus, Loader2, Music2, Search, Upload, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { GripVertical, ImagePlus, Loader2, Music2, Search, Upload, X } from "lucide-react";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import { PlaylistArtwork } from "@/components/playlists/PlaylistArtwork";
 import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from "@/components/ui/AppModal";
@@ -50,6 +53,32 @@ function getTrackKey(track: PlaylistComposerTrack): string {
   if (track.path) return `path:${track.path}`;
   if (track.navidromeId) return `nav:${track.navidromeId}`;
   return `${track.artist}:${track.album}:${track.title}`;
+}
+
+function SortableTrackItem({ track, onRemove }: { track: PlaylistComposerTrack; onRemove: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: getTrackKey(track) });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center justify-between gap-2 px-3 py-2.5">
+      <button type="button" {...attributes} {...listeners} className="flex-shrink-0 cursor-grab text-white/20 hover:text-white/50 touch-none">
+        <GripVertical size={14} />
+      </button>
+      <div className="flex items-center gap-3 min-w-0 flex-1">
+        <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
+          <Music2 size={15} className="text-white/45" />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm text-foreground">{track.title}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {track.artist}{track.album ? ` · ${track.album}` : ""}{track.duration ? ` · ${formatDuration(track.duration)}` : ""}
+          </div>
+        </div>
+      </div>
+      <button type="button" className="rounded-full p-1.5 text-white/45 hover:text-white hover:bg-white/5 transition-colors" onClick={onRemove}>
+        <X size={14} />
+      </button>
+    </div>
+  );
 }
 
 function mergeUniqueTracks(tracks: PlaylistComposerTrack[]): PlaylistComposerTrack[] {
@@ -185,6 +214,16 @@ export function PlaylistCreateModal({
     const keyToRemove = getTrackKey(track);
     setTracks((current) => current.filter((item) => getTrackKey(item) !== keyToRemove));
   }
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setTracks((items) => {
+      const oldIdx = items.findIndex((t) => getTrackKey(t) === active.id);
+      const newIdx = items.findIndex((t) => getTrackKey(t) === over.id);
+      return arrayMove(items, oldIdx, newIdx);
+    });
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -371,33 +410,13 @@ export function PlaylistCreateModal({
             <div className="rounded-2xl border border-white/10 bg-white/5">
               <div className="max-h-64 overflow-y-auto py-1.5">
                 {tracks.length > 0 ? (
-                  tracks.map((track) => (
-                    <div
-                      key={getTrackKey(track)}
-                      className="flex items-center justify-between gap-3 px-3 py-2.5"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
-                          <Music2 size={15} className="text-white/45" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="truncate text-sm text-foreground">{track.title}</div>
-                          <div className="truncate text-xs text-muted-foreground">
-                            {track.artist}
-                            {track.album ? ` · ${track.album}` : ""}
-                            {track.duration ? ` · ${formatDuration(track.duration)}` : ""}
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="rounded-full p-1.5 text-white/45 hover:text-white hover:bg-white/5 transition-colors"
-                        onClick={() => removeTrack(track)}
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-                  ))
+                  <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <SortableContext items={tracks.map(getTrackKey)} strategy={verticalListSortingStrategy}>
+                      {tracks.map((track) => (
+                        <SortableTrackItem key={getTrackKey(track)} track={track} onRemove={() => removeTrack(track)} />
+                      ))}
+                    </SortableContext>
+                  </DndContext>
                 ) : (
                   <div className="px-4 py-8 text-center text-sm text-muted-foreground">
                     Start by searching for tracks or open this modal from an album or track menu.

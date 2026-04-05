@@ -66,7 +66,7 @@ export function SearchResults() {
           <h2 className="text-lg font-semibold mb-3">Albums ({data.albums.length})</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {data.albums.map((a) => (
-              <AlbumCard key={`${a.artist}-${a.name}`} artist={a.artist} album={a.name} albumId={a.id} year={a.year} cover={`/api/cover/${encPath(a.artist)}/${encPath(a.name)}`} />
+              <AlbumCard layout="grid" key={`${a.artist}-${a.name}`} artist={a.artist} album={a.name} albumId={a.id} year={a.year} cover={`/api/cover/${encPath(a.artist)}/${encPath(a.name)}`} />
             ))}
           </div>
         </section>
