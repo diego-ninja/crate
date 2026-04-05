@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from crate.api._deps import library_path, safe_path
@@ -389,3 +389,71 @@ def api_download_track(request: Request, filepath: str):
         return Response(status_code=404)
 
     return FileResponse(path=str(file_path), filename=file_path.name, media_type="application/octet-stream")
+
+
+# ── Mood/Energy browse ──────────────────────────────────────────
+
+MOOD_PRESETS = {
+    "energetic": {"energy_min": 0.7, "danceability_min": 0.5},
+    "chill": {"energy_max": 0.4, "valence_min": 0.3},
+    "dark": {"valence_max": 0.3, "energy_min": 0.4},
+    "happy": {"valence_min": 0.6, "energy_min": 0.4},
+    "melancholy": {"valence_max": 0.35, "energy_max": 0.5},
+    "intense": {"energy_min": 0.8},
+    "groovy": {"danceability_min": 0.65, "energy_min": 0.45},
+    "acoustic": {"acousticness_min": 0.6},
+}
+
+
+@router.get("/api/browse/moods")
+def api_browse_moods(request: Request):
+    """Return available mood presets with track counts."""
+    _require_auth(request)
+    from crate.db import get_db_ctx
+    results = []
+    with get_db_ctx() as cur:
+        for name, filters in MOOD_PRESETS.items():
+            conditions = ["bpm IS NOT NULL"]
+            params: list = []
+            for key, val in filters.items():
+                col = key.rsplit("_", 1)[0]
+                op = ">" if key.endswith("_min") else "<"
+                conditions.append(f"{col} {op}= %s")
+                params.append(val)
+            cur.execute(
+                f"SELECT COUNT(*) AS cnt FROM library_tracks WHERE {' AND '.join(conditions)}",
+                params,
+            )
+            count = cur.fetchone()["cnt"]
+            results.append({"name": name, "track_count": count, "filters": filters})
+    return results
+
+
+@router.get("/api/browse/mood/{mood}")
+def api_browse_mood_tracks(request: Request, mood: str, limit: int = Query(50, ge=1, le=200)):
+    """Return tracks matching a mood preset."""
+    _require_auth(request)
+    preset = MOOD_PRESETS.get(mood)
+    if not preset:
+        raise HTTPException(status_code=404, detail=f"Unknown mood: {mood}")
+    from crate.db import get_db_ctx
+    conditions = ["bpm IS NOT NULL"]
+    params: list = []
+    for key, val in preset.items():
+        col = key.rsplit("_", 1)[0]
+        op = ">" if key.endswith("_min") else "<"
+        conditions.append(f"{col} {op}= %s")
+        params.append(val)
+    params.append(limit)
+    with get_db_ctx() as cur:
+        cur.execute(
+            f"""SELECT t.id, t.title, t.artist, a.name AS album, t.path, t.duration,
+                       t.bpm, t.energy, t.danceability, t.valence, t.navidrome_id
+                FROM library_tracks t
+                JOIN library_albums a ON a.id = t.album_id
+                WHERE {' AND '.join(conditions)}
+                ORDER BY RANDOM() LIMIT %s""",
+            params,
+        )
+        tracks = [dict(r) for r in cur.fetchall()]
+    return {"mood": mood, "filters": preset, "tracks": tracks, "count": len(tracks)}

@@ -375,6 +375,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
     const onDurationChange = () => setDuration(audio.duration || 0);
     const onEnded = () => {
+      import("@/lib/sleep-timer").then((m) => m.onTrackEnded());
       const endedTrack = currentTrackRef.current;
       if (endedTrack) {
         flushCurrentPlayEvent("completed");

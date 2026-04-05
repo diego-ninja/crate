@@ -21,6 +21,7 @@ import {
 } from "@/components/explore/explore-model";
 import { useApi } from "@/hooks/use-api";
 import { ApiError, api } from "@/lib/api";
+import { encPath } from "@/lib/utils";
 import { PlaylistCard } from "@/components/playlists/PlaylistCard";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 
@@ -234,12 +235,82 @@ export function Explore() {
                   </div>
                 </div>
               )}
+              {/* Moods — browse by audio analysis */}
+              <MoodBrowseSection />
             </>
           ) : (
             <p className="text-muted-foreground text-sm">No filters available.</p>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+const MOOD_COLORS: Record<string, string> = {
+  energetic: "bg-orange-500/20 text-orange-300 border-orange-500/30",
+  chill: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  dark: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+  happy: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  melancholy: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+  intense: "bg-red-500/20 text-red-300 border-red-500/30",
+  groovy: "bg-green-500/20 text-green-300 border-green-500/30",
+  acoustic: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+};
+
+interface MoodPreset { name: string; track_count: number; }
+
+function MoodBrowseSection() {
+  const { data: moods } = useApi<MoodPreset[]>("/api/browse/moods");
+  const { playAll } = usePlayerActions();
+  const [loadingMood, setLoadingMood] = useState<string | null>(null);
+
+  async function playMood(mood: string) {
+    setLoadingMood(mood);
+    try {
+      const data = await api<{ tracks: Array<{ id: number; title: string; artist: string; album: string; path: string; navidrome_id?: string }> }>(`/api/browse/mood/${mood}?limit=50`);
+      if (data.tracks.length > 0) {
+        playAll(
+          data.tracks.map((t) => ({
+            id: t.path || String(t.id),
+            title: t.title,
+            artist: t.artist,
+            album: t.album,
+            path: t.path,
+            navidromeId: t.navidrome_id,
+            albumCover: `/api/cover/${encPath(t.artist)}/${encPath(t.album)}`,
+          })),
+          0,
+          { type: "playlist", name: `${mood.charAt(0).toUpperCase() + mood.slice(1)} Mix` },
+        );
+      } else {
+        toast.info("No tracks match this mood yet — analyze more of your library");
+      }
+    } catch {
+      toast.error("Failed to load mood tracks");
+    } finally {
+      setLoadingMood(null);
+    }
+  }
+
+  if (!moods || moods.length === 0) return null;
+
+  return (
+    <div className="space-y-3">
+      <ExploreSectionHeader title="Browse by Mood" subtitle="Powered by audio analysis of your library." />
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {moods.map((m) => (
+          <button
+            key={m.name}
+            onClick={() => playMood(m.name)}
+            disabled={loadingMood !== null}
+            className={`rounded-xl border px-4 py-3 text-left transition-colors ${MOOD_COLORS[m.name] || "bg-white/5 text-white/70 border-white/10"} active:scale-[0.98]`}
+          >
+            <span className="text-sm font-medium capitalize">{loadingMood === m.name ? "Loading..." : m.name}</span>
+            <span className="block text-[10px] opacity-60 mt-0.5">{m.track_count} tracks</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
