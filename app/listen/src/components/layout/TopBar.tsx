@@ -28,7 +28,7 @@ export function TopBar() {
         </button>
       </div>
 
-      <div className="hidden md:flex md:flex-1" />
+      <div className="hidden md:block flex-1" />
 
       <TopBarSearch />
       <TopBarUserMenu />
