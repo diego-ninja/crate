@@ -220,6 +220,7 @@ export function Shell() {
   }, []);
 
   const sidebarW = sidebarExpanded ? "ml-52" : "ml-14";
+  const sidebarLeft = sidebarExpanded ? "left-52" : "left-14";
 
   if (isDesktop) {
       return (
@@ -227,7 +228,7 @@ export function Shell() {
         <Sidebar />
 
         <div
-          className={`z-app-header fixed top-0 ${sidebarW} right-0 transition-all duration-200 ${headerChromeClass}`}
+          className={`z-app-header fixed top-0 ${sidebarLeft} right-0 transition-all duration-200 ${headerChromeClass}`}
         >
           <TopBar />
         </div>
