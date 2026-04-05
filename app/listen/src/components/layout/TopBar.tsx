@@ -8,8 +8,8 @@ export function TopBar() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex h-16 items-center gap-4 px-4 pointer-events-none">
-      <div className="hidden items-center gap-2 pointer-events-auto md:flex">
+    <div className="flex h-16 w-full items-center gap-4 px-4 pointer-events-none">
+      <div className="hidden items-center gap-2 flex-shrink-0 pointer-events-auto md:flex">
         <button
           onClick={() => navigate(-1)}
           className="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.04] text-white/45 transition-colors hover:bg-white/10 hover:text-white"
@@ -28,7 +28,7 @@ export function TopBar() {
         </button>
       </div>
 
-      <div className="hidden flex-1 md:block" />
+      <div className="hidden md:block md:w-4" />
 
       <TopBarSearch />
       <TopBarUserMenu />

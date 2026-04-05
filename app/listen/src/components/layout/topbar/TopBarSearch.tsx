@@ -131,7 +131,7 @@ export function TopBarSearch() {
   const showResults = showDropdown && query.trim().length > 0 && (results.length > 0 || loading);
 
   return (
-    <div className="relative w-full flex-1 pointer-events-auto md:max-w-md md:flex-none">
+    <div className="relative w-full flex-1 pointer-events-auto md:max-w-xl">
       <div className="relative flex items-center">
         <Search size={16} className="pointer-events-none absolute left-3 text-white/30" />
         {loading ? <Loader2 size={14} className="absolute right-3 animate-spin text-white/30" /> : null}
