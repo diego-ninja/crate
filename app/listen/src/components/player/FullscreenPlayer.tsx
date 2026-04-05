@@ -13,7 +13,15 @@ import {
   ListMusic,
   AlignLeft,
   Disc3,
+  Moon,
 } from "lucide-react";
+import {
+  subscribeSleepTimer,
+  startSleepTimer,
+  cancelSleepTimer,
+  formatRemaining,
+  type SleepTimerState,
+} from "@/lib/sleep-timer";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useEscapeKey } from "@/hooks/use-escape-key";
@@ -64,6 +72,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [swipeY, setSwipeY] = useState(0);
+  const [showSleepMenu, setShowSleepMenu] = useState(false);
+  const [sleepTimer, setSleepTimer] = useState<SleepTimerState>({ active: false, remainingSeconds: 0, mode: null });
+
+  useEffect(() => subscribeSleepTimer(setSleepTimer), []);
   const swipeStartRef = useRef<number | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
@@ -244,8 +256,41 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             </button>
           ))}
         </div>
-        <div className="w-11" />
+        <button
+          onClick={() => setShowSleepMenu(!showSleepMenu)}
+          className={`w-11 h-11 flex items-center justify-center -mr-2 transition-colors ${sleepTimer.active ? "text-primary" : "text-white/40 active:text-white/60"}`}
+        >
+          <Moon size={18} />
+          {sleepTimer.active && sleepTimer.remainingSeconds > 0 && (
+            <span className="absolute text-[8px] font-mono text-primary mt-7">{formatRemaining(sleepTimer.remainingSeconds)}</span>
+          )}
+        </button>
       </div>
+
+      {/* Sleep timer menu */}
+      {showSleepMenu && (
+        <div className="mx-4 mb-2 rounded-xl bg-white/5 p-3 flex flex-wrap gap-2">
+          {(["15min", "30min", "45min", "1hr", "end_of_track"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => { startSleepTimer(mode, pause); setShowSleepMenu(false); }}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                sleepTimer.mode === mode ? "bg-primary text-white" : "bg-white/10 text-white/60 active:bg-white/15"
+              }`}
+            >
+              {mode === "end_of_track" ? "End of track" : mode.replace("min", " min").replace("hr", " hour")}
+            </button>
+          ))}
+          {sleepTimer.active && (
+            <button
+              onClick={() => { cancelSleepTimer(); setShowSleepMenu(false); }}
+              className="rounded-full px-3 py-1.5 text-xs font-medium bg-red-500/20 text-red-400 active:bg-red-500/30"
+            >
+              Cancel timer
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Tab content */}
       {activeTab === "player" && (
