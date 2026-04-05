@@ -37,6 +37,9 @@ const Stats = React.lazy(() =>
 const Shows = React.lazy(() =>
   import("@/pages/Shows").then((m) => ({ default: m.Shows })),
 );
+const SearchResults = React.lazy(() =>
+  import("@/pages/SearchResults").then((m) => ({ default: m.SearchResults })),
+);
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode; fallback?: React.ReactNode },
@@ -110,6 +113,7 @@ export function App() {
         >
                     <Route index element={<Home />} />
                     <Route path="explore" element={<Explore />} />
+                    <Route path="search" element={<Suspense fallback={<Spinner />}><SearchResults /></Suspense>} />
                     <Route path="library" element={<Library />} />
                     <Route
                       path="stats"
