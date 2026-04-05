@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
-import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play, Pencil, Trash2 } from "lucide-react";
+import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play, Pencil, Trash2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
@@ -420,9 +420,31 @@ function AlbumsTab() {
   );
 }
 
+type LikedSort = "recent" | "title" | "artist" | "album";
+
 function LikedTab() {
   const { likedTracks: tracks, loading } = useLikedTracks();
   const { playAll } = usePlayerActions();
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<LikedSort>("recent");
+
+  const filtered = useMemo(() => {
+    if (!tracks) return [];
+    let list = [...tracks];
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (t) =>
+          t.title?.toLowerCase().includes(q) ||
+          t.artist?.toLowerCase().includes(q) ||
+          t.album?.toLowerCase().includes(q),
+      );
+    }
+    if (sort === "title") list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    else if (sort === "artist") list.sort((a, b) => (a.artist || "").localeCompare(b.artist || ""));
+    else if (sort === "album") list.sort((a, b) => (a.album || "").localeCompare(b.album || ""));
+    return list;
+  }, [tracks, search, sort]);
 
   if (loading) return <Spinner />;
   if (!tracks || tracks.length === 0) {
@@ -430,8 +452,8 @@ function LikedTab() {
   }
 
   function handlePlayAll() {
-    if (!tracks || tracks.length === 0) return;
-    const playerTracks: Track[] = tracks.map((t) => ({
+    const list = filtered.length ? filtered : tracks!;
+    const playerTracks: Track[] = list.map((t) => ({
       id: t.relative_path || t.path,
       title: t.title,
       artist: t.artist,
@@ -448,15 +470,37 @@ function LikedTab() {
 
   return (
     <div className="space-y-3">
-      <button
-        onClick={handlePlayAll}
-        className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-      >
-        <Play size={16} fill="currentColor" />
-        Play All
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handlePlayAll}
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          <Play size={16} fill="currentColor" />
+          Play {filtered.length < tracks.length ? `${filtered.length}` : "All"}
+        </button>
+        <div className="relative flex-1">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter liked tracks..."
+            className="w-full h-10 pl-9 pr-3 rounded-lg bg-white/5 text-sm text-white placeholder:text-white/25 outline-none focus:bg-white/8"
+          />
+        </div>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as LikedSort)}
+          className="h-10 rounded-lg bg-white/5 px-3 text-sm text-white/70 outline-none"
+        >
+          <option value="recent">Recent</option>
+          <option value="title">Title</option>
+          <option value="artist">Artist</option>
+          <option value="album">Album</option>
+        </select>
+      </div>
       <div>
-        {tracks.map((t, i) => (
+        {filtered.map((t, i) => (
           <TrackRow
             key={t.track_id}
             track={{

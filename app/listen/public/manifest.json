@@ -1,9 +1,21 @@
 {
   "name": "Crate Listen",
   "short_name": "Listen",
+  "description": "Your music, your way. Stream your self-hosted library.",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "theme_color": "#0a0a0f",
   "background_color": "#0a0a0f",
-  "icons": []
+  "categories": ["music", "entertainment"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Library", "url": "/library", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Explore", "url": "/explore", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
 }
