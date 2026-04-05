@@ -47,7 +47,7 @@ class ErrorBoundary extends React.Component<
   render() {
     if (this.state.error) {
       return this.props.fallback ?? (
-        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#0a0a0f] text-white">
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-app-surface text-white">
           <p className="text-lg font-medium">Something went wrong</p>
           <p className="text-sm text-muted-foreground max-w-md text-center">{this.state.error.message}</p>
           <button onClick={() => { this.setState({ error: null }); window.location.href = "/"; }}
@@ -73,7 +73,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0a0a0f]">
+      <div className="flex min-h-screen items-center justify-center bg-app-surface">
         <Loader2 size={22} className="animate-spin text-primary" />
       </div>
     );

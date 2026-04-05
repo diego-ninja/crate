@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Play, Pause, Plus, ListPlus, Heart, ListMusic } from "lucide-react";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { formatDuration, encPath } from "@/lib/utils";
 
 export interface TrackRowData {
@@ -154,8 +155,10 @@ export const TrackRow = memo(function TrackRow({
       )}
 
       {/* Like + Actions */}
-      <button
-        className={`flex-shrink-0 p-2 transition-opacity ${
+      <ActionIconButton
+        variant="row"
+        active={liked}
+        className={`h-8 w-8 flex-shrink-0 transition-opacity ${
           liked ? "opacity-100" : "md:opacity-0 md:group-hover:opacity-100"
         }`}
         title={liked ? "Unlike" : "Like"}
@@ -173,16 +176,16 @@ export const TrackRow = memo(function TrackRow({
       >
         <Heart
           size={14}
-          className={liked ? "text-primary fill-primary" : "text-muted-foreground"}
+          className={liked ? "fill-current" : ""}
         />
-      </button>
+      </ActionIconButton>
 
       {/* Actions (visible on mobile, hover-reveal on desktop) */}
       <div className="flex-shrink-0 flex gap-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
         {onAddToPlaylist && (
           <div className="relative" ref={playlistMenuRef}>
             <button
-              className="p-1 text-muted-foreground hover:text-foreground"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
               title="Add to playlist"
               onClick={(e) => {
                 e.stopPropagation();
@@ -192,7 +195,7 @@ export const TrackRow = memo(function TrackRow({
               <ListMusic size={14} />
             </button>
             {playlistMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-52 rounded-xl border border-white/10 bg-[#12121a]/95 backdrop-blur-xl shadow-2xl py-1 z-30">
+              <div className="z-app-popover absolute right-0 top-full mt-2 w-52 rounded-xl border border-white/10 bg-popover-surface py-1 shadow-2xl backdrop-blur-xl">
                 {onCreatePlaylist ? (
                   <button
                     className="w-full px-3 py-2 text-left text-sm text-foreground hover:bg-white/5 transition-colors"
@@ -229,20 +232,20 @@ export const TrackRow = memo(function TrackRow({
             )}
           </div>
         )}
-        <button
-          className="p-1 text-muted-foreground hover:text-foreground"
+        <ActionIconButton
+          className="h-8 w-8"
           title="Play next"
           onClick={(e) => { e.stopPropagation(); playNext(playerTrack); }}
         >
           <ListPlus size={14} />
-        </button>
-        <button
-          className="p-1 text-muted-foreground hover:text-foreground"
+        </ActionIconButton>
+        <ActionIconButton
+          className="h-8 w-8"
           title="Add to queue"
           onClick={(e) => { e.stopPropagation(); addToQueue(playerTrack); }}
         >
           <Plus size={14} />
-        </button>
+        </ActionIconButton>
       </div>
     </div>
   );

@@ -145,7 +145,7 @@ def api_artists(
     request: Request,
     q: str = "",
     page: int = 1,
-    per_page: int = 60,
+    per_page: int = Query(60, ge=1, le=120),
     sort: str = "name",
     genre: str = "",
     country: str = "",

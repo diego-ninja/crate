@@ -1,105 +1,24 @@
-import { memo, useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router";
+import { useMemo, useState } from "react";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
-  Heart, MoreHorizontal, Volume2, VolumeX, Airplay, ListMusic,
-  Mic2, Maximize2, User, Share2, Plus, Disc, Loader2, ArrowLeft,
+  Heart, Airplay, ListMusic, Mic2, Maximize2, Loader2,
 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
-import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
-import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
-import { AppMenuButton, AppPopover } from "@/components/ui/AppPopover";
-import { type PlaylistComposerTrack } from "@/components/playlists/PlaylistCreateModal";
-import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import { QueuePanel } from "@/components/player/QueuePanel";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
 import { ExtendedPlayer } from "@/components/player/ExtendedPlayer";
-
-interface PlaylistOption {
-  id: number;
-  name: string;
-}
-
-function formatTime(s: number): string {
-  if (!s || !isFinite(s)) return "0:00";
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, "0")}`;
-}
-
-function formatBadge(track: { id: string }): string | null {
-  const id = track.id.toLowerCase();
-  if (id.endsWith(".flac")) return "FLAC";
-  if (id.endsWith(".mp3")) return "MP3";
-  if (id.endsWith(".ogg")) return "OGG";
-  if (id.endsWith(".opus")) return "OPUS";
-  if (id.endsWith(".m4a") || id.endsWith(".aac")) return "AAC";
-  if (id.endsWith(".wav")) return "WAV";
-  return null;
-}
-
-// Deterministic pseudo-waveform bars from track ID
-function generateBars(seed: string, count: number): number[] {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
-  const bars: number[] = [];
-  for (let i = 0; i < count; i++) {
-    h = ((h * 1103515245 + 12345) & 0x7fffffff);
-    bars.push(0.15 + (h % 1000) / 1000 * 0.85);
-  }
-  return bars;
-}
-
-const WaveformCanvas = memo(function WaveformCanvas({
-  bars, progress, frequencies, isPlaying,
-}: {
-  bars: number[]; progress: number; frequencies: number[]; isPlaying: boolean;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, w, h);
-
-    const n = bars.length;
-    const gap = 1;
-    const barW = Math.max(1, (w - gap * (n - 1)) / n);
-
-    for (let i = 0; i < n; i++) {
-      const base = bars[i]!;
-      const freqIdx = Math.floor((i / n) * frequencies.length);
-      const freq = frequencies[freqIdx] ?? 0;
-      const val = isPlaying ? Math.max(base * 0.3, base * 0.4 + freq * 0.6) : base;
-      const barH = Math.max(1, val * h);
-      const x = i * (barW + gap);
-      const y = h - barH;
-      const barPct = ((i + 0.5) / n) * 100;
-      ctx.fillStyle = barPct <= progress ? "rgba(6,182,212,0.6)" : "rgba(255,255,255,0.08)";
-      ctx.beginPath();
-      ctx.roundRect(x, y, barW, barH, 1);
-      ctx.fill();
-    }
-  }, [bars, progress, frequencies, isPlaying, dpr]);
-
-  useEffect(() => { draw(); }, [draw]);
-
-  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />;
-});
+import { PlayerTrackMenu } from "@/components/player/bar/PlayerTrackMenu";
+import { PlayerVolumeControl } from "@/components/player/bar/PlayerVolumeControl";
+import { WaveformCanvas } from "@/components/player/bar/WaveformCanvas";
+import {
+  formatPlayerTime,
+  formatPlayerTrackBadge,
+  generateWaveformBars,
+} from "@/components/player/bar/player-bar-utils";
 
 export function PlayerBar() {
   const { currentTime, duration, isPlaying, isBuffering, volume } = usePlayer();
@@ -113,44 +32,17 @@ export function PlayerBar() {
   // on first play, enabling the WebGL visualizer in ExtendedPlayer to work.
   const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
 
-  const navigate = useNavigate();
   const [extendedOpen, setExtendedOpen] = useState(false);
-  const [showVolume, setShowVolume] = useState(false);
-  const [showMenu, setShowMenu] = useState(false);
-  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const volumeRef = useRef<HTMLDivElement>(null);
-  const volumeButtonRef = useRef<HTMLButtonElement>(null);
+  const [hasFloatingOverlayOpen, setHasFloatingOverlayOpen] = useState(false);
   const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
-  const { openCreatePlaylist } = usePlaylistComposer();
-  const { data: playlists } = useApi<PlaylistOption[]>("/api/playlists");
 
   useDismissibleLayer({
-    active: showMenu,
-    refs: [menuRef, menuButtonRef],
-    onDismiss: () => {
-      setShowMenu(false);
-      setShowPlaylistPicker(false);
-    },
-    closeOnEscape: false,
-  });
-
-  useDismissibleLayer({
-    active: showVolume,
-    refs: [volumeRef, volumeButtonRef],
-    onDismiss: () => setShowVolume(false),
-    closeOnEscape: false,
-  });
-
-  useDismissibleLayer({
-    active: showMenu || showVolume || showQueue || showLyrics,
+    active: hasFloatingOverlayOpen || showQueue || showLyrics,
     refs: [],
     onDismiss: () => {
-      setShowMenu(false);
-      setShowVolume(false);
+      setHasFloatingOverlayOpen(false);
       setShowQueue(false);
       setShowLyrics(false);
     },
@@ -158,9 +50,11 @@ export function PlayerBar() {
   });
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const pseudoBars = useMemo(() => currentTrack ? generateBars(currentTrack.id, 80) : [], [currentTrack?.id]);
-  const fmt = currentTrack ? formatBadge(currentTrack) : null;
-  const hasFloatingOverlayOpen = showVolume || showMenu;
+  const pseudoBars = useMemo(
+    () => currentTrack ? generateWaveformBars(currentTrack.id, 80) : [],
+    [currentTrack],
+  );
+  const fmt = currentTrack ? formatPlayerTrackBadge(currentTrack) : null;
 
   if (!currentTrack) return null;
 
@@ -179,46 +73,17 @@ export function PlayerBar() {
     } catch { /* ignore */ }
   }
 
-  function currentTrackToPlaylistSeed(): PlaylistComposerTrack | null {
-    if (!currentTrack) return null;
-    return {
-      title: currentTrack.title,
-      artist: currentTrack.artist,
-      album: currentTrack.album,
-      duration: duration || 0,
-      path: currentTrack.path,
-      libraryTrackId: currentTrack.libraryTrackId,
-      navidromeId: currentTrack.navidromeId,
-    };
-  }
-
-  async function handleAddCurrentTrackToPlaylist(playlistId: number) {
-    if (!currentTrack?.path) {
-      toast.error("This track cannot be added to a playlist yet");
-      return;
-    }
+  async function handleAddToCollection() {
+    if (!currentTrack) return;
     try {
-      const payload = {
-        tracks: [{
-          path: currentTrack.path,
-          title: currentTrack.title,
-          artist: currentTrack.artist,
-          album: currentTrack.album || "",
-          duration: duration || 0,
-        }],
-      };
-      await api(`/api/playlists/${playlistId}/tracks`, "POST", payload);
-      toast.success("Added to playlist");
-      setShowMenu(false);
-      setShowPlaylistPicker(false);
-    } catch {
-      toast.error("Failed to add track to playlist");
-    }
+      await likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
+      toast.success("Added to collection");
+    } catch { /* ignore */ }
   }
 
   return (
     <>
-      <div className={`fixed bottom-0 left-0 right-0 h-[72px] bg-[#0c0c14] border-t border-white/5 ${hasFloatingOverlayOpen ? "z-[90]" : "z-50"}`}>
+      <div className={`fixed bottom-0 left-0 right-0 h-[72px] border-t border-white/5 bg-panel-surface ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}>
         <div className="h-full flex items-center px-4 gap-2">
 
           {/* ── Block 1: Track Info ── */}
@@ -257,99 +122,12 @@ export function PlayerBar() {
               <Heart size={16} className={liked ? "text-primary fill-primary" : "text-white/30 hover:text-white/60"} />
             </button>
 
-            {/* Menu */}
-            <div className="relative" ref={menuRef}>
-              <button
-                ref={menuButtonRef}
-                onClick={() => {
-                  setShowPlaylistPicker(false);
-                  setShowMenu(!showMenu);
-                }}
-                className="shrink-0 p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60"
-              >
-                <MoreHorizontal size={16} />
-              </button>
-              {showMenu && currentTrack && (
-                <AppPopover ref={menuRef} className="absolute bottom-full left-0 z-[60] mb-2 w-52 py-1.5">
-                  {showPlaylistPicker ? (
-                    <>
-                      <AppMenuButton
-                        onClick={() => setShowPlaylistPicker(false)}
-                        className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
-                      >
-                        <ArrowLeft size={14} className="text-white/40 shrink-0" />
-                        Back
-                      </AppMenuButton>
-                      <div className="mx-3 my-1 h-px bg-white/10" />
-                      <AppMenuButton
-                        onClick={() => {
-                          const seed = currentTrackToPlaylistSeed();
-                          if (seed) {
-                            openCreatePlaylist({ tracks: [seed] });
-                          } else {
-                            openCreatePlaylist();
-                          }
-                          setShowMenu(false);
-                          setShowPlaylistPicker(false);
-                        }}
-                        className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
-                      >
-                        <Plus size={14} className="text-white/40 shrink-0" />
-                        Add new playlist
-                      </AppMenuButton>
-                      <div className="mx-3 my-1 h-px bg-white/10" />
-                      {playlists && playlists.length > 0 ? (
-                        playlists.map((playlist) => (
-                          <AppMenuButton
-                            key={playlist.id}
-                            onClick={() => void handleAddCurrentTrackToPlaylist(playlist.id)}
-                            className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
-                          >
-                            <ListMusic size={14} className="text-white/40 shrink-0" />
-                            {playlist.name}
-                          </AppMenuButton>
-                        ))
-                      ) : (
-                        <div className="px-4 py-2 text-[12px] text-white/45">No playlists yet</div>
-                      )}
-                    </>
-                  ) : (
-                    [
-                      { icon: Plus, label: "Add to playlist", action: () => setShowPlaylistPicker(true) },
-                      { icon: Disc, label: "Add to my collection", action: () => {
-                        likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id).then(() => {
-                          toast.success("Added to collection");
-                        }).catch(() => {});
-                        setShowMenu(false);
-                      }},
-                      { icon: User, label: "Go to artist", action: () => {
-                        navigate(`/artist/${encPath(currentTrack.artist)}`);
-                        setShowMenu(false);
-                      } },
-                      { icon: Disc, label: "Go to album", action: () => {
-                        if (currentTrack.album) {
-                          navigate(`/album/${encPath(currentTrack.artist)}/${encPath(currentTrack.album)}`);
-                        }
-                        setShowMenu(false);
-                      } },
-                      { icon: Share2, label: "Share", action: () => {
-                        navigator.clipboard.writeText(`${currentTrack.title} - ${currentTrack.artist}`).then(() => toast.success("Copied to clipboard")).catch(() => {});
-                        setShowMenu(false);
-                      }},
-                    ].map(({ icon: Icon, label, action }) => (
-                      <AppMenuButton
-                        key={label}
-                        onClick={action}
-                        className="rounded-none px-4 py-2 text-[13px] text-white/70 hover:text-white"
-                      >
-                        <Icon size={14} className="text-white/40 shrink-0" />
-                        {label}
-                      </AppMenuButton>
-                    ))
-                  )}
-                </AppPopover>
-              )}
-            </div>
+            <PlayerTrackMenu
+              currentTrack={currentTrack}
+              duration={duration}
+              onOverlayChange={setHasFloatingOverlayOpen}
+              onAddToCollection={handleAddToCollection}
+            />
           </div>
 
           {/* ── Block 2: Controls + Progress ── */}
@@ -391,7 +169,7 @@ export function PlayerBar() {
             {/* Progress with waveform bars */}
             <div className="flex items-center gap-2 w-full">
               <span className="text-[10px] text-white/40 w-9 text-right tabular-nums font-mono">
-                {formatTime(currentTime)}
+                {formatPlayerTime(currentTime)}
               </span>
               <div
                 className="flex-1 h-5 relative cursor-pointer group flex items-end"
@@ -404,7 +182,7 @@ export function PlayerBar() {
                 <WaveformCanvas bars={pseudoBars} progress={progress} frequencies={frequencies} isPlaying={isPlaying} />
               </div>
               <span className="text-[10px] text-white/40 w-9 tabular-nums font-mono">
-                {formatTime(duration)}
+                {formatPlayerTime(duration)}
               </span>
             </div>
           </div>
@@ -419,27 +197,11 @@ export function PlayerBar() {
             )}
 
             {/* Volume */}
-            <div className="relative flex items-center">
-              <button
-                ref={volumeButtonRef}
-                onClick={() => setShowVolume(!showVolume)}
-                className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60"
-              >
-                {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
-              </button>
-              {showVolume && (
-                <AppPopover ref={volumeRef} className="absolute bottom-full left-1/2 z-[90] -translate-x-1/2 mb-2 rounded-lg p-2">
-                  <input
-                    type="range"
-                    min={0} max={1} step={0.01}
-                    value={volume}
-                    onChange={(e) => setVolume(parseFloat(e.target.value))}
-                    className="w-24 accent-cyan-400 h-1"
-                    style={{ writingMode: "horizontal-tb" }}
-                  />
-                </AppPopover>
-              )}
-            </div>
+            <PlayerVolumeControl
+              volume={volume}
+              onVolumeChange={setVolume}
+              onOverlayChange={setHasFloatingOverlayOpen}
+            />
 
             {/* Device (placeholder) */}
             <button className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60" title="Connect device">

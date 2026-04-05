@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -36,21 +37,37 @@ const SavedAlbumsContext = createContext<SavedAlbumsContextValue | null>(null);
 export function SavedAlbumsProvider({ children }: { children: ReactNode }) {
   const [savedAlbums, setSavedAlbums] = useState<SavedAlbum[]>([]);
   const [loading, setLoading] = useState(true);
+  const savedAlbumsRequestRef = useRef<AbortController | null>(null);
 
   const refetch = useCallback(async () => {
+    savedAlbumsRequestRef.current?.abort();
+    const controller = new AbortController();
+    savedAlbumsRequestRef.current = controller;
     setLoading(true);
     try {
-      const albums = await api<SavedAlbum[]>("/api/me/albums");
+      const albums = await api<SavedAlbum[]>("/api/me/albums", "GET", undefined, {
+        signal: controller.signal,
+      });
       setSavedAlbums(Array.isArray(albums) ? albums : []);
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted || (error as Error).name === "AbortError") {
+        return;
+      }
       setSavedAlbums([]);
     } finally {
-      setLoading(false);
+      if (savedAlbumsRequestRef.current === controller) {
+        savedAlbumsRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void refetch();
+    return () => {
+      savedAlbumsRequestRef.current?.abort();
+      savedAlbumsRequestRef.current = null;
+    };
   }, [refetch]);
 
   const savedIds = useMemo(() => new Set(savedAlbums.map((album) => album.id)), [savedAlbums]);

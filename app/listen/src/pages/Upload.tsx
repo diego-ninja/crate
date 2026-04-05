@@ -93,7 +93,7 @@ export function Upload() {
             </label>
 
             {files.length > 0 ? (
-              <div className="space-y-2 rounded-2xl border border-white/10 bg-[#0a0a0f]/50 p-4">
+              <div className="space-y-2 rounded-2xl border border-white/10 bg-[var(--gradient-bg-50)] p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div>
                     <div className="text-sm font-semibold text-foreground">Ready to import</div>
@@ -128,7 +128,7 @@ export function Upload() {
             ) : null}
           </div>
 
-          <div className="space-y-4 rounded-[24px] border border-white/10 bg-[#0a0a0f]/50 p-5">
+          <div className="space-y-4 rounded-[24px] border border-white/10 bg-[var(--gradient-bg-50)] p-5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-white/45">What happens next</h2>
             <ul className="space-y-3 text-sm leading-6 text-muted-foreground">
               <li>Crate imports the files into the shared library.</li>

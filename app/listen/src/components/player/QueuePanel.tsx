@@ -16,7 +16,7 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
   const played = queue.slice(0, currentIndex);
 
   return (
-    <div className="fixed right-0 top-0 bottom-[72px] w-[360px] bg-[#0c0c14] border-l border-white/5 z-50 flex flex-col shadow-2xl animate-in slide-in-from-right">
+    <div className="z-app-player-drawer fixed right-0 top-0 bottom-[72px] flex w-[360px] animate-in slide-in-from-right flex-col border-l border-white/5 bg-panel-surface shadow-2xl">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <h2 className="text-sm font-bold text-white">Queue</h2>
@@ -77,7 +77,7 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
                 <div className="flex items-center gap-2">
                   <p className="min-w-0 flex-1 truncate text-[12px] text-white/80">{track.title}</p>
                   {track.isSuggested ? (
-                    <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-cyan-300">
+                    <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary">
                       Suggested
                     </span>
                   ) : null}
@@ -120,7 +120,7 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
                   <div className="flex items-center gap-2">
                     <p className="min-w-0 flex-1 truncate text-[12px] text-white/50">{track.title}</p>
                     {track.isSuggested ? (
-                      <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-cyan-300">
+                      <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary">
                         Suggested
                       </span>
                     ) : null}

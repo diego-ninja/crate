@@ -1,357 +1,81 @@
 import { useNavigate } from "react-router";
-import {
-  ArrowRight,
-  Calendar,
-  Clock3,
-  ListMusic,
-  Loader2,
-  Play,
-  RadioTower,
-  Sparkles,
-} from "lucide-react";
 import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
-import { AlbumCard } from "@/components/cards/AlbumCard";
-import { ArtistCard } from "@/components/cards/ArtistCard";
-import { PlaylistCard } from "@/components/playlists/PlaylistCard";
-import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import {
+  FromCrateSection,
+  HomeLibrarySection,
+  JustLandedSection,
+} from "@/components/home/HomeLibrarySections";
+import {
+  ContinueListeningSection,
+  HomeReplaySection,
+  KeepQueueMovingSection,
+} from "@/components/home/HomePlaybackSections";
+import {
+  getHomeDateString,
+  getHomeGreeting,
+} from "@/components/home/HomeSections";
+import {
+  HomeShowPrepSection,
+  HomeUpcomingSection,
+} from "@/components/home/HomeUpcomingSections";
+import type {
+  CuratedPlaylist,
+  HomeUpcomingInsight,
+  HomeUpcomingResponse,
+  LibraryAddition,
+  PaginatedArtistsResponse,
+  PlaylistDetailData,
+  ReplayMix,
+  SavedAlbum,
+  UserPlaylist,
+} from "@/components/home/home-model";
 import { encPath } from "@/lib/utils";
 
-interface SavedAlbum {
-  id: number;
-  artist: string;
-  name: string;
-  year?: string;
-  has_cover?: boolean;
-  track_count?: number;
-  saved_at?: string;
-}
-
-interface LibraryAddition {
-  type: "album" | "playlist" | "system_playlist";
-  added_at: string;
-  album_id?: number;
-  album_name?: string;
-  album_artist?: string;
-  album_year?: string;
-  playlist_id?: number;
-  playlist_name?: string;
-  playlist_description?: string;
-  playlist_tracks?: PlaylistArtworkTrack[];
-  playlist_cover_data_url?: string | null;
-  playlist_track_count?: number;
-  playlist_follower_count?: number;
-  playlist_badge?: string;
-}
-
-interface UserPlaylist {
-  id: number;
-  name: string;
-  description?: string;
-  cover_data_url?: string | null;
-  artwork_tracks?: PlaylistArtworkTrack[];
-  track_count: number;
-  updated_at?: string;
-  created_at?: string;
-}
-
-interface CuratedPlaylist {
-  id: number;
-  name: string;
-  description?: string;
-  category?: string | null;
-  artwork_tracks?: PlaylistArtworkTrack[];
-  track_count: number;
-  follower_count: number;
-  is_followed: boolean;
-  is_smart: boolean;
-  followed_at?: string;
-  updated_at?: string;
-}
-
-interface GlobalArtist {
-  name: string;
-  albums?: number;
-  tracks?: number;
-  album_count?: number;
-  track_count?: number;
-  has_photo: boolean;
-}
-
-interface PaginatedArtistsResponse {
-  items: GlobalArtist[];
-  total: number;
-  page: number;
-  per_page: number;
-}
-
-interface UpcomingItem {
-  id?: number;
-  type: "release" | "show";
-  date: string;
-  artist: string;
-  title: string;
-  subtitle: string;
-  is_upcoming: boolean;
-  user_attending?: boolean;
-}
-
-interface UpcomingInsight {
-  type: "one_month" | "one_week" | "show_prep";
-  show_id: number;
-  artist: string;
-  date: string;
-  title: string;
-  subtitle: string;
-  message: string;
-  has_setlist?: boolean;
-  weight?: "normal" | "high";
-}
-
-interface UpcomingResponse {
-  items: UpcomingItem[];
-  insights: UpcomingInsight[];
-  summary: {
-    followed_artists: number;
-    show_count: number;
-    release_count: number;
-    attending_count: number;
-    insight_count: number;
-  };
-}
-
-interface ReplayTrack {
-  track_id: number | null;
-  track_path: string | null;
-  title: string;
-  artist: string;
-  album: string;
-  play_count: number;
-  complete_play_count: number;
-  minutes_listened: number;
-}
-
-interface ReplayMix {
-  window: string;
-  title: string;
-  subtitle: string;
-  track_count: number;
-  minutes_listened: number;
-  items: ReplayTrack[];
-}
-
-interface PlaylistDetailTrack {
-  id?: number;
-  track_id?: number;
-  track_path: string;
-  title: string;
-  artist: string;
-  album: string;
-  duration: number;
-  navidrome_id?: string;
-}
-
-interface PlaylistDetailData {
-  id: number;
-  name: string;
-  cover_data_url?: string | null;
-  tracks: PlaylistDetailTrack[];
-}
-
-function getGreeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
-}
-
-function getDateString(): string {
-  return new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function SectionHeader({
-  title,
-  subtitle,
-  actionLabel,
-  onAction,
-}: {
-  title: string;
-  subtitle?: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  return (
-    <div className="flex items-end justify-between gap-4">
-      <div>
-        <h2 className="text-lg font-bold text-foreground">{title}</h2>
-        {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
-      </div>
-      {actionLabel && onAction ? (
-        <button
-          onClick={onAction}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {actionLabel}
-          <ArrowRight size={15} />
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function SectionRail({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-      {children}
-    </div>
-  );
-}
-
-function SectionLoading() {
-  return (
-    <div className="flex items-center justify-center py-10">
-      <Loader2 size={20} className="animate-spin text-primary" />
-    </div>
-  );
-}
-
-function UpcomingPreviewRow({
-  item,
-  onClick,
-}: {
-  item: UpcomingItem;
-  onClick: () => void;
-}) {
-  const dateLabel = item.date
-    ? new Date(`${item.date}T12:00:00`).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-      })
-    : "Soon";
-
-  return (
-    <button
-      onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/5"
-    >
-      <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]">
-        <span className="text-[10px] uppercase tracking-wide text-white/35">{dateLabel.split(" ")[0]}</span>
-        <span className="text-sm font-semibold text-foreground">{dateLabel.split(" ")[1] || ""}</span>
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {item.type === "show" ? item.artist : item.title}
-          </span>
-          {item.user_attending && item.type === "show" ? (
-            <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-              Going
-            </span>
-          ) : null}
-        </div>
-        <div className="truncate text-xs text-muted-foreground">
-          {item.type === "show" ? `${item.title} · ${item.subtitle}` : `${item.artist} · ${item.title}`}
-        </div>
-      </div>
-      <div className="shrink-0 rounded-full border border-primary/15 bg-primary/10 px-2 py-1 text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
-        {item.type === "show" ? "Show" : "Release"}
-      </div>
-    </button>
-  );
-}
-
-function FeaturedPlaylistCard({
-  name,
-  description,
-  tracks,
-  coverDataUrl,
-  meta,
-  onClick,
-  badge,
-}: {
-  name: string;
-  description?: string;
-  tracks?: PlaylistArtworkTrack[];
-  coverDataUrl?: string | null;
-  meta: string;
-  badge?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="group w-[180px] flex-shrink-0 text-left"
-    >
-      <div className="relative">
-        <PlaylistArtwork
-          name={name}
-          coverDataUrl={coverDataUrl}
-          tracks={tracks}
-          className="aspect-square rounded-3xl shadow-xl transition-transform group-hover:scale-[1.02]"
-        />
-        {badge ? (
-          <div className="absolute left-3 top-3 rounded-full border border-primary/25 bg-[#0a0a0f]/80 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-primary backdrop-blur-md">
-            {badge}
-          </div>
-        ) : null}
-      </div>
-      <div className="px-1 pt-3">
-        <div className="truncate text-sm font-bold text-foreground">{name}</div>
-        <div className="mt-1 line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-muted-foreground">
-          {description || meta}
-        </div>
-        <div className="mt-2 text-[11px] uppercase tracking-wider text-white/35">{meta}</div>
-      </div>
-    </button>
-  );
-}
-
-function ContinueListeningCard({
-  track,
-  onPlay,
-}: {
-  track: Track;
-  onPlay: () => void;
-}) {
-  return (
-    <div className="group relative overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04] p-4">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_55%)]" />
-      <div className="relative flex items-center gap-4">
-        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-white/5">
-          {track.albumCover ? (
-            <img src={track.albumCover} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-white/5">
-              <ListMusic size={24} className="text-white/20" />
-            </div>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-wider text-white/45">
-            <Clock3 size={11} />
-            Continue listening
-          </div>
-          <h2 className="truncate text-xl font-bold text-foreground">{track.title}</h2>
-          <p className="mt-1 truncate text-sm text-muted-foreground">{track.artist}</p>
-          {track.album ? <p className="mt-1 truncate text-xs text-white/35">{track.album}</p> : null}
-        </div>
-        <button
-          onClick={onPlay}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform group-hover:scale-105"
-        >
-          <Play size={18} fill="currentColor" className="ml-0.5" />
-        </button>
-      </div>
-    </div>
-  );
+function buildLibraryAdditions(
+  playlists: UserPlaylist[],
+  followedCurated: CuratedPlaylist[],
+  savedAlbums: SavedAlbum[],
+): LibraryAddition[] {
+  return [
+    ...playlists.map((playlist) => ({
+      type: "playlist" as const,
+      added_at: playlist.updated_at || playlist.created_at || "",
+      playlist_id: playlist.id,
+      playlist_name: playlist.name,
+      playlist_description: playlist.description,
+      playlist_tracks: playlist.artwork_tracks,
+      playlist_cover_data_url: playlist.cover_data_url,
+      playlist_track_count: playlist.track_count,
+      playlist_badge: "Playlist",
+    })),
+    ...followedCurated.map((playlist) => ({
+      type: "system_playlist" as const,
+      added_at: playlist.followed_at || playlist.updated_at || "",
+      playlist_id: playlist.id,
+      playlist_name: playlist.name,
+      playlist_description: playlist.description,
+      playlist_tracks: playlist.artwork_tracks,
+      playlist_track_count: playlist.track_count,
+      playlist_follower_count: playlist.follower_count,
+      playlist_badge: playlist.is_smart ? "Smart" : "Curated",
+    })),
+    ...savedAlbums.map((album) => ({
+      type: "album" as const,
+      added_at: album.saved_at || "",
+      album_id: album.id,
+      album_name: album.name,
+      album_artist: album.artist,
+      album_year: album.year,
+      album_track_count: album.track_count,
+    })),
+  ]
+    .sort((a, b) => b.added_at.localeCompare(a.added_at))
+    .slice(0, 14);
 }
 
 export function Home() {
@@ -370,7 +94,7 @@ export function Home() {
   const { data: playlists, loading: playlistsLoading } =
     useApi<UserPlaylist[]>("/api/playlists");
   const { data: upcoming } =
-    useApi<UpcomingResponse>("/api/me/upcoming");
+    useApi<HomeUpcomingResponse>("/api/me/upcoming");
   const { data: replay } =
     useApi<ReplayMix>("/api/me/stats/replay?window=30d&limit=18");
 
@@ -383,50 +107,13 @@ export function Home() {
     .filter((item) => item.is_upcoming)
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
     .slice(0, 3);
-  const nextUpcoming = upcomingPreview[0] || null;
-  const nextUpcomingDate = nextUpcoming?.date
-    ? new Date(`${nextUpcoming.date}T12:00:00`).toLocaleDateString("en-US", {
-        month: "long",
-        day: "numeric",
-      })
-    : null;
   const homeInsights = (upcoming?.insights || []).slice(0, 2);
   const replayPreview = (replay?.items || []).slice(0, 4);
-  const libraryAdditions: LibraryAddition[] = [
-    ...((playlists || []).map((playlist) => ({
-      type: "playlist" as const,
-      added_at: playlist.updated_at || playlist.created_at || "",
-      playlist_id: playlist.id,
-      playlist_name: playlist.name,
-      playlist_description: playlist.description,
-      playlist_tracks: playlist.artwork_tracks,
-      playlist_cover_data_url: playlist.cover_data_url,
-      playlist_track_count: playlist.track_count,
-      playlist_badge: "Playlist",
-    }))),
-    ...((followedCurated || []).map((playlist) => ({
-      type: "system_playlist" as const,
-      added_at: playlist.followed_at || playlist.updated_at || "",
-      playlist_id: playlist.id,
-      playlist_name: playlist.name,
-      playlist_description: playlist.description,
-      playlist_tracks: playlist.artwork_tracks,
-      playlist_track_count: playlist.track_count,
-      playlist_follower_count: playlist.follower_count,
-      playlist_badge: playlist.is_smart ? "Smart" : "Curated",
-    }))),
-    ...((savedAlbums || []).map((album) => ({
-      type: "album" as const,
-      added_at: album.saved_at || "",
-      album_id: album.id,
-      album_name: album.name,
-      album_artist: album.artist,
-      album_year: album.year,
-      album_track_count: album.track_count,
-    }))),
-  ]
-    .sort((a, b) => b.added_at.localeCompare(a.added_at))
-    .slice(0, 14);
+  const libraryAdditions = buildLibraryAdditions(
+    playlists || [],
+    followedCurated || [],
+    savedAlbums || [],
+  );
   const libraryAdditionsLoading =
     savedAlbumsLoading || playlistsLoading || followedLoading;
 
@@ -470,7 +157,7 @@ export function Home() {
     }
   }
 
-  async function acknowledgeInsight(insight: UpcomingInsight) {
+  async function acknowledgeInsight(insight: HomeUpcomingInsight) {
     try {
       await api(`/api/me/shows/${insight.show_id}/reminders`, "POST", {
         reminder_type: insight.type,
@@ -482,7 +169,7 @@ export function Home() {
     }
   }
 
-  async function playInsightSetlist(insight: UpcomingInsight) {
+  async function playInsightSetlist(insight: HomeUpcomingInsight) {
     try {
       const queue = await fetchPlayableSetlist(insight.artist);
       if (!queue.length) {
@@ -519,444 +206,83 @@ export function Home() {
     <div className="space-y-10">
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">{getGreeting()}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{getDateString()}</p>
+          <h1 className="text-3xl font-bold text-foreground">{getHomeGreeting()}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{getHomeDateString()}</p>
         </div>
 
-        {continueLead ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.85fr)]">
-            <ContinueListeningCard
-              track={continueLead}
-              onPlay={() => play(continueLead, { type: "track", name: "Continue Listening" })}
-            />
-
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
-              <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/40">
-                <Clock3 size={12} />
-                Recent listens
-              </div>
-              <div className="space-y-1">
-                {continueRail.length > 0 ? continueRail.slice(0, 4).map((track) => (
-                  <button
-                    key={track.id}
-                    onClick={() => play(track, { type: "track", name: "Recent Listening" })}
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5"
-                  >
-                    <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-white/5">
-                      {track.albumCover ? (
-                        <img src={track.albumCover} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center bg-white/5">
-                          <ListMusic size={16} className="text-white/20" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">{track.title}</div>
-                      <div className="truncate text-xs text-muted-foreground">{track.artist}</div>
-                    </div>
-                    <Play size={15} className="shrink-0 text-white/30" />
-                  </button>
-                )) : (
-                  <div className="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-sm text-muted-foreground">
-                    Start playing music and your listening history will show up here.
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-hidden rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_50%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-6">
-            <div className="max-w-2xl space-y-3">
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary">
-                <Sparkles size={12} />
-                Start listening
-              </div>
-              <h2 className="text-2xl font-bold text-foreground">Your home should feel alive as soon as playback starts.</h2>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Play an album, a playlist, or a curated mix and this screen will turn into your real listening surface:
-                continuity, smart picks, and system playlists from Crate.
-              </p>
-            </div>
-          </div>
-        )}
+        <ContinueListeningSection
+          continueLead={continueLead}
+          continueRail={continueRail}
+          onPlayTrack={(track, sourceName) => play(track, { type: "track", name: sourceName })}
+        />
       </div>
 
-      {upcomingPreview.length > 0 ? (
-        <section className="space-y-4">
-          <SectionHeader
-            title="Upcoming"
-            subtitle="Next shows and releases from the artists you follow."
-            actionLabel="Open Upcoming"
-            onAction={() => navigate("/upcoming")}
-          />
+      <HomeUpcomingSection
+        previewItems={upcomingPreview}
+        summary={upcoming?.summary}
+        onOpenUpcoming={() => navigate("/upcoming")}
+      />
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5">
-              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
-                <RadioTower size={12} />
-                From your artists
-              </div>
-              {nextUpcoming ? (
-                <>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-white/55">
-                      {nextUpcoming.type === "show" ? "Next show" : "Next release"}
-                    </div>
-                    {nextUpcoming.user_attending && nextUpcoming.type === "show" ? (
-                      <div className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-primary">
-                        Going
-                      </div>
-                    ) : null}
-                  </div>
-                  <h2 className="mt-4 text-2xl font-bold text-foreground">
-                    {nextUpcoming.type === "show" ? nextUpcoming.artist : nextUpcoming.title}
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {nextUpcoming.type === "show"
-                      ? `${nextUpcoming.title} · ${nextUpcoming.subtitle}`
-                      : `${nextUpcoming.artist} · ${nextUpcoming.subtitle}`}
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {nextUpcomingDate ? (
-                      <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                        <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Date</div>
-                        <div className="mt-1 text-sm font-semibold text-foreground">{nextUpcomingDate}</div>
-                      </div>
-                    ) : null}
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                      <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Shows</div>
-                      <div className="mt-1 text-sm font-semibold text-foreground">{upcoming?.summary.show_count ?? 0}</div>
-                    </div>
-                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                      <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Releases</div>
-                      <div className="mt-1 text-sm font-semibold text-foreground">{upcoming?.summary.release_count ?? 0}</div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => navigate("/upcoming")}
-                    className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                  >
-                    <Calendar size={15} />
-                    View details
-                  </button>
-                </>
-              ) : null}
-            </div>
+      <HomeShowPrepSection
+        insights={homeInsights}
+        onOpenUpcoming={() => navigate("/upcoming")}
+        onPlaySetlist={(insight) => void playInsightSetlist(insight)}
+        onSaveReminder={(insight) => void acknowledgeInsight(insight)}
+      />
 
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
-              <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/40">
-                <Calendar size={12} />
-                Next up
-              </div>
-              <div className="space-y-1">
-                {upcomingPreview.map((item) => (
-                  <UpcomingPreviewRow
-                    key={`${item.type}-${item.artist}-${item.title}-${item.date}`}
-                    item={item}
-                    onClick={() => navigate("/upcoming")}
-                  />
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
+      <HomeReplaySection
+        replay={replay || undefined}
+        replayPreview={replayPreview}
+        onOpenStats={() => navigate("/stats")}
+        onPlayReplay={playReplayMix}
+        onPlayTrack={(item) =>
+          play(
+            {
+              id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
+              title: item.title,
+              artist: item.artist,
+              album: item.album,
+              path: item.track_path || undefined,
+              libraryTrackId: item.track_id || undefined,
+              albumCover: item.artist && item.album
+                ? `/api/cover/${encPath(item.artist)}/${encPath(item.album)}`
+                : undefined,
+            },
+            { type: "track", name: item.title },
+          )
+        }
+      />
 
-      {homeInsights.length > 0 ? (
-        <section className="space-y-4">
-          <SectionHeader
-            title="Show prep"
-            subtitle="A couple of timely prompts from the shows you're planning to attend."
-            actionLabel="Open Upcoming"
-            onAction={() => navigate("/upcoming")}
-          />
+      <FromCrateSection
+        playlists={curatedPlaylists || undefined}
+        loading={curatedLoading}
+        onOpenPlaylist={(playlistId) => navigate(`/curation/playlist/${playlistId}`)}
+      />
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            {homeInsights.map((insight) => (
-              <div
-                key={`${insight.type}:${insight.show_id}`}
-                className="rounded-[24px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.16),transparent_42%),rgba(255,255,255,0.03)] p-5"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-primary">
-                      <Sparkles size={12} />
-                      {insight.type === "show_prep" ? "Show prep" : insight.type === "one_week" ? "This week" : "One month"}
-                    </div>
-                    <h3 className="mt-3 text-lg font-bold text-foreground">{insight.title}</h3>
-                    <p className="mt-1 text-sm text-white/60">{insight.subtitle}</p>
-                  </div>
-                  {insight.weight === "high" ? (
-                    <div className="rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[10px] uppercase tracking-[0.16em] text-primary">
-                      Heavy rotation
-                    </div>
-                  ) : null}
-                </div>
+      <HomeLibrarySection
+        additions={libraryAdditions}
+        loading={libraryAdditionsLoading}
+        onOpenLibrary={() => navigate("/library")}
+        onPlayPlaylist={(playlistId, isSystem, playlistName) =>
+          void handlePlayPlaylist(playlistId, isSystem, playlistName)
+        }
+        onToggleSystemPlaylistFollow={(playlistId) =>
+          void handleToggleSystemPlaylistFollow(playlistId, true)
+        }
+        onOpenPlaylist={(playlistId) => navigate(`/playlist/${playlistId}`)}
+        onOpenSystemPlaylist={(playlistId) => navigate(`/curation/playlist/${playlistId}`)}
+      />
 
-                <p className="mt-4 text-sm leading-6 text-muted-foreground">{insight.message}</p>
+      <JustLandedSection
+        artists={recentGlobalArtists?.items}
+        loading={globalArtistsLoading}
+        onOpenExplore={() => navigate("/explore")}
+      />
 
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {insight.has_setlist ? (
-                    <button
-                      onClick={() => void playInsightSetlist(insight)}
-                      className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-                    >
-                      <Play size={14} fill="currentColor" />
-                      Play probable setlist
-                    </button>
-                  ) : null}
-                  <button
-                    onClick={() => void acknowledgeInsight(insight)}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm text-white/65 transition-colors hover:border-white/20 hover:text-foreground"
-                  >
-                    <Calendar size={14} />
-                    Save for later
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {replayPreview.length > 0 ? (
-        <section className="space-y-4">
-          <SectionHeader
-            title={replay?.title || "Replay this month"}
-            subtitle={replay?.subtitle || "A playable recap of your current listening window."}
-            actionLabel="Open Stats"
-            onAction={() => navigate("/stats")}
-          />
-
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)]">
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.14),transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5">
-              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
-                <Sparkles size={12} />
-                Replay
-              </div>
-              <h2 className="mt-4 text-2xl font-bold text-foreground">{replay?.title}</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">{replay?.subtitle}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Tracks</div>
-                  <div className="mt-1 text-sm font-semibold text-foreground">{replay?.track_count ?? 0}</div>
-                </div>
-                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Time listened</div>
-                  <div className="mt-1 text-sm font-semibold text-foreground">
-                    {Math.round(replay?.minutes_listened ?? 0)}m
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={playReplayMix}
-                className="mt-5 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <Play size={15} fill="currentColor" />
-                Play replay
-              </button>
-            </div>
-
-            <div className="overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.03] p-4">
-              <div className="mb-3 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/40">
-                <Clock3 size={12} />
-                Replay picks
-              </div>
-              <div className="space-y-1">
-                {replayPreview.map((item) => (
-                  <button
-                    key={`${item.track_id ?? item.track_path ?? item.title}`}
-                    onClick={() =>
-                      play(
-                        {
-                          id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
-                          title: item.title,
-                          artist: item.artist,
-                          album: item.album,
-                          path: item.track_path || undefined,
-                          libraryTrackId: item.track_id || undefined,
-                          albumCover: item.artist && item.album
-                            ? `/api/cover/${encPath(item.artist)}/${encPath(item.album)}`
-                            : undefined,
-                        },
-                        { type: "track", name: item.title },
-                      )
-                    }
-                    className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5"
-                  >
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white/45">
-                      {item.play_count}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
-                      <div className="truncate text-xs text-muted-foreground">{item.artist}</div>
-                    </div>
-                    <Play size={15} className="shrink-0 text-white/30" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      <section className="space-y-4">
-        <SectionHeader
-          title="From Crate"
-          subtitle="Global smart and curated playlists published from admin."
-        />
-        {curatedLoading ? (
-          <SectionLoading />
-        ) : curatedPlaylists && curatedPlaylists.length > 0 ? (
-          <SectionRail>
-            {curatedPlaylists.map((playlist) => (
-              <FeaturedPlaylistCard
-                key={playlist.id}
-                name={playlist.name}
-                description={playlist.description}
-                tracks={playlist.artwork_tracks}
-                meta={`${playlist.track_count} tracks${playlist.category ? ` · ${playlist.category}` : ""}`}
-                badge={playlist.is_smart ? "Smart" : "Curated"}
-                onClick={() => navigate(`/curation/playlist/${playlist.id}`)}
-              />
-            ))}
-          </SectionRail>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
-            No system playlists are available yet.
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-4">
-        <SectionHeader
-          title="In Your Library"
-          subtitle="Your latest playlists and saved albums in one place."
-          actionLabel="Go to Library"
-          onAction={() => navigate("/library")}
-        />
-
-        {libraryAdditionsLoading ? (
-          <SectionLoading />
-        ) : libraryAdditions.length > 0 ? (
-          <SectionRail>
-            {libraryAdditions.map((item) => {
-              if (
-                (item.type === "playlist" || item.type === "system_playlist") &&
-                item.playlist_id &&
-                item.playlist_name
-              ) {
-                const isSystem = item.type === "system_playlist";
-                const playlistMeta = isSystem
-                  ? `${item.playlist_track_count || 0} tracks${item.playlist_follower_count != null ? ` · ${item.playlist_follower_count} followers` : ""}`
-                  : `${item.playlist_track_count || 0} tracks`;
-                return (
-                  <PlaylistCard
-                    key={`${item.type}-${item.playlist_id}-${item.added_at}`}
-                    name={item.playlist_name}
-                    description={item.playlist_description}
-                    tracks={item.playlist_tracks}
-                    coverDataUrl={item.playlist_cover_data_url}
-                    meta={playlistMeta}
-                    systemPlaylist={isSystem}
-                    isFollowed={isSystem}
-                    badge={item.playlist_badge}
-                    onPlay={() => handlePlayPlaylist(item.playlist_id!, isSystem, item.playlist_name!)}
-                    onToggleFollow={
-                      isSystem
-                        ? () => handleToggleSystemPlaylistFollow(item.playlist_id!, true)
-                        : undefined
-                    }
-                    onClick={() =>
-                      navigate(isSystem ? `/curation/playlist/${item.playlist_id}` : `/playlist/${item.playlist_id}`)
-                    }
-                  />
-                );
-              }
-
-              if (item.album_id && item.album_name && item.album_artist) {
-                return (
-                  <AlbumCard
-                    key={`album-${item.album_id}-${item.added_at}`}
-                    artist={item.album_artist}
-                    album={item.album_name}
-                    albumId={item.album_id}
-                    year={item.album_year}
-                  />
-                );
-              }
-
-              return null;
-            })}
-          </SectionRail>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
-            Start saving albums or creating playlists and they will show up here.
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-4">
-        <SectionHeader
-          title="Just landed"
-          subtitle="Fresh additions arriving in the shared Crate library."
-          actionLabel="Explore"
-          onAction={() => navigate("/explore")}
-        />
-        {globalArtistsLoading ? (
-          <SectionLoading />
-        ) : recentGlobalArtists?.items?.length ? (
-          <SectionRail>
-            {recentGlobalArtists.items.map((artist) => (
-              <ArtistCard
-                key={`just-landed-${artist.name}`}
-                name={artist.name}
-                subtitle={`${artist.albums ?? artist.album_count ?? 0} album${(artist.albums ?? artist.album_count ?? 0) === 1 ? "" : "s"} · ${artist.tracks ?? artist.track_count ?? 0} tracks`}
-              />
-            ))}
-          </SectionRail>
-        ) : (
-          <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
-            No recent global additions yet.
-          </div>
-        )}
-      </section>
-
-      {continueRail.length > 0 ? (
-        <section className="space-y-4">
-          <SectionHeader
-            title="Keep the queue moving"
-            subtitle="Quick picks from your own recent listening."
-          />
-          <SectionRail>
-            {continueRail.map((track) => (
-              <button
-                key={track.id}
-                onClick={() => play(track, { type: "track", name: "Quick Pick" })}
-                className="group w-[220px] flex-shrink-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] text-left"
-              >
-                <div className="flex items-center gap-3 p-3">
-                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-white/5">
-                    {track.albumCover ? (
-                      <img src={track.albumCover} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-white/5">
-                        <ListMusic size={18} className="text-white/20" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-foreground">{track.title}</div>
-                    <div className="mt-1 truncate text-xs text-muted-foreground">{track.artist}</div>
-                    {track.album ? <div className="mt-1 truncate text-[11px] text-white/35">{track.album}</div> : null}
-                  </div>
-                </div>
-              </button>
-            ))}
-          </SectionRail>
-        </section>
-      ) : null}
+      <KeepQueueMovingSection
+        tracks={continueRail}
+        onPlayTrack={(track) => play(track, { type: "track", name: "Quick Pick" })}
+      />
     </div>
   );
 }

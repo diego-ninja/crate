@@ -31,14 +31,10 @@ export function getUseAlbumPalettePreference(): boolean {
 export function setUseAlbumPalettePreference(value: boolean) {
   try {
     localStorage.setItem(USE_ALBUM_PALETTE_KEY, String(value));
+    dispatchVisualizerPrefsChange({ useAlbumPalette: value });
   } catch {
     // ignore storage failures
   }
-  window.dispatchEvent(
-    new CustomEvent(PLAYER_VIZ_PREFS_EVENT, {
-      detail: { useAlbumPalette: value },
-    }),
-  );
 }
 
 export function getVisualizerEnabledPreference(): boolean {
@@ -53,14 +49,10 @@ export function getVisualizerEnabledPreference(): boolean {
 export function setVisualizerEnabledPreference(value: boolean) {
   try {
     localStorage.setItem(VISUALIZER_ENABLED_KEY, String(value));
+    dispatchVisualizerPrefsChange({ visualizerEnabled: value });
   } catch {
     // ignore storage failures
   }
-  window.dispatchEvent(
-    new CustomEvent(PLAYER_VIZ_PREFS_EVENT, {
-      detail: { visualizerEnabled: value },
-    }),
-  );
 }
 
 export function getVisualizerSettingsPreference(): VisualizerSettingsPreference {
@@ -83,14 +75,10 @@ export function getVisualizerSettingsPreference(): VisualizerSettingsPreference 
 export function setVisualizerSettingsPreference(value: VisualizerSettingsPreference) {
   try {
     localStorage.setItem(VISUALIZER_SETTINGS_KEY, JSON.stringify(value));
+    dispatchVisualizerPrefsChange({ visualizerSettings: value });
   } catch {
     // ignore storage failures
   }
-  window.dispatchEvent(
-    new CustomEvent(PLAYER_VIZ_PREFS_EVENT, {
-      detail: { visualizerSettings: value },
-    }),
-  );
 }
 
 export function getLegacyVisualizerModePreference(): VisualizerMode {
@@ -103,4 +91,12 @@ export function getLegacyVisualizerModePreference(): VisualizerMode {
     // ignore storage failures
   }
   return "spheres";
+}
+
+function dispatchVisualizerPrefsChange(detail: Record<string, unknown>) {
+  window.dispatchEvent(
+    new CustomEvent(PLAYER_VIZ_PREFS_EVENT, {
+      detail,
+    }),
+  );
 }

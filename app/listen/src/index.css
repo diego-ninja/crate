@@ -37,8 +37,23 @@
   --gradient-bg-90: rgba(10, 10, 15, 0.9);
   --gradient-bg-40: rgba(10, 10, 15, 0.4);
   --gradient-bg-50: rgba(10, 10, 15, 0.5);
+  --surface-app: #0a0a0f;
+  --surface-panel: #0c0c14;
+  --surface-raised: #12121a;
+  --surface-modal: rgba(16, 16, 24, 0.95);
+  --surface-popover: rgba(18, 18, 26, 0.95);
   --scrollbar-thumb: #252535;
   --scrollbar-hover: #353545;
+  --z-header: 30;
+  --z-sidebar: 40;
+  --z-player: 50;
+  --z-player-drawer: 55;
+  --z-extended-player: 60;
+  --z-popover: 70;
+  --z-player-overlay: 80;
+  --z-modal: 90;
+  --z-upcoming-overlay: 95;
+  --z-leaflet-popup: 96;
   color-scheme: dark;
 }
 
@@ -66,6 +81,22 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 
+.bg-app-surface { background-color: var(--surface-app); }
+.bg-panel-surface { background-color: var(--surface-panel); }
+.bg-raised-surface { background-color: var(--surface-raised); }
+.bg-modal-surface { background-color: var(--surface-modal); }
+.bg-popover-surface { background-color: var(--surface-popover); }
+
+.z-app-header { z-index: var(--z-header); }
+.z-app-sidebar { z-index: var(--z-sidebar); }
+.z-app-player { z-index: var(--z-player); }
+.z-app-player-drawer { z-index: var(--z-player-drawer); }
+.z-app-extended-player { z-index: var(--z-extended-player); }
+.z-app-popover { z-index: var(--z-popover); }
+.z-app-player-overlay { z-index: var(--z-player-overlay); }
+.z-app-modal { z-index: var(--z-modal); }
+.z-app-upcoming-overlay { z-index: var(--z-upcoming-overlay); }
+
 @keyframes pageIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -92,7 +123,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .animate-pulse-subtle { animation: pulse-subtle 3s ease-in-out infinite; }
 
 /* Lyric line gradient mask */
-.lyrics-mask { mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); }
+.lyrics-mask { -webkit-mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); }
 
 /* Leaflet */
 .leaflet-popup-content-wrapper {
@@ -124,7 +155,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   z-index: 500 !important;
 }
 .upcoming-map .leaflet-popup-pane {
-  z-index: 1200 !important;
+  z-index: var(--z-leaflet-popup) !important;
 }
 .upcoming-map .leaflet-control-container,
 .upcoming-map .leaflet-top,

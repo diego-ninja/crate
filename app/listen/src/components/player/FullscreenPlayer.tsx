@@ -272,7 +272,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           </h2>
           <button
             onClick={goToArtist}
-            className="text-sm text-white/50 hover:text-cyan-400 active:text-cyan-400 transition-colors mt-1"
+            className="mt-1 text-sm text-white/50 transition-colors hover:text-primary active:text-primary"
           >
             {currentTrack.artist}
           </button>
@@ -315,7 +315,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           </button>
           <button
             onClick={isPlaying ? pause : resume}
-            className="w-14 h-14 rounded-full bg-cyan-500 flex items-center justify-center active:bg-cyan-600 transition-colors shadow-lg shadow-cyan-500/25"
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/25 transition-colors active:bg-primary/90"
           >
             {isPlaying ? (
               <Pause size={28} className="text-white" fill="white" />
@@ -336,7 +336,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           <button
             onClick={toggleShuffle}
             className={`w-11 h-11 flex items-center justify-center transition-colors ${
-              shuffle ? "text-cyan-400" : "text-white/40 active:text-white/70"
+              shuffle ? "text-primary" : "text-white/40 active:text-white/70"
             }`}
           >
             <Shuffle size={20} />
@@ -359,7 +359,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             onClick={cycleRepeat}
             className={`w-11 h-11 flex items-center justify-center transition-colors ${
               repeat !== "off"
-                ? "text-cyan-400"
+                ? "text-primary"
                 : "text-white/40 active:text-white/70"
             }`}
           >

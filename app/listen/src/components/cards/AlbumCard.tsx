@@ -4,8 +4,9 @@ import { Heart, Loader2, Play } from "lucide-react";
 
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
+import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { cn, encPath } from "@/lib/utils";
 
 interface AlbumCardProps {
   artist: string;
@@ -14,6 +15,7 @@ interface AlbumCardProps {
   year?: string;
   cover?: string;
   compact?: boolean;
+  layout?: "rail" | "grid";
 }
 
 interface AlbumData {
@@ -31,7 +33,15 @@ interface AlbumData {
   }>;
 }
 
-export const AlbumCard = memo(function AlbumCard({ artist, album, albumId, year, cover, compact }: AlbumCardProps) {
+export const AlbumCard = memo(function AlbumCard({
+  artist,
+  album,
+  albumId,
+  year,
+  cover,
+  compact,
+  layout = "rail",
+}: AlbumCardProps) {
   const navigate = useNavigate();
   const { playAll } = usePlayerActions();
   const { isSaved, toggleAlbumSaved } = useSavedAlbums();
@@ -69,7 +79,12 @@ export const AlbumCard = memo(function AlbumCard({ artist, album, albumId, year,
     <div
       role="button"
       tabIndex={0}
-      className={`group text-left flex-shrink-0 snap-start ${compact ? "w-[120px]" : "w-[160px]"}`}
+      className={cn(
+        "group snap-start text-left",
+        layout === "grid"
+          ? "w-full min-w-0"
+          : `flex-shrink-0 ${compact ? "w-[120px]" : "w-[160px]"}`,
+      )}
       onClick={() => navigate(`/album/${encPath(artist)}/${encPath(album)}`)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -87,8 +102,10 @@ export const AlbumCard = memo(function AlbumCard({ artist, album, albumId, year,
           onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
         />
         {albumId != null && (
-          <button
-            className={`absolute top-2 right-2 z-10 w-9 h-9 rounded-full bg-black/55 backdrop-blur-md border border-white/10 flex items-center justify-center text-white/75 hover:text-white hover:bg-black/70 transition-colors ${saved ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          <ActionIconButton
+            variant="card"
+            active={saved}
+            className={`absolute top-2 right-2 z-10 ${saved ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
             onClick={async (event) => {
               event.stopPropagation();
               try {
@@ -98,8 +115,8 @@ export const AlbumCard = memo(function AlbumCard({ artist, album, albumId, year,
               }
             }}
           >
-            <Heart size={16} className={saved ? "text-primary fill-primary" : ""} />
-          </button>
+            <Heart size={16} className={saved ? "fill-current" : ""} />
+          </ActionIconButton>
         )}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end justify-end p-2 md:items-center md:justify-center md:p-0">
           <button

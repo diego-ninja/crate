@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { api } from "@/lib/api";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { encPath, shuffleArray } from "@/lib/utils";
 
@@ -176,69 +177,56 @@ export function PlaylistListRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        <button
+        <ActionIconButton
           onClick={(event) => {
             event.stopPropagation();
             void loadAndPlay("play");
           }}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
           title="Play"
         >
           {playingMode === "play" ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} fill="currentColor" className="ml-0.5" />}
-        </button>
-        <button
+        </ActionIconButton>
+        <ActionIconButton
           onClick={(event) => {
             event.stopPropagation();
             void loadAndPlay("shuffle");
           }}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
           title="Shuffle"
         >
           {playingMode === "shuffle" ? <Loader2 size={15} className="animate-spin" /> : <Shuffle size={15} />}
-        </button>
+        </ActionIconButton>
         {followState ? (
-          <button
+          <ActionIconButton
             onClick={handleToggleFollow}
-            className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
-              followState.isFollowed
-                ? "text-primary hover:bg-primary/10"
-                : "text-white/45 hover:bg-white/10 hover:text-white"
-            }`}
+            active={followState.isFollowed}
             title={followState.isFollowed ? "Following" : "Follow"}
           >
             {togglingFollow ? <Loader2 size={15} className="animate-spin" /> : <Heart size={15} className={followState.isFollowed ? "fill-current" : ""} />}
-          </button>
+          </ActionIconButton>
         ) : null}
         {extraActions?.map((action) => {
           const Icon = action.icon;
-          const toneClass =
-            action.tone === "danger"
-              ? "text-red-300/80 hover:bg-red-500/10 hover:text-red-300"
-              : action.tone === "primary"
-                ? "text-cyan-200/80 hover:bg-cyan-400/10 hover:text-cyan-100"
-                : "text-white/45 hover:bg-white/10 hover:text-white";
 
           return (
-            <button
+            <ActionIconButton
               key={action.key}
               onClick={async (event) => {
                 event.stopPropagation();
                 await action.onClick();
               }}
-              className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${toneClass}`}
+              tone={action.tone}
               title={action.title}
             >
               {action.loading ? <Loader2 size={15} className="animate-spin" /> : <Icon size={15} />}
-            </button>
+            </ActionIconButton>
           );
         })}
-        <button
+        <ActionIconButton
           onClick={handleShare}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/10 hover:text-white"
           title="Share"
         >
           {sharing ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />}
-        </button>
+        </ActionIconButton>
       </div>
     </div>
   );

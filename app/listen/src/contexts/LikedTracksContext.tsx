@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -46,21 +47,37 @@ function getComparableKeys(value?: string | null): string[] {
 export function LikedTracksProvider({ children }: { children: ReactNode }) {
   const [likedTracks, setLikedTracks] = useState<LikedTrack[]>([]);
   const [loading, setLoading] = useState(true);
+  const likedTracksRequestRef = useRef<AbortController | null>(null);
 
   const refetch = useCallback(async () => {
+    likedTracksRequestRef.current?.abort();
+    const controller = new AbortController();
+    likedTracksRequestRef.current = controller;
     setLoading(true);
     try {
-      const tracks = await api<LikedTrack[]>("/api/me/likes?limit=1000");
+      const tracks = await api<LikedTrack[]>("/api/me/likes?limit=1000", "GET", undefined, {
+        signal: controller.signal,
+      });
       setLikedTracks(Array.isArray(tracks) ? tracks : []);
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted || (error as Error).name === "AbortError") {
+        return;
+      }
       setLikedTracks([]);
     } finally {
-      setLoading(false);
+      if (likedTracksRequestRef.current === controller) {
+        likedTracksRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void refetch();
+    return () => {
+      likedTracksRequestRef.current?.abort();
+      likedTracksRequestRef.current = null;
+    };
   }, [refetch]);
 
   const likedIndex = useMemo(() => {

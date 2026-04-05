@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -39,20 +40,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const authRequestRef = useRef<AbortController | null>(null);
 
   const refetch = useCallback(async () => {
+    authRequestRef.current?.abort();
+    const controller = new AbortController();
+    authRequestRef.current = controller;
+    setLoading(true);
     try {
-      const data = await api<AuthUser>("/api/auth/me");
+      const data = await api<AuthUser>("/api/auth/me", "GET", undefined, {
+        signal: controller.signal,
+      });
       setUser(data && data.id ? data : null);
-    } catch {
+    } catch (error) {
+      if (controller.signal.aborted || (error as Error).name === "AbortError") {
+        return;
+      }
       setUser(null);
     } finally {
-      setLoading(false);
+      if (authRequestRef.current === controller) {
+        authRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     void refetch();
+    return () => {
+      authRequestRef.current?.abort();
+      authRequestRef.current = null;
+    };
   }, [refetch]);
 
   const logout = useCallback(async () => {

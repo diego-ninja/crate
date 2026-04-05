@@ -12,7 +12,7 @@ export function Login() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f] px-4">
+      <div className="flex min-h-screen items-center justify-center bg-app-surface px-4">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
       </div>
     );
@@ -47,7 +47,7 @@ export function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f] px-4">
+    <div className="flex min-h-screen items-center justify-center bg-app-surface px-4">
       <form
         onSubmit={handleSubmit}
         className="w-full max-w-sm space-y-5"
@@ -96,7 +96,7 @@ export function Login() {
 
         <p className="text-center text-sm text-white/40">
           No account?{" "}
-          <Link to="/register" className="text-cyan-400 hover:underline">Create one</Link>
+          <Link to="/register" className="text-primary hover:underline">Create one</Link>
         </p>
       </form>
     </div>

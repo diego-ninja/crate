@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { encPath } from "@/lib/utils";
+import { cn, encPath } from "@/lib/utils";
 
 interface ArtistCardProps {
   name: string;
@@ -9,18 +9,38 @@ interface ArtistCardProps {
   href?: string;
   external?: boolean;
   large?: boolean;
+  layout?: "rail" | "grid";
 }
 
-export function ArtistCard({ name, photo, subtitle, compact, href, external = false, large = false }: ArtistCardProps) {
+export function ArtistCard({
+  name,
+  photo,
+  subtitle,
+  compact,
+  href,
+  external = false,
+  large = false,
+  layout = "rail",
+}: ArtistCardProps) {
   const navigate = useNavigate();
   const photoUrl = photo || `/api/artist/${encPath(name)}/photo`;
   const targetHref = href || `/artist/${encPath(name)}`;
   const imageSize = compact ? 100 : large ? 156 : 140;
+  const wrapperClassName = cn(
+    "group snap-start text-left",
+    layout === "grid"
+      ? "w-full min-w-0"
+      : `flex-shrink-0 ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`,
+  );
   const content = (
     <>
       <div
-        className="relative aspect-square rounded-full overflow-hidden bg-white/5 mb-2 mx-auto"
-        style={{ width: imageSize, height: imageSize }}
+        className="relative mx-auto mb-2 aspect-square overflow-hidden rounded-full bg-white/5"
+        style={{
+          width: layout === "grid" ? "100%" : imageSize,
+          maxWidth: imageSize,
+          height: layout === "grid" ? "auto" : imageSize,
+        }}
       >
         <img
           src={photoUrl}
@@ -43,7 +63,7 @@ export function ArtistCard({ name, photo, subtitle, compact, href, external = fa
         href={targetHref}
         target="_blank"
         rel="noopener noreferrer"
-        className={`group text-left flex-shrink-0 snap-start ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`}
+        className={wrapperClassName}
       >
         {content}
       </a>
@@ -52,7 +72,7 @@ export function ArtistCard({ name, photo, subtitle, compact, href, external = fa
 
   return (
     <button
-      className={`group text-left flex-shrink-0 snap-start ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`}
+      className={wrapperClassName}
       onClick={() => navigate(targetHref)}
     >
       {content}
