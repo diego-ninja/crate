@@ -43,12 +43,15 @@ export function useUpcomingShowActions(
   }
 
   async function playProbableSetlist() {
-    if (!item.probable_setlist?.length) return;
+    if (!item.probable_setlist?.length) {
+      toast.info("No probable setlist available for this show");
+      return;
+    }
     try {
       setPlayingSetlist(true);
       const queue = await fetchPlayableSetlist(item.artist);
       if (!queue.length) {
-        toast.info("No probable setlist tracks matched your library");
+        toast.info(`None of the ${item.probable_setlist.length} setlist tracks were found in your library`);
         return;
       }
       playAll(queue, 0, { type: "playlist", name: `${item.artist} Probable Setlist` });

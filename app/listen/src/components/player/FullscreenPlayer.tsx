@@ -276,6 +276,9 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           >
             {currentTrack.artist}
           </button>
+          {currentTrack.album && (
+            <p className="mt-0.5 text-xs text-white/30 truncate">{currentTrack.album}</p>
+          )}
         </div>
 
         {/* Progress bar */}
