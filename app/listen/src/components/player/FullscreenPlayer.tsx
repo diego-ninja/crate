@@ -14,6 +14,7 @@ import {
   AlignLeft,
   Disc3,
   Moon,
+  Volume2,
 } from "lucide-react";
 import {
   subscribeSleepTimer,
@@ -62,6 +63,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     toggleShuffle,
     cycleRepeat,
     jumpTo,
+    volume,
+    setVolume,
   } = usePlayer();
   const navigate = useNavigate();
 
@@ -413,6 +416,20 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           >
             {repeat === "one" ? <Repeat1 size={20} /> : <Repeat size={20} />}
           </button>
+        </div>
+
+        {/* Volume */}
+        <div className="flex items-center gap-3 mt-6 px-4 w-full max-w-[280px]">
+          <Volume2 size={14} className="text-white/30 flex-shrink-0" />
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={volume}
+            onChange={(e) => setVolume(Number(e.target.value))}
+            className="w-full h-1 appearance-none bg-white/10 rounded-full accent-primary"
+          />
         </div>
       </div>
       )}
