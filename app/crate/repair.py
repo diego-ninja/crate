@@ -347,7 +347,7 @@ class LibraryRepair:
             if artist_name:
                 try:
                     from crate.library_sync import LibrarySync
-                    from crate.utils import load_config
+                    from crate.config import load_config
                     syncer = LibrarySync(load_config())
                     artist_dir = self.library_path / artist_name
                     if artist_dir.is_dir():
