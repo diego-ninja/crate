@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play, Pencil, Trash2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
+import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
+import { PullIndicator } from "@/components/ui/PullIndicator";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { ArtistCard } from "@/components/cards/ArtistCard";
@@ -550,15 +552,24 @@ function LikedTab() {
 
 export function Library() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data: stats } = useApi<MeStats>("/api/me");
+  const { data: stats, refetch: refetchStats } = useApi<MeStats>("/api/me");
   const tab = parseTab(searchParams.get("tab"));
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const onRefresh = useCallback(async () => {
+    refetchStats();
+    setRefreshKey((k) => k + 1);
+  }, [refetchStats]);
+
+  const { handlers: pullHandlers, pullDistance, refreshing } = usePullToRefresh(onRefresh);
 
   function setTab(tab: Tab) {
     setSearchParams({ tab });
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" {...pullHandlers}>
+      <PullIndicator distance={pullDistance} refreshing={refreshing} />
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Your Library</h1>
@@ -593,10 +604,10 @@ export function Library() {
       </div>
 
       {/* Tab content */}
-      {tab === "playlists" && <PlaylistsTab />}
-      {tab === "artists" && <ArtistsTab />}
-      {tab === "albums" && <AlbumsTab />}
-      {tab === "liked" && <LikedTab />}
+      {tab === "playlists" && <PlaylistsTab key={refreshKey} />}
+      {tab === "artists" && <ArtistsTab key={refreshKey} />}
+      {tab === "albums" && <AlbumsTab key={refreshKey} />}
+      {tab === "liked" && <LikedTab key={refreshKey} />}
     </div>
   );
 }
