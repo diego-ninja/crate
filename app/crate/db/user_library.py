@@ -371,7 +371,7 @@ def _window_day_cutoff(window: str) -> str | None:
     days = _STATS_WINDOWS[normalized]
     if days is None:
         return None
-    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
 
 def _recompute_user_listening_aggregates(cur, user_id: int):

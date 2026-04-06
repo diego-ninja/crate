@@ -52,7 +52,7 @@ def get_new_releases(status: str = "", upcoming: bool = False, limit: int = 200)
                 + "WHERE nr.status NOT IN ('dismissed') "
                 "AND nr.release_date IS NOT NULL AND nr.release_date >= %s "
                 "ORDER BY nr.release_date ASC LIMIT %s",
-                (datetime.now(timezone.utc).strftime("%Y-%m-%d"), limit),
+                (datetime.now(timezone.utc).date(), limit),
             )
         elif status:
             cur.execute(

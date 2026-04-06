@@ -129,7 +129,7 @@ def upsert_show(external_id: str, artist_name: str, date: str, **kwargs) -> int 
 def get_upcoming_shows(artist_name: str | None = None, city: str | None = None,
                        country: str | None = None, limit: int = 200) -> list[dict]:
     """Get upcoming shows, optionally filtered."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).date()
     with get_db_ctx() as cur:
         conditions = ["date >= %s", "status != 'cancelled'"]
         params: list = [today]
@@ -159,7 +159,7 @@ def get_all_shows(limit: int = 500) -> list[dict]:
 
 def get_show_cities() -> list[str]:
     """Get distinct cities with upcoming shows."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).date()
     with get_db_ctx() as cur:
         cur.execute(
             "SELECT DISTINCT city FROM shows WHERE date >= %s AND city IS NOT NULL AND city != '' ORDER BY city",
@@ -170,7 +170,7 @@ def get_show_cities() -> list[str]:
 
 def get_show_countries() -> list[str]:
     """Get distinct countries with upcoming shows."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).date()
     with get_db_ctx() as cur:
         cur.execute(
             "SELECT DISTINCT country FROM shows WHERE date >= %s AND country IS NOT NULL ORDER BY country",
@@ -182,7 +182,7 @@ def get_show_countries() -> list[str]:
 def delete_past_shows(days_old: int = 30):
     """Remove shows older than N days."""
     from datetime import timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days_old)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days_old)).date()
     with get_db_ctx() as cur:
         cur.execute("DELETE FROM shows WHERE date < %s", (cutoff,))
         return cur.rowcount

@@ -826,7 +826,7 @@ def api_upcoming(request: Request):
 
     _require_auth(request)
     items = []
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).date()
 
     releases = get_new_releases(limit=50)
     for release in releases:

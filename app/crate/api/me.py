@@ -493,8 +493,8 @@ def feed(request: Request, limit: int = 30):
     followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
 
     items = []
-    recent_day_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    recent_day_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    today = datetime.now(timezone.utc).date()
     with get_db_ctx() as cur:
         if followed_names:
             placeholders = ",".join(["%s"] * len(followed_names))
@@ -560,7 +560,7 @@ def upcoming(request: Request, limit: int = 120):
             },
         }
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).date()
     recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
     placeholders = ",".join(["%s"] * len(followed_names))
 
