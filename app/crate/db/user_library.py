@@ -408,7 +408,7 @@ def _recompute_user_daily_listening(cur, user_id: int):
         )
         SELECT
             user_id,
-            substring(ended_at, 1, 10) AS day,
+            (ended_at AT TIME ZONE 'UTC')::date AS day,
             COUNT(*)::INTEGER AS play_count,
             SUM(CASE WHEN was_completed THEN 1 ELSE 0 END)::INTEGER AS complete_play_count,
             SUM(CASE WHEN was_skipped THEN 1 ELSE 0 END)::INTEGER AS skip_count,
@@ -418,7 +418,7 @@ def _recompute_user_daily_listening(cur, user_id: int):
             COUNT(DISTINCT NULLIF(CONCAT(COALESCE(artist, ''), '||', COALESCE(album, '')), '||'))::INTEGER AS unique_albums
         FROM user_play_events
         WHERE user_id = %s
-        GROUP BY user_id, substring(ended_at, 1, 10)
+        GROUP BY user_id, (ended_at AT TIME ZONE 'UTC')::date
         """,
         (user_id,),
     )

@@ -503,7 +503,7 @@ def feed(request: Request, limit: int = 30):
                        la.updated_at AS date
                 FROM library_albums la
                 WHERE la.artist IN ({placeholders})
-                AND substring(COALESCE(la.updated_at, ''), 1, 10) >= %s
+                AND la.updated_at >= %s
                 ORDER BY la.updated_at DESC
                 LIMIT %s
             """, list(followed_names) + [recent_day_cutoff, limit])
@@ -589,7 +589,7 @@ def upcoming(request: Request, limit: int = 120):
                 (nr.release_date IS NOT NULL AND nr.release_date >= %s)
                 OR nr.detected_at >= %s
               )
-            ORDER BY COALESCE(nr.release_date, substring(nr.detected_at, 1, 10)) ASC
+            ORDER BY COALESCE(nr.release_date, (nr.detected_at AT TIME ZONE 'UTC')::date) ASC
             LIMIT %s
             """,
             followed_names + [today, recent_cutoff, limit],

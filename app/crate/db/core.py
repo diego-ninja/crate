@@ -261,17 +261,17 @@ def _create_schema(cur):
             params_json JSONB DEFAULT '{}',
             result_json JSONB,
             error TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
             priority INTEGER DEFAULT 2,
             pool TEXT DEFAULT 'default',
             parent_task_id TEXT,
             max_duration_sec INTEGER DEFAULT 1800,
-            heartbeat_at TEXT,
+            heartbeat_at TIMESTAMPTZ,
             worker_id TEXT,
             retry_count INTEGER DEFAULT 0,
             max_retries INTEGER DEFAULT 0,
-            started_at TEXT
+            started_at TIMESTAMPTZ
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
@@ -294,7 +294,7 @@ def _create_schema(cur):
             id SERIAL PRIMARY KEY,
             task_id TEXT REFERENCES tasks(id),
             issues_json JSONB NOT NULL,
-            scanned_at TEXT NOT NULL
+            scanned_at TIMESTAMPTZ NOT NULL
         )
     """)
 
@@ -307,8 +307,8 @@ def _create_schema(cur):
             details_json JSONB DEFAULT '{}',
             auto_fixable BOOLEAN DEFAULT FALSE,
             status TEXT NOT NULL DEFAULT 'open',
-            created_at TEXT NOT NULL,
-            resolved_at TEXT
+            created_at TIMESTAMPTZ NOT NULL,
+            resolved_at TIMESTAMPTZ
         )
     """)
     cur.execute("""
@@ -328,9 +328,9 @@ def _create_schema(cur):
             tracks INTEGER,
             quality TEXT,
             status TEXT NOT NULL DEFAULT 'detected',
-            detected_at TEXT NOT NULL,
-            downloaded_at TEXT,
-            release_date TEXT,
+            detected_at TIMESTAMPTZ NOT NULL,
+            downloaded_at TIMESTAMPTZ,
+            release_date DATE,
             release_type TEXT DEFAULT 'Album',
             mb_release_group_id TEXT,
             UNIQUE(artist_name, album_title)
@@ -343,7 +343,7 @@ def _create_schema(cur):
             task_id TEXT NOT NULL,
             event_type TEXT NOT NULL,
             data_json JSONB DEFAULT '{}',
-            created_at TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
             FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
         )
     """)
@@ -360,7 +360,7 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS mb_cache (
             key TEXT PRIMARY KEY,
             value_json JSONB NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TIMESTAMPTZ NOT NULL
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_mb_cache_created ON mb_cache(created_at)")
@@ -369,7 +369,7 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS cache (
             key TEXT PRIMARY KEY,
             value_json JSONB NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TIMESTAMPTZ NOT NULL
         )
     """)
 
@@ -393,8 +393,8 @@ def _create_schema(cur):
             avatar TEXT,
             role TEXT NOT NULL DEFAULT 'user',
             google_id TEXT UNIQUE,
-            created_at TEXT NOT NULL,
-            last_login TEXT
+            created_at TIMESTAMPTZ NOT NULL,
+            last_login TIMESTAMPTZ
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
@@ -404,8 +404,8 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            expires_at TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            expires_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
@@ -421,9 +421,9 @@ def _create_schema(cur):
             last_error TEXT,
             last_task_id TEXT,
             metadata_json JSONB DEFAULT '{}',
-            last_synced_at TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
+            last_synced_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
             UNIQUE (user_id, provider)
         )
     """)
@@ -442,7 +442,7 @@ def _create_schema(cur):
             primary_format TEXT,
             has_photo INTEGER DEFAULT 0,
             dir_mtime DOUBLE PRECISION,
-            updated_at TEXT,
+            updated_at TIMESTAMPTZ,
             id BIGINT DEFAULT nextval('library_artists_id_seq'),
             slug TEXT,
             folder_name TEXT,
@@ -460,7 +460,7 @@ def _create_schema(cur):
             members_json JSONB,
             urls_json JSONB,
             listeners INTEGER,
-            enriched_at TEXT,
+            enriched_at TIMESTAMPTZ,
             discogs_id TEXT,
             spotify_followers INTEGER,
             lastfm_playcount BIGINT,
@@ -490,7 +490,7 @@ def _create_schema(cur):
             has_cover INTEGER DEFAULT 0,
             musicbrainz_albumid TEXT,
             dir_mtime DOUBLE PRECISION,
-            updated_at TEXT,
+            updated_at TIMESTAMPTZ,
             slug TEXT,
             tag_album TEXT,
             musicbrainz_releasegroupid TEXT,
@@ -527,7 +527,7 @@ def _create_schema(cur):
             musicbrainz_albumid TEXT,
             musicbrainz_trackid TEXT,
             path TEXT UNIQUE NOT NULL,
-            updated_at TEXT,
+            updated_at TIMESTAMPTZ,
             bpm DOUBLE PRECISION,
             audio_key TEXT,
             audio_scale TEXT,
@@ -611,8 +611,8 @@ def _create_schema(cur):
             task_id TEXT,
             error TEXT,
             metadata_json JSONB DEFAULT '{}',
-            created_at TEXT NOT NULL,
-            completed_at TEXT
+            created_at TIMESTAMPTZ NOT NULL,
+            completed_at TIMESTAMPTZ
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tidal_downloads_status ON tidal_downloads(status)")
@@ -621,7 +621,7 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS tidal_monitored_artists (
             artist_name TEXT PRIMARY KEY,
             tidal_id TEXT,
-            last_checked TEXT,
+            last_checked TIMESTAMPTZ,
             last_release_id TEXT,
             enabled BOOLEAN DEFAULT TRUE
         )
@@ -651,11 +651,11 @@ def _create_schema(cur):
             navidrome_public BOOLEAN NOT NULL DEFAULT FALSE,
             navidrome_projection_status TEXT NOT NULL DEFAULT 'unprojected',
             navidrome_projection_error TEXT,
-            navidrome_projected_at TEXT,
+            navidrome_projected_at TIMESTAMPTZ,
             track_count INTEGER DEFAULT 0,
             total_duration DOUBLE PRECISION DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
         )
     """)
     cur.execute("""
@@ -681,7 +681,7 @@ def _create_schema(cur):
             album TEXT,
             duration DOUBLE PRECISION DEFAULT 0,
             position INTEGER NOT NULL,
-            added_at TEXT NOT NULL
+            added_at TIMESTAMPTZ NOT NULL
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id, position)")
@@ -690,7 +690,7 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS user_followed_playlists (
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-            followed_at TEXT NOT NULL,
+            followed_at TIMESTAMPTZ NOT NULL,
             PRIMARY KEY (user_id, playlist_id)
         )
     """)
@@ -702,7 +702,7 @@ def _create_schema(cur):
     cur.execute("""
         CREATE TABLE IF NOT EXISTS audit_log (
             id SERIAL PRIMARY KEY,
-            timestamp TEXT NOT NULL,
+            timestamp TIMESTAMPTZ NOT NULL,
             action TEXT NOT NULL,
             target_type TEXT NOT NULL,
             target_name TEXT NOT NULL,
@@ -722,7 +722,7 @@ def _create_schema(cur):
             item_id TEXT NOT NULL,
             navidrome_id TEXT,
             user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-            created_at TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
             UNIQUE(item_type, item_id)
         )
     """)
@@ -734,7 +734,7 @@ def _create_schema(cur):
             id SERIAL PRIMARY KEY,
             external_id TEXT UNIQUE,
             artist_name TEXT NOT NULL,
-            date TEXT NOT NULL,
+            date DATE NOT NULL,
             local_time TEXT,
             venue TEXT,
             address_line1 TEXT,
@@ -751,8 +751,8 @@ def _create_schema(cur):
             price_range TEXT,
             status TEXT DEFAULT 'onsale',
             source TEXT DEFAULT 'ticketmaster',
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_date ON shows(date)")
@@ -764,7 +764,7 @@ def _create_schema(cur):
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             show_id INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
-            created_at TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
             UNIQUE(user_id, show_id)
         )
     """)
@@ -777,8 +777,8 @@ def _create_schema(cur):
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             show_id INTEGER NOT NULL REFERENCES shows(id) ON DELETE CASCADE,
             reminder_type TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            triggered_at TEXT,
+            created_at TIMESTAMPTZ NOT NULL,
+            triggered_at TIMESTAMPTZ,
             UNIQUE(user_id, show_id, reminder_type)
         )
     """)
@@ -795,7 +795,7 @@ def _create_schema(cur):
             score REAL DEFAULT 0,
             source TEXT DEFAULT 'lastfm',
             in_library BOOLEAN DEFAULT FALSE,
-            updated_at TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
             UNIQUE(artist_name, similar_name)
         )
     """)
@@ -808,7 +808,7 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS user_follows (
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             artist_name TEXT NOT NULL,
-            created_at TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
             PRIMARY KEY (user_id, artist_name)
         )
     """)
@@ -818,7 +818,7 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS user_saved_albums (
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             album_id INTEGER NOT NULL REFERENCES library_albums(id) ON DELETE CASCADE,
-            created_at TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
             PRIMARY KEY (user_id, album_id)
         )
     """)
@@ -828,7 +828,7 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS user_liked_tracks (
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             track_id INTEGER NOT NULL REFERENCES library_tracks(id) ON DELETE CASCADE,
-            created_at TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL,
             PRIMARY KEY (user_id, track_id)
         )
     """)
@@ -845,7 +845,7 @@ def _create_schema(cur):
             title TEXT,
             artist TEXT,
             album TEXT,
-            played_at TEXT NOT NULL
+            played_at TIMESTAMPTZ NOT NULL
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_user ON play_history(user_id, played_at DESC)")
@@ -860,8 +860,8 @@ def _create_schema(cur):
             title TEXT,
             artist TEXT,
             album TEXT,
-            started_at TEXT NOT NULL,
-            ended_at TEXT NOT NULL,
+            started_at TIMESTAMPTZ NOT NULL,
+            ended_at TIMESTAMPTZ NOT NULL,
             played_seconds DOUBLE PRECISION NOT NULL DEFAULT 0,
             track_duration_seconds DOUBLE PRECISION,
             completion_ratio DOUBLE PRECISION,
@@ -875,7 +875,7 @@ def _create_schema(cur):
             context_playlist_id INTEGER,
             device_type TEXT,
             app_platform TEXT,
-            created_at TEXT NOT NULL
+            created_at TIMESTAMPTZ NOT NULL
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user ON user_play_events(user_id, ended_at DESC)")
@@ -883,12 +883,12 @@ def _create_schema(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_source ON user_play_events(user_id, play_source_type, ended_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_artist ON user_play_events(user_id, artist, ended_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_album ON user_play_events(user_id, album, ended_at DESC)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_day ON user_play_events(user_id, (substring(ended_at, 1, 10)))")
+    # idx_user_play_events_user_day is created in migration 20 after TIMESTAMPTZ conversion
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_daily_listening (
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            day TEXT NOT NULL,
+            day DATE NOT NULL,
             play_count INTEGER NOT NULL DEFAULT 0,
             complete_play_count INTEGER NOT NULL DEFAULT 0,
             skip_count INTEGER NOT NULL DEFAULT 0,
@@ -914,8 +914,8 @@ def _create_schema(cur):
             play_count INTEGER NOT NULL DEFAULT 0,
             complete_play_count INTEGER NOT NULL DEFAULT 0,
             minutes_listened DOUBLE PRECISION NOT NULL DEFAULT 0,
-            first_played_at TEXT,
-            last_played_at TEXT,
+            first_played_at TIMESTAMPTZ,
+            last_played_at TIMESTAMPTZ,
             PRIMARY KEY (user_id, stat_window, entity_key)
         )
     """)
@@ -929,8 +929,8 @@ def _create_schema(cur):
             play_count INTEGER NOT NULL DEFAULT 0,
             complete_play_count INTEGER NOT NULL DEFAULT 0,
             minutes_listened DOUBLE PRECISION NOT NULL DEFAULT 0,
-            first_played_at TEXT,
-            last_played_at TEXT,
+            first_played_at TIMESTAMPTZ,
+            last_played_at TIMESTAMPTZ,
             PRIMARY KEY (user_id, stat_window, artist_name)
         )
     """)
@@ -946,8 +946,8 @@ def _create_schema(cur):
             play_count INTEGER NOT NULL DEFAULT 0,
             complete_play_count INTEGER NOT NULL DEFAULT 0,
             minutes_listened DOUBLE PRECISION NOT NULL DEFAULT 0,
-            first_played_at TEXT,
-            last_played_at TEXT,
+            first_played_at TIMESTAMPTZ,
+            last_played_at TIMESTAMPTZ,
             PRIMARY KEY (user_id, stat_window, entity_key)
         )
     """)
@@ -961,8 +961,8 @@ def _create_schema(cur):
             play_count INTEGER NOT NULL DEFAULT 0,
             complete_play_count INTEGER NOT NULL DEFAULT 0,
             minutes_listened DOUBLE PRECISION NOT NULL DEFAULT 0,
-            first_played_at TEXT,
-            last_played_at TEXT,
+            first_played_at TIMESTAMPTZ,
+            last_played_at TIMESTAMPTZ,
             PRIMARY KEY (user_id, stat_window, genre_name)
         )
     """)
@@ -1327,6 +1327,102 @@ def _m00_add_username_column(cur):
     """)
 
 
+def _m20_convert_to_timestamptz(cur):
+    """Convert TEXT date/time columns to TIMESTAMPTZ/DATE for proper temporal queries."""
+    conversions = [
+        # (table, column, target_type)
+        ("tasks", "created_at", "TIMESTAMPTZ"),
+        ("tasks", "updated_at", "TIMESTAMPTZ"),
+        ("tasks", "started_at", "TIMESTAMPTZ"),
+        ("tasks", "heartbeat_at", "TIMESTAMPTZ"),
+        ("scan_results", "scanned_at", "TIMESTAMPTZ"),
+        ("health_issues", "created_at", "TIMESTAMPTZ"),
+        ("health_issues", "resolved_at", "TIMESTAMPTZ"),
+        ("new_releases", "detected_at", "TIMESTAMPTZ"),
+        ("new_releases", "downloaded_at", "TIMESTAMPTZ"),
+        ("new_releases", "release_date", "DATE"),
+        ("task_events", "created_at", "TIMESTAMPTZ"),
+        ("cache", "updated_at", "TIMESTAMPTZ"),
+        ("mb_cache", "created_at", "TIMESTAMPTZ"),
+        ("users", "created_at", "TIMESTAMPTZ"),
+        ("users", "last_login", "TIMESTAMPTZ"),
+        ("sessions", "expires_at", "TIMESTAMPTZ"),
+        ("sessions", "created_at", "TIMESTAMPTZ"),
+        ("user_external_identities", "last_synced_at", "TIMESTAMPTZ"),
+        ("user_external_identities", "created_at", "TIMESTAMPTZ"),
+        ("user_external_identities", "updated_at", "TIMESTAMPTZ"),
+        ("library_artists", "updated_at", "TIMESTAMPTZ"),
+        ("library_artists", "enriched_at", "TIMESTAMPTZ"),
+        ("library_albums", "updated_at", "TIMESTAMPTZ"),
+        ("library_tracks", "updated_at", "TIMESTAMPTZ"),
+        ("tidal_downloads", "created_at", "TIMESTAMPTZ"),
+        ("tidal_downloads", "completed_at", "TIMESTAMPTZ"),
+        ("tidal_monitored_artists", "last_checked", "TIMESTAMPTZ"),
+        ("playlists", "navidrome_projected_at", "TIMESTAMPTZ"),
+        ("playlists", "created_at", "TIMESTAMPTZ"),
+        ("playlists", "updated_at", "TIMESTAMPTZ"),
+        ("playlist_tracks", "added_at", "TIMESTAMPTZ"),
+        ("user_followed_playlists", "followed_at", "TIMESTAMPTZ"),
+        ("audit_log", "timestamp", "TIMESTAMPTZ"),
+        ("shows", "date", "DATE"),
+        ("shows", "created_at", "TIMESTAMPTZ"),
+        ("shows", "updated_at", "TIMESTAMPTZ"),
+        ("user_show_attendance", "created_at", "TIMESTAMPTZ"),
+        ("user_show_reminders", "created_at", "TIMESTAMPTZ"),
+        ("user_show_reminders", "triggered_at", "TIMESTAMPTZ"),
+        ("artist_similarities", "updated_at", "TIMESTAMPTZ"),
+        ("favorites", "created_at", "TIMESTAMPTZ"),
+        ("user_follows", "created_at", "TIMESTAMPTZ"),
+        ("user_saved_albums", "created_at", "TIMESTAMPTZ"),
+        ("user_liked_tracks", "created_at", "TIMESTAMPTZ"),
+        ("play_history", "played_at", "TIMESTAMPTZ"),
+        ("user_play_events", "started_at", "TIMESTAMPTZ"),
+        ("user_play_events", "ended_at", "TIMESTAMPTZ"),
+        ("user_play_events", "created_at", "TIMESTAMPTZ"),
+        ("user_daily_listening", "day", "DATE"),
+        ("user_track_stats", "first_played_at", "TIMESTAMPTZ"),
+        ("user_track_stats", "last_played_at", "TIMESTAMPTZ"),
+        ("user_artist_stats", "first_played_at", "TIMESTAMPTZ"),
+        ("user_artist_stats", "last_played_at", "TIMESTAMPTZ"),
+        ("user_album_stats", "first_played_at", "TIMESTAMPTZ"),
+        ("user_album_stats", "last_played_at", "TIMESTAMPTZ"),
+        ("user_genre_stats", "first_played_at", "TIMESTAMPTZ"),
+        ("user_genre_stats", "last_played_at", "TIMESTAMPTZ"),
+    ]
+    # Drop indexes that use substring() on columns being converted — they'd
+    # block the ALTER TYPE and can't be recalculated for TIMESTAMPTZ.
+    cur.execute("DROP INDEX IF EXISTS idx_user_play_events_user_day")
+
+    for table, column, target_type in conversions:
+        try:
+            cur.execute("SAVEPOINT sp_ts")
+            cur.execute(f"""
+                ALTER TABLE {table}
+                ALTER COLUMN {column} TYPE {target_type}
+                USING CASE
+                    WHEN {column} IS NULL OR {column} = '' THEN NULL
+                    ELSE {column}::{'timestamptz' if target_type == 'TIMESTAMPTZ' else 'date'}
+                END
+            """)
+            cur.execute("RELEASE SAVEPOINT sp_ts")
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT sp_ts")
+            log.debug("Column %s.%s already converted or missing", table, column)
+
+    # Recreate functional index that depends on TIMESTAMPTZ type
+    try:
+        cur.execute("SAVEPOINT sp_idx")
+        cur.execute("DROP INDEX IF EXISTS idx_user_play_events_user_day")
+        cur.execute(
+            "CREATE INDEX idx_user_play_events_user_day "
+            "ON user_play_events(user_id, ((ended_at AT TIME ZONE 'UTC')::date))"
+        )
+        cur.execute("RELEASE SAVEPOINT sp_idx")
+    except Exception:
+        cur.execute("ROLLBACK TO SAVEPOINT sp_idx")
+        log.warning("Could not create TIMESTAMPTZ-based index on user_play_events.ended_at")
+
+
 # ---------------------------------------------------------------------------
 # Migration registry — (version, name, handler)
 # ---------------------------------------------------------------------------
@@ -1351,4 +1447,5 @@ _MIGRATIONS = [
     (17, "add_play_history_track_id", _m17_add_play_history_track_id),
     (18, "add_favorites_user_id", _m18_add_favorites_user_id),
     (19, "add_username_column", _m00_add_username_column),
+    (20, "convert_to_timestamptz", _m20_convert_to_timestamptz),
 ]
