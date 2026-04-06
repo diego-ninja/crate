@@ -1,12 +1,29 @@
+import json
 import os
 from contextlib import asynccontextmanager
+from datetime import date, datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from crate.db import init_db
+
+
+class _DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, date):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+class DateAwareJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return json.dumps(content, cls=_DateTimeEncoder, ensure_ascii=False).encode("utf-8")
 
 
 @asynccontextmanager
@@ -18,7 +35,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="MusicDock", lifespan=lifespan)
+    app = FastAPI(title="MusicDock", lifespan=lifespan, default_response_class=DateAwareJSONResponse)
 
     domain = os.environ.get("DOMAIN", "localhost")
     allowed_origins = [
