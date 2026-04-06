@@ -199,7 +199,31 @@ def get_db_ctx():
         pool.putconn(conn)
 
 
+_MIGRATION_LOCK_ID = 820149  # arbitrary unique advisory lock ID for init_db
+
+
 def init_db():
+    # Acquire an advisory lock so only one process (API or worker) runs
+    # schema migrations at a time.  The lock is automatically released
+    # when the connection is returned to the pool.
+    pool = _get_pool()
+    lock_conn = pool.getconn()
+    try:
+        lock_conn.autocommit = True
+        with lock_conn.cursor() as lc:
+            lc.execute("SELECT pg_advisory_lock(%s)", (_MIGRATION_LOCK_ID,))
+        _init_db_inner()
+    finally:
+        try:
+            lock_conn.autocommit = True
+            with lock_conn.cursor() as lc:
+                lc.execute("SELECT pg_advisory_unlock(%s)", (_MIGRATION_LOCK_ID,))
+        except Exception:
+            pass
+        pool.putconn(lock_conn)
+
+
+def _init_db_inner():
     with get_db_ctx() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
