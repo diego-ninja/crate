@@ -53,6 +53,7 @@
   --z-player-overlay: 80;
   --z-modal: 90;
   --z-upcoming-overlay: 95;
+  --z-fullscreen-player: 100;
   --z-leaflet-popup: 600;
   color-scheme: dark;
 }
@@ -96,6 +97,7 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .z-app-player-overlay { z-index: var(--z-player-overlay); }
 .z-app-modal { z-index: var(--z-modal); }
 .z-app-upcoming-overlay { z-index: var(--z-upcoming-overlay); }
+.z-fullscreen-player { z-index: var(--z-fullscreen-player); }
 
 @keyframes pageIn {
   from { opacity: 0; transform: translateY(8px); }

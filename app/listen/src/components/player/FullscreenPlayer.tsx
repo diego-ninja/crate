@@ -226,7 +226,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex flex-col ease-out ${
+      className={`fixed inset-0 z-fullscreen-player flex flex-col ease-out ${
         animating
           ? "opacity-100"
           : "opacity-0 translate-y-full"

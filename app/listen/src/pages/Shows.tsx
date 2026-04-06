@@ -270,7 +270,7 @@ export function Shows() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Filter by artist, venue, city..."
-            className="h-11 w-full rounded-2xl border border-white/10 bg-[#0f1016] px-4 text-sm text-foreground placeholder:text-white/25 focus:border-primary/40 focus:outline-none"
+            className="h-11 w-full rounded-2xl border border-white/10 bg-input px-4 text-sm text-foreground placeholder:text-white/25 focus:border-primary/40 focus:outline-none"
           />
         </div>
       </div>
