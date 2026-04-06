@@ -243,101 +243,24 @@ def api_track_info(request: Request, filepath: str):
 
 @router.get("/api/discover/completeness")
 def api_discover_completeness(request: Request):
+    """Return cached completeness data. The heavy computation runs as a worker task."""
     _require_auth(request)
-    cache_key = "discover:completeness"
-    cached = get_cache(cache_key, max_age_seconds=3600)
-    if cached:
+    cached = get_cache("discover:completeness", max_age_seconds=86400)
+    if cached is not None:
         return cached
+    # No cached data — queue a worker task to compute it
+    from crate.db import create_task_dedup
+    create_task_dedup("compute_completeness", {})
+    return []
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT id, slug, name, mbid, album_count, has_photo, listeners
-            FROM library_artists
-            WHERE mbid IS NOT NULL AND mbid != ''
-            ORDER BY name
-            """
-        )
-        artists = [dict(row) for row in cur.fetchall()]
 
-    import musicbrainzngs
-
-    musicbrainzngs.set_useragent("grooveyard", "0.1", "https://github.com/grooveyard")
-
-    results = []
-    for artist in artists:
-        try:
-            mb_data = get_cache(f"mb:albums:{artist['mbid']}", max_age_seconds=86400 * 7)
-            if not mb_data:
-                try:
-                    mb_artist = musicbrainzngs.get_artist_by_id(artist["mbid"])["artist"]
-                    mb_name = mb_artist.get("name", "")
-                    from thefuzz import fuzz
-
-                    if fuzz.ratio(artist["name"].lower(), mb_name.lower()) < 70:
-                        log.warning(
-                            "MBID mismatch: %s -> %s (expected %s), skipping",
-                            artist["mbid"],
-                            mb_name,
-                            artist["name"],
-                        )
-                        continue
-                except Exception:
-                    pass
-
-                result = musicbrainzngs.browse_release_groups(
-                    artist=artist["mbid"], release_type=["album"], limit=100
-                )
-                mb_albums = result.get("release-group-list", [])
-                mb_data = {
-                    "count": result.get("release-group-count", len(mb_albums)),
-                    "albums": [
-                        {
-                            "title": release_group.get("title", ""),
-                            "type": release_group.get("primary-type", ""),
-                            "year": release_group.get("first-release-date", "")[:4]
-                            if release_group.get("first-release-date")
-                            else "",
-                        }
-                        for release_group in mb_albums
-                    ],
-                }
-                set_cache(f"mb:albums:{artist['mbid']}", mb_data, ttl=604800)
-
-            mb_count = mb_data["count"]
-            local_count = artist["album_count"] or 0
-            pct = round(local_count / mb_count * 100) if mb_count > 0 else 100
-
-            with get_db_ctx() as cur:
-                cur.execute("SELECT name FROM library_albums WHERE artist = %s", (artist["name"],))
-                local_names = {row["name"].lower() for row in cur.fetchall()}
-                local_clean = {_YEAR_PREFIX_RE.sub("", name).lower() for name in local_names}
-
-            missing = [
-                album
-                for album in mb_data["albums"]
-                if album["title"].lower() not in local_names and album["title"].lower() not in local_clean
-            ]
-
-            results.append(
-                {
-                    "artist_id": artist["id"],
-                    "artist_slug": artist["slug"],
-                    "artist": artist["name"],
-                    "has_photo": bool(artist["has_photo"]),
-                    "listeners": artist.get("listeners", 0),
-                    "local_count": local_count,
-                    "mb_count": mb_count,
-                    "pct": min(pct, 100),
-                    "missing": missing[:10],
-                }
-            )
-        except Exception:
-            pass
-
-    results.sort(key=lambda item: item["pct"])
-    set_cache(cache_key, results, ttl=3600)
-    return results
+@router.post("/api/discover/completeness/refresh")
+def api_discover_completeness_refresh(request: Request):
+    """Force recompute of completeness data."""
+    _require_auth(request)
+    from crate.db import create_task_dedup
+    task_id = create_task_dedup("compute_completeness", {})
+    return {"task_id": task_id}
 
 
 _STREAM_MEDIA_TYPES = {
