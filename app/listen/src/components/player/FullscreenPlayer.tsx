@@ -200,18 +200,21 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   // Reset tab when player closes
   useEffect(() => { if (!visible) { setActiveTab("player"); setSwipeY(0); } }, [visible]);
 
-  // Swipe-down to dismiss
+  // Swipe-down to dismiss (only from top 150px)
   const onSwipeStart = useCallback((e: React.TouchEvent) => {
     if (draggingRef.current) return;
-    swipeStartRef.current = e.touches[0]!.clientY;
+    const startY = e.touches[0]!.clientY;
+    const el = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (startY - el.top > 150) return;
+    swipeStartRef.current = startY;
   }, []);
   const onSwipeMove = useCallback((e: React.TouchEvent) => {
     if (swipeStartRef.current === null || draggingRef.current) return;
     const dy = e.touches[0]!.clientY - swipeStartRef.current;
-    setSwipeY(Math.max(0, dy));
+    setSwipeY(dy > 0 ? Math.min(dy * 0.6, 300) : 0);
   }, []);
   const onSwipeEnd = useCallback(() => {
-    if (swipeY > 120) {
+    if (swipeY > 100) {
       onClose();
     }
     setSwipeY(0);
@@ -241,6 +244,11 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       onTouchMove={onSwipeMove}
       onTouchEnd={onSwipeEnd}
     >
+      {/* Drag handle */}
+      <div className="flex justify-center pt-3 pb-1">
+        <div className="w-10 h-1 rounded-full bg-white/20" />
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-[env(safe-area-inset-top,12px)] pb-2">
         <button
