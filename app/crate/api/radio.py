@@ -3,6 +3,7 @@ from fastapi.responses import JSONResponse
 
 from crate.api.auth import _require_auth
 from crate.api._deps import artist_name_from_id, enrich_radio_tracks as _enrich_radio_tracks
+from crate.db import get_cache, set_cache
 from crate.bliss import (
     generate_album_radio,
     generate_artist_radio,
@@ -54,13 +55,21 @@ def _resolve_track_path(track_id: int = 0, path: str = "") -> str | None:
     return row["path"] if row else None
 
 
+_RADIO_CACHE_TTL = 300  # 5 minutes
+
+
 def api_artist_radio(request: Request, name: str, limit: int = Query(50, ge=1, le=100)):
     _require_auth(request)
+    cache_key = f"radio:artist:{name.lower()}:{limit}"
+    cached = get_cache(cache_key, max_age_seconds=_RADIO_CACHE_TTL)
+    if cached:
+        return cached
+
     tracks = generate_artist_radio(name, limit=limit)
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
     enriched_tracks = _enrich_radio_tracks(tracks)
-    return {
+    result = {
         "session": {
             "type": "artist",
             "name": f"{name} Radio",
@@ -68,6 +77,8 @@ def api_artist_radio(request: Request, name: str, limit: int = Query(50, ge=1, l
         },
         "tracks": enriched_tracks,
     }
+    set_cache(cache_key, result, ttl=_RADIO_CACHE_TTL)
+    return result
 
 
 @router.get("/api/artists/{artist_id}/radio")
@@ -97,13 +108,18 @@ def api_track_radio(
     if not resolved_path:
         raise HTTPException(status_code=404, detail="Track not found")
 
+    cache_key = f"radio:track:{resolved_path}:{limit}"
+    cached = get_cache(cache_key, max_age_seconds=_RADIO_CACHE_TTL)
+    if cached:
+        return cached
+
     tracks = generate_track_radio(resolved_path, limit=limit)
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
     enriched_tracks = _enrich_radio_tracks(tracks)
     seed_track = enriched_tracks[0]
-    return {
+    result = {
         "session": {
             "type": "track",
             "name": f"{seed_track.get('title') or 'Track'} Radio",
@@ -116,6 +132,8 @@ def api_track_radio(
         },
         "tracks": enriched_tracks,
     }
+    set_cache(cache_key, result, ttl=_RADIO_CACHE_TTL)
+    return result
 
 
 @router.get("/api/radio/album/{album_id}")
@@ -127,12 +145,17 @@ def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1
     if not row:
         raise HTTPException(status_code=404, detail="Album not found")
 
+    cache_key = f"radio:album:{album_id}:{limit}"
+    cached = get_cache(cache_key, max_age_seconds=_RADIO_CACHE_TTL)
+    if cached:
+        return cached
+
     tracks = generate_album_radio(album_id, limit=limit)
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
     enriched_tracks = _enrich_radio_tracks(tracks)
-    return {
+    result = {
         "session": {
             "type": "album",
             "name": f"{row['name']} Radio",
@@ -144,6 +167,8 @@ def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1
         },
         "tracks": enriched_tracks,
     }
+    set_cache(cache_key, result, ttl=_RADIO_CACHE_TTL)
+    return result
 
 
 @router.get("/api/radio/playlist/{playlist_id}")
@@ -164,12 +189,17 @@ def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50
     ):
         raise HTTPException(status_code=403, detail="Not your playlist")
 
+    cache_key = f"radio:playlist:{playlist_id}:{limit}"
+    cached = get_cache(cache_key, max_age_seconds=_RADIO_CACHE_TTL)
+    if cached:
+        return cached
+
     tracks = generate_playlist_radio(playlist_id, limit=limit)
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
     enriched_tracks = _enrich_radio_tracks(tracks)
-    return {
+    result = {
         "session": {
             "type": "playlist",
             "name": f"{row['name']} Radio",
@@ -180,3 +210,5 @@ def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50
         },
         "tracks": enriched_tracks,
     }
+    set_cache(cache_key, result, ttl=_RADIO_CACHE_TTL)
+    return result
