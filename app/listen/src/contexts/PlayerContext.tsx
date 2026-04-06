@@ -535,6 +535,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const track = tracks[startIndex];
     if (!track) return;
 
+    try {
+      const w = window as unknown as Record<string, AudioContext>;
+      if (!w.__crateAudioCtx) w.__crateAudioCtx = new AudioContext();
+      if (w.__crateAudioCtx.state === "suspended") w.__crateAudioCtx.resume();
+    } catch { /* ok */ }
+
     restoredRef.current = false;
     resetPlaybackIntelligence();
     flushCurrentPlayEvent("interrupted");

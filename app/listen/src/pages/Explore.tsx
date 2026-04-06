@@ -266,6 +266,12 @@ function MoodBrowseSection() {
   const [loadingMood, setLoadingMood] = useState<string | null>(null);
 
   async function playMood(mood: string) {
+    // Resume AudioContext synchronously in the user gesture before the await
+    try {
+      const w = window as unknown as Record<string, AudioContext>;
+      if (!w.__crateAudioCtx) w.__crateAudioCtx = new AudioContext();
+      if (w.__crateAudioCtx.state === "suspended") w.__crateAudioCtx.resume();
+    } catch { /* ok */ }
     setLoadingMood(mood);
     try {
       const data = await api<{ tracks: Array<{
@@ -293,6 +299,7 @@ function MoodBrowseSection() {
             albumSlug: t.album_slug,
             path: t.path,
             navidromeId: t.navidrome_id,
+            libraryTrackId: t.id,
             albumCover: albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }),
           })),
           0,
