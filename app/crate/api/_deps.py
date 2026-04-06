@@ -1,8 +1,25 @@
+import json
+from datetime import date, datetime
 from pathlib import Path
 
 from crate.config import load_config
 
 COVER_NAMES = ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png", "album.jpg", "album.png"]
+
+
+class DateTimeEncoder(json.JSONEncoder):
+    """JSON encoder that handles datetime/date from TIMESTAMPTZ columns."""
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, date):
+            return obj.isoformat()
+        return super().default(obj)
+
+
+def json_dumps(obj, **kwargs) -> str:
+    """json.dumps with datetime support. Use instead of json.dumps for DB data."""
+    return json.dumps(obj, cls=DateTimeEncoder, ensure_ascii=False, **kwargs)
 
 
 def get_config() -> dict:

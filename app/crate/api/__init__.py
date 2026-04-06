@@ -1,7 +1,5 @@
-import json
 import os
 from contextlib import asynccontextmanager
-from datetime import date, datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,21 +7,13 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
+from crate.api._deps import json_dumps
 from crate.db import init_db
-
-
-class _DateTimeEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        if isinstance(obj, date):
-            return obj.isoformat()
-        return super().default(obj)
 
 
 class DateAwareJSONResponse(JSONResponse):
     def render(self, content) -> bytes:
-        return json.dumps(content, cls=_DateTimeEncoder, ensure_ascii=False).encode("utf-8")
+        return json_dumps(content).encode("utf-8")
 
 
 @asynccontextmanager

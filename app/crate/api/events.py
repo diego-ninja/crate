@@ -1,12 +1,11 @@
 import asyncio
-import json
 
 from fastapi import APIRouter, Request
 from starlette.responses import StreamingResponse
 
 from crate.api.auth import _require_auth
 from crate.db import list_tasks, get_latest_scan, get_task, get_task_events
-from crate.api._deps import get_config
+from crate.api._deps import get_config, json_dumps
 from crate.importer import ImportQueue
 
 router = APIRouter()
@@ -50,7 +49,7 @@ async def _event_stream():
             ],
         }
 
-        yield f"data: {json.dumps(data)}\n\n"
+        yield f"data: {json_dumps(data)}\n\n"
         await asyncio.sleep(2)
 
 
@@ -80,14 +79,14 @@ async def _task_event_stream(task_id: str):
                 "data": event["data"],
                 "timestamp": event["created_at"],
             }
-            yield f"event: {event['event_type']}\ndata: {json.dumps(payload)}\n\n"
+            yield f"event: {event['event_type']}\ndata: {json_dumps(payload)}\n\n"
             last_event_id = event["id"]
 
         # Check if task is done
         task = get_task(task_id)
         if task and task["status"] in ("completed", "failed", "cancelled"):
             # Emit final status event
-            yield f"event: task_done\ndata: {json.dumps({'status': task['status'], 'result': task.get('result'), 'error': task.get('error')})}\n\n"
+            yield f"event: task_done\ndata: {json_dumps({'status': task['status'], 'result': task.get('result'), 'error': task.get('error')})}\n\n"
             break
 
         await asyncio.sleep(1)
