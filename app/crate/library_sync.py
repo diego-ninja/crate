@@ -5,7 +5,7 @@ from pathlib import Path
 
 import mutagen
 
-from crate.audio import get_audio_files, read_tags
+from crate.audio import read_tags
 from crate.db import (
     delete_album,
     delete_artist,
@@ -116,6 +116,26 @@ class LibrarySync:
         artist_name = self._canonical_artist_name(artist_dir, folder_name)
         return self.sync_artist_dirs(artist_name, [artist_dir])
 
+    def _iter_album_audio_files(self, album_dir: Path) -> list[Path]:
+        return sorted(
+            file_path
+            for file_path in album_dir.rglob("*")
+            if file_path.is_file()
+            and not any(part.startswith(".") for part in file_path.relative_to(album_dir).parts)
+            and file_path.suffix.lower() in self.extensions
+        )
+
+    def _album_tree_mtime(self, album_dir: Path) -> float:
+        latest_mtime = album_dir.stat().st_mtime
+        for path in album_dir.rglob("*"):
+            if any(part.startswith(".") for part in path.relative_to(album_dir).parts):
+                continue
+            try:
+                latest_mtime = max(latest_mtime, path.stat().st_mtime)
+            except OSError:
+                continue
+        return latest_mtime
+
     def sync_artist_dirs(self, artist_name: str, artist_dirs: list[Path]) -> int:
         """Sync one or more folders that all belong to the same canonical artist."""
         primary_dir = artist_dirs[0]
@@ -160,9 +180,15 @@ class LibrarySync:
                 synced_paths.add(album_path)
 
                 existing_album = next((a for a in existing_albums if a["path"] == album_path), None)
-                dir_mtime = album_dir.stat().st_mtime
+                tree_mtime = self._album_tree_mtime(album_dir)
+                actual_track_count = len(self._iter_album_audio_files(album_dir))
 
-                if existing_album and existing_album.get("dir_mtime") and existing_album["dir_mtime"] >= dir_mtime:
+                if (
+                    existing_album
+                    and existing_album.get("dir_mtime")
+                    and existing_album["dir_mtime"] >= tree_mtime
+                    and existing_album.get("track_count", 0) == actual_track_count
+                ):
                     total_tracks += existing_album.get("track_count", 0)
                     continue
 
@@ -217,7 +243,7 @@ class LibrarySync:
             upsert_artist({"name": artist_name, "album_count": 0, "track_count": 0,
                            "total_size": 0, "formats": [], "dir_mtime": album_dir.parent.stat().st_mtime})
 
-        audio_files = get_audio_files(album_dir, list(self.extensions))
+        audio_files = self._iter_album_audio_files(album_dir)
 
         # Get existing tracks for this album to reuse data for unchanged files
         existing_album_row = None
@@ -361,7 +387,7 @@ class LibrarySync:
             "has_cover": has_cover,
             "musicbrainz_albumid": mb_albumid,
             "tag_album": tag_album,
-            "dir_mtime": album_dir.stat().st_mtime,
+            "dir_mtime": self._album_tree_mtime(album_dir),
         })
 
         # Upsert tracks
