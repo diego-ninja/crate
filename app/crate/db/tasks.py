@@ -146,7 +146,8 @@ def list_tasks(status: str | None = None, task_type: str | None = None, limit: i
         query += " AND type = %s"
         params.append(task_type)
     query += (" ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,"
-              " priority ASC, created_at DESC LIMIT %s")
+              " CASE WHEN status IN ('running','pending') THEN priority ELSE 999 END ASC,"
+              " updated_at DESC LIMIT %s")
     params.append(limit)
 
     with get_db_ctx() as cur:
