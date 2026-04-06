@@ -1,4 +1,5 @@
 import { StatCard } from "@/components/artist/ArtistPageBits";
+import type { ArtistExternalLink, LastfmData, MusicBrainzData, SpotifyData } from "@/components/artist/artistPageTypes";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TopTrack } from "@/hooks/use-artist-data";
@@ -18,37 +19,6 @@ import {
   Users,
 } from "lucide-react";
 
-interface MusicBrainzMember {
-  name: string;
-  type?: string;
-  begin?: string;
-  end?: string | null;
-  attributes?: string[];
-}
-
-interface MusicBrainzData {
-  type?: string;
-  begin_date?: string;
-  country?: string;
-  members?: MusicBrainzMember[];
-}
-
-interface LastfmData {
-  listeners?: number;
-  playcount?: number;
-}
-
-interface SpotifyData {
-  followers?: number;
-  popularity?: number;
-}
-
-interface ExternalLink {
-  label: string;
-  url: string;
-  color: string;
-}
-
 interface ArtistOverviewSectionProps {
   bioText: string;
   bioExpanded: boolean;
@@ -63,7 +33,7 @@ interface ArtistOverviewSectionProps {
   activeMembersCount: number;
   lastfm?: LastfmData;
   spotify?: SpotifyData;
-  externalLinks: ExternalLink[];
+  externalLinks: ArtistExternalLink[];
   enrichmentLoading: boolean;
 }
 

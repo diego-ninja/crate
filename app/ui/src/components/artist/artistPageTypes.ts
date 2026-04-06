@@ -38,6 +38,35 @@ export interface ArtistExternalLink {
   color: string;
 }
 
+export interface MusicBrainzMember {
+  name: string;
+  type?: string;
+  begin?: string;
+  end?: string | null;
+  attributes?: string[];
+}
+
+export interface MusicBrainzData {
+  mbid?: string;
+  type?: string;
+  begin_date?: string;
+  end_date?: string;
+  country?: string;
+  area?: string;
+  members?: MusicBrainzMember[];
+  urls?: Record<string, string>;
+}
+
+export interface LastfmData {
+  listeners?: number;
+  playcount?: number;
+}
+
+export interface SpotifyData {
+  followers?: number;
+  popularity?: number;
+}
+
 export interface ArtistSimilarArtist {
   id?: number;
   slug?: string;

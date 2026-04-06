@@ -1,36 +1,6 @@
+import type { ArtistExternalLink, LastfmData, MusicBrainzData, SpotifyData } from "@/components/artist/artistPageTypes";
 import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
 import { ChevronDown, ChevronUp, Globe } from "lucide-react";
-
-interface MusicBrainzMember {
-  name: string;
-  type?: string;
-  begin?: string;
-  end?: string | null;
-  attributes?: string[];
-}
-
-interface MusicBrainzData {
-  begin_date?: string;
-  country?: string;
-  area?: string;
-  members?: MusicBrainzMember[];
-}
-
-interface LastfmData {
-  listeners?: number;
-  playcount?: number;
-}
-
-interface SpotifyData {
-  followers?: number;
-  popularity?: number;
-}
-
-interface ExternalLink {
-  label: string;
-  url: string;
-  color: string;
-}
 
 interface ArtistAboutSectionProps {
   bioText: string;
@@ -39,7 +9,7 @@ interface ArtistAboutSectionProps {
   musicbrainz?: MusicBrainzData;
   lastfm?: LastfmData;
   spotify?: SpotifyData;
-  externalLinks: ExternalLink[];
+  externalLinks: ArtistExternalLink[];
   albumCount: number;
   totalTracks: number;
   totalSizeMb: number;
