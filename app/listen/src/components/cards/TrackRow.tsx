@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from "react";
 import { Play, Pause, Plus, ListPlus, Heart, ListMusic } from "lucide-react";
-import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { usePlayerState, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { formatDuration } from "@/lib/utils";
@@ -51,8 +51,8 @@ export const TrackRow = memo(function TrackRow({
   onAddToPlaylist,
   onCreatePlaylist,
 }: TrackRowProps) {
-  const { currentTrack, isPlaying } = usePlayer();
-  const { play, pause, resume, addToQueue, playNext } = usePlayerActions();
+  const { isPlaying } = usePlayerState();
+  const { currentTrack, play, pause, resume, addToQueue, playNext } = usePlayerActions();
   const { isLiked, toggleTrackLike } = useLikedTracks();
   const [playlistMenuOpen, setPlaylistMenuOpen] = useState(false);
   const playlistMenuRef = useRef<HTMLDivElement>(null);
