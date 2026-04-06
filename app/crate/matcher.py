@@ -262,7 +262,10 @@ def _score_match(local: dict, release: dict) -> int:
     """Score how well a MB release matches local files. 0-100.
 
     Uses best-match pairing (not positional) so bonus tracks or
-    different track order don't tank the score.
+    different track order don't tank the score.  Deluxe/expanded
+    editions are handled gracefully: only matched tracks count toward
+    the title-similarity average, and track-count differences are
+    scored relative to the smaller side.
     """
     from thefuzz import fuzz
 
@@ -272,29 +275,35 @@ def _score_match(local: dict, release: dict) -> int:
     local_tracks = local["tracks"]
     mb_tracks = release["tracks"]
 
-    # Track count match (0-20)
-    if local_count == mb_count:
-        score += 20
-    elif abs(local_count - mb_count) <= 2:
-        score += 12
-    elif abs(local_count - mb_count) <= 4:
-        score += 5
+    # Track count match (0-15)
+    # Use ratio so deluxe editions (24 vs 14) still score something
+    if local_count and mb_count:
+        count_ratio = min(local_count, mb_count) / max(local_count, mb_count)
+        score += int(count_ratio * 15)
 
     # Best-match title + duration pairing (0-50)
-    title_scores = []
+    matched_title_scores = []
+    unmatched_count = 0
     duration_diffs = []
     remaining_mb = list(mb_tracks)
 
     for lt in local_tracks:
         t_score, best = _best_title_match(lt["title"], remaining_mb)
-        title_scores.append(t_score)
-        if best:
+        if best and t_score >= 50:
+            matched_title_scores.append(t_score)
             duration_diffs.append(abs(lt["length_sec"] - best.get("length_sec", 0)))
             remaining_mb.remove(best)
+        else:
+            unmatched_count += 1
 
-    if title_scores:
-        avg_title = sum(title_scores) / len(title_scores)
-        score += int(avg_title * 0.35)  # 0-35
+    # Coverage: what fraction of MB tracks did we match?
+    matched_count = len(matched_title_scores)
+    coverage = matched_count / mb_count if mb_count else 0
+
+    if matched_title_scores:
+        avg_title = sum(matched_title_scores) / len(matched_title_scores)
+        # Scale by coverage so a partial match (deluxe) still scores well
+        score += int(avg_title * 0.35 * max(coverage, 0.6))  # 0-35
 
     if duration_diffs:
         avg_diff = sum(duration_diffs) / len(duration_diffs)
@@ -305,14 +314,15 @@ def _score_match(local: dict, release: dict) -> int:
         elif avg_diff <= 10:
             score += 5
 
-    # Album name match (0-20)
+    # Album name match (0-25)
+    # Use token_set_ratio so "Album (Deluxe Edition)" matches "Album"
     if local["album"]:
-        album_ratio = fuzz.ratio(local["album"].lower(), release["title"].lower())
-        score += int(album_ratio * 0.20)
+        album_ratio = fuzz.token_set_ratio(local["album"].lower(), release["title"].lower())
+        score += int(album_ratio * 0.25)
 
     # Artist name match (0-10)
     if local["artist"] and release.get("artist"):
-        artist_ratio = fuzz.ratio(local["artist"].lower(), release["artist"].lower())
+        artist_ratio = fuzz.token_set_ratio(local["artist"].lower(), release["artist"].lower())
         score += int(artist_ratio * 0.10)
 
     return min(score, 100)

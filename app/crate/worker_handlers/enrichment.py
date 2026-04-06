@@ -83,7 +83,12 @@ def _build_album_match_local_info(
     album_path = album.get("path", "")
     album_dir = Path(album_path) if album_path else None
     if album_dir and album_dir.is_dir():
-        return _gather_local_info(get_audio_files(album_dir, list(exts)))
+        info = _gather_local_info(get_audio_files(album_dir, list(exts)))
+        if not info.get("artist"):
+            info["artist"] = artist_name
+        if not info.get("album"):
+            info["album"] = clean_album
+        return info
 
     return {
         "artist": artist_name,
