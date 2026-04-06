@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
   Heart, Airplay, ListMusic, Mic2, Maximize2, Loader2,
@@ -49,6 +49,30 @@ export function PlayerBar() {
     closeOnPointerDownOutside: false,
   });
 
+  const touchStartX = useRef<number>(0);
+  const touchStartY = useRef<number>(0);
+
+  function handleTouchStart(e: React.TouchEvent) {
+    const t = e.touches[0];
+    if (!t) return;
+    touchStartX.current = t.clientX;
+    touchStartY.current = t.clientY;
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const deltaX = t.clientX - touchStartX.current;
+    const deltaY = t.clientY - touchStartY.current;
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 2) {
+      if (deltaX < 0) {
+        next();
+      } else {
+        prev();
+      }
+    }
+  }
+
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const pseudoBars = useMemo(
     () => currentTrack ? generateWaveformBars(currentTrack.id, 80) : [],
@@ -83,7 +107,11 @@ export function PlayerBar() {
 
   return (
     <>
-      <div className={`fixed bottom-0 left-0 right-0 h-[72px] border-t border-white/5 bg-panel-surface ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}>
+      <div
+        className={`fixed bottom-0 left-0 right-0 h-[72px] border-t border-white/5 bg-panel-surface ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <div className="h-full flex items-center px-4 gap-2">
 
           {/* ── Block 1: Track Info ── */}
