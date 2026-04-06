@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router";
+import { api } from "@/lib/api";
 import {
   ChevronDown,
   SkipBack,
@@ -173,10 +174,9 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     if (!visible || !currentTrack) { setLyrics(null); return; }
     let cancelled = false;
     setLyrics(null);
-    fetch(`https://lrclib.net/api/get?artist_name=${encodeURIComponent(currentTrack.artist || "")}&track_name=${encodeURIComponent(currentTrack.title || "")}`)
-      .then((r) => r.ok ? r.json() : null)
+    api<{ syncedLyrics: string | null; plainLyrics: string | null }>(`/api/lyrics?artist=${encodeURIComponent(currentTrack.artist || "")}&title=${encodeURIComponent(currentTrack.title || "")}`)
       .then((d) => {
-        if (cancelled || !d) return;
+        if (cancelled) return;
         setLyrics({
           synced: d.syncedLyrics ? parseSyncedLyrics(d.syncedLyrics) : null,
           plain: d.plainLyrics || null,

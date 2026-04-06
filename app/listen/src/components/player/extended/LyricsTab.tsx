@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
+import { api } from "@/lib/api";
 
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { extractPalette } from "@/lib/palette";
@@ -53,21 +54,12 @@ export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
   useEffect(() => {
     if (!currentTrack) return;
     const controller = new AbortController();
-    const params = new URLSearchParams({
-      artist_name: currentTrack.artist,
-      track_name: currentTrack.title,
-    });
 
     setLyrics(null);
     setLoading(true);
 
-    fetch(`https://lrclib.net/api/get?${params}`, { signal: controller.signal })
-      .then((response) => (response.ok ? response.json() : null))
+    api<{ syncedLyrics: string | null; plainLyrics: string | null }>(`/api/lyrics?artist=${encodeURIComponent(currentTrack.artist)}&title=${encodeURIComponent(currentTrack.title)}`)
       .then((data) => {
-        if (!data) {
-          setLyrics({ synced: null, plain: null });
-          return;
-        }
         setLyrics({
           synced: data.syncedLyrics ? parseSyncedLyrics(data.syncedLyrics) : null,
           plain: data.plainLyrics || null,

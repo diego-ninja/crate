@@ -63,16 +63,14 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
     setLyricsLoading(true);
     const artist = encodeURIComponent(currentTrack.artist);
     const title = encodeURIComponent(currentTrack.title);
-    fetch(`https://lrclib.net/api/get?artist_name=${artist}&track_name=${title}`)
-      .then(r => r.ok ? r.json() : null)
+    api<{ syncedLyrics: string | null; plainLyrics: string | null }>(`/api/lyrics?artist=${artist}&title=${title}`)
       .then(d => {
-        if (!d) { setLyrics({ synced: null, plain: null }); return; }
         let synced: { time: number; text: string }[] | null = null;
         if (d.syncedLyrics) {
           synced = [];
           for (const line of d.syncedLyrics.split("\n")) {
             const m = line.match(/\[(\d+):(\d+)\.(\d+)\]\s*(.*)/);
-            if (m) synced.push({ time: parseInt(m[1]) * 60 + parseInt(m[2]) + parseInt(m[3]) / 100, text: m[4] });
+            if (m) synced.push({ time: parseInt(m[1]!) * 60 + parseInt(m[2]!) + parseInt(m[3]!) / 100, text: m[4]! });
           }
         }
         setLyrics({ synced, plain: d.plainLyrics || null });
