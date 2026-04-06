@@ -38,7 +38,7 @@ def _compute_dir_hash(directory: Path) -> str:
                 if content_hash:
                     return content_hash
     except Exception:
-        pass
+        log.debug("crate-cli scan failed for %s, falling back to md5", directory, exc_info=True)
 
     import hashlib
 
@@ -302,7 +302,7 @@ def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
             try:
                 photo_path.unlink()
             except OSError:
-                pass
+                log.debug("Failed to delete photo %s", photo_path, exc_info=True)
 
     emit_task_event(task_id, "info", {"message": f"Reset enrichment for: {name}"})
     log_audit("reset_enrichment", "artist", name, task_id=task_id)
@@ -691,7 +691,7 @@ def _process_new_content_popularity(
                                 )
                             track_pop += 1
                 except Exception:
-                    pass
+                    log.debug("Failed to fetch Last.fm popularity for track %s by %s", title, artist_name, exc_info=True)
                 time.sleep(0.2)
 
         _normalize_popularity()
@@ -744,7 +744,7 @@ def _process_new_content_missing_covers(
                             if img_resp.status_code == 200 and len(img_resp.content) > 1000:
                                 cover_data = img_resp.content
                 except Exception:
-                    pass
+                    log.debug("Failed to fetch Deezer cover for %s / %s", artist_name, album_name, exc_info=True)
 
             if cover_data:
                 save_cover(album_dir, cover_data)

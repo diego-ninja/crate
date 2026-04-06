@@ -108,7 +108,7 @@ def _compute_dir_hash(directory: Path) -> str:
                 if content_hash:
                     return content_hash
     except Exception:
-        pass
+        log.debug("crate-cli scan failed for %s, falling back to md5", directory, exc_info=True)
 
     import hashlib
 
@@ -224,14 +224,14 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
             if _should_process_artist(current_artist, config):
                 create_task_dedup("process_new_content", {"artist": current_artist})
         except Exception:
-            pass
+            log.debug("Failed to queue process_new_content for Tidal artist %s", current_artist, exc_info=True)
 
     try:
         from crate.navidrome import start_scan
 
         start_scan()
     except Exception:
-        pass
+        log.debug("Failed to start Navidrome scan after Tidal download", exc_info=True)
 
     emit_task_event(
         task_id,
@@ -247,7 +247,7 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         try:
             mark_release_downloaded(new_release_id)
         except Exception:
-            pass
+            log.debug("Failed to mark release %s as downloaded", new_release_id, exc_info=True)
 
     return {
         "success": True,
@@ -281,7 +281,7 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
             try:
                 update_tidal_download(download_id, status="failed", error=str(exc)[:200])
             except Exception:
-                pass
+                log.debug("Failed to update tidal_download %s status to failed", download_id, exc_info=True)
         raise
 
 
@@ -322,7 +322,7 @@ def _find_tidal_release_match(artist_name: str, title: str) -> dict:
                     "quality": tidal_album.get("quality", ""),
                 }
     except Exception:
-        pass
+        log.debug("Tidal search failed for %s - %s", artist_name, title, exc_info=True)
 
     return {"tidal_url": "", "tidal_id": "", "cover_url": "", "tracks": 0, "quality": ""}
 
@@ -511,7 +511,7 @@ def _search_alternate_peers(task_id: str, artist: str, skip_username: str, faile
                             found = True
                             break
                     except Exception:
-                        pass
+                        log.debug("Failed to download %s from %s via soulseek", track_name, result["username"], exc_info=True)
             if found:
                 break
         if not found:
@@ -629,7 +629,7 @@ def _poll_soulseek_download_completion(
                             [{"filename": full_path, "size": download.get("size", 0)}],
                         )
                     except Exception:
-                        pass
+                        log.debug("Failed to retry soulseek download for %s", full_path, exc_info=True)
                 time.sleep(5)
             else:
                 retries_done = max_retries
@@ -954,7 +954,7 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
 
         start_scan()
     except Exception:
-        pass
+        log.debug("Failed to start Navidrome scan after library upload", exc_info=True)
 
     shutil.rmtree(staging_dir, ignore_errors=True)
     return {

@@ -478,7 +478,7 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
     try:
         _normalize_popularity()
     except Exception:
-        pass
+        log.debug("Failed to normalize popularity scores", exc_info=True)
 
     return {"albums_fetched": albums_fetched, "tracks_fetched": tracks_fetched, "artists": len(artists)}
 

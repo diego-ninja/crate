@@ -389,7 +389,7 @@ def _handle_apply_cover(task_id: str, params: dict, config: dict) -> dict:
                     if img_resp.status_code == 200:
                         cover_data = img_resp.content
         except Exception:
-            pass
+            log.debug("Failed to fetch Deezer cover for %s / %s", artist, album, exc_info=True)
 
     if not cover_data:
         return {"error": "Failed to fetch cover"}
@@ -457,7 +457,7 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
 
             start_scan()
         except Exception:
-            pass
+            log.debug("Failed to start Navidrome scan after cover upload", exc_info=True)
 
     return {"type": img_type, "path": str(dest), "width": img.width, "height": img.height}
 
