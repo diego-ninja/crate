@@ -6,15 +6,12 @@ import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
-
 from crate.audio import get_audio_files, read_tags
 from crate.db import create_task, create_task_dedup, emit_task_event, get_db_ctx, get_setting, get_task, update_task
 from crate.db.user_library import follow_artist, like_track, save_album
+from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
-
-TaskHandler = Callable[[str, dict, dict], dict]
 
 
 def _sanitize_import_name(name: str) -> str:
@@ -98,14 +95,6 @@ def _seed_uploaded_library(user_id: int | None, imported_albums: list[dict]):
             if track_id and track_id not in seen_track_ids:
                 like_track(user_id, track_id=track_id)
                 seen_track_ids.add(track_id)
-
-
-def _is_cancelled(task_id: str) -> bool:
-    try:
-        task = get_task(task_id)
-        return task is not None and task.get("status") == "cancelled"
-    except Exception:
-        return False
 
 
 def _compute_dir_hash(directory: Path) -> str:
@@ -416,7 +405,7 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
     checked = 0
 
     for i, artist in enumerate(all_artists):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
 
         name = artist["name"]
@@ -590,7 +579,7 @@ def _poll_soulseek_download_completion(
     completed_files: list[dict] = []
 
     while elapsed < max_wait:
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             return {"status": "cancelled"}
 
         time.sleep(5)
@@ -906,7 +895,7 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
 
     update_task(task_id, progress=json.dumps({"phase": "importing", "albums_total": len(album_dirs), "albums_done": 0}))
     for index, album_dir in enumerate(album_dirs, start=1):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
 
         result = queue.import_item(str(album_dir))

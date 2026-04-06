@@ -3,14 +3,11 @@ import logging
 import shutil
 import time
 from pathlib import Path
-from typing import Callable
-
 from crate.db import delete_cache, emit_task_event, get_db_ctx, get_setting, get_task, set_cache, update_task
+from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
 
-TaskHandler = Callable[[str, dict, dict], dict]
-DEFAULT_AUDIO_EXTENSIONS = [".flac", ".mp3", ".m4a", ".ogg", ".opus"]
 ENRICHMENT_CACHE_PREFIXES = (
     "enrichment:",
     "lastfm:artist:",
@@ -20,14 +17,6 @@ ENRICHMENT_CACHE_PREFIXES = (
     "nd:artist:",
     "spotify:artist:",
 )
-
-
-def _is_cancelled(task_id: str) -> bool:
-    try:
-        task = get_task(task_id)
-        return task is not None and task.get("status") == "cancelled"
-    except Exception:
-        return False
 
 
 def _mark_processing(artist_name: str):
@@ -58,10 +47,6 @@ def _compute_dir_hash(directory: Path) -> str:
         if file_path.is_file():
             digest.update(f"{file_path.relative_to(directory)}:{file_path.stat().st_size}\n".encode())
     return digest.hexdigest()
-
-
-def _audio_extensions(config: dict) -> set[str]:
-    return set(config.get("audio_extensions", DEFAULT_AUDIO_EXTENSIONS))
 
 
 def _clean_album_lookup_name(album_name: str) -> str:
@@ -252,7 +237,7 @@ def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
     skipped = 0
 
     for index, artist in enumerate(all_artists):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
 
         name = artist["name"]
@@ -331,7 +316,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     from crate.db import get_library_albums, get_library_tracks
 
     lib = Path(config["library_path"])
-    exts = _audio_extensions(config)
+    exts = DEFAULT_AUDIO_EXTENSIONS
     artist_filter = params.get("artist")
     min_score = params.get("min_score", 70)
 
@@ -350,7 +335,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     failed = 0
 
     for index, album in enumerate(albums):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
 
         album_name = album.get("tag_album") or album.get("name", "")
@@ -459,7 +444,7 @@ def _reorganize_artist_folders(
         return
 
     year_prefix_re = _re.compile(r"^(\d{4})\s*[-–]\s*(.+)$")
-    exts = _audio_extensions(config)
+    exts = DEFAULT_AUDIO_EXTENSIONS
     moved = 0
 
     for subdir in list(artist_dir.iterdir()):
@@ -602,7 +587,7 @@ def _process_new_content_album_mbids(
 
     update_task(task_id, progress=json.dumps({"step": "album_mbid", "artist": artist_name}))
     try:
-        exts = _audio_extensions(config)
+        exts = DEFAULT_AUDIO_EXTENSIONS
         mbid_count = 0
         for album in albums:
             if album_folder and album["name"] != album_folder:

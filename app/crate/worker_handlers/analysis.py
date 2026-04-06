@@ -5,19 +5,11 @@ from pathlib import Path
 from typing import Callable
 
 from crate.db import create_task, emit_task_event, get_db_ctx, get_task, set_cache, update_task
+from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
 
-TaskHandler = Callable[[str, dict, dict], dict]
 CHUNK_SIZE = 10
-
-
-def _is_cancelled(task_id: str) -> bool:
-    try:
-        task = get_task(task_id)
-        return task is not None and task.get("status") == "cancelled"
-    except Exception:
-        return False
 
 
 def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
@@ -205,7 +197,7 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
     batch_size = PANNS_BATCH_SIZE
 
     for batch_start in range(0, total, batch_size):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
 
         batch = tracks_to_analyze[batch_start : batch_start + batch_size]
@@ -314,7 +306,7 @@ def _chunk_coordinator(
     coordinator_start = time.time()
     coordinator_timeout = 3600 * 6
     while completed < len(chunk_task_ids):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             return {"status": "cancelled", "completed_chunks": completed}
         if time.time() - coordinator_start > coordinator_timeout:
             log.warning("Coordinator %s timed out after %ds", task_id, coordinator_timeout)
@@ -386,7 +378,7 @@ def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:
     analyzed = 0
 
     for index, name in enumerate(artists):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
         artist = get_library_artist(name)
         folder = (artist.get("folder_name") if artist else None) or name
@@ -423,7 +415,7 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
     tracks_fetched = 0
 
     for index, artist_name in enumerate(artists):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
         update_task(task_id, progress=json.dumps({"artist": artist_name, "done": index, "total": len(artists)}))
 

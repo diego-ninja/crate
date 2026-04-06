@@ -1,21 +1,10 @@
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Callable
-
 from crate.db import emit_task_event, get_db_ctx, get_task, update_task
+from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
-
-TaskHandler = Callable[[str, dict, dict], dict]
-
-
-def _is_cancelled(task_id: str) -> bool:
-    try:
-        task = get_task(task_id)
-        return task is not None and task.get("status") == "cancelled"
-    except Exception:
-        return False
 
 
 def _handle_sync_user_navidrome(task_id: str, params: dict, config: dict) -> dict:
@@ -331,7 +320,7 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
     shows_found = 0
 
     for index, artist in enumerate(artists):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
         name = artist["name"]
         if index % 10 == 0:
@@ -386,7 +375,7 @@ def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> d
     total = len(rows)
     upserted = 0
     for index, row in enumerate(rows):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
         similar_json = row["similar_json"]
         if not similar_json:

@@ -2,9 +2,6 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Callable
-
-
 def _escape_like(value: str) -> str:
     """Escape SQL LIKE metacharacters and prepend wildcard for year-prefix matching."""
     escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -21,11 +18,10 @@ from crate.db import (
     set_cache,
     update_task,
 )
+from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
 
-TaskHandler = Callable[[str, dict, dict], dict]
-DEFAULT_AUDIO_EXTENSIONS = [".flac", ".mp3", ".m4a", ".ogg", ".opus"]
 ENRICHMENT_CACHE_PREFIXES = (
     "enrichment:",
     "lastfm:artist:",
@@ -37,24 +33,12 @@ ENRICHMENT_CACHE_PREFIXES = (
 )
 
 
-def _is_cancelled(task_id: str) -> bool:
-    try:
-        task = get_task(task_id)
-        return task is not None and task.get("status") == "cancelled"
-    except Exception:
-        return False
-
-
 def _mark_processing(artist_name: str):
     set_cache(f"processing:{artist_name.lower()}", True, ttl=3600)
 
 
 def _unmark_processing(artist_name: str):
     delete_cache(f"processing:{artist_name.lower()}")
-
-
-def _audio_extensions(config: dict) -> set[str]:
-    return set(config.get("audio_extensions", DEFAULT_AUDIO_EXTENSIONS))
 
 
 def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
@@ -149,7 +133,7 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
 
     emit_task_event(task_id, "info", {"message": "Pipeline: running health check..."})
     update_task(task_id, progress=json.dumps({"phase": "health_check"}))
-    if _is_cancelled(task_id):
+    if is_cancelled(task_id):
         return {"status": "cancelled"}
 
     checker = LibraryHealthCheck(config)
@@ -161,7 +145,7 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     )
     set_cache("health_report", report, ttl=3600)
 
-    if _is_cancelled(task_id):
+    if is_cancelled(task_id):
         return {"status": "cancelled"}
 
     emit_task_event(task_id, "info", {"message": "Pipeline: running repair..."})
@@ -178,7 +162,7 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
         ),
     )
 
-    if _is_cancelled(task_id):
+    if is_cancelled(task_id):
         return {"status": "cancelled"}
 
     emit_task_event(task_id, "info", {"message": "Pipeline: running sync..."})
@@ -418,7 +402,7 @@ def _handle_update_album_tags(task_id: str, params: dict, config: dict) -> dict:
     if not album_dir.is_dir():
         return {"error": "Album not found"}
 
-    tracks = get_audio_files(album_dir, list(_audio_extensions(config)))
+    tracks = get_audio_files(album_dir, list(DEFAULT_AUDIO_EXTENSIONS))
     updated = 0
     errors = []
 
@@ -511,7 +495,7 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
     if not album_dir.is_dir():
         return {"error": f"Album not found: {artist_folder}/{album_folder}"}
 
-    result = apply_match(album_dir, _audio_extensions(config), release)
+    result = apply_match(album_dir, DEFAULT_AUDIO_EXTENSIONS, release)
     updated_count = result.get("updated", 0)
     emit_task_event(task_id, "info", {"message": f"Applied MusicBrainz tags: {updated_count} tracks"})
 

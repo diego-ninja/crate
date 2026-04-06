@@ -2,26 +2,14 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Callable
-
 from crate.db import create_task, emit_task_event, get_task, save_scan_result, update_task
 from crate.library_sync import LibrarySync
 from crate.matcher import apply_match, match_album
 from crate.report import save_report
 from crate.scanner import LibraryScanner
+from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
-
-TaskHandler = Callable[[str, dict, dict], dict]
-DEFAULT_AUDIO_EXTENSIONS = [".flac", ".mp3", ".m4a", ".ogg", ".opus"]
-
-
-def _is_cancelled(task_id: str) -> bool:
-    try:
-        task = get_task(task_id)
-        return task is not None and task.get("status") == "cancelled"
-    except Exception:
-        return False
 
 
 def _handle_scan(task_id: str, params: dict, config: dict) -> dict:
@@ -118,7 +106,7 @@ def _handle_batch_retag(task_id: str, params: dict, config: dict) -> dict:
     results = []
 
     for index, item in enumerate(albums):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
         artist = item.get("artist")
         album_name = item.get("album")

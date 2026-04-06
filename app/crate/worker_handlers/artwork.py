@@ -4,41 +4,24 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Callable
-
 from crate.db import emit_task_event, get_db_ctx, get_task, set_cache, update_task
+from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
-
-TaskHandler = Callable[[str, dict, dict], dict]
-DEFAULT_AUDIO_EXTENSIONS = [".flac", ".mp3", ".m4a", ".ogg", ".opus"]
-
-
-def _is_cancelled(task_id: str) -> bool:
-    """Check if a task has been cancelled (reads from DB)."""
-    try:
-        task = get_task(task_id)
-        return task is not None and task.get("status") == "cancelled"
-    except Exception:
-        return False
-
-
-def _audio_extensions(config: dict) -> set[str]:
-    return set(config.get("audio_extensions", DEFAULT_AUDIO_EXTENSIONS))
 
 
 def _handle_fetch_artwork_all(task_id: str, params: dict, config: dict) -> dict:
     from crate.artwork import fetch_cover_from_caa, save_cover, scan_missing_covers
 
     lib = Path(config["library_path"])
-    missing = scan_missing_covers(lib, _audio_extensions(config))
+    missing = scan_missing_covers(lib, DEFAULT_AUDIO_EXTENSIONS)
 
     fetched = 0
     failed = 0
     total = len(missing)
 
     for i, album in enumerate(missing):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
         mbid = album.get("mbid")
         if not mbid:
@@ -62,7 +45,7 @@ def _handle_batch_covers(task_id: str, params: dict, config: dict) -> dict:
     results = []
 
     for i, item in enumerate(albums):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
         mbid = item.get("mbid")
         path = item.get("path")
@@ -244,7 +227,7 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
 
     update_task(task_id, progress=json.dumps({"phase": "scanning"}))
     emit_task_event(task_id, "info", {"message": "Scanning library for missing covers..."})
-    missing = scan_missing_covers(lib, _audio_extensions(config))
+    missing = scan_missing_covers(lib, DEFAULT_AUDIO_EXTENSIONS)
 
     emit_task_event(
         task_id,
@@ -256,7 +239,7 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
     not_found = 0
 
     for i, album in enumerate(missing):
-        if _is_cancelled(task_id):
+        if is_cancelled(task_id):
             break
 
         artist = album["artist"]
