@@ -1,5 +1,4 @@
 import { useApi } from "@/hooks/use-api";
-import { encPath } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 // Badge available if needed for quality indicators
 import { ResponsivePie } from "@nivo/pie";
@@ -21,8 +20,10 @@ interface ArtistStatsData {
   genres: { name: string; weight: number }[];
 }
 
-export function ArtistStats({ name }: { name: string }) {
-  const { data, loading } = useApi<ArtistStatsData>(`/api/artist-stats/${encPath(name)}`);
+export function ArtistStats({ artistId }: { artistId?: number }) {
+  const { data, loading } = useApi<ArtistStatsData>(
+    artistId != null ? `/api/artists/${artistId}/stats` : null,
+  );
 
   if (loading) return <div className="py-8 text-center text-muted-foreground"><Loader2 size={18} className="animate-spin inline mr-2" />Loading stats...</div>;
   if (!data) return <div className="py-8 text-center text-muted-foreground">No stats available</div>;

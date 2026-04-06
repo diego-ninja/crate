@@ -27,7 +27,7 @@ import {
 } from "@/components/stats/stats-model";
 import { useApi } from "@/hooks/use-api";
 import { usePlayerActions } from "@/contexts/PlayerContext";
-import { encPath } from "../../../shared/web/utils";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 
 export function Stats() {
   const [selectedWindow, setSelectedWindow] = useState<StatsWindow>("30d");
@@ -234,7 +234,7 @@ export function Stats() {
             {topArtistItems.map((item, index) => (
               <Link
                 key={`${item.artist_name}-${index}`}
-                to={`/artist/${encPath(item.artist_name)}`}
+                to={artistPagePath({ artistId: item.artist_id, artistSlug: item.artist_slug })}
                 className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-white/10 hover:bg-white/5"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
@@ -260,7 +260,7 @@ export function Stats() {
             {topAlbumItems.map((item, index) => (
               <Link
                 key={`${item.artist}-${item.album}-${index}`}
-                to={`/album/${encPath(item.artist)}/${encPath(item.album)}`}
+                to={albumPagePath({ albumId: item.album_id, albumSlug: item.album_slug })}
                 className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-white/10 hover:bg-white/5"
               >
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">

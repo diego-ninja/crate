@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
 
 interface EnrichmentData {
   lastfm?: {
     bio?: string;
     tags?: string[];
-    similar?: { name: string }[];
+    similar?: { id?: number; slug?: string; name: string }[];
     listeners?: number;
     playcount?: number;
     url?: string;
@@ -23,6 +22,8 @@ interface EnrichmentData {
       preview_url?: string;
     }[];
     related_artists?: {
+      id?: number;
+      slug?: string;
       name: string;
       images?: { url: string }[];
       genres?: string[];
@@ -74,59 +75,60 @@ interface TopTrack {
   id: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   track: number;
   listeners?: number;
 }
 
-export function useArtistEnrichment(name: string | undefined) {
+export function useArtistEnrichment(artistId: number | undefined) {
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!name) return;
+    if (artistId == null) return;
     let cancelled = false;
     setLoading(true);
-    api<EnrichmentData>(`/api/artist/${encPath(name)}/enrichment`)
+    api<EnrichmentData>(`/api/artists/${artistId}/enrichment`)
       .then((d) => { if (!cancelled) setEnrichment(d); })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [name]);
+  }, [artistId]);
 
   return { enrichment, loading };
 }
 
-export function useNavidromeLink(artist: string | undefined, album?: string) {
+export function useNavidromeLink(artistId: number | undefined) {
   const [data, setData] = useState<NavidromeArtistLink | null>(null);
 
   useEffect(() => {
-    if (!artist) return;
+    if (artistId == null) return;
     let cancelled = false;
-    const url = album
-      ? `/api/navidrome/album/${encPath(artist)}/${encPath(album)}/link`
-      : `/api/navidrome/artist/${encPath(artist)}/link`;
-    api<NavidromeArtistLink>(url)
+    api<NavidromeArtistLink>(`/api/navidrome/artists/${artistId}/link`)
       .then((d) => { if (!cancelled) setData(d); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [artist, album]);
+  }, [artistId]);
 
   return data;
 }
 
-export function useTopTracks(name: string | undefined) {
+export function useTopTracks(artistId: number | undefined) {
   const [tracks, setTracks] = useState<TopTrack[]>([]);
 
   useEffect(() => {
-    if (!name) return;
+    if (artistId == null) return;
     let cancelled = false;
-    api<TopTrack[]>(`/api/navidrome/artist/${encPath(name)}/top-tracks?count=10`)
+    api<TopTrack[]>(`/api/navidrome/artists/${artistId}/top-tracks?count=10`)
       .then((d) => { if (!cancelled && Array.isArray(d)) setTracks(d); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [name]);
+  }, [artistId]);
 
   return tracks;
 }

@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
-import { cn, encPath } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 import { UpcomingActionButton, UpcomingActionLink } from "./UpcomingActionButtons";
 import type { UpcomingItem } from "./upcoming-model";
@@ -30,6 +31,11 @@ export function UpcomingEventRow({
     ? dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" })
     : "";
   const timeStr = item.time ? item.time.slice(0, 5) : "";
+  const artistImageUrl = artistPhotoApiUrl({
+    artistId: item.artist_id,
+    artistSlug: item.artist_slug,
+    artistName: item.artist,
+  }) || item.cover_url || undefined;
 
   useEffect(() => {
     setAttending(Boolean(item.user_attending));
@@ -64,9 +70,13 @@ export function UpcomingEventRow({
       toast.info("No probable setlist available for this show");
       return;
     }
+    if (!item.artist_id) {
+      toast.info("Artist not linked to library");
+      return;
+    }
     setPlayingSetlist(true);
     try {
-      const queue = await fetchPlayableSetlist(item.artist);
+      const queue = await fetchPlayableSetlist({ artistId: item.artist_id, artistName: item.artist });
       if (!queue.length) {
         toast.info(`None of the ${item.probable_setlist.length} setlist tracks were found in your library`);
         return;
@@ -94,8 +104,8 @@ export function UpcomingEventRow({
         <img
           src={
             isShow
-              ? `/api/artist/${encPath(item.artist)}/photo`
-              : item.cover_url || `/api/artist/${encPath(item.artist)}/photo`
+              ? artistImageUrl
+              : item.cover_url || artistImageUrl
           }
           alt=""
           className="h-full w-full object-cover"
@@ -130,7 +140,7 @@ export function UpcomingEventRow({
           ) : (
             <>
               <Link
-                to={`/artist/${encPath(item.artist)}`}
+                to={artistPagePath({ artistId: item.artist_id, artistSlug: item.artist_slug })}
                 className="truncate text-white/55 transition-colors hover:text-foreground"
               >
                 {item.artist}

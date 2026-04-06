@@ -115,7 +115,14 @@ def unfollow_artist(user_id: int, artist_name: str) -> bool:
 def get_followed_artists(user_id: int) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute("""
-            SELECT uf.artist_name, uf.created_at, la.album_count, la.track_count, la.has_photo
+            SELECT
+                uf.artist_name,
+                uf.created_at,
+                la.id AS artist_id,
+                la.slug AS artist_slug,
+                la.album_count,
+                la.track_count,
+                la.has_photo
             FROM user_follows uf
             LEFT JOIN library_artists la ON la.name = uf.artist_name
             WHERE uf.user_id = %s
@@ -150,9 +157,21 @@ def unsave_album(user_id: int, album_id: int) -> bool:
 def get_saved_albums(user_id: int) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute("""
-            SELECT usa.created_at AS saved_at, la.id, la.artist, la.name, la.year, la.has_cover, la.track_count, la.total_duration
+            SELECT
+                usa.created_at AS saved_at,
+                la.id,
+                la.slug,
+                la.artist,
+                art.id AS artist_id,
+                art.slug AS artist_slug,
+                la.name,
+                la.year,
+                la.has_cover,
+                la.track_count,
+                la.total_duration
             FROM user_saved_albums usa
             JOIN library_albums la ON la.id = usa.album_id
+            LEFT JOIN library_artists art ON art.name = la.artist
             WHERE usa.user_id = %s
             ORDER BY usa.created_at DESC
         """, (user_id,))
@@ -200,11 +219,17 @@ def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
                 lt.path,
                 lt.title,
                 lt.artist,
+                ar.id AS artist_id,
+                ar.slug AS artist_slug,
                 lt.album,
+                alb.id AS album_id,
+                alb.slug AS album_slug,
                 lt.duration,
                 lt.navidrome_id
             FROM user_liked_tracks ult
             JOIN library_tracks lt ON lt.id = ult.track_id
+            LEFT JOIN library_albums alb ON alb.id = lt.album_id
+            LEFT JOIN library_artists ar ON ar.name = lt.artist
             WHERE ult.user_id = %s
             ORDER BY ult.created_at DESC
             LIMIT %s
@@ -562,10 +587,17 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
                 COALESCE(lt.path, ph.track_path) AS track_path,
                 COALESCE(lt.title, ph.title) AS title,
                 COALESCE(lt.artist, ph.artist) AS artist,
+                ar.id AS artist_id,
+                ar.slug AS artist_slug,
                 COALESCE(lt.album, ph.album) AS album,
+                alb.id AS album_id,
+                alb.slug AS album_slug,
+                lt.navidrome_id,
                 ph.played_at
             FROM play_history ph
             LEFT JOIN library_tracks lt ON lt.id = ph.track_id
+            LEFT JOIN library_albums alb ON alb.id = lt.album_id
+            LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, ph.artist)
             WHERE ph.user_id = %s
             ORDER BY ph.played_at DESC
             LIMIT %s
@@ -655,7 +687,18 @@ def get_stats_overview(user_id: int, window: str = "30d") -> dict:
             """,
             (user_id, normalized),
         )
-        top_artist = cur.fetchone()
+        top_artist_row = cur.fetchone()
+        top_artist = None
+        if top_artist_row:
+            top_artist = dict(top_artist_row)
+            cur.execute(
+                "SELECT id, slug FROM library_artists WHERE name = %s",
+                (top_artist["artist_name"],),
+            )
+            artist_ref = cur.fetchone()
+            if artist_ref:
+                top_artist["artist_id"] = artist_ref["id"]
+                top_artist["artist_slug"] = artist_ref["slug"]
 
     play_count = overview.get("play_count", 0) or 0
     skip_count = overview.get("skip_count", 0) or 0
@@ -711,6 +754,10 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
                 COALESCE(lt.artist, uts.artist) AS artist,
                 COALESCE(lt.album, uts.album) AS album,
                 lt.navidrome_id,
+                art.id AS artist_id,
+                art.slug AS artist_slug,
+                COALESCE(alb_by_id.id, alb_by_name.id) AS album_id,
+                COALESCE(alb_by_id.slug, alb_by_name.slug) AS album_slug,
                 uts.play_count,
                 uts.complete_play_count,
                 uts.minutes_listened,
@@ -718,6 +765,12 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
                 uts.last_played_at
             FROM user_track_stats uts
             LEFT JOIN library_tracks lt ON lt.id = uts.track_id
+            LEFT JOIN library_albums alb_by_id ON alb_by_id.id = lt.album_id
+            LEFT JOIN library_albums alb_by_name
+              ON alb_by_id.id IS NULL
+             AND alb_by_name.artist = COALESCE(lt.artist, uts.artist)
+             AND alb_by_name.name = COALESCE(lt.album, uts.album)
+            LEFT JOIN library_artists art ON art.name = COALESCE(lt.artist, uts.artist)
             WHERE uts.user_id = %s AND uts.stat_window = %s
             ORDER BY uts.play_count DESC, uts.minutes_listened DESC, uts.last_played_at DESC
             LIMIT %s
@@ -733,14 +786,17 @@ def get_top_artists(user_id: int, window: str = "30d", limit: int = 20) -> list[
         cur.execute(
             """
             SELECT
-                artist_name,
+                uas.artist_name,
+                la.id AS artist_id,
+                la.slug AS artist_slug,
                 play_count,
                 complete_play_count,
                 minutes_listened,
                 first_played_at,
                 last_played_at
-            FROM user_artist_stats
-            WHERE user_id = %s AND stat_window = %s
+            FROM user_artist_stats uas
+            LEFT JOIN library_artists la ON la.name = uas.artist_name
+            WHERE uas.user_id = %s AND uas.stat_window = %s
             ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
             LIMIT %s
             """,
@@ -755,16 +811,22 @@ def get_top_albums(user_id: int, window: str = "30d", limit: int = 20) -> list[d
         cur.execute(
             """
             SELECT
-                artist,
-                album,
-                play_count,
-                complete_play_count,
-                minutes_listened,
-                first_played_at,
-                last_played_at
-            FROM user_album_stats
-            WHERE user_id = %s AND stat_window = %s
-            ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
+                uas.artist,
+                art.id AS artist_id,
+                art.slug AS artist_slug,
+                uas.album,
+                alb.id AS album_id,
+                alb.slug AS album_slug,
+                uas.play_count,
+                uas.complete_play_count,
+                uas.minutes_listened,
+                uas.first_played_at,
+                uas.last_played_at
+            FROM user_album_stats uas
+            LEFT JOIN library_albums alb ON alb.artist = uas.artist AND alb.name = uas.album
+            LEFT JOIN library_artists art ON art.name = uas.artist
+            WHERE uas.user_id = %s AND uas.stat_window = %s
+            ORDER BY uas.play_count DESC, uas.minutes_listened DESC, uas.last_played_at DESC
             LIMIT %s
             """,
             (user_id, normalized, limit),

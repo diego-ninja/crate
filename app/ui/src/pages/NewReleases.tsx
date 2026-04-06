@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { toast } from "sonner";
 import { Loader2, Download, X, RefreshCw, Disc3, Sparkles, List, LayoutGrid } from "lucide-react";
 import { ErrorState } from "@/components/ui/error-state";
@@ -11,7 +11,11 @@ import { ErrorState } from "@/components/ui/error-state";
 interface Release {
   id: number;
   artist_name: string;
+  artist_id?: number;
+  artist_slug?: string;
   album_title: string;
+  album_id?: number;
+  album_slug?: string;
   tidal_id: string;
   tidal_url: string;
   cover_url: string;
@@ -23,6 +27,20 @@ interface Release {
   status: string;
   detected_at: string;
   downloaded_at: string | null;
+}
+
+function ReleaseArtistLink({ release, className }: { release: Release; className?: string }) {
+  if (release.artist_id != null) {
+    return (
+      <Link
+        to={artistPagePath({ artistId: release.artist_id, artistSlug: release.artist_slug, artistName: release.artist_name })}
+        className={className}
+      >
+        {release.artist_name}
+      </Link>
+    );
+  }
+  return <span className={className}>{release.artist_name}</span>;
 }
 
 // ── Timeline subcomponents ────────────────────────────────────────
@@ -64,11 +82,18 @@ function ReleaseRow({ release: r, onDownload, onDismiss }: {
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium truncate">{r.album_title}</div>
-        <div className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
-          <Link to={`/artist/${encPath(r.artist_name)}`} className="hover:text-foreground transition-colors">
-            {r.artist_name}
+        {r.album_id != null ? (
+          <Link
+            to={albumPagePath({ albumId: r.album_id, albumSlug: r.album_slug, artistName: r.artist_name, albumName: r.album_title })}
+            className="text-sm font-medium truncate block hover:text-foreground transition-colors"
+          >
+            {r.album_title}
           </Link>
+        ) : (
+          <div className="text-sm font-medium truncate">{r.album_title}</div>
+        )}
+        <div className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
+          <ReleaseArtistLink release={r} className="hover:text-foreground transition-colors" />
           {r.release_type && (
             <Badge variant="outline" className="text-[9px] px-1 py-0">{r.release_type}</Badge>
           )}

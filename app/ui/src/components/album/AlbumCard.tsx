@@ -12,6 +12,8 @@ interface AlbumCardProps {
   albumId?: number;
   albumSlug?: string;
   artist: string;
+  artistId?: number;
+  artistSlug?: string;
   name: string;
   displayName?: string;
   year?: string;
@@ -47,6 +49,8 @@ export const AlbumCard = React.memo(function AlbumCard({
   albumId,
   albumSlug,
   artist,
+  artistId,
+  artistSlug,
   name,
   displayName,
   year,
@@ -66,14 +70,20 @@ export const AlbumCard = React.memo(function AlbumCard({
   async function handlePlay(e: React.MouseEvent) {
     e.stopPropagation();
     try {
+      if (albumId == null) throw new Error("missing album id");
       const data = await api<NavidromeAlbumLink>(
-        `/api/navidrome/album/${encodeURIComponent(artist)}/${encodeURIComponent(name)}/link`,
+        `/api/navidrome/albums/${albumId}/link`,
       );
       if (data?.songs?.length) {
         const playerTracks: Track[] = data.songs.map((s) => ({
           id: s.id,
           title: s.title,
           artist,
+          artistId,
+          artistSlug,
+          album: name,
+          albumId,
+          albumSlug,
           albumCover: coverUrl,
         }));
         player.playAll(playerTracks);
@@ -85,7 +95,15 @@ export const AlbumCard = React.memo(function AlbumCard({
   }
 
   return (
-    <MusicContextMenu type="album" artist={artist} album={name}>
+    <MusicContextMenu
+      type="album"
+      artist={artist}
+      artistId={artistId}
+      artistSlug={artistSlug}
+      album={name}
+      albumId={albumId}
+      albumSlug={albumSlug}
+    >
       <div
         onClick={() => navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: name }))}
         className="bg-card border border-border rounded-lg p-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 hover:border-primary text-center group"

@@ -5,12 +5,13 @@ import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { Button } from "@/components/ui/button";
 import { SimilarTracksPanel } from "@/components/track/SimilarTracksPanel";
 import { api } from "@/lib/api";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, X,
   Shuffle, Repeat, Repeat1, PanelRightOpen, PanelRightClose,
   Music, Timer, Gauge, Save, Download, Trash2, Radar,
 } from "lucide-react";
-import { formatDuration, encPath } from "@/lib/utils";
+import { formatDuration } from "@/lib/utils";
 import { toast } from "sonner";
 import { StarRating } from "@/components/ui/star-rating";
 
@@ -133,13 +134,17 @@ const VIZ_MAP: Record<VizMode, typeof BarVisualizer> = {
 
 interface TrackMeta { bpm?: number; audio_key?: string; audio_scale?: string; energy?: number; album?: string; rating?: number }
 
-function useTrackMeta(trackId: string | undefined): { meta: TrackMeta | null; rating: number; setRating: (r: number) => void } {
+function useTrackMeta(trackId: string | undefined, libraryTrackId?: number): { meta: TrackMeta | null; rating: number; setRating: (r: number) => void } {
   const [meta, setMeta] = useState<TrackMeta | null>(null);
   const [rating, setRating] = useState(0);
   useEffect(() => {
+    if (libraryTrackId != null) {
+      api<TrackMeta>(`/api/tracks/${libraryTrackId}/info`).then((m) => { setMeta(m); setRating(m?.rating ?? 0); }).catch(() => { setMeta(null); setRating(0); });
+      return;
+    }
     if (!trackId?.includes("/")) { setMeta(null); setRating(0); return; }
     api<TrackMeta>(`/api/track-info/${trackId}`).then((m) => { setMeta(m); setRating(m?.rating ?? 0); }).catch(() => { setMeta(null); setRating(0); });
-  }, [trackId]);
+  }, [trackId, libraryTrackId]);
   return { meta, rating, setRating };
 }
 
@@ -283,7 +288,7 @@ export function AudioPlayer() {
   const [activeTab, setActiveTab] = useState<"queue" | "lyrics">("queue");
   const [similarOpen, setSimilarOpen] = useState(false);
   const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
-  const { meta: trackMeta, rating: currentRating, setRating: setCurrentRating } = useTrackMeta(currentTrack?.id);
+  const { meta: trackMeta, rating: currentRating, setRating: setCurrentRating } = useTrackMeta(currentTrack?.id, currentTrack?.libraryTrackId);
 
   function handleRate(r: number) {
     if (!currentTrack) return;
@@ -312,8 +317,15 @@ export function AudioPlayer() {
   }
 
   function navigateToAlbum() {
-    if (albumName && currentTrack) {
-      navigate(`/album/${encPath(currentTrack.artist)}/${encPath(albumName)}`);
+    if (albumName && currentTrack?.albumId != null) {
+      navigate(
+        albumPagePath({
+          albumId: currentTrack.albumId,
+          albumSlug: currentTrack.albumSlug,
+          artistName: currentTrack.artist,
+          albumName,
+        }),
+      );
       if (panelOpen) togglePanel();
     }
   }
@@ -368,7 +380,19 @@ export function AudioPlayer() {
               onClick={navigateToAlbum} />
             <div className="text-center w-full">
               <div className="text-lg font-bold truncate">{currentTrack.title}</div>
-              <button onClick={() => { navigate(`/artist/${encPath(currentTrack.artist)}`); togglePanel(); }}
+              <button
+                onClick={() => {
+                  if (currentTrack.artistId != null) {
+                    navigate(
+                      artistPagePath({
+                        artistId: currentTrack.artistId,
+                        artistSlug: currentTrack.artistSlug,
+                        artistName: currentTrack.artist,
+                      }),
+                    );
+                    togglePanel();
+                  }
+                }}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate block w-full">
                 {currentTrack.artist}
               </button>

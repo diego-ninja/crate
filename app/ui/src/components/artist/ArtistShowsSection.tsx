@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { encPath } from "@/lib/utils";
+import { artistPhotoApiUrl } from "@/lib/library-routes";
 import { ExternalLink, MapPin } from "lucide-react";
 
 interface ShowPriceRange {
@@ -10,6 +10,8 @@ interface ShowPriceRange {
 
 export interface ArtistShowEvent {
   id: string;
+  artist_id?: number;
+  artist_slug?: string;
   name: string;
   date: string;
   local_date: string;
@@ -27,10 +29,12 @@ export interface ArtistShowEvent {
 
 interface ArtistShowsSectionProps {
   artistName: string;
+  artistId?: number;
+  artistSlug?: string;
   shows: ArtistShowEvent[];
 }
 
-export function ArtistShowsSection({ artistName, shows }: ArtistShowsSectionProps) {
+export function ArtistShowsSection({ artistName, artistId, artistSlug, shows }: ArtistShowsSectionProps) {
   return (
     <div className="space-y-1">
       {shows.map((show, i) => {
@@ -47,7 +51,7 @@ export function ArtistShowsSection({ artistName, shows }: ArtistShowsSectionProp
           >
             <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-secondary">
               <img
-                src={`/api/artist/${encPath(artistName)}/photo`}
+                src={artistPhotoApiUrl({ artistId, artistSlug, artistName })}
                 alt=""
                 className="w-full h-full object-cover"
                 onError={(e) => {

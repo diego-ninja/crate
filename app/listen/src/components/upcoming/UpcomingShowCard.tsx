@@ -45,7 +45,8 @@ export function UpcomingShowCard({
       })
     : "";
   const timeLabel = item.time ? item.time.slice(0, 5) : "";
-  const locationLabel = [item.city, item.country].filter(Boolean).join(", ");
+  const locationLabel = [item.city, item.region, item.country].filter(Boolean).join(", ");
+  const addressLabel = [item.address_line1, item.postal_code].filter(Boolean).join(" · ");
 
   return (
     <div
@@ -73,18 +74,19 @@ export function UpcomingShowCard({
             style={{ width: "100%", height: "100%" }}
             zoomControl={false}
             attributionControl={false}
-            dragging={false}
-            scrollWheelZoom={false}
-            doubleClickZoom={false}
-            touchZoom={false}
-            boxZoom={false}
-            keyboard={false}
+            dragging
+            scrollWheelZoom
+            doubleClickZoom
+            touchZoom
+            boxZoom
+            keyboard
           >
             <UpcomingShowMap
               item={item}
               position={position}
               dateLabel={dateLabel}
               timeLabel={timeLabel}
+              addressLabel={addressLabel}
               locationLabel={locationLabel}
             />
           </MapContainer>
@@ -99,6 +101,7 @@ export function UpcomingShowCard({
           playingSetlist={playingSetlist}
           dateLabel={dateLabel}
           timeLabel={timeLabel}
+          addressLabel={addressLabel}
           onToggleAttendance={toggleAttendance}
           onPlaySetlist={playProbableSetlist}
         />
@@ -110,6 +113,7 @@ export function UpcomingShowCard({
           playingSetlist={playingSetlist}
           dateLabel={dateLabel}
           timeLabel={timeLabel}
+          addressLabel={addressLabel}
           locationLabel={locationLabel}
           onToggleAttendance={toggleAttendance}
           onPlaySetlist={playProbableSetlist}

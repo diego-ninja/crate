@@ -14,7 +14,8 @@ import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from 
 import { type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
-import { encPath, formatTotalDuration } from "@/lib/utils";
+import { formatTotalDuration } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 
 type Tab = "playlists" | "artists" | "albums" | "liked";
 
@@ -43,7 +44,11 @@ interface PlaylistTrack {
   track_path: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   position: number;
   navidrome_id?: string;
@@ -67,6 +72,8 @@ interface CuratedPlaylist {
 
 interface FollowedArtist {
   artist_name: string;
+  artist_id?: number;
+  artist_slug?: string;
   created_at: string;
   album_count: number;
   track_count: number;
@@ -76,7 +83,10 @@ interface FollowedArtist {
 interface SavedAlbum {
   saved_at: string;
   id: number;
+  slug?: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   name: string;
   year: string;
   has_cover: boolean;
@@ -386,8 +396,10 @@ function ArtistsTab() {
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-5">
       {artists.map((a) => (
         <ArtistCard
-          key={a.artist_name}
+          key={a.artist_id ?? a.artist_name}
           name={a.artist_name}
+          artistId={a.artist_id}
+          artistSlug={a.artist_slug}
           subtitle={`${a.album_count} album${a.album_count !== 1 ? "s" : ""}`}
           layout="grid"
         />
@@ -412,6 +424,7 @@ function AlbumsTab() {
           artist={a.artist}
           album={a.name}
           albumId={a.id}
+          albumSlug={a.slug}
           year={a.year}
           layout="grid"
         />
@@ -457,9 +470,13 @@ function LikedTab() {
       id: t.relative_path || t.path,
       title: t.title,
       artist: t.artist,
+      artistId: t.artist_id,
+      artistSlug: t.artist_slug,
       album: t.album,
+      albumId: t.album_id,
+      albumSlug: t.album_slug,
       albumCover: t.artist && t.album
-        ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}`
+        ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
         : undefined,
       path: t.relative_path || t.path,
       navidromeId: t.navidrome_id,
@@ -507,7 +524,11 @@ function LikedTab() {
               id: t.track_id,
               title: t.title,
               artist: t.artist,
+              artist_id: t.artist_id,
+              artist_slug: t.artist_slug,
               album: t.album,
+              album_id: t.album_id,
+              album_slug: t.album_slug,
               duration: t.duration,
               path: t.relative_path || t.path,
               navidrome_id: t.navidrome_id,
@@ -516,7 +537,9 @@ function LikedTab() {
             index={i + 1}
             showArtist
             showAlbum
-            albumCover={t.artist && t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : undefined}
+            albumCover={t.artist && t.album
+              ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
+              : undefined}
             showCoverThumb
           />
         ))}

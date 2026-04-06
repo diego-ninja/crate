@@ -53,7 +53,7 @@
   --z-player-overlay: 80;
   --z-modal: 90;
   --z-upcoming-overlay: 95;
-  --z-leaflet-popup: 96;
+  --z-leaflet-popup: 600;
   color-scheme: dark;
 }
 

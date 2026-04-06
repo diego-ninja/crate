@@ -6,9 +6,10 @@ import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { Badge } from "@/components/ui/badge";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
+import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 import { ResponsivePie } from "@nivo/pie";
 import { ResponsiveBar } from "@nivo/bar";
-import { formatNumber, encPath, timeAgo } from "@/lib/utils";
+import { formatNumber, timeAgo } from "@/lib/utils";
 import {
   Users, Disc3, Music, HardDrive, Loader2, ArrowRight,
   Play, RefreshCw, CheckCircle2, XCircle, Clock,
@@ -32,7 +33,7 @@ interface Stats {
   total_duration_hours: number;
   avg_bitrate: number;
   top_genres: { name: string; count: number }[];
-  recent_albums: { artist: string; name: string; display_name?: string; year: string | null; updated_at: string }[];
+  recent_albums: { id?: number; slug?: string; artist: string; artist_id?: number; artist_slug?: string; name: string; display_name?: string; year: string | null; updated_at: string }[];
   analyzed_tracks: number;
   avg_album_duration_min?: number;
   avg_tracks_per_album?: number;
@@ -41,7 +42,7 @@ interface Stats {
 interface AnalyticsData {
   formats: Record<string, number>;
   decades: Record<string, number>;
-  top_artists: { name: string; albums: number }[];
+  top_artists: { id?: number; slug?: string; name: string; albums: number }[];
   computing?: boolean;
 }
 
@@ -394,12 +395,12 @@ export function Dashboard() {
               {recentAlbums.map((album, i) => (
                 <button
                   key={`${album.artist}-${album.name}-${i}`}
-                  onClick={() => navigate(`/album/${encPath(album.artist)}/${encPath(album.name)}`)}
+                  onClick={() => navigate(albumPagePath({ albumId: album.id, albumSlug: album.slug }))}
                   className="flex-shrink-0 w-[140px] group text-left"
                 >
                   <div className="relative w-[140px] h-[140px] rounded-lg overflow-hidden bg-secondary mb-2">
                     <img
-                      src={`/api/cover/${encPath(album.artist)}/${encPath(album.name)}`}
+                      src={albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name })}
                       alt={album.name}
                       loading="lazy"
                       className="w-full h-full object-cover"

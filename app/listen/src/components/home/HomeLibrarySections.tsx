@@ -118,6 +118,7 @@ export function HomeLibrarySection({
                   artist={item.album_artist}
                   album={item.album_name}
                   albumId={item.album_id}
+                  albumSlug={item.album_slug}
                   year={item.album_year}
                 />
               );
@@ -161,8 +162,10 @@ export function JustLandedSection({
             const trackCount = artist.tracks ?? artist.track_count ?? 0;
             return (
               <ArtistCard
-                key={`just-landed-${artist.name}`}
+                key={`just-landed-${artist.id ?? artist.name}`}
                 name={artist.name}
+                artistId={artist.id}
+                artistSlug={artist.slug}
                 subtitle={`${albumCount} album${albumCount === 1 ? "" : "s"} · ${trackCount} tracks`}
               />
             );

@@ -1,14 +1,19 @@
 import type { PlaySource, Track } from "@/contexts/PlayerContext";
 import { ApiError, api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export interface RadioTrackPayload {
   track_id?: number | null;
+  track_slug?: string | null;
   navidrome_id?: string | null;
   track_path?: string | null;
   title: string;
   artist: string;
+  artist_id?: number | null;
+  artist_slug?: string | null;
   album?: string | null;
+  album_id?: number | null;
+  album_slug?: string | null;
   duration?: number | null;
   score?: number | null;
 }
@@ -20,6 +25,7 @@ interface RadioResponse {
     seed?: {
       track_id?: number | null;
       track_path?: string | null;
+      artist_id?: number | null;
       artist_name?: string | null;
       album_id?: number | null;
       playlist_id?: number | null;
@@ -46,10 +52,27 @@ function toTrack(payload: RadioTrackPayload): Track {
     id: playbackId,
     title: payload.title || "Unknown",
     artist: payload.artist || "Unknown",
+    artistId: payload.artist_id || undefined,
+    artistSlug: payload.artist_slug || undefined,
     album: payload.album || undefined,
-    albumCover: payload.artist && payload.album
-      ? `/api/cover/${encPath(payload.artist)}/${encPath(payload.album)}`
-      : undefined,
+    albumId: payload.album_id || undefined,
+    albumSlug: payload.album_slug || undefined,
+    albumCover: payload.album
+      ? albumCoverApiUrl({
+          albumId: payload.album_id,
+          albumSlug: payload.album_slug,
+          artistName: payload.artist,
+          albumName: payload.album,
+        }) || artistPhotoApiUrl({
+          artistId: payload.artist_id,
+          artistSlug: payload.artist_slug,
+          artistName: payload.artist,
+        }) || undefined
+      : artistPhotoApiUrl({
+          artistId: payload.artist_id,
+          artistSlug: payload.artist_slug,
+          artistName: payload.artist,
+        }) || undefined,
     path: trackPath || undefined,
     navidromeId,
     libraryTrackId: payload.track_id || undefined,
@@ -67,11 +90,16 @@ async function requestRadio(url: string, options: RadioRequestOptions = {}): Pro
   }
 }
 
-export async function fetchArtistRadio(artistName: string, limit = 50, options: RadioRequestOptions = {}): Promise<{
+export async function fetchArtistRadio(
+  artistId: number,
+  artistName: string,
+  limit = 50,
+  options: RadioRequestOptions = {},
+): Promise<{
   tracks: Track[];
   source: PlaySource;
 }> {
-  const data = await requestRadio(`/api/radio/artist/${encPath(artistName)}?limit=${limit}`, options);
+  const data = await requestRadio(`/api/artists/${artistId}/radio?limit=${limit}`, options);
   return {
     tracks: (data.tracks || []).map(toTrack),
     source: {
@@ -79,7 +107,7 @@ export async function fetchArtistRadio(artistName: string, limit = 50, options: 
       name: data.session?.name || `${artistName} Radio`,
       radio: {
         seedType: "artist",
-        seedId: data.session?.seed?.artist_name || artistName,
+        seedId: data.session?.seed?.artist_id ?? artistId,
       },
     },
   };
@@ -170,7 +198,8 @@ export async function fetchRadioContinuation(
   if (!radio) return [];
 
   if (radio.seedType === "artist" && radio.seedId) {
-    const data = await requestRadio(`/api/radio/artist/${encPath(String(radio.seedId))}?limit=${limit}`, options);
+    if (typeof radio.seedId !== "number") return [];
+    const data = await requestRadio(`/api/artists/${radio.seedId}/radio?limit=${limit}`, options);
     return (data.tracks || []).map(toTrack);
   }
 

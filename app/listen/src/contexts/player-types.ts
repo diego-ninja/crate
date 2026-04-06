@@ -2,7 +2,11 @@ export interface Track {
   id: string;
   title: string;
   artist: string;
+  artistId?: number;
+  artistSlug?: string;
   album?: string;
+  albumId?: number;
+  albumSlug?: string;
   albumCover?: string;
   path?: string;
   navidromeId?: string;

@@ -34,7 +34,7 @@ import type {
   SavedAlbum,
   UserPlaylist,
 } from "@/components/home/home-model";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 
 function buildLibraryAdditions(
   playlists: UserPlaylist[],
@@ -72,6 +72,9 @@ function buildLibraryAdditions(
       album_artist: album.artist,
       album_year: album.year,
       album_track_count: album.track_count,
+      album_slug: album.slug,
+      album_artist_id: album.artist_id,
+      album_artist_slug: album.artist_slug,
     })),
   ]
     .sort((a, b) => b.added_at.localeCompare(a.added_at))
@@ -129,11 +132,15 @@ export function Home() {
         album: track.album || "",
         albumCover:
           track.artist && track.album
-            ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+            ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
             : data.cover_data_url || undefined,
         path: track.track_path,
         libraryTrackId: track.track_id,
         navidromeId: track.navidrome_id,
+        artistId: track.artist_id,
+        artistSlug: track.artist_slug,
+        albumId: track.album_id,
+        albumSlug: track.album_slug,
       }));
       if (playerTracks.length > 0) {
         playAll(playerTracks, 0, {
@@ -171,7 +178,8 @@ export function Home() {
 
   async function playInsightSetlist(insight: HomeUpcomingInsight) {
     try {
-      const queue = await fetchPlayableSetlist(insight.artist);
+      if (!insight.artist_id) return;
+      const queue = await fetchPlayableSetlist({ artistId: insight.artist_id, artistName: insight.artist });
       if (!queue.length) {
         toast.info("No probable setlist tracks matched your library");
         return;
@@ -196,8 +204,12 @@ export function Home() {
       path: item.track_path || undefined,
       libraryTrackId: item.track_id || undefined,
       albumCover: item.artist && item.album
-        ? `/api/cover/${encPath(item.artist)}/${encPath(item.album)}`
+        ? albumCoverApiUrl({ albumId: item.album_id, albumSlug: item.album_slug, artistName: item.artist, albumName: item.album })
         : undefined,
+      artistId: item.artist_id || undefined,
+      artistSlug: item.artist_slug || undefined,
+      albumId: item.album_id || undefined,
+      albumSlug: item.album_slug || undefined,
     }));
     playAll(queue, 0, { type: "playlist", name: replay.title });
   }
@@ -245,8 +257,12 @@ export function Home() {
               path: item.track_path || undefined,
               libraryTrackId: item.track_id || undefined,
               albumCover: item.artist && item.album
-                ? `/api/cover/${encPath(item.artist)}/${encPath(item.album)}`
+                ? albumCoverApiUrl({ albumId: item.album_id, albumSlug: item.album_slug, artistName: item.artist, albumName: item.album })
                 : undefined,
+              artistId: item.artist_id || undefined,
+              artistSlug: item.artist_slug || undefined,
+              albumId: item.album_id || undefined,
+              albumSlug: item.album_slug || undefined,
             },
             { type: "track", name: item.title },
           )

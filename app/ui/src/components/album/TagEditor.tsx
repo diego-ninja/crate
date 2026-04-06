@@ -3,7 +3,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 
@@ -15,8 +14,7 @@ interface Track {
 }
 
 interface TagEditorProps {
-  artist: string;
-  album: string;
+  albumId: number;
   tags: {
     artist?: string;
     album?: string;
@@ -27,7 +25,7 @@ interface TagEditorProps {
   onSaved?: () => void;
 }
 
-export function TagEditor({ artist, album, tags, tracks, onSaved }: TagEditorProps) {
+export function TagEditor({ albumId, tags, tracks, onSaved }: TagEditorProps) {
   const [values, setValues] = useState({
     artist: tags.artist || "",
     albumartist: tags.artist || "",
@@ -79,7 +77,7 @@ export function TagEditor({ artist, album, tags, tracks, onSaved }: TagEditorPro
         body.tracks = trackEdits;
       }
       const { task_id } = await api<{ task_id: string }>(
-        `/api/tags/${encPath(artist)}/${encPath(album)}`,
+        `/api/albums/${albumId}/tags`,
         "PUT",
         body,
       );

@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 
-from crate.api._deps import library_path, safe_path
+from crate.api._deps import enrich_radio_tracks as _enrich_radio_tracks, library_path, safe_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import _YEAR_PREFIX_RE, fs_search, has_library_data
 from crate.db import get_cache, get_db_ctx, set_cache
@@ -45,7 +45,7 @@ def api_search(request: Request, q: str = "", limit: int = 20):
                    ar.id AS artist_id, ar.slug AS artist_slug
             FROM library_albums a
             LEFT JOIN library_artists ar ON ar.name = a.artist
-            WHERE name ILIKE %s OR artist ILIKE %s
+            WHERE a.name ILIKE %s OR a.artist ILIKE %s
             ORDER BY year DESC NULLS LAST, name ASC
             LIMIT %s
             """,
@@ -201,6 +201,24 @@ def api_rate_track(request: Request, body: dict):
     return {"ok": True, "rating": rating}
 
 
+_TRACK_INFO_COLS = (
+    "title, artist, album, bpm, audio_key, audio_scale, energy, "
+    "danceability, valence, acousticness, instrumentalness, loudness, "
+    "dynamic_range, lastfm_listeners, lastfm_playcount, popularity, rating"
+)
+
+
+@router.get("/api/tracks/{track_id}/info")
+def api_track_info_by_id(request: Request, track_id: int):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute(f"SELECT {_TRACK_INFO_COLS} FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return dict(row)
+
+
 @router.get("/api/track-info/{filepath:path}")
 def api_track_info(request: Request, filepath: str):
     _require_auth(request)
@@ -209,10 +227,7 @@ def api_track_info(request: Request, filepath: str):
 
     with get_db_ctx() as cur:
         cur.execute(
-            "SELECT title, artist, album, bpm, audio_key, audio_scale, energy, "
-            "danceability, valence, acousticness, instrumentalness, loudness, "
-            "dynamic_range, lastfm_listeners, lastfm_playcount, popularity, rating "
-            "FROM library_tracks WHERE path LIKE %s LIMIT 1",
+            f"SELECT {_TRACK_INFO_COLS} FROM library_tracks WHERE path LIKE %s LIMIT 1",
             (f"%{filepath}",),
         )
         row = cur.fetchone()
@@ -233,7 +248,7 @@ def api_discover_completeness(request: Request):
     with get_db_ctx() as cur:
         cur.execute(
             """
-            SELECT name, mbid, album_count, has_photo, listeners
+            SELECT id, slug, name, mbid, album_count, has_photo, listeners
             FROM library_artists
             WHERE mbid IS NOT NULL AND mbid != ''
             ORDER BY name
@@ -302,6 +317,8 @@ def api_discover_completeness(request: Request):
 
             results.append(
                 {
+                    "artist_id": artist["id"],
+                    "artist_slug": artist["slug"],
                     "artist": artist["name"],
                     "has_photo": bool(artist["has_photo"]),
                     "listeners": artist.get("listeners", 0),
@@ -319,46 +336,52 @@ def api_discover_completeness(request: Request):
     return results
 
 
-@router.get("/api/stream/{filepath:path}")
-def api_stream_file(request: Request, filepath: str):
+_STREAM_MEDIA_TYPES = {
+    ".flac": "audio/flac",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/opus",
+    ".wav": "audio/wav",
+}
+
+
+def _stream_file(request: Request, filepath: str):
     _require_auth(request)
     from fastapi.responses import FileResponse
 
     lib = library_path()
     lib_str = str(lib)
     if filepath.startswith(lib_str):
-        filepath = filepath[len(lib_str) :].lstrip("/")
+        filepath = filepath[len(lib_str):].lstrip("/")
     elif filepath.startswith("/music/"):
-        filepath = filepath[len("/music/") :].lstrip("/")
+        filepath = filepath[len("/music/"):].lstrip("/")
     file_path = safe_path(lib, filepath)
     if not file_path or not file_path.is_file():
         return Response(status_code=404)
 
     ext = file_path.suffix.lower()
-    media_types = {
-        ".flac": "audio/flac",
-        ".mp3": "audio/mpeg",
-        ".m4a": "audio/mp4",
-        ".ogg": "audio/ogg",
-        ".opus": "audio/opus",
-        ".wav": "audio/wav",
-    }
     return FileResponse(
         path=str(file_path),
-        media_type=media_types.get(ext, "audio/mpeg"),
+        media_type=_STREAM_MEDIA_TYPES.get(ext, "audio/mpeg"),
         headers={"Accept-Ranges": "bytes"},
     )
 
 
-@router.get("/api/artist-radio/{name:path}")
-def api_artist_radio(request: Request, name: str, limit: int = 50):
+@router.get("/api/tracks/{track_id}/stream")
+def api_stream_by_id(request: Request, track_id: int):
     _require_auth(request)
-    from crate.bliss import generate_artist_radio
+    with get_db_ctx() as cur:
+        cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _stream_file(request, row["path"])
 
-    tracks = generate_artist_radio(name, limit=limit)
-    if not tracks:
-        return JSONResponse({"error": "No bliss data available. Run 'Compute Bliss' first."}, status_code=404)
-    return tracks
+
+@router.get("/api/stream/{filepath:path}")
+def api_stream_file(request: Request, filepath: str):
+    return _stream_file(request, filepath)
 
 
 @router.get("/api/similar-tracks")
@@ -377,7 +400,7 @@ def api_similar_tracks_query(request: Request, path: str = "", track_id: int = 0
         raise HTTPException(status_code=400, detail="path or track_id required")
 
     results = get_similar_from_db(path, limit=limit)
-    return {"tracks": results}
+    return {"tracks": _enrich_radio_tracks(results)}
 
 
 @router.get("/api/similar-tracks/{filepath:path}")
@@ -390,20 +413,40 @@ def api_similar_tracks(request: Request, filepath: str, limit: int = 20):
     if not full_path or not full_path.is_file():
         return JSONResponse({"error": "Track not found"}, status_code=404)
     similar = get_similar_from_db(str(full_path), limit=limit)
-    return {"tracks": similar}
+    return {"tracks": _enrich_radio_tracks(similar)}
 
 
-@router.get("/api/download/track/{filepath:path}")
-def api_download_track(request: Request, filepath: str):
+def _download_track(request: Request, filepath: str):
     _require_auth(request)
     from fastapi.responses import FileResponse
 
     lib = library_path()
+    lib_str = str(lib)
+    if filepath.startswith(lib_str):
+        filepath = filepath[len(lib_str):].lstrip("/")
+    elif filepath.startswith("/music/"):
+        filepath = filepath[len("/music/"):].lstrip("/")
     file_path = safe_path(lib, filepath)
     if not file_path or not file_path.is_file():
         return Response(status_code=404)
 
     return FileResponse(path=str(file_path), filename=file_path.name, media_type="application/octet-stream")
+
+
+@router.get("/api/tracks/{track_id}/download")
+def api_download_track_by_id(request: Request, track_id: int):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _download_track(request, row["path"])
+
+
+@router.get("/api/download/track/{filepath:path}")
+def api_download_track(request: Request, filepath: str):
+    return _download_track(request, filepath)
 
 
 # ── Mood/Energy browse ──────────────────────────────────────────
@@ -463,9 +506,12 @@ def api_browse_mood_tracks(request: Request, mood: str, limit: int = Query(50, g
     with get_db_ctx() as cur:
         cur.execute(
             f"""SELECT t.id, t.title, t.artist, a.name AS album, t.path, t.duration,
+                       ar.id AS artist_id, ar.slug AS artist_slug,
+                       a.id AS album_id, a.slug AS album_slug,
                        t.bpm, t.energy, t.danceability, t.valence, t.navidrome_id
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
+                LEFT JOIN library_artists ar ON ar.name = t.artist
                 WHERE {' AND '.join(conditions)}
                 ORDER BY RANDOM() LIMIT %s""",
             params,

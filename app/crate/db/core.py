@@ -847,8 +847,10 @@ def init_db():
                 date TEXT NOT NULL,
                 local_time TEXT,
                 venue TEXT,
+                address_line1 TEXT,
                 city TEXT,
                 region TEXT,
+                postal_code TEXT,
                 country TEXT,
                 country_code TEXT,
                 latitude DOUBLE PRECISION,
@@ -866,6 +868,16 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_date ON shows(date)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_artist ON shows(artist_name)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_city ON shows(city)")
+        for col, col_type in [
+            ("address_line1", "TEXT"),
+            ("postal_code", "TEXT"),
+        ]:
+            cur.execute(f"""
+                DO $$ BEGIN
+                    ALTER TABLE shows ADD COLUMN {col} {col_type};
+                EXCEPTION WHEN duplicate_column THEN NULL;
+                END $$
+            """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS user_show_attendance (
                 id SERIAL PRIMARY KEY,

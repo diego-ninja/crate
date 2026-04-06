@@ -5,7 +5,8 @@ import { useMusicVisualizer } from "./visualizer/useMusicVisualizer";
 import { useDraggable } from "./useDraggable";
 import { QueueList } from "./QueueList";
 import { api } from "@/lib/api";
-import { cn, encPath, formatDuration } from "@/lib/utils";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
+import { cn, formatDuration } from "@/lib/utils";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
   X, Music, ListMusic, Mic2, Save, Download, Settings2,
@@ -44,7 +45,7 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
 
   useEffect(() => {
     if (!currentTrack) return;
-    api<TrackMeta>(`/api/track-info/${currentTrack.id}`)
+    api<TrackMeta>(currentTrack.libraryTrackId != null ? `/api/tracks/${currentTrack.libraryTrackId}/info` : `/api/track-info/${currentTrack.id}`)
       .then((m) => { setTrackMeta(m); setCurrentRating(m?.rating ?? 0); })
       .catch(() => { setTrackMeta(null); setCurrentRating(0); });
   }, [currentTrack?.id]);
@@ -210,14 +211,35 @@ export function FloatingPlayer({ open, onClose }: FloatingPlayerProps) {
         <div className="min-w-0 flex-1">
           <div className="text-sm font-bold truncate">{currentTrack.title}</div>
           <button
-            onClick={() => navigate(`/artist/${encPath(currentTrack.artist)}`)}
+            onClick={() => {
+              if (currentTrack.artistId != null) {
+                navigate(
+                  artistPagePath({
+                    artistId: currentTrack.artistId,
+                    artistSlug: currentTrack.artistSlug,
+                    artistName: currentTrack.artist,
+                  }),
+                );
+              }
+            }}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors truncate block"
           >
             {currentTrack.artist}
           </button>
           {albumName && (
             <button
-              onClick={() => navigate(`/album/${encPath(currentTrack.artist)}/${encPath(albumName)}`)}
+              onClick={() => {
+                if (currentTrack.albumId != null) {
+                  navigate(
+                    albumPagePath({
+                      albumId: currentTrack.albumId,
+                      albumSlug: currentTrack.albumSlug,
+                      artistName: currentTrack.artist,
+                      albumName,
+                    }),
+                  );
+                }
+              }}
               className="text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors truncate block"
             >
               {albumName}

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl, albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { toast } from "sonner";
 import { Radar } from "lucide-react";
 import {
@@ -16,7 +16,11 @@ interface MusicContextMenuProps {
   children: React.ReactNode;
   type: "album" | "track" | "artist";
   artist: string;
+  artistId?: number;
+  artistSlug?: string;
   album?: string;
+  albumId?: number;
+  albumSlug?: string;
   trackId?: string;
   trackTitle?: string;
   albumCover?: string;
@@ -41,7 +45,11 @@ export function MusicContextMenu({
   children,
   type,
   artist,
+  artistId,
+  artistSlug,
   album,
+  albumId,
+  albumSlug,
   trackId,
   trackTitle,
   albumCover,
@@ -49,40 +57,84 @@ export function MusicContextMenu({
 }: MusicContextMenuProps) {
   const navigate = useNavigate();
   const { play, playAll, playNext, addToQueue } = usePlayer();
+  const resolvedAlbumCover = albumCover || albumCoverApiUrl({
+    albumId,
+    albumSlug,
+    artistName: artist,
+    albumName: album,
+  }) || undefined;
 
   async function handlePlay() {
     if (type === "track" && trackId) {
-      play({ id: trackId, title: trackTitle || "", artist, album, albumCover });
+      play({
+        id: trackId,
+        title: trackTitle || "",
+        artist,
+        artistId,
+        artistSlug,
+        album,
+        albumId,
+        albumSlug,
+        albumCover: resolvedAlbumCover,
+      });
       return;
     }
     if (type === "album" && album) {
       try {
+        if (albumId == null) throw new Error("missing album id");
         const data = await api<NavidromeAlbumLink>(
-          `/api/navidrome/album/${encPath(artist)}/${encPath(album)}/link`,
+          `/api/navidrome/albums/${albumId}/link`,
         );
         if (data?.songs?.length) {
-          const coverUrl = `/api/cover/${encPath(artist)}/${encPath(album)}`;
           const tracks: Track[] = data.songs.map((s) => ({
-            id: s.id, title: s.title, artist, album, albumCover: coverUrl,
+            id: s.id,
+            title: s.title,
+            artist,
+            artistId,
+            artistSlug,
+            album,
+            albumId,
+            albumSlug,
+            albumCover: resolvedAlbumCover,
           }));
           playAll(tracks);
         }
       } catch {
-        navigate(`/album/${encPath(artist)}/${encPath(album)}`);
+        navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }));
       }
     }
   }
 
   function handlePlayNext() {
     if (type === "track" && trackId) {
-      playNext({ id: trackId, title: trackTitle || "", artist, album, albumCover });
+      playNext({
+        id: trackId,
+        title: trackTitle || "",
+        artist,
+        artistId,
+        artistSlug,
+        album,
+        albumId,
+        albumSlug,
+        albumCover: resolvedAlbumCover,
+      });
       toast.success("Playing next");
     }
   }
 
   function handleAddToQueue() {
     if (type === "track" && trackId) {
-      addToQueue({ id: trackId, title: trackTitle || "", artist, album, albumCover });
+      addToQueue({
+        id: trackId,
+        title: trackTitle || "",
+        artist,
+        artistId,
+        artistSlug,
+        album,
+        albumId,
+        albumSlug,
+        albumCover: resolvedAlbumCover,
+      });
       toast.success("Added to queue");
     }
   }
@@ -107,7 +159,7 @@ export function MusicContextMenu({
         )}
         {type !== "artist" && (
           <ContextMenuItem
-            onClick={() => navigate(`/artist/${encPath(artist)}`)}
+            onClick={() => navigate(artistPagePath({ artistId, artistSlug, artistName: artist }))}
             className="text-sm"
           >
             Go to Artist
@@ -115,9 +167,7 @@ export function MusicContextMenu({
         )}
         {type === "track" && album && (
           <ContextMenuItem
-            onClick={() =>
-              navigate(`/album/${encPath(artist)}/${encPath(album)}`)
-            }
+            onClick={() => navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }))}
             className="text-sm"
           >
             Go to Album
@@ -125,9 +175,7 @@ export function MusicContextMenu({
         )}
         {type === "album" && album && (
           <ContextMenuItem
-            onClick={() =>
-              navigate(`/album/${encPath(artist)}/${encPath(album)}`)
-            }
+            onClick={() => navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }))}
             className="text-sm"
           >
             Open Album
@@ -141,20 +189,24 @@ export function MusicContextMenu({
             </ContextMenuItem>
           </>
         )}
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          onClick={async () => {
-            try {
-              await api(`/api/artist/${encPath(artist)}/enrich`, "POST");
-              toast.success("Enrichment started");
-            } catch {
-              toast.error("Failed to start enrichment");
-            }
-          }}
-          className="text-sm"
-        >
-          Enrich Artist
-        </ContextMenuItem>
+        {artistId != null && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onClick={async () => {
+                try {
+                  await api(`/api/artists/${artistId}/enrich`, "POST");
+                  toast.success("Enrichment started");
+                } catch {
+                  toast.error("Failed to start enrichment");
+                }
+              }}
+              className="text-sm"
+            >
+              Enrich Artist
+            </ContextMenuItem>
+          </>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   );

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request, HTTPException, Query
 from pydantic import BaseModel, field_validator, model_validator
 
 from crate.api.auth import _require_auth
+from crate.api._deps import artist_name_from_id
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -145,6 +146,8 @@ def _build_upcoming_insights(
                 "type": "one_month",
                 "show_id": show_id,
                 "artist": artist_name,
+                "artist_id": show.get("artist_id"),
+                "artist_slug": show.get("artist_slug"),
                 "date": date_str,
                 "title": show.get("venue") or artist_name,
                 "subtitle": f"{days_until} days to go",
@@ -157,6 +160,8 @@ def _build_upcoming_insights(
                 "type": "one_week",
                 "show_id": show_id,
                 "artist": artist_name,
+                "artist_id": show.get("artist_id"),
+                "artist_slug": show.get("artist_slug"),
                 "date": date_str,
                 "title": show.get("venue") or artist_name,
                 "subtitle": f"{days_until} days to go",
@@ -170,6 +175,8 @@ def _build_upcoming_insights(
                 "type": "show_prep",
                 "show_id": show_id,
                 "artist": artist_name,
+                "artist_id": show.get("artist_id"),
+                "artist_slug": show.get("artist_slug"),
                 "date": date_str,
                 "title": f"{artist_name} probable setlist",
                 "subtitle": "Show prep",
@@ -242,6 +249,14 @@ def follow(request: Request, body: FollowRequest):
     added = follow_artist(user["id"], body.artist_name)
     return {"ok": True, "added": added}
 
+
+@router.post("/follows/artists/{artist_id}")
+def follow_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return follow(request, FollowRequest(artist_name=artist_name))
+
 @router.delete("/follows/{artist_name}")
 def unfollow(request: Request, artist_name: str):
     user = _require_auth(request)
@@ -251,11 +266,27 @@ def unfollow(request: Request, artist_name: str):
         raise HTTPException(status_code=404, detail="Not following this artist")
     return {"ok": True}
 
+
+@router.delete("/follows/artists/{artist_id}")
+def unfollow_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return unfollow(request, artist_name)
+
 @router.get("/follows/{artist_name}")
 def is_following_check(request: Request, artist_name: str):
     user = _require_auth(request)
     from crate.db.user_library import is_following
     return {"following": is_following(user["id"], artist_name)}
+
+
+@router.get("/follows/artists/{artist_id}")
+def is_following_check_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return is_following_check(request, artist_name)
 
 
 # ── Saved Albums ─────────────────────────────────────────────
@@ -541,6 +572,8 @@ def upcoming(request: Request, limit: int = 120):
             SELECT
                 nr.id,
                 nr.artist_name,
+                la.id AS artist_id,
+                la.slug AS artist_slug,
                 nr.album_title,
                 nr.cover_url,
                 nr.status,
@@ -549,6 +582,7 @@ def upcoming(request: Request, limit: int = 120):
                 nr.release_date,
                 nr.detected_at
             FROM new_releases nr
+            LEFT JOIN library_artists la ON la.name = nr.artist_name
             WHERE nr.artist_name IN ({placeholders})
               AND nr.status != 'dismissed'
               AND (
@@ -567,6 +601,8 @@ def upcoming(request: Request, limit: int = 120):
                     "type": "release",
                     "date": release_date,
                     "artist": release.get("artist_name", ""),
+                    "artist_id": release.get("artist_id"),
+                    "artist_slug": release.get("artist_slug"),
                     "title": release.get("album_title", ""),
                     "subtitle": release.get("release_type") or "Album",
                     "cover_url": release.get("cover_url"),
@@ -579,10 +615,24 @@ def upcoming(request: Request, limit: int = 120):
 
         cur.execute(
             f"""
-            SELECT id, artist_name, venue, city, country, country_code, date, local_time,
+            SELECT
+                   s.id,
+                   s.artist_name,
+                   la.id AS artist_id,
+                   la.slug AS artist_slug,
+                   s.venue,
+                   s.address_line1,
+                   s.city,
+                   s.region,
+                   s.postal_code,
+                   s.country,
+                   s.country_code,
+                   s.date,
+                   s.local_time,
                    url, image_url, lineup, latitude, longitude
-            FROM shows
-            WHERE artist_name IN ({placeholders})
+            FROM shows s
+            LEFT JOIN library_artists la ON la.name = s.artist_name
+            WHERE s.artist_name IN ({placeholders})
               AND date >= %s
               AND status != 'cancelled'
             ORDER BY date ASC
@@ -623,13 +673,18 @@ def upcoming(request: Request, limit: int = 120):
                 "date": show.get("date"),
                 "time": show.get("local_time"),
                 "artist": artist_name,
+                "artist_id": show.get("artist_id"),
+                "artist_slug": show.get("artist_slug"),
                 "title": show.get("venue") or "",
                 "subtitle": f"{show.get('city', '')}, {show.get('country', '')}".strip(", "),
                 "cover_url": show.get("image_url"),
                 "status": "onsale",
                 "url": show.get("url"),
                 "venue": show.get("venue"),
+                "address_line1": show.get("address_line1"),
                 "city": show.get("city"),
+                "region": show.get("region"),
+                "postal_code": show.get("postal_code"),
                 "country": show.get("country"),
                 "country_code": show.get("country_code"),
                 "latitude": show.get("latitude"),

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import ForceGraph2D from "react-force-graph-2d";
 
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -14,6 +14,8 @@ interface NetworkNode {
   group: number;
   in_library: boolean;
   score: number;
+  artist_id?: number;
+  artist_slug?: string;
 }
 
 interface NetworkLink {
@@ -29,9 +31,20 @@ interface NetworkData {
 
 interface ArtistNetworkGraphProps {
   centerArtist: string;
+  centerArtistId?: number;
 }
 
-export function ArtistNetworkGraph({ centerArtist }: ArtistNetworkGraphProps) {
+function artistNetworkApiPath(name: string, artistId?: number, depth?: number) {
+  if (artistId != null) {
+    const params = depth != null ? `?depth=${depth}` : "";
+    return `/api/artists/${artistId}/network${params}`;
+  }
+  const qs = new URLSearchParams({ name });
+  if (depth != null) qs.set("depth", String(depth));
+  return `/api/network/external-artist?${qs}`;
+}
+
+export function ArtistNetworkGraph({ centerArtist, centerArtistId }: ArtistNetworkGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(undefined);
   const navigate = useNavigate();
@@ -48,16 +61,16 @@ export function ArtistNetworkGraph({ centerArtist }: ArtistNetworkGraphProps) {
 
     setLoading(true);
     setExpandedNodes(new Set([centerArtist]));
-    api<NetworkData>(`/api/artist/${encPath(centerArtist)}/network`)
+    api<NetworkData>(artistNetworkApiPath(centerArtist, centerArtistId))
       .then((data) => setNetworkData(data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [centerArtist]);
+  }, [centerArtist, centerArtistId]);
 
-  function expandNode(name: string) {
-    if (expandedNodes.has(name)) return;
-    setExpandedNodes((previous) => new Set([...previous, name]));
-    api<NetworkData>(`/api/artist/${encPath(name)}/network?depth=1`)
+  function expandNode(node: NetworkNode) {
+    if (expandedNodes.has(node.id)) return;
+    setExpandedNodes((previous) => new Set([...previous, node.id]));
+    api<NetworkData>(artistNetworkApiPath(node.id, node.artist_id, 1))
       .then((data) => {
         setNetworkData((previous) => {
           const existingIds = new Set(previous.nodes.map((node) => node.id));
@@ -213,10 +226,12 @@ export function ArtistNetworkGraph({ centerArtist }: ArtistNetworkGraphProps) {
           const currentNode = nodeSet.get(node.id) as NetworkNode | undefined;
           const inLibrary = currentNode?.in_library ?? false;
           const score = currentNode?.score ?? 0;
-          const photoUrl = `/api/artist/${encodeURIComponent(node.id)}/photo`;
+          const photoUrl = currentNode?.artist_id != null
+            ? artistPhotoApiUrl({ artistId: currentNode.artist_id, artistSlug: currentNode.artist_slug, artistName: node.id })
+            : "";
           return `<div style="background:var(--color-card);border:1px solid var(--color-border);border-radius:10px;padding:0;font-size:12px;min-width:200px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4)">
             <div style="display:flex;align-items:center;gap:8px;padding:10px 12px">
-              <img src="${photoUrl}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;background:#1c1c28" onerror="this.style.display='none'" />
+              ${photoUrl ? `<img src="${photoUrl}" style="width:36px;height:36px;border-radius:6px;object-fit:cover;background:#1c1c28" onerror="this.style.display='none'" />` : ""}
               <div style="min-width:0;flex:1">
                 <div style="font-weight:600;color:var(--color-foreground)">${escapeHtml(node.id)}</div>
               </div>
@@ -237,12 +252,15 @@ export function ArtistNetworkGraph({ centerArtist }: ArtistNetworkGraphProps) {
           </div>`;
         }}
         onNodeClick={(node: any) => {
-          expandNode(node.id);
+          expandNode(node as NetworkNode);
         }}
         onNodeRightClick={(node: any) => {
           const currentNode = nodeSet.get(node.id) as NetworkNode | undefined;
-          if (currentNode?.in_library) navigate(`/artist/${encPath(node.id)}`);
-          else navigate(`/download?q=${encodeURIComponent(node.id)}`);
+          if (currentNode?.in_library && currentNode.artist_id != null) {
+            navigate(artistPagePath({ artistId: currentNode.artist_id, artistSlug: currentNode.artist_slug, artistName: node.id }));
+          } else {
+            navigate(`/download?q=${encodeURIComponent(node.id)}`);
+          }
         }}
         cooldownTicks={200}
         d3AlphaDecay={0.01}

@@ -21,7 +21,7 @@ import {
 } from "@/components/explore/explore-model";
 import { useApi } from "@/hooks/use-api";
 import { ApiError, api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 import { PlaylistCard } from "@/components/playlists/PlaylistCard";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 
@@ -268,17 +268,32 @@ function MoodBrowseSection() {
   async function playMood(mood: string) {
     setLoadingMood(mood);
     try {
-      const data = await api<{ tracks: Array<{ id: number; title: string; artist: string; album: string; path: string; navidrome_id?: string }> }>(`/api/browse/mood/${mood}?limit=50`);
+      const data = await api<{ tracks: Array<{
+        id: number;
+        title: string;
+        artist: string;
+        artist_id?: number;
+        artist_slug?: string;
+        album: string;
+        album_id?: number;
+        album_slug?: string;
+        path: string;
+        navidrome_id?: string;
+      }> }>(`/api/browse/mood/${mood}?limit=50`);
       if (data.tracks.length > 0) {
         playAll(
           data.tracks.map((t) => ({
             id: t.path || String(t.id),
             title: t.title,
             artist: t.artist,
+            artistId: t.artist_id,
+            artistSlug: t.artist_slug,
             album: t.album,
+            albumId: t.album_id,
+            albumSlug: t.album_slug,
             path: t.path,
             navidromeId: t.navidrome_id,
-            albumCover: `/api/cover/${encPath(t.artist)}/${encPath(t.album)}`,
+            albumCover: albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }),
           })),
           0,
           { type: "playlist", name: `${mood.charAt(0).toUpperCase() + mood.slice(1)} Mix` },

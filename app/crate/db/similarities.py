@@ -168,6 +168,28 @@ def get_artist_network(artist_name: str, depth: int = 2, limit_per_level: int = 
                 seen_links.add(lk)
                 links.append({"source": nodes[sk]["id"], "target": dst, "value": score})
 
+    library_names = [node["id"] for node in nodes.values() if node.get("in_library")]
+    refs_by_name: dict[str, dict] = {}
+    if library_names:
+        with get_db_ctx() as cur:
+            cur.execute(
+                """
+                SELECT id, slug, name
+                FROM library_artists
+                WHERE LOWER(name) = ANY(%s)
+                """,
+                ([name.lower() for name in library_names],),
+            )
+            refs_by_name = {
+                row["name"].lower(): {"artist_id": row["id"], "artist_slug": row["slug"]}
+                for row in cur.fetchall()
+            }
+
+    for node in nodes.values():
+        ref = refs_by_name.get(node["id"].lower())
+        if ref:
+            node.update(ref)
+
     return {"nodes": list(nodes.values()), "links": links}
 
 

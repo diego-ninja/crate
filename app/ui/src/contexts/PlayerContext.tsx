@@ -13,8 +13,15 @@ export interface Track {
   id: string;
   title: string;
   artist: string;
+  artistId?: number;
+  artistSlug?: string;
   album?: string;
+  albumId?: number;
+  albumSlug?: string;
   albumCover?: string;
+  libraryTrackId?: number;
+  path?: string;
+  navidromeId?: string;
 }
 
 type RepeatMode = "off" | "one" | "all";
@@ -160,6 +167,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const shouldAutoplayRef = useRef(false);
 
   function getStreamUrl(track: Track): string {
+    if (track.libraryTrackId != null) {
+      return `/api/tracks/${track.libraryTrackId}/stream`;
+    }
     return track.id.includes("/")
       ? `/api/stream/${encodeURIComponent(track.id).replace(/%2F/g, "/")}`
       : `/api/navidrome/stream/${track.id}`;

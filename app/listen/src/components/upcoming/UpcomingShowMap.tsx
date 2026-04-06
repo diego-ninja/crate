@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -12,20 +12,28 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-function MapSizeFixer() {
+function MapViewportFixer({ position }: { position: [number, number] }) {
   const map = useMap();
 
   useEffect(() => {
-    const timers = [
-      window.setTimeout(() => map.invalidateSize(), 0),
-      window.setTimeout(() => map.invalidateSize(), 120),
-      window.setTimeout(() => map.invalidateSize(), 320),
-    ];
+    const syncViewport = () => {
+      map.invalidateSize({ pan: false });
+      // Offset the center so the marker sits in the upper third, leaving room for the popup above
+      const containerHeight = map.getContainer().getBoundingClientRect().height;
+      const px = map.project(position, map.getZoom());
+      px.y -= containerHeight * 0.15;
+      const offsetCenter = map.unproject(px, map.getZoom());
+      map.setView(offsetCenter, map.getZoom(), { animate: false });
+    };
+    const timers = [0, 120, 320].map((delay) => window.setTimeout(syncViewport, delay));
+    const observer = new ResizeObserver(syncViewport);
+    observer.observe(map.getContainer());
 
     return () => {
       for (const timer of timers) window.clearTimeout(timer);
+      observer.disconnect();
     };
-  }, [map]);
+  }, [map, position]);
 
   return null;
 }
@@ -35,23 +43,45 @@ export function UpcomingShowMap({
   position,
   dateLabel,
   timeLabel,
+  addressLabel,
   locationLabel,
 }: {
   item: UpcomingItem;
   position: [number, number];
   dateLabel: string;
   timeLabel: string;
+  addressLabel: string;
   locationLabel: string;
 }) {
+  const markerRef = useRef<L.Marker>(null);
+
+  useEffect(() => {
+    const timers = [0, 120, 320].map((delay) =>
+      window.setTimeout(() => {
+        markerRef.current?.openPopup();
+      }, delay),
+    );
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+    };
+  }, [position]);
+
   return (
     <>
-      <MapSizeFixer />
+      <MapViewportFixer position={position} />
       <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-      <Marker position={position}>
-        <Popup className="upcoming-marker-popup">
+      <Marker ref={markerRef} position={position}>
+        <Popup
+          className="upcoming-marker-popup"
+          autoClose={false}
+          closeOnClick={false}
+          closeOnEscapeKey={false}
+          autoPan={false}
+        >
           <div className="space-y-2 text-xs">
             <div>
               <div className="font-semibold text-foreground">{item.venue || item.artist}</div>
+              {addressLabel ? <div className="text-white/75">{addressLabel}</div> : null}
               <div className="text-muted-foreground">{locationLabel || item.subtitle}</div>
             </div>
             <div className="space-y-1 text-muted-foreground">

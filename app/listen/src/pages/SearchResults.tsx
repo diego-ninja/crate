@@ -40,9 +40,14 @@ export function SearchResults() {
     id: t.path || String(t.id || `${t.artist}-${t.title}`),
     title: t.title,
     artist: t.artist,
+    artistId: t.artist_id,
+    artistSlug: t.artist_slug,
     album: t.album,
+    albumId: t.album_id,
+    albumSlug: t.album_slug,
     path: t.path,
     navidromeId: t.navidrome_id,
+    libraryTrackId: typeof t.id === "number" ? t.id : undefined,
     albumCover: t.album ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }) : undefined,
   });
 
@@ -87,7 +92,20 @@ export function SearchResults() {
             {data.tracks.map((t, i) => (
               <TrackRow
                 key={t.path || `${t.artist}-${t.title}-${i}`}
-                track={{ id: String(t.id || t.path || i), title: t.title, artist: t.artist, album: t.album, duration: t.duration }}
+                track={{
+                  id: String(t.id || t.path || i),
+                  title: t.title,
+                  artist: t.artist,
+                  artist_id: t.artist_id,
+                  artist_slug: t.artist_slug,
+                  album: t.album,
+                  album_id: t.album_id,
+                  album_slug: t.album_slug,
+                  duration: t.duration,
+                  path: t.path,
+                  navidrome_id: t.navidrome_id,
+                  library_track_id: typeof t.id === "number" ? t.id : undefined,
+                }}
                 index={i}
                 showArtist
                 showAlbum

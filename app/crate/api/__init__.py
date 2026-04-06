@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
 from crate.db import init_db
@@ -13,7 +12,8 @@ from crate.db import init_db
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Scheduled tasks are managed by the worker process — no task creation here
+    from crate.utils import init_musicbrainz
+    init_musicbrainz()
     yield
 
 
@@ -53,7 +53,6 @@ def create_app() -> FastAPI:
     from crate.api.analytics import router as analytics_router
     from crate.api.events import router as events_router
     from crate.api.tasks import router as tasks_router
-    from crate.api.pages import router as pages_router
     from crate.api.navidrome import router as navidrome_router
     from crate.api.stack import router as stack_router
     from crate.api.audiomuse import router as audiomuse_router
@@ -97,10 +96,9 @@ def create_app() -> FastAPI:
     app.include_router(batch_router)
     app.include_router(events_router)
     app.include_router(tasks_router)
-    app.include_router(pages_router)
     app.include_router(stack_router)
 
-    # Static files and templates
+    # Static files
     base = Path(__file__).resolve().parent.parent
     static_dir = base / "static"
     if static_dir.is_dir():

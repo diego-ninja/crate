@@ -30,37 +30,39 @@ import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchArtistRadio } from "@/lib/radio";
-import { encPath, shuffleArray } from "@/lib/utils";
+import { shuffleArray } from "@/lib/utils";
 import { artistApiPath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export function Artist() {
-  const { name, artistId: artistIdParam } = useParams<{ name?: string; artistId?: string }>();
+  const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
   const artistId = artistIdParam ? Number(artistIdParam) : undefined;
-  const decodedName = decodeURIComponent(name || "");
   const [bioModalOpen, setBioModalOpen] = useState(false);
   const [expandedShowId, setExpandedShowId] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
-  const [localSimilarArtists, setLocalSimilarArtists] = useState<Record<string, boolean>>({});
   const { playAll } = usePlayerActions();
 
+  const { data, loading, error } = useApi<ArtistData>(
+    artistId != null ? artistApiPath({ artistId }) : null,
+  );
+
   useEffect(() => {
-    if (!decodedName) return;
-    api<{ following: boolean }>(`/api/me/follows/${encPath(decodedName)}`)
+    if (!data?.id) return;
+    api<{ following: boolean }>(`/api/me/follows/artists/${data.id}`)
       .then((d) => setFollowing(d.following))
       .catch(() => {});
-  }, [decodedName]);
+  }, [data?.id]);
 
   async function toggleFollow() {
-    if (!decodedName) return;
+    if (!data?.id) return;
     try {
       if (following) {
-        await api(`/api/me/follows/${encPath(decodedName)}`, "DELETE");
+        await api(`/api/me/follows/artists/${data.id}`, "DELETE");
         setFollowing(false);
-        toast.success(`Unfollowed ${decodedName}`);
+        toast.success(`Unfollowed ${data.name}`);
       } else {
-        await api("/api/me/follows", "POST", { artist_name: decodedName });
+        await api(`/api/me/follows/artists/${data.id}`, "POST");
         setFollowing(true);
-        toast.success(`Following ${decodedName}`);
+        toast.success(`Following ${data.name}`);
       }
     } catch {
       toast.error("Failed to update follow status");
@@ -68,14 +70,14 @@ export function Artist() {
   }
 
   async function handleShare() {
+    if (!data?.id) return;
     const shareUrl = `${window.location.origin}${artistPagePath({
-      artistId: data?.id ?? artistId,
-      artistSlug: data?.slug,
-      artistName: data?.name ?? decodedName,
+      artistId: data.id,
+      artistSlug: data.slug,
     })}`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: decodedName, text: decodedName, url: shareUrl });
+        await navigator.share({ title: data.name, text: data.name, url: shareUrl });
       } else {
         await navigator.clipboard.writeText(shareUrl);
         toast.success("Artist link copied");
@@ -84,21 +86,17 @@ export function Artist() {
       toast.error("Failed to share artist");
     }
   }
-
-  const { data, loading, error } = useApi<ArtistData>(
-    artistId != null ? artistApiPath({ artistId }) : decodedName ? artistApiPath({ artistName: decodedName }) : null,
-  );
   const { data: info } = useApi<ArtistInfo>(
-    artistId != null ? `/api/artists/${artistId}/info` : decodedName ? `/api/artist/${encPath(decodedName)}/info` : null,
+    artistId != null ? `/api/artists/${artistId}/info` : null,
   );
   const { data: topTracks } = useApi<ArtistTopTrack[]>(
-    (data?.name || decodedName) ? `/api/navidrome/artist/${encPath(data?.name || decodedName)}/top-tracks?count=12` : null,
+    artistId != null ? `/api/navidrome/artists/${artistId}/top-tracks?count=12` : null,
   );
   const { data: showsData } = useApi<{ events: ArtistShowEvent[] }>(
-    artistId != null ? `/api/artists/${artistId}/shows?limit=12` : decodedName ? `/api/artist/${encPath(decodedName)}/shows?limit=12` : null,
+    artistId != null ? `/api/artists/${artistId}/shows?limit=12` : null,
   );
   const { data: topArtistsStats } = useApi<StatsListResponse<StatsArtist>>(
-    decodedName ? "/api/me/stats/top-artists?window=30d&limit=12" : null,
+    artistId != null ? "/api/me/stats/top-artists?window=30d&limit=12" : null,
   );
 
   const coverFallback = data?.albums?.[0]
@@ -107,13 +105,14 @@ export function Artist() {
 
   const playerTracks = useMemo<Track[]>(() => {
     if (!topTracks?.length) return [];
-    return topTracks.map((track) => buildArtistPlayerTrack(track, decodedName, coverFallback));
-  }, [coverFallback, decodedName, topTracks]);
+    return topTracks.map((track) => buildArtistPlayerTrack(track, data?.name || "", coverFallback));
+  }, [coverFallback, data?.name, topTracks]);
 
   async function handleArtistRadio() {
-    if (!decodedName) return;
+    const currentArtistId = data?.id;
+    if (currentArtistId == null || !data?.name) return;
     try {
-      const radio = await fetchArtistRadio(decodedName);
+      const radio = await fetchArtistRadio(currentArtistId, data.name);
       if (!radio.tracks.length) {
         toast.info("Artist radio is not available yet");
         return;
@@ -137,7 +136,7 @@ export function Artist() {
     }
 
     const queue = shuffle ? shuffleArray(playerTracks) : playerTracks;
-    playAll(queue, shuffle ? 0 : startIndex, { type: "queue", name: `${decodedName} Top Tracks` });
+    playAll(queue, shuffle ? 0 : startIndex, { type: "queue", name: `${data?.name || "Artist"} Top Tracks` });
   }
 
   const similarArtists = info?.similar ?? [];
@@ -148,42 +147,23 @@ export function Artist() {
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
     .slice(0, 5);
   const artistHotNow = Boolean(
-    topArtistsStats?.items?.some((item) => item.artist_name.toLowerCase() === decodedName.toLowerCase()),
+    data?.id && topArtistsStats?.items?.some((item) => item.artist_id === data.id),
   );
 
   async function handlePlayArtistSetlist() {
     try {
-      const queue = await fetchPlayableSetlist(decodedName);
+      if (!data?.id) return;
+      const queue = await fetchPlayableSetlist({ artistId: data.id, artistName: data.name });
       if (!queue.length) {
         toast.info("No probable setlist tracks matched your library");
         return;
       }
-      playAll(queue, 0, { type: "playlist", name: `${decodedName} Probable Setlist` });
+      playAll(queue, 0, { type: "playlist", name: `${data.name} Probable Setlist` });
       toast.success(`Playing probable setlist: ${queue.length} tracks`);
     } catch {
       toast.error("Failed to load probable setlist");
     }
   }
-
-  useEffect(() => {
-    if (!similarArtists.length) {
-      setLocalSimilarArtists({});
-      return;
-    }
-
-    let cancelled = false;
-    const names = similarArtists.slice(0, 18).map((a) => a.name);
-
-    api<Record<string, boolean>>("/api/artists/check-library", "POST", { names })
-      .then((result) => {
-        if (!cancelled) setLocalSimilarArtists(result);
-      })
-      .catch(() => {
-        if (!cancelled) setLocalSimilarArtists({});
-      });
-
-    return () => { cancelled = true; };
-  }, [similarArtists]);
 
   if (loading) {
     return (
@@ -201,7 +181,7 @@ export function Artist() {
     );
   }
 
-  const photoUrl = buildArtistPhotoUrl(data.name);
+  const photoUrl = buildArtistPhotoUrl(data.name, data.id, data.slug);
   const canonicalPhotoUrl = artistPhotoApiUrl({ artistId: data.id, artistSlug: data.slug, artistName: data.name });
   const tags = data.genres.length > 0 ? data.genres : (info?.tags ?? []);
 
@@ -223,7 +203,8 @@ export function Artist() {
 
       <div className="px-4 sm:px-6 pb-8 space-y-8">
         <ArtistTopTracksSection
-          artistName={decodedName}
+          artistId={data.id}
+          artistSlug={data.slug}
           tracks={previewTopTracks}
           coverFallback={coverFallback}
         />
@@ -237,7 +218,6 @@ export function Artist() {
         />
         <RelatedArtistsSection
           artists={similarArtists}
-          localSimilarArtists={localSimilarArtists}
         />
       </div>
 

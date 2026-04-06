@@ -1,10 +1,14 @@
 import { ListMusic } from "lucide-react";
 
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 
 export interface PlaylistArtworkTrack {
   artist?: string;
+  artist_id?: number;
+  artist_slug?: string;
   album?: string;
+  album_id?: number;
+  album_slug?: string;
 }
 
 interface PlaylistArtworkProps {
@@ -26,7 +30,12 @@ function playlistGradient(name: string): string {
 
 function buildCoverUrl(track: PlaylistArtworkTrack): string | null {
   if (!track.artist || !track.album) return null;
-  return `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`;
+  return albumCoverApiUrl({
+    albumId: track.album_id,
+    albumSlug: track.album_slug,
+    artistName: track.artist,
+    albumName: track.album,
+  }) || null;
 }
 
 export function PlaylistArtwork({

@@ -28,9 +28,8 @@ import {
 } from "@/components/artist/artistPageData";
 import type { ArtistData, TabKey } from "@/components/artist/artistPageTypes";
 import { api } from "@/lib/api";
-import { artistApiPath } from "@/lib/library-routes";
+import { albumCoverApiUrl, artistApiPath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { usePlayerActions, type Track as PlayerTrack } from "@/contexts/PlayerContext";
-import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -38,11 +37,10 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 // ── Main Component ──
 
 export function Artist() {
-  const { name, artistId: artistIdParam } = useParams<{ name?: string; artistId?: string }>();
+  const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
   const artistId = artistIdParam ? Number(artistIdParam) : undefined;
-  const decodedName = name ? decodeURIComponent(name) : "";
   const { data, loading } = useApi<ArtistData>(
-    artistId != null ? artistApiPath({ artistId }) : name ? artistApiPath({ artistName: decodedName }) : null,
+    artistId != null ? artistApiPath({ artistId }) : null,
   );
   const player = usePlayerActions();
   // Use audioElement.paused directly to avoid re-rendering the whole page (and the graph) on play/pause
@@ -54,8 +52,8 @@ export function Artist() {
   const [bgCacheBust, setBgCacheBust] = useState("");
   const [bgLoaded, setBgLoaded] = useState(false);
   // Data fetching hooks (replace manual useEffect + useState)
-  const navidromeLink = useNavidromeLink(data?.name);
-  const topTracks = useTopTracks(data?.name);
+  const navidromeLink = useNavidromeLink(data?.id);
+  const topTracks = useTopTracks(data?.id);
   const [enriching, setEnriching] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [showMissing, setShowMissing] = useState(true);
@@ -66,9 +64,15 @@ export function Artist() {
   const [tidalMissing, setTidalMissing] = useState<{ url: string; title: string; year: string; tracks: number; cover: string | null; quality: string }[]>([]);
   const [tidalMissingLoaded, setTidalMissingLoaded] = useState(false);
   const [downloadingDiscog, setDownloadingDiscog] = useState(false);
-  const [allTrackTitles, setAllTrackTitles] = useState<{ title: string; album: string; path: string }[]>([]);
+  const [allTrackTitles, setAllTrackTitles] = useState<{
+    title: string;
+    album: string;
+    path: string;
+    album_id?: number;
+    album_slug?: string;
+  }[]>([]);
   const [bioExpanded, setBioExpanded] = useState(false);
-  const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.name);
+  const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.id);
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { isAdmin } = useAuth();
@@ -80,37 +84,37 @@ export function Artist() {
 
   // Fetch upcoming shows
   useEffect(() => {
-    if (!data?.name || showsLoaded) return;
-    api<{ events: ArtistShowEvent[]; configured: boolean }>(`/api/artist/${encPath(data.name)}/shows`)
+    if (!data?.id || showsLoaded) return;
+    api<{ events: ArtistShowEvent[]; configured: boolean }>(`/api/artists/${data.id}/shows`)
       .then((d) => { setUpcomingShows(d.events || []); setShowsLoaded(true); })
       .catch(() => setShowsLoaded(true));
-  }, [data?.name]);
+  }, [data?.id, showsLoaded]);
 
   // Fetch all track titles for setlist matching (lazy)
   useEffect(() => {
-    if (!data?.name || activeTab !== "setlist" || allTrackTitles.length > 0) return;
-    api<{ title: string; album: string; path: string }[]>(`/api/artist/${encPath(data.name)}/track-titles`)
+    if (!data?.id || activeTab !== "setlist" || allTrackTitles.length > 0) return;
+    api<{ title: string; album: string; path: string; album_id?: number; album_slug?: string }[]>(`/api/artists/${data.id}/track-titles`)
       .then((d) => { if (Array.isArray(d)) setAllTrackTitles(d); })
       .catch(() => {});
-  }, [data?.name, activeTab]);
+  }, [data?.id, activeTab, allTrackTitles.length]);
 
   // Fetch missing albums (lazy, on discography tab)
   useEffect(() => {
-    if (!data?.name || activeTab !== "discography" || missingLoaded) return;
+    if (!data?.id || activeTab !== "discography" || missingLoaded) return;
     let cancelled = false;
-    api<{ missing: { title: string; first_release_date: string; type: string }[] }>(`/api/missing/${encPath(data.name)}`)
+    api<{ missing: { title: string; first_release_date: string; type: string }[] }>(`/api/artists/${data.id}/missing`)
       .then((d) => { if (!cancelled) { setMissingAlbums(d.missing ?? []); setMissingLoaded(true); } })
       .catch(() => { if (!cancelled) setMissingLoaded(true); });
     return () => { cancelled = true; };
-  }, [data?.name, activeTab, missingLoaded]);
+  }, [data?.id, activeTab, missingLoaded]);
 
   // Fetch Tidal missing albums (lazy, on discography tab)
   useEffect(() => {
-    if (!data?.name || activeTab !== "discography" || tidalMissingLoaded) return;
-    api<{ albums: typeof tidalMissing; authenticated: boolean }>(`/api/tidal/missing/${encPath(data.name)}`)
+    if (!data?.id || activeTab !== "discography" || tidalMissingLoaded) return;
+    api<{ albums: typeof tidalMissing; authenticated: boolean }>(`/api/tidal/missing/artists/${data.id}`)
       .then((d) => { if (d.albums) setTidalMissing(d.albums); setTidalMissingLoaded(true); })
       .catch(() => setTidalMissingLoaded(true));
-  }, [data?.name, activeTab, tidalMissingLoaded]);
+  }, [data?.id, activeTab, tidalMissingLoaded]);
 
   if (loading) return <ArtistLoadingState />;
 
@@ -136,11 +140,24 @@ export function Artist() {
   const allTags = buildArtistTags(data.genres, enrichment);
 
   function playTopTrack(_track: TopTrack, index: number) {
-    const tracks: PlayerTrack[] = topTracks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      artist: t.artist,
-      albumCover: t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : `/api/artist/${encPath(t.artist)}/photo`,
+      const tracks: PlayerTrack[] = topTracks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        artist: t.artist,
+        artistId: t.artist_id,
+        artistSlug: t.artist_slug,
+        album: t.album,
+        albumId: t.album_id,
+        albumSlug: t.album_slug,
+        albumCover:
+        albumCoverApiUrl({
+          albumId: t.album_id,
+          albumSlug: t.album_slug,
+          artistName: t.artist,
+          albumName: t.album,
+        }) ||
+        artistPhotoApiUrl({ artistId: t.artist_id, artistSlug: t.artist_slug, artistName: t.artist }) ||
+        undefined,
     }));
     player.playAll(tracks, index);
   }
@@ -153,15 +170,41 @@ export function Artist() {
 
   async function playArtistRadio() {
     try {
-      const tracks = await api<{ path: string; title: string; artist: string; album: string }[]>(
-        `/api/artist-radio/${encPath(artistName)}?limit=50`,
+      const artistId = data?.id;
+      if (artistId == null) throw new Error("artist id missing");
+      const tracks = await api<{
+        track_path?: string;
+        path?: string;
+        title: string;
+        artist: string;
+        artist_id?: number;
+        artist_slug?: string;
+        album: string;
+        album_id?: number;
+        album_slug?: string;
+      }[]>(
+        `/api/artists/${artistId}/radio?limit=50`,
       );
       if (Array.isArray(tracks) && tracks.length > 0) {
         const playerTracks = tracks.map((track) => ({
-          id: track.path,
+          id: track.track_path || track.path || "",
           title: track.title,
           artist: track.artist,
-          albumCover: track.album ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}` : undefined,
+          artistId: track.artist_id,
+          artistSlug: track.artist_slug,
+          album: track.album,
+          albumId: track.album_id,
+          albumSlug: track.album_slug,
+          albumCover: albumCoverApiUrl({
+            albumId: track.album_id,
+            albumSlug: track.album_slug,
+            artistName: track.artist,
+            albumName: track.album,
+          }) || artistPhotoApiUrl({
+            artistId: track.artist_id,
+            artistSlug: track.artist_slug,
+            artistName: track.artist,
+          }) || undefined,
         }));
         player.playAll(playerTracks, 0);
         toast.success(`Artist Radio: ${tracks.length} tracks`);
@@ -176,7 +219,9 @@ export function Artist() {
   async function enrichArtist() {
     setEnriching(true);
     try {
-      const res = await api<{ status: string; task_id: string }>(`/api/artist/${encPath(artistName)}/enrich`, "POST");
+      const artistId = data?.id;
+      if (artistId == null) throw new Error("artist id missing");
+      const res = await api<{ status: string; task_id: string }>(`/api/artists/${artistId}/enrich`, "POST");
       toast.success("Enrichment started", { description: "This may take a moment..." });
       const taskId = res.task_id;
       const poll = setInterval(async () => {
@@ -208,7 +253,9 @@ export function Artist() {
 
   async function analyzeArtist() {
     try {
-      await api(`/api/analyze/artist/${encPath(artistName)}`, "POST");
+      const artistId = data?.id;
+      if (artistId == null) throw new Error("artist id missing");
+      await api(`/api/artists/${artistId}/analyze`, "POST");
       toast.success("Analysis queued", { description: "Background daemons will process the tracks." });
     } catch {
       toast.error("Failed to queue analysis");
@@ -217,7 +264,9 @@ export function Artist() {
 
   async function repairArtist() {
     try {
-      await api(`/api/manage/repair-artist/${encPath(artistName)}`, "POST");
+      const artistId = data?.id;
+      if (artistId == null) throw new Error("artist id missing");
+      await api(`/api/manage/artists/${artistId}/repair`, "POST");
       toast.success(`Repair started for ${issueCount} issue${issueCount !== 1 ? "s" : ""}`);
     } catch {
       toast.error("Failed to start repair");
@@ -227,7 +276,9 @@ export function Artist() {
   async function downloadMissingDiscography() {
     setDownloadingDiscog(true);
     try {
-      const res = await api<{ queued: number }>(`/api/tidal/download-missing/${encPath(artistName)}`, "POST", {
+      const artistId = data?.id;
+      if (artistId == null) throw new Error("artist id missing");
+      const res = await api<{ queued: number }>(`/api/tidal/download-missing/artists/${artistId}`, "POST", {
         albums: tidalMissing.map((album) => ({ url: album.url, title: album.title, cover_url: album.cover })),
       });
       toast.success(`Queued ${res.queued} albums for download`);
@@ -241,9 +292,11 @@ export function Artist() {
 
   return (
     <div className="-mt-16 md:-mt-[6.5rem]">
-      <ArtistHeroSection
-        artistName={artistName}
-        letter={letter}
+        <ArtistHeroSection
+          artistName={artistName}
+          artistId={data.id}
+          artistSlug={data.slug}
+          letter={letter}
         albumCount={data.albums.length}
         totalTracks={totalTracks}
         totalSizeMb={totalSize}
@@ -337,6 +390,8 @@ export function Artist() {
         {activeTab === "discography" && (
           <ArtistDiscographySection
             artistName={artistName}
+            artistId={data.id}
+            artistSlug={data.slug}
             albums={data.albums}
             sortedAlbums={sortedAlbums}
             missingAlbums={missingAlbums}
@@ -356,6 +411,7 @@ export function Artist() {
         {activeTab === "setlist" && (
           <ArtistSetlistSection
             artistName={artistName}
+            artistId={data.id}
             setlistData={setlistData}
             allTrackTitles={allTrackTitles}
             onTrackTitlesLoaded={setAllTrackTitles}
@@ -366,17 +422,22 @@ export function Artist() {
 
         {/* ── Shows Tab ── */}
         {activeTab === "shows" && (
-          <ArtistShowsSection artistName={artistName} shows={upcomingShows} />
+          <ArtistShowsSection
+            artistName={artistName}
+            artistId={data.id}
+            artistSlug={data.slug}
+            shows={upcomingShows}
+          />
         )}
 
         {/* ── Similar Artists Tab ── */}
         {activeTab === "similar" && (
-          <ArtistSimilarSection artistName={artistName} artists={mergedSimilar} />
+          <ArtistSimilarSection artistName={artistName} artistId={data.id} artists={mergedSimilar} />
         )}
 
         {/* ── Stats Tab ── */}
         {activeTab === "stats" && (
-          <ArtistStatsSection artistName={artistName} />
+          <ArtistStatsSection artistName={artistName} artistId={data.id} />
         )}
 
         {/* ── About Tab ── */}
@@ -406,7 +467,7 @@ export function Artist() {
         variant="destructive"
         onConfirm={async () => {
           try {
-            await api(`/api/manage/artist/${encPath(data!.name)}/delete`, "POST", { mode: "full" });
+            await api(`/api/manage/artists/${data!.id}/delete`, "POST", { mode: "full" });
             toast.success(`Artist ${data!.name} deleted`);
             window.location.href = "/browse";
           } catch {

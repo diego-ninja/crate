@@ -33,17 +33,39 @@ def upsert_new_release(artist_name: str, album_title: str, tidal_id: str = "",
 def get_new_releases(status: str = "", upcoming: bool = False, limit: int = 200) -> list[dict]:
     """Get new releases. If upcoming=True, only future releases ordered by release_date."""
     with get_db_ctx() as cur:
+        select_sql = """
+            SELECT
+                nr.*,
+                la.id AS artist_id,
+                la.slug AS artist_slug,
+                alb.id AS album_id,
+                alb.slug AS album_slug
+            FROM new_releases nr
+            LEFT JOIN library_artists la ON LOWER(la.name) = LOWER(nr.artist_name)
+            LEFT JOIN library_albums alb
+              ON LOWER(alb.artist) = LOWER(nr.artist_name)
+             AND LOWER(alb.name) = LOWER(nr.album_title)
+        """
         if upcoming:
             cur.execute(
-                "SELECT * FROM new_releases WHERE status NOT IN ('dismissed') "
-                "AND release_date IS NOT NULL AND release_date >= %s "
-                "ORDER BY release_date ASC LIMIT %s",
+                select_sql
+                + "WHERE nr.status NOT IN ('dismissed') "
+                "AND nr.release_date IS NOT NULL AND nr.release_date >= %s "
+                "ORDER BY nr.release_date ASC LIMIT %s",
                 (datetime.now(timezone.utc).strftime("%Y-%m-%d"), limit),
             )
         elif status:
-            cur.execute("SELECT * FROM new_releases WHERE status = %s ORDER BY release_date DESC NULLS LAST, detected_at DESC LIMIT %s", (status, limit))
+            cur.execute(
+                select_sql
+                + "WHERE nr.status = %s ORDER BY nr.release_date DESC NULLS LAST, nr.detected_at DESC LIMIT %s",
+                (status, limit),
+            )
         else:
-            cur.execute("SELECT * FROM new_releases WHERE status NOT IN ('dismissed') ORDER BY release_date DESC NULLS LAST, detected_at DESC LIMIT %s", (limit,))
+            cur.execute(
+                select_sql
+                + "WHERE nr.status NOT IN ('dismissed') ORDER BY nr.release_date DESC NULLS LAST, nr.detected_at DESC LIMIT %s",
+                (limit,),
+            )
         return [dict(r) for r in cur.fetchall()]
 
 

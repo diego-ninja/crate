@@ -1,20 +1,22 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { encPath } from "@/lib/utils";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 interface ArtistAvatarProps {
   name: string;
+  artistId?: number;
+  artistSlug?: string;
   size?: number;
   linked?: boolean;
 }
 
-export function ArtistAvatar({ name, size = 36, linked = false }: ArtistAvatarProps) {
+export function ArtistAvatar({ name, artistId, artistSlug, size = 36, linked = false }: ArtistAvatarProps) {
   const [failed, setFailed] = useState(false);
   const letter = name.charAt(0).toUpperCase();
 
   const img = !failed ? (
     <img
-      src={`/api/artist/${encPath(name)}/photo`}
+      src={artistPhotoApiUrl({ artistId, artistSlug, artistName: name })}
       alt={name}
       className="w-full h-full object-cover"
       onError={() => setFailed(true)}
@@ -33,9 +35,9 @@ export function ArtistAvatar({ name, size = 36, linked = false }: ArtistAvatarPr
     </div>
   );
 
-  if (linked) {
+  if (linked && artistId != null) {
     return (
-      <Link to={`/artist/${encPath(name)}`} className="hover:ring-primary/50 rounded-full transition-all">
+      <Link to={artistPagePath({ artistId, artistSlug, artistName: name })} className="hover:ring-primary/50 rounded-full transition-all">
         {wrapper}
       </Link>
     );

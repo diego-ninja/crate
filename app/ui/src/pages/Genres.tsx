@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
-import { encPath, formatNumber } from "@/lib/utils";
+import { formatNumber } from "@/lib/utils";
+import { albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { Search, Sparkles, Tag, Disc3, Users, ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { ErrorState } from "@/components/ui/error-state";
@@ -23,6 +24,8 @@ interface Genre {
 interface GenreDetail extends Genre {
   artists: {
     artist_name: string;
+    artist_id?: number;
+    artist_slug?: string;
     weight: number;
     source: string;
     album_count: number;
@@ -33,8 +36,11 @@ interface GenreDetail extends Genre {
   }[];
   albums: {
     album_id: number;
+    album_slug?: string;
     weight: number;
     artist: string;
+    artist_id?: number;
+    artist_slug?: string;
     name: string;
     year: string | null;
     track_count: number;
@@ -249,12 +255,12 @@ function GenreView({ slug }: { slug: string }) {
             {genre.artists.map((a) => (
               <button
                 key={a.artist_name}
-                onClick={() => navigate(`/artist/${encPath(a.artist_name)}`)}
+                onClick={() => navigate(artistPagePath({ artistId: a.artist_id, artistSlug: a.artist_slug }))}
                 className="bg-card border border-border rounded-lg p-3 text-left hover:border-primary transition-colors"
               >
                 <div className="w-full aspect-square rounded-lg mb-2 overflow-hidden bg-secondary">
                   <img
-                    src={`/api/artist/${encPath(a.artist_name)}/photo`}
+                    src={artistPhotoApiUrl({ artistId: a.artist_id, artistSlug: a.artist_slug, artistName: a.artist_name })}
                     alt={a.artist_name}
                     loading="lazy"
                     className="w-full h-full object-cover"
@@ -283,12 +289,12 @@ function GenreView({ slug }: { slug: string }) {
             {genre.albums.map((a) => (
               <button
                 key={a.album_id}
-                onClick={() => navigate(`/album/${encPath(a.artist)}/${encPath(a.name)}`)}
+                onClick={() => navigate(albumPagePath({ albumId: a.album_id, albumSlug: a.album_slug }))}
                 className="bg-card border border-border rounded-lg overflow-hidden text-left hover:border-primary transition-colors"
               >
                 <div className="w-full aspect-square bg-secondary">
                   <img
-                    src={`/api/cover/${encPath(a.artist)}/${encPath(a.name)}`}
+                    src={albumCoverApiUrl({ albumId: a.album_id, albumSlug: a.album_slug, artistName: a.artist, albumName: a.name })}
                     alt={a.name}
                     loading="lazy"
                     className="w-full h-full object-cover"

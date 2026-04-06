@@ -2,7 +2,8 @@ import { Link } from "react-router";
 
 import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { Button } from "@/components/ui/button";
-import { encPath, formatCompact, formatNumber, formatSize } from "@/lib/utils";
+import { artistBackgroundApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
+import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
 import {
   Calendar,
   Disc3,
@@ -31,6 +32,8 @@ interface ArtistHeroMusicBrainz {
 
 interface ArtistHeroSectionProps {
   artistName: string;
+  artistId?: number;
+  artistSlug?: string;
   letter: string;
   albumCount: number;
   totalTracks: number;
@@ -65,6 +68,8 @@ interface ArtistHeroSectionProps {
 
 export function ArtistHeroSection({
   artistName,
+  artistId,
+  artistSlug,
   letter,
   albumCount,
   totalTracks,
@@ -96,6 +101,9 @@ export function ArtistHeroSection({
   onRepair,
   onDelete,
 }: ArtistHeroSectionProps) {
+  const backgroundUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName });
+  const photoUrl = artistPhotoApiUrl({ artistId, artistSlug, artistName });
+
   return (
     <div
       className="relative h-[420px] md:h-[560px] overflow-hidden -mx-4 md:-mx-8 group/hero"
@@ -103,7 +111,7 @@ export function ArtistHeroSection({
     >
       <img
         key={bgCacheBust || "bg"}
-        src={`/api/artist/${encPath(artistName)}/background?random=true${bgCacheBust ? `&t=${bgCacheBust}` : ""}`}
+        src={`${backgroundUrl}?random=true${bgCacheBust ? `&t=${bgCacheBust}` : ""}`}
         alt=""
         className={`absolute inset-0 w-full h-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
         onLoad={onBackgroundLoad}
@@ -129,7 +137,7 @@ export function ArtistHeroSection({
       />
 
       <ImageCropUpload
-        endpoint={`/api/artwork/upload-background/${encPath(artistName)}`}
+        endpoint={artistId != null ? `/api/artwork/artists/${artistId}/upload-background` : ""}
         aspect={21 / 9}
         onUploaded={onBackgroundUploaded}
         className="absolute top-16 right-4 z-30 p-2 rounded-lg bg-black/50 text-white/60 hover:text-white hover:bg-black/70 opacity-0 group-hover/hero:opacity-100 transition-opacity cursor-pointer"
@@ -141,7 +149,7 @@ export function ArtistHeroSection({
             {!photoError ? (
               <img
                 key={photoCacheBust || "photo"}
-                src={`/api/artist/${encPath(artistName)}/photo?random=true${photoCacheBust ? `&t=${photoCacheBust}` : ""}`}
+                src={`${photoUrl}?random=true${photoCacheBust ? `&t=${photoCacheBust}` : ""}`}
                 alt={artistName}
                 className={`w-full h-full object-cover transition-opacity duration-500 ${photoLoaded ? "opacity-100" : "opacity-0"}`}
                 onLoad={onPhotoLoad}
@@ -154,7 +162,7 @@ export function ArtistHeroSection({
               </div>
             )}
             <ImageCropUpload
-              endpoint={`/api/artwork/upload-artist-photo/${encPath(artistName)}`}
+              endpoint={artistId != null ? `/api/artwork/artists/${artistId}/upload-photo` : ""}
               aspect={1}
               onUploaded={onPhotoUploaded}
               className="absolute bottom-1 right-1 p-1.5 rounded-md bg-black/60 text-white/70 hover:text-white hover:bg-black/80 opacity-0 group-hover/photo:opacity-100 transition-opacity"

@@ -102,8 +102,10 @@ export function SearchResultsView({ results }: { results: SearchResults }) {
           <ExploreSectionRail>
             {results.artists.map((artist) => (
               <ArtistCard
-                key={artist.name}
+                key={artist.id ?? artist.name}
                 name={artist.name}
+                artistId={artist.id}
+                artistSlug={artist.slug}
                 subtitle={artist.album_count ? `${artist.album_count} albums` : undefined}
               />
             ))}
@@ -121,6 +123,7 @@ export function SearchResultsView({ results }: { results: SearchResults }) {
                 artist={album.artist}
                 album={album.name}
                 albumId={album.id}
+                albumSlug={album.slug}
                 year={album.year}
               />
             ))}
@@ -180,8 +183,10 @@ export function GenreDetailView({ slug, onBack }: { slug: string; onBack: () => 
           <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">
             {data.artists.map((artist) => (
               <ArtistCard
-                key={artist.artist_name}
+                key={artist.artist_id ?? artist.artist_name}
                 name={artist.artist_name}
+                artistId={artist.artist_id}
+                artistSlug={artist.artist_slug}
                 subtitle={`${artist.album_count} albums`}
                 compact
                 layout="grid"
@@ -201,6 +206,7 @@ export function GenreDetailView({ slug, onBack }: { slug: string; onBack: () => 
                 artist={album.artist}
                 album={album.name}
                 albumId={album.album_id}
+                albumSlug={album.album_slug}
                 year={album.year}
                 layout="grid"
               />
@@ -236,8 +242,10 @@ export function DecadeDetailView({ decade, onBack }: { decade: string; onBack: (
         <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">
           {data.items.map((artist) => (
             <ArtistCard
-              key={artist.name}
+              key={artist.id ?? artist.name}
               name={artist.name}
+              artistId={artist.id}
+              artistSlug={artist.slug}
               subtitle={`${artist.albums} albums`}
               compact
               layout="grid"

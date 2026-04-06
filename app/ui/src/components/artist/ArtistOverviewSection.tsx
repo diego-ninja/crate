@@ -2,7 +2,8 @@ import { StatCard } from "@/components/artist/ArtistPageBits";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TopTrack } from "@/hooks/use-artist-data";
-import { encPath, formatCompact, formatDuration } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
+import { formatCompact, formatDuration } from "@/lib/utils";
 import {
   BarChart3,
   Calendar,
@@ -106,19 +107,29 @@ export function ArtistOverviewSection({
       {topTracks.length > 0 && (
         <div className="max-w-2xl">
           <h3 className="text-sm font-semibold text-white/70 mb-2">Top Tracks</h3>
-          <div className="space-y-0.5">
+              <div className="space-y-0.5">
             {topTracks.slice(0, 5).map((track, i) => {
               const isCurrent = currentTrackId === track.id;
               const isCurrentPlaying = isCurrent && trackPlaying;
+              const coverUrl = albumCoverApiUrl({
+                albumId: track.album_id,
+                albumSlug: track.album_slug,
+                artistName: track.artist,
+                albumName: track.album,
+              }) || undefined;
               return (
                 <MusicContextMenu
                   key={track.id}
                   type="track"
                   artist={track.artist}
+                  artistId={track.artist_id}
+                  artistSlug={track.artist_slug}
                   album={track.album || ""}
+                  albumId={track.album_id}
+                  albumSlug={track.album_slug}
                   trackId={track.id}
                   trackTitle={track.title}
-                  albumCover={track.album ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}` : undefined}
+                  albumCover={coverUrl}
                 >
                   <button
                     onClick={() => {

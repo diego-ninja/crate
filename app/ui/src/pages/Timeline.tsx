@@ -2,12 +2,16 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useApi } from "@/hooks/use-api";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 import { Calendar, Disc3, Trophy, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { ErrorState } from "@/components/ui/error-state";
 
 interface TimelineAlbum {
+  id?: number;
+  slug?: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
   tracks: number;
 }
@@ -139,12 +143,12 @@ export function Timeline() {
             {expandedData.map((album, i) => (
               <button
                 key={`${album.artist}-${album.album}-${i}`}
-                onClick={() => navigate(`/album/${encPath(album.artist)}/${encPath(album.album)}`)}
+                onClick={() => navigate(albumPagePath({ albumId: album.id, albumSlug: album.slug }))}
                 className="flex-shrink-0 w-[140px] group text-left"
               >
                 <div className="relative w-[140px] h-[140px] rounded-lg overflow-hidden bg-secondary mb-2">
                   <img
-                    src={`/api/cover/${encPath(album.artist)}/${encPath(album.album)}`}
+                    src={albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.album })}
                     alt={album.album}
                     loading="lazy"
                     className="w-full h-full object-cover"

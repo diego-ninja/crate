@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { useApi } from "@/hooks/use-api";
 import { useNavigate } from "react-router";
-import { encPath, cn, formatCompact } from "@/lib/utils";
+import { cn, formatCompact } from "@/lib/utils";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { Compass, ChevronDown, ChevronRight, ExternalLink, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -15,6 +16,8 @@ interface MissingAlbum {
 
 interface ArtistCompleteness {
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   has_photo: boolean;
   listeners: number;
   local_count: number;
@@ -48,7 +51,7 @@ function ArtistRow({ artist }: { artist: ArtistCompleteness }) {
       <div className="flex items-center gap-3">
         <div className="w-12 h-12 rounded-full overflow-hidden bg-secondary flex-shrink-0 flex items-center justify-center">
           <img
-            src={`/api/artist/${encPath(artist.artist)}/photo`}
+            src={artistPhotoApiUrl({ artistId: artist.artist_id, artistSlug: artist.artist_slug, artistName: artist.artist })}
             alt={artist.artist}
             className="w-full h-full object-cover"
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
@@ -58,7 +61,7 @@ function ArtistRow({ artist }: { artist: ArtistCompleteness }) {
 
         <div className="flex-1 min-w-0">
           <button
-            onClick={() => navigate(`/artist/${encPath(artist.artist)}`)}
+            onClick={() => navigate(artistPagePath({ artistId: artist.artist_id, artistSlug: artist.artist_slug }))}
             className="text-sm font-medium hover:text-primary transition-colors truncate block"
           >
             {artist.artist}

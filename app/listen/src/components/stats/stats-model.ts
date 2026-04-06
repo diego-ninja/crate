@@ -12,6 +12,8 @@ export interface StatsOverview {
   skip_rate: number;
   top_artist: {
     artist_name: string;
+    artist_id?: number | null;
+    artist_slug?: string | null;
     play_count: number;
     minutes_listened: number;
   } | null;
@@ -36,7 +38,11 @@ export interface StatsTrack {
   navidrome_id?: string | null;
   title: string;
   artist: string;
+  artist_id?: number | null;
+  artist_slug?: string | null;
   album: string;
+  album_id?: number | null;
+  album_slug?: string | null;
   play_count: number;
   complete_play_count: number;
   minutes_listened: number;
@@ -44,6 +50,8 @@ export interface StatsTrack {
 
 export interface StatsArtist {
   artist_name: string;
+  artist_id?: number | null;
+  artist_slug?: string | null;
   play_count: number;
   complete_play_count: number;
   minutes_listened: number;
@@ -51,7 +59,11 @@ export interface StatsArtist {
 
 export interface StatsAlbum {
   artist: string;
+  artist_id?: number | null;
+  artist_slug?: string | null;
   album: string;
+  album_id?: number | null;
+  album_slug?: string | null;
   play_count: number;
   complete_play_count: number;
   minutes_listened: number;
@@ -114,6 +126,10 @@ export function toPlayerTrack(item: StatsTrack): Track {
     path: item.track_path || undefined,
     libraryTrackId: item.track_id || undefined,
     navidromeId: item.navidrome_id || undefined,
+    artistId: item.artist_id || undefined,
+    artistSlug: item.artist_slug || undefined,
+    albumId: item.album_id || undefined,
+    albumSlug: item.album_slug || undefined,
   };
 }
 

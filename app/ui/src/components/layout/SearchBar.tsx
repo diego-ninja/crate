@@ -4,14 +4,13 @@ import { Search, Music, Download, Heart, Cloud, Library, Loader2, Clock } from "
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
 import { albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { toast } from "sonner";
 
 interface LocalResults {
   artists: { id?: number; slug?: string; name: string }[];
   albums: { id?: number; slug?: string; artist: string; artist_id?: number; artist_slug?: string; name: string }[];
-  tracks: { title: string; artist: string; album: string }[];
+  tracks: { title: string; artist: string; album: string; album_id?: number; album_slug?: string }[];
 }
 
 interface TidalResults {
@@ -213,7 +212,15 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
       items.push({ type: "album", source: "library", label: a.name, sublabel: a.artist, path: albumPagePath({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name }), artistName: a.artist, albumName: a.name, imageUrl: albumCoverApiUrl({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name }) });
     }
     for (const t of (localResults.tracks ?? []).slice(0, 3)) {
-      items.push({ type: "track", source: "library", label: t.title, sublabel: `${t.artist} — ${t.album}`, path: `/album/${encPath(t.artist)}/${encPath(t.album)}`, artistName: t.artist, albumName: t.album });
+      items.push({
+        type: "track",
+        source: "library",
+        label: t.title,
+        sublabel: `${t.artist} — ${t.album}`,
+        path: albumPagePath({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }),
+        artistName: t.artist,
+        albumName: t.album,
+      });
     }
   }
 

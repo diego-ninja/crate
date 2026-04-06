@@ -73,7 +73,7 @@ export function MissingAlbums() {
     setLoading(true);
     setShowSuggestions(false);
     try {
-      const result = await api<MissingData>(`/api/missing/${encPath(q)}`);
+      const result = await api<MissingData>(`/api/missing-search?q=${encPath(q)}`);
       setData(result);
     } finally {
       setLoading(false);

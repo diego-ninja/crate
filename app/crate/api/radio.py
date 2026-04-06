@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 from crate.api.auth import _require_auth
+from crate.api._deps import artist_name_from_id, enrich_radio_tracks as _enrich_radio_tracks
 from crate.bliss import (
     generate_album_radio,
     generate_artist_radio,
@@ -53,20 +54,35 @@ def _resolve_track_path(track_id: int = 0, path: str = "") -> str | None:
     return row["path"] if row else None
 
 
-@router.get("/api/radio/artist/{name:path}")
 def api_artist_radio(request: Request, name: str, limit: int = Query(50, ge=1, le=100)):
     _require_auth(request)
     tracks = generate_artist_radio(name, limit=limit)
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
+    enriched_tracks = _enrich_radio_tracks(tracks)
     return {
         "session": {
             "type": "artist",
             "name": f"{name} Radio",
-            "seed": {"artist_name": name},
+            "seed": {"artist_id": None, "artist_name": name},
         },
-        "tracks": tracks,
+        "tracks": enriched_tracks,
     }
+
+
+@router.get("/api/artists/{artist_id}/radio")
+def api_artist_radio_by_id(request: Request, artist_id: int, limit: int = Query(50, ge=1, le=100)):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    result = api_artist_radio(request, artist_name, limit)
+    if isinstance(result, dict):
+        session = dict(result.get("session") or {})
+        seed = dict(session.get("seed") or {})
+        seed["artist_id"] = artist_id
+        session["seed"] = seed
+        result["session"] = session
+    return result
 
 
 @router.get("/api/radio/track")
@@ -85,7 +101,8 @@ def api_track_radio(
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
-    seed_track = tracks[0]
+    enriched_tracks = _enrich_radio_tracks(tracks)
+    seed_track = enriched_tracks[0]
     return {
         "session": {
             "type": "track",
@@ -97,7 +114,7 @@ def api_track_radio(
                 "artist": seed_track.get("artist"),
             },
         },
-        "tracks": tracks,
+        "tracks": enriched_tracks,
     }
 
 
@@ -114,6 +131,7 @@ def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
+    enriched_tracks = _enrich_radio_tracks(tracks)
     return {
         "session": {
             "type": "album",
@@ -124,7 +142,7 @@ def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1
                 "album": row["name"],
             },
         },
-        "tracks": tracks,
+        "tracks": enriched_tracks,
     }
 
 
@@ -150,6 +168,7 @@ def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50
     if not tracks:
         return JSONResponse({"error": "No radio data available yet"}, status_code=404)
 
+    enriched_tracks = _enrich_radio_tracks(tracks)
     return {
         "session": {
             "type": "playlist",
@@ -159,5 +178,5 @@ def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50
                 "name": row["name"],
             },
         },
-        "tracks": tracks,
+        "tracks": enriched_tracks,
     }

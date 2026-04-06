@@ -15,7 +15,8 @@ import {
   Download,
   Heart,
 } from "lucide-react";
-import { encPath, formatDuration, formatSize } from "@/lib/utils";
+import { albumCoverApiUrl, artistBackgroundApiUrl, artistPagePath } from "@/lib/library-routes";
+import { formatDuration, formatSize } from "@/lib/utils";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { useFavorites } from "@/hooks/use-favorites";
 import { ImageCropUpload } from "@/components/ImageCropUpload";
@@ -30,8 +31,13 @@ interface NavidromeAlbumData {
 }
 
 interface AlbumHeaderProps {
+  albumId?: number;
+  albumSlug?: string;
+  artistId?: number;
+  artistSlug?: string;
   artist: string;
   album: string;
+  displayName?: string;
   albumTags: {
     artist?: string;
     album?: string;
@@ -52,8 +58,13 @@ interface AlbumHeaderProps {
 }
 
 export function AlbumHeader({
+  albumId,
+  albumSlug,
+  artistId,
+  artistSlug,
   artist,
   album,
+  displayName: explicitDisplayName,
   albumTags,
   trackCount,
   totalLengthSec,
@@ -69,16 +80,21 @@ export function AlbumHeader({
   const { playAll } = usePlayer();
   const { isFavorite, toggleFavorite } = useFavorites();
   const [coverCacheBust, setCoverCacheBust] = useState("");
-  const coverUrl = `/api/cover/${encPath(artist)}/${encPath(album)}${coverCacheBust ? `?t=${coverCacheBust}` : ""}`;
+  const baseCoverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
+  const coverUrl = `${baseCoverUrl}${coverCacheBust ? `${baseCoverUrl.includes("?") ? "&" : "?"}t=${coverCacheBust}` : ""}`;
   const albumFavId = navidromeData?.id || `${artist}/${album}`;
   const [coverLoaded, setCoverLoaded] = useState(false);
   const [coverError, setCoverError] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
 
   async function handleEnrich() {
+    if (albumId == null) {
+      toast.error("Album ID missing");
+      return;
+    }
     setAnalyzing(true);
     try {
-      const res = await api<{ task_id: string }>(`/api/enrich/album/${encPath(artist)}/${encPath(album)}`, "POST");
+      const res = await api<{ task_id: string }>(`/api/albums/${albumId}/enrich`, "POST");
       toast.success("Enriching album (MBID, covers, analysis, bliss)...");
       const taskId = res.task_id;
       const poll = setInterval(async () => {
@@ -103,9 +119,9 @@ export function AlbumHeader({
       toast.error("Failed to start enrichment");
     }
   }
-  const displayName = albumTags.album || album;
+  const resolvedDisplayName = albumTags.album || explicitDisplayName || album;
   const displayArtist = albumTags.artist || artist;
-  const letter = displayName.charAt(0).toUpperCase();
+  const letter = resolvedDisplayName.charAt(0).toUpperCase();
 
   function handlePlayAll() {
     // Prefer Navidrome streaming, fallback to direct file streaming
@@ -114,6 +130,11 @@ export function AlbumHeader({
         id: s.id,
         title: s.title,
         artist: displayArtist,
+        artistId,
+        artistSlug,
+        album,
+        albumId,
+        albumSlug,
         albumCover: coverUrl,
       }));
       playAll(tracks);
@@ -122,6 +143,11 @@ export function AlbumHeader({
         id: (t.path || "").replace(/^\/music\//, ""),
         title: t.title || t.filename.replace(/\.\w+$/, ""),
         artist: displayArtist,
+        artistId,
+        artistSlug,
+        album,
+        albumId,
+        albumSlug,
         albumCover: coverUrl,
       }));
       playAll(tracks);
@@ -129,7 +155,7 @@ export function AlbumHeader({
   }
 
   const [bgLoaded, setBgLoaded] = useState(false);
-  const bgUrl = `/api/artist/${encPath(artist)}/background`;
+  const bgUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName: artist });
 
   return (
     <div
@@ -161,12 +187,12 @@ export function AlbumHeader({
         <div className="flex items-end gap-4 md:gap-6 w-full max-w-[1100px] px-4 md:px-8 pb-6 md:pb-8">
           {/* Cover art with upload overlay */}
           <div className="relative group/cover flex-shrink-0">
-            <ImageLightbox src={coverUrl} alt={`${displayName} cover art`}>
+            <ImageLightbox src={coverUrl} alt={`${resolvedDisplayName} cover art`}>
               <div className="w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-lg overflow-hidden ring-2 ring-white/10 shadow-2xl shadow-black/50">
                 {!coverError ? (
                   <img
                     src={coverUrl}
-                    alt={displayName}
+                    alt={resolvedDisplayName}
                     className={`w-full h-full object-cover transition-opacity duration-500 ${coverLoaded ? "opacity-100" : "opacity-0"}`}
                     onLoad={() => setCoverLoaded(true)}
                     onError={() => setCoverError(true)}
@@ -180,7 +206,7 @@ export function AlbumHeader({
               </div>
             </ImageLightbox>
             <ImageCropUpload
-              endpoint={`/api/artwork/upload-cover/${encPath(artist)}/${encPath(album)}`}
+              endpoint={albumId != null ? `/api/artwork/albums/${albumId}/upload-cover` : ""}
               aspect={1}
               onUploaded={() => { setCoverError(false); setCoverLoaded(false); setCoverCacheBust(String(Date.now())); }}
             />
@@ -192,19 +218,24 @@ export function AlbumHeader({
             <div className="text-xs text-white/40 mb-2">
               <Link to="/browse" className="hover:text-white/70 transition-colors">Browse</Link>
               <span className="mx-1.5">/</span>
-              <Link to={`/artist/${encPath(artist)}`} className="hover:text-white/70 transition-colors">{artist}</Link>
+              <Link
+                to={artistPagePath({ artistId, artistSlug, artistName: artist })}
+                className="hover:text-white/70 transition-colors"
+              >
+                {artist}
+              </Link>
               <span className="mx-1.5">/</span>
-              <span className="text-white/60">{displayName}</span>
+              <span className="text-white/60">{resolvedDisplayName}</span>
             </div>
 
             {/* Album title */}
             <h1 className="text-xl md:text-4xl font-black tracking-tight text-white leading-none mb-1.5 truncate">
-              {displayName}
+              {resolvedDisplayName}
             </h1>
 
             {/* Artist link */}
             <Link
-              to={`/artist/${encPath(artist)}`}
+              to={artistPagePath({ artistId, artistSlug, artistName: artist })}
               className="text-base text-white/60 hover:text-white transition-colors"
             >
               {displayArtist}
@@ -275,7 +306,7 @@ export function AlbumHeader({
                 className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
                 asChild
               >
-                <a href={`/api/download/album/${encPath(artist)}/${encPath(album)}`} download>
+                <a href={albumId != null ? `/api/albums/${albumId}/download` : "#"} download>
                   <Download size={14} className="mr-1" /> Download
                 </a>
               </Button>
@@ -296,5 +327,3 @@ export function AlbumHeader({
     </div>
   );
 }
-
-

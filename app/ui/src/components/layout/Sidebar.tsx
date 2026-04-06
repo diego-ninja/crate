@@ -22,7 +22,8 @@ import {
   Calendar,
   AudioWaveform,
 } from "lucide-react";
-import { cn, encPath } from "@/lib/utils";
+import { artistPagePath } from "@/lib/library-routes";
+import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayer } from "@/contexts/PlayerContext";
@@ -197,7 +198,7 @@ function NowPlaying() {
 
   return (
     <Link
-      to={currentTrack.artist ? `/artist/${encPath(currentTrack.artist)}` : "#"}
+      to={currentTrack.artistId != null ? artistPagePath({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug, artistName: currentTrack.artist }) : "#"}
       className="border-t border-border px-4 py-2 flex items-center gap-2.5 hover:bg-white/5 transition-colors"
     >
       {currentTrack.albumCover ? (

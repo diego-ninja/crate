@@ -14,7 +14,8 @@ import { AppModal, ModalBody, ModalFooter, ModalHeader, ModalCloseButton } from 
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { fetchPlaylistRadio } from "@/lib/radio";
-import { encPath, shuffleArray, formatTotalDuration } from "@/lib/utils";
+import { shuffleArray, formatTotalDuration } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 
 interface PlaylistTrack {
   id: number;
@@ -23,7 +24,11 @@ interface PlaylistTrack {
   track_path: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   position: number;
   added_at: string;
@@ -70,10 +75,14 @@ export function Playlist() {
         id: t.track_path,
         title: t.title || "Unknown",
         artist: t.artist || "",
+        artistId: t.artist_id,
+        artistSlug: t.artist_slug,
         album: t.album,
+        albumId: t.album_id,
+        albumSlug: t.album_slug,
         albumCover:
           t.artist && t.album
-            ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}`
+            ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
             : undefined,
         path: t.track_path,
         navidromeId: t.navidrome_id,
@@ -397,7 +406,11 @@ export function Playlist() {
                 id: t.track_id,
                 title: t.title,
                 artist: t.artist,
+                artist_id: t.artist_id,
+                artist_slug: t.artist_slug,
                 album: t.album,
+                album_id: t.album_id,
+                album_slug: t.album_slug,
                 duration: t.duration,
                 path: t.track_path,
                 navidrome_id: t.navidrome_id,

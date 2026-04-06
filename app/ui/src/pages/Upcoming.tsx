@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/lib/api";
-import { cn, encPath } from "@/lib/utils";
+import { albumPagePath, artistBackgroundApiUrl, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { cn } from "@/lib/utils";
 import { ArtistAvatar } from "@/components/artist/ArtistAvatar";
 import { toast } from "sonner";
 import {
@@ -29,7 +30,11 @@ interface UpcomingItem {
   date: string;
   time?: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   title: string;
+  album_id?: number;
+  album_slug?: string;
   subtitle: string;
   cover_url: string | null;
   status: string;
@@ -38,13 +43,23 @@ interface UpcomingItem {
   release_id?: number;
   url?: string;
   venue?: string;
+  address_line1?: string;
   city?: string;
+  region?: string;
+  postal_code?: string;
   country?: string;
   country_code?: string;
   latitude?: number;
   longitude?: number;
   lineup?: string[];
+  lineup_artists?: UpcomingArtistRef[];
   genres?: string[];
+}
+
+interface UpcomingArtistRef {
+  name: string;
+  id?: number;
+  slug?: string;
 }
 
 type ViewMode = "list" | "calendar";
@@ -52,6 +67,66 @@ type TypeFilter = "all" | "releases" | "shows";
 
 function itemKey(item: UpcomingItem, index: number): string {
   return `${item.type}-${item.artist}-${item.release_id ?? item.venue ?? index}-${item.date}`;
+}
+
+function buildArtistRef(name?: string, id?: number, slug?: string): UpcomingArtistRef | null {
+  if (!name) return null;
+  return { name, id, slug };
+}
+
+function getPrimaryArtist(item: UpcomingItem): UpcomingArtistRef | null {
+  return buildArtistRef(item.artist, item.artist_id, item.artist_slug);
+}
+
+function getLineupArtists(item: UpcomingItem): UpcomingArtistRef[] {
+  if (Array.isArray(item.lineup_artists) && item.lineup_artists.length > 0) {
+    return item.lineup_artists.filter((artist) => artist?.name);
+  }
+  if (Array.isArray(item.lineup) && item.lineup.length > 0) {
+    return item.lineup.filter(Boolean).map((name) => ({ name }));
+  }
+  const primaryArtist = getPrimaryArtist(item);
+  return primaryArtist ? [primaryArtist] : [];
+}
+
+function getArtistHref(artist: UpcomingArtistRef | null | undefined) {
+  if (!artist || artist.id == null) return undefined;
+  return artistPagePath({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name });
+}
+
+function getArtistPhotoUrl(artist: UpcomingArtistRef | null | undefined) {
+  if (!artist || artist.id == null) return "";
+  return artistPhotoApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name });
+}
+
+function getArtistBackgroundUrl(artist: UpcomingArtistRef | null | undefined) {
+  if (!artist || artist.id == null) return "";
+  return artistBackgroundApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name });
+}
+
+function getShowLocation(item: UpcomingItem) {
+  return [item.city, item.country].filter(Boolean).join(", ");
+}
+
+function getShowAddress(item: UpcomingItem) {
+  return [item.address_line1, item.city, item.region, item.postal_code, item.country].filter(Boolean).join(", ");
+}
+
+function ArtistTextLink({
+  artist,
+  className,
+  children,
+}: {
+  artist: UpcomingArtistRef | null | undefined;
+  className?: string;
+  children?: ReactNode;
+}) {
+  const href = getArtistHref(artist);
+  const content = children ?? artist?.name ?? "";
+  if (href) {
+    return <Link to={href} className={className}>{content}</Link>;
+  }
+  return <span className={className}>{content}</span>;
 }
 
 // ── Searchable dropdown ──
@@ -445,6 +520,8 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
 }) {
   const isShow = item.type === "show";
   const isRelease = item.type === "release";
+  const primaryArtist = getPrimaryArtist(item);
+  const artistPhotoUrl = getArtistPhotoUrl(primaryArtist);
 
   const dateObj = item.date ? new Date(item.date + "T12:00:00") : null;
   const dateStr = dateObj ? dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
@@ -462,17 +539,17 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
     >
       {/* Thumbnail */}
       <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-secondary relative group/thumb">
-        {isShow ? (
-          <img src={`/api/artist/${encPath(item.artist)}/photo`} alt=""
+        {isShow && artistPhotoUrl ? (
+          <img src={artistPhotoUrl} alt=""
             className="w-full h-full object-cover"
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
         ) : item.cover_url ? (
           <img src={item.cover_url} alt="" className="w-full h-full object-cover" />
-        ) : (
-          <img src={`/api/artist/${encPath(item.artist)}/photo`} alt=""
+        ) : artistPhotoUrl ? (
+          <img src={artistPhotoUrl} alt=""
             className="w-full h-full object-cover opacity-60"
             onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-        )}
+        ) : null}
         {/* Download overlay on thumbnail for releases */}
         {isRelease && item.status === "detected" && item.tidal_url && onDownload && item.release_id && (
           <button
@@ -514,10 +591,12 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
             </>
           ) : (
             <>
-              <Link to={`/artist/${encPath(item.artist)}`}
-                className="hover:text-foreground transition-colors">
+              <ArtistTextLink
+                artist={primaryArtist}
+                className="hover:text-foreground transition-colors"
+              >
                 {item.artist}
-              </Link>
+              </ArtistTextLink>
               <span className="text-muted-foreground/40">&middot;</span>
               <span>{item.subtitle}</span>
             </>
@@ -555,11 +634,15 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
 
 function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () => void }) {
   const hasCoords = item.latitude && item.longitude;
+  const primaryArtist = getPrimaryArtist(item);
+  const lineupArtists = getLineupArtists(item);
+  const artistPhotoUrl = getArtistPhotoUrl(primaryArtist);
   const dateStr = item.date ? new Date(item.date + "T12:00:00").toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric", year: "numeric"
   }) : "";
   const timeStr = item.time ? item.time.slice(0, 5) : "";
-  const location = [item.city, item.country].filter(Boolean).join(", ");
+  const location = getShowLocation(item);
+  const address = getShowAddress(item);
 
   return (
     <div className="relative h-[320px] rounded-xl overflow-hidden border border-amber-500/20 mb-1">
@@ -596,7 +679,7 @@ function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () =>
             <MapPin size={12} className="text-amber-400 flex-shrink-0" />
             <div className="text-xs font-semibold text-white truncate">{item.venue}</div>
           </div>
-          <div className="text-[10px] text-white/50 ml-[18px]">{location}</div>
+          <div className="text-[10px] text-white/50 ml-[18px]">{address || location}</div>
         </div>
       )}
 
@@ -605,13 +688,17 @@ function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () =>
         <div className="flex items-end gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2.5 mb-1">
-              <img src={`/api/artist/${encPath(item.artist)}/photo`} alt=""
+              {artistPhotoUrl ? (
+                <img src={artistPhotoUrl} alt=""
                 className="w-10 h-10 rounded-full object-cover ring-2 ring-amber-500/30 flex-shrink-0"
                 onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              <Link to={`/artist/${encPath(item.artist)}`}
-                className="text-xl font-bold text-white hover:text-amber-400 transition-colors">
-              {item.artist}
-            </Link>
+              ) : null}
+              <ArtistTextLink
+                artist={primaryArtist}
+                className="text-xl font-bold text-white hover:text-amber-400 transition-colors"
+              >
+                {item.artist}
+              </ArtistTextLink>
             </div>
             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
               {item.genres?.slice(0, 3).map(g => (
@@ -630,17 +717,22 @@ function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () =>
               )}
             </div>
 
-            {item.lineup && item.lineup.length > 1 && (
+            {lineupArtists.length > 1 && (
               <div className="flex items-center gap-2 mt-2 flex-wrap">
                 <span className="text-[10px] text-white/40">Lineup:</span>
-                {item.lineup.slice(0, 5).map(name => (
-                  <Link key={name} to={`/artist/${encPath(name)}`}
-                    className="flex items-center gap-1 text-[11px] text-white/80 hover:text-amber-400 transition-colors">
-                    <img src={`/api/artist/${encPath(name)}/photo`} alt=""
+                {lineupArtists.slice(0, 5).map((artist) => (
+                  <ArtistTextLink
+                    key={`${artist.name}-${artist.id ?? "external"}`}
+                    artist={artist}
+                    className="flex items-center gap-1 text-[11px] text-white/80 hover:text-amber-400 transition-colors"
+                  >
+                    {getArtistPhotoUrl(artist) ? (
+                    <img src={getArtistPhotoUrl(artist)} alt=""
                       className="w-4 h-4 rounded-full object-cover"
                       onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    {name}
-                  </Link>
+                    ) : null}
+                    {artist.name}
+                  </ArtistTextLink>
                 ))}
               </div>
             )}
@@ -795,48 +887,54 @@ function CalendarPill({ item, onDownload, onDismiss, onShowClick }: {
 
 function ShowPopoverContent({ item }: { item: UpcomingItem }) {
   const dateObj = item.date ? new Date(item.date + "T12:00:00") : null;
+  const primaryArtist = getPrimaryArtist(item);
+  const lineupArtists = getLineupArtists(item);
   const dateStr = dateObj
     ? dateObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
     : "";
   const timeStr = item.time ? item.time.slice(0, 5) : "";
-  const location = [item.city, item.country].filter(Boolean).join(", ");
-  const allArtists = item.lineup && item.lineup.length > 0 ? item.lineup : [item.artist];
-  const headliner = allArtists[0] || item.artist;
-  const support = allArtists.slice(1);
+  const location = getShowLocation(item);
+  const address = getShowAddress(item);
+  const headlinerArtist = lineupArtists[0] ?? primaryArtist;
+  const supportArtists = lineupArtists.slice(1);
+  const backgroundUrl = getArtistBackgroundUrl(headlinerArtist);
 
   return (
     <div className="bg-card rounded-md overflow-hidden">
       {/* Header image */}
       <div className="relative h-[80px] bg-secondary">
+        {backgroundUrl ? (
         <img
-          src={`/api/artist/${encPath(headliner)}/background`}
+          src={backgroundUrl}
           alt=""
           className="w-full h-full object-cover opacity-60"
           onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
         />
+        ) : null}
         <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
         <div className="absolute -bottom-3 left-3 flex -space-x-2">
-          {allArtists.slice(0, 3).map((name) => (
-            <ArtistAvatar key={name} name={name} size={28} linked />
+          {lineupArtists.slice(0, 3).map((artist) => (
+            <ArtistAvatar key={`${artist.name}-${artist.id ?? "external"}`} name={artist.name} artistId={artist.id} artistSlug={artist.slug} size={28} linked />
           ))}
         </div>
       </div>
 
       <div className="p-3 pt-5">
-        <Link to={`/artist/${encPath(headliner)}`}
+        <ArtistTextLink
+          artist={headlinerArtist}
           className="block font-bold text-sm text-foreground hover:text-primary transition-colors truncate mb-0.5">
-          {headliner}
-        </Link>
+          {headlinerArtist?.name || item.artist}
+        </ArtistTextLink>
 
-        {support.length > 0 && (
+        {supportArtists.length > 0 && (
           <div className="text-[11px] text-muted-foreground mb-1 truncate">
-            {support.slice(0, 3).map((name, i) => (
-              <span key={name}>
+            {supportArtists.slice(0, 3).map((artist, i) => (
+              <span key={`${artist.name}-${artist.id ?? "external"}`}>
                 {i > 0 && <span> &middot; </span>}
-                <Link to={`/artist/${encPath(name)}`} className="hover:text-foreground transition-colors">{name}</Link>
+                <ArtistTextLink artist={artist} className="hover:text-foreground transition-colors">{artist.name}</ArtistTextLink>
               </span>
             ))}
-            {support.length > 3 && <span> +{support.length - 3} more</span>}
+            {supportArtists.length > 3 && <span> +{supportArtists.length - 3} more</span>}
           </div>
         )}
 
@@ -844,7 +942,7 @@ function ShowPopoverContent({ item }: { item: UpcomingItem }) {
           <MapPin size={12} className="flex-shrink-0 mt-0.5 text-amber-400/60" />
           <div>
             <div className="text-foreground font-medium">{item.venue}</div>
-            <div>{location}</div>
+            <div>{address || location}</div>
           </div>
         </div>
 
@@ -898,11 +996,21 @@ function ReleasePopoverContent({ item, onDownload, onDismiss }: {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-bold text-sm truncate">{item.title}</div>
-          <Link to={`/artist/${encPath(item.artist)}`}
+          {item.album_id != null ? (
+            <Link
+              to={albumPagePath({ albumId: item.album_id, albumSlug: item.album_slug, artistName: item.artist, albumName: item.title })}
+              className="font-bold text-sm truncate block hover:text-foreground transition-colors"
+            >
+              {item.title}
+            </Link>
+          ) : (
+            <div className="font-bold text-sm truncate">{item.title}</div>
+          )}
+          <ArtistTextLink
+            artist={getPrimaryArtist(item)}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors">
             {item.artist}
-          </Link>
+          </ArtistTextLink>
           <div className="flex items-center gap-1.5 mt-1">
             {item.subtitle && (
               <Badge variant="outline" className="text-[9px] px-1 py-0">{item.subtitle}</Badge>
@@ -945,4 +1053,3 @@ function ReleasePopoverContent({ item, onDownload, onDismiss }: {
     </div>
   );
 }
-

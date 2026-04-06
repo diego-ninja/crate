@@ -17,11 +17,10 @@ router = APIRouter()
 def api_related_albums_by_id(request: Request, album_id: int, limit: int = 15):
     album = get_library_album_by_id(album_id)
     if not album:
-        return []
+        return JSONResponse({"error": "Not found"}, status_code=404)
     return api_related_albums(request, album["artist"], album["name"], limit)
 
 
-@router.get("/api/album/{artist:path}/{album:path}/related")
 def api_related_albums(request: Request, artist: str, album: str, limit: int = 15):
     """Find related albums: same artist, same genre+decade, similar audio profile."""
     _require_auth(request)
@@ -113,7 +112,6 @@ def api_related_albums(request: Request, artist: str, album: str, limit: int = 1
     return related[:limit]
 
 
-@router.get("/api/album/{artist:path}/{album:path}")
 def api_album(request: Request, artist: str, album: str):
     _require_auth(request)
     if not has_library_data():
@@ -218,7 +216,6 @@ def api_album_by_id(request: Request, album_id: int):
     return api_album(request, album["artist"], album["name"])
 
 
-@router.get("/api/cover/{artist:path}/{album:path}")
 def api_cover(artist: str, album: str):
     lib = library_path()
     album_dir = find_album_dir(lib, artist, album)
@@ -255,7 +252,6 @@ def api_cover_by_id(album_id: int):
     return api_cover(album["artist"], album["name"])
 
 
-@router.get("/api/download/album/{artist:path}/{album:path}")
 def api_download_album(request: Request, artist: str, album: str):
     """Download an entire album as a ZIP file."""
     _require_auth(request)
@@ -283,3 +279,11 @@ def api_download_album(request: Request, artist: str, album: str):
 
     safe_name = f"{artist} - {album}.zip".replace("/", "-")
     return FileResponse(path=tmp.name, filename=safe_name, media_type="application/zip", background=None)
+
+
+@router.get("/api/albums/{album_id}/download")
+def api_download_album_by_id(request: Request, album_id: int):
+    album = get_library_album_by_id(album_id)
+    if not album:
+        return Response(status_code=404)
+    return api_download_album(request, album["artist"], album["name"])

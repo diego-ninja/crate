@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from crate.api.auth import _require_auth
 from crate.missing import find_missing_albums
 from crate.quality import quality_report
 from crate.audio import read_tags, get_audio_files
-from crate.api._deps import library_path, extensions, safe_path, get_config
+from crate.api._deps import artist_name_from_id, library_path, extensions, safe_path, get_config
 from crate.db import (
     list_tasks, get_latest_scan, get_library_stats, get_library_track_count,
     get_db_ctx, get_setting,
@@ -76,9 +76,16 @@ def api_analytics(request: Request):
 
         # Top artists by album count
         cur.execute(
-            "SELECT artist, COUNT(DISTINCT name) as albums FROM library_albums GROUP BY artist ORDER BY albums DESC LIMIT 25"
+            """
+            SELECT la.id, la.slug, la.name, COUNT(DISTINCT alb.id) AS albums
+            FROM library_artists la
+            JOIN library_albums alb ON alb.artist = la.name
+            GROUP BY la.id, la.slug, la.name
+            ORDER BY albums DESC
+            LIMIT 25
+            """
         )
-        top_artists = [{"name": r["artist"], "albums": r["albums"]} for r in cur.fetchall()]
+        top_artists = [{"id": r["id"], "slug": r["slug"], "name": r["name"], "albums": r["albums"]} for r in cur.fetchall()]
 
         # Total duration
         cur.execute("SELECT COALESCE(SUM(duration), 0) as total FROM library_tracks")
@@ -166,13 +173,14 @@ def api_stats(request: Request):
             top_genres = [{"name": r["genre"], "count": r["c"]} for r in cur.fetchall()]
 
             cur.execute(
-                "SELECT artist, name, year, dir_mtime FROM library_albums "
+                "SELECT a.id, a.slug, a.artist, ar.id AS artist_id, ar.slug AS artist_slug, a.name, a.year, a.dir_mtime FROM library_albums a "
+                "LEFT JOIN library_artists ar ON ar.name = a.artist "
                 "ORDER BY dir_mtime DESC NULLS LAST LIMIT 10"
             )
             import re as _re
             _year_re = _re.compile(r"^\d{4}\s*[-–]\s*")
             recent_albums = [
-                {"artist": r["artist"], "name": r["name"],
+                {"id": r["id"], "slug": r["slug"], "artist": r["artist"], "artist_id": r["artist_id"], "artist_slug": r["artist_slug"], "name": r["name"],
                  "display_name": _year_re.sub("", r["name"]),
                  "year": r["year"]}
                 for r in cur.fetchall()
@@ -287,7 +295,21 @@ def api_timeline(request: Request):
     if _has_library_data():
         with get_db_ctx() as cur:
             cur.execute(
-                "SELECT year, artist, name, track_count FROM library_albums WHERE year IS NOT NULL AND year != '' ORDER BY year"
+                """
+                SELECT
+                    a.id,
+                    a.slug,
+                    a.year,
+                    a.artist,
+                    ar.id AS artist_id,
+                    ar.slug AS artist_slug,
+                    a.name,
+                    a.track_count
+                FROM library_albums a
+                LEFT JOIN library_artists ar ON ar.name = a.artist
+                WHERE a.year IS NOT NULL AND a.year != ''
+                ORDER BY a.year
+                """
             )
             rows = cur.fetchall()
 
@@ -296,7 +318,11 @@ def api_timeline(request: Request):
             year = r["year"][:4] if r["year"] else ""
             if year and year.isdigit():
                 years.setdefault(year, []).append({
+                    "id": r["id"],
+                    "slug": r["slug"],
                     "artist": r["artist"],
+                    "artist_id": r["artist_id"],
+                    "artist_slug": r["artist_slug"],
                     "album": r["name"],
                     "tracks": r["track_count"],
                 })
@@ -336,7 +362,6 @@ def api_quality(request: Request):
     return report
 
 
-@router.get("/api/missing/{artist:path}")
 def api_missing_albums(request: Request, artist: str):
     _require_auth(request)
     lib = library_path()
@@ -349,7 +374,23 @@ def api_missing_albums(request: Request, artist: str):
     return result
 
 
-@router.get("/api/artist-stats/{name:path}")
+@router.get("/api/artists/{artist_id}/missing")
+def api_missing_albums_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return api_missing_albums(request, artist_name)
+
+
+@router.get("/api/missing-search")
+def api_missing_albums_search(request: Request, q: str = Query("")):
+    _require_auth(request)
+    query = q.strip()
+    if not query:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return api_missing_albums(request, query)
+
+
 def api_artist_stats(request: Request, name: str):
     """Stats for a single artist: format split, year timeline, audio features."""
     _require_auth(request)
@@ -422,6 +463,14 @@ def api_artist_stats(request: Request, name: str):
         "top_tracks_by_popularity": top_tracks,
         "genres": genres,
     }
+
+
+@router.get("/api/artists/{artist_id}/stats")
+def api_artist_stats_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return api_artist_stats(request, artist_name)
 
 
 @router.get("/api/insights")

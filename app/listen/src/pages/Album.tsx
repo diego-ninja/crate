@@ -12,8 +12,8 @@ import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { fetchAlbumRadio } from "@/lib/radio";
-import { encPath, formatBadgeClass, shuffleArray, formatTotalDuration } from "@/lib/utils";
-import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { formatBadgeClass, shuffleArray, formatTotalDuration } from "@/lib/utils";
+import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 interface AlbumTrack {
   id: number;
@@ -73,18 +73,22 @@ function buildPlayerTracks(data: AlbumData): Track[] {
   const cover = albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name });
   return data.tracks.map((t) => ({
     id: t.path || String(t.id),
-    title: t.tags.title || t.filename,
-    artist: data.artist,
-    album: data.display_name || data.name,
-    albumCover: cover,
-    path: t.path,
-    libraryTrackId: t.id,
+      title: t.tags.title || t.filename,
+      artist: data.artist,
+      artistId: data.artist_id,
+      artistSlug: data.artist_slug,
+      album: data.display_name || data.name,
+      albumId: data.id,
+      albumSlug: data.slug,
+      albumCover: cover,
+      path: t.path,
+      libraryTrackId: t.id,
   }));
 }
 
 
 export function Album() {
-  const { artist, album, albumId: albumIdParam } = useParams<{ artist?: string; album?: string; albumId?: string }>();
+  const { albumId: albumIdParam } = useParams<{ albumId?: string }>();
   const navigate = useNavigate();
   const { playAll, addToQueue, playNext } = usePlayerActions();
   const { openCreatePlaylist } = usePlaylistComposer();
@@ -94,15 +98,9 @@ export function Album() {
   const menuRef = useRef<HTMLDivElement>(null);
 
   const routeAlbumId = albumIdParam ? Number(albumIdParam) : undefined;
-  const decodedArtist = decodeURIComponent(artist || "");
-  const decodedAlbum = decodeURIComponent(album || "");
 
   const { data, loading, error } = useApi<AlbumData>(
-    routeAlbumId != null
-      ? albumApiPath({ albumId: routeAlbumId })
-      : decodedArtist && decodedAlbum
-        ? albumApiPath({ artistName: decodedArtist, albumName: decodedAlbum })
-        : null,
+    routeAlbumId != null ? albumApiPath({ albumId: routeAlbumId }) : null,
   );
   const { data: playlists } = useApi<Playlist[]>("/api/playlists");
 
@@ -136,7 +134,6 @@ export function Album() {
   const displayName = data.display_name || data.name;
   const albumId = data.id;
   const artistName = data.artist;
-  const albumName = data.name;
   const albumTracks = data.tracks;
   const year = data.album_tags?.year?.slice(0, 4);
   const genre = data.genres.length > 0 ? data.genres.join(", ") : data.album_tags?.genre;
@@ -201,7 +198,7 @@ export function Album() {
     setMenuOpen(false);
   };
 
-  const shareUrl = `${window.location.origin}${albumPagePath({ albumId, albumSlug: data.slug, artistName, albumName })}`;
+  const shareUrl = `${window.location.origin}${albumPagePath({ albumId, albumSlug: data.slug })}`;
 
   async function handleShare() {
     try {
@@ -332,7 +329,7 @@ export function Album() {
             <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1.5">{displayName}</h1>
             <button
               className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors mb-3 self-start"
-              onClick={() => navigate(`/artist/${encPath(data.artist)}`)}
+              onClick={() => navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug }))}
             >
               <span className="w-6 h-6 rounded-full overflow-hidden bg-white/5 flex-shrink-0">
                 <img
@@ -502,7 +499,7 @@ export function Album() {
                 </AppMenuButton>
                 <AppMenuButton
                   onClick={() => {
-                    navigate(`/artist/${encPath(data.artist)}`);
+                    navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug }));
                     setMenuOpen(false);
                   }}
                 >
@@ -542,7 +539,11 @@ export function Album() {
                       id: String(t.id),
                       title: t.tags.title || t.filename,
                       artist: data.artist,
+                      artist_id: data.artist_id,
+                      artist_slug: data.artist_slug,
                       album: displayName,
+                      album_id: data.id,
+                      album_slug: data.slug,
                       duration: t.length_sec,
                       path: t.path,
                       track_number: parseInt(t.tags.tracknumber) || idx + 1,
@@ -563,12 +564,16 @@ export function Album() {
           data.tracks.map((t, idx) => (
             <TrackRow
               key={t.id}
-              track={{
-                id: String(t.id),
-                title: t.tags.title || t.filename,
-                artist: data.artist,
-                album: displayName,
-                duration: t.length_sec,
+                track={{
+                  id: String(t.id),
+                  title: t.tags.title || t.filename,
+                  artist: data.artist,
+                  artist_id: data.artist_id,
+                  artist_slug: data.artist_slug,
+                  album: displayName,
+                  album_id: data.id,
+                  album_slug: data.slug,
+                  duration: t.length_sec,
                 path: t.path,
                 track_number: parseInt(t.tags.tracknumber) || idx + 1,
                 format: t.format,

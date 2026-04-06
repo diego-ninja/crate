@@ -108,15 +108,19 @@ def _get_similar_artist_names(cur, artist_name: str) -> set[str]:
     """Return set of similar artist names using artist_similarities table or similar_json fallback."""
     # Try artist_similarities table first (Phase 1)
     try:
-        cur.execute("""
-            SELECT artist_b FROM artist_similarities
-            WHERE artist_a = %s AND artist_b_in_library = TRUE
-        """, (artist_name,))
-        rows = cur.fetchall()
-        if rows:
-            return {r["artist_b"] for r in rows}
+        cur.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'artist_similarities' LIMIT 1"
+        )
+        if cur.fetchone():
+            cur.execute("""
+                SELECT artist_b FROM artist_similarities
+                WHERE artist_a = %s AND artist_b_in_library = TRUE
+            """, (artist_name,))
+            rows = cur.fetchall()
+            if rows:
+                return {r["artist_b"] for r in rows}
     except Exception:
-        pass  # table may not exist yet
+        pass
 
     # Fallback: parse similar_json from library_artists
     cur.execute("SELECT similar_json FROM library_artists WHERE name = %s", (artist_name,))

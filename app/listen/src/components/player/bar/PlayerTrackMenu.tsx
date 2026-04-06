@@ -16,7 +16,7 @@ import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 
 import { currentTrackToPlaylistSeed } from "./player-bar-utils";
 import { AppMenuButton, AppPopover } from "@/components/ui/AppPopover";
@@ -152,7 +152,9 @@ export function PlayerTrackMenu({
                 icon: User,
                 label: "Go to artist",
                 action: () => {
-                  navigate(`/artist/${encPath(currentTrack.artist)}`);
+                  if (currentTrack.artistId != null) {
+                    navigate(artistPagePath({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug }));
+                  }
                   closeMenu();
                 },
               },
@@ -160,8 +162,8 @@ export function PlayerTrackMenu({
                 icon: Disc,
                 label: "Go to album",
                 action: () => {
-                  if (currentTrack.album) {
-                    navigate(`/album/${encPath(currentTrack.artist)}/${encPath(currentTrack.album)}`);
+                  if (currentTrack.albumId != null) {
+                    navigate(albumPagePath({ albumId: currentTrack.albumId, albumSlug: currentTrack.albumSlug }));
                   }
                   closeMenu();
                 },

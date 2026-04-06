@@ -63,6 +63,7 @@ export function Shows() {
           local_date: (e.date as string || "").slice(0, 10),
           local_time: e.local_time || "",
           venue: e.venue || "",
+          address_line1: (e.address_line1 as string) || undefined,
           city: e.city || "",
           region: e.region || "",
           country: e.country || "",
@@ -75,6 +76,9 @@ export function Shows() {
           latitude: e.latitude ? String(e.latitude) : undefined,
           longitude: e.longitude ? String(e.longitude) : undefined,
           artist_name: e.artist_name as string || "",
+          artist_id: typeof e.artist_id === "number" ? e.artist_id : undefined,
+          artist_slug: typeof e.artist_slug === "string" ? e.artist_slug : undefined,
+          lineup_artists: Array.isArray(e.lineup_artists) ? e.lineup_artists as ShowEvent["lineup_artists"] : undefined,
           artist_listeners: 0,
           artist_genres: Array.isArray(e.artist_genres) ? e.artist_genres : [],
         }));
@@ -312,9 +316,31 @@ function coloredIcon(color: string) {
   });
 }
 
+function PopupCenterer() {
+  const map = useMap();
+  useEffect(() => {
+    function onPopupOpen(e: L.PopupEvent) {
+      const popup = e.popup;
+      const latlng = popup.getLatLng();
+      if (!latlng) return;
+      const px = map.project(latlng);
+      const container = popup.getElement();
+      if (container) {
+        const popupHeight = container.getBoundingClientRect().height;
+        px.y -= popupHeight / 2;
+      }
+      map.panTo(map.unproject(px), { animate: true, duration: 0.3 });
+    }
+    map.on("popupopen", onPopupOpen);
+    return () => { map.off("popupopen", onPopupOpen); };
+  }, [map]);
+  return null;
+}
+
 function LiveMarkers({ events }: { events: ShowEvent[] }) {
   return (
     <>
+      <PopupCenterer />
       {events.map((e, i) => {
         const color = getGenreColor(e.artist_genres);
         return (
@@ -323,7 +349,7 @@ function LiveMarkers({ events }: { events: ShowEvent[] }) {
             position={[parseFloat(e.latitude!), parseFloat(e.longitude!)]}
             icon={coloredIcon(color)}
           >
-            <Popup maxWidth={360} minWidth={340}>
+            <Popup maxWidth={360} minWidth={340} autoPan={false}>
               <ShowCard show={e} />
             </Popup>
           </Marker>

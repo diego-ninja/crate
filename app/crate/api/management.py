@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
+from crate.api._deps import artist_name_from_id, album_names_from_id
 from crate.db import (
     create_task, get_cache, get_audit_log,
     get_open_issues, get_issue_counts, resolve_issue, dismiss_issue,
@@ -119,7 +120,6 @@ def api_fix_type(request: Request, check_type: str):
 
 # ── Per-Artist Health ────────────────────────────────────────────
 
-@router.get("/health-issues/artist/{name:path}")
 def get_artist_health_issues(request: Request, name: str):
     """Get open health issues for a specific artist."""
     _require_admin(request)
@@ -128,7 +128,6 @@ def get_artist_health_issues(request: Request, name: str):
     return {"artist": name, "issues": issues, "count": len(issues)}
 
 
-@router.post("/repair-artist/{name:path}")
 def repair_artist(request: Request, name: str):
     """Repair all auto-fixable issues for a specific artist."""
     _require_admin(request)
@@ -141,9 +140,24 @@ def repair_artist(request: Request, name: str):
     return {"task_id": task_id, "count": len(fixable)}
 
 
+@router.get("/artists/{artist_id}/health-issues")
+def get_artist_health_issues_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return get_artist_health_issues(request, artist_name)
+
+
+@router.post("/artists/{artist_id}/repair")
+def repair_artist_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return repair_artist(request, artist_name)
+
+
 # ── Artist Management ────────────────────────────────────────────
 
-@router.post("/artist/{name:path}/delete")
 def delete_artist(request: Request, name: str, body: DeleteRequest):
     _require_admin(request)
     if body.mode not in ("db_only", "full"):
@@ -152,14 +166,28 @@ def delete_artist(request: Request, name: str, body: DeleteRequest):
     return {"task_id": task_id}
 
 
-@router.post("/artist/{name:path}/reset")
+@router.post("/artists/{artist_id}/delete")
+def delete_artist_by_id(request: Request, artist_id: int, body: DeleteRequest):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return delete_artist(request, artist_name, body)
+
+
 def reset_enrichment(request: Request, name: str):
     _require_admin(request)
     task_id = create_task("reset_enrichment", {"artist": name})
     return {"task_id": task_id}
 
 
-@router.post("/artist/{name:path}/move")
+@router.post("/artists/{artist_id}/reset")
+def reset_enrichment_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return reset_enrichment(request, artist_name)
+
+
 def move_artist(request: Request, name: str, body: MoveRequest):
     _require_admin(request)
     if not body.new_name.strip():
@@ -168,15 +196,31 @@ def move_artist(request: Request, name: str, body: MoveRequest):
     return {"task_id": task_id}
 
 
+@router.post("/artists/{artist_id}/move")
+def move_artist_by_id(request: Request, artist_id: int, body: MoveRequest):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return move_artist(request, artist_name, body)
+
+
 # ── Album Management ────────────────────────────────────────────
 
-@router.post("/album/{artist:path}/{album:path}/delete")
 def delete_album(request: Request, artist: str, album: str, body: DeleteRequest):
     _require_admin(request)
     if body.mode not in ("db_only", "full"):
         raise HTTPException(status_code=422, detail="mode must be 'db_only' or 'full'")
     task_id = create_task("delete_album", {"artist": artist, "album": album, "mode": body.mode})
     return {"task_id": task_id}
+
+
+@router.post("/albums/{album_id}/delete")
+def delete_album_by_id(request: Request, album_id: int, body: DeleteRequest):
+    album_names = album_names_from_id(album_id)
+    if not album_names:
+        raise HTTPException(status_code=404, detail="Album not found")
+    artist, album = album_names
+    return delete_album(request, artist, album, body)
 
 
 # ── Library Management ───────────────────────────────────────────
@@ -242,12 +286,19 @@ def analyze_all_tracks(request: Request):
     return {"task_id": task_id}
 
 
-@router.post("/reanalyze-artist/{name:path}")
 def reanalyze_artist(request: Request, name: str):
     """Reset analysis state for all tracks of an artist."""
     _require_admin(request)
     task_id = create_task("analyze_tracks", {"artist": name, "what": "both"})
     return {"task_id": task_id}
+
+
+@router.post("/artists/{artist_id}/reanalyze")
+def reanalyze_artist_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return reanalyze_artist(request, artist_name)
 
 
 @router.post("/reanalyze-album/{album_id}")

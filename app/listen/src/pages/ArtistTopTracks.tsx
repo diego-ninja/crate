@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
-import { encPath } from "@/lib/utils";
 import { albumCoverApiUrl, artistApiPath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 interface ArtistTopTrack {
@@ -26,7 +25,11 @@ function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
     id: track.id,
     title: track.title || "Unknown",
     artist: track.artist,
+    artistId: track.artist_id,
+    artistSlug: track.artist_slug,
     album: track.album,
+    albumId: track.album_id,
+    albumSlug: track.album_slug,
     albumCover: track.artist && track.album
       ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
       : artistPhotoApiUrl({ artistId: track.artist_id, artistSlug: track.artist_slug, artistName: track.artist }),
@@ -37,16 +40,15 @@ function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
 
 export function ArtistTopTracks() {
   const navigate = useNavigate();
-  const { name, artistId: artistIdParam } = useParams<{ name?: string; artistId?: string }>();
+  const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
   const artistId = artistIdParam ? Number(artistIdParam) : undefined;
-  const decodedName = decodeURIComponent(name || "");
   const { playAll } = usePlayerActions();
   const { data: artist } = useApi<{ id?: number; slug?: string; name: string }>(
-    artistId != null ? artistApiPath({ artistId }) : decodedName ? artistApiPath({ artistName: decodedName }) : null,
+    artistId != null ? artistApiPath({ artistId }) : null,
   );
-  const artistName = artist?.name || decodedName;
+  const artistName = artist?.name || "";
   const { data: topTracks, loading } = useApi<ArtistTopTrack[]>(
-    artistName ? `/api/navidrome/artist/${encPath(artistName)}/top-tracks?count=50` : null,
+    artistId != null ? `/api/navidrome/artists/${artistId}/top-tracks?count=50` : null,
   );
 
   function handlePlayAll() {
@@ -71,7 +73,7 @@ export function ArtistTopTracks() {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate(artistPagePath({ artistId: artist?.id ?? artistId, artistSlug: artist?.slug, artistName }))}
+            onClick={() => navigate(artistPagePath({ artistId: artist?.id ?? artistId, artistSlug: artist?.slug }))}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-white/70 transition-colors hover:bg-white/5 hover:text-white"
           >
             <ArrowLeft size={18} />
@@ -99,7 +101,11 @@ export function ArtistTopTracks() {
               id: track.id,
               title: track.title,
               artist: track.artist,
+              artist_id: track.artist_id,
+              artist_slug: track.artist_slug,
               album: track.album,
+              album_id: track.album_id,
+              album_slug: track.album_slug,
               duration: track.duration,
               path: track.id.includes("/") ? track.id : undefined,
               navidrome_id: track.id.includes("/") ? undefined : track.id,

@@ -3,8 +3,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
-from crate.db import create_task
-from crate.api._deps import library_path, safe_path
+from crate.api._deps import album_names_from_id, library_path, safe_path
+from crate.db import create_task, get_db_ctx, get_library_album_by_id
 
 router = APIRouter()
 
@@ -22,8 +22,7 @@ class TrackTagsUpdate(BaseModel):
     model_config = {"extra": "allow"}
 
 
-@router.put("/api/tags/{artist:path}/{album:path}")
-def api_update_tags(request: Request, artist: str, album: str, data: AlbumTagsUpdate):
+def _update_album_tags(request: Request, artist: str, album: str, data: AlbumTagsUpdate):
     _require_admin(request)
     lib = library_path()
     album_dir = safe_path(lib, f"{artist}/{album}")
@@ -45,8 +44,15 @@ def api_update_tags(request: Request, artist: str, album: str, data: AlbumTagsUp
     return {"task_id": task_id}
 
 
-@router.put("/api/tags/track/{filepath:path}")
-def api_update_track_tags(request: Request, filepath: str, data: TrackTagsUpdate):
+@router.put("/api/albums/{album_id}/tags")
+def api_update_tags_by_id(request: Request, album_id: int, data: AlbumTagsUpdate):
+    names = album_names_from_id(album_id)
+    if not names:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return _update_album_tags(request, names[0], names[1], data)
+
+
+def _update_track_tags(request: Request, filepath: str, data: TrackTagsUpdate):
     _require_admin(request)
     lib = library_path()
     track_path = safe_path(lib, filepath)
@@ -58,3 +64,21 @@ def api_update_track_tags(request: Request, filepath: str, data: TrackTagsUpdate
         "tags": data.model_dump(),
     })
     return {"task_id": task_id}
+
+
+@router.put("/api/tracks/{track_id}/tags")
+def api_update_track_tags_by_id(request: Request, track_id: int, data: TrackTagsUpdate):
+    _require_admin(request)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    if not row:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    filepath = row["path"]
+    lib = library_path()
+    lib_str = str(lib)
+    if filepath.startswith(lib_str):
+        filepath = filepath[len(lib_str):].lstrip("/")
+    elif filepath.startswith("/music/"):
+        filepath = filepath[len("/music/"):].lstrip("/")
+    return _update_track_tags(request, filepath, data)

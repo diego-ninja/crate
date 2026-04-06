@@ -63,6 +63,11 @@ interface TrackTableProps {
   tracks: Track[];
   navidromeSongs?: NavidromeSong[];
   artist?: string;
+  artistId?: number;
+  artistSlug?: string;
+  album?: string;
+  albumId?: number;
+  albumSlug?: string;
   albumCover?: string;
   audiomuseData?: Record<string, AudioMuseTrack>;
 }
@@ -188,7 +193,18 @@ function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
   );
 }
 
-export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomuseData }: TrackTableProps) {
+export function TrackTable({
+  tracks,
+  navidromeSongs,
+  artist,
+  artistId,
+  artistSlug,
+  album,
+  albumId,
+  albumSlug,
+  albumCover,
+  audiomuseData,
+}: TrackTableProps) {
   const { play, playAll, pause, resume, isPlaying, queue, currentIndex } = usePlayer();
   const { isFavorite, toggleFavorite } = useFavorites();
   const currentTrack = queue[currentIndex];
@@ -228,6 +244,11 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
       id: getTrackId(track, index),
       title: track.tags.title || track.filename,
       artist: artist || track.tags.artist || "",
+      artistId,
+      artistSlug,
+      album: album || track.tags.album || "",
+      albumId,
+      albumSlug,
       albumCover,
     };
   }
@@ -283,7 +304,20 @@ export function TrackTable({ tracks, navidromeSongs, artist, albumCover, audiomu
           const ndSong = hasNavidrome ? findNavidromeSong(t, i) : undefined;
           const amTrack = audiomuseData ? (audiomuseData[trackTitle] ?? audiomuseData[ndSong?.id ?? ""]) : undefined;
           return (
-            <MusicContextMenu key={t.filename} type="track" artist={artist || t.tags.artist || ""} album={t.tags.album || ""} trackId={trackId} trackTitle={t.tags.title || t.filename} albumCover={albumCover} onFindSimilar={t.path ? () => setSimilarTrack({ path: t.path!, title: t.tags.title || t.filename, artist: artist || t.tags.artist || "" }) : undefined}>
+            <MusicContextMenu
+              key={t.filename}
+              type="track"
+              artist={artist || t.tags.artist || ""}
+              artistId={artistId}
+              artistSlug={artistSlug}
+              album={album || t.tags.album || ""}
+              albumId={albumId}
+              albumSlug={albumSlug}
+              trackId={trackId}
+              trackTitle={t.tags.title || t.filename}
+              albumCover={albumCover}
+              onFindSimilar={t.path ? () => setSimilarTrack({ path: t.path!, title: t.tags.title || t.filename, artist: artist || t.tags.artist || "" }) : undefined}
+            >
             <TableRow className={cn(isCurrentTrack && "bg-primary/5")}>
               <TableCell>
                 <Button

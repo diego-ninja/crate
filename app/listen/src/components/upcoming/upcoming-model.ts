@@ -4,6 +4,8 @@ export interface UpcomingItem {
   date: string;
   time?: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   title: string;
   subtitle: string;
   cover_url: string | null;
@@ -13,7 +15,10 @@ export interface UpcomingItem {
   release_id?: number;
   url?: string;
   venue?: string;
+  address_line1?: string;
   city?: string;
+  region?: string;
+  postal_code?: string;
   country?: string;
   country_code?: string;
   latitude?: number;
@@ -28,10 +33,15 @@ export interface ArtistShowEvent {
   id: string;
   show_id?: number;
   artist_name: string;
+  artist_id?: number;
+  artist_slug?: string;
   date: string;
   local_time?: string;
   venue: string;
+  address_line1?: string;
   city: string;
+  region?: string;
+  postal_code?: string;
   country: string;
   country_code: string;
   url?: string;
@@ -51,13 +61,18 @@ export function artistShowToUpcomingItem(show: ArtistShowEvent): UpcomingItem {
     date: show.date,
     time: show.local_time,
     artist: show.artist_name,
+    artist_id: show.artist_id,
+    artist_slug: show.artist_slug,
     title: show.venue || "",
     subtitle: [show.city, show.country].filter(Boolean).join(", "),
     cover_url: show.image_url || null,
     status: "onsale",
     url: show.url,
     venue: show.venue,
+    address_line1: show.address_line1,
     city: show.city,
+    region: show.region,
+    postal_code: show.postal_code,
     country: show.country,
     country_code: show.country_code,
     latitude: show.latitude,

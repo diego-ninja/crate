@@ -1,7 +1,8 @@
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import type { TopTrack } from "@/hooks/use-artist-data";
 import { PopularityBar } from "@/components/artist/ArtistPageBits";
-import { encPath, formatCompact, formatDuration, formatDurationMs } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
+import { formatCompact, formatDuration, formatDurationMs } from "@/lib/utils";
 import { Pause, Play } from "lucide-react";
 
 interface SpotifyTopTrack {
@@ -48,15 +49,25 @@ export function ArtistTopTracksSection({
         {topTracks.map((track, index) => {
           const isCurrent = currentTrackId === track.id;
           const isCurrentPlaying = isCurrent && trackPlaying;
+          const coverUrl = albumCoverApiUrl({
+            albumId: track.album_id,
+            albumSlug: track.album_slug,
+            artistName: track.artist,
+            albumName: track.album,
+          }) || undefined;
           return (
             <MusicContextMenu
               key={`nd-${track.id}`}
               type="track"
               artist={track.artist}
+              artistId={track.artist_id}
+              artistSlug={track.artist_slug}
               album={track.album || ""}
+              albumId={track.album_id}
+              albumSlug={track.album_slug}
               trackId={track.id}
               trackTitle={track.title}
-              albumCover={track.album ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}` : undefined}
+              albumCover={coverUrl}
             >
               <button
                 onClick={() => {

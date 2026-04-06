@@ -47,9 +47,13 @@ export function useUpcomingShowActions(
       toast.info("No probable setlist available for this show");
       return;
     }
+    if (!item.artist_id) {
+      toast.info("Artist not linked to library");
+      return;
+    }
     try {
       setPlayingSetlist(true);
-      const queue = await fetchPlayableSetlist(item.artist);
+      const queue = await fetchPlayableSetlist({ artistId: item.artist_id, artistName: item.artist });
       if (!queue.length) {
         toast.info(`None of the ${item.probable_setlist.length} setlist tracks were found in your library`);
         return;

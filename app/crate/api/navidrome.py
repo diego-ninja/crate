@@ -5,6 +5,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from crate.api.auth import _require_auth
+from crate.api._deps import artist_name_from_id, album_names_from_id
 from crate import navidrome
 from crate import playlists
 
@@ -14,6 +15,29 @@ router = APIRouter()
 
 def _domain() -> str:
     return os.environ.get("DOMAIN", "lespedants.org")
+
+
+def _lookup_track_library_refs(cur, artist_name: str, album_name: str, title: str) -> dict:
+    cur.execute(
+        """
+        SELECT
+            t.id AS library_track_id,
+            t.slug AS track_slug,
+            a.id AS album_id,
+            a.slug AS album_slug,
+            ar.id AS artist_id,
+            ar.slug AS artist_slug
+        FROM library_tracks t
+        JOIN library_albums a ON t.album_id = a.id
+        LEFT JOIN library_artists ar ON ar.name = a.artist
+        WHERE LOWER(a.artist) = LOWER(%s)
+          AND LOWER(t.title) = LOWER(%s)
+        ORDER BY CASE WHEN LOWER(a.name) = LOWER(%s) THEN 0 ELSE 1 END, a.year NULLS LAST, a.id ASC
+        LIMIT 1
+        """,
+        (artist_name, title, album_name or ""),
+    )
+    return dict(cur.fetchone() or {})
 
 
 @router.get("/api/navidrome/status")
@@ -75,7 +99,6 @@ def navidrome_stream(song_id: str, request: Request):
         return JSONResponse({"error": "Stream failed"}, status_code=502)
 
 
-@router.get("/api/navidrome/artist/{name}/link")
 def navidrome_artist_link(request: Request, name: str):
     _require_auth(request)
     try:
@@ -93,24 +116,44 @@ def navidrome_artist_link(request: Request, name: str):
         return JSONResponse({"error": "Navidrome unavailable"}, status_code=502)
 
 
-@router.get("/api/navidrome/artist/{name}/top-tracks")
+@router.get("/api/navidrome/artists/{artist_id}/link")
+def navidrome_artist_link_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return navidrome_artist_link(request, artist_name)
+
+
 def navidrome_top_tracks(request: Request, name: str, count: int = 20):
     _require_auth(request)
     # Try Navidrome first
     try:
         songs = navidrome.get_top_songs(name, count)
         if songs:
-            return [
-                {
-                    "id": s["id"],
-                    "title": s.get("title", ""),
-                    "artist": s.get("artist", name),
-                    "album": s.get("album", ""),
-                    "duration": s.get("duration", 0),
-                    "track": s.get("track", 0),
-                }
-                for s in songs
-            ]
+            from crate.db import get_db_ctx
+
+            results = []
+            with get_db_ctx() as cur:
+                for s in songs:
+                    refs = _lookup_track_library_refs(
+                        cur,
+                        s.get("artist", name),
+                        s.get("album", ""),
+                        s.get("title", ""),
+                    )
+                    results.append({
+                        "id": s["id"],
+                        "title": s.get("title", ""),
+                        "artist": s.get("artist", name),
+                        "artist_id": refs.get("artist_id"),
+                        "artist_slug": refs.get("artist_slug"),
+                        "album": s.get("album", ""),
+                        "album_id": refs.get("album_id"),
+                        "album_slug": refs.get("album_slug"),
+                        "duration": s.get("duration", 0),
+                        "track": s.get("track", 0),
+                    })
+            return results
     except Exception as e:
         log.debug("Navidrome top tracks failed for %s: %s", name, e)
 
@@ -128,8 +171,10 @@ def navidrome_top_tracks(request: Request, name: str, count: int = 20):
             for lt in lastfm_tracks:
                 # Try exact match first, then prefix match (handles "Song (Album Version)" etc.)
                 cur.execute(
-                    "SELECT t.path, t.title, t.artist, t.duration, a.name AS album "
+                    "SELECT t.path, t.title, t.artist, t.duration, a.name AS album, "
+                    "a.id AS album_id, a.slug AS album_slug, ar.id AS artist_id, ar.slug AS artist_slug "
                     "FROM library_tracks t JOIN library_albums a ON t.album_id = a.id "
+                    "LEFT JOIN library_artists ar ON ar.name = a.artist "
                     "WHERE LOWER(t.artist) = LOWER(%s) AND ("
                     "  LOWER(t.title) = LOWER(%s) OR LOWER(t.title) LIKE LOWER(%s) || '%%'"
                     ") LIMIT 1",
@@ -145,7 +190,11 @@ def navidrome_top_tracks(request: Request, name: str, count: int = 20):
                         "id": track_path,
                         "title": row["title"],
                         "artist": row["artist"],
+                        "artist_id": row.get("artist_id"),
+                        "artist_slug": row.get("artist_slug"),
                         "album": row["album"],
+                        "album_id": row.get("album_id"),
+                        "album_slug": row.get("album_slug"),
                         "duration": int(row["duration"] or 0),
                         "track": 0,
                         "listeners": lt.get("listeners", 0),
@@ -156,7 +205,14 @@ def navidrome_top_tracks(request: Request, name: str, count: int = 20):
         return []
 
 
-@router.get("/api/navidrome/album/{artist}/{album}/link")
+@router.get("/api/navidrome/artists/{artist_id}/top-tracks")
+def navidrome_top_tracks_by_id(request: Request, artist_id: int, count: int = 20):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return navidrome_top_tracks(request, artist_name, count)
+
+
 def navidrome_album_link(request: Request, artist: str, album: str):
     _require_auth(request)
     try:
@@ -188,6 +244,15 @@ def navidrome_album_link(request: Request, artist: str, album: str):
     except Exception as e:
         log.warning("Album link failed for %s/%s: %s", artist, album, e)
         return JSONResponse({"error": "Navidrome unavailable"}, status_code=502)
+
+
+@router.get("/api/navidrome/albums/{album_id}/link")
+def navidrome_album_link_by_id(request: Request, album_id: int):
+    album_names = album_names_from_id(album_id)
+    if not album_names:
+        return JSONResponse({"error": "Album not found"}, status_code=404)
+    artist, album = album_names
+    return navidrome_album_link(request, artist, album)
 
 
 @router.get("/api/navidrome/playlists")

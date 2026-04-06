@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router";
 
-import { encPath } from "@/lib/utils";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export function StatCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
   return (
@@ -33,24 +33,32 @@ export function PopularityBar({ value }: { value: number }) {
 }
 
 export function SimilarArtistCard({
+  id,
+  slug,
   name,
+  image,
   genres,
   popularity,
 }: {
+  id?: number;
+  slug?: string;
   name: string;
+  image?: string;
   genres?: string[];
   popularity?: number;
 }) {
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const letter = name.charAt(0).toUpperCase();
+  const targetPath = id != null ? artistPagePath({ artistId: id, artistSlug: slug, artistName: name }) : null;
+  const imageUrl = image || (id != null ? `${artistPhotoApiUrl({ artistId: id, artistSlug: slug, artistName: name })}?random=true` : "");
 
-  return (
-    <Link to={`/artist/${encPath(name)}`} className="group text-center">
+  const content = (
+    <>
       <div className="w-full aspect-square rounded-xl overflow-hidden mb-2 ring-1 ring-white/5 group-hover:ring-primary/30 transition-all duration-300 group-hover:scale-[1.03]">
-        {!imgError ? (
+        {!imgError && imageUrl ? (
           <img
-            src={`/api/artist/${encPath(name)}/photo?random=true`}
+            src={imageUrl}
             alt={name}
             loading="lazy"
             className={`w-full h-full object-cover transition-opacity duration-500 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
@@ -58,10 +66,10 @@ export function SimilarArtistCard({
             onError={() => setImgError(true)}
           />
         ) : null}
-        {(imgError || !imgLoaded) && (
+        {(imgError || !imgLoaded || !imageUrl) && (
           <div
             className={`w-full h-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center ${
-              imgLoaded && !imgError ? "hidden" : ""
+              imgLoaded && !imgError && imageUrl ? "hidden" : ""
             }`}
           >
             <span className="text-3xl font-bold text-white/20">{letter}</span>
@@ -79,14 +87,29 @@ export function SimilarArtistCard({
           <PopularityBar value={popularity} />
         </div>
       )}
-    </Link>
+    </>
+  );
+
+  if (targetPath) {
+    return <Link to={targetPath} className="group text-center">{content}</Link>;
+  }
+
+  return (
+    <a
+      href={`https://www.last.fm/music/${encodeURIComponent(name)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group text-center"
+    >
+      {content}
+    </a>
   );
 }
 
-export function fuzzyMatchTrack(
+export function fuzzyMatchTrack<T extends { title: string; album: string; path: string }>(
   songTitle: string,
-  tracks: { title: string; album: string; path: string }[],
-): { title: string; album: string; path: string } | undefined {
+  tracks: T[],
+): T | undefined {
   const normalize = (value: string) =>
     value
       .toLowerCase()

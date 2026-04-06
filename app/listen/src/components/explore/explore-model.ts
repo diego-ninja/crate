@@ -1,9 +1,11 @@
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
 import type { Track } from "@/contexts/PlayerContext";
 import type { PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 
 export interface SearchArtist {
+  id?: number;
+  slug?: string;
   name: string;
   album_count: number;
   has_photo: boolean;
@@ -11,7 +13,10 @@ export interface SearchArtist {
 
 export interface SearchAlbum {
   id: number;
+  slug?: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   name: string;
   year: string;
   has_cover: boolean;
@@ -19,9 +24,14 @@ export interface SearchAlbum {
 
 export interface SearchTrack {
   id: number;
+  slug?: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   path: string;
   duration: number;
   navidrome_id: string;
@@ -57,7 +67,11 @@ interface PlaylistDetailTrack {
   track_path: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   navidrome_id?: string;
 }
@@ -75,6 +89,8 @@ export interface GenreDetail {
   slug: string;
   artists: {
     artist_name: string;
+    artist_id?: number;
+    artist_slug?: string;
     album_count: number;
     track_count: number;
     has_photo: boolean;
@@ -82,7 +98,10 @@ export interface GenreDetail {
   }[];
   albums: {
     album_id: number;
+    album_slug?: string;
     artist: string;
+    artist_id?: number;
+    artist_slug?: string;
     name: string;
     year: string;
     track_count: number;
@@ -91,7 +110,7 @@ export interface GenreDetail {
 }
 
 export interface DecadeArtists {
-  items: { name: string; albums: number; tracks: number; has_photo: boolean }[];
+  items: { id?: number; slug?: string; name: string; albums: number; tracks: number; has_photo: boolean }[];
   total: number;
 }
 
@@ -112,11 +131,20 @@ export async function loadSystemPlaylistTracks(playlistId: number): Promise<{
       album: track.album || "",
       albumCover:
         track.artist && track.album
-          ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+          ? albumCoverApiUrl({
+              albumId: track.album_id,
+              albumSlug: track.album_slug,
+              artistName: track.artist,
+              albumName: track.album,
+            })
           : data.cover_data_url || undefined,
       path: track.track_path,
       libraryTrackId: track.track_id,
       navidromeId: track.navidrome_id,
+      artistId: track.artist_id,
+      artistSlug: track.artist_slug,
+      albumId: track.album_id,
+      albumSlug: track.album_slug,
     })),
     source: {
       type: "playlist",

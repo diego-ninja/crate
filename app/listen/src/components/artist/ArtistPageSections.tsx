@@ -6,20 +6,23 @@ import { ArtistCard } from "@/components/cards/ArtistCard";
 import { TrackRow } from "@/components/cards/TrackRow";
 import {
   buildArtistAlbumCover,
+  buildArtistPhotoUrl,
   type ArtistAlbum,
   type ArtistTopTrack,
 } from "@/components/artist/artist-model";
 import { groupByMonth, itemKey, UpcomingMonthGroup, type UpcomingItem } from "@/components/upcoming/UpcomingRows";
-import { encPath } from "@/lib/utils";
+import { artistPagePath, artistTopTracksPath } from "@/lib/library-routes";
 
 interface ArtistTopTracksSectionProps {
-  artistName: string;
+  artistId?: number;
+  artistSlug?: string;
   tracks: ArtistTopTrack[];
   coverFallback?: string;
 }
 
 export function ArtistTopTracksSection({
-  artistName,
+  artistId,
+  artistSlug,
   tracks,
   coverFallback,
 }: ArtistTopTracksSectionProps) {
@@ -32,7 +35,7 @@ export function ArtistTopTracksSection({
         <h2 className="text-lg font-semibold text-foreground">Top Tracks</h2>
         <button
           className="text-sm text-primary hover:underline"
-          onClick={() => navigate(`/artist/${encPath(artistName)}/top-tracks`)}
+          onClick={() => navigate(artistTopTracksPath({ artistId, artistSlug }))}
         >
           View all
         </button>
@@ -81,8 +84,9 @@ export function ArtistAlbumsSection({ artistName, albums }: ArtistAlbumsSectionP
             artist={artistName}
             album={album.display_name || album.name}
             albumId={album.id}
+            albumSlug={album.slug}
             year={album.year?.slice(0, 4)}
-            cover={buildArtistAlbumCover(artistName, album.name)}
+            cover={buildArtistAlbumCover(artistName, album.name, album.id, album.slug)}
             layout="grid"
           />
         ))}
@@ -183,13 +187,11 @@ export function ArtistShowsSection({
 }
 
 interface RelatedArtistsSectionProps {
-  artists: { name: string; match: number }[];
-  localSimilarArtists: Record<string, boolean>;
+  artists: { name: string; match: number; id?: number; slug?: string }[];
 }
 
 export function RelatedArtistsSection({
   artists,
-  localSimilarArtists,
 }: RelatedArtistsSectionProps) {
   if (!artists.length) return null;
 
@@ -199,15 +201,14 @@ export function RelatedArtistsSection({
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {artists.slice(0, 15).map((artist) => (
           <ArtistCard
-            key={artist.name}
+            key={artist.id ?? artist.name}
             name={artist.name}
+            artistId={artist.id}
+            artistSlug={artist.slug}
+            photo={artist.id ? buildArtistPhotoUrl(artist.name, artist.id, artist.slug) : undefined}
             subtitle={artist.match ? `${Math.round(artist.match * 100)}% match` : undefined}
-            href={
-              localSimilarArtists[artist.name]
-                ? `/artist/${encPath(artist.name)}`
-                : `https://www.last.fm/music/${encodeURIComponent(artist.name)}`
-            }
-            external={!localSimilarArtists[artist.name]}
+            href={artist.id ? artistPagePath({ artistId: artist.id, artistSlug: artist.slug }) : `https://www.last.fm/music/${encodeURIComponent(artist.name)}`}
+            external={!artist.id}
             large
             layout="grid"
           />

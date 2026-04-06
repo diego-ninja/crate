@@ -86,8 +86,17 @@ def get_genre_detail(slug: str) -> dict | None:
 
         # Top artists by weight
         cur.execute("""
-            SELECT ag.artist_name, ag.weight, ag.source,
-                   la.album_count, la.track_count, la.has_photo, la.spotify_popularity, la.listeners
+            SELECT
+                ag.artist_name,
+                la.id AS artist_id,
+                la.slug AS artist_slug,
+                ag.weight,
+                ag.source,
+                la.album_count,
+                la.track_count,
+                la.has_photo,
+                la.spotify_popularity,
+                la.listeners
             FROM artist_genres ag
             JOIN library_artists la ON ag.artist_name = la.name
             WHERE ag.genre_id = %s
@@ -97,9 +106,19 @@ def get_genre_detail(slug: str) -> dict | None:
 
         # Albums in this genre: from album_genres OR from artists in this genre
         cur.execute("""
-            SELECT DISTINCT ON (a.id) a.id AS album_id, a.artist, a.name, a.year, a.track_count, a.has_cover,
+            SELECT DISTINCT ON (a.id)
+                a.id AS album_id,
+                a.slug AS album_slug,
+                a.artist,
+                ar.id AS artist_id,
+                ar.slug AS artist_slug,
+                a.name,
+                a.year,
+                a.track_count,
+                a.has_cover,
                 COALESCE(alg.weight, ag.weight, 0.5) AS weight
             FROM library_albums a
+            LEFT JOIN library_artists ar ON ar.name = a.artist
             LEFT JOIN album_genres alg ON alg.album_id = a.id AND alg.genre_id = %s
             LEFT JOIN artist_genres ag ON ag.artist_name = a.artist AND ag.genre_id = %s
             WHERE alg.genre_id IS NOT NULL OR ag.genre_id IS NOT NULL
@@ -108,5 +127,4 @@ def get_genre_detail(slug: str) -> dict | None:
         genre["albums"] = [dict(r) for r in cur.fetchall()]
 
         return genre
-
 

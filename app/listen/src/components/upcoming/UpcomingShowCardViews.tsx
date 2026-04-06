@@ -2,7 +2,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { Link } from "react-router";
 import { Calendar, Check, Clock, Loader2, MapPin, Play, Ticket, X } from "lucide-react";
 
-import { encPath } from "@/lib/utils";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 import { UpcomingActionButton, UpcomingActionLink } from "./UpcomingActionButtons";
 import type { UpcomingItem } from "./upcoming-model";
@@ -14,6 +14,7 @@ interface UpcomingShowCardViewProps {
   playingSetlist: boolean;
   dateLabel: string;
   timeLabel: string;
+  addressLabel: string;
   locationLabel: string;
   onToggleAttendance: () => void;
   onPlaySetlist: () => void;
@@ -26,14 +27,21 @@ export function UpcomingShowCollapsedView({
   playingSetlist,
   dateLabel,
   timeLabel,
+  addressLabel,
   onToggleAttendance,
   onPlaySetlist,
 }: Omit<UpcomingShowCardViewProps, "locationLabel">) {
+  const artistImageUrl = artistPhotoApiUrl({
+    artistId: item.artist_id,
+    artistSlug: item.artist_slug,
+    artistName: item.artist,
+  }) || item.cover_url || undefined;
+
   return (
     <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-4 p-3">
       <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl bg-white/5">
         <img
-          src={`/api/artist/${encPath(item.artist)}/photo`}
+          src={artistImageUrl}
           alt=""
           className="h-full w-full object-cover"
           onError={(event) => {
@@ -58,6 +66,9 @@ export function UpcomingShowCollapsedView({
           <span className="text-white/20">&middot;</span>
           <span className="truncate">{item.city}, {item.country}</span>
         </div>
+        {addressLabel ? (
+          <div className="mt-1 truncate text-[11px] text-white/35">{addressLabel}</div>
+        ) : null}
       </div>
       <div className="flex flex-shrink-0 items-center gap-2">
         <div className="text-right text-primary">
@@ -106,6 +117,7 @@ export function UpcomingShowExpandedView({
   playingSetlist,
   dateLabel,
   timeLabel,
+  addressLabel,
   locationLabel,
   onToggleAttendance,
   onPlaySetlist,
@@ -113,26 +125,87 @@ export function UpcomingShowExpandedView({
 }: UpcomingShowCardViewProps & {
   onClose: () => void;
 }) {
+  const artistImageUrl = artistPhotoApiUrl({
+    artistId: item.artist_id,
+    artistSlug: item.artist_slug,
+    artistName: item.artist,
+  }) || item.cover_url || undefined;
+
   return (
     <>
-      <button
-        onClick={onClose}
-        className="z-app-upcoming-overlay absolute top-3 right-3 rounded-full bg-black/60 p-1.5 transition-colors hover:bg-black/80"
-      >
-        <X size={14} className="text-white" />
-      </button>
-
+      {/* Venue card — top-left */}
       {item.venue ? (
         <div className="z-app-upcoming-overlay absolute top-3 left-3 max-w-[220px] rounded-lg bg-black/70 px-3 py-2 backdrop-blur-sm">
           <div className="flex items-center gap-1.5">
             <MapPin size={12} className="flex-shrink-0 text-primary" />
             <div className="truncate text-xs font-semibold text-white">{item.venue}</div>
           </div>
+          {addressLabel ? (
+            <div className="ml-[18px] truncate text-[10px] text-white/65">{addressLabel}</div>
+          ) : null}
           <div className="ml-[18px] text-[10px] text-white/50">{locationLabel}</div>
         </div>
       ) : null}
 
-      <div className="z-app-upcoming-overlay absolute top-12 right-3 flex flex-col gap-2">
+      {/* Show info card — bottom-left */}
+      <div className="z-app-upcoming-overlay absolute bottom-3 left-3 max-w-[260px] rounded-lg bg-black/70 px-3 py-2.5 backdrop-blur-sm">
+        <div className="mb-1 flex items-center gap-2">
+          <img
+            src={artistImageUrl}
+            alt=""
+            className="h-8 w-8 flex-shrink-0 rounded-full object-cover ring-1 ring-primary/30"
+            onError={(event) => {
+              (event.target as HTMLImageElement).style.display = "none";
+            }}
+          />
+          <Link
+            to={artistPagePath({ artistId: item.artist_id, artistSlug: item.artist_slug })}
+            className="truncate text-sm font-bold text-white transition-colors hover:text-primary"
+          >
+            {item.artist}
+          </Link>
+        </div>
+        {item.genres && item.genres.length > 0 ? (
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            {item.genres.slice(0, 3).map((genre) => (
+              <span
+                key={genre}
+                className="rounded-full border border-white/20 px-1.5 py-0.5 text-[9px] text-white/60"
+              >
+                {genre}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex items-center gap-3 text-[11px] text-white/60">
+          <span className="flex items-center gap-1">
+            <Calendar size={11} className="text-primary/80" /> {dateLabel}
+          </span>
+          {timeLabel ? (
+            <span className="flex items-center gap-1">
+              <Clock size={11} className="text-primary/80" /> {timeLabel}
+            </span>
+          ) : null}
+        </div>
+        {item.lineup && item.lineup.length > 1 ? (
+          <div className="mt-1.5 truncate text-[10px] text-white/40">
+            Lineup: {item.lineup.slice(0, 5).join(" · ")}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Close — top-right */}
+      <div className="z-app-upcoming-overlay absolute top-3 right-3">
+        <UpcomingActionButton
+          onClick={onClose}
+          title="Close"
+        >
+          <X size={15} />
+        </UpcomingActionButton>
+      </div>
+
+      {/* Actions — bottom-right */}
+      <div className="z-app-upcoming-overlay absolute bottom-3 right-3 flex flex-col gap-2">
         <UpcomingActionButton
           onClick={() => {
             void onPlaySetlist();
@@ -159,73 +232,6 @@ export function UpcomingShowExpandedView({
           )}
         </UpcomingActionButton>
         <TicketsActionLink href={item.url} />
-      </div>
-
-      <div className="z-app-upcoming-overlay pointer-events-none absolute right-0 bottom-0 left-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent px-4 pt-16 pb-4">
-        <div className="pointer-events-none flex items-end gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-center gap-2.5">
-              <img
-                src={`/api/artist/${encPath(item.artist)}/photo`}
-                alt=""
-                className="h-10 w-10 flex-shrink-0 rounded-full object-cover ring-2 ring-primary/30"
-                onError={(event) => {
-                  (event.target as HTMLImageElement).style.display = "none";
-                }}
-              />
-              <Link
-                to={`/artist/${encPath(item.artist)}`}
-                className="pointer-events-auto text-xl font-bold text-white transition-colors hover:text-primary"
-              >
-                {item.artist}
-              </Link>
-            </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-              {item.genres?.slice(0, 3).map((genre) => (
-                <span
-                  key={genre}
-                  className="rounded-full border border-white/20 px-2 py-0.5 text-[9px] text-white/70"
-                >
-                  {genre}
-                </span>
-              ))}
-            </div>
-
-            <div className="mt-2 flex items-center gap-4 text-xs text-white/70">
-              <span className="flex items-center gap-1">
-                <Calendar size={12} className="text-primary" /> {dateLabel}
-              </span>
-              {timeLabel ? (
-                <span className="flex items-center gap-1">
-                  <Clock size={12} className="text-primary" /> {timeLabel}
-                </span>
-              ) : null}
-            </div>
-
-            {item.lineup && item.lineup.length > 1 ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="text-[10px] text-white/40">Lineup:</span>
-                {item.lineup.slice(0, 5).map((name) => (
-                  <Link
-                    key={name}
-                    to={`/artist/${encPath(name)}`}
-                    className="pointer-events-auto flex items-center gap-1 text-[11px] text-white/80 transition-colors hover:text-primary"
-                  >
-                    <img
-                      src={`/api/artist/${encPath(name)}/photo`}
-                      alt=""
-                      className="h-4 w-4 rounded-full object-cover"
-                      onError={(event) => {
-                        (event.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                    {name}
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
       </div>
     </>
   );

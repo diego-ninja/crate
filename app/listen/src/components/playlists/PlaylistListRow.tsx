@@ -7,14 +7,19 @@ import { api } from "@/lib/api";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
-import { encPath, shuffleArray } from "@/lib/utils";
+import { shuffleArray } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 
 interface PlaylistTrackResponse {
   track_id?: number;
   track_path: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   navidrome_id?: string;
 }
@@ -54,10 +59,14 @@ function toPlayerTracks(tracks: PlaylistTrackResponse[]): Track[] {
     id: track.track_path,
     title: track.title || "Unknown",
     artist: track.artist || "",
+    artistId: track.artist_id,
+    artistSlug: track.artist_slug,
     album: track.album,
+    albumId: track.album_id,
+    albumSlug: track.album_slug,
     albumCover:
       track.artist && track.album
-        ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+        ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
         : undefined,
     path: track.track_path,
     navidromeId: track.navidrome_id,

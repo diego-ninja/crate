@@ -3,13 +3,18 @@ import { Play, Pause, Plus, ListPlus, Heart, ListMusic } from "lucide-react";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
-import { formatDuration, encPath } from "@/lib/utils";
+import { formatDuration } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 
 export interface TrackRowData {
   id?: string | number;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album?: string;
+  album_id?: number;
+  album_slug?: string;
   duration?: number;
   path?: string;
   track_number?: number;
@@ -55,15 +60,19 @@ export const TrackRow = memo(function TrackRow({
   const playbackId = track.path || String(track.id || track.navidrome_id || "");
   const liked = isLiked(track.library_track_id ?? (typeof track.id === "number" ? track.id : null), track.path);
   const isActive = currentTrack?.id === playbackId;
-  const cover = albumCover || (track.artist && track.album
-    ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+  const cover = albumCover || (track.album_id != null
+    ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
     : undefined);
 
   const playerTrack: Track = {
     id: playbackId,
     title: track.title || "Unknown",
     artist: track.artist,
+    artistId: track.artist_id,
+    artistSlug: track.artist_slug,
     album: track.album,
+    albumId: track.album_id,
+    albumSlug: track.album_slug,
     albumCover: cover,
     path: track.path,
     navidromeId: track.navidrome_id,

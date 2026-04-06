@@ -7,12 +7,15 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from crate.api.auth import _require_auth, _require_admin
+from crate.api._deps import artist_name_from_id, album_names_from_id
 from crate import audiomuse
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
 AUDIOMUSE_DOMAIN = f"https://ai.{os.environ.get('DOMAIN', 'lespedants.org')}"
+
+
 
 
 @router.get("/api/audiomuse/status")
@@ -41,11 +44,18 @@ def audiomuse_track_data(request: Request, ids: str = ""):
     return audiomuse.get_track_data_from_db(item_ids)
 
 
-@router.get("/api/audiomuse/artist/{artist_name}/tracks")
 def audiomuse_artist_tracks(request: Request, artist_name: str):
     """Get analysis data for all tracks by an artist. Returns {title_lower: {tempo, key, scale, energy}}."""
     _require_auth(request)
     return audiomuse.get_track_data_by_titles(artist_name, [])
+
+
+@router.get("/api/audiomuse/artists/{artist_id}/tracks")
+def audiomuse_artist_tracks_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return audiomuse_artist_tracks(request, artist_name)
 
 
 @router.get("/api/audiomuse/tasks")
@@ -59,7 +69,6 @@ def audiomuse_tasks(request: Request):
 
 # ── Internal audio analysis (lightweight, no AudioMuse needed) ──
 
-@router.post("/api/analyze/artist/{name}")
 def analyze_artist(request: Request, name: str):
     """Queue audio analysis for all tracks by an artist."""
     _require_admin(request)
@@ -68,7 +77,14 @@ def analyze_artist(request: Request, name: str):
     return {"status": "queued", "task_id": task_id}
 
 
-@router.post("/api/analyze/album/{artist}/{album}")
+@router.post("/api/artists/{artist_id}/analyze")
+def analyze_artist_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return analyze_artist(request, artist_name)
+
+
 def analyze_album(request: Request, artist: str, album: str):
     """Queue audio analysis + bliss vectors for a single album."""
     _require_admin(request)
@@ -77,7 +93,15 @@ def analyze_album(request: Request, artist: str, album: str):
     return {"status": "queued", "task_id": task_id}
 
 
-@router.post("/api/enrich/album/{artist}/{album}")
+@router.post("/api/albums/{album_id}/analyze")
+def analyze_album_by_id(request: Request, album_id: int):
+    album_names = album_names_from_id(album_id)
+    if not album_names:
+        return JSONResponse({"error": "Album not found"}, status_code=404)
+    artist, album = album_names
+    return analyze_album(request, artist, album)
+
+
 def enrich_album(request: Request, artist: str, album: str):
     """Full album re-enrichment: MBID lookup + cover art + popularity + audio analysis + bliss."""
     _require_admin(request)
@@ -89,7 +113,15 @@ def enrich_album(request: Request, artist: str, album: str):
     return {"status": "queued", "task_id": task_id}
 
 
-@router.get("/api/analyze/artist/{name}/data")
+@router.post("/api/albums/{album_id}/enrich")
+def enrich_album_by_id(request: Request, album_id: int):
+    album_names = album_names_from_id(album_id)
+    if not album_names:
+        return JSONResponse({"error": "Album not found"}, status_code=404)
+    artist, album = album_names
+    return enrich_album(request, artist, album)
+
+
 def get_analysis_data(request: Request, name: str):
     """Get BPM/key/energy/mood data from our library_tracks table."""
     _require_auth(request)
@@ -123,3 +155,11 @@ def get_analysis_data(request: Request, name: str):
             "spectral_complexity": r["spectral_complexity"],
         }
     return result
+
+
+@router.get("/api/artists/{artist_id}/analysis-data")
+def get_analysis_data_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return get_analysis_data(request, artist_name)

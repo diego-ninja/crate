@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
 from crate.api.auth import _require_auth, _require_admin
+from crate.api._deps import artist_name_from_id
 from crate.db import (
     create_task, add_tidal_download, get_tidal_downloads,
     update_tidal_download, delete_tidal_download,
@@ -71,7 +72,6 @@ def tidal_logout(request: Request):
 
 # ── Missing from Tidal ────────────────────────────────────────────
 
-@router.get("/missing/{artist:path}")
 def tidal_missing(request: Request, artist: str):
     """Find Tidal albums not in the local library for an artist."""
     _require_auth(request)
@@ -109,7 +109,14 @@ def tidal_missing(request: Request, artist: str):
     return {"albums": missing, "authenticated": True}
 
 
-@router.post("/download-missing/{artist:path}")
+@router.get("/missing/artists/{artist_id}")
+def tidal_missing_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return tidal_missing(request, artist_name)
+
+
 def tidal_download_missing(request: Request, artist: str, body: dict):
     """Download multiple missing albums from Tidal."""
     _require_auth(request)
@@ -135,6 +142,14 @@ def tidal_download_missing(request: Request, artist: str, body: dict):
             queued += 1
 
     return {"queued": queued}
+
+
+@router.post("/download-missing/artists/{artist_id}")
+def tidal_download_missing_by_id(request: Request, artist_id: int, body: dict):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return tidal_download_missing(request, artist_name, body)
 
 
 # ── Search ───────────────────────────────────────────────────────
@@ -281,7 +296,6 @@ def remove_queue_item(request: Request, dl_id: int):
 
 # ── Artist Discography ───────────────────────────────────────────
 
-@router.get("/artist-discography/{name:path}")
 def artist_discography(request: Request, name: str):
     """Cross-reference Tidal discography with local library."""
     _require_auth(request)
@@ -333,9 +347,16 @@ def artist_discography(request: Request, name: str):
     }
 
 
+@router.get("/artists/{artist_id}/discography")
+def artist_discography_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return artist_discography(request, artist_name)
+
+
 # ── Match Missing Albums ─────────────────────────────────────────
 
-@router.get("/match-missing/{name:path}")
 def match_missing(request: Request, name: str):
     """Match missing albums (from MusicBrainz) with Tidal availability."""
     _require_auth(request)
@@ -387,14 +408,29 @@ def match_missing(request: Request, name: str):
     }
 
 
+@router.get("/artists/{artist_id}/match-missing")
+def match_missing_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return match_missing(request, artist_name)
+
+
 # ── Monitor ──────────────────────────────────────────────────────
 
-@router.post("/monitor/{name:path}")
 def toggle_monitor(request: Request, name: str, body: dict | None = None):
     _require_auth(request)
     enabled = body.get("enabled", True) if body else True
     set_monitored_artist(name, enabled=enabled)
     return {"artist": name, "monitored": enabled}
+
+
+@router.post("/artists/{artist_id}/monitor")
+def toggle_monitor_by_id(request: Request, artist_id: int, body: dict | None = None):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return toggle_monitor(request, artist_name, body)
 
 
 @router.get("/monitored")
@@ -403,7 +439,14 @@ def list_monitored(request: Request):
     return get_monitored_artists()
 
 
-@router.get("/monitored/{name:path}")
 def check_monitored(request: Request, name: str):
     _require_auth(request)
     return {"artist": name, "monitored": is_artist_monitored(name)}
+
+
+@router.get("/artists/{artist_id}/monitored")
+def check_monitored_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return check_monitored(request, artist_name)

@@ -2,7 +2,7 @@ import { fuzzyMatchTrack } from "@/components/artist/ArtistPageBits";
 import { Button } from "@/components/ui/button";
 import { type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 import { ListMusic, Play } from "lucide-react";
 import { toast } from "sonner";
 
@@ -23,10 +23,13 @@ interface LibraryTrackTitle {
   title: string;
   album: string;
   path: string;
+  album_id?: number;
+  album_slug?: string;
 }
 
 interface ArtistSetlistSectionProps {
   artistName: string;
+  artistId?: number;
   setlistData?: SetlistData;
   allTrackTitles: LibraryTrackTitle[];
   onTrackTitlesLoaded: (tracks: LibraryTrackTitle[]) => void;
@@ -36,6 +39,7 @@ interface ArtistSetlistSectionProps {
 
 export function ArtistSetlistSection({
   artistName,
+  artistId,
   setlistData,
   allTrackTitles,
   onTrackTitlesLoaded,
@@ -55,9 +59,10 @@ export function ArtistSetlistSection({
   }
 
   async function ensureTrackTitles() {
+    if (artistId == null) return [];
     if (allTrackTitles.length > 0) return allTrackTitles;
     try {
-      const tracks = await api<LibraryTrackTitle[]>(`/api/artist/${encPath(artistName)}/track-titles`);
+      const tracks = await api<LibraryTrackTitle[]>(`/api/artists/${artistId}/track-titles`);
       if (Array.isArray(tracks)) {
         onTrackTitlesLoaded(tracks);
         return tracks;
@@ -85,7 +90,12 @@ export function ArtistSetlistSection({
           title: track.title,
           artist: artistName,
           album: track.album,
-          albumCover: `/api/cover/${encPath(artistName)}/${encPath(track.album)}`,
+          albumCover: albumCoverApiUrl({
+            albumId: track.album_id,
+            albumSlug: track.album_slug,
+            artistName,
+            albumName: track.album,
+          }),
         });
       }
     }
@@ -100,8 +110,12 @@ export function ArtistSetlistSection({
   }
 
   async function saveSetlistPlaylist() {
+    if (artistId == null) {
+      toast.error("Artist id missing");
+      return;
+    }
     try {
-      await api(`/api/artist/${encPath(artistName)}/setlist-playlist`, "POST");
+      await api(`/api/artists/${artistId}/setlist-playlist`, "POST");
       toast.success("Setlist playlist created in Navidrome");
     } catch {
       toast.error("Failed to create playlist");
@@ -167,7 +181,12 @@ export function ArtistSetlistSection({
                       title: libraryMatch.title,
                       artist: artistName,
                       album: libraryMatch.album,
-                      albumCover: `/api/cover/${encPath(artistName)}/${encPath(libraryMatch.album)}`,
+                      albumCover: albumCoverApiUrl({
+                        albumId: libraryMatch.album_id,
+                        albumSlug: libraryMatch.album_slug,
+                        artistName,
+                        albumName: libraryMatch.album,
+                      }),
                     });
                   }
                 }}

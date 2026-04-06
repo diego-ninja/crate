@@ -2,7 +2,10 @@ import type { PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwor
 
 export interface SavedAlbum {
   id: number;
+  slug?: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   name: string;
   year?: string;
   has_cover?: boolean;
@@ -14,8 +17,11 @@ export interface LibraryAddition {
   type: "album" | "playlist" | "system_playlist";
   added_at: string;
   album_id?: number;
+  album_slug?: string;
   album_name?: string;
   album_artist?: string;
+  album_artist_id?: number;
+  album_artist_slug?: string;
   album_year?: string;
   playlist_id?: number;
   playlist_name?: string;
@@ -53,6 +59,8 @@ export interface CuratedPlaylist {
 }
 
 export interface GlobalArtist {
+  id?: number;
+  slug?: string;
   name: string;
   albums?: number;
   tracks?: number;
@@ -73,6 +81,8 @@ export interface HomeUpcomingItem {
   type: "release" | "show";
   date: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   title: string;
   subtitle: string;
   is_upcoming: boolean;
@@ -83,6 +93,8 @@ export interface HomeUpcomingInsight {
   type: "one_month" | "one_week" | "show_prep";
   show_id: number;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   date: string;
   title: string;
   subtitle: string;
@@ -108,7 +120,11 @@ export interface ReplayTrack {
   track_path: string | null;
   title: string;
   artist: string;
+  artist_id?: number | null;
+  artist_slug?: string | null;
   album: string;
+  album_id?: number | null;
+  album_slug?: string | null;
   play_count: number;
   complete_play_count: number;
   minutes_listened: number;
@@ -129,7 +145,11 @@ export interface PlaylistDetailTrack {
   track_path: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   navidrome_id?: string;
 }

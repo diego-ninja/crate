@@ -1,6 +1,7 @@
 import { AlbumCard } from "@/components/album/AlbumCard";
 import { MissingAlbumCard } from "@/components/album/MissingAlbumCard";
 import { TidalAlbumCard } from "@/components/album/TidalAlbumCard";
+import type { ArtistAlbumSummary } from "@/components/artist/artistPageTypes";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -10,16 +11,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Disc3, Eye, EyeOff, Loader2 } from "lucide-react";
-
-interface ArtistAlbumSummary {
-  name: string;
-  display_name?: string;
-  tracks: number;
-  formats: string[];
-  size_mb: number;
-  year: string;
-  has_cover: boolean;
-}
 
 interface MissingAlbum {
   title: string;
@@ -38,6 +29,8 @@ interface TidalMissingAlbum {
 
 interface ArtistDiscographySectionProps {
   artistName: string;
+  artistId?: number;
+  artistSlug?: string;
   albums: ArtistAlbumSummary[];
   sortedAlbums: ArtistAlbumSummary[];
   missingAlbums: MissingAlbum[];
@@ -52,6 +45,8 @@ interface ArtistDiscographySectionProps {
 
 export function ArtistDiscographySection({
   artistName,
+  artistId,
+  artistSlug,
   albums,
   sortedAlbums,
   missingAlbums,
@@ -144,7 +139,11 @@ export function ArtistDiscographySection({
             item.kind === "local" ? (
               <AlbumCard
                 key={`local-${item.album.name}`}
+                albumId={item.album.id}
+                albumSlug={item.album.slug}
                 artist={artistName}
+                artistId={artistId}
+                artistSlug={artistSlug}
                 name={item.album.name}
                 displayName={item.album.display_name}
                 year={item.album.year}
@@ -153,15 +152,18 @@ export function ArtistDiscographySection({
                 hasCover={item.album.has_cover}
               />
             ) : item.kind === "tidal" ? (
-              <TidalAlbumCard
-                key={`tidal-${item.album.url}`}
-                artist={artistName}
-                title={item.album.title}
-                year={item.album.year}
-                tracks={item.album.tracks}
-                cover={item.album.cover}
-                url={item.album.url}
-              />
+              artistId != null ? (
+                <TidalAlbumCard
+                  key={`tidal-${item.album.url}`}
+                  artist={artistName}
+                  artistId={artistId}
+                  title={item.album.title}
+                  year={item.album.year}
+                  tracks={item.album.tracks}
+                  cover={item.album.cover}
+                  url={item.album.url}
+                />
+              ) : null
             ) : (
               <MissingAlbumCard
                 key={`missing-${item.album.title}`}

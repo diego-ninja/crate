@@ -18,7 +18,11 @@ export interface LikedTrack {
   liked_at: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   navidrome_id?: string;
 }

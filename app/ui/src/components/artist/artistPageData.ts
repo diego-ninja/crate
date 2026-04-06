@@ -35,6 +35,8 @@ export function buildMergedSimilarArtists(enrichment: EnrichmentData | null): Ar
     if (!seen.has(lower)) {
       seen.add(lower);
       result.push({
+        id: artist.id,
+        slug: artist.slug,
         name: artist.name,
         image: artist.images?.[0]?.url,
         genres: artist.genres,
@@ -47,7 +49,7 @@ export function buildMergedSimilarArtists(enrichment: EnrichmentData | null): Ar
     const lower = artist.name.toLowerCase();
     if (!seen.has(lower)) {
       seen.add(lower);
-      result.push({ name: artist.name });
+      result.push({ id: artist.id, slug: artist.slug, name: artist.name });
     }
   }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { encPath, formatDuration } from "@/lib/utils";
+import { formatDuration } from "@/lib/utils";
 import {
   ChevronDown,
   ChevronUp,
@@ -33,9 +34,15 @@ import { toast } from "sonner";
 interface PlaylistTrack {
   id: number;
   track_path: string;
+  track_id?: number;
+  navidrome_id?: string | null;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   position: number;
 }
@@ -168,11 +175,21 @@ export function Playlists() {
   function playPlaylist(playlist: SystemPlaylist) {
     if (!playlist.tracks || playlist.tracks.length === 0) return;
     const tracks: PlayerTrack[] = playlist.tracks.map((track) => ({
-      id: track.track_path,
+      id: track.navidrome_id || track.track_path,
       title: track.title,
       artist: track.artist,
+      artistId: track.artist_id,
+      artistSlug: track.artist_slug,
+      album: track.album,
+      albumId: track.album_id,
+      albumSlug: track.album_slug,
       albumCover: track.album
-        ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+        ? albumCoverApiUrl({
+            albumId: track.album_id,
+            albumSlug: track.album_slug,
+            artistName: track.artist,
+            albumName: track.album,
+          })
         : undefined,
     }));
     player.playAll(tracks, 0);
@@ -477,11 +494,21 @@ export function Playlists() {
                               className="h-7 w-7"
                               onClick={() =>
                                 player.play({
-                                  id: track.track_path,
+                                  id: track.navidrome_id || track.track_path,
                                   title: track.title,
                                   artist: track.artist,
+                                  artistId: track.artist_id,
+                                  artistSlug: track.artist_slug,
+                                  album: track.album,
+                                  albumId: track.album_id,
+                                  albumSlug: track.album_slug,
                                   albumCover: track.album
-                                    ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
+                                    ? albumCoverApiUrl({
+                                        albumId: track.album_id,
+                                        albumSlug: track.album_slug,
+                                        artistName: track.artist,
+                                        albumName: track.album,
+                                      })
                                     : undefined,
                                 })
                               }

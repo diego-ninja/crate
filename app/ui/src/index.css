@@ -90,7 +90,7 @@ body {
 .leaflet-popup-content-wrapper { background: var(--card) !important; box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important; border-radius: 8px !important; border: 1px solid var(--border) !important; }
 .leaflet-popup-content { margin: 8px 12px !important; line-height: normal !important; color: var(--foreground) !important; }
 .leaflet-popup-tip { background: var(--card) !important; }
-.leaflet-popup-close-button { display: none !important; }
+.leaflet-popup-close-button { color: var(--muted-foreground) !important; font-size: 18px !important; padding: 4px 8px !important; }
 
 /* Subtle glow pulse for Tidal-available releases */
 @keyframes pulse-subtle {

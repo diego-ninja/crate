@@ -13,17 +13,19 @@ def upsert_show(external_id: str, artist_name: str, date: str, **kwargs) -> int 
     with get_db_ctx() as cur:
         if normalized_external_id:
             cur.execute("""
-                INSERT INTO shows (external_id, artist_name, date, local_time, venue, city, region,
-                    country, country_code, latitude, longitude, url, image_url, lineup,
+                INSERT INTO shows (external_id, artist_name, date, local_time, venue, address_line1, city, region,
+                    postal_code, country, country_code, latitude, longitude, url, image_url, lineup,
                     price_range, status, source, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (external_id) DO UPDATE SET
                     artist_name = EXCLUDED.artist_name,
                     date = EXCLUDED.date,
                     local_time = EXCLUDED.local_time,
                     venue = EXCLUDED.venue,
+                    address_line1 = EXCLUDED.address_line1,
                     city = EXCLUDED.city,
                     region = EXCLUDED.region,
+                    postal_code = EXCLUDED.postal_code,
                     country = EXCLUDED.country,
                     country_code = EXCLUDED.country_code,
                     latitude = EXCLUDED.latitude,
@@ -38,8 +40,8 @@ def upsert_show(external_id: str, artist_name: str, date: str, **kwargs) -> int 
                 RETURNING id
             """, (
                 normalized_external_id, artist_name, date,
-                kwargs.get("local_time"), venue, kwargs.get("city"),
-                kwargs.get("region"), kwargs.get("country"), kwargs.get("country_code"),
+                kwargs.get("local_time"), venue, kwargs.get("address_line1"), kwargs.get("city"),
+                kwargs.get("region"), kwargs.get("postal_code"), kwargs.get("country"), kwargs.get("country_code"),
                 kwargs.get("latitude"), kwargs.get("longitude"),
                 kwargs.get("url"), kwargs.get("image_url"),
                 kwargs.get("lineup"), kwargs.get("price_range"),
@@ -66,8 +68,10 @@ def upsert_show(external_id: str, artist_name: str, date: str, **kwargs) -> int 
                 """
                 UPDATE shows
                 SET local_time = %s,
+                    address_line1 = %s,
                     city = %s,
                     region = %s,
+                    postal_code = %s,
                     country = %s,
                     country_code = %s,
                     latitude = %s,
@@ -83,8 +87,10 @@ def upsert_show(external_id: str, artist_name: str, date: str, **kwargs) -> int 
                 """,
                 (
                     kwargs.get("local_time"),
+                    kwargs.get("address_line1"),
                     kwargs.get("city"),
                     kwargs.get("region"),
+                    kwargs.get("postal_code"),
                     kwargs.get("country"),
                     kwargs.get("country_code"),
                     kwargs.get("latitude"),
@@ -102,15 +108,15 @@ def upsert_show(external_id: str, artist_name: str, date: str, **kwargs) -> int 
             return existing["id"]
 
         cur.execute("""
-            INSERT INTO shows (external_id, artist_name, date, local_time, venue, city, region,
-                country, country_code, latitude, longitude, url, image_url, lineup,
+            INSERT INTO shows (external_id, artist_name, date, local_time, venue, address_line1, city, region,
+                postal_code, country, country_code, latitude, longitude, url, image_url, lineup,
                 price_range, status, source, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         """, (
             None, artist_name, date,
-            kwargs.get("local_time"), venue, kwargs.get("city"),
-            kwargs.get("region"), kwargs.get("country"), kwargs.get("country_code"),
+            kwargs.get("local_time"), venue, kwargs.get("address_line1"), kwargs.get("city"),
+            kwargs.get("region"), kwargs.get("postal_code"), kwargs.get("country"), kwargs.get("country_code"),
             kwargs.get("latitude"), kwargs.get("longitude"),
             kwargs.get("url"), kwargs.get("image_url"),
             kwargs.get("lineup"), kwargs.get("price_range"),

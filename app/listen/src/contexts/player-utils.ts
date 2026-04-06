@@ -67,6 +67,10 @@ export function getSharedAudio(key: string): HTMLAudioElement {
 }
 
 export function getStreamUrl(track: Track): string {
+  if (track.libraryTrackId != null) {
+    return `/api/tracks/${track.libraryTrackId}/stream`;
+  }
+
   if (track.navidromeId) {
     return `/api/navidrome/stream/${track.navidromeId}`;
   }

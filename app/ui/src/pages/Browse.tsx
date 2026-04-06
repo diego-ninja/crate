@@ -82,31 +82,32 @@ export function Browse() {
   const [loading, setLoading] = useState(true);
 
   const [selectMode, setSelectMode] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [showBatchDelete, setShowBatchDelete] = useState(false);
 
-  function toggleSelect(name: string) {
+  function toggleSelect(artistId?: number) {
+    if (artistId == null) return;
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
+      if (next.has(artistId)) next.delete(artistId);
+      else next.add(artistId);
       return next;
     });
   }
 
   function selectAll() {
-    setSelected(new Set(artists.map(a => a.name)));
+    setSelected(new Set(artists.map(a => a.id).filter((id): id is number => id != null)));
   }
 
   function clearSelection() {
-    setSelected(new Set());
+    setSelected(new Set<number>());
     setSelectMode(false);
   }
 
   async function batchEnrich() {
-    for (const name of selected) {
+    for (const artistId of selected) {
       try {
-        await api(`/api/artist/${encodeURIComponent(name)}/enrich`, "POST");
+        await api(`/api/artists/${artistId}/enrich`, "POST");
       } catch { /* continue */ }
     }
     toast.success(`Enrichment started for ${selected.size} artists`);
@@ -114,9 +115,9 @@ export function Browse() {
   }
 
   async function batchAnalyze() {
-    for (const name of selected) {
+    for (const artistId of selected) {
       try {
-        await api(`/api/analyze/artist/${encodeURIComponent(name)}`, "POST");
+        await api(`/api/artists/${artistId}/analyze`, "POST");
       } catch { /* continue */ }
     }
     toast.success(`Analysis started for ${selected.size} artists`);
@@ -124,9 +125,9 @@ export function Browse() {
   }
 
   async function batchDelete() {
-    for (const name of selected) {
+    for (const artistId of selected) {
       try {
-        await api(`/api/manage/artist/${encodeURIComponent(name)}/delete`, "POST", { mode: "full" });
+        await api(`/api/manage/artists/${artistId}/delete`, "POST", { mode: "full" });
       } catch { /* continue */ }
     }
     toast.success(`Deleted ${selected.size} artists`);
@@ -310,8 +311,8 @@ export function Browse() {
               primary_format={a.primary_format ?? ""}
               hasIssues={a.has_issues}
               selectMode={selectMode}
-              isSelected={selected.has(a.name)}
-              onClick={() => selectMode ? toggleSelect(a.name) : navigate(artistPagePath({ artistId: a.id, artistSlug: a.slug, artistName: a.name }))}
+              isSelected={a.id != null ? selected.has(a.id) : false}
+              onClick={() => selectMode ? toggleSelect(a.id) : navigate(artistPagePath({ artistId: a.id, artistSlug: a.slug, artistName: a.name }))}
             />
           ))}
         </div>
@@ -328,8 +329,8 @@ export function Browse() {
               genres={a.genres}
               hasIssues={a.has_issues}
               selectMode={selectMode}
-              isSelected={selected.has(a.name)}
-              onClick={() => selectMode ? toggleSelect(a.name) : navigate(artistPagePath({ artistId: a.id, artistSlug: a.slug, artistName: a.name }))}
+              isSelected={a.id != null ? selected.has(a.id) : false}
+              onClick={() => selectMode ? toggleSelect(a.id) : navigate(artistPagePath({ artistId: a.id, artistSlug: a.slug, artistName: a.name }))}
             />
           ))}
         </div>

@@ -17,6 +17,8 @@ interface UpcomingInsight {
   type: "one_month" | "one_week" | "show_prep";
   show_id: number;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   date: string;
   title: string;
   subtitle: string;
@@ -106,7 +108,8 @@ export function Shows() {
     const key = insightKey(insight);
     setActingInsightKey(key);
     try {
-      const queue = await fetchPlayableSetlist(insight.artist);
+      if (!insight.artist_id) return;
+      const queue = await fetchPlayableSetlist({ artistId: insight.artist_id, artistName: insight.artist });
       if (!queue.length) {
         toast.info("No probable setlist tracks matched your library");
       } else {

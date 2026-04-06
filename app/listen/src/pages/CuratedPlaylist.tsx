@@ -10,7 +10,8 @@ import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlis
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { fetchPlaylistRadio } from "@/lib/radio";
-import { encPath, shuffleArray, formatTotalDuration } from "@/lib/utils";
+import { shuffleArray, formatTotalDuration } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 
 interface CuratedPlaylistTrack {
   id: number;
@@ -19,7 +20,11 @@ interface CuratedPlaylistTrack {
   track_path: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   position: number;
   added_at: string;
@@ -63,10 +68,14 @@ export function CuratedPlaylist() {
         id: t.track_path,
         title: t.title || "Unknown",
         artist: t.artist || "",
+        artistId: t.artist_id,
+        artistSlug: t.artist_slug,
         album: t.album,
+        albumId: t.album_id,
+        albumSlug: t.album_slug,
         albumCover:
           t.artist && t.album
-            ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}`
+            ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
             : undefined,
         path: t.track_path,
         navidromeId: t.navidrome_id,
@@ -302,7 +311,11 @@ export function CuratedPlaylist() {
               id: track.track_id ?? track.track_path,
               title: track.title || "Unknown",
               artist: track.artist || "",
+              artist_id: track.artist_id,
+              artist_slug: track.artist_slug,
               album: track.album,
+              album_id: track.album_id,
+              album_slug: track.album_slug,
               duration: track.duration,
               path: track.track_path,
               navidrome_id: track.navidrome_id,

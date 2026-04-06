@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
 from crate.organizer import preview_organize, organize_album, suggest_folder_name, PRESETS
 from crate.api._deps import library_path, extensions, safe_path
+from crate.db import get_library_album_by_id
 
 router = APIRouter()
 
@@ -20,7 +21,6 @@ def api_organize_presets(request: Request):
     return PRESETS
 
 
-@router.get("/api/organize/preview/{artist:path}/{album:path}")
 def api_organize_preview(request: Request, artist: str, album: str, pattern: str | None = None):
     _require_admin(request)
     lib = library_path()
@@ -40,7 +40,6 @@ def api_organize_preview(request: Request, artist: str, album: str, pattern: str
     }
 
 
-@router.post("/api/organize/apply/{artist:path}/{album:path}")
 def api_organize_apply(request: Request, artist: str, album: str, data: OrganizeApplyRequest | None = None):
     _require_admin(request)
     lib = library_path()
@@ -54,3 +53,19 @@ def api_organize_apply(request: Request, artist: str, album: str, data: Organize
 
     result = organize_album(album_dir, exts, pattern, rename_folder)
     return result
+
+
+@router.get("/api/organize/albums/{album_id}/preview")
+def api_organize_preview_by_id(request: Request, album_id: int, pattern: str | None = None):
+    album = get_library_album_by_id(album_id)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_organize_preview(request, album["artist"], album["name"], pattern)
+
+
+@router.post("/api/organize/albums/{album_id}/apply")
+def api_organize_apply_by_id(request: Request, album_id: int, data: OrganizeApplyRequest | None = None):
+    album = get_library_album_by_id(album_id)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_organize_apply(request, album["artist"], album["name"], data)

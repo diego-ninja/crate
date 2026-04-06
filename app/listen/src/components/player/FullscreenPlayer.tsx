@@ -23,6 +23,7 @@ import {
   formatRemaining,
   type SleepTimerState,
 } from "@/lib/sleep-timer";
+import { artistPagePath } from "@/lib/library-routes";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useEscapeKey } from "@/hooks/use-escape-key";
@@ -162,9 +163,9 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   }
 
   function goToArtist() {
-    if (!currentTrack?.artist) return;
+    if (currentTrack?.artistId == null) return;
     onClose();
-    navigate(`/artist/${encodeURIComponent(currentTrack.artist)}`);
+    navigate(artistPagePath({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug }));
   }
 
   // Lyrics fetch

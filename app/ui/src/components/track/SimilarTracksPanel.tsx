@@ -1,14 +1,20 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, Play } from "lucide-react";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 
 interface SimilarTrack {
+  track_id?: number;
+  track_slug?: string;
   path: string;
   title: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   album: string;
+  album_id?: number;
+  album_slug?: string;
   duration: number;
   score: number | null;
 }
@@ -86,9 +92,18 @@ export function SimilarTracksPanel({
                   id: t.path,
                   title: t.title || "Unknown",
                   artist: t.artist || artist,
+                  artistId: t.artist_id,
+                  artistSlug: t.artist_slug,
                   album: t.album,
+                  albumId: t.album_id,
+                  albumSlug: t.album_slug,
                   albumCover: t.album
-                    ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}`
+                    ? albumCoverApiUrl({
+                        albumId: t.album_id,
+                        albumSlug: t.album_slug,
+                        artistName: t.artist,
+                        albumName: t.album,
+                      })
                     : undefined,
                 });
               }}

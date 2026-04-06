@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Command } from "cmdk";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import {
@@ -27,8 +27,8 @@ import {
 } from "lucide-react";
 
 interface SearchResults {
-  artists: { name: string }[];
-  albums: { artist: string; name: string }[];
+  artists: { id?: number; slug?: string; name: string }[];
+  albums: { id?: number; slug?: string; artist: string; name: string }[];
 }
 
 export function CommandPalette() {
@@ -276,7 +276,7 @@ export function CommandPalette() {
                 {searchResults.artists.slice(0, 5).map((a) => (
                   <Command.Item
                     key={a.name}
-                    onSelect={() => go(`/artist/${encPath(a.name)}`)}
+                    onSelect={() => go(artistPagePath({ artistId: a.id, artistSlug: a.slug, artistName: a.name }))}
                     className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
                   >
                     <User size={14} className="text-muted-foreground" />
@@ -294,11 +294,7 @@ export function CommandPalette() {
                 {searchResults.albums.slice(0, 5).map((a) => (
                   <Command.Item
                     key={`${a.artist}-${a.name}`}
-                    onSelect={() =>
-                      go(
-                        `/album/${encPath(a.artist)}/${encPath(a.name)}`,
-                      )
-                    }
+                    onSelect={() => go(albumPagePath({ albumId: a.id, albumSlug: a.slug, albumName: a.name }))}
                     className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
                   >
                     <Disc3 size={14} className="text-muted-foreground" />

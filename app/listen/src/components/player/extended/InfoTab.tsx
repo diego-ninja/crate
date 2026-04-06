@@ -65,15 +65,18 @@ export function InfoTab() {
   useEffect(() => {
     if (!currentTrack) return;
     const controller = new AbortController();
-    const trackPath = currentTrack.id.startsWith("/music/")
-      ? currentTrack.id.slice(7)
-      : currentTrack.id;
+
+    const infoUrl = currentTrack.libraryTrackId != null
+      ? `/api/tracks/${currentTrack.libraryTrackId}/info`
+      : `/api/track-info/${encodeURIComponent(
+          currentTrack.id.startsWith("/music/") ? currentTrack.id.slice(7) : currentTrack.id,
+        ).replace(/%2F/g, "/")}`;
 
     setInfo(null);
     setLoading(true);
 
     api<TrackInfo>(
-      `/api/track-info/${encodeURIComponent(trackPath).replace(/%2F/g, "/")}`,
+      infoUrl,
       "GET",
       undefined,
       { signal: controller.signal },

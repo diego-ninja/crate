@@ -80,6 +80,7 @@ class TestArtistDetailAPI:
         ]
 
         with patch("crate.api.browse.get_library_track_count", return_value=100), \
+             patch("crate.api.browse_artist.get_library_artist_by_id", return_value={"id": 7, "name": "Tool", "slug": "tool"}), \
              patch("crate.api.browse.get_library_artist", return_value=mock_artist), \
              patch("crate.api.browse.get_library_albums", return_value=mock_albums), \
              patch("crate.api.browse.get_artist_issue_count", return_value=0), \
@@ -89,17 +90,15 @@ class TestArtistDetailAPI:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
-            resp = test_app.get("/api/artist/Tool")
+            resp = test_app.get("/api/artists/7")
             assert resp.status_code == 200
             data = resp.json()
             assert data["name"] == "Tool"
             assert len(data["albums"]) == 1
 
     def test_get_artist_not_found(self, test_app):
-        with patch("crate.api.browse.get_library_track_count", return_value=100), \
-             patch("crate.api.browse.get_library_artist", return_value=None), \
-             patch("crate.api.browse.safe_path", return_value=None):
-            resp = test_app.get("/api/artist/NonExistent")
+        with patch("crate.api.browse_artist.get_library_artist_by_id", return_value=None):
+            resp = test_app.get("/api/artists/999")
             assert resp.status_code == 404
 
 
@@ -114,9 +113,6 @@ class TestStatsAPI:
         }
         with patch("crate.api.browse.get_library_track_count", return_value=5000), \
              patch("crate.db.get_library_stats", return_value=mock_stats):
-            # Stats endpoint is in the browse module via /api/stats in web.py
-            # The FastAPI app doesn't have /api/stats from browse, it's from web.py (Flask)
-            # Let's check available endpoints
             pass
 
 

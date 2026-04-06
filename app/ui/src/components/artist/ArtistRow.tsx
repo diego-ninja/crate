@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
-import { encPath, formatSize, formatCompact } from "@/lib/utils";
+import { formatSize, formatCompact } from "@/lib/utils";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { Users, Wrench, Check } from "lucide-react";
 
 interface ArtistRowProps {
   name: string;
+  artistId?: number;
+  artistSlug?: string;
   albums: number;
   tracks: number;
   total_size_mb: number;
@@ -20,6 +23,8 @@ interface ArtistRowProps {
 
 export function ArtistRow({
   name,
+  artistId,
+  artistSlug,
   albums,
   tracks,
   total_size_mb,
@@ -38,7 +43,7 @@ export function ArtistRow({
     if (onClick) {
       onClick();
     } else {
-      navigate(`/artist/${encPath(name)}`);
+      navigate(artistPagePath({ artistId, artistSlug, artistName: name }));
     }
   }
 
@@ -61,7 +66,7 @@ export function ArtistRow({
       <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 relative">
         {!imgError ? (
           <img
-            src={`/api/artist/${encPath(name)}/photo`}
+            src={artistPhotoApiUrl({ artistId, artistSlug, artistName: name })}
             alt={name}
             loading="lazy"
             className="w-full h-full object-cover"

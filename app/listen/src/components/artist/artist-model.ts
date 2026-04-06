@@ -30,7 +30,12 @@ export interface ArtistData {
 export interface ArtistInfo {
   bio: string;
   tags: string[];
-  similar: { name: string; match: number }[];
+  similar: {
+    name: string;
+    match: number;
+    id?: number;
+    slug?: string;
+  }[];
   listeners: number;
   playcount: number;
   image_url: string | null;
@@ -52,6 +57,8 @@ export interface ArtistTopTrack {
 
 export interface StatsArtist {
   artist_name: string;
+  artist_id?: number | null;
+  artist_slug?: string | null;
   play_count: number;
   complete_play_count: number;
   minutes_listened: number;
@@ -62,8 +69,8 @@ export interface StatsListResponse<T> {
   items: T[];
 }
 
-export function buildArtistPhotoUrl(artistName: string) {
-  return artistPhotoApiUrl({ artistName });
+export function buildArtistPhotoUrl(artistName: string, artistId?: number, artistSlug?: string) {
+  return artistPhotoApiUrl({ artistId, artistSlug, artistName });
 }
 
 export function buildArtistAlbumCover(artistName: string, albumName: string, albumId?: number, albumSlug?: string) {
@@ -96,7 +103,11 @@ export function buildArtistPlayerTrack(
     id: track.id,
     title: track.title || "Unknown",
     artist: track.artist || artistName,
+    artistId: track.artist_id,
+    artistSlug: track.artist_slug,
     album: track.album,
+    albumId: track.album_id,
+    albumSlug: track.album_slug,
     albumCover: track.artist && track.album
       ? buildArtistAlbumCover(track.artist, track.album, track.album_id, track.album_slug)
       : coverFallback,

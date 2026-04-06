@@ -18,15 +18,16 @@ class TestRadioApiContracts:
             }
         ]
 
-        with patch("crate.api.radio.generate_artist_radio", return_value=tracks):
-            resp = test_app.get("/api/radio/artist/Converge?limit=25")
+        with patch("crate.api.radio.get_library_artist_by_id", return_value={"id": 7, "name": "Converge", "slug": "converge"}), \
+             patch("crate.api.radio.generate_artist_radio", return_value=tracks):
+            resp = test_app.get("/api/artists/7/radio?limit=25")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["session"] == {
             "type": "artist",
             "name": "Converge Radio",
-            "seed": {"artist_name": "Converge"},
+            "seed": {"artist_id": 7, "artist_name": "Converge"},
         }
         assert data["tracks"] == tracks
 
@@ -144,5 +145,6 @@ class TestRadioApiContracts:
         assert resp.status_code == 404
 
     def test_radio_endpoints_clamp_limit(self, test_app):
-        resp = test_app.get("/api/radio/artist/Converge?limit=101")
+        with patch("crate.api.radio.get_library_artist_by_id", return_value={"id": 7, "name": "Converge", "slug": "converge"}):
+            resp = test_app.get("/api/artists/7/radio?limit=101")
         assert resp.status_code == 422

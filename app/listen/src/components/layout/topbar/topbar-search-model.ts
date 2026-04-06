@@ -83,8 +83,13 @@ export function flattenTopBarSearchResults(data: SearchResult): TopBarSearchItem
         path: track.path,
         title: track.title,
         artist: track.artist,
+        artistId: track.artist_id,
+        artistSlug: track.artist_slug,
         album: track.album,
+        albumId: track.album_id,
+        albumSlug: track.album_slug,
         navidromeId: track.navidrome_id,
+        libraryTrackId: typeof track.id === "number" ? track.id : undefined,
       },
     });
   }

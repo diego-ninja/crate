@@ -1,11 +1,16 @@
 import { Link } from "react-router";
-import { encPath, formatBadgeClass } from "@/lib/utils";
+import { formatBadgeClass } from "@/lib/utils";
+import { albumCoverApiUrl, albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { Music } from "lucide-react";
 import { useState } from "react";
 
 interface AlbumRowProps {
   artist: string;
+  artistId?: number;
+  artistSlug?: string;
   album: string;
+  albumId?: number;
+  albumSlug?: string;
   year?: string;
   tracks?: number;
   format?: string;
@@ -19,7 +24,11 @@ interface AlbumRowProps {
 
 export function AlbumRow({
   artist,
+  artistId,
+  artistSlug,
   album,
+  albumId,
+  albumSlug,
   year,
   tracks,
   format,
@@ -31,7 +40,7 @@ export function AlbumRow({
 }: AlbumRowProps) {
   const [imgError, setImgError] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
-  const src = coverUrl ?? `/api/cover/${encPath(artist)}/${encPath(album)}`;
+  const src = coverUrl ?? albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors group">
@@ -57,14 +66,14 @@ export function AlbumRow({
       {/* Title + Artist */}
       <div className="flex-1 min-w-0">
         <Link
-          to={`/album/${encPath(artist)}/${encPath(album)}`}
+          to={albumPagePath({ albumId, albumSlug, albumName: album })}
           className="text-sm font-medium text-white/90 hover:text-white truncate block transition-colors"
         >
           {album}
         </Link>
         {showArtist && (
           <Link
-            to={`/artist/${encPath(artist)}`}
+            to={artistPagePath({ artistId, artistSlug, artistName: artist })}
             className="text-xs text-white/40 hover:text-white/60 truncate block transition-colors"
           >
             {artist}
@@ -101,4 +110,3 @@ export function AlbumRow({
     </div>
   );
 }
-

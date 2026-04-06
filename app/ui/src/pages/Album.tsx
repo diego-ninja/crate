@@ -11,8 +11,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
-import { albumApiPath } from "@/lib/library-routes";
+import { albumApiPath, albumCoverApiUrl, artistPagePath } from "@/lib/library-routes";
 import { Badge } from "@/components/ui/badge";
 import { AudioWaveform, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -37,6 +36,8 @@ export interface AudioMuseTrack {
 interface AlbumData {
   id?: number;
   slug?: string;
+  artist_id?: number;
+  artist_slug?: string;
   artist: string;
   name: string;
   display_name?: string;
@@ -90,15 +91,9 @@ interface MatchResult {
 }
 
 export function Album() {
-  const { artist, album, albumId: albumIdParam } = useParams<{ artist?: string; album?: string; albumId?: string }>();
+  const { albumId: albumIdParam } = useParams<{ albumId?: string }>();
   const albumId = albumIdParam ? Number(albumIdParam) : undefined;
-  const { data, loading, refetch } = useApi<AlbumData>(
-    albumId != null
-      ? albumApiPath({ albumId })
-      : artist && album
-        ? albumApiPath({ artistName: artist, albumName: album })
-        : null,
-  );
+  const { data, loading, refetch } = useApi<AlbumData>(albumId != null ? albumApiPath({ albumId }) : null);
   const [showTags, setShowTags] = useState(false);
   const [matches, setMatches] = useState<MatchResult[] | null>(null);
   const [matching, setMatching] = useState(false);
@@ -110,22 +105,17 @@ export function Album() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const artistName = data?.artist || artist;
-    const albumName = data?.name || album;
-    if (!artistName || !albumName) return;
+    if (data?.id == null) return;
     let cancelled = false;
-    api<NavidromeAlbumLink>(`/api/navidrome/album/${encPath(artistName)}/${encPath(albumName)}/link`)
+    api<NavidromeAlbumLink>(`/api/navidrome/albums/${data.id}/link`)
       .then((d) => { if (!cancelled) setNavidromeData(d); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [artist, album, data?.artist, data?.name]);
+  }, [data?.id]);
 
-  function fetchAudiomuseData(artistName: string) {
-    api<Record<string, AudioMuseTrack>>(`/api/analyze/artist/${encPath(artistName)}/data`)
-      .then((d) => {
-        if (d && Object.keys(d).length > 0) setAudiomuseData(d);
-        else return api<Record<string, AudioMuseTrack>>(`/api/audiomuse/artist/${encPath(artistName)}/tracks`);
-      })
+  function fetchAudiomuseData(artistId?: number) {
+    if (artistId == null) return;
+    api<Record<string, AudioMuseTrack>>(`/api/artists/${artistId}/analysis-data`)
       .then((d) => {
         if (d && Object.keys(d).length > 0) setAudiomuseData(d);
       })
@@ -133,18 +123,15 @@ export function Album() {
   }
 
   useEffect(() => {
-    if (!data?.artist) return;
-    fetchAudiomuseData(data.artist);
-  }, [data?.artist]);
+    fetchAudiomuseData(data?.artist_id);
+  }, [data?.artist_id]);
 
   async function findMatches() {
-    const artistName = data?.artist || artist;
-    const albumName = data?.name || album;
-    if (!artistName || !albumName) return;
+    if (data?.id == null) return;
     setMatching(true);
     try {
       const results = await api<MatchResult[]>(
-        `/api/match/${encPath(artistName)}/${encPath(albumName)}`,
+        `/api/match/albums/${data.id}`,
       );
       setMatches(results);
     } finally {
@@ -153,13 +140,10 @@ export function Album() {
   }
 
   async function applyMatch(match: MatchResult) {
-    const artistName = data?.artist || artist;
-    const albumName = data?.name || album;
-    if (!artistName || !albumName) return;
+    if (data?.id == null) return;
     try {
       const { task_id } = await api<{ task_id: string }>("/api/match/apply", "POST", {
-        artist_folder: artistName,
-        album_folder: albumName,
+        album_id: data.id,
         release: match,
       });
       setPendingMatch(null);
@@ -203,8 +187,13 @@ export function Album() {
     <div className="-mx-8 -mt-8">
       <div className="px-8 pt-8">
         <AlbumHeader
+          albumId={data.id}
+          albumSlug={data.slug}
+          artistId={data.artist_id}
+          artistSlug={data.artist_slug}
           artist={data.artist}
-          album={data.display_name || data.name}
+          album={data.name}
+          displayName={data.display_name}
           albumTags={data.album_tags}
           trackCount={data.track_count}
           totalLengthSec={data.total_length_sec}
@@ -214,7 +203,7 @@ export function Album() {
           tracks={data.tracks}
           genres={data.genres}
           hasAnalysis={audiomuseData != null && Object.values(audiomuseData).some((t) => t.tempo != null)}
-          onAnalysisComplete={() => data?.artist && fetchAudiomuseData(data.artist)}
+          onAnalysisComplete={() => fetchAudiomuseData(data?.artist_id)}
         >
           <Button
             size="sm"
@@ -246,7 +235,7 @@ export function Album() {
             className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
             onClick={async () => {
               try {
-                await api(`/api/analyze/album/${encPath(data?.artist ?? "")}/${encPath(data?.name ?? "")}`, "POST");
+                await api(`/api/albums/${data.id}/analyze`, "POST");
                 toast.success("Analysis queued", { description: "Background daemons will process the tracks." });
               } catch {
                 toast.error("Failed to queue analysis");
@@ -269,10 +258,9 @@ export function Album() {
       </div>
 
       <div className="px-8 pb-12">
-        {showTags && (
+        {showTags && data.id != null && (
           <TagEditor
-            artist={data.artist}
-            album={data.name}
+            albumId={data.id}
             tags={data.album_tags}
             tracks={data.tracks?.map((t: { filename: string; tags: { title?: string; tracknumber?: string; artist?: string } }) => ({
               filename: t.filename,
@@ -342,12 +330,17 @@ export function Album() {
             tracks={data.tracks}
             navidromeSongs={navidromeData?.songs}
             artist={data.artist}
-            albumCover={`/api/cover/${encPath(data.artist)}/${encPath(data.name)}`}
+            artistId={data.artist_id}
+            artistSlug={data.artist_slug}
+            album={data.name}
+            albumId={data.id}
+            albumSlug={data.slug}
+            albumCover={albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name })}
             audiomuseData={audiomuseData ?? undefined}
           />
         </div>
 
-        <RelatedAlbums artist={data.artist} album={data.name} />
+        <RelatedAlbums albumId={data.id} />
 
         <ConfirmDialog
           open={pendingMatch !== null}
@@ -368,9 +361,9 @@ export function Album() {
           variant="destructive"
           onConfirm={async () => {
             try {
-              await api(`/api/manage/album/${encPath(data.artist)}/${encPath(data.name)}/delete`, "POST", { mode: "full" });
+              await api(`/api/manage/albums/${data.id}/delete`, "POST", { mode: "full" });
               toast.success("Album deleted");
-              navigate(`/artist/${encPath(data.artist)}`);
+              navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug, artistName: data.artist }));
             } catch {
               toast.error("Failed to delete album");
             }

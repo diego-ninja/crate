@@ -28,7 +28,7 @@ export function ArtistCard({
   layout = "rail",
 }: ArtistCardProps) {
   const navigate = useNavigate();
-  const photoUrl = photo || artistPhotoApiUrl({ artistId, artistSlug, artistName: name });
+  const photoUrl = photo || artistPhotoApiUrl({ artistId, artistSlug, artistName: name }) || undefined;
   const targetHref = href || artistPagePath({ artistId, artistSlug, artistName: name });
   const imageSize = compact ? 100 : large ? 156 : 140;
   const wrapperClassName = cn(
@@ -47,13 +47,15 @@ export function ArtistCard({
           height: layout === "grid" ? "auto" : imageSize,
         }}
       >
-        <img
-          src={photoUrl}
-          alt={name}
-          className="w-full h-full object-cover"
-          loading="lazy"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-        />
+        {photoUrl ? (
+          <img
+            src={photoUrl}
+            alt={name}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+        ) : null}
       </div>
       <div className="truncate text-sm font-medium text-foreground text-center">{name}</div>
       {subtitle && (

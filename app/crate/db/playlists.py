@@ -24,12 +24,31 @@ def _normalize_playlist_row(row: dict) -> dict:
 def _fetch_artwork_tracks(cur, playlist_id: int) -> list[dict]:
     cur.execute(
         """
-        SELECT DISTINCT artist, album
-        FROM playlist_tracks
-        WHERE playlist_id = %s
-          AND artist IS NOT NULL AND artist != ''
-          AND album IS NOT NULL AND album != ''
-        ORDER BY album
+        SELECT
+            COALESCE(lt.artist, pt.artist) AS artist,
+            ar.id AS artist_id,
+            ar.slug AS artist_slug,
+            COALESCE(lt.album, pt.album) AS album,
+            alb.id AS album_id,
+            alb.slug AS album_slug
+        FROM playlist_tracks pt
+        LEFT JOIN LATERAL (
+            SELECT id, path, artist, album, album_id
+            FROM library_tracks lt
+            WHERE lt.path = pt.track_path
+               OR lt.path LIKE ('%%/' || pt.track_path)
+            ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
+            LIMIT 1
+        ) lt ON TRUE
+        LEFT JOIN library_albums alb
+          ON alb.id = lt.album_id
+          OR (lt.album_id IS NULL AND alb.artist = COALESCE(lt.artist, pt.artist) AND alb.name = COALESCE(lt.album, pt.album))
+        LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, pt.artist)
+        WHERE pt.playlist_id = %s
+          AND COALESCE(lt.artist, pt.artist, '') != ''
+          AND COALESCE(lt.album, pt.album, '') != ''
+        GROUP BY COALESCE(lt.artist, pt.artist), ar.id, ar.slug, COALESCE(lt.album, pt.album), alb.id, alb.slug
+        ORDER BY COALESCE(lt.album, pt.album)
         LIMIT 4
         """,
         (playlist_id,),
@@ -210,16 +229,24 @@ def get_playlist_tracks(playlist_id: int) -> list[dict]:
             SELECT
                 pt.*,
                 lt.id AS track_id,
-                lt.navidrome_id
+                lt.navidrome_id,
+                ar.id AS artist_id,
+                ar.slug AS artist_slug,
+                alb.id AS album_id,
+                alb.slug AS album_slug
             FROM playlist_tracks pt
             LEFT JOIN LATERAL (
-                SELECT id, navidrome_id, path
+                SELECT id, navidrome_id, path, artist, album, album_id
                 FROM library_tracks lt
                 WHERE lt.path = pt.track_path
                    OR lt.path LIKE ('%%/' || pt.track_path)
                 ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
                 LIMIT 1
             ) lt ON TRUE
+            LEFT JOIN library_albums alb
+              ON alb.id = lt.album_id
+              OR (lt.album_id IS NULL AND alb.artist = COALESCE(lt.artist, pt.artist) AND alb.name = COALESCE(lt.album, pt.album))
+            LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, pt.artist)
             WHERE pt.playlist_id = %s
             ORDER BY pt.position
             """,

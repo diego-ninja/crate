@@ -1,13 +1,17 @@
 import { useApi } from "@/hooks/use-api";
-import { encPath } from "@/lib/utils";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
 import { Music, Play } from "lucide-react";
+import { albumCoverApiUrl, albumPagePath, albumRelatedApiPath } from "@/lib/library-routes";
 
 interface RelatedAlbum {
+  id?: number;
+  slug?: string;
   name: string;
   display_name: string;
   artist: string;
+  artist_id?: number;
+  artist_slug?: string;
   year: string | null;
   track_count: number;
   has_cover: boolean;
@@ -20,8 +24,8 @@ const REASON_LABELS: Record<string, string> = {
   audio_similar: "Similar Sound",
 };
 
-export function RelatedAlbums({ artist, album }: { artist: string; album: string }) {
-  const { data } = useApi<RelatedAlbum[]>(`/api/album/${encPath(artist)}/${encPath(album)}/related`);
+export function RelatedAlbums({ albumId }: { albumId?: number }) {
+  const { data } = useApi<RelatedAlbum[]>(albumId != null ? albumRelatedApiPath({ albumId }) : null);
   const navigate = useNavigate();
 
   if (!data || data.length === 0) return null;
@@ -33,12 +37,12 @@ export function RelatedAlbums({ artist, album }: { artist: string; album: string
         {data.map((a, i) => (
           <button
             key={`${a.artist}-${a.name}-${i}`}
-            onClick={() => navigate(`/album/${encPath(a.artist)}/${encPath(a.name)}`)}
+            onClick={() => navigate(albumPagePath({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name }))}
             className="flex-shrink-0 w-[140px] group text-left"
           >
             <div className="relative w-[140px] h-[140px] rounded-lg overflow-hidden bg-secondary mb-2">
               <img
-                src={`/api/cover/${encPath(a.artist)}/${encPath(a.name)}`}
+                src={albumCoverApiUrl({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name })}
                 alt={a.display_name}
                 loading="lazy"
                 className="w-full h-full object-cover"

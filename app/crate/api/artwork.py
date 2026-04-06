@@ -8,12 +8,14 @@ from pydantic import BaseModel
 from crate.api.auth import _require_auth, _require_admin
 from crate.artwork import scan_missing_covers, extract_embedded_cover, save_cover
 from crate.audio import get_audio_files
-from crate.api._deps import library_path, extensions, safe_path
+from crate.api._deps import artist_name_from_id, album_names_from_id, library_path, extensions, safe_path
 from crate.db import create_task
 
 log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
 
 
 class FetchRequest(BaseModel):
@@ -100,12 +102,19 @@ def api_artwork_extract(request: Request, data: ExtractRequest):
     return {"status": "saved", "path": str(album_dir / "cover.jpg")}
 
 
-@router.post("/api/artwork/fetch-artist/{name}")
 def api_artwork_fetch_artist(request: Request, name: str):
     """Queue a task to fetch covers for all albums by an artist."""
     _require_admin(request)
     task_id = create_task("fetch_artist_covers", {"artist": name})
     return {"status": "queued", "task_id": task_id}
+
+
+@router.post("/api/artwork/artists/{artist_id}/fetch")
+def api_artwork_fetch_artist_by_id(request: Request, artist_id: int):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return api_artwork_fetch_artist(request, artist_name)
 
 
 @router.post("/api/artwork/fetch-all")
@@ -116,7 +125,6 @@ def api_artwork_fetch_all(request: Request):
     return {"status": "queued", "task_id": task_id}
 
 
-@router.post("/api/artwork/upload-cover/{artist:path}/{album:path}")
 async def api_upload_cover(request: Request, artist: str, album: str, file: UploadFile = File(...)):
     """Upload a cover image for an album. Saved to staging, worker copies to album dir."""
     _require_admin(request)
@@ -129,7 +137,15 @@ async def api_upload_cover(request: Request, artist: str, album: str, file: Uplo
     return {"status": "queued", "task_id": task_id}
 
 
-@router.post("/api/artwork/upload-artist-photo/{name:path}")
+@router.post("/api/artwork/albums/{album_id}/upload-cover")
+async def api_upload_cover_by_id(request: Request, album_id: int, file: UploadFile = File(...)):
+    album_names = album_names_from_id(album_id)
+    if not album_names:
+        return JSONResponse({"error": "Album not found"}, status_code=404)
+    artist, album = album_names
+    return await api_upload_cover(request, artist, album, file)
+
+
 async def api_upload_artist_photo(request: Request, name: str, file: UploadFile = File(...)):
     """Upload artist photo. Worker saves to artist dir."""
     _require_admin(request)
@@ -142,7 +158,14 @@ async def api_upload_artist_photo(request: Request, name: str, file: UploadFile 
     return {"status": "queued", "task_id": task_id}
 
 
-@router.post("/api/artwork/upload-background/{name:path}")
+@router.post("/api/artwork/artists/{artist_id}/upload-photo")
+async def api_upload_artist_photo_by_id(request: Request, artist_id: int, file: UploadFile = File(...)):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return await api_upload_artist_photo(request, artist_name, file)
+
+
 async def api_upload_background(request: Request, name: str, file: UploadFile = File(...)):
     """Upload artist background. Worker saves to artist dir."""
     _require_admin(request)
@@ -153,3 +176,11 @@ async def api_upload_background(request: Request, name: str, file: UploadFile = 
         "data_b64": base64.b64encode(data).decode(),
     })
     return {"status": "queued", "task_id": task_id}
+
+
+@router.post("/api/artwork/artists/{artist_id}/upload-background")
+async def api_upload_background_by_id(request: Request, artist_id: int, file: UploadFile = File(...)):
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Artist not found"}, status_code=404)
+    return await api_upload_background(request, artist_name, file)
