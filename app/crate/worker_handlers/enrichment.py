@@ -819,10 +819,103 @@ def _process_new_content_inner(
     return result
 
 
+def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> dict:
+    """Compute library completeness vs MusicBrainz for all artists with MBIDs."""
+    import re
+    import musicbrainzngs
+    from crate.db import get_cache, set_cache
+
+    musicbrainzngs.set_useragent("crate", "1.0", "https://github.com/crate")
+    year_re = re.compile(r"^\d{4}\s*[-–]\s*")
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT id, slug, name, mbid, album_count, has_photo, listeners
+            FROM library_artists
+            WHERE mbid IS NOT NULL AND mbid != ''
+            ORDER BY name
+            """
+        )
+        artists = [dict(row) for row in cur.fetchall()]
+
+    total = len(artists)
+    results = []
+    for index, artist in enumerate(artists):
+        if is_cancelled(task_id):
+            break
+        if index % 10 == 0:
+            update_task(task_id, progress=json.dumps({"done": index, "total": total}))
+
+        try:
+            mb_data = get_cache(f"mb:albums:{artist['mbid']}", max_age_seconds=86400 * 7)
+            if not mb_data:
+                try:
+                    mb_artist = musicbrainzngs.get_artist_by_id(artist["mbid"])["artist"]
+                    mb_name = mb_artist.get("name", "")
+                    from thefuzz import fuzz
+                    if fuzz.ratio(artist["name"].lower(), mb_name.lower()) < 70:
+                        log.debug("MBID mismatch: %s -> %s, skipping", artist["mbid"], mb_name)
+                        continue
+                except Exception:
+                    pass
+
+                result = musicbrainzngs.browse_release_groups(
+                    artist=artist["mbid"], release_type=["album"], limit=100
+                )
+                mb_albums = result.get("release-group-list", [])
+                mb_data = {
+                    "count": result.get("release-group-count", len(mb_albums)),
+                    "albums": [
+                        {
+                            "title": rg.get("title", ""),
+                            "type": rg.get("primary-type", ""),
+                            "year": rg.get("first-release-date", "")[:4] if rg.get("first-release-date") else "",
+                        }
+                        for rg in mb_albums
+                    ],
+                }
+                set_cache(f"mb:albums:{artist['mbid']}", mb_data, ttl=604800)
+                time.sleep(1)  # rate limit
+
+            mb_count = mb_data["count"]
+            local_count = artist["album_count"] or 0
+            pct = round(local_count / mb_count * 100) if mb_count > 0 else 100
+
+            with get_db_ctx() as cur:
+                cur.execute("SELECT name FROM library_albums WHERE artist = %s", (artist["name"],))
+                local_names = {row["name"].lower() for row in cur.fetchall()}
+                local_clean = {year_re.sub("", name).lower() for name in local_names}
+
+            missing = [
+                album for album in mb_data["albums"]
+                if album["title"].lower() not in local_names and album["title"].lower() not in local_clean
+            ]
+
+            results.append({
+                "artist_id": artist["id"],
+                "artist_slug": artist["slug"],
+                "artist": artist["name"],
+                "has_photo": bool(artist["has_photo"]),
+                "listeners": artist.get("listeners", 0),
+                "local_count": local_count,
+                "mb_count": mb_count,
+                "pct": min(pct, 100),
+                "missing": missing[:10],
+            })
+        except Exception:
+            log.debug("Completeness check failed for %s", artist["name"], exc_info=True)
+
+    results.sort(key=lambda item: item["pct"])
+    set_cache("discover:completeness", results, ttl=86400)
+    return {"artists_checked": len(results), "total": total}
+
+
 ENRICHMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "enrich_artist": _handle_enrich_single,
     "enrich_artists": _handle_enrich_artists,
     "reset_enrichment": _handle_reset_enrichment,
     "enrich_mbids": _handle_enrich_mbids,
     "process_new_content": _handle_process_new_content,
+    "compute_completeness": _handle_compute_completeness,
 }
