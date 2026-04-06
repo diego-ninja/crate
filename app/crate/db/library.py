@@ -1,6 +1,9 @@
 import json
 from datetime import datetime, timezone
+from psycopg2 import sql
+
 from crate.db.core import get_db_ctx
+from crate.slugs import build_album_slug, build_artist_slug, build_track_slug
 
 # ── Library helpers ──────────────────────────────────────────────
 
@@ -47,6 +50,13 @@ def get_library_artist(name: str) -> dict | None:
     return _row_to_lib_artist(row) if row else None
 
 
+def get_library_artist_by_id(artist_id: int) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM library_artists WHERE id = %s", (artist_id,))
+        row = cur.fetchone()
+    return _row_to_lib_artist(row) if row else None
+
+
 def get_library_albums(artist: str) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute(
@@ -61,6 +71,13 @@ def get_library_album(artist: str, album: str) -> dict | None:
         cur.execute(
             "SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s) AND LOWER(name) = LOWER(%s)", (artist, album)
         )
+        row = cur.fetchone()
+    return _row_to_lib_album(row) if row else None
+
+
+def get_library_album_by_id(album_id: int) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM library_albums WHERE id = %s", (album_id,))
         row = cur.fetchone()
     return _row_to_lib_album(row) if row else None
 
@@ -80,6 +97,20 @@ def get_library_tracks(album_id: int) -> list[dict]:
             d["mood_json"] = json.loads(mood)
         results.append(d)
     return results
+
+
+def _allocate_unique_slug(cur, table: str, base_slug: str) -> str:
+    candidate = base_slug or "item"
+    suffix = 2
+    while True:
+        cur.execute(
+            sql.SQL("SELECT 1 FROM {} WHERE slug = %s LIMIT 1").format(sql.Identifier(table)),
+            (candidate,),
+        )
+        if not cur.fetchone():
+            return candidate
+        candidate = f"{base_slug}-{suffix}"
+        suffix += 1
 
 
 def get_library_stats() -> dict:
@@ -115,18 +146,24 @@ def get_library_track_count() -> int:
 def upsert_artist(data: dict):
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
+        cur.execute("SELECT slug FROM library_artists WHERE name = %s", (data["name"],))
+        existing = cur.fetchone()
+        slug = existing["slug"] if existing and existing.get("slug") else _allocate_unique_slug(
+            cur, "library_artists", build_artist_slug(data["name"])
+        )
         cur.execute("""
-            INSERT INTO library_artists (name, folder_name, album_count, track_count, total_size,
+            INSERT INTO library_artists (name, slug, folder_name, album_count, track_count, total_size,
                 formats_json, primary_format, has_photo, dir_mtime, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(name) DO UPDATE SET
+                slug=COALESCE(library_artists.slug, EXCLUDED.slug),
                 folder_name=COALESCE(library_artists.folder_name, EXCLUDED.folder_name),
                 album_count=EXCLUDED.album_count, track_count=EXCLUDED.track_count,
                 total_size=EXCLUDED.total_size, formats_json=EXCLUDED.formats_json,
                 primary_format=EXCLUDED.primary_format, has_photo=EXCLUDED.has_photo,
                 dir_mtime=EXCLUDED.dir_mtime, updated_at=EXCLUDED.updated_at
         """, (
-            data["name"], data.get("folder_name") or data["name"],
+            data["name"], slug, data.get("folder_name") or data["name"],
             data.get("album_count", 0), data.get("track_count", 0),
             data.get("total_size", 0), json.dumps(data.get("formats", [])),
             data.get("primary_format"), data.get("has_photo", 0),
@@ -137,13 +174,18 @@ def upsert_artist(data: dict):
 def upsert_album(data: dict) -> int:
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
+        cur.execute("SELECT slug FROM library_albums WHERE path = %s", (data["path"],))
+        existing = cur.fetchone()
+        slug = existing["slug"] if existing and existing.get("slug") else _allocate_unique_slug(
+            cur, "library_albums", build_album_slug(data["artist"], data["name"])
+        )
         cur.execute("""
-            INSERT INTO library_albums (artist, name, path, track_count, total_size,
+            INSERT INTO library_albums (artist, name, slug, path, track_count, total_size,
                 total_duration, formats_json, year, genre, has_cover,
                 musicbrainz_albumid, tag_album, dir_mtime, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(path) DO UPDATE SET
-                artist=EXCLUDED.artist, name=EXCLUDED.name,
+                artist=EXCLUDED.artist, name=EXCLUDED.name, slug=COALESCE(library_albums.slug, EXCLUDED.slug),
                 track_count=EXCLUDED.track_count, total_size=EXCLUDED.total_size,
                 total_duration=EXCLUDED.total_duration, formats_json=EXCLUDED.formats_json,
                 year=EXCLUDED.year, genre=EXCLUDED.genre, has_cover=EXCLUDED.has_cover,
@@ -151,7 +193,7 @@ def upsert_album(data: dict) -> int:
                 tag_album=COALESCE(EXCLUDED.tag_album, library_albums.tag_album),
                 dir_mtime=EXCLUDED.dir_mtime, updated_at=EXCLUDED.updated_at
         """, (
-            data["artist"], data["name"], data["path"],
+            data["artist"], data["name"], slug, data["path"],
             data.get("track_count", 0), data.get("total_size", 0),
             data.get("total_duration", 0), json.dumps(data.get("formats", [])),
             data.get("year"), data.get("genre"), data.get("has_cover", 0),
@@ -166,14 +208,22 @@ def upsert_album(data: dict) -> int:
 def upsert_track(data: dict):
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
+        cur.execute("SELECT slug FROM library_tracks WHERE path = %s", (data["path"],))
+        existing = cur.fetchone()
+        slug = existing["slug"] if existing and existing.get("slug") else _allocate_unique_slug(
+            cur,
+            "library_tracks",
+            build_track_slug(data["artist"], data.get("title"), data.get("filename")),
+        )
         cur.execute("""
-            INSERT INTO library_tracks (album_id, artist, album, filename, title,
+            INSERT INTO library_tracks (album_id, artist, album, slug, filename, title,
                 track_number, disc_number, format, bitrate, duration, size,
                 year, genre, albumartist, musicbrainz_albumid, musicbrainz_trackid,
                 path, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(path) DO UPDATE SET
                 album_id=EXCLUDED.album_id, artist=EXCLUDED.artist, album=EXCLUDED.album,
+                slug=COALESCE(library_tracks.slug, EXCLUDED.slug),
                 filename=EXCLUDED.filename, title=EXCLUDED.title,
                 track_number=EXCLUDED.track_number, disc_number=EXCLUDED.disc_number,
                 format=EXCLUDED.format, bitrate=EXCLUDED.bitrate,
@@ -185,7 +235,7 @@ def upsert_track(data: dict):
                 -- Preserve AudioMuse fields (don't overwrite with NULL)
                 -- bpm, audio_key, audio_scale, energy, mood_json are NOT touched
         """, (
-            data.get("album_id"), data["artist"], data["album"],
+            data.get("album_id"), data["artist"], data["album"], slug,
             data["filename"], data.get("title"), data.get("track_number"),
             data.get("disc_number", 1), data.get("format"), data.get("bitrate"),
             data.get("duration"), data.get("size"), data.get("year"),
@@ -306,5 +356,4 @@ def _row_to_lib_album(row: dict) -> dict:
     fmt = d.pop("formats_json", [])
     d["formats"] = fmt if isinstance(fmt, list) else json.loads(fmt or "[]")
     return d
-
 

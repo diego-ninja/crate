@@ -1,14 +1,19 @@
 import { type Track } from "@/contexts/PlayerContext";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export interface SearchResult {
-  artists: { name: string }[];
-  albums: { artist: string; name: string }[];
+  artists: { id?: number; slug?: string; name: string }[];
+  albums: { id?: number; slug?: string; artist: string; artist_id?: number; artist_slug?: string; name: string }[];
   tracks: {
     id?: number;
+    slug?: string;
     title: string;
     artist: string;
+    artist_id?: number;
+    artist_slug?: string;
     album: string;
+    album_id?: number;
+    album_slug?: string;
     path?: string;
     navidrome_id?: string;
   }[];
@@ -47,8 +52,8 @@ export function flattenTopBarSearchResults(data: SearchResult): TopBarSearchItem
     items.push({
       type: "artist",
       label: artist.name,
-      navigateTo: `/artist/${encPath(artist.name)}`,
-      imageUrl: `/api/artist/${encPath(artist.name)}/photo`,
+      navigateTo: artistPagePath({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name }),
+      imageUrl: artistPhotoApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name }),
     });
   }
 
@@ -57,8 +62,8 @@ export function flattenTopBarSearchResults(data: SearchResult): TopBarSearchItem
       type: "album",
       label: album.name,
       sublabel: album.artist,
-      navigateTo: `/album/${encPath(album.artist)}/${encPath(album.name)}`,
-      imageUrl: `/api/cover/${encPath(album.artist)}/${encPath(album.name)}`,
+      navigateTo: albumPagePath({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name }),
+      imageUrl: albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name }),
     });
   }
 
@@ -67,9 +72,12 @@ export function flattenTopBarSearchResults(data: SearchResult): TopBarSearchItem
       type: "track",
       label: track.title,
       sublabel: `${track.artist} - ${track.album}`,
-      imageUrl: track.album
-        ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
-        : undefined,
+      imageUrl: track.album ? albumCoverApiUrl({
+        albumId: track.album_id,
+        albumSlug: track.album_slug,
+        artistName: track.artist,
+        albumName: track.album,
+      }) : undefined,
       trackData: {
         id: track.path || String(track.id),
         path: track.path,

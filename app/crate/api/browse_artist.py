@@ -14,12 +14,18 @@ from crate.db import (
     get_db_ctx,
     get_library_albums,
     get_library_artist,
+    get_library_artist_by_id,
 )
 from crate.lastfm import get_artist_info
 
 log = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _artist_name_from_id(artist_id: int) -> str | None:
+    artist = get_library_artist_by_id(artist_id)
+    return artist["name"] if artist else None
 
 
 def _normalize_song_title(value: str) -> str:
@@ -227,6 +233,8 @@ def api_artists(
     items = []
     for row in rows:
         item = {
+            "id": row.get("id"),
+            "slug": row.get("slug"),
             "name": row["name"],
             "albums": row["album_count"],
             "tracks": row["track_count"],
@@ -266,6 +274,78 @@ def api_check_artists_in_library(request: Request, body: dict):
                     [n.lower() for n in names])
         found = {r["name"].lower() for r in cur.fetchall()}
     return {name: name.lower() in found for name in names}
+
+
+@router.get("/api/artists/{artist_id}")
+def api_artist_by_id(request: Request, artist_id: int):
+    artist_name = _artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist(request, artist_name)
+
+
+@router.get("/api/artists/{artist_id}/background")
+def api_artist_background_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
+    artist_name = _artist_name_from_id(artist_id)
+    if not artist_name:
+        return Response(status_code=404)
+    return api_artist_background(request, artist_name, random_pick)
+
+
+@router.get("/api/artists/{artist_id}/photo")
+def api_artist_photo_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
+    artist_name = _artist_name_from_id(artist_id)
+    if not artist_name:
+        return Response(status_code=404)
+    return api_artist_photo(request, artist_name, random_pick)
+
+
+@router.get("/api/artists/{artist_id}/info")
+def api_artist_info_by_id(request: Request, artist_id: int):
+    artist_name = _artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_info(request, artist_name)
+
+
+@router.get("/api/artists/{artist_id}/shows")
+def api_artist_shows_by_id(request: Request, artist_id: int, limit: int = Query(10), country: str = Query("")):
+    artist_name = _artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_shows(request, artist_name, limit, country)
+
+
+@router.post("/api/artists/{artist_id}/enrich")
+def api_artist_enrich_by_id(request: Request, artist_id: int):
+    artist_name = _artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_enrich(request, artist_name)
+
+
+@router.get("/api/artists/{artist_id}/track-titles")
+def api_artist_track_titles_by_id(request: Request, artist_id: int):
+    artist_name = _artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_track_titles(request, artist_name)
+
+
+@router.get("/api/artists/{artist_id}/setlist-playable")
+def api_artist_setlist_playable_by_id(request: Request, artist_id: int):
+    artist_name = _artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"tracks": []}, status_code=404)
+    return api_artist_setlist_playable(request, artist_name)
+
+
+@router.get("/api/artists/{artist_id}/network")
+def api_artist_network_by_id(request: Request, artist_id: int, depth: int = 2):
+    artist_name = _artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_artist_network(request, artist_name, depth)
 
 
 @router.get("/api/artist/{name}/background")
@@ -721,6 +801,7 @@ def api_artist(request: Request, name: str):
         albums.append(
             {
                 "id": album["id"],
+                "slug": album.get("slug"),
                 "name": album["name"],
                 "display_name": display_name(album["name"]),
                 "tracks": album["track_count"],
@@ -732,6 +813,8 @@ def api_artist(request: Request, name: str):
         )
 
     return {
+        "id": artist.get("id"),
+        "slug": artist.get("slug"),
         "name": canonical,
         "albums": albums,
         "total_tracks": artist["track_count"],

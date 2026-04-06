@@ -6,12 +6,14 @@ import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { api } from "@/lib/api";
-import { cn, encPath } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { albumApiPath, albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 
 interface AlbumCardProps {
   artist: string;
   album: string;
   albumId?: number;
+  albumSlug?: string;
   year?: string;
   cover?: string;
   compact?: boolean;
@@ -37,6 +39,7 @@ export const AlbumCard = memo(function AlbumCard({
   artist,
   album,
   albumId,
+  albumSlug,
   year,
   cover,
   compact,
@@ -46,14 +49,14 @@ export const AlbumCard = memo(function AlbumCard({
   const { playAll } = usePlayerActions();
   const { isSaved, toggleAlbumSaved } = useSavedAlbums();
   const [playing, setPlaying] = useState(false);
-  const coverUrl = cover || `/api/cover/${encPath(artist)}/${encPath(album)}`;
+  const coverUrl = cover || albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
   const saved = isSaved(albumId);
 
   async function handlePlayOverlay(event: React.MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     setPlaying(true);
     try {
-      const data = await api<AlbumData>(`/api/album/${encPath(artist)}/${encPath(album)}`);
+      const data = await api<AlbumData>(albumApiPath({ albumId, albumSlug, artistName: artist, albumName: album }));
       const playerTracks: Track[] = (data.tracks || []).map((track) => ({
         id: track.path || String(track.id),
         title: track.tags?.title || track.filename || "Unknown",
@@ -85,11 +88,11 @@ export const AlbumCard = memo(function AlbumCard({
           ? "w-full min-w-0"
           : `flex-shrink-0 ${compact ? "w-[120px]" : "w-[160px]"}`,
       )}
-      onClick={() => navigate(`/album/${encPath(artist)}/${encPath(album)}`)}
+      onClick={() => navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }))}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          navigate(`/album/${encPath(artist)}/${encPath(album)}`);
+          navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }));
         }
       }}
     >

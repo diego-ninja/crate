@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { artistPagePath } from "@/lib/library-routes";
 import { toast } from "sonner";
 import {
   LayoutGrid, List, Loader2,
@@ -21,6 +21,8 @@ import { ArtistCard } from "@/components/artist/ArtistCard";
 import { ArtistRow } from "@/components/artist/ArtistRow";
 
 interface ArtistItem {
+  id?: number;
+  slug?: string;
   name: string;
   albums: number;
   tracks: number;
@@ -299,6 +301,8 @@ export function Browse() {
           {artists.map((a) => (
             <ArtistCard
               key={a.name}
+              artistId={a.id}
+              artistSlug={a.slug}
               name={a.name}
               albums={a.albums}
               tracks={a.tracks}
@@ -307,7 +311,7 @@ export function Browse() {
               hasIssues={a.has_issues}
               selectMode={selectMode}
               isSelected={selected.has(a.name)}
-              onClick={() => selectMode ? toggleSelect(a.name) : navigate(`/artist/${encPath(a.name)}`)}
+              onClick={() => selectMode ? toggleSelect(a.name) : navigate(artistPagePath({ artistId: a.id, artistSlug: a.slug, artistName: a.name }))}
             />
           ))}
         </div>
@@ -325,7 +329,7 @@ export function Browse() {
               hasIssues={a.has_issues}
               selectMode={selectMode}
               isSelected={selected.has(a.name)}
-              onClick={() => selectMode ? toggleSelect(a.name) : navigate(`/artist/${encPath(a.name)}`)}
+              onClick={() => selectMode ? toggleSelect(a.name) : navigate(artistPagePath({ artistId: a.id, artistSlug: a.slug, artistName: a.name }))}
             />
           ))}
         </div>

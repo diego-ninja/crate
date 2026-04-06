@@ -28,6 +28,7 @@ import {
 } from "@/components/artist/artistPageData";
 import type { ArtistData, TabKey } from "@/components/artist/artistPageTypes";
 import { api } from "@/lib/api";
+import { artistApiPath } from "@/lib/library-routes";
 import { usePlayerActions, type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { encPath } from "@/lib/utils";
 import { toast } from "sonner";
@@ -37,10 +38,11 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 // ── Main Component ──
 
 export function Artist() {
-  const { name } = useParams<{ name: string }>();
+  const { name, artistId: artistIdParam } = useParams<{ name?: string; artistId?: string }>();
+  const artistId = artistIdParam ? Number(artistIdParam) : undefined;
   const decodedName = name ? decodeURIComponent(name) : "";
   const { data, loading } = useApi<ArtistData>(
-    name ? `/api/artist/${encPath(decodedName)}` : null,
+    artistId != null ? artistApiPath({ artistId }) : name ? artistApiPath({ artistName: decodedName }) : null,
   );
   const player = usePlayerActions();
   // Use audioElement.paused directly to avoid re-rendering the whole page (and the graph) on play/pause

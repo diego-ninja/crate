@@ -1,10 +1,11 @@
 import { type Track } from "@/contexts/PlayerContext";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
 
 import { artistShowToUpcomingItem, type ArtistShowEvent } from "@/components/upcoming/UpcomingRows";
 
 export interface ArtistAlbum {
   id: number;
+  slug?: string;
   name: string;
   display_name: string;
   tracks: number;
@@ -15,6 +16,8 @@ export interface ArtistAlbum {
 }
 
 export interface ArtistData {
+  id?: number;
+  slug?: string;
   name: string;
   albums: ArtistAlbum[];
   total_tracks: number;
@@ -36,6 +39,10 @@ export interface ArtistInfo {
 
 export interface ArtistTopTrack {
   id: string;
+  artist_id?: number;
+  artist_slug?: string;
+  album_id?: number;
+  album_slug?: string;
   title: string;
   artist: string;
   album: string;
@@ -56,11 +63,11 @@ export interface StatsListResponse<T> {
 }
 
 export function buildArtistPhotoUrl(artistName: string) {
-  return `/api/artist/${encPath(artistName)}/photo`;
+  return artistPhotoApiUrl({ artistName });
 }
 
-export function buildArtistAlbumCover(artistName: string, albumName: string) {
-  return `/api/cover/${encPath(artistName)}/${encPath(albumName)}`;
+export function buildArtistAlbumCover(artistName: string, albumName: string, albumId?: number, albumSlug?: string) {
+  return albumCoverApiUrl({ albumId, albumSlug, artistName, albumName });
 }
 
 export function artistGenreSlug(name: string) {
@@ -91,7 +98,7 @@ export function buildArtistPlayerTrack(
     artist: track.artist || artistName,
     album: track.album,
     albumCover: track.artist && track.album
-      ? buildArtistAlbumCover(track.artist, track.album)
+      ? buildArtistAlbumCover(track.artist, track.album, track.album_id, track.album_slug)
       : coverFallback,
     path: isPath ? track.id : undefined,
     navidromeId: isPath ? undefined : track.id,

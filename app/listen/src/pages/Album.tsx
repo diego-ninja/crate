@@ -13,6 +13,7 @@ import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { fetchAlbumRadio } from "@/lib/radio";
 import { encPath, formatBadgeClass, shuffleArray, formatTotalDuration } from "@/lib/utils";
+import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 interface AlbumTrack {
   id: number;
@@ -39,6 +40,9 @@ interface AlbumTrack {
 
 interface AlbumData {
   id: number;
+  slug?: string;
+  artist_id?: number;
+  artist_slug?: string;
   artist: string;
   name: string;
   display_name: string;
@@ -66,7 +70,7 @@ interface Playlist {
 
 
 function buildPlayerTracks(data: AlbumData): Track[] {
-  const cover = `/api/cover/${encPath(data.artist)}/${encPath(data.name)}`;
+  const cover = albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name });
   return data.tracks.map((t) => ({
     id: t.path || String(t.id),
     title: t.tags.title || t.filename,
@@ -80,7 +84,7 @@ function buildPlayerTracks(data: AlbumData): Track[] {
 
 
 export function Album() {
-  const { artist, album } = useParams<{ artist: string; album: string }>();
+  const { artist, album, albumId: albumIdParam } = useParams<{ artist?: string; album?: string; albumId?: string }>();
   const navigate = useNavigate();
   const { playAll, addToQueue, playNext } = usePlayerActions();
   const { openCreatePlaylist } = usePlaylistComposer();
@@ -89,13 +93,16 @@ export function Album() {
   const [playlistPickerOpen, setPlaylistPickerOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  const routeAlbumId = albumIdParam ? Number(albumIdParam) : undefined;
   const decodedArtist = decodeURIComponent(artist || "");
   const decodedAlbum = decodeURIComponent(album || "");
 
   const { data, loading, error } = useApi<AlbumData>(
-    decodedArtist && decodedAlbum
-      ? `/api/album/${encPath(decodedArtist)}/${encPath(decodedAlbum)}`
-      : null,
+    routeAlbumId != null
+      ? albumApiPath({ albumId: routeAlbumId })
+      : decodedArtist && decodedAlbum
+        ? albumApiPath({ artistName: decodedArtist, albumName: decodedAlbum })
+        : null,
   );
   const { data: playlists } = useApi<Playlist[]>("/api/playlists");
 
@@ -124,8 +131,8 @@ export function Album() {
     );
   }
 
-  const coverUrl = `/api/cover/${encPath(data.artist)}/${encPath(data.name)}`;
-  const artistPhotoUrl = `/api/artist/${encPath(data.artist)}/photo`;
+  const coverUrl = albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name });
+  const artistPhotoUrl = artistPhotoApiUrl({ artistId: data.artist_id, artistSlug: data.artist_slug, artistName: data.artist });
   const displayName = data.display_name || data.name;
   const albumId = data.id;
   const artistName = data.artist;
@@ -194,7 +201,7 @@ export function Album() {
     setMenuOpen(false);
   };
 
-  const shareUrl = `${window.location.origin}/album/${encPath(artistName)}/${encPath(albumName)}`;
+  const shareUrl = `${window.location.origin}${albumPagePath({ albumId, albumSlug: data.slug, artistName, albumName })}`;
 
   async function handleShare() {
     try {

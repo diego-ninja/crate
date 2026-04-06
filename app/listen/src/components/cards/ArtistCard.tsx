@@ -1,8 +1,11 @@
 import { useNavigate } from "react-router";
-import { cn, encPath } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 interface ArtistCardProps {
   name: string;
+  artistId?: number;
+  artistSlug?: string;
   photo?: string;
   subtitle?: string;
   compact?: boolean;
@@ -14,6 +17,8 @@ interface ArtistCardProps {
 
 export function ArtistCard({
   name,
+  artistId,
+  artistSlug,
   photo,
   subtitle,
   compact,
@@ -23,8 +28,8 @@ export function ArtistCard({
   layout = "rail",
 }: ArtistCardProps) {
   const navigate = useNavigate();
-  const photoUrl = photo || `/api/artist/${encPath(name)}/photo`;
-  const targetHref = href || `/artist/${encPath(name)}`;
+  const photoUrl = photo || artistPhotoApiUrl({ artistId, artistSlug, artistName: name });
+  const targetHref = href || artistPagePath({ artistId, artistSlug, artistName: name });
   const imageSize = compact ? 100 : large ? 156 : 140;
   const wrapperClassName = cn(
     "group snap-start text-left",

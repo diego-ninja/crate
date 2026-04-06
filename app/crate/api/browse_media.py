@@ -30,7 +30,7 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     with get_db_ctx() as cur:
         cur.execute(
             """
-            SELECT name, album_count, has_photo
+            SELECT id, slug, name, album_count, has_photo
             FROM library_artists
             WHERE name ILIKE %s
             ORDER BY listeners DESC NULLS LAST, album_count DESC, name ASC
@@ -41,8 +41,10 @@ def api_search(request: Request, q: str = "", limit: int = 20):
         artist_rows = cur.fetchall()
         cur.execute(
             """
-            SELECT id, artist, name, year, has_cover
-            FROM library_albums
+            SELECT a.id, a.slug, a.artist, a.name, a.year, a.has_cover,
+                   ar.id AS artist_id, ar.slug AS artist_slug
+            FROM library_albums a
+            LEFT JOIN library_artists ar ON ar.name = a.artist
             WHERE name ILIKE %s OR artist ILIKE %s
             ORDER BY year DESC NULLS LAST, name ASC
             LIMIT %s
@@ -52,9 +54,12 @@ def api_search(request: Request, q: str = "", limit: int = 20):
         album_rows = cur.fetchall()
         cur.execute(
             """
-            SELECT t.id, t.title, t.artist, a.name AS album, t.path, t.duration, t.navidrome_id
+            SELECT t.id, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
+                   a.name AS album, ar.id AS artist_id, ar.slug AS artist_slug,
+                   t.path, t.duration, t.navidrome_id
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
+            LEFT JOIN library_artists ar ON ar.name = t.artist
             WHERE t.title ILIKE %s OR t.artist ILIKE %s OR a.name ILIKE %s
             ORDER BY t.title ASC
             LIMIT %s
@@ -65,6 +70,8 @@ def api_search(request: Request, q: str = "", limit: int = 20):
 
     artists = [
         {
+            "id": row["id"],
+            "slug": row.get("slug"),
             "name": row["name"],
             "album_count": row.get("album_count", 0),
             "has_photo": bool(row.get("has_photo")),
@@ -74,7 +81,10 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     albums = [
         {
             "id": row["id"],
+            "slug": row.get("slug"),
             "artist": row["artist"],
+            "artist_id": row.get("artist_id"),
+            "artist_slug": row.get("artist_slug"),
             "name": row["name"],
             "year": row.get("year") or "",
             "has_cover": bool(row.get("has_cover")),
@@ -84,8 +94,13 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     tracks = [
         {
             "id": row["id"],
+            "slug": row.get("slug"),
             "title": row["title"],
             "artist": row["artist"],
+            "artist_id": row.get("artist_id"),
+            "artist_slug": row.get("artist_slug"),
+            "album_id": row.get("album_id"),
+            "album_slug": row.get("album_slug"),
             "album": row["album"],
             "path": row["path"],
             "duration": row["duration"],

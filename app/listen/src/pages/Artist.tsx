@@ -31,9 +31,11 @@ import { api } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchArtistRadio } from "@/lib/radio";
 import { encPath, shuffleArray } from "@/lib/utils";
+import { artistApiPath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export function Artist() {
-  const { name } = useParams<{ name: string }>();
+  const { name, artistId: artistIdParam } = useParams<{ name?: string; artistId?: string }>();
+  const artistId = artistIdParam ? Number(artistIdParam) : undefined;
   const decodedName = decodeURIComponent(name || "");
   const [bioModalOpen, setBioModalOpen] = useState(false);
   const [expandedShowId, setExpandedShowId] = useState<string | null>(null);
@@ -66,8 +68,11 @@ export function Artist() {
   }
 
   async function handleShare() {
-    if (!decodedName) return;
-    const shareUrl = `${window.location.origin}/artist/${encPath(decodedName)}`;
+    const shareUrl = `${window.location.origin}${artistPagePath({
+      artistId: data?.id ?? artistId,
+      artistSlug: data?.slug,
+      artistName: data?.name ?? decodedName,
+    })}`;
     try {
       if (navigator.share) {
         await navigator.share({ title: decodedName, text: decodedName, url: shareUrl });
@@ -81,23 +86,23 @@ export function Artist() {
   }
 
   const { data, loading, error } = useApi<ArtistData>(
-    decodedName ? `/api/artist/${encPath(decodedName)}` : null,
+    artistId != null ? artistApiPath({ artistId }) : decodedName ? artistApiPath({ artistName: decodedName }) : null,
   );
   const { data: info } = useApi<ArtistInfo>(
-    decodedName ? `/api/artist/${encPath(decodedName)}/info` : null,
+    artistId != null ? `/api/artists/${artistId}/info` : decodedName ? `/api/artist/${encPath(decodedName)}/info` : null,
   );
   const { data: topTracks } = useApi<ArtistTopTrack[]>(
-    decodedName ? `/api/navidrome/artist/${encPath(decodedName)}/top-tracks?count=12` : null,
+    (data?.name || decodedName) ? `/api/navidrome/artist/${encPath(data?.name || decodedName)}/top-tracks?count=12` : null,
   );
   const { data: showsData } = useApi<{ events: ArtistShowEvent[] }>(
-    decodedName ? `/api/artist/${encPath(decodedName)}/shows?limit=12` : null,
+    artistId != null ? `/api/artists/${artistId}/shows?limit=12` : decodedName ? `/api/artist/${encPath(decodedName)}/shows?limit=12` : null,
   );
   const { data: topArtistsStats } = useApi<StatsListResponse<StatsArtist>>(
     decodedName ? "/api/me/stats/top-artists?window=30d&limit=12" : null,
   );
 
   const coverFallback = data?.albums?.[0]
-    ? buildArtistAlbumCover(data.name, data.albums[0]!.name)
+    ? buildArtistAlbumCover(data.name, data.albums[0]!.name, data.albums[0]!.id, data.albums[0]!.slug)
     : undefined;
 
   const playerTracks = useMemo<Track[]>(() => {
@@ -197,6 +202,7 @@ export function Artist() {
   }
 
   const photoUrl = buildArtistPhotoUrl(data.name);
+  const canonicalPhotoUrl = artistPhotoApiUrl({ artistId: data.id, artistSlug: data.slug, artistName: data.name });
   const tags = data.genres.length > 0 ? data.genres : (info?.tags ?? []);
 
   return (
@@ -204,7 +210,7 @@ export function Artist() {
       <ArtistHeroSection
         artist={data}
         artistInfo={info ?? undefined}
-        photoUrl={photoUrl}
+        photoUrl={canonicalPhotoUrl || photoUrl}
         tags={tags}
         following={following}
         onPlay={() => handlePlayTopTracks()}

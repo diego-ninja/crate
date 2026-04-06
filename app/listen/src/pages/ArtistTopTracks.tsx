@@ -6,9 +6,14 @@ import { TrackRow } from "@/components/cards/TrackRow";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
 import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl, artistApiPath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 interface ArtistTopTrack {
   id: string;
+  artist_id?: number;
+  artist_slug?: string;
+  album_id?: number;
+  album_slug?: string;
   title: string;
   artist: string;
   album: string;
@@ -23,8 +28,8 @@ function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
     artist: track.artist,
     album: track.album,
     albumCover: track.artist && track.album
-      ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
-      : `/api/artist/${encPath(track.artist)}/photo`,
+      ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
+      : artistPhotoApiUrl({ artistId: track.artist_id, artistSlug: track.artist_slug, artistName: track.artist }),
     path: track.id.includes("/") ? track.id : undefined,
     navidromeId: track.id.includes("/") ? undefined : track.id,
   }));
@@ -32,11 +37,16 @@ function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
 
 export function ArtistTopTracks() {
   const navigate = useNavigate();
-  const { name } = useParams<{ name: string }>();
+  const { name, artistId: artistIdParam } = useParams<{ name?: string; artistId?: string }>();
+  const artistId = artistIdParam ? Number(artistIdParam) : undefined;
   const decodedName = decodeURIComponent(name || "");
   const { playAll } = usePlayerActions();
+  const { data: artist } = useApi<{ id?: number; slug?: string; name: string }>(
+    artistId != null ? artistApiPath({ artistId }) : decodedName ? artistApiPath({ artistName: decodedName }) : null,
+  );
+  const artistName = artist?.name || decodedName;
   const { data: topTracks, loading } = useApi<ArtistTopTrack[]>(
-    decodedName ? `/api/navidrome/artist/${encPath(decodedName)}/top-tracks?count=50` : null,
+    artistName ? `/api/navidrome/artist/${encPath(artistName)}/top-tracks?count=50` : null,
   );
 
   function handlePlayAll() {
@@ -45,7 +55,7 @@ export function ArtistTopTracks() {
       toast.info("No top tracks available for this artist yet");
       return;
     }
-    playAll(queue, 0, { type: "queue", name: `${decodedName} Top Tracks` });
+    playAll(queue, 0, { type: "queue", name: `${artistName} Top Tracks` });
   }
 
   if (loading) {
@@ -61,13 +71,13 @@ export function ArtistTopTracks() {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate(`/artist/${encPath(decodedName)}`)}
+            onClick={() => navigate(artistPagePath({ artistId: artist?.id ?? artistId, artistSlug: artist?.slug, artistName }))}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-white/70 transition-colors hover:bg-white/5 hover:text-white"
           >
             <ArrowLeft size={18} />
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">{decodedName}</h1>
+            <h1 className="text-2xl font-bold text-foreground">{artistName}</h1>
             <p className="text-sm text-muted-foreground">Top Tracks</p>
           </div>
         </div>
@@ -97,8 +107,8 @@ export function ArtistTopTracks() {
             index={track.track || index + 1}
             showAlbum
             albumCover={track.artist && track.album
-              ? `/api/cover/${encPath(track.artist)}/${encPath(track.album)}`
-              : `/api/artist/${encPath(track.artist)}/photo`}
+              ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
+              : artistPhotoApiUrl({ artistId: track.artist_id, artistSlug: track.artist_slug, artistName: track.artist })}
             showCoverThumb
           />
         ))}

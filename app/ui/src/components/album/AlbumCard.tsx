@@ -1,13 +1,16 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
-import { encPath, formatBadgeClass } from "@/lib/utils";
+import { formatBadgeClass } from "@/lib/utils";
 import { Music, Play, Heart, ListPlus } from "lucide-react";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { useFavorites } from "@/hooks/use-favorites";
 import { api } from "@/lib/api";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
+import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 
 interface AlbumCardProps {
+  albumId?: number;
+  albumSlug?: string;
   artist: string;
   name: string;
   displayName?: string;
@@ -41,6 +44,8 @@ interface NavidromeAlbumLink {
 }
 
 export const AlbumCard = React.memo(function AlbumCard({
+  albumId,
+  albumSlug,
   artist,
   name,
   displayName,
@@ -55,14 +60,14 @@ export const AlbumCard = React.memo(function AlbumCard({
   const [imgError, setImgError] = useState(false);
   const player = usePlayer();
   const { isFavorite, toggleFavorite } = useFavorites();
-  const coverUrl = `/api/cover/${encPath(artist)}/${encPath(name)}`;
+  const coverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: name });
   const favId = `${artist}/${name}`;
 
   async function handlePlay(e: React.MouseEvent) {
     e.stopPropagation();
     try {
       const data = await api<NavidromeAlbumLink>(
-        `/api/navidrome/album/${encPath(artist)}/${encPath(name)}/link`,
+        `/api/navidrome/album/${encodeURIComponent(artist)}/${encodeURIComponent(name)}/link`,
       );
       if (data?.songs?.length) {
         const playerTracks: Track[] = data.songs.map((s) => ({
@@ -75,14 +80,14 @@ export const AlbumCard = React.memo(function AlbumCard({
       }
     } catch {
       // navidrome not linked, navigate instead
-      navigate(`/album/${encPath(artist)}/${encPath(name)}`);
+      navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: name }));
     }
   }
 
   return (
     <MusicContextMenu type="album" artist={artist} album={name}>
       <div
-        onClick={() => navigate(`/album/${encPath(artist)}/${encPath(name)}`)}
+        onClick={() => navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: name }))}
         className="bg-card border border-border rounded-lg p-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 hover:border-primary text-center group"
       >
         <div className="w-full aspect-square rounded-lg bg-secondary overflow-hidden mb-2 relative">
@@ -156,4 +161,3 @@ export const AlbumCard = React.memo(function AlbumCard({
     </MusicContextMenu>
   );
 });
-

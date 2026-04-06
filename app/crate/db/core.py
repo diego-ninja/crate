@@ -11,10 +11,58 @@ import psycopg2.extras
 import psycopg2.pool
 from psycopg2 import sql
 
+from crate.slugs import build_album_slug, build_artist_slug, build_track_slug
+
 log = logging.getLogger(__name__)
 
 _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _db_provisioned = False
+
+
+def _reserve_unique_slug(existing: set[str], base_slug: str) -> str:
+    base = base_slug or "item"
+    candidate = base
+    suffix = 2
+    while candidate in existing:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    existing.add(candidate)
+    return candidate
+
+
+def _backfill_missing_slugs(cur) -> None:
+    for table in ("library_artists", "library_albums", "library_tracks"):
+        cur.execute(sql.SQL("SELECT slug FROM {} WHERE slug IS NOT NULL AND slug != ''").format(sql.Identifier(table)))
+        existing = {row["slug"] for row in cur.fetchall()}
+
+        if table == "library_artists":
+            cur.execute("SELECT name FROM library_artists WHERE slug IS NULL OR slug = '' ORDER BY name")
+            for row in cur.fetchall():
+                slug = _reserve_unique_slug(existing, build_artist_slug(row["name"]))
+                cur.execute("UPDATE library_artists SET slug = %s WHERE name = %s", (slug, row["name"]))
+            continue
+
+        if table == "library_albums":
+            cur.execute("SELECT id, artist, name FROM library_albums WHERE slug IS NULL OR slug = '' ORDER BY id")
+            for row in cur.fetchall():
+                slug = _reserve_unique_slug(existing, build_album_slug(row["artist"], row["name"]))
+                cur.execute("UPDATE library_albums SET slug = %s WHERE id = %s", (slug, row["id"]))
+            continue
+
+        cur.execute(
+            """
+            SELECT id, artist, title, filename
+            FROM library_tracks
+            WHERE slug IS NULL OR slug = ''
+            ORDER BY id
+            """
+        )
+        for row in cur.fetchall():
+            slug = _reserve_unique_slug(
+                existing,
+                build_track_slug(row["artist"], row.get("title"), row.get("filename")),
+            )
+            cur.execute("UPDATE library_tracks SET slug = %s WHERE id = %s", (slug, row["id"]))
 
 
 def _reset_pool():
@@ -318,6 +366,24 @@ def init_db():
                 updated_at TEXT
             )
         """)
+        cur.execute("CREATE SEQUENCE IF NOT EXISTS library_artists_id_seq")
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_artists ADD COLUMN id BIGINT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+        cur.execute("ALTER TABLE library_artists ALTER COLUMN id SET DEFAULT nextval('library_artists_id_seq')")
+        cur.execute("UPDATE library_artists SET id = nextval('library_artists_id_seq') WHERE id IS NULL")
+        cur.execute(
+            """
+            SELECT setval(
+                'library_artists_id_seq',
+                GREATEST(COALESCE((SELECT MAX(id) FROM library_artists), 0), 1),
+                true
+            )
+            """
+        )
         cur.execute("""
             CREATE TABLE IF NOT EXISTS library_albums (
                 id SERIAL PRIMARY KEY,
@@ -336,6 +402,18 @@ def init_db():
                 updated_at TEXT,
                 UNIQUE(artist, name)
             )
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_artists ADD COLUMN slug TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_albums ADD COLUMN slug TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS library_tracks (
@@ -365,7 +443,18 @@ def init_db():
                 mood_json JSONB
             )
         """)
+        cur.execute("""
+            DO $$ BEGIN
+                ALTER TABLE library_tracks ADD COLUMN slug TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+        _backfill_missing_slugs(cur)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_albums_artist ON library_albums(artist)")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_id ON library_artists(id)")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_slug ON library_artists(slug)")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_slug ON library_albums(slug)")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_slug ON library_tracks(slug)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_tracks_album ON library_tracks(album_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_tracks_artist ON library_tracks(artist)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_tracks_genre ON library_tracks(genre)")

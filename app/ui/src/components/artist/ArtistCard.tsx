@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
-import { encPath, formatSize } from "@/lib/utils";
+import { formatSize } from "@/lib/utils";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { Wrench, Check } from "lucide-react";
 
 interface ArtistCardProps {
   name: string;
+  artistId?: number;
+  artistSlug?: string;
   albums: number;
   tracks: number;
   size_mb: number;
@@ -18,6 +21,8 @@ interface ArtistCardProps {
 
 export function ArtistCard({
   name,
+  artistId,
+  artistSlug,
   albums,
   tracks,
   size_mb,
@@ -36,7 +41,7 @@ export function ArtistCard({
     if (onClick) {
       onClick();
     } else {
-      navigate(`/artist/${encPath(name)}`);
+      navigate(artistPagePath({ artistId, artistSlug, artistName: name }));
     }
   }
 
@@ -64,7 +69,7 @@ export function ArtistCard({
         )}
         {!imgError ? (
           <img
-            src={`/api/artist/${encPath(name)}/photo`}
+            src={artistPhotoApiUrl({ artistId, artistSlug, artistName: name })}
             alt={name}
             loading="lazy"
             className="w-full h-full object-cover"

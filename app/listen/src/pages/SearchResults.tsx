@@ -2,16 +2,16 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router";
 import { Loader2, Play } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
-import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 
 interface SearchData {
-  artists: { name: string }[];
-  albums: { artist: string; name: string; id?: number; year?: string }[];
-  tracks: { id?: number; title: string; artist: string; album: string; path?: string; navidrome_id?: string; duration?: number }[];
+  artists: { id?: number; slug?: string; name: string }[];
+  albums: { artist: string; artist_id?: number; artist_slug?: string; name: string; id?: number; slug?: string; year?: string }[];
+  tracks: { id?: number; slug?: string; title: string; artist: string; artist_id?: number; artist_slug?: string; album: string; album_id?: number; album_slug?: string; path?: string; navidrome_id?: string; duration?: number }[];
 }
 
 export function SearchResults() {
@@ -43,7 +43,7 @@ export function SearchResults() {
     album: t.album,
     path: t.path,
     navidromeId: t.navidrome_id,
-    albumCover: t.album ? `/api/cover/${encPath(t.artist)}/${encPath(t.album)}` : undefined,
+    albumCover: t.album ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }) : undefined,
   });
 
   return (
@@ -55,7 +55,7 @@ export function SearchResults() {
           <h2 className="text-lg font-semibold mb-3">Artists ({data.artists.length})</h2>
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-4">
             {data.artists.map((a) => (
-              <ArtistCard key={a.name} name={a.name} photo={`/api/artist/${encPath(a.name)}/photo`} layout="grid" />
+              <ArtistCard key={a.id || a.name} name={a.name} artistId={a.id} artistSlug={a.slug} layout="grid" />
             ))}
           </div>
         </section>
@@ -66,7 +66,7 @@ export function SearchResults() {
           <h2 className="text-lg font-semibold mb-3">Albums ({data.albums.length})</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             {data.albums.map((a) => (
-              <AlbumCard layout="grid" key={`${a.artist}-${a.name}`} artist={a.artist} album={a.name} albumId={a.id} year={a.year} cover={`/api/cover/${encPath(a.artist)}/${encPath(a.name)}`} />
+              <AlbumCard layout="grid" key={a.id || `${a.artist}-${a.name}`} artist={a.artist} album={a.name} albumId={a.id} albumSlug={a.slug} year={a.year} cover={albumCoverApiUrl({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name })} />
             ))}
           </div>
         </section>

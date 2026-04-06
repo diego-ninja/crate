@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
+import { albumApiPath } from "@/lib/library-routes";
 import { Badge } from "@/components/ui/badge";
 import { AudioWaveform, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -34,6 +35,8 @@ export interface AudioMuseTrack {
 }
 
 interface AlbumData {
+  id?: number;
+  slug?: string;
   artist: string;
   name: string;
   display_name?: string;
@@ -87,11 +90,14 @@ interface MatchResult {
 }
 
 export function Album() {
-  const { artist, album } = useParams<{ artist: string; album: string }>();
+  const { artist, album, albumId: albumIdParam } = useParams<{ artist?: string; album?: string; albumId?: string }>();
+  const albumId = albumIdParam ? Number(albumIdParam) : undefined;
   const { data, loading, refetch } = useApi<AlbumData>(
-    artist && album
-      ? `/api/album/${encPath(artist)}/${encPath(album)}`
-      : null,
+    albumId != null
+      ? albumApiPath({ albumId })
+      : artist && album
+        ? albumApiPath({ artistName: artist, albumName: album })
+        : null,
   );
   const [showTags, setShowTags] = useState(false);
   const [matches, setMatches] = useState<MatchResult[] | null>(null);
@@ -104,13 +110,15 @@ export function Album() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!artist || !album) return;
+    const artistName = data?.artist || artist;
+    const albumName = data?.name || album;
+    if (!artistName || !albumName) return;
     let cancelled = false;
-    api<NavidromeAlbumLink>(`/api/navidrome/album/${encPath(artist)}/${encPath(album)}/link`)
+    api<NavidromeAlbumLink>(`/api/navidrome/album/${encPath(artistName)}/${encPath(albumName)}/link`)
       .then((d) => { if (!cancelled) setNavidromeData(d); })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [artist, album]);
+  }, [artist, album, data?.artist, data?.name]);
 
   function fetchAudiomuseData(artistName: string) {
     api<Record<string, AudioMuseTrack>>(`/api/analyze/artist/${encPath(artistName)}/data`)
@@ -130,11 +138,13 @@ export function Album() {
   }, [data?.artist]);
 
   async function findMatches() {
-    if (!artist || !album) return;
+    const artistName = data?.artist || artist;
+    const albumName = data?.name || album;
+    if (!artistName || !albumName) return;
     setMatching(true);
     try {
       const results = await api<MatchResult[]>(
-        `/api/match/${encPath(artist)}/${encPath(album)}`,
+        `/api/match/${encPath(artistName)}/${encPath(albumName)}`,
       );
       setMatches(results);
     } finally {
@@ -143,11 +153,13 @@ export function Album() {
   }
 
   async function applyMatch(match: MatchResult) {
-    if (!artist || !album) return;
+    const artistName = data?.artist || artist;
+    const albumName = data?.name || album;
+    if (!artistName || !albumName) return;
     try {
       const { task_id } = await api<{ task_id: string }>("/api/match/apply", "POST", {
-        artist_folder: artist,
-        album_folder: album,
+        artist_folder: artistName,
+        album_folder: albumName,
         release: match,
       });
       setPendingMatch(null);

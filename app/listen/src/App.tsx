@@ -135,6 +135,22 @@ export function App() {
                       }
                     />
                     <Route
+                      path="artists/:artistId/:slug"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <Artist />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="artists/:artistId/:slug/top-tracks"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <ArtistTopTracks />
+                        </Suspense>
+                      }
+                    />
+                    <Route
                       path="artist/:name"
                       element={
                         <Suspense fallback={<Spinner />}>
@@ -147,6 +163,14 @@ export function App() {
                       element={
                         <Suspense fallback={<Spinner />}>
                           <ArtistTopTracks />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="albums/:albumId/:slug"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <Album />
                         </Suspense>
                       }
                     />

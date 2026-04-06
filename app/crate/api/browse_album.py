@@ -8,9 +8,17 @@ from crate.api._deps import COVER_NAMES, extensions, library_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import display_name, find_album_dir, find_album_row, fs_album_detail, has_library_data
 from crate.audio import get_audio_files
-from crate.db import get_db_ctx, get_library_tracks
+from crate.db import get_db_ctx, get_library_album_by_id, get_library_artist, get_library_tracks
 
 router = APIRouter()
+
+
+@router.get("/api/albums/{album_id}/related")
+def api_related_albums_by_id(request: Request, album_id: int, limit: int = 15):
+    album = get_library_album_by_id(album_id)
+    if not album:
+        return []
+    return api_related_albums(request, album["artist"], album["name"], limit)
 
 
 @router.get("/api/album/{artist:path}/{album:path}/related")
@@ -34,8 +42,10 @@ def api_related_albums(request: Request, artist: str, album: str, limit: int = 1
         genre_ids = [row["genre_id"] for row in cur.fetchall()]
 
         cur.execute(
-            "SELECT id, name, artist, year, track_count, has_cover FROM library_albums "
-            "WHERE artist = %s AND id != %s ORDER BY year",
+            "SELECT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug, "
+            "a.year, a.track_count, a.has_cover "
+            "FROM library_albums a LEFT JOIN library_artists ar ON ar.name = a.artist "
+            "WHERE a.artist = %s AND a.id != %s ORDER BY a.year",
             (artist, album_id),
         )
         for row in cur.fetchall():
@@ -48,8 +58,10 @@ def api_related_albums(request: Request, artist: str, album: str, limit: int = 1
             placeholders = ",".join(["%s"] * len(genre_ids))
             cur.execute(
                 f"""
-                SELECT DISTINCT a.id, a.name, a.artist, a.year, a.track_count, a.has_cover
+                SELECT DISTINCT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug,
+                    a.year, a.track_count, a.has_cover
                 FROM library_albums a
+                LEFT JOIN library_artists ar ON ar.name = a.artist
                 JOIN album_genres ag ON a.id = ag.album_id
                 WHERE ag.genre_id IN ({placeholders})
                 AND a.artist != %s
@@ -75,12 +87,14 @@ def api_related_albums(request: Request, artist: str, album: str, limit: int = 1
         if audio and audio["e"] is not None:
             cur.execute(
                 """
-                SELECT a.id, a.name, a.artist, a.year, a.track_count, a.has_cover,
+                SELECT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug,
+                    a.year, a.track_count, a.has_cover,
                     ABS(AVG(t.energy) - %s) + ABS(AVG(t.danceability) - %s) + ABS(AVG(t.valence) - %s) AS dist
                 FROM library_albums a
+                LEFT JOIN library_artists ar ON ar.name = a.artist
                 JOIN library_tracks t ON t.album_id = a.id
                 WHERE t.energy IS NOT NULL AND a.id != %s AND a.artist != %s
-                GROUP BY a.id, a.name, a.artist, a.year, a.track_count, a.has_cover
+                GROUP BY a.id, a.slug, a.name, a.artist, ar.id, ar.slug, a.year, a.track_count, a.has_cover
                 ORDER BY dist ASC LIMIT 8
                 """,
                 (audio["e"], audio["d"], audio["v"], album_id, artist),
@@ -178,6 +192,9 @@ def api_album(request: Request, artist: str, album: str):
 
     return {
         "id": album_data["id"],
+        "slug": album_data.get("slug"),
+        "artist_id": artist_row["id"] if (artist_row := get_library_artist(artist)) else None,
+        "artist_slug": artist_row["slug"] if artist_row else None,
         "artist": artist,
         "name": album,
         "display_name": display_name(album),
@@ -191,6 +208,14 @@ def api_album(request: Request, artist: str, album: str):
         "album_tags": album_tags,
         "genres": album_genres,
     }
+
+
+@router.get("/api/albums/{album_id}")
+def api_album_by_id(request: Request, album_id: int):
+    album = get_library_album_by_id(album_id)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_album(request, album["artist"], album["name"])
 
 
 @router.get("/api/cover/{artist:path}/{album:path}")
@@ -220,6 +245,14 @@ def api_cover(artist: str, album: str):
                     return Response(content=pic.data, media_type=pic.mime)
 
     return Response(status_code=404)
+
+
+@router.get("/api/albums/{album_id}/cover")
+def api_cover_by_id(album_id: int):
+    album = get_library_album_by_id(album_id)
+    if not album:
+        return Response(status_code=404)
+    return api_cover(album["artist"], album["name"])
 
 
 @router.get("/api/download/album/{artist:path}/{album:path}")

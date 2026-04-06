@@ -5,11 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";
+import { albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { toast } from "sonner";
 
 interface LocalResults {
-  artists: { name: string }[];
-  albums: { artist: string; name: string }[];
+  artists: { id?: number; slug?: string; name: string }[];
+  albums: { id?: number; slug?: string; artist: string; artist_id?: number; artist_slug?: string; name: string }[];
   tracks: { title: string; artist: string; album: string }[];
 }
 
@@ -206,10 +207,10 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
   // Local results
   if (localResults) {
     for (const a of localResults.artists.slice(0, 4)) {
-      items.push({ type: "artist", source: "library", label: a.name, sublabel: "Artist", path: `/artist/${encPath(a.name)}`, artistName: a.name, imageUrl: `/api/artist/${encPath(a.name)}/photo` });
+      items.push({ type: "artist", source: "library", label: a.name, sublabel: "Artist", path: artistPagePath({ artistId: a.id, artistSlug: a.slug, artistName: a.name }), artistName: a.name, imageUrl: artistPhotoApiUrl({ artistId: a.id, artistSlug: a.slug, artistName: a.name }) });
     }
     for (const a of localResults.albums.slice(0, 4)) {
-      items.push({ type: "album", source: "library", label: a.name, sublabel: a.artist, path: `/album/${encPath(a.artist)}/${encPath(a.name)}`, artistName: a.artist, albumName: a.name, imageUrl: `/api/cover/${encPath(a.artist)}/${encPath(a.name)}` });
+      items.push({ type: "album", source: "library", label: a.name, sublabel: a.artist, path: albumPagePath({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name }), artistName: a.artist, albumName: a.name, imageUrl: albumCoverApiUrl({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name }) });
     }
     for (const t of (localResults.tracks ?? []).slice(0, 3)) {
       items.push({ type: "track", source: "library", label: t.title, sublabel: `${t.artist} — ${t.album}`, path: `/album/${encPath(t.artist)}/${encPath(t.album)}`, artistName: t.artist, albumName: t.album });
