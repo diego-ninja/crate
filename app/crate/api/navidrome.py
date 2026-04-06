@@ -310,6 +310,8 @@ def api_star(request: Request, body: dict):
     item_type = body.get("type", "song")
     if not item_id:
         return JSONResponse({"error": "navidrome_id required"}, status_code=400)
+    if item_type not in ("song", "album", "artist"):
+        return JSONResponse({"error": "type must be song, album, or artist"}, status_code=400)
     ok = navidrome.star(item_id, item_type)
     if ok:
         from crate.db import get_db_ctx
@@ -330,6 +332,8 @@ def api_unstar(request: Request, body: dict):
     item_type = body.get("type", "song")
     if not item_id:
         return JSONResponse({"error": "navidrome_id required"}, status_code=400)
+    if item_type not in ("song", "album", "artist"):
+        return JSONResponse({"error": "type must be song, album, or artist"}, status_code=400)
     ok = navidrome.unstar(item_id, item_type)
     if ok:
         from crate.db import get_db_ctx

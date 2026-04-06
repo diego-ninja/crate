@@ -905,12 +905,14 @@ def get_replay_mix(user_id: int, window: str = "30d", limit: int = 30) -> dict:
 
 def get_user_library_counts(user_id: int) -> dict:
     with get_db_ctx() as cur:
-        cur.execute("SELECT COUNT(*) AS c FROM user_follows WHERE user_id = %s", (user_id,))
-        follows = cur.fetchone()["c"]
-        cur.execute("SELECT COUNT(*) AS c FROM user_saved_albums WHERE user_id = %s", (user_id,))
-        albums = cur.fetchone()["c"]
-        cur.execute("SELECT COUNT(*) AS c FROM user_liked_tracks WHERE user_id = %s", (user_id,))
-        likes = cur.fetchone()["c"]
-        cur.execute("SELECT COUNT(*) AS c FROM playlists WHERE user_id = %s", (user_id,))
-        playlists = cur.fetchone()["c"]
-    return {"followed_artists": follows, "saved_albums": albums, "liked_tracks": likes, "playlists": playlists}
+        cur.execute(
+            """
+            SELECT
+                (SELECT COUNT(*) FROM user_follows WHERE user_id = %s) AS followed_artists,
+                (SELECT COUNT(*) FROM user_saved_albums WHERE user_id = %s) AS saved_albums,
+                (SELECT COUNT(*) FROM user_liked_tracks WHERE user_id = %s) AS liked_tracks,
+                (SELECT COUNT(*) FROM playlists WHERE user_id = %s) AS playlists
+            """,
+            (user_id, user_id, user_id, user_id),
+        )
+        return dict(cur.fetchone())

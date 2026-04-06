@@ -466,7 +466,7 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
             checked += 1
             time.sleep(1)
         except Exception:
-            log.debug("New release check failed for %s", name)
+            log.debug("New release check failed for %s", name, exc_info=True)
 
     return {"checked": checked, "new_releases": new_count}
 

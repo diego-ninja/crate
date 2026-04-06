@@ -54,10 +54,15 @@ def create_user(email: str, name: str | None = None, password_hash: str | None =
     with get_db_ctx() as cur:
         cur.execute(
             """INSERT INTO users (email, username, name, password_hash, avatar, role, google_id, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (email) DO NOTHING
+               RETURNING *""",
             (email, final_username, name, password_hash, avatar, role, google_id, now),
         )
-        return dict(cur.fetchone())
+        row = cur.fetchone()
+        if not row:
+            raise ValueError(f"Email already registered: {email}")
+        return dict(row)
 
 
 def get_user_by_email(email: str) -> dict | None:

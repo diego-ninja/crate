@@ -222,7 +222,7 @@ def find_artist_by_name(name: str) -> dict | None:
             best_artist = artist
 
     if best_artist and best_score >= 80:
-        set_cache(cache_key, best_artist)
+        set_cache(cache_key, best_artist, ttl=3600)
         return best_artist
 
     return None
@@ -283,7 +283,7 @@ def find_album(artist_name: str, album_name: str,
             best_album = album
 
     if best_album and best_score >= 75:
-        set_cache(cache_key, best_album)
+        set_cache(cache_key, best_album, ttl=3600)
         return best_album
 
     return None
