@@ -1,8 +1,11 @@
+import { useCallback } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
+import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
 import { api } from "@/lib/api";
+import { PullIndicator } from "@/components/ui/PullIndicator";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import {
@@ -86,20 +89,32 @@ export function Home() {
   const { currentTrack, recentlyPlayed } = usePlayer();
   const { play, playAll } = usePlayerActions();
 
-  const { data: curatedPlaylists, loading: curatedLoading } =
+  const { data: curatedPlaylists, loading: curatedLoading, refetch: refetchCurated } =
     useApi<CuratedPlaylist[]>("/api/curation/playlists");
   const { data: followedCurated, loading: followedLoading, refetch: refetchFollowedCurated } =
     useApi<CuratedPlaylist[]>("/api/curation/followed");
-  const { data: recentGlobalArtists, loading: globalArtistsLoading } =
+  const { data: recentGlobalArtists, loading: globalArtistsLoading, refetch: refetchArtists } =
     useApi<PaginatedArtistsResponse>("/api/artists?sort=recent&per_page=10");
-  const { data: savedAlbums, loading: savedAlbumsLoading } =
+  const { data: savedAlbums, loading: savedAlbumsLoading, refetch: refetchAlbums } =
     useApi<SavedAlbum[]>("/api/me/albums");
-  const { data: playlists, loading: playlistsLoading } =
+  const { data: playlists, loading: playlistsLoading, refetch: refetchPlaylists } =
     useApi<UserPlaylist[]>("/api/playlists");
-  const { data: upcoming } =
+  const { data: upcoming, refetch: refetchUpcoming } =
     useApi<HomeUpcomingResponse>("/api/me/upcoming");
-  const { data: replay } =
+  const { data: replay, refetch: refetchReplay } =
     useApi<ReplayMix>("/api/me/stats/replay?window=30d&limit=18");
+
+  const onRefresh = useCallback(async () => {
+    refetchCurated();
+    refetchFollowedCurated();
+    refetchArtists();
+    refetchAlbums();
+    refetchPlaylists();
+    refetchUpcoming();
+    refetchReplay();
+  }, [refetchCurated, refetchFollowedCurated, refetchArtists, refetchAlbums, refetchPlaylists, refetchUpcoming, refetchReplay]);
+
+  const { handlers: pullHandlers, pullDistance, refreshing } = usePullToRefresh(onRefresh);
 
   const continueItems = currentTrack
     ? [currentTrack, ...recentlyPlayed.filter((track) => track.id !== currentTrack.id)]
@@ -215,7 +230,8 @@ export function Home() {
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-10" {...pullHandlers}>
+      <PullIndicator distance={pullDistance} refreshing={refreshing} />
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-foreground">{getHomeGreeting()}</h1>
