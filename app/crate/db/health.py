@@ -19,7 +19,7 @@ def upsert_health_issue(check_type: str, severity: str, description: str,
             DO UPDATE SET severity = EXCLUDED.severity, details_json = EXCLUDED.details_json,
                          auto_fixable = EXCLUDED.auto_fixable
             RETURNING id
-        """, (check_type, severity, description, json.dumps(details or {}), auto_fixable, now))
+        """, (check_type, severity, description, json.dumps(details or {}, default=str), auto_fixable, now))
         return cur.fetchone()["id"]
 
 

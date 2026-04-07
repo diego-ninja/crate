@@ -10,7 +10,7 @@ def emit_task_event(task_id: str, event_type: str, data: dict | None = None):
         cur.execute(
             "INSERT INTO task_events (task_id, event_type, data_json, created_at) "
             "VALUES (%s, %s, %s, %s)",
-            (task_id, event_type, json.dumps(data or {}), now),
+            (task_id, event_type, json.dumps(data or {}, default=str), now),
         )
 
 

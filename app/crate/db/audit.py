@@ -13,7 +13,7 @@ def log_audit(action: str, target_type: str, target_name: str,
             "INSERT INTO audit_log (timestamp, action, target_type, target_name, details_json, user_id, task_id) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (now, action, target_type, target_name,
-             json.dumps(details) if details else "{}", user_id, task_id),
+             json.dumps(details, default=str) if details else "{}", user_id, task_id),
         )
 
 

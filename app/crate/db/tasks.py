@@ -1,10 +1,22 @@
 import uuid
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from crate.db.core import get_db_ctx
 
 log = logging.getLogger(__name__)
+
+
+def _dumps(obj, **kwargs) -> str:
+    return json.dumps(obj, default=_json_default, **kwargs)
+
+
+def _json_default(obj):
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    return str(obj)
 
 # ── Task CRUD ─────────────────────────────────────────────────────
 
@@ -37,7 +49,7 @@ def create_task(task_type: str, params: dict | None = None, *,
                (id, type, status, params_json, priority, pool,
                 parent_task_id, max_duration_sec, max_retries, created_at, updated_at)
                VALUES (%s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (task_id, task_type, json.dumps(params or {}),
+            (task_id, task_type, _dumps(params or {}),
              priority, pool, parent_task_id, max_duration, max_retries, now, now),
         )
 
@@ -58,7 +70,7 @@ def create_task_dedup(task_type: str, params: dict | None = None,
     from crate.actors import get_priority_for_task, get_queue_for_task, TASK_POOL_CONFIG
 
     p = params or {}
-    params_text = json.dumps(p, sort_keys=True)
+    params_text = _dumps(p, sort_keys=True)
     task_id = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).isoformat()
 
@@ -112,7 +124,7 @@ def update_task(task_id: str, *, status: str | None = None, progress: str | None
         values.append(progress)
     if result is not None:
         fields.append("result_json = %s")
-        values.append(json.dumps(result))
+        values.append(_dumps(result))
     if error is not None:
         fields.append("error = %s")
         values.append(error)
@@ -268,7 +280,7 @@ def save_scan_result(task_id: str, issues: list[dict]):
     with get_db_ctx() as cur:
         cur.execute(
             "INSERT INTO scan_results (task_id, issues_json, scanned_at) VALUES (%s, %s, %s)",
-            (task_id, json.dumps(issues), now),
+            (task_id, _dumps(issues), now),
         )
 
 
