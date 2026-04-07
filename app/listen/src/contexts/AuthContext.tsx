@@ -79,6 +79,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore logout errors and clear local auth state anyway
     }
+    // Clear per-session player state so the next user doesn't see stale data
+    try {
+      localStorage.removeItem("listen-player-state");
+      localStorage.removeItem("listen-recently-played");
+    } catch { /* ignore */ }
     setUser(null);
     navigate("/login");
   }, [navigate]);

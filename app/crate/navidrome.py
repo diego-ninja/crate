@@ -139,8 +139,30 @@ def get_user(username: str) -> dict | None:
 
 
 def ensure_external_user(username: str) -> dict:
-    sr = _request_with_headers("ping", headers=_extauth_headers(username))
-    return {"username": username, "status": sr.get("status")}
+    """Ensure a user exists in Navidrome. Creates via Subsonic API if missing."""
+    existing = get_user(username)
+    if existing:
+        return {"username": username, "status": "ok", "created": False}
+
+    import secrets
+    temp_password = secrets.token_urlsafe(24)
+    try:
+        _request(
+            "createUser",
+            username=username,
+            password=temp_password,
+            email=f"{username}@crate.local",
+            adminRole="false",
+            streamRole="true",
+            downloadRole="true",
+            shareRole="false",
+            settingsRole="true",
+        )
+        return {"username": username, "status": "ok", "created": True}
+    except RuntimeError as exc:
+        if "already exists" in str(exc).lower():
+            return {"username": username, "status": "ok", "created": False}
+        raise
 
 
 def create_playlist(name: str, song_ids: list[str]) -> str:
