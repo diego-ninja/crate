@@ -54,7 +54,6 @@ function connectAudio(audio: HTMLAudioElement): AnalyserNode | null {
 
     sourceNode.connect(analyser);
     analyser.connect(ctx.destination);
-
     return analyser;
   } catch {
     return null;
@@ -73,7 +72,7 @@ function connectAudio(audio: HTMLAudioElement): AnalyserNode | null {
 let vizAnalyser: AnalyserNode | null = null;
 
 export function createAnalyserNode(audio: HTMLAudioElement, fftSize = 2048): AnalyserNode | null {
-  // First ensure connectAudio has been called (sets up source → destination chain)
+  // First ensure connectAudio has been called (sets up source → analyser → destination chain)
   const mainAnalyser = connectAudio(audio);
   if (!mainAnalyser) return null;
 
@@ -89,9 +88,6 @@ export function createAnalyserNode(audio: HTMLAudioElement, fftSize = 2048): Ana
     vizAnalyser = ctx.createAnalyser();
     vizAnalyser.fftSize = fftSize;
     vizAnalyser.smoothingTimeConstant = 0.8;
-
-    // Connect from the main analyser output (not sourceNode directly)
-    // This ensures the audio chain: source → mainAnalyser → destination stays intact
     mainAnalyser.connect(vizAnalyser);
     return vizAnalyser;
   } catch {

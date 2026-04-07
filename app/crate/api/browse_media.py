@@ -1,4 +1,5 @@
 import logging
+import math
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -205,22 +206,59 @@ def api_rate_track(request: Request, body: dict):
     return {"ok": True, "rating": rating}
 
 
-_TRACK_INFO_COLS = (
+_TRACK_INFO_QUERY_COLS = (
     "title, artist, album, bpm, audio_key, audio_scale, energy, "
     "danceability, valence, acousticness, instrumentalness, loudness, "
-    "dynamic_range, lastfm_listeners, lastfm_playcount, popularity, rating"
+    "dynamic_range, mood_json, bliss_vector, lastfm_listeners, lastfm_playcount, popularity, rating"
 )
+
+
+def _derive_bliss_signature(bliss_vector) -> dict[str, float] | None:
+    if not isinstance(bliss_vector, (list, tuple)) or not bliss_vector:
+        return None
+
+    values: list[float] = []
+    for value in bliss_vector:
+        try:
+            values.append(float(value))
+        except (TypeError, ValueError):
+            continue
+
+    if not values:
+        return None
+
+    mean_abs = sum(abs(value) for value in values) / len(values)
+    density_raw = math.sqrt(sum(value * value for value in values) / len(values))
+    diffs = [abs(values[i] - values[i - 1]) for i in range(1, len(values))]
+    texture_raw = sum(diffs) / len(diffs) if diffs else 0.0
+    half = max(1, len(values) // 2)
+    front = sum(values[:half]) / half
+    back = sum(values[half:]) / max(1, len(values) - half)
+    motion_raw = abs(back - front)
+
+    return {
+        "texture": round(math.tanh(texture_raw * 1.35), 3),
+        "motion": round(math.tanh((motion_raw + mean_abs * 0.35) * 1.55), 3),
+        "density": round(math.tanh((density_raw * 0.9 + mean_abs * 0.5) * 1.2), 3),
+    }
+
+
+def _serialize_track_info_row(row) -> dict:
+    payload = dict(row)
+    bliss_vector = payload.pop("bliss_vector", None)
+    payload["bliss_signature"] = _derive_bliss_signature(bliss_vector)
+    return payload
 
 
 @router.get("/api/tracks/{track_id}/info")
 def api_track_info_by_id(request: Request, track_id: int):
     _require_auth(request)
     with get_db_ctx() as cur:
-        cur.execute(f"SELECT {_TRACK_INFO_COLS} FROM library_tracks WHERE id = %s", (track_id,))
+        cur.execute(f"SELECT {_TRACK_INFO_QUERY_COLS} FROM library_tracks WHERE id = %s", (track_id,))
         row = cur.fetchone()
     if not row:
         return Response(status_code=404)
-    return dict(row)
+    return _serialize_track_info_row(row)
 
 
 @router.get("/api/track-info/{filepath:path}")
@@ -231,14 +269,14 @@ def api_track_info(request: Request, filepath: str):
 
     with get_db_ctx() as cur:
         cur.execute(
-            f"SELECT {_TRACK_INFO_COLS} FROM library_tracks WHERE path LIKE %s LIMIT 1",
+            f"SELECT {_TRACK_INFO_QUERY_COLS} FROM library_tracks WHERE path LIKE %s LIMIT 1",
             (f"%{filepath}",),
         )
         row = cur.fetchone()
 
     if not row:
         return Response(status_code=404)
-    return dict(row)
+    return _serialize_track_info_row(row)
 
 
 @router.get("/api/discover/completeness")

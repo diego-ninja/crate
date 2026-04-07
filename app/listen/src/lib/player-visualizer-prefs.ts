@@ -1,8 +1,9 @@
 const USE_ALBUM_PALETTE_KEY = "listen-viz-use-album-palette";
 const VISUALIZER_ENABLED_KEY = "listen-viz-enabled";
 const VISUALIZER_SETTINGS_KEY = "listen-viz-settings";
+const TRACK_ADAPTIVE_VISUALIZER_KEY = "listen-viz-track-adaptive";
 export const PLAYER_VIZ_PREFS_EVENT = "listen:viz-prefs-changed";
-export type VisualizerMode = "spheres" | "halo" | "tunnel";
+export type VisualizerMode = "spheres";
 
 export interface VisualizerSettingsPreference {
   separation: number;
@@ -55,6 +56,24 @@ export function setVisualizerEnabledPreference(value: boolean) {
   }
 }
 
+export function getTrackAdaptiveVisualizerPreference(): boolean {
+  try {
+    const raw = localStorage.getItem(TRACK_ADAPTIVE_VISUALIZER_KEY);
+    return raw == null ? true : raw === "true";
+  } catch {
+    return true;
+  }
+}
+
+export function setTrackAdaptiveVisualizerPreference(value: boolean) {
+  try {
+    localStorage.setItem(TRACK_ADAPTIVE_VISUALIZER_KEY, String(value));
+    dispatchVisualizerPrefsChange({ trackAdaptiveVisualizer: value });
+  } catch {
+    // ignore storage failures
+  }
+}
+
 export function getVisualizerSettingsPreference(): VisualizerSettingsPreference {
   try {
     const raw = localStorage.getItem(VISUALIZER_SETTINGS_KEY);
@@ -82,14 +101,6 @@ export function setVisualizerSettingsPreference(value: VisualizerSettingsPrefere
 }
 
 export function getLegacyVisualizerModePreference(): VisualizerMode {
-  try {
-    const raw = localStorage.getItem("listen-viz-mode");
-    if (raw === "halo" || raw === "spheres" || raw === "tunnel") {
-      return raw;
-    }
-  } catch {
-    // ignore storage failures
-  }
   return "spheres";
 }
 
