@@ -51,6 +51,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await api<AuthUser>("/api/auth/me", "GET", undefined, {
         signal: controller.signal,
       });
+      if (data && data.id) {
+        // Clear player state if a different user logged in
+        const prevUserId = localStorage.getItem("listen-auth-user-id");
+        if (prevUserId && prevUserId !== String(data.id)) {
+          try {
+            localStorage.removeItem("listen-player-state");
+            localStorage.removeItem("listen-recently-played");
+          } catch { /* ignore */ }
+        }
+        try { localStorage.setItem("listen-auth-user-id", String(data.id)); } catch { /* ignore */ }
+      }
       setUser(data && data.id ? data : null);
     } catch (error) {
       if (controller.signal.aborted || (error as Error).name === "AbortError") {
