@@ -13,17 +13,22 @@ export function QueueTab() {
   const sourceName = playSource?.name || "Queue";
 
   async function handleSaveAsPlaylist() {
+    const validTracks = queue.filter((t) => t.path && t.path.includes("/"));
+    if (!validTracks.length) {
+      toast.error("No local tracks in queue to save");
+      return;
+    }
     try {
       await api("/api/playlists", "POST", {
         name: playSource?.name || "Queue",
-        tracks: queue.map((t) => ({
-          track_path: t.path || t.id,
+        tracks: validTracks.map((t) => ({
+          path: t.path,
           title: t.title,
           artist: t.artist,
           album: t.album || "",
         })),
       });
-      toast.success("Playlist saved");
+      toast.success(`Playlist saved (${validTracks.length} tracks)`);
     } catch {
       toast.error("Failed to save playlist");
     }
