@@ -101,7 +101,7 @@ def search_events(artist_name: str, country_code: str = "", size: int = 10) -> l
             event = {
                 "id": e.get("id", ""),
                 "name": e.get("name", ""),
-                "date": start.get("dateTime") or start.get("localDate", ""),
+                "date": start.get("localDate") or (start.get("dateTime", "")[:10] if start.get("dateTime") else ""),
                 "local_date": start.get("localDate", ""),
                 "local_time": start.get("localTime", ""),
                 "venue": venue_data.get("name", ""),
