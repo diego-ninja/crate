@@ -6,6 +6,7 @@ import {
   ArtistBioModal,
 } from "@/components/artist/ArtistBioModal";
 import { ArtistHeroSection } from "@/components/artist/ArtistHeroSection";
+import { ArtistSetlistModal } from "@/components/artist/ArtistSetlistSection";
 import {
   ArtistAlbumsSection,
   ArtistShowsSection,
@@ -37,6 +38,7 @@ export function Artist() {
   const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
   const artistId = artistIdParam ? Number(artistIdParam) : undefined;
   const [bioModalOpen, setBioModalOpen] = useState(false);
+  const [setlistModalOpen, setSetlistModalOpen] = useState(false);
   const [expandedShowId, setExpandedShowId] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
   const { playAll } = usePlayerActions();
@@ -94,6 +96,14 @@ export function Artist() {
   );
   const { data: showsData } = useApi<{ events: ArtistShowEvent[] }>(
     artistId != null ? `/api/artists/${artistId}/shows?limit=12` : null,
+  );
+  const { data: enrichment } = useApi<{
+    setlist?: {
+      probable_setlist: { title: string; frequency: number; play_count: number; last_played?: string }[];
+      total_shows: number;
+    };
+  }>(
+    artistId != null ? `/api/artists/${artistId}/enrichment` : null,
   );
   const { data: topArtistsStats } = useApi<StatsListResponse<StatsArtist>>(
     artistId != null ? "/api/me/stats/top-artists?window=30d&limit=12" : null,
@@ -196,6 +206,8 @@ export function Artist() {
         onPlay={() => handlePlayTopTracks()}
         onShuffle={() => handlePlayTopTracks(0, true)}
         onArtistRadio={() => void handleArtistRadio()}
+        onPlaySetlist={() => setSetlistModalOpen(true)}
+        hasSetlist={!!enrichment?.setlist?.probable_setlist?.length}
         onToggleFollow={() => void toggleFollow()}
         onShare={() => void handleShare()}
         onOpenBio={() => setBioModalOpen(true)}
@@ -229,6 +241,16 @@ export function Artist() {
         tags={tags}
         onClose={() => setBioModalOpen(false)}
       />
+      {enrichment?.setlist?.probable_setlist?.length ? (
+        <ArtistSetlistModal
+          artistName={data.name}
+          artistId={data.id}
+          setlist={enrichment.setlist.probable_setlist}
+          open={setlistModalOpen}
+          onClose={() => setSetlistModalOpen(false)}
+          onPlay={() => void handlePlayArtistSetlist()}
+        />
+      ) : null}
     </div>
   );
 }

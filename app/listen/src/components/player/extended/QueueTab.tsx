@@ -1,6 +1,8 @@
-import { X } from "lucide-react";
+import { Save, X } from "lucide-react";
+import { toast } from "sonner";
 
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { api } from "@/lib/api";
 
 export function QueueTab() {
   const { isPlaying } = usePlayer();
@@ -9,6 +11,28 @@ export function QueueTab() {
   const history = queue.slice(0, currentIndex).reverse();
   const upcoming = queue.slice(currentIndex + 1);
   const sourceName = playSource?.name || "Queue";
+
+  async function handleSaveAsPlaylist() {
+    const validTracks = queue.filter((t) => t.path && t.path.includes("/"));
+    if (!validTracks.length) {
+      toast.error("No local tracks in queue to save");
+      return;
+    }
+    try {
+      await api("/api/playlists", "POST", {
+        name: playSource?.name || "Queue",
+        tracks: validTracks.map((t) => ({
+          path: t.path,
+          title: t.title,
+          artist: t.artist,
+          album: t.album || "",
+        })),
+      });
+      toast.success(`Playlist saved (${validTracks.length} tracks)`);
+    } catch {
+      toast.error("Failed to save playlist");
+    }
+  }
 
   return (
     <div className="flex-1 overflow-y-auto pr-1">
@@ -47,9 +71,21 @@ export function QueueTab() {
 
       {currentTrack && (
         <div className="mb-4">
-          <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-white/25">
-            Now playing from: {sourceName}
-          </p>
+          <div className="mb-2 flex items-center justify-between px-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-white/25">
+              Now playing from: {sourceName}
+            </p>
+            {queue.length > 0 && (
+              <button
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white/30 transition-colors hover:bg-white/5 hover:text-white/50"
+                onClick={() => void handleSaveAsPlaylist()}
+                title="Save as Playlist"
+              >
+                <Save size={10} />
+                Save
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-3 rounded-lg bg-white/5 px-2 py-1.5">
             <span className="w-4 shrink-0 text-right text-[10px] tabular-nums text-primary">
               {currentIndex + 1}

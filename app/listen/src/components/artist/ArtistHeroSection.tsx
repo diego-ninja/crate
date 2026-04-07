@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  ListMusic,
   Play,
   Radio,
   Share2,
@@ -22,6 +23,8 @@ interface ArtistHeroSectionProps {
   onPlay: () => void;
   onShuffle: () => void;
   onArtistRadio: () => void;
+  onPlaySetlist?: () => void;
+  hasSetlist?: boolean;
   onToggleFollow: () => void;
   onShare: () => void;
   onOpenBio: () => void;
@@ -36,6 +39,8 @@ export function ArtistHeroSection({
   onPlay,
   onShuffle,
   onArtistRadio,
+  onPlaySetlist,
+  hasSetlist,
   onToggleFollow,
   onShare,
   onOpenBio,
@@ -138,6 +143,14 @@ export function ArtistHeroSection({
         >
           <Radio size={15} />
           Artist Radio
+        </button>
+        <button
+          className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
+          onClick={onPlaySetlist}
+          disabled={!hasSetlist}
+        >
+          <ListMusic size={15} />
+          Setlist
         </button>
         <button
           className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm transition-colors ${
