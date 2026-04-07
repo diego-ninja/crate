@@ -775,6 +775,10 @@ def api_artist_setlist_playable(request: Request, name: str):
     if not probable_setlist:
         return {"tracks": []}
 
+    artist_row = get_library_artist(name)
+    artist_id = artist_row["id"] if artist_row else None
+    artist_slug = artist_row.get("slug") if artist_row else None
+
     with get_db_ctx() as cur:
         cur.execute(
             """
@@ -783,6 +787,8 @@ def api_artist_setlist_playable(request: Request, name: str):
                 t.title,
                 t.path,
                 t.album,
+                t.album_id,
+                a.slug AS album_slug,
                 t.duration,
                 t.navidrome_id
             FROM library_tracks t
@@ -806,7 +812,11 @@ def api_artist_setlist_playable(request: Request, name: str):
                 "library_track_id": match["id"],
                 "title": match.get("title", ""),
                 "artist": name,
+                "artist_id": artist_id,
+                "artist_slug": artist_slug,
                 "album": match.get("album", ""),
+                "album_id": match.get("album_id"),
+                "album_slug": match.get("album_slug"),
                 "path": match.get("path", ""),
                 "duration": match.get("duration"),
                 "navidrome_id": match.get("navidrome_id"),
