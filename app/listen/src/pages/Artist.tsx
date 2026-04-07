@@ -6,6 +6,7 @@ import {
   ArtistBioModal,
 } from "@/components/artist/ArtistBioModal";
 import { ArtistHeroSection } from "@/components/artist/ArtistHeroSection";
+import { ArtistSetlistSection } from "@/components/artist/ArtistSetlistSection";
 import {
   ArtistAlbumsSection,
   ArtistShowsSection,
@@ -94,6 +95,14 @@ export function Artist() {
   );
   const { data: showsData } = useApi<{ events: ArtistShowEvent[] }>(
     artistId != null ? `/api/artists/${artistId}/shows?limit=12` : null,
+  );
+  const { data: enrichment } = useApi<{
+    setlist?: {
+      probable_setlist: { title: string; frequency: number; play_count: number; last_played?: string }[];
+      total_shows: number;
+    };
+  }>(
+    artistId != null ? `/api/artists/${artistId}/enrichment` : null,
   );
   const { data: topArtistsStats } = useApi<StatsListResponse<StatsArtist>>(
     artistId != null ? "/api/me/stats/top-artists?window=30d&limit=12" : null,
@@ -196,6 +205,8 @@ export function Artist() {
         onPlay={() => handlePlayTopTracks()}
         onShuffle={() => handlePlayTopTracks(0, true)}
         onArtistRadio={() => void handleArtistRadio()}
+        onPlaySetlist={() => void handlePlayArtistSetlist()}
+        hasSetlist={!!enrichment?.setlist?.probable_setlist?.length}
         onToggleFollow={() => void toggleFollow()}
         onShare={() => void handleShare()}
         onOpenBio={() => setBioModalOpen(true)}
@@ -216,6 +227,13 @@ export function Artist() {
           onToggleExpand={setExpandedShowId}
           onPlayProbableSetlist={() => void handlePlayArtistSetlist()}
         />
+        {enrichment?.setlist?.probable_setlist?.length ? (
+          <ArtistSetlistSection
+            artistName={data.name}
+            setlist={enrichment.setlist.probable_setlist}
+            onPlayAll={() => void handlePlayArtistSetlist()}
+          />
+        ) : null}
         <RelatedArtistsSection
           artists={similarArtists}
         />

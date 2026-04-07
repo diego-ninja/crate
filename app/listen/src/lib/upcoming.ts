@@ -23,7 +23,7 @@ export async function fetchPlayableSetlist(input: { artistId?: number; artistNam
   }>(`/api/artists/${input.artistId}/setlist-playable`);
 
   return (response.tracks || []).map((track) => ({
-    id: track.path || track.navidrome_id || String(track.library_track_id),
+    id: track.path || String(track.library_track_id),
     title: track.title,
     artist: track.artist,
     artistId: track.artist_id,
@@ -31,11 +31,11 @@ export async function fetchPlayableSetlist(input: { artistId?: number; artistNam
     album: track.album,
     albumId: track.album_id,
     albumSlug: track.album_slug,
-    albumCover: track.album
-      ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
-      : artistPhotoApiUrl({ artistId: track.artist_id, artistSlug: track.artist_slug, artistName: track.artist || input.artistName }),
-    path: track.path || undefined,
-    navidromeId: track.navidrome_id || undefined,
+    path: track.path,
+    navidromeId: track.navidrome_id,
     libraryTrackId: track.library_track_id,
+    albumCover: albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
+      || artistPhotoApiUrl({ artistId: track.artist_id, artistSlug: track.artist_slug, artistName: track.artist })
+      || undefined,
   }));
 }
