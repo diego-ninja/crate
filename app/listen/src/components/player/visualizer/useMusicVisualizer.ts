@@ -68,7 +68,7 @@ export function useMusicVisualizer(
       };
 
       try {
-        const viz = new MusicVisualizer(canvas, node, mode);
+        const viz = new MusicVisualizer(canvas, node, audioElement, mode);
         vizRef.current = viz;
         viz.start();
         setTimeout(() => forceResize(viz), 100);

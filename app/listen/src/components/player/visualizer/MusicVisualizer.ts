@@ -1,4 +1,4 @@
-import { mat4, vec3, vec4 } from 'gl-matrix';
+import { vec3, vec4 } from 'gl-matrix';
 import { type VisualizerMode } from '@/lib/player-visualizer-prefs';
 import { setGL } from './globals';
 import Icosphere from './geometry/Icosphere';
@@ -16,6 +16,8 @@ interface AudioMetrics {
   mid: number;
   high: number;
   pulse: number;
+  beat: number;
+  transient: number;
 }
 
 function clamp(value: number, min: number, max: number) {
@@ -31,9 +33,14 @@ function mixColor(a: [number, number, number], b: [number, number, number], t: n
   ];
 }
 
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
+
 export class MusicVisualizer {
   private glCtx: WebGL2RenderingContext;
   private analyser: AnalyserNode;
+  private audioElement: HTMLAudioElement;
   private freqDomain: Uint8Array<ArrayBuffer>;
   private timeDomain: Uint8Array<ArrayBuffer>;
 
@@ -62,6 +69,38 @@ export class MusicVisualizer {
   private canvas: HTMLCanvasElement;
   private width = 0;
   private height = 0;
+  private envelopeAverage = 0;
+  private analysisAverage = 0;
+  private beatPulse = 0;
+  private lastBeatFrame = -120;
+  private groovePulse = 0;
+  private beatIntervals: number[] = [];
+  private beatIntervalAverage = 0;
+  private grooveConfidence = 0;
+  private arrivalAccentPulse = 0;
+  private playbackLevel = 1;
+  private renderedSeparation = 0.15;
+  private renderedGlow = 6.0;
+  private renderedScale = 1.4;
+  private renderedPersistence = 0.8;
+  private renderedOctaves = 2;
+  private renderedOrbitSpeed = 1.0;
+  private renderedCameraDrift = 1.0;
+  private renderedCameraDepth = 0.0;
+  private renderedPulseGain = 1.0;
+  private renderedTurbulence = 1.0;
+  private renderedOrbitPhase = 0.0;
+  private renderedShellDensity = 1.0;
+  private renderedBeatResponse = 1.0;
+  private renderedBeatDecay = 0.88;
+  private renderedSectionRate = 1.0;
+  private renderedSectionDepth = 0.12;
+  private renderedLowBandWeight = 1.0;
+  private renderedMidBandWeight = 1.0;
+  private renderedHighBandWeight = 1.0;
+  private renderedColor1: [number, number, number] = [0.024, 0.714, 0.831];
+  private renderedColor2: [number, number, number] = [0.4, 0.9, 1.0];
+  private renderedColor3: [number, number, number] = [0.1, 0.3, 0.8];
 
   // Exposed controls
   separation = 0.15;
@@ -70,20 +109,41 @@ export class MusicVisualizer {
   persistence = 0.8;
   octaves = 2;
   mode: VisualizerMode;
+  orbitSpeed = 1.0;
+  cameraDrift = 1.0;
+  cameraDepth = 0.0;
+  pulseGain = 1.0;
+  turbulence = 1.0;
+  orbitPhase = 0.0;
+  shellDensity = 1.0;
+  beatResponse = 1.0;
+  beatDecay = 0.88;
+  sectionRate = 1.0;
+  sectionDepth = 0.12;
+  lowBandWeight = 1.0;
+  midBandWeight = 1.0;
+  highBandWeight = 1.0;
+  analysisGainCompensation = 1.0;
 
   // Dynamic scene colors — [r, g, b] normalized 0-1
   color1: [number, number, number] = [0.024, 0.714, 0.831];
   color2: [number, number, number] = [0.4, 0.9, 1.0];
   color3: [number, number, number] = [0.1, 0.3, 0.8];
 
-  constructor(canvas: HTMLCanvasElement, analyser: AnalyserNode, mode: VisualizerMode = "spheres") {
+  constructor(
+    canvas: HTMLCanvasElement,
+    analyser: AnalyserNode,
+    audioElement: HTMLAudioElement,
+    _mode: VisualizerMode = "spheres",
+  ) {
     const glCtx = canvas.getContext('webgl2', { alpha: true, antialias: false, preserveDrawingBuffer: false });
     if (!glCtx) throw new Error('WebGL2 not supported');
 
     this.canvas = canvas;
     this.glCtx = glCtx;
     this.analyser = analyser;
-    this.mode = mode;
+    this.audioElement = audioElement;
+    this.mode = "spheres";
     this.freqDomain = new Uint8Array(analyser.frequencyBinCount);
     this.timeDomain = new Uint8Array(analyser.frequencyBinCount);
 
@@ -100,6 +160,55 @@ export class MusicVisualizer {
 
   setMode(mode: VisualizerMode) {
     this.mode = mode;
+  }
+
+  accentTrackChange(strength = 1) {
+    const next = clamp(strength, 0, 1.5);
+    this.arrivalAccentPulse = Math.max(this.arrivalAccentPulse, next);
+    this.beatPulse = Math.max(this.beatPulse, next * 0.35);
+    this.groovePulse = 0;
+    this.envelopeAverage = 0;
+  }
+
+  private updateTrackMorph() {
+    const ease = 0.085;
+    const colorEase = 0.065;
+
+    this.renderedSeparation = lerp(this.renderedSeparation, this.separation, ease);
+    this.renderedGlow = lerp(this.renderedGlow, this.glow, ease);
+    this.renderedScale = lerp(this.renderedScale, this.scale, ease);
+    this.renderedPersistence = lerp(this.renderedPersistence, this.persistence, ease);
+    this.renderedOctaves = lerp(this.renderedOctaves, this.octaves, ease);
+    this.renderedOrbitSpeed = lerp(this.renderedOrbitSpeed, this.orbitSpeed, ease);
+    this.renderedCameraDrift = lerp(this.renderedCameraDrift, this.cameraDrift, ease);
+    this.renderedCameraDepth = lerp(this.renderedCameraDepth, this.cameraDepth, ease);
+    this.renderedPulseGain = lerp(this.renderedPulseGain, this.pulseGain, ease);
+    this.renderedTurbulence = lerp(this.renderedTurbulence, this.turbulence, ease);
+    this.renderedOrbitPhase = lerp(this.renderedOrbitPhase, this.orbitPhase, ease);
+    this.renderedShellDensity = lerp(this.renderedShellDensity, this.shellDensity, ease);
+    this.renderedBeatResponse = lerp(this.renderedBeatResponse, this.beatResponse, ease);
+    this.renderedBeatDecay = lerp(this.renderedBeatDecay, this.beatDecay, ease);
+    this.renderedSectionRate = lerp(this.renderedSectionRate, this.sectionRate, ease);
+    this.renderedSectionDepth = lerp(this.renderedSectionDepth, this.sectionDepth, ease);
+    this.renderedLowBandWeight = lerp(this.renderedLowBandWeight, this.lowBandWeight, ease);
+    this.renderedMidBandWeight = lerp(this.renderedMidBandWeight, this.midBandWeight, ease);
+    this.renderedHighBandWeight = lerp(this.renderedHighBandWeight, this.highBandWeight, ease);
+
+    this.renderedColor1 = [
+      lerp(this.renderedColor1[0], this.color1[0], colorEase),
+      lerp(this.renderedColor1[1], this.color1[1], colorEase),
+      lerp(this.renderedColor1[2], this.color1[2], colorEase),
+    ];
+    this.renderedColor2 = [
+      lerp(this.renderedColor2[0], this.color2[0], colorEase),
+      lerp(this.renderedColor2[1], this.color2[1], colorEase),
+      lerp(this.renderedColor2[2], this.color2[2], colorEase),
+    ];
+    this.renderedColor3 = [
+      lerp(this.renderedColor3[0], this.color3[0], colorEase),
+      lerp(this.renderedColor3[1], this.color3[1], colorEase),
+      lerp(this.renderedColor3[2], this.color3[2], colorEase),
+    ];
   }
 
   private initScene() {
@@ -204,73 +313,110 @@ export class MusicVisualizer {
     const bins = this.analyser.frequencyBinCount;
     const lowEnd = Math.max(4, Math.floor(bins * 0.12));
     const midEnd = Math.max(lowEnd + 4, Math.floor(bins * 0.45));
-    let freqAvg = 0;
+    let rawFreqAvg = 0;
     let timeAvg = 0;
-    let low = 0;
-    let mid = 0;
-    let high = 0;
+    let rawLow = 0;
+    let rawMid = 0;
+    let rawHigh = 0;
 
     for (let i = 0; i < bins; i++) {
       const freq = this.freqDomain[i]! / 255;
-      freqAvg += freq;
+      rawFreqAvg += freq;
       timeAvg += this.timeDomain[i]! / 255;
 
-      if (i < lowEnd) low += freq;
-      else if (i < midEnd) mid += freq;
-      else high += freq;
+      if (i < lowEnd) rawLow += freq;
+      else if (i < midEnd) rawMid += freq;
+      else rawHigh += freq;
     }
 
-    freqAvg /= bins;
+    rawFreqAvg /= bins;
     timeAvg /= bins;
-    low /= lowEnd;
-    mid /= Math.max(1, midEnd - lowEnd);
-    high /= Math.max(1, bins - midEnd);
+    rawLow /= lowEnd;
+    rawMid /= Math.max(1, midEnd - lowEnd);
+    rawHigh /= Math.max(1, bins - midEnd);
 
-    const pulse = clamp(low * 0.55 + mid * 0.3 + high * 0.15, 0, 1);
-    return { freqAvg, timeAvg, low, mid, high, pulse };
-  }
+    const rawEnvelope = clamp(rawLow * 0.62 + rawMid * 0.25 + rawHigh * 0.13, 0, 1);
+    const playbackTarget = this.audioElement.paused || this.audioElement.ended ? 0 : 1;
+    this.playbackLevel = lerp(
+      this.playbackLevel,
+      playbackTarget,
+      playbackTarget > this.playbackLevel ? 0.2 : 0.075,
+    );
+    // AGC: normalize to recent average so the visualizer adapts to any volume level.
+    // This inherently compensates for audio.volume since the average tracks the
+    // actual signal level regardless of gain.
+    this.analysisAverage = this.analysisAverage * 0.97 + rawEnvelope * 0.03;
+    const normalization = clamp(
+      0.22 / Math.max(this.analysisAverage, 0.04),
+      0.7,
+      3.5,
+    );
 
-  private createModel(options?: {
-    scale?: number;
-    translate?: [number, number, number];
-    rotate?: [number, number, number];
-  }): mat4 {
-    const model = mat4.create();
-    mat4.identity(model);
-    const translate = options?.translate ?? [0, 0, 0];
-    const rotate = options?.rotate ?? [0, 0, 0];
-    const scale = options?.scale ?? 1;
-    mat4.translate(model, model, vec3.fromValues(translate[0], translate[1], translate[2]));
-    mat4.rotateX(model, model, rotate[0]);
-    mat4.rotateY(model, model, rotate[1]);
-    mat4.rotateZ(model, model, rotate[2]);
-    mat4.scale(model, model, vec3.fromValues(scale, scale, scale));
-    return model;
+    // Use sqrt instead of 1-exp to preserve peak shape while still compressing
+    const baseFreqAvg = clamp(Math.sqrt(rawFreqAvg * normalization * 0.85), 0, 1.15);
+    const low = clamp(Math.sqrt(rawLow * normalization * 1.0), 0, 1.25) * this.playbackLevel;
+    const mid = clamp(Math.sqrt(rawMid * normalization * 0.95), 0, 1.2) * this.playbackLevel;
+    const high = clamp(Math.sqrt(rawHigh * normalization * 0.9), 0, 1.15) * this.playbackLevel;
+    const envelope = clamp(Math.sqrt(rawEnvelope * normalization * 1.0), 0, 1.2) * this.playbackLevel;
+    const freqAvg = clamp(baseFreqAvg * (0.84 + envelope * 0.26), 0, 1.15) * this.playbackLevel;
+
+    this.envelopeAverage = this.envelopeAverage * 0.9 + envelope * 0.1;
+    const transient = Math.max(0, envelope - this.envelopeAverage);
+    const beatThreshold = 0.018 + (1.15 - this.renderedBeatResponse) * 0.008;
+    const minBeatFrames = Math.max(10, Math.round(20 - this.renderedBeatResponse * 5));
+    const isBeat =
+      transient * this.renderedBeatResponse > beatThreshold
+      && envelope > this.envelopeAverage + 0.015
+      && this.time - this.lastBeatFrame > minBeatFrames;
+
+    if (isBeat) {
+      if (this.lastBeatFrame > 0) {
+        const interval = this.time - this.lastBeatFrame;
+        if (interval >= 10 && interval <= 48) {
+          this.beatIntervals.push(interval);
+          if (this.beatIntervals.length > 6) {
+            this.beatIntervals.shift();
+          }
+          this.beatIntervalAverage =
+            this.beatIntervals.reduce((sum, value) => sum + value, 0) / this.beatIntervals.length;
+
+          const variance =
+            this.beatIntervals.reduce(
+              (sum, value) => sum + (value - this.beatIntervalAverage) ** 2,
+              0,
+            ) / this.beatIntervals.length;
+          const deviation = Math.sqrt(variance);
+          this.grooveConfidence = clamp(1 - deviation / Math.max(this.beatIntervalAverage, 1), 0, 1);
+        }
+      }
+      this.beatPulse = clamp(transient * 10 * this.renderedBeatResponse + envelope * 0.4, 0, 1.6);
+      this.lastBeatFrame = this.time;
+    } else {
+      this.beatPulse *= this.renderedBeatDecay;
+      if (this.beatIntervalAverage > 0 && this.grooveConfidence > 0.08) {
+        const phase = (this.time - this.lastBeatFrame) / this.beatIntervalAverage;
+        const wrapped = phase - Math.floor(phase);
+        const beatWindow = Math.min(wrapped, 1 - wrapped);
+        const predicted = Math.exp(-beatWindow * 20) * this.grooveConfidence * this.renderedBeatResponse * 0.52;
+        this.groovePulse = Math.max(this.groovePulse * 0.93, predicted);
+      } else {
+        this.groovePulse *= this.playbackLevel > 0.1 ? 0.9 : 0.82;
+      }
+    }
+
+    this.arrivalAccentPulse *= this.playbackLevel > 0.1 ? 0.962 : 0.9;
+
+    const beat = clamp(Math.max(this.beatPulse, this.groovePulse), 0, 1.5);
+    const pulse = clamp(envelope + beat * 0.22, 0, 1.4);
+    return { freqAvg, timeAvg, low, mid, high, pulse, beat, transient };
   }
 
   private updateCamera(metrics: AudioMetrics) {
-    switch (this.mode) {
-      case "halo":
-        this.camera.position = vec3.fromValues(
-          Math.sin(this.time * 0.0034) * 0.2 + Math.cos(this.time * 0.0018) * 0.05,
-          Math.cos(this.time * 0.0031) * 0.14,
-          4.35 - metrics.low * 0.12,
-        );
-        break;
-      case "tunnel":
-        this.camera.position = vec3.fromValues(
-          Math.sin(this.time * 0.003) * 0.1,
-          Math.cos(this.time * 0.0025) * 0.08,
-          4.1 - metrics.low * 0.18,
-        );
-        break;
-      default:
-        this.camera.position = vec3.fromValues(
-          Math.sin(this.time * 0.0025) * 0.08,
-          Math.cos(this.time * 0.002) * 0.06,
-          5 - metrics.pulse * 0.08,
-        );
-    }
+    this.camera.position = vec3.fromValues(
+      Math.sin(this.time * 0.0025 * this.renderedOrbitSpeed + this.renderedOrbitPhase) * 0.08 * this.renderedCameraDrift,
+      Math.cos(this.time * 0.002 * this.renderedOrbitSpeed + this.renderedOrbitPhase * 0.6) * 0.06 * this.renderedCameraDrift,
+      5 + this.renderedCameraDepth - metrics.pulse * 0.08 * this.renderedPulseGain - this.arrivalAccentPulse * 0.12,
+    );
     this.camera.update();
   }
 
@@ -278,225 +424,56 @@ export class MusicVisualizer {
     this.line.setTime(this.time);
     this.line.setAudio(metrics.freqAvg, metrics.timeAvg);
 
-    let scaleVal = 1.18 + metrics.low * 0.2;
-    this.line.setNoise(this.scale * 2.0, this.persistence * 0.5, 3 + this.octaves, 0.005);
-    this.line.setGeometryColor(vec4.fromValues(this.color1[0], this.color1[1], this.color1[2], 1.0));
+    const beat = metrics.beat * this.renderedBeatResponse;
+    const sectionWave = 0.5 + 0.5 * Math.sin(this.time * 0.0014 * this.renderedSectionRate + this.renderedOrbitPhase * 0.35);
+    const sectionLift = (sectionWave - 0.5) * 2 * this.renderedSectionDepth;
+    const arrival = this.arrivalAccentPulse;
+    const pulseLow = (metrics.low * this.renderedLowBandWeight + beat * 0.5) * this.renderedPulseGain;
+    const pulseMid = (metrics.mid * this.renderedMidBandWeight + beat * 0.22 + metrics.transient * 0.35) * this.renderedPulseGain;
+    const pulseHigh = (metrics.high * this.renderedHighBandWeight + metrics.transient * 0.28) * this.renderedPulseGain;
+    const turbulence = this.renderedTurbulence + sectionLift * 0.18 + arrival * 0.16;
+    const shellGap = this.renderedSeparation * clamp(1.22 - (this.renderedShellDensity - 1) * 0.7 + sectionLift * 0.18 + arrival * 0.12, 0.7, 1.4);
+    const coreDetail = 3 + this.renderedOctaves + beat * 0.3 + this.renderedShellDensity * 0.2 + sectionLift * 0.2 + arrival * 0.35;
+    const midDetail = 1 + this.renderedOctaves + this.renderedShellDensity * 0.15 + sectionLift * 0.15 + arrival * 0.18;
+    const outerDetail = 2 + this.renderedOctaves + metrics.transient * 0.4 + this.renderedShellDensity * 0.1 + sectionLift * 0.1 + arrival * 0.22;
+    const colorLift = clamp(arrival * 0.18 + beat * 0.05, 0, 0.24);
+    const color1 = mixColor(this.renderedColor1, [1, 1, 1], colorLift);
+    const color2 = mixColor(this.renderedColor2, [1, 1, 1], colorLift * 0.85);
+    const color3 = mixColor(this.renderedColor3, [1, 1, 1], colorLift * 0.72);
+
+    let scaleVal = 1.16 + pulseLow * 0.3 + beat * 0.11 + this.renderedCameraDepth * 0.08 + sectionLift * 0.08 + arrival * 0.1;
+    this.line.setNoise(
+      this.renderedScale * 2.0 * turbulence * (0.92 + this.renderedShellDensity * 0.08),
+      this.renderedPersistence * (0.48 + sectionWave * 0.04),
+      coreDetail,
+      0.005 * turbulence + this.renderedOrbitPhase * 0.001,
+    );
+    this.line.setGeometryColor(vec4.fromValues(color1[0], color1[1], color1[2], 1.0));
     this.renderer.render(this.camera, this.line, [this.sphere3], scaleVal);
 
-    scaleVal += this.separation + metrics.mid * 0.06;
-    this.line.setNoise(this.scale, this.persistence * 0.2, 1 + this.octaves, -0.01);
-    this.line.setGeometryColor(vec4.fromValues(this.color2[0], this.color2[1], this.color2[2], 1.0));
+    scaleVal += shellGap + pulseMid * 0.1;
+    this.line.setNoise(
+      this.renderedScale * turbulence,
+      this.renderedPersistence * (0.18 + beat * 0.06 + sectionWave * 0.02),
+      midDetail,
+      -0.01 * turbulence + this.renderedOrbitPhase * 0.0006,
+    );
+    this.line.setGeometryColor(vec4.fromValues(color2[0], color2[1], color2[2], 1.0));
     this.renderer.render(this.camera, this.line, [this.sphere2], scaleVal);
 
-    scaleVal += this.separation + metrics.high * 0.04;
-    this.line.setNoise(this.scale, this.persistence, 2 + this.octaves, 0.01);
-    this.line.setGeometryColor(vec4.fromValues(this.color3[0], this.color3[1], this.color3[2], 1.0));
+    scaleVal += shellGap + pulseHigh * 0.08;
+    this.line.setNoise(
+      this.renderedScale * (0.92 + turbulence * 0.08 + beat * 0.04),
+      this.renderedPersistence * (0.94 + metrics.transient * 0.12 + sectionLift * 0.05),
+      outerDetail,
+      0.01 * turbulence - this.renderedOrbitPhase * 0.0008,
+    );
+    this.line.setGeometryColor(vec4.fromValues(color3[0], color3[1], color3[2], 1.0));
     this.renderer.render(this.camera, this.line, [this.sphere1], scaleVal);
   }
 
-  private renderHaloScene(metrics: AudioMetrics) {
-    this.line.setTime(this.time);
-    this.line.setAudio(metrics.freqAvg, metrics.timeAvg);
-    const white: [number, number, number] = [1, 1, 1];
-    const cyanLift = mixColor(this.color1, white, 0.22);
-    const pearlLift = mixColor(this.color2, white, 0.32);
-    const deepLift = mixColor(this.color3, white, 0.16);
-    const pulse = 1 + metrics.low * 0.22;
-    const shimmer = 0.5 + 0.5 * Math.sin(this.time * 0.018);
-    const iris = 0.5 + 0.5 * Math.cos(this.time * 0.014);
-
-    const haloRings = [
-      {
-        scale: 2.32 + metrics.low * 0.28,
-        translate: [0, 0, -0.82] as [number, number, number],
-        rotate: [Math.PI / 2, this.time * 0.0018, this.time * 0.0026] as [number, number, number],
-        color: mixColor(deepLift, this.color1, 0.55),
-        noiseScale: 1.75,
-        persistence: 0.16,
-        octaves: 1.8,
-        offset: -0.028,
-      },
-      {
-        scale: 2.04 * pulse,
-        translate: [0, 0, -0.46] as [number, number, number],
-        rotate: [1.34, this.time * 0.0032, this.time * 0.0039] as [number, number, number],
-        color: cyanLift,
-        noiseScale: 1.52,
-        persistence: 0.24,
-        octaves: 2.2,
-        offset: -0.02,
-      },
-      {
-        scale: 1.72 + metrics.mid * 0.22,
-        translate: [0, 0, -0.12] as [number, number, number],
-        rotate: [0.42, 1.08 + shimmer * 0.12, -this.time * 0.0031] as [number, number, number],
-        color: mixColor(this.color1, pearlLift, 0.55),
-        noiseScale: 1.24,
-        persistence: 0.34,
-        octaves: 2.7,
-        offset: -0.008,
-      },
-      {
-        scale: 1.36 + metrics.high * 0.18,
-        translate: [0, 0, 0.18] as [number, number, number],
-        rotate: [2.08, 0.56 + iris * 0.16, this.time * 0.0037] as [number, number, number],
-        color: pearlLift,
-        noiseScale: 1.04,
-        persistence: 0.42,
-        octaves: 3.1,
-        offset: 0.012,
-      },
-      {
-        scale: 1.04 + metrics.low * 0.12,
-        translate: [0, 0, 0.44] as [number, number, number],
-        rotate: [0.84, 0.28, -this.time * 0.0054] as [number, number, number],
-        color: mixColor(this.color2, white, 0.18),
-        noiseScale: 0.88,
-        persistence: 0.52,
-        octaves: 3.4,
-        offset: 0.02,
-      },
-    ] as const;
-
-    haloRings.forEach((ring, index) => {
-      this.line.setNoise(
-        this.scale * ring.noiseScale,
-        Math.max(0.08, this.persistence * ring.persistence),
-        ring.octaves + this.octaves * 0.2,
-        ring.offset,
-      );
-      this.line.setGeometryColor(vec4.fromValues(ring.color[0], ring.color[1], ring.color[2], 1.0));
-      this.renderer.renderWithModel(
-        this.camera,
-        this.line,
-        [this.ring],
-        this.createModel({
-          scale: ring.scale,
-          translate: ring.translate,
-          rotate: ring.rotate,
-        }),
-      );
-
-      if (index >= 1 && index <= 3) {
-        const echoColor = mixColor(ring.color, white, 0.1);
-        this.line.setNoise(
-          this.scale * (ring.noiseScale * 0.78),
-          Math.max(0.08, this.persistence * (ring.persistence * 0.82)),
-          ring.octaves + 0.6,
-          ring.offset + 0.01,
-        );
-        this.line.setGeometryColor(vec4.fromValues(echoColor[0], echoColor[1], echoColor[2], 1.0));
-        this.renderer.renderWithModel(
-          this.camera,
-          this.line,
-          [this.ring],
-          this.createModel({
-            scale: ring.scale * (0.92 + index * 0.01),
-            translate: [ring.translate[0], ring.translate[1], ring.translate[2] + 0.08],
-            rotate: [ring.rotate[0] + 0.08, ring.rotate[1] - 0.1, ring.rotate[2] + 0.16],
-          }),
-        );
-      }
-    });
-
-    const orbitColorA = mixColor(this.color1, white, 0.2);
-    const orbitColorB = mixColor(this.color2, this.color3, 0.45);
-    const orbitDrift = Math.sin(this.time * 0.01) * 0.08;
-
-    this.line.setNoise(this.scale * 0.9, this.persistence * 0.44, 3.1, 0.026);
-    this.line.setGeometryColor(vec4.fromValues(orbitColorA[0], orbitColorA[1], orbitColorA[2], 1.0));
-    this.renderer.renderWithModel(
-      this.camera,
-      this.line,
-      [this.ring],
-      this.createModel({
-        scale: 0.72 + metrics.mid * 0.08,
-        translate: [0.34 + orbitDrift, 0.18, 0.28],
-        rotate: [1.24, 0.52, this.time * 0.0072],
-      }),
-    );
-
-    this.line.setNoise(this.scale * 0.84, this.persistence * 0.36, 2.8, -0.024);
-    this.line.setGeometryColor(vec4.fromValues(orbitColorB[0], orbitColorB[1], orbitColorB[2], 1.0));
-    this.renderer.renderWithModel(
-      this.camera,
-      this.line,
-      [this.ring],
-      this.createModel({
-        scale: 0.66 + metrics.high * 0.06,
-        translate: [-0.32 - orbitDrift * 0.7, -0.14, 0.16],
-        rotate: [0.96, 0.28, -this.time * 0.0064],
-      }),
-    );
-
-    this.line.setNoise(this.scale * 1.18, this.persistence * 0.32, 2.9 + this.octaves * 0.18, -0.014);
-    this.line.setGeometryColor(vec4.fromValues(cyanLift[0], cyanLift[1], cyanLift[2], 1.0));
-    this.renderer.renderWithModel(
-      this.camera,
-      this.line,
-      [this.sphere2],
-      this.createModel({
-        scale: 0.92 + metrics.low * 0.08,
-        rotate: [this.time * 0.0022, this.time * 0.0028, 0],
-      }),
-    );
-
-    this.line.setNoise(this.scale * 0.78, this.persistence * 0.56, 3.8 + this.octaves * 0.1, 0.034);
-    this.line.setGeometryColor(vec4.fromValues(pearlLift[0], pearlLift[1], pearlLift[2], 1.0));
-    this.renderer.renderWithModel(
-      this.camera,
-      this.line,
-      [this.sphere1],
-      this.createModel({
-        scale: 0.56 + metrics.mid * 0.06 + shimmer * 0.02,
-        rotate: [0, -this.time * 0.0038, this.time * 0.0024],
-      }),
-    );
-  }
-
-  private renderTunnelScene(metrics: AudioMetrics) {
-    this.line.setTime(this.time);
-    this.line.setAudio(metrics.freqAvg, metrics.timeAvg);
-
-    const ringCount = 11;
-    for (let i = 0; i < ringCount; i++) {
-      const t = i / (ringCount - 1);
-      const z = -6.2 + t * 8.8 + Math.sin(this.time * 0.006 + i * 0.35) * 0.08;
-      const scale = 0.55 + t * 2.25 + metrics.low * (0.28 - t * 0.12);
-      const driftX = Math.sin(this.time * 0.003 + i * 0.45) * 0.08 * (1 - t * 0.7);
-      const driftY = Math.cos(this.time * 0.0026 + i * 0.38) * 0.06 * (1 - t * 0.7);
-      const color =
-        t < 0.5
-          ? mixColor(this.color3, this.color2, t * 2)
-          : mixColor(this.color2, this.color1, (t - 0.5) * 2);
-
-      this.line.setNoise(
-        this.scale * (0.65 + metrics.high * 0.35),
-        this.persistence * 0.25,
-        1.2 + this.octaves,
-        -0.02 + i * 0.004,
-      );
-      this.line.setGeometryColor(vec4.fromValues(color[0], color[1], color[2], 1.0));
-      const model = this.createModel({
-        scale,
-        translate: [driftX, driftY, z],
-        rotate: [0.18 + i * 0.03, 0.12 + metrics.mid * 0.1, this.time * 0.0045 + i * 0.28],
-      });
-      this.renderer.renderWithModel(this.camera, this.line, [this.ring], model);
-    }
-  }
-
   private renderScene(metrics: AudioMetrics) {
-    switch (this.mode) {
-      case "halo":
-        this.renderHaloScene(metrics);
-        break;
-      case "tunnel":
-        this.renderTunnelScene(metrics);
-        break;
-      default:
-        this.renderSpheresScene(metrics);
-    }
+    this.renderSpheresScene(metrics);
   }
 
   setSize(w: number, h: number) {
@@ -559,6 +536,7 @@ export class MusicVisualizer {
       this.setSize(w, h);
     }
 
+    this.updateTrackMorph();
     const metrics = this.readAudioMetrics();
     this.updateCamera(metrics);
 
@@ -593,7 +571,7 @@ export class MusicVisualizer {
     g.bindTexture(g.TEXTURE_2D, this.colorTex);
     g.activeTexture(g.TEXTURE1);
     g.bindTexture(g.TEXTURE_2D, this.blurTexs[Number(!horizontal)]!);
-    this.quad.setBloom(this.glow);
+    this.quad.setBloom(this.renderedGlow + this.arrivalAccentPulse * 1.8);
     this.renderer.render(this.camera, this.quad, [this.square]);
 
     this.rafId = requestAnimationFrame(() => this.tick());

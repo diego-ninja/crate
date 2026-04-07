@@ -11,7 +11,7 @@ export function useMusicVisualizer(
   const analyserRef = useRef<AnalyserNode | null>(null);
 
   useEffect(() => {
-    if (!canvasRef.current || !audioElement || !active) {
+    if (!active || !canvasRef.current || !audioElement) {
       if (vizRef.current) {
         vizRef.current.destroy();
         vizRef.current = null;
@@ -21,27 +21,50 @@ export function useMusicVisualizer(
     }
 
     const canvas = canvasRef.current;
+    let cancelled = false;
+    let attempts = 0;
 
-    // Wait for canvas to have layout dimensions before creating WebGL context
-    const initId = requestAnimationFrame(() => {
-      if (!canvas.clientWidth || !canvas.clientHeight) return;
+    const tryInit = () => {
+      if (cancelled) return;
+      attempts += 1;
+
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (!width || !height) {
+        if (attempts < 50) requestAnimationFrame(tryInit);
+        return;
+      }
 
       const node = createAnalyserNode(audioElement, 2048);
-      if (!node) return;
+      if (!node) {
+        if (attempts < 50) window.setTimeout(tryInit, 200);
+        return;
+      }
       analyserRef.current = node;
 
       try {
         const viz = new MusicVisualizer(canvas, node);
         vizRef.current = viz;
-        viz.setSize(canvas.clientWidth, canvas.clientHeight);
         viz.start();
+        window.setTimeout(() => {
+          if (!cancelled && vizRef.current) {
+            const nextWidth = canvas.clientWidth;
+            const nextHeight = canvas.clientHeight;
+            if (nextWidth > 0 && nextHeight > 0) {
+              vizRef.current.setSize(nextWidth, nextHeight);
+            }
+          }
+        }, 100);
       } catch (e) {
         console.error('Failed to initialize WebGL visualizer:', e);
       }
-    });
+    };
+
+    const initId = window.setTimeout(tryInit, 50);
 
     return () => {
-      cancelAnimationFrame(initId);
+      cancelled = true;
+      clearTimeout(initId);
       if (vizRef.current) {
         vizRef.current.destroy();
         vizRef.current = null;

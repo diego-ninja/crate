@@ -136,12 +136,15 @@ void main() {
     fs_Nor = vec4(invTranspose * vec3(vs_Nor), 0);
     fs_Pos = vs_Pos;
 
-    float amp = ease_in_quadratic(u_AudioFreqAvg);
-    amp = impulse(0.5, amp);
+    float amp = ease_in_quadratic(clamp(u_AudioFreqAvg, 0.0, 1.0));
+    amp = impulse(0.5, amp) * 0.24;
+    float octaveNorm = clamp((u_FBMOctaves - 1.0) / 4.0, 0.0, 1.0);
 
     vec3 offset = vec3(u_FBMOffset)*u_Time;
-    float displacement = amp * 20.0 * fbm(vs_Pos.xyz + offset);
-    fs_Disp = map(displacement, 0.0, 5.0, 0.0, 1.0);
+    float baseNoise = fbm(vs_Pos.xyz + offset);
+    float detailedNoise = sign(baseNoise) * pow(abs(baseNoise), mix(1.0, 0.72, octaveNorm));
+    float displacement = amp * mix(12.0, 24.0, octaveNorm) * detailedNoise;
+    fs_Disp = clamp(abs(displacement) / mix(3.0, 5.4, octaveNorm), 0.0, 1.0);
 
     vec4 jitteredPos = vs_Pos;
     jitteredPos.xyz += displacement * vs_Nor.xyz;
