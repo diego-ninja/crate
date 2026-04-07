@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -84,9 +84,23 @@ function buildLibraryAdditions(
     .slice(0, 14);
 }
 
+interface HistoryTrack {
+  track_id: number | null;
+  track_path: string;
+  title: string;
+  artist: string;
+  artist_id?: number;
+  artist_slug?: string;
+  album: string;
+  album_id?: number;
+  album_slug?: string;
+  navidrome_id?: string;
+  played_at: string;
+}
+
 export function Home() {
   const navigate = useNavigate();
-  const { currentTrack, recentlyPlayed } = usePlayer();
+  const { currentTrack } = usePlayer();
   const { play, playAll } = usePlayerActions();
 
   const { data: curatedPlaylists, loading: curatedLoading, refetch: refetchCurated } =
@@ -103,6 +117,8 @@ export function Home() {
     useApi<HomeUpcomingResponse>("/api/me/upcoming");
   const { data: replay, refetch: refetchReplay } =
     useApi<ReplayMix>("/api/me/stats/replay?window=30d&limit=18");
+  const { data: historyRaw, refetch: refetchHistory } =
+    useApi<HistoryTrack[]>("/api/me/history?limit=12");
 
   const onRefresh = useCallback(async () => {
     refetchCurated();
@@ -112,9 +128,38 @@ export function Home() {
     refetchPlaylists();
     refetchUpcoming();
     refetchReplay();
-  }, [refetchCurated, refetchFollowedCurated, refetchArtists, refetchAlbums, refetchPlaylists, refetchUpcoming, refetchReplay]);
+    refetchHistory();
+  }, [refetchCurated, refetchFollowedCurated, refetchArtists, refetchAlbums, refetchPlaylists, refetchUpcoming, refetchReplay, refetchHistory]);
 
   const { handlers: pullHandlers, pullDistance, refreshing } = usePullToRefresh(onRefresh);
+
+  const recentlyPlayed: Track[] = useMemo(() => {
+    if (!historyRaw) return [];
+    const seen = new Set<string>();
+    const tracks: Track[] = [];
+    for (const h of historyRaw) {
+      const key = h.track_path || String(h.track_id || "");
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      tracks.push({
+        id: h.track_path || String(h.track_id || ""),
+        title: h.title,
+        artist: h.artist,
+        artistId: h.artist_id,
+        artistSlug: h.artist_slug,
+        album: h.album,
+        albumId: h.album_id,
+        albumSlug: h.album_slug,
+        path: h.track_path,
+        navidromeId: h.navidrome_id,
+        libraryTrackId: h.track_id ?? undefined,
+        albumCover: h.album_id != null
+          ? albumCoverApiUrl({ albumId: h.album_id, albumSlug: h.album_slug, artistName: h.artist, albumName: h.album })
+          : undefined,
+      });
+    }
+    return tracks;
+  }, [historyRaw]);
 
   const continueItems = currentTrack
     ? [currentTrack, ...recentlyPlayed.filter((track) => track.id !== currentTrack.id)]
