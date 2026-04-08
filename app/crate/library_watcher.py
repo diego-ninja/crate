@@ -131,23 +131,8 @@ class LibraryWatcher:
             # Queue enrichment for new content (only if content actually changed)
             if is_new_file:
                 try:
-                    from crate.db import create_task_dedup, get_library_artist
-                    artist_row = get_library_artist(canonical)
-                    old_hash = artist_row.get("content_hash") if artist_row else None
-                    should_queue = True
-                    if old_hash:
-                        import hashlib
-                        h = hashlib.md5(usedforsecurity=False)
-                        for f in sorted(artist_dir.rglob("*")):
-                            if f.is_file():
-                                h.update(f"{f.relative_to(artist_dir)}:{f.stat().st_size}\n".encode())
-                        if h.hexdigest() == old_hash:
-                            should_queue = False
-                            log.debug("Watcher: skipping %s — content unchanged", canonical)
-                    if should_queue:
-                        create_task_dedup("process_new_content", {
-                            "artist": canonical,
-                        })
+                    from crate.content import queue_process_new_content_if_needed
+                    if queue_process_new_content_if_needed(canonical, library_path=self.library_path):
                         log.info("Watcher: queued process_new_content for %s", canonical)
                 except Exception:
                     log.debug("Watcher: failed to queue processing for %s", canonical)

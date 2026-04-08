@@ -9,7 +9,6 @@ def _escape_like(value: str) -> str:
 
 from crate.db import (
     create_task,
-    create_task_dedup,
     delete_cache,
     emit_task_event,
     get_cache,
@@ -115,11 +114,42 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
                 except Exception:
                     log.debug("Failed to mark issue %s as resolved", issue_id, exc_info=True)
 
+        # Collect unique artists that need re-enrichment from repair actions
+        # (e.g. unindexed_files that just got synced). Queue one
+        # process_new_content per artist after the loop, not per action —
+        # otherwise we flood the worker with duplicates that all skip.
+        enrich_artists: set[str] = set()
+        for action in result.get("actions", []):
+            if action.get("applied"):
+                artist = (action.get("details") or {}).get("enrich_artist")
+                if artist:
+                    enrich_artists.add(artist)
+
+        enqueued_enrich = 0
+        if not dry_run and enrich_artists:
+            from crate.content import queue_process_new_content_if_needed
+
+            for artist in sorted(enrich_artists):
+                try:
+                    # force=True because the repair actions just mutated the
+                    # DB and the filesystem content_hash may still match
+                    # what's stored in library_artists.
+                    if queue_process_new_content_if_needed(
+                        artist, library_path=config.get("library_path"), force=True
+                    ):
+                        enqueued_enrich += 1
+                except Exception:
+                    log.debug("Failed to queue enrichment for %s", artist, exc_info=True)
+
         emit_task_event(
             task_id,
             "info",
             {
-                "message": f"Repair complete: {action_count} actions, {len(resolved_ids)} resolved",
+                "message": (
+                    f"Repair complete: {action_count} actions, "
+                    f"{len(resolved_ids)} resolved, "
+                    f"{enqueued_enrich} enrichments queued"
+                ),
                 "fs_changed": result.get("fs_changed"),
                 "db_changed": result.get("db_changed"),
             },
@@ -127,6 +157,7 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
         if not dry_run and result.get("fs_changed"):
             start_scan()
 
+        result["enrich_queued"] = enqueued_enrich
         return result
     finally:
         if not dry_run:
@@ -189,12 +220,31 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     if repair_result.get("fs_changed"):
         start_scan()
 
+    from crate.content import queue_process_new_content_if_needed
+
+    repair_enrich_artists: set[str] = set()
+    for action in repair_result.get("actions", []):
+        if action.get("applied"):
+            artist = (action.get("details") or {}).get("enrich_artist")
+            if artist:
+                repair_enrich_artists.add(artist)
+
+    for artist in sorted(repair_enrich_artists):
+        try:
+            queue_process_new_content_if_needed(
+                artist, library_path=config.get("library_path"), force=True
+            )
+        except Exception:
+            log.debug("Failed to queue enrichment for %s", artist, exc_info=True)
+
     all_artists, _ = get_library_artists(per_page=10000)
     queued = 0
     for artist in all_artists:
         if not artist.get("content_hash"):
-            create_task_dedup("process_new_content", {"artist": artist["name"]})
-            queued += 1
+            if queue_process_new_content_if_needed(
+                artist["name"], library_path=config.get("library_path")
+            ):
+                queued += 1
     if queued:
         emit_task_event(
             task_id,

@@ -56,13 +56,12 @@ def should_run(task_type: str, schedules: dict[str, int] | None = None) -> bool:
     last_run = get_setting(last_key)
 
     if last_run:
-        try:
-            last_time = datetime.fromisoformat(last_run)
+        from crate.utils import to_datetime
+        last_time = to_datetime(last_run)
+        if last_time is not None:
             elapsed = (datetime.now(timezone.utc) - last_time).total_seconds()
             if elapsed < interval:
                 return False
-        except Exception:
-            pass
 
     # Check if already pending/running
     pending = list_tasks(status="pending", task_type=task_type, limit=1)

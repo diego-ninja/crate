@@ -2,6 +2,7 @@
 
 import re
 import unicodedata
+from datetime import datetime, timezone
 
 PHOTO_NAMES = {"artist.jpg", "artist.png", "photo.jpg"}
 
@@ -24,3 +25,25 @@ def normalize_key(name: str) -> str:
     name = re.sub(r"\s+", " ", name)
     name = re.sub(r"-+", "-", name)
     return name
+
+
+def to_datetime(value) -> datetime | None:
+    """Normalize a DB/date-ish value to a timezone-aware datetime.
+
+    After the TIMESTAMPTZ migration, psycopg2 returns datetime objects for
+    TIMESTAMPTZ/TIMESTAMP columns. Older code that called
+    ``datetime.fromisoformat(row["updated_at"])`` now raises TypeError. Use
+    this helper instead — it accepts datetime, str or None and always returns
+    a timezone-aware datetime (or None on failure).
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    return None
