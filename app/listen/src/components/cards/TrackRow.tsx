@@ -3,6 +3,7 @@ import { Play, Pause, Plus, ListPlus, Heart, ListMusic } from "lucide-react";
 import { usePlayerState, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { TrackCoverThumb } from "@/components/cards/TrackCoverThumb";
 import { formatDuration } from "@/lib/utils";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 
@@ -108,11 +109,15 @@ export const TrackRow = memo(function TrackRow({
         ${isActive ? "bg-primary/10" : "hover:bg-white/5"}`}
       onClick={handleActivate}
     >
-      {showCoverThumb && cover ? (
-        <div className="relative w-11 h-11 rounded-md overflow-hidden bg-white/5 flex-shrink-0">
-          <img src={cover} alt="" className="w-full h-full object-cover" />
+      {showCoverThumb ? (
+        <div className="relative h-11 w-11 flex-shrink-0">
+          <TrackCoverThumb
+            src={cover}
+            iconSize={16}
+            className="absolute inset-0 rounded-md"
+          />
           <div
-            className={`absolute inset-0 flex items-center justify-center transition-colors ${
+            className={`absolute inset-0 flex items-center justify-center rounded-md transition-colors ${
               isActive ? "bg-black/40" : "bg-black/0 group-hover:bg-black/45"
             }`}
           >

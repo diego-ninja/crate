@@ -216,11 +216,34 @@ def api_album_by_id(request: Request, album_id: int):
     return api_album(request, album["artist"], album["name"])
 
 
+def _placeholder_cover(seed: str) -> Response:
+    """Return a deterministic SVG placeholder so <img> never 404s."""
+    # Pick a hue from the seed string
+    h = sum(ord(c) for c in (seed or "?")) % 360
+    initial = (seed.strip()[:1] or "?").upper()
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">'
+        f'<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0%" stop-color="hsl({h},45%,28%)"/>'
+        f'<stop offset="100%" stop-color="hsl({(h + 30) % 360},35%,15%)"/>'
+        f'</linearGradient></defs>'
+        f'<rect width="200" height="200" fill="url(#g)"/>'
+        f'<text x="100" y="118" font-family="sans-serif" font-size="86" '
+        f'font-weight="700" fill="rgba(255,255,255,0.42)" text-anchor="middle">{initial}</text>'
+        f'</svg>'
+    )
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 def api_cover(artist: str, album: str):
     lib = library_path()
     album_dir = find_album_dir(lib, artist, album)
     if not album_dir:
-        return Response(status_code=404)
+        return _placeholder_cover(album or artist)
 
     for cover_name in COVER_NAMES:
         cover = album_dir / cover_name
@@ -241,14 +264,14 @@ def api_cover(artist: str, album: str):
                     pic = audio.tags[key]
                     return Response(content=pic.data, media_type=pic.mime)
 
-    return Response(status_code=404)
+    return _placeholder_cover(album or artist)
 
 
 @router.get("/api/albums/{album_id}/cover")
 def api_cover_by_id(album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
-        return Response(status_code=404)
+        return _placeholder_cover("?")
     return api_cover(album["artist"], album["name"])
 
 
