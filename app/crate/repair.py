@@ -366,6 +366,49 @@ class LibraryRepair:
                           details=result["details"], task_id=task_id)
                 return result
 
+        # Check for a duplicate album folder pattern: a loose `/Artist/Album`
+        # dir that collides with a canonical `/Artist/YYYY/Album` already
+        # indexed in the DB. Classify and act before the sync path (which
+        # would hit UNIQUE(artist, name) and silently fail).
+        if folder_artist_name:
+            try:
+                from crate.duplicate_album import classify_duplicate_album, apply_duplicate_resolution
+
+                verdict = classify_duplicate_album(unindexed_dir, self.library_path)
+                if verdict.action in ("delete_loose", "merge_into_canonical"):
+                    action_result = apply_duplicate_resolution(verdict, dry_run=dry_run)
+                    result["action"] = verdict.action
+                    result["details"].update(
+                        {
+                            "canonical_dir": action_result.get("canonical"),
+                            "reason": action_result.get("reason"),
+                            "loose_tracks": action_result.get("loose_tracks"),
+                            "canonical_tracks": action_result.get("canonical_tracks"),
+                            "common_tracks": action_result.get("common_tracks"),
+                        }
+                    )
+                    if "moved" in action_result:
+                        result["details"]["moved"] = action_result["moved"]
+                    result["applied"] = action_result.get("applied", False)
+                    result["fs_write"] = action_result.get("fs_write", False)
+                    log_audit(
+                        verdict.action,
+                        "album",
+                        f"{folder_artist_name}/{folder_name}",
+                        details=result["details"],
+                        task_id=task_id,
+                    )
+                    return result
+                elif verdict.action == "manual" and verdict.canonical_dir is not None:
+                    # Leave the issue open with a clear reason so a human can
+                    # resolve the distinct-release / partial-overlap case.
+                    result["details"]["duplicate_classification"] = "manual"
+                    result["details"]["canonical_dir"] = str(verdict.canonical_dir)
+                    result["details"]["reason"] = verdict.reason
+                    return result
+            except Exception:
+                log.debug("duplicate_album classifier failed for %s", unindexed_dir, exc_info=True)
+
         # Not a residue — sync files into DB, then enrich
         if not folder_artist_name:
             result["details"]["no_artist_folder"] = True

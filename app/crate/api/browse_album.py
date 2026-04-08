@@ -239,9 +239,55 @@ def _placeholder_cover(seed: str) -> Response:
     )
 
 
-def api_cover(artist: str, album: str):
+def _extract_embedded_cover(audio_file: Path) -> tuple[bytes, str] | None:
+    """Return (data, mime) for the first embedded cover in ``audio_file``.
+
+    Handles FLAC (``audio.pictures``), Ogg/Opus (METADATA_BLOCK_PICTURE) and
+    ID3-tagged files (MP3/AIFF with APIC frames) without blowing up on the
+    tuple-vs-string iteration difference between ``VComment`` and ``ID3``.
+    """
+    try:
+        audio = mutagen.File(audio_file)
+    except Exception:
+        return None
+    if audio is None:
+        return None
+
+    # FLAC / Ogg / Opus expose pictures directly.
+    pictures = getattr(audio, "pictures", None)
+    if pictures:
+        pic = pictures[0]
+        return pic.data, pic.mime
+
+    tags = getattr(audio, "tags", None)
+    if not tags:
+        return None
+
+    # ID3 (MP3, AIFF, WAV) — tags iterates as string frame keys and indexing
+    # returns the frame object. FLAC VComment iterates as (key, value) tuples
+    # where the value is a plain text string, so APIC never lives there.
+    try:
+        keys = list(tags.keys()) if hasattr(tags, "keys") else list(tags)
+    except Exception:
+        return None
+    for key in keys:
+        if not isinstance(key, str) or not key.startswith("APIC"):
+            continue
+        frame = tags.get(key) if hasattr(tags, "get") else tags[key]
+        data = getattr(frame, "data", None)
+        mime = getattr(frame, "mime", None) or "image/jpeg"
+        if data:
+            return data, mime
+    return None
+
+
+def api_cover(artist: str, album: str, album_dir: Path | None = None):
     lib = library_path()
-    album_dir = find_album_dir(lib, artist, album)
+    # Prefer the caller-supplied canonical directory (from api_cover_by_id)
+    # so we don't get fooled by a loose duplicate folder under /Artist/Album
+    # that shadows the real /Artist/YYYY/Album entry in the DB.
+    if album_dir is None or not album_dir.is_dir():
+        album_dir = find_album_dir(lib, artist, album)
     if not album_dir:
         return _placeholder_cover(album or artist)
 
@@ -253,16 +299,11 @@ def api_cover(artist: str, album: str):
 
     exts = extensions()
     tracks = get_audio_files(album_dir, exts)
-    if tracks:
-        audio = mutagen.File(tracks[0])
-        if audio and hasattr(audio, "pictures") and audio.pictures:
-            pic = audio.pictures[0]
-            return Response(content=pic.data, media_type=pic.mime)
-        if audio and hasattr(audio, "tags") and audio.tags:
-            for key in audio.tags:
-                if key.startswith("APIC"):
-                    pic = audio.tags[key]
-                    return Response(content=pic.data, media_type=pic.mime)
+    for track in tracks:
+        extracted = _extract_embedded_cover(track)
+        if extracted:
+            data, mime = extracted
+            return Response(content=data, media_type=mime)
 
     return _placeholder_cover(album or artist)
 
@@ -272,7 +313,9 @@ def api_cover_by_id(album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
         return _placeholder_cover("?")
-    return api_cover(album["artist"], album["name"])
+    stored_path = album.get("path")
+    album_dir = Path(stored_path) if stored_path else None
+    return api_cover(album["artist"], album["name"], album_dir=album_dir)
 
 
 def api_download_album(request: Request, artist: str, album: str):

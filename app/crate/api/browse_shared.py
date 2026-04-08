@@ -236,18 +236,28 @@ def find_album_row(artist: str, album: str) -> dict | None:
 
 def find_album_dir(lib: Path, artist: str, album: str) -> Path | None:
     """Find album directory, supporting both 2-level and 3-level structures.
-    Tries multiple album name variants (e.g. '...' → '.') for resilient matching."""
+    Tries multiple album name variants (e.g. '...' → '.') for resilient matching.
+
+    Prefers the canonical path stored in library_albums when available; this
+    avoids picking a stale loose folder at /Artist/Album when the DB already
+    tracks /Artist/YYYY/Album.
+    """
     import re
     album_variants = [album]
     normalized = re.sub(r'\.{2,}', '.', album)
     if normalized != album:
         album_variants.append(normalized)
 
+    # 1) Trust the DB first: if the album is indexed, its stored path is the
+    # canonical location and takes precedence over anything on disk.
     for name in album_variants:
-        direct = safe_path(lib, f"{artist}/{name}")
-        if direct and direct.is_dir():
-            return direct
+        album_data = get_library_album(artist, name)
+        if album_data and album_data.get("path"):
+            path = Path(album_data["path"])
+            if path.is_dir():
+                return path
 
+    # 2) Year-subdir layout /Artist/YYYY/Album — the standard organized shape.
     artist_dir = safe_path(lib, artist)
     if artist_dir and artist_dir.is_dir():
         for subdir in artist_dir.iterdir():
@@ -257,10 +267,10 @@ def find_album_dir(lib: Path, artist: str, album: str) -> Path | None:
                     if candidate.is_dir():
                         return candidate
 
+    # 3) Flat layout /Artist/Album — legacy / loose fallback.
     for name in album_variants:
-        album_data = get_library_album(artist, name)
-        if album_data and album_data.get("path"):
-            path = Path(album_data["path"])
-            if path.is_dir():
-                return path
+        direct = safe_path(lib, f"{artist}/{name}")
+        if direct and direct.is_dir():
+            return direct
+
     return None
