@@ -29,14 +29,16 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
     # Skip if recently enriched (unless force)
     if not force and db_artist and db_artist.get("enriched_at"):
         from datetime import datetime, timezone
-        try:
-            enriched = datetime.fromisoformat(db_artist["enriched_at"])
+        from crate.utils import to_datetime
+        enriched = to_datetime(db_artist["enriched_at"])
+        if enriched is not None:
             age_hours = (datetime.now(timezone.utc) - enriched).total_seconds() / 3600
-            min_age = int(get_setting("enrichment_min_age_hours", "24"))
+            try:
+                min_age = int(get_setting("enrichment_min_age_hours", "24"))
+            except (TypeError, ValueError):
+                min_age = 24
             if age_hours < min_age:
                 return {"artist": name, "skipped": True, "reason": "recently_enriched"}
-        except Exception:
-            pass
 
     if force:
         for prefix in ("enrichment:", "lastfm:artist:", "fanart:artist:",

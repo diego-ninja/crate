@@ -97,44 +97,6 @@ def _seed_uploaded_library(user_id: int | None, imported_albums: list[dict]):
                 seen_track_ids.add(track_id)
 
 
-def _compute_dir_hash(directory: Path) -> str:
-    try:
-        from crate.crate_cli import has_subcommands, is_available, run_scan
-
-        if is_available() and has_subcommands():
-            data = run_scan(str(directory), hash=True, covers=False)
-            if data and data.get("artists"):
-                content_hash = data["artists"][0].get("content_hash")
-                if content_hash:
-                    return content_hash
-    except Exception:
-        log.debug("crate-cli scan failed for %s, falling back to md5", directory, exc_info=True)
-
-    import hashlib
-
-    digest = hashlib.md5(usedforsecurity=False)
-    for file_path in sorted(directory.rglob("*")):
-        if file_path.is_file():
-            digest.update(f"{file_path.relative_to(directory)}:{file_path.stat().st_size}\n".encode())
-    return digest.hexdigest()
-
-
-def _should_process_artist(artist_name: str, config: dict) -> bool:
-    from crate.db import get_library_artist
-
-    lib = Path(config["library_path"])
-    artist_row = get_library_artist(artist_name)
-    folder = (artist_row.get("folder_name") if artist_row else None) or artist_name
-    artist_dir = lib / folder
-    if not artist_dir.is_dir():
-        return False
-    old_hash = artist_row.get("content_hash") if artist_row else None
-    if not old_hash:
-        return True
-    new_hash = _compute_dir_hash(artist_dir)
-    return new_hash != old_hash
-
-
 def _tidal_download_inner(task_id, params, config, url, quality, download_id, lib):
     from crate.db import mark_release_downloaded, update_tidal_download
     from crate.library_sync import LibrarySync
@@ -219,10 +181,12 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
             except Exception:
                 log.warning("Sync failed for %s", current_artist, exc_info=True)
 
+    from crate.content import queue_process_new_content_if_needed
     for current_artist in modified_artists:
         try:
-            if _should_process_artist(current_artist, config):
-                create_task_dedup("process_new_content", {"artist": current_artist})
+            queue_process_new_content_if_needed(
+                current_artist, library_path=config.get("library_path"), force=True
+            )
         except Exception:
             log.debug("Failed to queue process_new_content for Tidal artist %s", current_artist, exc_info=True)
 
@@ -791,9 +755,12 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
             },
         )
 
-    if artist and moved > 0 and _should_process_artist(artist, config):
-        create_task_dedup("process_new_content", {"artist": artist})
-        emit_task_event(task_id, "info", {"message": f"Processing new content for {artist}"})
+    if artist and moved > 0:
+        from crate.content import queue_process_new_content_if_needed
+        if queue_process_new_content_if_needed(
+            artist, library_path=config.get("library_path"), force=True
+        ):
+            emit_task_event(task_id, "info", {"message": f"Processing new content for {artist}"})
 
     return {
         "artist": artist,
@@ -943,9 +910,12 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
 
     _seed_uploaded_library(uploader_user_id, imported_albums)
 
+    from crate.content import queue_process_new_content_if_needed
     for artist in modified_artists:
         try:
-            create_task_dedup("process_new_content", {"artist": artist})
+            queue_process_new_content_if_needed(
+                artist, library_path=config.get("library_path"), force=True
+            )
         except Exception:
             log.debug("Failed to queue process_new_content for uploaded artist %s", artist, exc_info=True)
 

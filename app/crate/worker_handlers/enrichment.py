@@ -27,26 +27,7 @@ def _unmark_processing(artist_name: str):
     delete_cache(f"processing:{artist_name.lower()}")
 
 
-def _compute_dir_hash(directory: Path) -> str:
-    try:
-        from crate.crate_cli import has_subcommands, is_available, run_scan
-
-        if is_available() and has_subcommands():
-            data = run_scan(str(directory), hash=True, covers=False)
-            if data and data.get("artists"):
-                content_hash = data["artists"][0].get("content_hash")
-                if content_hash:
-                    return content_hash
-    except Exception:
-        log.debug("crate-cli scan failed for %s, falling back to md5", directory, exc_info=True)
-
-    import hashlib
-
-    digest = hashlib.md5(usedforsecurity=False)
-    for file_path in sorted(directory.rglob("*")):
-        if file_path.is_file():
-            digest.update(f"{file_path.relative_to(directory)}:{file_path.stat().st_size}\n".encode())
-    return digest.hexdigest()
+from crate.content import compute_dir_hash as _compute_dir_hash
 
 
 def _clean_album_lookup_name(album_name: str) -> str:

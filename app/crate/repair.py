@@ -9,7 +9,6 @@ from crate.db import (
     delete_album,
     delete_track,
     upsert_artist,
-    create_task_dedup,
 )
 from crate.utils import PHOTO_NAMES
 
@@ -406,7 +405,10 @@ class LibraryRepair:
             result["details"]["sync_error"] = str(exc)[:200]
             return result
 
-        create_task_dedup("process_new_content", {"artist": canonical_artist})
+        # Report the affected canonical artist so _handle_repair can queue
+        # process_new_content once per artist after the full batch, instead of
+        # re-enqueueing per-album and flooding dedup.
+        result["details"]["enrich_artist"] = canonical_artist
         log_audit("reindex_unindexed", "directory", dir_path,
                   details={"count": details.get("count", 0), "artist": canonical_artist}, task_id=task_id)
         return result

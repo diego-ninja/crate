@@ -17,7 +17,7 @@ from crate.db import (
     upsert_artist,
     upsert_track,
 )
-from crate.utils import COVER_NAMES, PHOTO_NAMES, normalize_key
+from crate.utils import COVER_NAMES, PHOTO_NAMES, normalize_key, to_datetime
 
 log = logging.getLogger(__name__)
 
@@ -284,8 +284,9 @@ class LibrarySync:
             existing = existing_tracks_by_path.get(fpath)
             if existing and existing.get("updated_at"):
                 try:
-                    stored_ts = datetime.fromisoformat(existing["updated_at"]).timestamp()
-                    if fstat.st_mtime <= stored_ts:
+                    stored_dt = to_datetime(existing["updated_at"])
+                    stored_ts = stored_dt.timestamp() if stored_dt else 0.0
+                    if stored_ts and fstat.st_mtime <= stored_ts:
                         duration = existing.get("duration") or 0.0
                         total_duration += duration
                         if not year and existing.get("year"):
@@ -315,7 +316,7 @@ class LibrarySync:
                             "path": fpath,
                         })
                         continue
-                except (ValueError, OSError):
+                except (ValueError, OSError, TypeError):
                     pass
 
             # New or changed file — read tags + mutagen info

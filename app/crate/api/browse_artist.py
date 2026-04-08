@@ -739,9 +739,11 @@ def api_shows_list(request: Request, city: str = "", country: str = ""):
 
 def api_artist_enrich(request: Request, name: str):
     _require_auth(request)
-    from crate.db import create_task_dedup
+    from crate.content import queue_process_new_content_if_needed
 
-    task_id = create_task_dedup("process_new_content", {"artist": name})
+    # force=True because this endpoint is the "re-enrich" button; the admin
+    # explicitly asked for a fresh run even if the filesystem hash is stable.
+    task_id = queue_process_new_content_if_needed(name, force=True)
     return {"status": "queued", "task_id": task_id}
 
 

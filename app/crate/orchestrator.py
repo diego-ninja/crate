@@ -254,7 +254,10 @@ class Orchestrator:
             for t in running:
                 try:
                     from datetime import datetime, timezone
-                    updated = datetime.fromisoformat(t["updated_at"].replace("Z", "+00:00"))
+                    from crate.utils import to_datetime
+                    updated = to_datetime(t["updated_at"])
+                    if updated is None:
+                        continue
                     age_sec = (datetime.now(timezone.utc) - updated).total_seconds()
                     if age_sec > 1800:  # 30 minutes
                         log.warning("Marking zombie task %s (type=%s, age=%dm) as failed",
