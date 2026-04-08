@@ -1,11 +1,18 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
 import { Link } from "react-router";
 import { Calendar, Check, Clock, Loader2, MapPin, Play, Ticket, X } from "lucide-react";
 
+import { ItemActionMenuButton } from "@/components/actions/ItemActionMenu";
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 import { UpcomingActionButton, UpcomingActionLink } from "./UpcomingActionButtons";
 import type { UpcomingItem } from "./upcoming-model";
+
+interface ActionMenuSlot {
+  triggerRef: RefObject<HTMLButtonElement | null>;
+  hasActions: boolean;
+  onOpen: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+}
 
 interface UpcomingShowCardViewProps {
   item: UpcomingItem;
@@ -16,6 +23,7 @@ interface UpcomingShowCardViewProps {
   timeLabel: string;
   addressLabel: string;
   locationLabel: string;
+  actionMenu: ActionMenuSlot;
   onToggleAttendance: () => void;
   onPlaySetlist: () => void;
 }
@@ -28,6 +36,7 @@ export function UpcomingShowCollapsedView({
   dateLabel,
   timeLabel,
   addressLabel,
+  actionMenu,
   onToggleAttendance,
   onPlaySetlist,
 }: Omit<UpcomingShowCardViewProps, "locationLabel">) {
@@ -105,6 +114,12 @@ export function UpcomingShowCollapsedView({
           )}
         </UpcomingActionButton>
         <TicketsActionLink href={item.url} />
+        <ItemActionMenuButton
+          buttonRef={actionMenu.triggerRef}
+          hasActions={actionMenu.hasActions}
+          onClick={actionMenu.onOpen}
+          className="h-8 w-8 opacity-80 transition-opacity hover:opacity-100"
+        />
       </div>
     </div>
   );
@@ -119,6 +134,7 @@ export function UpcomingShowExpandedView({
   timeLabel,
   addressLabel,
   locationLabel,
+  actionMenu,
   onToggleAttendance,
   onPlaySetlist,
   onClose,
@@ -232,6 +248,12 @@ export function UpcomingShowExpandedView({
           )}
         </UpcomingActionButton>
         <TicketsActionLink href={item.url} />
+        <ItemActionMenuButton
+          buttonRef={actionMenu.triggerRef}
+          hasActions={actionMenu.hasActions}
+          onClick={actionMenu.onOpen}
+          className="h-9 w-9 opacity-85 transition-opacity hover:opacity-100"
+        />
       </div>
     </>
   );

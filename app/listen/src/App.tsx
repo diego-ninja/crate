@@ -2,6 +2,7 @@ import React, { Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { ArtistFollowsProvider } from "@/contexts/ArtistFollowsContext";
 import { LikedTracksProvider } from "@/contexts/LikedTracksContext";
 import { PlayerProvider } from "@/contexts/PlayerContext";
 import { PlaylistComposerProvider } from "@/contexts/PlaylistComposerContext";
@@ -98,15 +99,17 @@ export function App() {
           element={
             <ProtectedRoute>
               <PlayerProvider>
-                <LikedTracksProvider>
-                  <UserSyncProvider>
-                    <SavedAlbumsProvider>
-                      <PlaylistComposerProvider>
-                        <Shell />
-                      </PlaylistComposerProvider>
-                    </SavedAlbumsProvider>
-                  </UserSyncProvider>
-                </LikedTracksProvider>
+                <ArtistFollowsProvider>
+                  <LikedTracksProvider>
+                    <UserSyncProvider>
+                      <SavedAlbumsProvider>
+                        <PlaylistComposerProvider>
+                          <Shell />
+                        </PlaylistComposerProvider>
+                      </SavedAlbumsProvider>
+                    </UserSyncProvider>
+                  </LikedTracksProvider>
+                </ArtistFollowsProvider>
               </PlayerProvider>
             </ProtectedRoute>
           }

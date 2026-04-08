@@ -1,12 +1,12 @@
 """User personal library: follows, saved albums, likes, play history, feed."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request, HTTPException, Query
 from pydantic import BaseModel, field_validator, model_validator
 
 from crate.api.auth import _require_auth
-from crate.api._deps import artist_name_from_id
+from crate.api._deps import artist_name_from_id, coerce_date as _coerce_date
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -124,19 +124,17 @@ def _build_upcoming_insights(
 
     today = datetime.now(timezone.utc).date()
     insights: list[dict] = []
-    for show in sorted(shows, key=lambda item: item.get("date", "")):
+    sortable_shows = [(show, _coerce_date(show.get("date")) or today) for show in shows]
+    sortable_shows.sort(key=lambda pair: pair[1])
+    for show, show_date in sortable_shows:
         show_id = show.get("id")
         if not show_id or show_id not in attending_show_ids:
             continue
 
-        date_str = show.get("date")
-        if not date_str:
-            continue
-        try:
-            show_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
+        if _coerce_date(show.get("date")) is None:
             continue
 
+        date_str = show_date.isoformat()
         days_until = (show_date - today).days
         artist_name = show.get("artist_name") or ""
         has_setlist = bool(show.get("probable_setlist"))
@@ -533,7 +531,13 @@ def feed(request: Request, limit: int = 30):
         for r in cur.fetchall():
             items.append(dict(r))
 
-    items.sort(key=lambda x: x.get("date", ""), reverse=True)
+    def _feed_sort_key(item: dict):
+        value = item.get("date")
+        normalized = _coerce_date(value)
+        # Keep rows with missing dates at the bottom.
+        return normalized or date.min
+
+    items.sort(key=_feed_sort_key, reverse=True)
     return items[:limit]
 
 
@@ -595,11 +599,12 @@ def upcoming(request: Request, limit: int = 120):
             followed_names + [today, recent_cutoff, limit],
         )
         for release in cur.fetchall():
-            release_date = release.get("release_date") or (release.get("detected_at") or "")[:10]
+            scheduled_date = _coerce_date(release.get("release_date"))
+            fallback_date = scheduled_date or _coerce_date(release.get("detected_at"))
             items.append(
                 {
                     "type": "release",
-                    "date": release_date,
+                    "date": fallback_date.isoformat() if fallback_date else "",
                     "artist": release.get("artist_name", ""),
                     "artist_id": release.get("artist_id"),
                     "artist_slug": release.get("artist_slug"),
@@ -609,7 +614,7 @@ def upcoming(request: Request, limit: int = 120):
                     "status": release.get("status", "detected"),
                     "tidal_url": release.get("tidal_url"),
                     "release_id": release.get("id"),
-                    "is_upcoming": bool(release.get("release_date") and release["release_date"] >= today),
+                    "is_upcoming": bool(scheduled_date and scheduled_date >= today),
                 }
             )
 

@@ -22,6 +22,27 @@ def json_dumps(obj, **kwargs) -> str:
     return json.dumps(obj, cls=DateTimeEncoder, ensure_ascii=False, **kwargs)
 
 
+def coerce_date(value) -> date | None:
+    """Normalize a DB/date-ish value to a datetime.date, returning None on failure.
+
+    Needed after the TIMESTAMPTZ migration: DATE columns return datetime.date
+    and TIMESTAMPTZ columns return datetime.datetime from psycopg2. Legacy
+    code that did str slicing or strptime on those values now crashes.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
+    return None
+
+
 def get_config() -> dict:
     return load_config()
 

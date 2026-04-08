@@ -1,11 +1,14 @@
 import { useState } from "react";
 import { Heart, Loader2, Play } from "lucide-react";
 
+import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { usePlaylistActionEntries } from "@/components/actions/playlist-actions";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { cn } from "@/lib/utils";
 
 interface PlaylistCardProps {
+  playlistId?: number;
   name: string;
   description?: string;
   tracks?: PlaylistArtworkTrack[];
@@ -14,13 +17,17 @@ interface PlaylistCardProps {
   badge?: string;
   systemPlaylist?: boolean;
   isFollowed?: boolean;
+  href?: string;
   layout?: "rail" | "grid";
   onClick: () => void;
   onPlay?: () => Promise<void> | void;
+  onShuffle?: () => Promise<void> | void;
+  onStartRadio?: () => Promise<void> | void;
   onToggleFollow?: () => Promise<void> | void;
 }
 
 export function PlaylistCard({
+  playlistId,
   name,
   description,
   tracks,
@@ -29,19 +36,43 @@ export function PlaylistCard({
   badge,
   systemPlaylist = false,
   isFollowed = false,
+  href,
   layout = "rail",
   onClick,
   onPlay,
+  onShuffle,
+  onStartRadio,
   onToggleFollow,
 }: PlaylistCardProps) {
   const [playing, setPlaying] = useState(false);
   const [togglingFollow, setTogglingFollow] = useState(false);
+  const actions = usePlaylistActionEntries({
+    playlistId,
+    name,
+    href,
+    canFollow: systemPlaylist && Boolean(onToggleFollow),
+    isFollowed,
+    onToggleFollow,
+    onPlay,
+    onShuffle,
+    onStartRadio,
+  });
+  const actionMenu = useItemActionMenu(actions);
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      onContextMenu={actionMenu.handleContextMenu}
       className={cn(
-        "group text-left",
+        "group cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-lg",
         layout === "grid" ? "w-full min-w-0" : "w-[160px] flex-shrink-0",
       )}
     >
@@ -74,6 +105,12 @@ export function PlaylistCard({
             )}
           </ActionIconButton>
         ) : null}
+        <ItemActionMenuButton
+          buttonRef={actionMenu.triggerRef}
+          hasActions={actionMenu.hasActions}
+          onClick={actionMenu.openFromTrigger}
+          className="absolute bottom-2 left-2 z-10 opacity-80 transition-opacity hover:opacity-100 md:opacity-65 md:group-hover:opacity-100"
+        />
         {onPlay ? (
           <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/40">
             <button
@@ -106,6 +143,13 @@ export function PlaylistCard({
       <div className="truncate text-xs text-muted-foreground">
         {description || meta}
       </div>
-    </button>
+      <ItemActionMenu
+        actions={actions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
+    </div>
   );
 }

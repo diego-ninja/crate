@@ -2,6 +2,8 @@ import { memo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Heart, Loader2, Play } from "lucide-react";
 
+import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { useAlbumActionEntries } from "@/components/actions/album-actions";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
@@ -51,6 +53,14 @@ export const AlbumCard = memo(function AlbumCard({
   const [playing, setPlaying] = useState(false);
   const coverUrl = cover || albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
   const saved = isSaved(albumId);
+  const actions = useAlbumActionEntries({
+    artist,
+    album,
+    albumId,
+    albumSlug,
+    cover: coverUrl,
+  });
+  const actionMenu = useItemActionMenu(actions, { disabled: albumId == null });
 
   async function handlePlayOverlay(event: React.MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
@@ -83,11 +93,12 @@ export const AlbumCard = memo(function AlbumCard({
       role="button"
       tabIndex={0}
       className={cn(
-        "group snap-start text-left",
+        "group snap-start cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-lg",
         layout === "grid"
           ? "w-full min-w-0"
           : `flex-shrink-0 ${compact ? "w-[120px]" : "w-[160px]"}`,
       )}
+      onContextMenu={actionMenu.handleContextMenu}
       onClick={() => navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }))}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -121,6 +132,12 @@ export const AlbumCard = memo(function AlbumCard({
             <Heart size={16} className={saved ? "fill-current" : ""} />
           </ActionIconButton>
         )}
+        <ItemActionMenuButton
+          buttonRef={actionMenu.triggerRef}
+          hasActions={actionMenu.hasActions}
+          onClick={actionMenu.openFromTrigger}
+          className="absolute bottom-2 left-2 z-10 opacity-80 transition-opacity hover:opacity-100 md:opacity-65 md:group-hover:opacity-100"
+        />
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end justify-end p-2 md:items-center md:justify-center md:p-0">
           <button
             className="w-10 h-10 rounded-full bg-primary flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity md:translate-y-2 md:group-hover:translate-y-0 shadow-lg"
@@ -138,6 +155,13 @@ export const AlbumCard = memo(function AlbumCard({
       <div className="truncate text-xs text-muted-foreground">
         {year ? `${year} · ${artist}` : artist}
       </div>
+      <ItemActionMenu
+        actions={actions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
     </div>
   );
 });

@@ -158,6 +158,7 @@ export function Explore() {
                 {featuredPlaylists.map((playlist) => (
                   <PlaylistCard
                     key={playlist.id}
+                    playlistId={playlist.id}
                     name={playlist.name}
                     description={playlist.description}
                     tracks={playlist.artwork_tracks}
@@ -170,6 +171,7 @@ export function Explore() {
                     badge={playlist.is_smart ? "Smart" : "Curated"}
                     systemPlaylist
                     isFollowed={playlist.is_followed}
+                    href={`/curation/playlist/${playlist.id}`}
                     onPlay={() => handlePlayPlaylist(playlist.id, playlist.name)}
                     onToggleFollow={() => handleToggleFollow(playlist.id, playlist.is_followed)}
                     onClick={() => navigate(`/curation/playlist/${playlist.id}`)}

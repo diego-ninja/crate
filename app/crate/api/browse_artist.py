@@ -4,7 +4,7 @@ import mutagen
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 
-from crate.api._deps import COVER_NAMES, artist_name_from_id, extensions, library_path, safe_path
+from crate.api._deps import COVER_NAMES, artist_name_from_id, coerce_date, extensions, library_path, safe_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import ARTIST_PHOTO_NAMES, display_name, fs_artist_detail, fs_build_artists_list, has_library_data
 from crate.audio import get_audio_files
@@ -844,10 +844,12 @@ def api_upcoming(request: Request):
             continue
         if release.get("artist_name", "").lower() in ("various artists", "v/a"):
             continue
+        scheduled_date = coerce_date(release.get("release_date"))
+        fallback_date = scheduled_date or coerce_date(release.get("detected_at"))
         items.append(
             {
                 "type": "release",
-                "date": release.get("release_date") or (release.get("detected_at") or "")[:10],
+                "date": fallback_date.isoformat() if fallback_date else "",
                 "artist": release.get("artist_name", ""),
                 "artist_id": release.get("artist_id"),
                 "artist_slug": release.get("artist_slug"),
@@ -859,7 +861,7 @@ def api_upcoming(request: Request):
                 "status": release.get("status", "detected"),
                 "tidal_url": release.get("tidal_url"),
                 "release_id": release.get("id"),
-                "is_upcoming": bool(release.get("release_date") and release["release_date"] >= today),
+                "is_upcoming": bool(scheduled_date and scheduled_date >= today),
             }
         )
 
@@ -887,10 +889,11 @@ def api_upcoming(request: Request):
     for show in shows:
         artist = show["artist_name"]
         artist_ref = refs_by_name.get((artist or "").lower())
+        show_date = coerce_date(show.get("date"))
         items.append(
             {
                 "type": "show",
-                "date": show["date"],
+                "date": show_date.isoformat() if show_date else "",
                 "time": show.get("local_time"),
                 "artist": artist,
                 "artist_id": artist_ref.get("id") if artist_ref else None,
@@ -916,7 +919,7 @@ def api_upcoming(request: Request):
             }
         )
 
-    items.sort(key=lambda item: item.get("date") or "9999")
+    items.sort(key=lambda item: item.get("date") or "9999-12-31")
     return {"items": items}
 
 

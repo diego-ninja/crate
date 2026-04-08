@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { MapContainer } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
+import { ItemActionMenu, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { useShowActionEntries } from "@/components/actions/show-actions";
 import { cn } from "@/lib/utils";
 
 import {
@@ -30,6 +32,21 @@ export function UpcomingShowCard({
     toggleAttendance,
     playProbableSetlist,
   } = useUpcomingShowActions(item, onAttendanceChange);
+  const menuActions = useShowActionEntries({
+    item,
+    attending,
+    toggleAttendance,
+    playProbableSetlist,
+  });
+  const actionMenu = useItemActionMenu(menuActions);
+  const actionMenuSlot = useMemo(
+    () => ({
+      triggerRef: actionMenu.triggerRef,
+      hasActions: actionMenu.hasActions,
+      onOpen: actionMenu.openFromTrigger,
+    }),
+    [actionMenu.hasActions, actionMenu.openFromTrigger, actionMenu.triggerRef],
+  );
 
   const position = useMemo<[number, number] | null>(() => {
     if (item.latitude == null || item.longitude == null) return null;
@@ -58,6 +75,7 @@ export function UpcomingShowCard({
       )}
       style={{ height: expanded ? 320 : 92 }}
       onClick={!expanded ? onToggle : undefined}
+      onContextMenu={actionMenu.handleContextMenu}
     >
       <div className="absolute inset-0 bg-raised-surface" />
 
@@ -102,6 +120,7 @@ export function UpcomingShowCard({
           dateLabel={dateLabel}
           timeLabel={timeLabel}
           addressLabel={addressLabel}
+          actionMenu={actionMenuSlot}
           onToggleAttendance={toggleAttendance}
           onPlaySetlist={playProbableSetlist}
         />
@@ -115,11 +134,19 @@ export function UpcomingShowCard({
           timeLabel={timeLabel}
           addressLabel={addressLabel}
           locationLabel={locationLabel}
+          actionMenu={actionMenuSlot}
           onToggleAttendance={toggleAttendance}
           onPlaySetlist={playProbableSetlist}
           onClose={onToggle}
         />
       )}
+      <ItemActionMenu
+        actions={menuActions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
     </div>
   );
 }

@@ -1,9 +1,235 @@
-import { Clock3, ListMusic, Play, Sparkles } from "lucide-react";
+import { useMemo } from "react";
+import { Clock3, Play, Sparkles } from "lucide-react";
 
+import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { trackToMenuData } from "@/components/actions/shared";
+import { useTrackActionEntries } from "@/components/actions/track-actions";
+import { TrackCoverThumb } from "@/components/cards/TrackCoverThumb";
 import type { Track } from "@/contexts/PlayerContext";
+import { albumCoverApiUrl } from "@/lib/library-routes";
 
 import type { ReplayMix, ReplayTrack } from "./home-model";
 import { ContinueListeningCard, SectionHeader, SectionRail } from "./HomeSections";
+
+function HomeTrackRowAction({
+  track,
+  onPlay,
+}: {
+  track: Track;
+  onPlay: () => void;
+}) {
+  const menuTrack = useMemo(() => trackToMenuData(track), [track]);
+  const actions = useTrackActionEntries({
+    track: menuTrack,
+    albumCover: track.albumCover,
+    onPlayNowOverride: onPlay,
+  });
+  const actionMenu = useItemActionMenu(actions);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onPlay}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onPlay();
+        }
+      }}
+      onContextMenu={actionMenu.handleContextMenu}
+      className="group/row flex w-full cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
+      <div className="relative h-11 w-11 shrink-0">
+        <TrackCoverThumb
+          src={track.albumCover}
+          iconSize={16}
+          className="absolute inset-0 rounded-xl"
+        />
+        <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 transition-colors group-hover/row:bg-black/45">
+          <Play
+            size={15}
+            fill="currentColor"
+            className="text-white opacity-0 transition-opacity group-hover/row:opacity-100"
+          />
+        </div>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-foreground">{track.title}</div>
+        <div className="truncate text-xs text-muted-foreground">{track.artist}</div>
+      </div>
+      <ItemActionMenuButton
+        buttonRef={actionMenu.triggerRef}
+        hasActions={actionMenu.hasActions}
+        onClick={actionMenu.openFromTrigger}
+        className="h-8 w-8 opacity-80 transition-opacity hover:opacity-100"
+      />
+      <ItemActionMenu
+        actions={actions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
+    </div>
+  );
+}
+
+function HomeReplayRowAction({
+  item,
+  onPlay,
+}: {
+  item: ReplayTrack;
+  onPlay: () => void;
+}) {
+  const cover = replayCoverUrl(item);
+  const menuTrack = useMemo(() => ({
+    id: item.track_id ?? item.track_path ?? item.title,
+    title: item.title,
+    artist: item.artist,
+    artist_id: item.artist_id ?? undefined,
+    artist_slug: item.artist_slug ?? undefined,
+    album: item.album,
+    album_id: item.album_id ?? undefined,
+    album_slug: item.album_slug ?? undefined,
+    path: item.track_path ?? undefined,
+    library_track_id: item.track_id ?? undefined,
+  }), [item]);
+  const actions = useTrackActionEntries({
+    track: menuTrack,
+    albumCover: cover,
+    onPlayNowOverride: onPlay,
+  });
+  const actionMenu = useItemActionMenu(actions);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onPlay}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onPlay();
+        }
+      }}
+      onContextMenu={actionMenu.handleContextMenu}
+      className="group/row flex w-full cursor-pointer items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
+      <div className="relative h-11 w-11 shrink-0">
+        <TrackCoverThumb
+          src={cover}
+          iconSize={16}
+          className="absolute inset-0 rounded-xl"
+        />
+        <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/0 transition-colors group-hover/row:bg-black/45">
+          <Play
+            size={15}
+            fill="currentColor"
+            className="text-white opacity-0 transition-opacity group-hover/row:opacity-100"
+          />
+        </div>
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
+        <div className="truncate text-xs text-muted-foreground">{item.artist}</div>
+      </div>
+      <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/45">
+        {item.play_count}×
+      </span>
+      <ItemActionMenuButton
+        buttonRef={actionMenu.triggerRef}
+        hasActions={actionMenu.hasActions}
+        onClick={actionMenu.openFromTrigger}
+        className="h-8 w-8 opacity-80 transition-opacity hover:opacity-100"
+      />
+      <ItemActionMenu
+        actions={actions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
+    </div>
+  );
+}
+
+function HomeQueueCardAction({
+  track,
+  onPlay,
+}: {
+  track: Track;
+  onPlay: () => void;
+}) {
+  const menuTrack = useMemo(() => trackToMenuData(track), [track]);
+  const actions = useTrackActionEntries({
+    track: menuTrack,
+    albumCover: track.albumCover,
+    onPlayNowOverride: onPlay,
+  });
+  const actionMenu = useItemActionMenu(actions);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onPlay}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onPlay();
+        }
+      }}
+      onContextMenu={actionMenu.handleContextMenu}
+      className="group w-[220px] flex-shrink-0 cursor-pointer overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
+      <div className="flex items-center gap-3 p-3">
+        <div className="relative h-16 w-16 shrink-0">
+          <TrackCoverThumb
+            src={track.albumCover}
+            iconSize={18}
+            className="absolute inset-0 rounded-2xl"
+          />
+          <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/0 transition-colors group-hover:bg-black/45">
+            <Play
+              size={18}
+              fill="currentColor"
+              className="text-white opacity-0 transition-opacity group-hover:opacity-100"
+            />
+          </div>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold text-foreground">{track.title}</div>
+          <div className="mt-1 truncate text-xs text-muted-foreground">{track.artist}</div>
+          {track.album ? <div className="mt-1 truncate text-[11px] text-white/35">{track.album}</div> : null}
+        </div>
+        <ItemActionMenuButton
+          buttonRef={actionMenu.triggerRef}
+          hasActions={actionMenu.hasActions}
+          onClick={actionMenu.openFromTrigger}
+          className="h-8 w-8 self-start opacity-80 transition-opacity hover:opacity-100"
+        />
+      </div>
+      <ItemActionMenu
+        actions={actions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
+    </div>
+  );
+}
+
+function replayCoverUrl(item: ReplayTrack): string | undefined {
+  if (item.album_id == null) return undefined;
+  return albumCoverApiUrl({
+    albumId: item.album_id,
+    albumSlug: item.album_slug ?? undefined,
+    artistName: item.artist,
+    albumName: item.album,
+  });
+}
 
 export function ContinueListeningSection({
   continueLead,
@@ -46,26 +272,11 @@ export function ContinueListeningSection({
         </div>
         <div className="space-y-1">
           {continueRail.length > 0 ? continueRail.slice(0, 4).map((track) => (
-            <button
+            <HomeTrackRowAction
               key={track.id}
-              onClick={() => onPlayTrack(track, "Recent Listening")}
-              className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5"
-            >
-              <div className="h-11 w-11 shrink-0 overflow-hidden rounded-xl bg-white/5">
-                {track.albumCover ? (
-                  <img src={track.albumCover} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-white/5">
-                    <ListMusic size={16} className="text-white/20" />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-foreground">{track.title}</div>
-                <div className="truncate text-xs text-muted-foreground">{track.artist}</div>
-              </div>
-              <Play size={15} className="shrink-0 text-white/30" />
-            </button>
+              track={track}
+              onPlay={() => onPlayTrack(track, "Recent Listening")}
+            />
           )) : (
             <div className="rounded-2xl border border-dashed border-white/10 px-4 py-5 text-sm text-muted-foreground">
               Start playing music and your listening history will show up here.
@@ -137,20 +348,11 @@ export function HomeReplaySection({
           </div>
           <div className="space-y-1">
             {replayPreview.map((item) => (
-              <button
+              <HomeReplayRowAction
                 key={`${item.track_id ?? item.track_path ?? item.title}`}
-                onClick={() => onPlayTrack(item)}
-                className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-left transition-colors hover:bg-white/5"
-              >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-sm font-semibold text-white/45">
-                  {item.play_count}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
-                  <div className="truncate text-xs text-muted-foreground">{item.artist}</div>
-                </div>
-                <Play size={15} className="shrink-0 text-white/30" />
-              </button>
+                item={item}
+                onPlay={() => onPlayTrack(item)}
+              />
             ))}
           </div>
         </div>
@@ -176,28 +378,11 @@ export function KeepQueueMovingSection({
       />
       <SectionRail>
         {tracks.map((track) => (
-          <button
+          <HomeQueueCardAction
             key={track.id}
-            onClick={() => onPlayTrack(track)}
-            className="group w-[220px] flex-shrink-0 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] text-left"
-          >
-            <div className="flex items-center gap-3 p-3">
-              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-white/5">
-                {track.albumCover ? (
-                  <img src={track.albumCover} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-white/5">
-                    <ListMusic size={18} className="text-white/20" />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-foreground">{track.title}</div>
-                <div className="mt-1 truncate text-xs text-muted-foreground">{track.artist}</div>
-                {track.album ? <div className="mt-1 truncate text-[11px] text-white/35">{track.album}</div> : null}
-              </div>
-            </div>
-          </button>
+            track={track}
+            onPlay={() => onPlayTrack(track)}
+          />
         ))}
       </SectionRail>
     </section>

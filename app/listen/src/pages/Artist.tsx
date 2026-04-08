@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "react-router";
 import { toast } from "sonner";
 
@@ -26,9 +26,9 @@ import {
   type StatsListResponse,
 } from "@/components/artist/artist-model";
 import { type ArtistShowEvent } from "@/components/upcoming/UpcomingRows";
+import { useArtistFollows } from "@/contexts/ArtistFollowsContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchArtistRadio } from "@/lib/radio";
 import { shuffleArray } from "@/lib/utils";
@@ -40,32 +40,19 @@ export function Artist() {
   const [bioModalOpen, setBioModalOpen] = useState(false);
   const [setlistModalOpen, setSetlistModalOpen] = useState(false);
   const [expandedShowId, setExpandedShowId] = useState<string | null>(null);
-  const [following, setFollowing] = useState(false);
+  const { isFollowing, toggleArtistFollow } = useArtistFollows();
   const { playAll } = usePlayerActions();
 
   const { data, loading, error } = useApi<ArtistData>(
     artistId != null ? artistApiPath({ artistId }) : null,
   );
 
-  useEffect(() => {
-    if (!data?.id) return;
-    api<{ following: boolean }>(`/api/me/follows/artists/${data.id}`)
-      .then((d) => setFollowing(d.following))
-      .catch(() => {});
-  }, [data?.id]);
-
   async function toggleFollow() {
     if (!data?.id) return;
     try {
-      if (following) {
-        await api(`/api/me/follows/artists/${data.id}`, "DELETE");
-        setFollowing(false);
-        toast.success(`Unfollowed ${data.name}`);
-      } else {
-        await api(`/api/me/follows/artists/${data.id}`, "POST");
-        setFollowing(true);
-        toast.success(`Following ${data.name}`);
-      }
+      const following = isFollowing(data.id);
+      await toggleArtistFollow(data.id);
+      toast.success(following ? `Unfollowed ${data.name}` : `Following ${data.name}`);
     } catch {
       toast.error("Failed to update follow status");
     }
@@ -150,6 +137,7 @@ export function Artist() {
   }
 
   const similarArtists = info?.similar ?? [];
+  const following = isFollowing(data?.id);
   const artistShowItems = buildArtistShowItems(showsData?.events ?? []);
   const albumsSorted = sortArtistAlbumsByYear(data?.albums ?? []);
   const previewTopTracks = (topTracks ?? []).slice(0, 5);

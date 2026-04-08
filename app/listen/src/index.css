@@ -48,12 +48,12 @@
   --z-sidebar: 40;
   --z-player: 50;
   --z-player-drawer: 55;
-  --z-extended-player: 60;
-  --z-popover: 70;
-  --z-player-overlay: 80;
-  --z-modal: 90;
-  --z-upcoming-overlay: 95;
-  --z-fullscreen-player: 100;
+  --z-extended-player: 1200;
+  --z-popover: 1400;
+  --z-player-overlay: 1410;
+  --z-modal: 1500;
+  --z-upcoming-overlay: 1510;
+  --z-fullscreen-player: 1300;
   --z-leaflet-popup: 600;
   color-scheme: dark;
 }

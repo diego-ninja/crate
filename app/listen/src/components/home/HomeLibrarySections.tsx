@@ -9,10 +9,14 @@ export function FromCrateSection({
   playlists,
   loading,
   onOpenPlaylist,
+  onPlayPlaylist,
+  onToggleFollow,
 }: {
   playlists?: CuratedPlaylist[];
   loading: boolean;
   onOpenPlaylist: (playlistId: number) => void;
+  onPlayPlaylist: (playlistId: number, playlistName: string) => void;
+  onToggleFollow: (playlistId: number, isFollowed: boolean) => void;
 }) {
   return (
     <section className="space-y-4">
@@ -27,11 +31,16 @@ export function FromCrateSection({
           {playlists.map((playlist) => (
             <FeaturedPlaylistCard
               key={playlist.id}
+              playlistId={playlist.id}
               name={playlist.name}
               description={playlist.description}
               tracks={playlist.artwork_tracks}
               meta={`${playlist.track_count} tracks${playlist.category ? ` · ${playlist.category}` : ""}`}
               badge={playlist.is_smart ? "Smart" : "Curated"}
+              href={`/curation/playlist/${playlist.id}`}
+              isFollowed={playlist.is_followed}
+              onPlay={() => onPlayPlaylist(playlist.id, playlist.name)}
+              onToggleFollow={() => onToggleFollow(playlist.id, playlist.is_followed)}
               onClick={() => onOpenPlaylist(playlist.id)}
             />
           ))}
@@ -88,6 +97,7 @@ export function HomeLibrarySection({
               return (
                 <PlaylistCard
                   key={`${item.type}-${item.playlist_id}-${item.added_at}`}
+                  playlistId={item.playlist_id}
                   name={item.playlist_name}
                   description={item.playlist_description}
                   tracks={item.playlist_tracks}
@@ -96,6 +106,7 @@ export function HomeLibrarySection({
                   systemPlaylist={isSystem}
                   isFollowed={isSystem}
                   badge={item.playlist_badge}
+                  href={isSystem ? `/curation/playlist/${item.playlist_id}` : `/playlist/${item.playlist_id}`}
                   onPlay={() => onPlayPlaylist(item.playlist_id!, isSystem, item.playlist_name!)}
                   onToggleFollow={
                     isSystem

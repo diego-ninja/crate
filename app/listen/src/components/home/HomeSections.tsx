@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
-import { ArrowRight, Clock3, ListMusic, Loader2, Play } from "lucide-react";
+import { ArrowRight, Clock3, Loader2, Play } from "lucide-react";
 
+import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { usePlaylistActionEntries } from "@/components/actions/playlist-actions";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { TrackCoverThumb } from "@/components/cards/TrackCoverThumb";
 import type { Track } from "@/contexts/PlayerContext";
 
 import type { HomeUpcomingItem } from "./home-model";
@@ -113,26 +116,56 @@ export function UpcomingPreviewRow({
 }
 
 export function FeaturedPlaylistCard({
+  playlistId,
   name,
   description,
   tracks,
   coverDataUrl,
   meta,
+  href,
+  isFollowed,
   onClick,
+  onPlay,
+  onToggleFollow,
   badge,
 }: {
+  playlistId?: number;
   name: string;
   description?: string;
   tracks?: PlaylistArtworkTrack[];
   coverDataUrl?: string | null;
   meta: string;
+  href?: string;
+  isFollowed?: boolean;
   badge?: string;
   onClick: () => void;
+  onPlay?: () => Promise<void> | void;
+  onToggleFollow?: () => Promise<void> | void;
 }) {
+  const actions = usePlaylistActionEntries({
+    playlistId,
+    name,
+    href,
+    canFollow: Boolean(onToggleFollow),
+    isFollowed,
+    onToggleFollow,
+    onPlay,
+  });
+  const actionMenu = useItemActionMenu(actions);
+
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="group w-[180px] flex-shrink-0 text-left"
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      onContextMenu={actionMenu.handleContextMenu}
+      className="group w-[180px] flex-shrink-0 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-3xl"
     >
       <div className="relative">
         <PlaylistArtwork
@@ -146,6 +179,12 @@ export function FeaturedPlaylistCard({
             {badge}
           </div>
         ) : null}
+        <ItemActionMenuButton
+          buttonRef={actionMenu.triggerRef}
+          hasActions={actionMenu.hasActions}
+          onClick={actionMenu.openFromTrigger}
+          className="absolute bottom-3 left-3 z-10 opacity-80 transition-opacity hover:opacity-100"
+        />
       </div>
       <div className="px-1 pt-3">
         <div className="truncate text-sm font-bold text-foreground">{name}</div>
@@ -154,7 +193,14 @@ export function FeaturedPlaylistCard({
         </div>
         <div className="mt-2 text-[11px] uppercase tracking-wider text-white/35">{meta}</div>
       </div>
-    </button>
+      <ItemActionMenu
+        actions={actions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
+    </div>
   );
 }
 
@@ -169,15 +215,11 @@ export function ContinueListeningCard({
     <div className="group relative overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04] p-4">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_55%)]" />
       <div className="relative flex items-center gap-4">
-        <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-white/5">
-          {track.albumCover ? (
-            <img src={track.albumCover} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-white/5">
-              <ListMusic size={24} className="text-white/20" />
-            </div>
-          )}
-        </div>
+        <TrackCoverThumb
+          src={track.albumCover}
+          iconSize={24}
+          className="h-20 w-20 shrink-0 rounded-2xl"
+        />
         <div className="min-w-0 flex-1">
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-wider text-white/45">
             <Clock3 size={11} />
