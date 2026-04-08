@@ -61,6 +61,7 @@ def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db import get_open_issues
     from crate.navidrome import start_scan
     from crate.repair import LibraryRepair
 
@@ -71,15 +72,21 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
     if specific_issues:
         report = {"issues": specific_issues}
     else:
-        report = get_cache("health_report")
-        if not report:
-            from crate.health_check import LibraryHealthCheck
-
-            checker = LibraryHealthCheck(config)
-            report = checker.run(
-                progress_callback=lambda data: update_task(task_id, progress=json.dumps(data))
-            )
-            set_cache("health_report", report, ttl=3600)
+        # Pull directly from the persisted health_issues table so each issue
+        # carries its DB id. The in-memory health_report cache is built from
+        # LibraryHealthCheck.run() which returns issues without ids, which
+        # means the repair could fix them but had no way to mark them as
+        # resolved afterwards.
+        db_issues = get_open_issues(limit=10000)
+        # Normalize to the shape LibraryRepair expects: 'check' + 'details'.
+        report_issues = []
+        for row in db_issues:
+            issue = dict(row)
+            issue["check"] = issue.get("check_type") or issue.get("check")
+            if "details" not in issue and "details_json" in issue:
+                issue["details"] = issue["details_json"]
+            report_issues.append(issue)
+        report = {"issues": report_issues}
 
     affected_artists = set()
     for issue in report.get("issues", []):
