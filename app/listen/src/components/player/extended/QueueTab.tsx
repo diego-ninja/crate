@@ -1,8 +1,92 @@
+import { useMemo } from "react";
 import { Save, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { ItemActionMenu, ItemActionMenuButton, type ItemActionMenuEntry, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { trackToMenuData } from "@/components/actions/shared";
+import { useTrackActionEntries } from "@/components/actions/track-actions";
+import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
+
+function QueueTabRow({
+  track,
+  indexLabel,
+  onJump,
+  onRemove,
+  faded = false,
+}: {
+  track: Track;
+  indexLabel: string;
+  onJump: () => void;
+  onRemove?: () => void;
+  faded?: boolean;
+}) {
+  const menuTrack = useMemo(() => trackToMenuData(track), [track]);
+  const baseActions = useTrackActionEntries({
+    track: menuTrack,
+    albumCover: track.albumCover,
+    onPlayNowOverride: onJump,
+  });
+  const actions = useMemo<ItemActionMenuEntry[]>(() => {
+    if (!onRemove) return baseActions;
+    return [
+      ...baseActions,
+      { type: "divider", key: `queue-tab-remove-divider-${track.id}-${indexLabel}` },
+      {
+        key: `queue-tab-remove-${track.id}-${indexLabel}`,
+        label: "Remove from queue",
+        icon: X,
+        danger: true,
+        onSelect: onRemove,
+      },
+    ];
+  }, [baseActions, indexLabel, onRemove, track.id]);
+  const actionMenu = useItemActionMenu(actions);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onJump}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onJump();
+        }
+      }}
+      onContextMenu={actionMenu.handleContextMenu}
+      className={`group flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${faded ? "opacity-50" : ""}`}
+    >
+      <span className={`w-4 shrink-0 text-right text-[10px] tabular-nums ${faded ? "text-white/15" : "text-white/20"}`}>
+        {indexLabel}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className={`min-w-0 flex-1 truncate text-[12px] ${faded ? "text-white/50" : "text-white/80"}`}>{track.title}</p>
+          {track.isSuggested ? (
+            <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary">
+              Suggested
+            </span>
+          ) : null}
+        </div>
+        <p className={`truncate text-[10px] ${faded ? "text-white/25" : "text-white/40"}`}>{track.artist}</p>
+      </div>
+      <ItemActionMenuButton
+        buttonRef={actionMenu.triggerRef}
+        hasActions={actionMenu.hasActions}
+        onClick={actionMenu.openFromTrigger}
+        className="h-8 w-8 shrink-0 opacity-80 transition-opacity hover:opacity-100"
+      />
+      <ItemActionMenu
+        actions={actions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
+    </div>
+  );
+}
 
 export function QueueTab() {
   const { isPlaying } = usePlayer();
@@ -44,26 +128,13 @@ export function QueueTab() {
           {history.map((track, i) => {
             const realIdx = currentIndex - 1 - i;
             return (
-              <button
+              <QueueTabRow
                 key={`hist-${track.id}-${realIdx}`}
-                onClick={() => jumpTo(realIdx)}
-                className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left opacity-50 transition-colors hover:bg-white/5"
-              >
-                <span className="w-4 shrink-0 text-right text-[10px] tabular-nums text-white/15">
-                  {realIdx + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="min-w-0 flex-1 truncate text-[12px] text-white/50">{track.title}</p>
-                    {track.isSuggested ? (
-                      <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary">
-                        Suggested
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="truncate text-[10px] text-white/25">{track.artist}</p>
-                </div>
-              </button>
+                track={track}
+                indexLabel={String(realIdx + 1)}
+                onJump={() => jumpTo(realIdx)}
+                faded
+              />
             );
           })}
         </div>
@@ -118,36 +189,13 @@ export function QueueTab() {
           {upcoming.map((track, i) => {
             const idx = currentIndex + 1 + i;
             return (
-              <button
+              <QueueTabRow
                 key={`next-${track.id}-${idx}`}
-                onClick={() => jumpTo(idx)}
-                className="group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-white/5"
-              >
-                <span className="w-4 shrink-0 text-right text-[10px] tabular-nums text-white/20">
-                  {i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="min-w-0 flex-1 truncate text-[12px] text-white/80">{track.title}</p>
-                    {track.isSuggested ? (
-                      <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary">
-                        Suggested
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="truncate text-[10px] text-white/40">{track.artist}</p>
-                </div>
-                <button
-                  className="shrink-0 p-1 text-white/20 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    removeFromQueue(idx);
-                  }}
-                  title="Remove"
-                >
-                  <X size={12} />
-                </button>
-              </button>
+                track={track}
+                indexLabel={String(i + 1)}
+                onJump={() => jumpTo(idx)}
+                onRemove={() => removeFromQueue(idx)}
+              />
             );
           })}
         </div>

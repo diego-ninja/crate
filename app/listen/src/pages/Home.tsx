@@ -333,6 +333,12 @@ export function Home() {
       <FromCrateSection
         playlists={curatedPlaylists || undefined}
         loading={curatedLoading}
+        onPlayPlaylist={(playlistId, playlistName) =>
+          void handlePlayPlaylist(playlistId, true, playlistName)
+        }
+        onToggleFollow={(playlistId, isFollowed) =>
+          void handleToggleSystemPlaylistFollow(playlistId, isFollowed)
+        }
         onOpenPlaylist={(playlistId) => navigate(`/curation/playlist/${playlistId}`)}
       />
 

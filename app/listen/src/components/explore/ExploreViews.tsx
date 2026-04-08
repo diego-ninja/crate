@@ -315,6 +315,7 @@ export function PlaylistCategoryView({
           {data.map((playlist) => (
             <PlaylistCard
               key={playlist.id}
+              playlistId={playlist.id}
               name={playlist.name}
               description={playlist.description}
               tracks={playlist.artwork_tracks}
@@ -328,6 +329,7 @@ export function PlaylistCategoryView({
               systemPlaylist
               isFollowed={playlist.is_followed}
               layout="grid"
+              href={`/curation/playlist/${playlist.id}`}
               onPlay={() => handlePlayPlaylist(playlist.id, playlist.name)}
               onToggleFollow={() => handleToggleFollow(playlist.id, playlist.is_followed)}
               onClick={() => navigate(`/curation/playlist/${playlist.id}`)}

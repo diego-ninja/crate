@@ -1,15 +1,13 @@
-import { type MouseEvent as ReactMouseEvent, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { Check, Loader2, MapPin, Play, Ticket } from "lucide-react";
-import { toast } from "sonner";
 
-import { usePlayerActions } from "@/contexts/PlayerContext";
-import { api } from "@/lib/api";
-import { fetchPlayableSetlist } from "@/lib/upcoming";
+import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { useShowActionEntries } from "@/components/actions/show-actions";
 import { cn } from "@/lib/utils";
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 import { UpcomingActionButton, UpcomingActionLink } from "./UpcomingActionButtons";
+import { useUpcomingShowActions } from "./use-upcoming-show-actions";
 import type { UpcomingItem } from "./upcoming-model";
 
 export function UpcomingEventRow({
@@ -22,10 +20,6 @@ export function UpcomingEventRow({
   onClick?: () => void;
 }) {
   const isShow = item.type === "show";
-  const { playAll } = usePlayerActions();
-  const [attending, setAttending] = useState(Boolean(item.user_attending));
-  const [savingAttendance, setSavingAttendance] = useState(false);
-  const [playingSetlist, setPlayingSetlist] = useState(false);
   const dateObj = item.date ? new Date(`${item.date}T12:00:00`) : null;
   const dateStr = dateObj
     ? dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" })
@@ -36,59 +30,20 @@ export function UpcomingEventRow({
     artistSlug: item.artist_slug,
     artistName: item.artist,
   }) || item.cover_url || undefined;
-
-  useEffect(() => {
-    setAttending(Boolean(item.user_attending));
-  }, [item.user_attending]);
-
-  async function toggleAttendance(event: ReactMouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    if (!item.id) return;
-    setSavingAttendance(true);
-    try {
-      if (attending) {
-        await api(`/api/me/shows/${item.id}/attendance`, "DELETE");
-        setAttending(false);
-        onAttendanceChange?.(false);
-        toast.success("Removed from your concert plan");
-      } else {
-        await api(`/api/me/shows/${item.id}/attendance`, "POST");
-        setAttending(true);
-        onAttendanceChange?.(true);
-        toast.success("Marked as attending");
-      }
-    } catch {
-      toast.error("Failed to update attendance");
-    } finally {
-      setSavingAttendance(false);
-    }
-  }
-
-  async function playProbableSetlist(event: ReactMouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    if (!isShow || !item.probable_setlist?.length) {
-      toast.info("No probable setlist available for this show");
-      return;
-    }
-    if (!item.artist_id) {
-      toast.info("Artist not linked to library");
-      return;
-    }
-    setPlayingSetlist(true);
-    try {
-      const queue = await fetchPlayableSetlist({ artistId: item.artist_id, artistName: item.artist });
-      if (!queue.length) {
-        toast.info(`None of the ${item.probable_setlist.length} setlist tracks were found in your library`);
-        return;
-      }
-      playAll(queue, 0, { type: "playlist", name: `${item.artist} Probable Setlist` });
-      toast.success(`Playing probable setlist: ${queue.length} tracks`);
-    } catch {
-      toast.error("Failed to load probable setlist");
-    } finally {
-      setPlayingSetlist(false);
-    }
-  }
+  const {
+    attending,
+    savingAttendance,
+    playingSetlist,
+    toggleAttendance,
+    playProbableSetlist,
+  } = useUpcomingShowActions(item, onAttendanceChange);
+  const menuActions = useShowActionEntries({
+    item,
+    attending,
+    toggleAttendance,
+    playProbableSetlist,
+  });
+  const actionMenu = useItemActionMenu(menuActions, { disabled: !isShow });
 
   return (
     <div
@@ -98,6 +53,7 @@ export function UpcomingEventRow({
           ? "cursor-pointer border-primary/10 bg-white/[0.02] hover:border-primary/25 hover:bg-white/[0.04]"
           : "border-primary/10 bg-white/[0.02] hover:border-primary/20 hover:bg-white/[0.04]",
       )}
+      onContextMenu={actionMenu.handleContextMenu}
       onClick={onClick}
     >
       <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl bg-white/5">
@@ -160,7 +116,10 @@ export function UpcomingEventRow({
         {isShow ? (
           <>
             <UpcomingActionButton
-              onClick={playProbableSetlist}
+              onClick={(event) => {
+                event.stopPropagation();
+                void playProbableSetlist();
+              }}
               disabled={!item.probable_setlist?.length || playingSetlist}
               title="Play probable setlist"
             >
@@ -172,7 +131,10 @@ export function UpcomingEventRow({
             </UpcomingActionButton>
 
             <UpcomingActionButton
-              onClick={toggleAttendance}
+              onClick={(event) => {
+                event.stopPropagation();
+                void toggleAttendance();
+              }}
               disabled={!item.id || savingAttendance}
               title={attending ? "Attending" : "Mark as attending"}
               active={attending}
@@ -198,9 +160,22 @@ export function UpcomingEventRow({
             >
               <Ticket size={14} />
             </UpcomingActionLink>
+            <ItemActionMenuButton
+              buttonRef={actionMenu.triggerRef}
+              hasActions={actionMenu.hasActions}
+              onClick={actionMenu.openFromTrigger}
+              className="h-8 w-8 opacity-80 transition-opacity hover:opacity-100"
+            />
           </>
         ) : null}
       </div>
+      <ItemActionMenu
+        actions={menuActions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
     </div>
   );
 }

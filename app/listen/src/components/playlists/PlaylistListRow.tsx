@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
-import { Heart, Loader2, Play, Share2, Shuffle, Sparkles, type LucideIcon } from "lucide-react";
+import { Heart, Loader2, Play, Shuffle, Sparkles, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
+import { ItemActionMenu, ItemActionMenuButton, type ItemActionMenuEntry, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { usePlaylistActionEntries } from "@/components/actions/playlist-actions";
 import { api } from "@/lib/api";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
@@ -91,10 +93,9 @@ export function PlaylistListRow({
   const navigate = useNavigate();
   const { playAll } = usePlayerActions();
   const [playingMode, setPlayingMode] = useState<"play" | "shuffle" | null>(null);
-  const [sharing, setSharing] = useState(false);
   const [togglingFollow, setTogglingFollow] = useState(false);
 
-  async function loadAndPlay(mode: "play" | "shuffle") {
+  const loadAndPlay = useCallback(async (mode: "play" | "shuffle") => {
     setPlayingMode(mode);
     try {
       const response = await api<PlaylistDetailResponse>(detailEndpoint);
@@ -114,25 +115,33 @@ export function PlaylistListRow({
     } finally {
       setPlayingMode(null);
     }
-  }
+  }, [detailEndpoint, name, playAll, playlistId]);
 
-  async function handleShare(event: React.MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    setSharing(true);
-    const shareUrl = `${window.location.origin}${href}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: name, text: name, url: shareUrl });
-      } else {
-        await navigator.clipboard.writeText(shareUrl);
-        toast.success("Playlist link copied");
-      }
-    } catch {
-      toast.error("Failed to share playlist");
-    } finally {
-      setSharing(false);
-    }
-  }
+  const baseActions = usePlaylistActionEntries({
+    playlistId,
+    name,
+    href,
+    canFollow: Boolean(followState),
+    isFollowed: followState?.isFollowed,
+    onToggleFollow: followState?.onToggle,
+    onPlay: () => loadAndPlay("play"),
+    onShuffle: () => loadAndPlay("shuffle"),
+  });
+  const menuActions = useMemo<ItemActionMenuEntry[]>(() => {
+    if (!extraActions?.length) return baseActions;
+    return [
+      ...baseActions,
+      { type: "divider", key: "divider-extra-actions" },
+      ...extraActions.map((item) => ({
+        key: `extra-${item.key}`,
+        label: item.title,
+        icon: item.icon,
+        danger: item.tone === "danger",
+        onSelect: item.onClick,
+      })),
+    ];
+  }, [baseActions, extraActions]);
+  const actionMenu = useItemActionMenu(menuActions);
 
   async function handleToggleFollow(event: React.MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
@@ -152,6 +161,7 @@ export function PlaylistListRow({
     <div
       role="button"
       tabIndex={0}
+      onContextMenu={actionMenu.handleContextMenu}
       onClick={() => navigate(href)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -159,7 +169,7 @@ export function PlaylistListRow({
           navigate(href);
         }
       }}
-      className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-white/5"
+      className="flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
     >
       <PlaylistArtwork
         name={name}
@@ -230,13 +240,20 @@ export function PlaylistListRow({
             </ActionIconButton>
           );
         })}
-        <ActionIconButton
-          onClick={handleShare}
-          title="Share"
-        >
-          {sharing ? <Loader2 size={15} className="animate-spin" /> : <Share2 size={15} />}
-        </ActionIconButton>
+        <ItemActionMenuButton
+          buttonRef={actionMenu.triggerRef}
+          hasActions={actionMenu.hasActions}
+          onClick={actionMenu.openFromTrigger}
+          className="opacity-80 transition-opacity hover:opacity-100"
+        />
       </div>
+      <ItemActionMenu
+        actions={menuActions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
     </div>
   );
 }

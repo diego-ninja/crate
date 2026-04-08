@@ -1,9 +1,101 @@
+import { useMemo } from "react";
 import { X } from "lucide-react";
+
+import { ItemActionMenu, ItemActionMenuButton, type ItemActionMenuEntry, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { trackToMenuData } from "@/components/actions/shared";
+import { useTrackActionEntries } from "@/components/actions/track-actions";
+import type { Track } from "@/contexts/PlayerContext";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 
 interface QueuePanelProps {
   open: boolean;
   onClose: () => void;
+}
+
+function QueuePanelRow({
+  track,
+  indexLabel,
+  onJump,
+  onRemove,
+  faded = false,
+}: {
+  track: Track;
+  indexLabel: string;
+  onJump: () => void;
+  onRemove?: () => void;
+  faded?: boolean;
+}) {
+  const menuTrack = useMemo(() => trackToMenuData(track), [track]);
+  const baseActions = useTrackActionEntries({
+    track: menuTrack,
+    albumCover: track.albumCover,
+    // In a queue context "Play now" must jump to this position, not reset the queue.
+    onPlayNowOverride: onJump,
+  });
+  const actions = useMemo<ItemActionMenuEntry[]>(() => {
+    if (!onRemove) return baseActions;
+    return [
+      ...baseActions,
+      { type: "divider", key: `queue-remove-divider-${track.id}-${indexLabel}` },
+      {
+        key: `queue-remove-${track.id}-${indexLabel}`,
+        label: "Remove from queue",
+        icon: X,
+        danger: true,
+        onSelect: onRemove,
+      },
+    ];
+  }, [baseActions, indexLabel, onRemove, track.id]);
+  const actionMenu = useItemActionMenu(actions);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onJump}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onJump();
+        }
+      }}
+      onContextMenu={actionMenu.handleContextMenu}
+      className={`group flex w-full items-center gap-3 px-4 py-2 text-left transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${faded ? "opacity-50" : ""}`}
+    >
+      <span className={`w-5 shrink-0 text-right text-[11px] tabular-nums ${faded ? "text-white/15" : "text-white/20"}`}>
+        {indexLabel}
+      </span>
+      {track.albumCover ? (
+        <img src={track.albumCover} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
+      ) : (
+        <div className="h-8 w-8 shrink-0 rounded bg-white/10" />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className={`min-w-0 flex-1 truncate text-[12px] ${faded ? "text-white/50" : "text-white/80"}`}>{track.title}</p>
+          {track.isSuggested ? (
+            <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary">
+              Suggested
+            </span>
+          ) : null}
+        </div>
+        <p className={`truncate text-[10px] ${faded ? "text-white/30" : "text-white/40"}`}>{track.artist}</p>
+      </div>
+      <ItemActionMenuButton
+        buttonRef={actionMenu.triggerRef}
+        hasActions={actionMenu.hasActions}
+        onClick={actionMenu.openFromTrigger}
+        className="h-8 w-8 shrink-0 opacity-80 transition-opacity hover:opacity-100"
+      />
+      <ItemActionMenu
+        actions={actions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
+    </div>
+  );
 }
 
 export function QueuePanel({ open, onClose }: QueuePanelProps) {
@@ -62,36 +154,13 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
         {upcoming.map((track, i) => {
           const idx = currentIndex + 1 + i;
           return (
-            <button
+            <QueuePanelRow
               key={`${track.id}-${idx}`}
-              className="w-full flex items-center gap-3 px-4 py-2 hover:bg-white/5 transition-colors text-left group"
-              onClick={() => jumpTo(idx)}
-            >
-              <span className="text-[11px] text-white/20 w-5 text-right tabular-nums shrink-0">{i + 1}</span>
-              {track.albumCover ? (
-                <img src={track.albumCover} alt="" className="w-8 h-8 rounded object-cover shrink-0" />
-              ) : (
-                <div className="w-8 h-8 rounded bg-white/10 shrink-0" />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="min-w-0 flex-1 truncate text-[12px] text-white/80">{track.title}</p>
-                  {track.isSuggested ? (
-                    <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary">
-                      Suggested
-                    </span>
-                  ) : null}
-                </div>
-                <p className="text-[10px] text-white/40 truncate">{track.artist}</p>
-              </div>
-              <button
-                className="p-1 text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                onClick={(e) => { e.stopPropagation(); removeFromQueue(idx); }}
-                title="Remove"
-              >
-                <X size={12} />
-              </button>
-            </button>
+              track={track}
+              indexLabel={String(i + 1)}
+              onJump={() => jumpTo(idx)}
+              onRemove={() => removeFromQueue(idx)}
+            />
           );
         })}
 
@@ -110,24 +179,13 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
               </p>
             </div>
             {played.map((track, i) => (
-              <button
+              <QueuePanelRow
                 key={`${track.id}-prev-${i}`}
-                className="w-full flex items-center gap-3 px-4 py-2 hover:bg-white/5 transition-colors text-left opacity-50"
-                onClick={() => jumpTo(i)}
-              >
-                <span className="text-[11px] text-white/15 w-5 text-right tabular-nums shrink-0">{i + 1}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="min-w-0 flex-1 truncate text-[12px] text-white/50">{track.title}</p>
-                    {track.isSuggested ? (
-                      <span className="rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-primary">
-                        Suggested
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="text-[10px] text-white/30 truncate">{track.artist}</p>
-                </div>
-              </button>
+                track={track}
+                indexLabel={String(i + 1)}
+                onJump={() => jumpTo(i)}
+                faded
+              />
             ))}
           </>
         )}

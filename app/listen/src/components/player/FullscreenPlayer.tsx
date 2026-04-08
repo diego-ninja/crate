@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router";
+import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { trackToMenuData } from "@/components/actions/shared";
+import { useTrackActionEntries } from "@/components/actions/track-actions";
 import { api } from "@/lib/api";
 import {
   ChevronDown,
@@ -25,7 +28,7 @@ import {
   type SleepTimerState,
 } from "@/lib/sleep-timer";
 import { artistPagePath } from "@/lib/library-routes";
-import { usePlayer } from "@/contexts/PlayerContext";
+import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useEscapeKey } from "@/hooks/use-escape-key";
 import { formatDuration } from "@/lib/utils";
@@ -45,6 +48,74 @@ function parseSyncedLyrics(raw: string): LyricLine[] {
 interface FullscreenPlayerProps {
   open: boolean;
   onClose: () => void;
+}
+
+function FullscreenQueueRow({
+  track,
+  onJump,
+}: {
+  track: Track;
+  onJump: () => void;
+}) {
+  const menuTrack = useMemo(() => trackToMenuData(track), [track]);
+  const actions = useTrackActionEntries({
+    track: menuTrack,
+    albumCover: track.albumCover,
+    onPlayNowOverride: onJump,
+  });
+  const actionMenu = useItemActionMenu(actions);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onJump}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onJump();
+        }
+      }}
+      onContextMenu={actionMenu.handleContextMenu}
+      className="flex items-center gap-3 w-full py-2 text-left active:bg-white/5 rounded-lg transition-colors focus-visible:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
+      {track.albumCover ? (
+        <img
+          src={track.albumCover}
+          alt=""
+          className="w-8 h-8 rounded object-cover shrink-0"
+        />
+      ) : (
+        <div className="w-8 h-8 rounded bg-white/10 shrink-0" />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <p className="min-w-0 flex-1 truncate text-sm text-white">{track.title}</p>
+          {track.isSuggested ? (
+            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-cyan-300">
+              Suggested
+            </span>
+          ) : null}
+        </div>
+        <p className="text-xs text-white/40 truncate">
+          {track.artist}
+        </p>
+      </div>
+      <ItemActionMenuButton
+        buttonRef={actionMenu.triggerRef}
+        hasActions={actionMenu.hasActions}
+        onClick={actionMenu.openFromTrigger}
+        className="h-8 w-8 shrink-0 opacity-85 transition-opacity hover:opacity-100"
+      />
+      <ItemActionMenu
+        actions={actions}
+        open={actionMenu.open}
+        position={actionMenu.position}
+        menuRef={actionMenu.menuRef}
+        onClose={actionMenu.close}
+      />
+    </div>
+  );
 }
 
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
@@ -456,34 +527,11 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             {upcomingTracks.map((track, i) => {
               const queueIndex = currentIndex + 1 + i;
               return (
-                <button
+                <FullscreenQueueRow
                   key={`${track.id}-${queueIndex}`}
-                  onClick={() => jumpTo(queueIndex)}
-                  className="flex items-center gap-3 w-full py-2 text-left active:bg-white/5 rounded-lg transition-colors"
-                >
-                  {track.albumCover ? (
-                    <img
-                      src={track.albumCover}
-                      alt=""
-                      className="w-8 h-8 rounded object-cover shrink-0"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded bg-white/10 shrink-0" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="min-w-0 flex-1 truncate text-sm text-white">{track.title}</p>
-                      {track.isSuggested ? (
-                        <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-cyan-300">
-                          Suggested
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="text-xs text-white/40 truncate">
-                      {track.artist}
-                    </p>
-                  </div>
-                </button>
+                  track={track}
+                  onJump={() => jumpTo(queueIndex)}
+                />
               );
             })}
           </div>
