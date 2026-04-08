@@ -25,6 +25,7 @@ class LibraryRepair:
                task_id: str | None = None, progress_callback=None) -> dict:
         issues = report.get("issues", [])
         actions = []
+        resolved_ids: list[int] = []
         fs_changed = False
         db_changed = False
 
@@ -73,10 +74,18 @@ class LibraryRepair:
                                 fs_changed = True
                             else:
                                 db_changed = True
+                            issue_id = issue.get("id")
+                            if isinstance(issue_id, int):
+                                resolved_ids.append(issue_id)
                 except Exception:
                     log.exception("Repair failed for %s: %s", check, issue)
 
-        return {"actions": actions, "fs_changed": fs_changed, "db_changed": db_changed}
+        return {
+            "actions": actions,
+            "fs_changed": fs_changed,
+            "db_changed": db_changed,
+            "resolved_ids": resolved_ids,
+        }
 
     def _fix_duplicate_folders(self, issue: dict, dry_run: bool, task_id: str | None = None) -> dict | None:
         details = issue.get("details", {})
@@ -312,56 +321,108 @@ class LibraryRepair:
             "action": "flag_unindexed",
             "target": dir_path,
             "details": {"count": details.get("count", 0)},
-            "applied": not dry_run,
+            "applied": False,
             "fs_write": False,
         }
 
-        if not dry_run:
-            import re
-            unindexed_dir = Path(dir_path)
+        if dry_run:
+            result["applied"] = True  # dry_run: always "applied" in the sense of "would apply"
+            return result
+
+        import re
+        unindexed_dir = Path(dir_path)
+        if not unindexed_dir.exists():
+            result["details"]["missing"] = True
+            result["applied"] = True  # dir is gone, nothing to index — treat as resolved
+            return result
+
+        try:
             dir_parts = unindexed_dir.relative_to(self.library_path).parts
-            artist_name = dir_parts[0] if dir_parts else ""
+        except ValueError:
+            result["details"]["outside_library"] = True
+            return result
+        folder_artist_name = dir_parts[0] if dir_parts else ""
 
-            # Check if this is a "YYYY - AlbumName" residue with a correct "YYYY/AlbumName" already indexed
-            folder_name = unindexed_dir.name
-            year_prefix = re.match(r"^(\d{4})\s*[-–]\s*(.+)$", folder_name)
-            if year_prefix and artist_name:
-                year, clean_name = year_prefix.group(1), year_prefix.group(2).strip()
-                correct_dir = self.library_path / artist_name / year / clean_name
-                if correct_dir.is_dir():
-                    # Duplicate residue — merge into correct dir and remove
-                    src_files = {f.name for f in unindexed_dir.iterdir() if f.is_file()}
-                    dst_files = {f.name for f in correct_dir.iterdir() if f.is_file()}
-                    for name in src_files - dst_files:
-                        shutil.move(str(unindexed_dir / name), str(correct_dir / name))
-                    shutil.rmtree(str(unindexed_dir))
-                    result["action"] = "remove_duplicate_folder"
-                    result["details"]["removed"] = str(unindexed_dir)
-                    result["details"]["merged_into"] = str(correct_dir)
-                    result["fs_write"] = True
-                    log_audit("remove_duplicate_folder", "album", f"{artist_name}/{folder_name}",
-                              details=result["details"], task_id=task_id)
-                    return result
+        # Check if this is a "YYYY - AlbumName" residue with a correct "YYYY/AlbumName" already indexed
+        folder_name = unindexed_dir.name
+        year_prefix = re.match(r"^(\d{4})\s*[-–]\s*(.+)$", folder_name)
+        if year_prefix and folder_artist_name:
+            year, clean_name = year_prefix.group(1), year_prefix.group(2).strip()
+            correct_dir = self.library_path / folder_artist_name / year / clean_name
+            if correct_dir.is_dir():
+                # Duplicate residue — merge into correct dir and remove
+                src_files = {f.name for f in unindexed_dir.iterdir() if f.is_file()}
+                dst_files = {f.name for f in correct_dir.iterdir() if f.is_file()}
+                for name in src_files - dst_files:
+                    shutil.move(str(unindexed_dir / name), str(correct_dir / name))
+                shutil.rmtree(str(unindexed_dir))
+                result["action"] = "remove_duplicate_folder"
+                result["details"]["removed"] = str(unindexed_dir)
+                result["details"]["merged_into"] = str(correct_dir)
+                result["applied"] = True
+                result["fs_write"] = True
+                log_audit("remove_duplicate_folder", "album", f"{folder_artist_name}/{folder_name}",
+                          details=result["details"], task_id=task_id)
+                return result
 
-            # Not a residue — sync files into DB, then enrich
-            if artist_name:
-                try:
-                    from crate.library_sync import LibrarySync
-                    from crate.config import load_config
-                    syncer = LibrarySync(load_config())
-                    artist_dir = self.library_path / artist_name
-                    if artist_dir.is_dir():
-                        syncer.sync_artist(artist_dir)
-                        result["action"] = "reindex_unindexed"
-                        result["details"]["synced"] = True
-                except Exception:
-                    log.warning("Failed to sync unindexed dir %s", dir_path, exc_info=True)
-                    result["details"]["sync_error"] = True
-                create_task_dedup("process_new_content", {"artist": artist_name})
-            log_audit("reindex_unindexed", "directory", dir_path,
-                      details={"count": details.get("count", 0)}, task_id=task_id)
+        # Not a residue — sync files into DB, then enrich
+        if not folder_artist_name:
+            result["details"]["no_artist_folder"] = True
+            return result
 
+        # Resolve canonical artist name from DB (folder name may differ from canonical)
+        canonical_artist = folder_artist_name
+        try:
+            with get_db_ctx() as cur:
+                cur.execute(
+                    "SELECT name FROM library_artists "
+                    "WHERE folder_name = %s OR LOWER(name) = LOWER(%s) LIMIT 1",
+                    (folder_artist_name, folder_artist_name),
+                )
+                row = cur.fetchone()
+                if row:
+                    canonical_artist = row["name"]
+        except Exception:
+            log.debug("Could not resolve canonical artist for %s", folder_artist_name, exc_info=True)
+
+        try:
+            from crate.library_sync import LibrarySync
+            from crate.config import load_config
+            syncer = LibrarySync(load_config())
+            artist_dir = self.library_path / folder_artist_name
+            if not artist_dir.is_dir():
+                result["details"]["artist_dir_missing"] = True
+                return result
+            tracks_before = self._count_artist_tracks(canonical_artist)
+            syncer.sync_artist(artist_dir)
+            tracks_after = self._count_artist_tracks(canonical_artist)
+            result["action"] = "reindex_unindexed"
+            result["details"]["synced"] = True
+            result["details"]["tracks_before"] = tracks_before
+            result["details"]["tracks_after"] = tracks_after
+            result["applied"] = True
+        except Exception as exc:
+            log.warning("Failed to sync unindexed dir %s", dir_path, exc_info=True)
+            result["details"]["sync_error"] = str(exc)[:200]
+            return result
+
+        create_task_dedup("process_new_content", {"artist": canonical_artist})
+        log_audit("reindex_unindexed", "directory", dir_path,
+                  details={"count": details.get("count", 0), "artist": canonical_artist}, task_id=task_id)
         return result
+
+    def _count_artist_tracks(self, artist_name: str) -> int:
+        try:
+            with get_db_ctx() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS c FROM library_tracks t "
+                    "JOIN library_albums a ON t.album_id = a.id WHERE a.artist = %s",
+                    (artist_name,),
+                )
+                row = cur.fetchone()
+                return int(row["c"] if row else 0)
+        except Exception:
+            return 0
 
     def _fix_tag_mismatch(self, issue: dict, dry_run: bool, task_id: str | None = None) -> dict | None:
         """Update DB track artist to match the albumartist tag (tag is source of truth)."""

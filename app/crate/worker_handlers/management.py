@@ -104,11 +104,22 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
         )
 
         action_count = len(result.get("actions", []))
+        resolved_ids = result.get("resolved_ids", [])
+
+        # Mark resolved issues as fixed in the DB
+        if not dry_run and resolved_ids:
+            from crate.db import resolve_issue
+            for issue_id in resolved_ids:
+                try:
+                    resolve_issue(issue_id)
+                except Exception:
+                    log.debug("Failed to mark issue %s as resolved", issue_id, exc_info=True)
+
         emit_task_event(
             task_id,
             "info",
             {
-                "message": f"Repair complete: {action_count} actions",
+                "message": f"Repair complete: {action_count} actions, {len(resolved_ids)} resolved",
                 "fs_changed": result.get("fs_changed"),
                 "db_changed": result.get("db_changed"),
             },

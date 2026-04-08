@@ -313,15 +313,20 @@ class LibraryHealthCheck:
 
         unindexed_by_dir: dict[str, int] = defaultdict(int)
         for audio_file in self.library_path.rglob("*"):
-            if audio_file.is_file() and audio_file.suffix.lower() in self.extensions:
-                if str(audio_file) not in db_paths:
-                    unindexed_by_dir[str(audio_file.parent)] += 1
+            if not audio_file.is_file() or audio_file.suffix.lower() not in self.extensions:
+                continue
+            # Skip hidden dirs and trash
+            if any(part.startswith(".") for part in audio_file.parts):
+                continue
+            if str(audio_file) not in db_paths:
+                unindexed_by_dir[str(audio_file.parent)] += 1
 
         return [
             {
                 "check": "unindexed_files",
                 "severity": "low",
                 "auto_fixable": True,
+                "description": f"unindexed_files:{dir_path}",
                 "details": {"dir": dir_path, "count": count},
             }
             for dir_path, count in sorted(unindexed_by_dir.items())
