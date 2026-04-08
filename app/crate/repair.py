@@ -256,7 +256,9 @@ class LibraryRepair:
     def _fix_has_photo_desync(self, issue: dict, dry_run: bool, task_id: str | None = None) -> dict | None:
         details = issue.get("details", {})
         artist_name = details.get("artist", "")
-        fs_has_photo = details.get("fs_has_photo", 0)
+        # has_photo is an INTEGER column; JSONB deserializes `true`/`false` to
+        # Python bool which Postgres refuses to coerce implicitly. Normalize.
+        fs_has_photo = 1 if details.get("fs_has_photo") else 0
 
         result = {
             "action": "fix_has_photo",
@@ -399,7 +401,21 @@ class LibraryRepair:
             result["details"]["synced"] = True
             result["details"]["tracks_before"] = tracks_before
             result["details"]["tracks_after"] = tracks_after
-            result["applied"] = True
+            # Only claim the fix actually landed if sync imported new rows.
+            # If tracks_after == tracks_before the sync silently failed on this
+            # album (most often: UNIQUE(artist, name) conflict against a
+            # duplicate album already indexed under a different path). Leaving
+            # applied=False keeps the issue open so a human can merge the
+            # duplicate, instead of resolving it only for the next health
+            # check to re-create it.
+            if tracks_after > tracks_before:
+                result["applied"] = True
+            else:
+                result["details"]["no_progress"] = True
+                result["details"]["reason"] = (
+                    "sync completed but no new tracks were indexed — likely a "
+                    "duplicate album folder or UNIQUE(artist, name) conflict"
+                )
         except Exception as exc:
             log.warning("Failed to sync unindexed dir %s", dir_path, exc_info=True)
             result["details"]["sync_error"] = str(exc)[:200]
@@ -408,7 +424,8 @@ class LibraryRepair:
         # Report the affected canonical artist so _handle_repair can queue
         # process_new_content once per artist after the full batch, instead of
         # re-enqueueing per-album and flooding dedup.
-        result["details"]["enrich_artist"] = canonical_artist
+        if result.get("applied"):
+            result["details"]["enrich_artist"] = canonical_artist
         log_audit("reindex_unindexed", "directory", dir_path,
                   details={"count": details.get("count", 0), "artist": canonical_artist}, task_id=task_id)
         return result
