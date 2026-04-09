@@ -189,8 +189,20 @@ class LibrarySync:
                     and existing_album["dir_mtime"] >= tree_mtime
                     and existing_album.get("track_count", 0) == actual_track_count
                 ):
-                    total_tracks += existing_album.get("track_count", 0)
-                    continue
+                    # Self-heal: the denormalized track_count on library_albums
+                    # can drift from the actual library_tracks rows (historically
+                    # caused by sync_album crashing mid-insert). If the album
+                    # row claims N tracks but fewer rows exist in library_tracks,
+                    # force a full sync instead of trusting the counter.
+                    with get_db_ctx() as cur:
+                        cur.execute(
+                            "SELECT COUNT(*) AS cnt FROM library_tracks WHERE album_id = %s",
+                            (existing_album["id"],),
+                        )
+                        actual_row_count = int(cur.fetchone()["cnt"] or 0)
+                    if actual_row_count == actual_track_count:
+                        total_tracks += existing_album.get("track_count", 0)
+                        continue
 
                 result = self.sync_album(album_dir, artist_name)
                 total_tracks += result["track_count"]

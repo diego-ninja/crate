@@ -212,14 +212,21 @@ def classify_duplicate_album(loose_dir: Path, library_path: Path) -> DuplicateVe
             comparison=empty_cmp,
         )
 
-    # Prefer candidates under year subdir, then ones with more audio files.
-    def rank(c: Path) -> tuple[int, int]:
+    loose_key = _normalize_album_name(loose_dir.name)
+
+    # Prefer, in order:
+    #  1) Exact normalized-name match (so "Group Sex (TRUST Edition)" beats
+    #     "Group Sex" when both are siblings of the loose "Group Sex
+    #     (TRUST Edition)" folder).
+    #  2) Candidates already under a year subdir (organized).
+    #  3) Candidates with more audio files (better-populated album).
+    def rank(c: Path) -> tuple[int, int, int]:
+        exact = 0 if _normalize_album_name(c.name) == loose_key else 1
         year_bucket = 0 if re.fullmatch(r"\d{4}", c.parent.name) else 1
         audio_count = sum(
             1 for f in c.iterdir() if f.is_file() and f.suffix.lower() in AUDIO_EXTENSIONS
         )
-        # Prefer year-subdir (lower bucket) and higher audio count (negated for sort asc).
-        return (year_bucket, -audio_count)
+        return (exact, year_bucket, -audio_count)
 
     candidates.sort(key=rank)
     canonical = candidates[0]
