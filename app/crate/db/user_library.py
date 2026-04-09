@@ -580,10 +580,18 @@ def _recompute_user_genre_stats(cur, user_id: int, window: str, cutoff: str | No
 
 
 def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
+    # Resolving library_tracks from play_history is best-effort: old rows
+    # may have NULL track_id if the client recorded a Navidrome-streamed
+    # play before our DB had a navidrome_id for that track. We do two
+    # passes:
+    #   1) SQL join on exact keys (id, path, navidrome_id) — cheap.
+    #   2) In-Python fallback on (artist, title) for any row still missing
+    #      an album_id. This is limited to the history page size so it's
+    #      fine even with 48k tracks in the library.
     with get_db_ctx() as cur:
         cur.execute("""
             SELECT
-                ph.track_id,
+                COALESCE(lt.id, ph.track_id) AS track_id,
                 COALESCE(lt.path, ph.track_path) AS track_path,
                 COALESCE(lt.title, ph.title) AS title,
                 COALESCE(lt.artist, ph.artist) AS artist,
@@ -595,18 +603,71 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
                 lt.navidrome_id,
                 ph.played_at
             FROM play_history ph
-            LEFT JOIN library_tracks lt ON lt.id = ph.track_id
+            LEFT JOIN library_tracks lt
+              ON lt.id = ph.track_id
+              OR (ph.track_id IS NULL AND lt.navidrome_id = ph.track_path)
+              OR (ph.track_id IS NULL AND lt.path = ph.track_path)
             LEFT JOIN library_albums alb ON alb.id = lt.album_id
             LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, ph.artist)
             WHERE ph.user_id = %s
             ORDER BY ph.played_at DESC
             LIMIT %s
         """, (user_id, limit))
-        rows = []
-        for row in cur.fetchall():
+        rows: list[dict] = []
+        needs_title_fallback: list[tuple[int, str, str]] = []
+        for idx, row in enumerate(cur.fetchall()):
             item = dict(row)
             item["relative_path"] = _relative_track_path(item.get("track_path") or "")
             rows.append(item)
+            if item.get("album_id") is None and item.get("artist") and item.get("title"):
+                needs_title_fallback.append((idx, item["artist"], item["title"]))
+
+        if needs_title_fallback:
+            # Batch-lookup by (LOWER(artist), LOWER(title)). We only touch
+            # rows the first pass couldn't resolve, so the input set is tiny.
+            artists = [a for _, a, _ in needs_title_fallback]
+            titles = [t for _, _, t in needs_title_fallback]
+            cur.execute(
+                """
+                SELECT DISTINCT ON (LOWER(lt.artist), LOWER(lt.title))
+                    lt.id AS track_id,
+                    lt.path,
+                    lt.title,
+                    lt.artist,
+                    lt.navidrome_id,
+                    alb.id AS album_id,
+                    alb.slug AS album_slug,
+                    alb.name AS album,
+                    ar.id AS artist_id,
+                    ar.slug AS artist_slug
+                FROM library_tracks lt
+                LEFT JOIN library_albums alb ON alb.id = lt.album_id
+                LEFT JOIN library_artists ar ON ar.name = lt.artist
+                WHERE (LOWER(lt.artist), LOWER(lt.title)) IN (
+                    SELECT LOWER(UNNEST(%s::text[])), LOWER(UNNEST(%s::text[]))
+                )
+                """,
+                (artists, titles),
+            )
+            resolved = {
+                ((r["artist"] or "").lower(), (r["title"] or "").lower()): dict(r)
+                for r in cur.fetchall()
+            }
+            for idx, artist, title in needs_title_fallback:
+                hit = resolved.get((artist.lower(), title.lower()))
+                if not hit:
+                    continue
+                item = rows[idx]
+                # Backfill everything the first pass left empty.
+                item["track_id"] = hit["track_id"]
+                item["track_path"] = item.get("track_path") or hit.get("path")
+                item["navidrome_id"] = item.get("navidrome_id") or hit.get("navidrome_id")
+                item["album_id"] = hit.get("album_id")
+                item["album_slug"] = hit.get("album_slug")
+                item["album"] = item.get("album") or hit.get("album")
+                item["artist_id"] = item.get("artist_id") or hit.get("artist_id")
+                item["artist_slug"] = item.get("artist_slug") or hit.get("artist_slug")
+
         return rows
 
 

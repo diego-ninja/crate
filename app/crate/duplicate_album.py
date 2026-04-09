@@ -37,6 +37,9 @@ from crate.utils import AUDIO_EXTENSIONS
 log = logging.getLogger(__name__)
 
 _TRACK_NUM_PREFIX_RE = re.compile(r"^\s*\d{1,3}\s*[\.\-_)\s]+\s*")
+# Apostrophes and quotes are dropped entirely (so "Man's" == "Mans"); every
+# other non-word/non-space character becomes a space.
+_APOSTROPHE_RE = re.compile(r"['\u2018\u2019\u02bc\u0060\u00b4]")
 _PUNCT_RE = re.compile(r"[^\w\s]")
 _WS_RE = re.compile(r"\s+")
 _YEAR_PREFIX_RE = re.compile(r"^\d{4}\s*[-–]\s*(.+)$")
@@ -114,6 +117,7 @@ def _normalize_title(title: str) -> str:
     t = _TRACK_NUM_PREFIX_RE.sub("", t)
     t = _TRIVIAL_TITLE_SUFFIX_RE.sub("", t)
     t = t.casefold()
+    t = _APOSTROPHE_RE.sub("", t)
     t = _PUNCT_RE.sub(" ", t)
     t = _WS_RE.sub(" ", t).strip()
     return t
