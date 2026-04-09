@@ -290,37 +290,91 @@ def download(url: str, quality: str = "max", task_id: str = "",
 
 def move_to_library(processing_path: str, library_path: str) -> list[str]:
     """Move downloaded files from processing dir to library.
-    Returns list of artist directories that were modified."""
+
+    Returns list of artist directories that were modified.
+
+    Implementation notes:
+
+    - All three nested directory listings are materialized to lists before
+      the inner loop runs. Previously we iterated Path.iterdir() directly
+      and mutated the directory from inside the loop via shutil.move()
+      which, on ext4, can cause readdir() to yield stale or duplicate
+      entries, leading to a FileNotFoundError on either the source
+      (already moved) or the destination (half-written).
+    - Each file move is wrapped in its own try/except so a single bad
+      file doesn't abort the whole batch. The caller gets the list of
+      artists we touched even when some files failed.
+    """
     src = Path(processing_path)
     dst = Path(library_path)
-    modified_artists = set()
+    modified_artists: set[str] = set()
 
     if not src.exists():
         return []
 
-    for item in src.iterdir():
-        if item.is_dir():
-            # item is likely "ArtistName" directory
-            dest_dir = dst / item.name
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            for album_dir in item.iterdir():
-                if album_dir.is_dir():
-                    final = dest_dir / album_dir.name
-                    final.mkdir(parents=True, exist_ok=True)
-                    for f in album_dir.iterdir():
-                        dest_file = final / f.name
-                        if dest_file.exists():
-                            dest_file.unlink()
-                        shutil.move(str(f), str(dest_file))
-                    try: album_dir.rmdir()
-                    except OSError: pass
-                elif album_dir.is_file():
-                    shutil.move(str(album_dir), str(dest_dir / album_dir.name))
-            try: item.rmdir()
-            except OSError: pass
-            modified_artists.add(item.name)
+    for item in sorted(src.iterdir()):
+        if not item.is_dir():
+            continue
+        # item is an "ArtistName" directory.
+        dest_dir = dst / item.name
+        dest_dir.mkdir(parents=True, exist_ok=True)
 
-    # Clean up processing dir
+        # Snapshot the album list before we start mutating the directory.
+        album_dirs = [d for d in sorted(item.iterdir())]
+        for album_dir in album_dirs:
+            if album_dir.is_dir():
+                final = dest_dir / album_dir.name
+                final.mkdir(parents=True, exist_ok=True)
+                album_files = [f for f in sorted(album_dir.iterdir())]
+                for f in album_files:
+                    if not f.exists():
+                        continue  # already moved or vanished
+                    dest_file = final / f.name
+                    try:
+                        if dest_file.exists():
+                            if dest_file.is_dir():
+                                shutil.rmtree(str(dest_file), ignore_errors=True)
+                            else:
+                                dest_file.unlink()
+                        shutil.move(str(f), str(dest_file))
+                    except FileNotFoundError:
+                        log.warning(
+                            "move_to_library: missing file during move %s -> %s",
+                            f,
+                            dest_file,
+                        )
+                    except Exception:
+                        log.warning(
+                            "move_to_library: failed to move %s -> %s",
+                            f,
+                            dest_file,
+                            exc_info=True,
+                        )
+                try:
+                    album_dir.rmdir()
+                except OSError:
+                    pass
+            elif album_dir.is_file():
+                dest_file = dest_dir / album_dir.name
+                try:
+                    if dest_file.exists():
+                        dest_file.unlink()
+                    shutil.move(str(album_dir), str(dest_file))
+                except Exception:
+                    log.warning(
+                        "move_to_library: failed to move file %s -> %s",
+                        album_dir,
+                        dest_file,
+                        exc_info=True,
+                    )
+        try:
+            item.rmdir()
+        except OSError:
+            pass
+        modified_artists.add(item.name)
+
+    # Clean up processing dir (best-effort — it may still contain files
+    # we couldn't move, and those will be cleaned on retry / manually).
     shutil.rmtree(str(src), ignore_errors=True)
 
     return list(modified_artists)

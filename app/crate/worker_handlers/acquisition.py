@@ -98,7 +98,7 @@ def _seed_uploaded_library(user_id: int | None, imported_albums: list[dict]):
 
 
 def _tidal_download_inner(task_id, params, config, url, quality, download_id, lib):
-    from crate.db import mark_release_downloaded, update_tidal_download
+    from crate.db import delete_cache, mark_release_downloaded, set_cache, update_tidal_download
     from crate.library_sync import LibrarySync
     from crate.tidal import download, move_to_library
 
@@ -132,63 +132,105 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         {"message": f"Moving {result.get('file_count', 0)} files to library"},
     )
     update_task(task_id, progress=json.dumps({"phase": "moving", "files": result.get("file_count", 0)}))
-    modified_artists = move_to_library(result["path"], str(lib))
+
+    # Suppress the library_watcher for the artists we're about to write to
+    # /music. Otherwise the watcher sees the new files, enqueues its own
+    # process_new_content which runs _reorganize_artist_folders in a parallel
+    # worker, moving Album/ -> YYYY/Album/ and yanking the filesystem out
+    # from under the sync_artist iterator below — FileNotFoundError, task
+    # fails, Dramatiq retries the whole 5 GB download.
+    #
+    # The processing key is cross-process via Redis/PG cache. We inspect
+    # the processing directory directly to enumerate the target artist
+    # names (tiddl writes to /tmp/.../<task_id>/<ArtistName>/) because the
+    # params.artist field is empty for artist-wide URL downloads.
+    processing_root = Path(result["path"])
+    staged_artists: list[str] = []
+    if processing_root.is_dir():
+        staged_artists = [
+            p.name for p in processing_root.iterdir() if p.is_dir()
+        ]
+    for staged in staged_artists:
+        set_cache(f"processing:{staged.lower()}", True, ttl=3600)
+
+    try:
+        modified_artists = move_to_library(result["path"], str(lib))
+        # move_to_library may have canonicalized names slightly differently;
+        # make sure every emitted artist has a processing mark too.
+        for current_artist in modified_artists:
+            set_cache(f"processing:{current_artist.lower()}", True, ttl=3600)
+    except Exception:
+        for staged in staged_artists:
+            delete_cache(f"processing:{staged.lower()}")
+        raise
 
     if not modified_artists:
         if download_id:
             update_tidal_download(download_id, status="failed", error="No files moved")
         return {"error": "No files were moved", "phase": "move"}
 
-    cover_url = params.get("cover_url", "")
-    if cover_url and modified_artists:
+    # All post-move work runs under the processing flag so the watcher's
+    # debounce loop treats any filesystem activity as ours and stays out.
+    try:
+        cover_url = params.get("cover_url", "")
+        if cover_url and modified_artists:
+            for current_artist in modified_artists:
+                current_album = params.get("album", "")
+                if not current_album:
+                    continue
+                album_dir = lib / current_artist / current_album
+                if not album_dir.is_dir():
+                    artist_dir = lib / current_artist
+                    if artist_dir.is_dir():
+                        for candidate in artist_dir.iterdir():
+                            if candidate.is_dir() and current_album.lower() in candidate.name.lower():
+                                album_dir = candidate
+                                break
+                if album_dir.is_dir():
+                    cover_path = album_dir / "cover.jpg"
+                    if not cover_path.exists():
+                        try:
+                            import requests
+
+                            resp = requests.get(cover_url, timeout=15)
+                            if resp.status_code == 200 and len(resp.content) > 1000:
+                                cover_path.write_bytes(resp.content)
+                                log.info("Downloaded Tidal cover for %s/%s", current_artist, current_album)
+                        except Exception:
+                            log.debug("Failed to download Tidal cover", exc_info=True)
+
+        emit_task_event(
+            task_id,
+            "info",
+            {"message": f"Syncing {', '.join(modified_artists)} to library"},
+        )
+        update_task(task_id, progress=json.dumps({"phase": "syncing", "artists": modified_artists}))
+        sync = LibrarySync(config)
         for current_artist in modified_artists:
-            current_album = params.get("album", "")
-            if not current_album:
-                continue
-            album_dir = lib / current_artist / current_album
-            if not album_dir.is_dir():
-                artist_dir = lib / current_artist
-                if artist_dir.is_dir():
-                    for candidate in artist_dir.iterdir():
-                        if candidate.is_dir() and current_album.lower() in candidate.name.lower():
-                            album_dir = candidate
-                            break
-            if album_dir.is_dir():
-                cover_path = album_dir / "cover.jpg"
-                if not cover_path.exists():
-                    try:
-                        import requests
+            artist_dir = lib / current_artist
+            if artist_dir.is_dir():
+                try:
+                    sync.sync_artist(artist_dir)
+                except Exception:
+                    # Sync failures here must not trigger a Dramatiq retry —
+                    # the files are already on disk, re-downloading 5 GB
+                    # would be pointless. The next process_new_content pass
+                    # (queued below) will pick them up.
+                    log.warning("Sync failed for %s", current_artist, exc_info=True)
 
-                        resp = requests.get(cover_url, timeout=15)
-                        if resp.status_code == 200 and len(resp.content) > 1000:
-                            cover_path.write_bytes(resp.content)
-                            log.info("Downloaded Tidal cover for %s/%s", current_artist, current_album)
-                    except Exception:
-                        log.debug("Failed to download Tidal cover", exc_info=True)
-
-    emit_task_event(
-        task_id,
-        "info",
-        {"message": f"Syncing {', '.join(modified_artists)} to library"},
-    )
-    update_task(task_id, progress=json.dumps({"phase": "syncing", "artists": modified_artists}))
-    sync = LibrarySync(config)
-    for current_artist in modified_artists:
-        artist_dir = lib / current_artist
-        if artist_dir.is_dir():
+        from crate.content import queue_process_new_content_if_needed
+        for current_artist in modified_artists:
             try:
-                sync.sync_artist(artist_dir)
+                queue_process_new_content_if_needed(
+                    current_artist, library_path=config.get("library_path"), force=True
+                )
             except Exception:
-                log.warning("Sync failed for %s", current_artist, exc_info=True)
-
-    from crate.content import queue_process_new_content_if_needed
-    for current_artist in modified_artists:
-        try:
-            queue_process_new_content_if_needed(
-                current_artist, library_path=config.get("library_path"), force=True
-            )
-        except Exception:
-            log.debug("Failed to queue process_new_content for Tidal artist %s", current_artist, exc_info=True)
+                log.debug("Failed to queue process_new_content for Tidal artist %s", current_artist, exc_info=True)
+    finally:
+        # Let the watcher react to any remaining file changes from the
+        # queued process_new_content as normal.
+        for name in set(staged_artists) | set(modified_artists):
+            delete_cache(f"processing:{name.lower()}")
 
     try:
         from crate.navidrome import start_scan

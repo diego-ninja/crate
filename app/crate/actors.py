@@ -37,7 +37,7 @@ MAX_RSS_MB = 1500  # 1.5 GB — matches previous worker recycling limit
 
 TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     # User-initiated (priority 0) — these should run ASAP
-    "tidal_download":       ("default", 0, 1800, 2),
+    "tidal_download":       ("default", 0, 1800, 0),
     "soulseek_download":    ("default", 0, 1800, 2),
     "delete_artist":        ("default", 0, 300, 0),
     "delete_album":         ("default", 0, 300, 0),
