@@ -74,10 +74,11 @@ def extract_embedded_cover(track_path: Path) -> bytes | None:
         if hasattr(audio, "pictures") and audio.pictures:
             return audio.pictures[0].data
 
-        # MP3 (ID3)
+        # MP3 (ID3) — guard against FLAC VComment which yields (key, value)
+        # tuples and would crash on .startswith.
         if hasattr(audio, "tags") and audio.tags:
             for key in audio.tags:
-                if key.startswith("APIC"):
+                if isinstance(key, str) and key.startswith("APIC"):
                     return audio.tags[key].data
 
         # M4A (MP4)

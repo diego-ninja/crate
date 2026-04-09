@@ -379,7 +379,7 @@ class LibrarySync:
                     if hasattr(first, "pictures") and first.pictures:
                         has_cover = 1
                     elif hasattr(first, "tags") and first.tags:
-                        if any(k.startswith("APIC") for k in first.tags):
+                        if any(isinstance(k, str) and k.startswith("APIC") for k in first.tags):
                             has_cover = 1
             except Exception:
                 pass

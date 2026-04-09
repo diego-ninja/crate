@@ -429,67 +429,117 @@ class LibraryHealthCheck:
         return issues
 
     def _check_missing_covers(self) -> list[dict]:
-        """Albums without cover art (file on disk or embedded in audio)."""
-        # Try Rust CLI scan for fast cover detection
-        try:
-            from crate.crate_cli import run_scan, is_available, has_subcommands
-            if is_available() and has_subcommands():
-                return self._check_missing_covers_rust()
-        except Exception:
-            pass
-        return self._check_missing_covers_python()
+        """Albums without cover art (file on disk or embedded in audio).
 
-    def _check_missing_covers_rust(self) -> list[dict]:
-        """Fast cover check via crate-cli scan."""
-        from crate.crate_cli import run_scan
-        data = run_scan(str(self.library_path), hash=False, covers=True)
-        if not data:
-            return self._check_missing_covers_python()
-        issues = []
-        for artist in data.get("artists", []):
-            artist_name = artist["name"]
-            for album in artist.get("albums", []):
-                if not album.get("has_cover") and not album.get("has_embedded_art"):
-                    issues.append({
-                        "check": "missing_cover",
-                        "severity": "low",
-                        "auto_fixable": True,
-                        "description": f"Missing cover: {artist_name} / {album['name']}",
-                        "details": {"artist": artist_name, "album": album["name"], "path": album["path"]},
-                    })
-        return issues
-
-    def _check_missing_covers_python(self) -> list[dict]:
-        """Fallback cover check via Python mutagen."""
-        import mutagen
+        Two-stage strategy to avoid hangs and stay fast on a 4400-album library:
+          1) Pure-stat pass — for every album, check the well-known cover
+             filenames. This handles ~95% of cases in O(album_count * 4) syscalls.
+          2) For the residue (no cover file), parallelize an embedded-art probe
+             using mutagen with a 5s per-file ceiling so a corrupt FLAC can't
+             stall the whole check. We previously called the Rust CLI here but
+             it serializes every track tag for the entire library and routinely
+             blew the 600s task budget.
+        """
         cover_names = {"cover.jpg", "cover.png", "folder.jpg", "folder.png"}
-        issues = []
         with get_db_ctx() as cur:
             cur.execute("SELECT artist, name, path FROM library_albums")
             albums = [dict(r) for r in cur.fetchall()]
+
+        candidates: list[dict] = []
         for row in albums:
             album_dir = Path(row["path"])
             if not album_dir.is_dir():
                 continue
-            has_cover = any((album_dir / c).exists() for c in cover_names)
-            if not has_cover:
-                for f in album_dir.iterdir():
-                    if f.suffix.lower() in self.extensions:
-                        try:
-                            audio = mutagen.File(f)
-                            if audio and hasattr(audio, "pictures") and audio.pictures:
-                                has_cover = True
-                            elif audio and hasattr(audio, "tags") and audio.tags:
-                                has_cover = any(k.startswith("APIC") for k in audio.tags)
-                        except Exception:
-                            pass
-                        break
-            if not has_cover:
-                issues.append({
-                    "check": "missing_cover",
-                    "severity": "low",
-                    "auto_fixable": True,
-                    "description": f"Missing cover: {row['artist']} / {row['name']}",
-                    "details": {"artist": row["artist"], "album": row["name"], "path": str(album_dir)},
-                })
+            if any((album_dir / c).exists() for c in cover_names):
+                continue  # cover file present, no need to read audio
+            candidates.append({**row, "_dir": album_dir})
+
+        if not candidates:
+            return []
+
+        from concurrent.futures import ThreadPoolExecutor, wait
+
+        def _has_embedded(album_dir: Path) -> bool:
+            import mutagen
+
+            for f in album_dir.iterdir():
+                if not f.is_file() or f.suffix.lower() not in self.extensions:
+                    continue
+                try:
+                    audio = mutagen.File(f)
+                except Exception:
+                    return False
+                if audio is None:
+                    return False
+                # FLAC / Ogg / Opus expose pictures directly.
+                pictures = getattr(audio, "pictures", None)
+                if pictures:
+                    return True
+                tags = getattr(audio, "tags", None)
+                if tags:
+                    try:
+                        keys = list(tags.keys()) if hasattr(tags, "keys") else list(tags)
+                    except Exception:
+                        return False
+                    for key in keys:
+                        # ID3 frames are strings; FLAC VComment yields tuples
+                        # whose first member never starts with APIC, hence the
+                        # isinstance guard prevents the AttributeError that
+                        # historically crashed the cover endpoint.
+                        if isinstance(key, str) and key.startswith("APIC"):
+                            return True
+                return False
+            return False
+
+        # 8 worker threads is plenty — the bottleneck is disk seeks, not CPU.
+        # We use a hard wall-clock budget so a single corrupt file can't
+        # stall the whole check; anything that hasn't reported by then is
+        # treated as "no embedded art" (which is the conservative default —
+        # the user will see it as a missing_cover issue and can investigate).
+        executor = ThreadPoolExecutor(max_workers=8)
+        budget_seconds = max(60.0, len(candidates) * 0.5)
+        try:
+            futures = {
+                executor.submit(_has_embedded, c["_dir"]): c for c in candidates
+            }
+            done, not_done = wait(futures.keys(), timeout=budget_seconds)
+        finally:
+            # Don't wait for stragglers; if a mutagen call hung, the thread
+            # will stay alive but the daemon worker process will reap it on
+            # exit. The Python `concurrent.futures` API does not support
+            # cancelling already-running futures, hence the lack of
+            # cancel_futures here.
+            executor.shutdown(wait=False)
+
+        if not_done:
+            log.warning(
+                "missing_covers: %d albums timed out after %.0fs, treating as missing",
+                len(not_done),
+                budget_seconds,
+            )
+
+        issues: list[dict] = []
+        for future, row in futures.items():
+            if future in done:
+                try:
+                    has_cover = future.result(timeout=0)
+                except Exception:
+                    has_cover = False
+            else:
+                has_cover = False
+            if has_cover:
+                continue
+            album_dir = row["_dir"]
+            issues.append({
+                "check": "missing_cover",
+                "severity": "low",
+                "auto_fixable": True,
+                "description": f"Missing cover: {row['artist']} / {row['name']}",
+                "details": {
+                    "artist": row["artist"],
+                    "album": row["name"],
+                    "path": str(album_dir),
+                },
+            })
+
         return issues

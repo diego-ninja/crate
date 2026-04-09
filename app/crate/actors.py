@@ -63,7 +63,7 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     # Scheduled recurring (priority 2)
     "library_sync":         ("default", 2, 3600, 0),
     "library_pipeline":     ("default", 2, 7200, 0),
-    "health_check":         ("default", 2, 600, 0),
+    "health_check":         ("default", 2, 1500, 0),
     "repair":               ("default", 2, 3600, 0),
     "compute_analytics":    ("fast",    2, 600, 0),
     "check_new_releases":   ("fast",    2, 600, 1),

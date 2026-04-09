@@ -540,7 +540,8 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
                 return Response(content=pic.data, media_type=pic.mime)
             if audio and hasattr(audio, "tags") and audio.tags:
                 for key in audio.tags:
-                    if key.startswith("APIC"):
+                    # Guard against FLAC VComment which yields tuples.
+                    if isinstance(key, str) and key.startswith("APIC"):
                         pic = audio.tags[key]
                         return Response(content=pic.data, media_type=pic.mime)
         break
