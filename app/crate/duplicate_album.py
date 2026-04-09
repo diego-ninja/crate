@@ -41,6 +41,19 @@ _PUNCT_RE = re.compile(r"[^\w\s]")
 _WS_RE = re.compile(r"\s+")
 _YEAR_PREFIX_RE = re.compile(r"^\d{4}\s*[-–]\s*(.+)$")
 
+# Trailing parentheticals that describe a format marker rather than a
+# distinct release — stripping them lets us match sloppily-tagged duplicates
+# like "Österbotten" vs "Österbotten (Interlude)". We keep distinguishing
+# suffixes like (Live), (Remix), (Instrumental), (Demo), (Acoustic), etc.
+_TRIVIAL_TITLE_SUFFIX_RE = re.compile(
+    r"\s*[\(\[]\s*(?:"
+    r"interlude|intro|outro|skit|reprise|continued|"
+    r"voice\s*memo|voicemail|spoken\s*word|announcement|"
+    r"hidden|bonus|pt\.?\s*\d+|part\s*\d+"
+    r")\s*[\)\]]\s*$",
+    re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class AlbumTrack:
@@ -87,11 +100,20 @@ class DuplicateVerdict:
 
 
 def _normalize_title(title: str) -> str:
-    """Aggressive title normalization so `01. Song Name` == `song name`."""
+    """Aggressive title normalization so `01. Song Name` == `song name`.
+
+    Strips track-number prefixes and trivial trailing markers like
+    ``(Interlude)`` or ``(Intro)`` so inconsistently tagged duplicates
+    still match. Distinguishing suffixes like ``(Live)``, ``(Remix)`` or
+    ``(Instrumental)`` are preserved to keep legitimately distinct
+    releases apart.
+    """
     if not title:
         return ""
-    t = unicodedata.normalize("NFKC", title).casefold().strip()
+    t = unicodedata.normalize("NFKC", title).strip()
     t = _TRACK_NUM_PREFIX_RE.sub("", t)
+    t = _TRIVIAL_TITLE_SUFFIX_RE.sub("", t)
+    t = t.casefold()
     t = _PUNCT_RE.sub(" ", t)
     t = _WS_RE.sub(" ", t).strip()
     return t
