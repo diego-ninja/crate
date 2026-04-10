@@ -55,8 +55,8 @@ export function ArtistTopTracksSection({
             }}
             index={track.track || index + 1}
             showAlbum
-            albumCover={track.artist && track.album
-              ? buildArtistAlbumCover(track.artist, track.album)
+            albumCover={track.album_id
+              ? buildArtistAlbumCover(track.artist, track.album, track.album_id, track.album_slug)
               : coverFallback}
             showCoverThumb
           />
