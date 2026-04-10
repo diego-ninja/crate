@@ -3,7 +3,7 @@ export type ApiMethod = "GET" | "POST" | "PUT" | "DELETE";
 export interface ApiClientOptions {
   base?: string;
   credentials?: RequestCredentials;
-  defaultHeaders?: Record<string, string>;
+  defaultHeaders?: Record<string, string> | (() => Record<string, string>);
   onUnauthorized?: () => void;
 }
 
@@ -34,7 +34,8 @@ export function createApiClient(options: ApiClientOptions = {}) {
     body?: unknown,
     options: ApiRequestOptions = {},
   ): Promise<T> {
-    const headers: Record<string, string> = { ...defaultHeaders };
+    const resolved = typeof defaultHeaders === "function" ? defaultHeaders() : defaultHeaders;
+    const headers: Record<string, string> = { ...resolved };
     const requestOptions: RequestInit = {
       method,
       headers,

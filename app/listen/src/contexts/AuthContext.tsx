@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router";
 
-import { authedApi, setAuthToken } from "@/lib/api";
+import { api, setAuthToken } from "@/lib/api";
 
 export interface AuthUser {
   id: number;
@@ -48,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authRequestRef.current = controller;
     setLoading(true);
     try {
-      const data = await authedApi<AuthUser>("/api/auth/me", "GET");
+      const data = await api<AuthUser>("/api/auth/me");
       if (data && data.id) {
         const prevUserId = localStorage.getItem("listen-auth-user-id");
         if (prevUserId && prevUserId !== String(data.id)) {
@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await authedApi("/api/auth/logout", "POST");
+      await api("/api/auth/logout", "POST");
     } catch {
       // ignore logout errors
     }

@@ -12,15 +12,6 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
 
-/** fetch() wrapper that adds API base URL and auth headers. Fire-and-forget friendly. */
-export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const headers: Record<string, string> = {
-    ...(init?.headers as Record<string, string> || {}),
-    ...authHeaders(),
-  };
-  return fetch(`${API_BASE}${path}`, { ...init, credentials: "include", headers });
-}
-
 // ── Token storage for Capacitor (cookies don't work cross-origin) ──
 
 const TOKEN_KEY = "crate-auth-token";
@@ -46,7 +37,7 @@ function authHeaders(): Record<string, string> {
 export const api = createApiClient({
   base: API_BASE,
   credentials: "include",
-  defaultHeaders: authHeaders(),
+  defaultHeaders: authHeaders, // Function — evaluated fresh on every request
   onUnauthorized: () => {
     if (window.location.pathname !== "/login") {
       window.location.href = "/login";
@@ -54,18 +45,11 @@ export const api = createApiClient({
   },
 });
 
-/** Refreshed api call that picks up the latest token (for post-login calls). */
-export function authedApi<T = unknown>(
-  url: string,
-  method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
-  body?: unknown,
-): Promise<T> {
-  // Re-create with fresh headers every call in native
-  if (!isNative) return api<T>(url, method, body);
-  const freshApi = createApiClient({
-    base: API_BASE,
-    credentials: "include",
-    defaultHeaders: authHeaders(),
-  });
-  return freshApi<T>(url, method, body);
+/** fetch() wrapper that adds API base URL and auth headers. Fire-and-forget friendly. */
+export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> || {}),
+    ...authHeaders(),
+  };
+  return fetch(`${API_BASE}${path}`, { ...init, credentials: "include", headers });
 }
