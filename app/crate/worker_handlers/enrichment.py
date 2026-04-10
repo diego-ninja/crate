@@ -797,6 +797,19 @@ def _process_new_content_inner(
     _process_new_content_missing_covers(task_id, result, albums, artist_name, album_folder)
     _process_new_content_update_artist_hash(artist_dir, artist_name)
 
+    # Notify connected clients to refresh cached library data.
+    # Worker runs in a separate process — POST to the API to broadcast.
+    try:
+        import requests as _req
+        from crate.db import get_library_artist as _get_artist
+        _artist_row = _get_artist(artist_name)
+        _scopes = ["library"]
+        if _artist_row and _artist_row.get("id"):
+            _scopes.append(f"artist:{_artist_row['id']}")
+        _req.post("http://crate-api:8585/api/cache/invalidate", json={"scopes": _scopes}, timeout=3)
+    except Exception:
+        pass  # Cache invalidation is best-effort
+
     return result
 
 

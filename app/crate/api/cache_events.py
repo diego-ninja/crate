@@ -63,6 +63,20 @@ async def cache_events(request: Request):
     )
 
 
+@router.post("/api/cache/invalidate")
+async def cache_invalidate_endpoint(request: Request):
+    """Internal endpoint for worker processes to broadcast invalidation.
+    Only accepts requests from Docker network peers (trusted proxy check)."""
+    client_ip = request.client.host if request.client else ""
+    if not (client_ip.startswith("172.") or client_ip.startswith("10.") or client_ip == "127.0.0.1"):
+        return Response(status_code=403)
+    body = await request.json()
+    scopes = body.get("scopes", [])
+    if scopes:
+        broadcast_invalidation(*scopes)
+    return {"ok": True, "scopes": scopes}
+
+
 # ── Auto-invalidation middleware ────────────────────────────────
 
 # Map mutation routes to cache scopes they invalidate.
