@@ -53,10 +53,10 @@ export function Login() {
         onSubmit={handleSubmit}
         className="w-full max-w-sm space-y-5"
       >
-        <div className="flex flex-col items-center gap-2 pb-4">
-          <img src="/icons/logo.svg" alt="Crate" className="h-16 w-16" />
+        <div className="flex flex-col items-center pb-4">
+          <img src="/icons/logo.svg" alt="Crate" className="h-16 w-16 mb-2" />
           <h1 className="text-2xl font-bold text-white">Crate</h1>
-          <p className="text-sm text-white/40">Own your music</p>
+          <p className="text-sm text-white/40 -mt-0.5">Own your music</p>
         </div>
 
         {error && (

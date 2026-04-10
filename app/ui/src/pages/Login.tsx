@@ -65,10 +65,10 @@ export function Login() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center gap-2 mb-8">
-          <img src="/assets/logo.svg" alt="Crate" className="w-20" />
+        <div className="flex flex-col items-center mb-8">
+          <img src="/assets/logo.svg" alt="Crate" className="w-20 mb-2" />
           <h1 className="text-2xl font-bold text-foreground">Crate</h1>
-          <p className="text-sm text-muted-foreground">Own your music</p>
+          <p className="text-sm text-muted-foreground -mt-0.5">Own your music</p>
         </div>
         <div className="bg-card border border-border rounded-lg p-8 shadow-xl">
 
