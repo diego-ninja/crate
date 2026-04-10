@@ -336,6 +336,46 @@ hosts-show: ## Mostrar dominios locales configurados
 	done
 
 # ===========================================================================
+# CAPACITOR (mobile native builds)
+# ===========================================================================
+
+CAP_DIR := app/listen
+CAP_IOS_TARGET ?= $(shell cd $(CAP_DIR) && npx cap run ios --list 2>/dev/null | grep "iPhone.*Pro " | head -1 | awk '{print $$NF}')
+
+.PHONY: cap-build
+cap-build: ## Build Listen for Capacitor (bakes production API URL)
+	@cd $(CAP_DIR) && npm run build:cap
+	@echo "$(GREEN)Capacitor build + sync done$(NC)"
+
+.PHONY: cap-ios
+cap-ios: ## Build and run Listen on iOS Simulator
+	@cd $(CAP_DIR) && npm run build:cap
+	@echo "$(YELLOW)Launching iOS Simulator...$(NC)"
+	@cd $(CAP_DIR) && npx cap run ios --target "$(CAP_IOS_TARGET)"
+
+.PHONY: cap-ios-open
+cap-ios-open: ## Open Listen iOS project in Xcode
+	@cd $(CAP_DIR) && npx cap open ios
+
+.PHONY: cap-android
+cap-android: ## Build and run Listen on Android Emulator
+	@cd $(CAP_DIR) && npm run build:cap
+	@echo "$(YELLOW)Launching Android Emulator...$(NC)"
+	@cd $(CAP_DIR) && npx cap run android
+
+.PHONY: cap-android-open
+cap-android-open: ## Open Listen Android project in Android Studio
+	@cd $(CAP_DIR) && npx cap open android
+
+.PHONY: cap-ios-list
+cap-ios-list: ## List available iOS Simulator targets
+	@cd $(CAP_DIR) && npx cap run ios --list
+
+.PHONY: cap-android-list
+cap-android-list: ## List available Android Emulator targets
+	@cd $(CAP_DIR) && npx cap run android --list
+
+# ===========================================================================
 # HELP
 # ===========================================================================
 

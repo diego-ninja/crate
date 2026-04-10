@@ -2,6 +2,21 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Prevent iOS WebView auto-zoom on input focus (requires font-size >= 16px) */
+@media screen and (max-width: 767px) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="url"],
+  input[type="tel"],
+  input[type="number"],
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* ── Obsidian Dark (default) ── */
 @theme inline {
   --color-background: #0a0a0f;
