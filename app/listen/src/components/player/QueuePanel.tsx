@@ -66,7 +66,7 @@ function QueuePanelRow({
         {indexLabel}
       </span>
       {track.albumCover ? (
-        <img src={track.albumCover} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
+        <img src={track.albumCover} alt="" loading="lazy" className="h-8 w-8 shrink-0 rounded object-cover" />
       ) : (
         <div className="h-8 w-8 shrink-0 rounded bg-white/10" />
       )}
@@ -85,7 +85,7 @@ function QueuePanelRow({
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.openFromTrigger}
-        className="h-8 w-8 shrink-0 opacity-80 transition-opacity hover:opacity-100"
+        className="h-9 w-9 shrink-0 opacity-80 transition-opacity hover:opacity-100"
       />
       <ItemActionMenu
         actions={actions}
@@ -112,7 +112,7 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
         <h2 className="text-sm font-bold text-white">Queue</h2>
-        <button onClick={onClose} className="p-1 text-white/40 hover:text-white transition-colors">
+        <button onClick={onClose} aria-label="Close queue" className="p-1 text-white/40 hover:text-white transition-colors">
           <X size={18} />
         </button>
       </div>

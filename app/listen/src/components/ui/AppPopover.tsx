@@ -3,7 +3,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ComponentPropsWithoutRef } 
 import { cn } from "@/lib/utils";
 
 export const APP_POPOVER_SURFACE =
-  "z-app-popover rounded-xl border border-white/10 bg-popover-surface backdrop-blur-xl shadow-2xl";
+  "z-app-popover rounded-xl border border-white/10 bg-popover-surface backdrop-blur-xl shadow-2xl animate-pop-in";
 
 export const AppPopover = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<"div">>(
   function AppPopover({ className, ...props }, ref) {

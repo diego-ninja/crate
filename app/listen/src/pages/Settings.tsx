@@ -8,12 +8,21 @@ import {
   setSmartPlaylistSuggestionsCadencePreference,
   setSmartPlaylistSuggestionsPreference,
 } from "@/lib/player-playback-prefs";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Upload, BarChart3, LogOut, Lock } from "lucide-react";
+import { Upload, BarChart3, LogOut, Lock, Moon } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePlayerActions } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
+import {
+  subscribeSleepTimer,
+  startSleepTimer,
+  cancelSleepTimer,
+  formatRemaining,
+  type SleepTimerMode,
+  type SleepTimerState,
+} from "@/lib/sleep-timer";
 
 function Section({
   title,
@@ -189,6 +198,8 @@ export function Settings() {
         />
       </Section>
 
+      <SleepTimerSection />
+
       <AccountSection />
 
       <Section title="Quick links">
@@ -205,6 +216,56 @@ export function Settings() {
         </div>
       </Section>
     </div>
+  );
+}
+
+const SLEEP_MODES: { mode: SleepTimerMode; label: string }[] = [
+  { mode: "15min", label: "15 min" },
+  { mode: "30min", label: "30 min" },
+  { mode: "45min", label: "45 min" },
+  { mode: "1hr", label: "1 hour" },
+  { mode: "end_of_track", label: "End of track" },
+];
+
+function SleepTimerSection() {
+  const { pause } = usePlayerActions();
+  const [timer, setTimer] = useState<SleepTimerState>({ active: false, remainingSeconds: 0, mode: null });
+  useEffect(() => subscribeSleepTimer(setTimer), []);
+
+  return (
+    <Section title="Sleep Timer" description="Automatically pause playback after a set duration.">
+      <div className="flex flex-wrap gap-2">
+        {SLEEP_MODES.map(({ mode, label }) => (
+          <button
+            key={mode}
+            onClick={() => startSleepTimer(mode, pause)}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+              timer.mode === mode
+                ? "bg-primary text-white"
+                : "bg-white/5 text-white/60 hover:bg-white/10"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {timer.active && timer.remainingSeconds > 0 ? (
+        <div className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Moon size={16} className="text-primary" />
+            <span className="text-sm text-foreground">
+              Pausing in <span className="font-mono font-semibold text-primary">{formatRemaining(timer.remainingSeconds)}</span>
+            </span>
+          </div>
+          <button
+            onClick={cancelSleepTimer}
+            className="rounded-full px-3 py-1.5 text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
+    </Section>
   );
 }
 

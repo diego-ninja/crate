@@ -40,6 +40,7 @@ export function PlayerVolumeControl({
           setShowVolume(nextOpen);
           onOverlayChange(nextOpen);
         }}
+        aria-label={volume === 0 ? "Unmute" : "Volume"}
         className="rounded-md p-1.5 text-white/30 transition-colors hover:bg-white/5 hover:text-white/60"
       >
         {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
@@ -48,6 +49,7 @@ export function PlayerVolumeControl({
         <AppPopover ref={volumeRef} className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-lg p-2">
           <input
             type="range"
+            aria-label="Volume"
             min={0}
             max={1}
             step={0.01}

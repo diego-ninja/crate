@@ -82,7 +82,7 @@ export function AppModal({
       role="dialog"
       aria-modal="true"
       className={cn(
-        "z-app-modal fixed inset-0 flex items-end justify-center bg-black/72 p-0 backdrop-blur-md sm:items-center sm:p-6",
+        "z-app-modal fixed inset-0 flex items-end justify-center bg-black/72 p-0 backdrop-blur-md animate-fade-in sm:items-center sm:p-6",
         overlayClassName,
       )}
       onClick={() => {
@@ -91,7 +91,7 @@ export function AppModal({
     >
       <div
         className={cn(
-          "bg-modal-surface max-h-[92vh] w-full overflow-hidden rounded-t-3xl border border-white/10 shadow-2xl sm:rounded-3xl",
+          "bg-modal-surface max-h-[92vh] w-full overflow-hidden rounded-t-3xl border border-white/10 shadow-2xl animate-sheet-up sm:rounded-3xl sm:animate-pop-in",
           maxWidthClassName,
           panelClassName,
         )}
@@ -163,6 +163,7 @@ export function ModalCloseButton({ onClick, disabled = false, className }: Modal
   return (
     <button
       type="button"
+      aria-label="Close"
       className={cn(
         "rounded-full p-2 text-white/60 hover:text-white hover:bg-white/5 transition-colors",
         className,

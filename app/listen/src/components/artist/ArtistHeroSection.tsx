@@ -54,7 +54,7 @@ export function ArtistHeroSection({
         <img
           src={photoUrl}
           alt=""
-          className="absolute inset-0 h-full w-full scale-105 object-cover opacity-30 blur-md"
+          className="absolute inset-0 h-full w-full scale-105 object-cover opacity-30 blur-[6px]"
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
           }}
@@ -63,7 +63,8 @@ export function ArtistHeroSection({
 
         <div className="relative flex h-full items-end px-4 pb-6 sm:px-6">
           <div className="flex w-full flex-col gap-5 sm:flex-row sm:items-end">
-            <div className="h-32 w-32 flex-shrink-0 overflow-hidden rounded-full bg-white/5 shadow-2xl ring-2 ring-white/10 sm:h-40 sm:w-40">
+            {/* Avatar — small inline on mobile, large circle on desktop */}
+            <div className="hidden sm:block h-40 w-40 flex-shrink-0 overflow-hidden rounded-full bg-white/5 shadow-2xl ring-2 ring-white/10">
               <img
                 src={photoUrl}
                 alt={artist.name}
@@ -75,9 +76,33 @@ export function ArtistHeroSection({
             </div>
 
             <div className="max-w-3xl pb-1">
-              <h1 className="mb-2 text-3xl font-bold text-foreground sm:text-4xl">{artist.name}</h1>
+              <div className="flex items-center gap-3 sm:block">
+                <div className="sm:hidden h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-white/5 shadow-xl ring-2 ring-white/10">
+                  <img
+                    src={photoUrl}
+                    alt={artist.name}
+                    className="h-full w-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                </div>
+                <div>
+                  <h1 className="mb-1 text-2xl font-bold text-foreground sm:mb-2 sm:text-4xl">{artist.name}</h1>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:hidden">
+                    {artistInfo?.listeners ? (
+                      <span className="flex items-center gap-1">
+                        <Users size={12} />
+                        {formatCompact(artistInfo.listeners)}
+                      </span>
+                    ) : null}
+                    {artist.total_tracks > 0 ? <span>{artist.total_tracks} tracks</span> : null}
+                    {artist.albums.length > 0 ? <span>{artist.albums.length} albums</span> : null}
+                  </div>
+                </div>
+              </div>
 
-              <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+              <div className="hidden sm:flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 {artistInfo?.listeners ? (
                   <span className="flex items-center gap-1">
                     <Users size={14} />

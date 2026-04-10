@@ -152,7 +152,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
       {/* Header */}
       <div className="relative flex items-center justify-between border-b border-white/5 px-4 py-3">
         <h2 className="text-sm font-bold text-white">Lyrics</h2>
-        <button onClick={onClose} className="p-1 text-white/40 hover:text-white transition-colors">
+        <button onClick={onClose} aria-label="Close lyrics" className="p-1 text-white/40 hover:text-white transition-colors">
           <X size={18} />
         </button>
       </div>

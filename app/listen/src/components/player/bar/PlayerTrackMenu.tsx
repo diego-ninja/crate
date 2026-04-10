@@ -92,6 +92,7 @@ export function PlayerTrackMenu({
           setShowMenu(nextOpen);
           onOverlayChange(nextOpen);
         }}
+        aria-label="Track menu"
         className="shrink-0 rounded-md p-1.5 text-white/30 transition-colors hover:bg-white/5 hover:text-white/60"
       >
         <MoreHorizontal size={16} />

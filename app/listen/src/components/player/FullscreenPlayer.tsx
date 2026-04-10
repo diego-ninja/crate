@@ -3,35 +3,21 @@ import { useNavigate } from "react-router";
 import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { trackToMenuData } from "@/components/actions/shared";
 import { useTrackActionEntries } from "@/components/actions/track-actions";
+import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
+import { useVisualizerConfig } from "@/components/player/visualizer/useVisualizerConfig";
+import { VisualizerSettingsPanel } from "@/components/player/visualizer/VisualizerSettingsPanel";
 import { api } from "@/lib/api";
 import {
   ChevronDown,
-  SkipBack,
-  SkipForward,
-  Play,
-  Pause,
-  Shuffle,
-  Repeat,
-  Repeat1,
-  Heart,
   ListMusic,
   AlignLeft,
   Disc3,
-  Moon,
-  Volume2,
+  Settings,
+  User,
 } from "lucide-react";
-import {
-  subscribeSleepTimer,
-  startSleepTimer,
-  cancelSleepTimer,
-  formatRemaining,
-  type SleepTimerState,
-} from "@/lib/sleep-timer";
-import { artistPagePath } from "@/lib/library-routes";
-import { usePlayer, type Track } from "@/contexts/PlayerContext";
-import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useEscapeKey } from "@/hooks/use-escape-key";
-import { formatDuration } from "@/lib/utils";
 
 type FSTab = "player" | "queue" | "lyrics";
 
@@ -83,6 +69,7 @@ function FullscreenQueueRow({
         <img
           src={track.albumCover}
           alt=""
+          loading="lazy"
           className="w-8 h-8 rounded object-cover shrink-0"
         />
       ) : (
@@ -105,7 +92,7 @@ function FullscreenQueueRow({
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.openFromTrigger}
-        className="h-8 w-8 shrink-0 opacity-85 transition-opacity hover:opacity-100"
+        className="h-9 w-9 shrink-0 opacity-85 transition-opacity hover:opacity-100"
       />
       <ItemActionMenu
         actions={actions}
@@ -119,26 +106,8 @@ function FullscreenQueueRow({
 }
 
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
-  const {
-    currentTrack,
-    queue,
-    currentIndex,
-    isPlaying,
-    currentTime,
-    duration,
-    shuffle,
-    repeat,
-    pause,
-    resume,
-    next,
-    prev,
-    seek,
-    toggleShuffle,
-    cycleRepeat,
-    jumpTo,
-    volume,
-    setVolume,
-  } = usePlayer();
+  const { currentTrack, queue, currentIndex, currentTime, seek, jumpTo } = usePlayer();
+  const { audioElement } = usePlayerActions();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<FSTab>("player");
@@ -148,14 +117,48 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [swipeY, setSwipeY] = useState(0);
-  const [showSleepMenu, setShowSleepMenu] = useState(false);
-  const [sleepTimer, setSleepTimer] = useState<SleepTimerState>({ active: false, remainingSeconds: 0, mode: null });
+  const [showVizSettings, setShowVizSettings] = useState(false);
 
-  useEffect(() => subscribeSleepTimer(setSleepTimer), []);
   const swipeStartRef = useRef<number | null>(null);
-  const progressRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
-  const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
+
+  // Visualizer
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
+  const fsRootRef = useRef<HTMLDivElement>(null);
+  const vizRef = useMusicVisualizer(canvasRef, audioElement, visible && activeTab === "player");
+  const vizCfg = useVisualizerConfig(vizRef, currentTrack, visible && activeTab === "player");
+  const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+
+  // Measure cover position relative to FS root, expand 15%.
+  // Re-runs when viz settings panel toggles (shifts cover position).
+  useEffect(() => {
+    if (!visible || activeTab !== "player") return;
+    const measure = () => {
+      const cover = coverRef.current;
+      const root = fsRootRef.current;
+      if (!cover || !root) return;
+      const cr = cover.getBoundingClientRect();
+      const rr = root.getBoundingClientRect();
+      const expand = 0.30;
+      const ew = cr.width * expand;
+      const eh = cr.height * expand;
+      setCanvasRect({
+        top: cr.top - rr.top - eh / 2,
+        left: cr.left - rr.left - ew / 2,
+        width: cr.width + ew,
+        height: cr.height + eh,
+      });
+    };
+    // Measure after layout settles (two rAFs for DOM + paint)
+    const t1 = requestAnimationFrame(() => requestAnimationFrame(measure));
+    const resizeObs = new ResizeObserver(measure);
+    if (coverRef.current) resizeObs.observe(coverRef.current);
+    return () => {
+      cancelAnimationFrame(t1);
+      resizeObs.disconnect();
+    };
+  }, [visible, activeTab, showVizSettings]);
 
   // Animate in/out
   useEffect(() => {
@@ -174,6 +177,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   useEscapeKey(visible, (event) => {
     event.preventDefault();
     event.stopImmediatePropagation();
+    if (showVizSettings) {
+      setShowVizSettings(false);
+      return;
+    }
     if (activeTab !== "player") {
       setActiveTab("player");
       return;
@@ -181,64 +188,15 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     onClose();
   });
 
-  const handleSeek = useCallback(
-    (clientX: number) => {
-      if (!progressRef.current) return;
-      const rect = progressRef.current.getBoundingClientRect();
-      const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      seek(pct * duration);
-    },
-    [duration, seek],
-  );
-
-  const onProgressClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      handleSeek(e.clientX);
-    },
-    [handleSeek],
-  );
-
-  const onProgressTouchStart = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      draggingRef.current = true;
-      handleSeek(e.touches[0]!.clientX);
-    },
-    [handleSeek],
-  );
-
-  const onProgressTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLDivElement>) => {
-      if (draggingRef.current) {
-        handleSeek(e.touches[0]!.clientX);
-      }
-    },
-    [handleSeek],
-  );
-
-  const onProgressTouchEnd = useCallback(() => {
-    draggingRef.current = false;
-  }, []);
-
-  async function toggleLike() {
-    if (!currentTrack) return;
-    const trackId = currentTrack.libraryTrackId ?? null;
-    const trackPath = currentTrack.path || currentTrack.id;
-    if (liked) {
-      await unlikeTrack(trackId, trackPath).catch(
-        () => {},
-      );
-    } else {
-      await likeTrack(trackId, trackPath).catch(
-        () => {},
-      );
-    }
-  }
-
   function goToArtist() {
     if (currentTrack?.artistId == null) return;
     onClose();
     navigate(artistPagePath({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug }));
   }
+
+  const artistPhotoUrl = currentTrack?.artistId != null
+    ? artistPhotoApiUrl({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug, artistName: currentTrack.artist })
+    : null;
 
   // Lyrics fetch
   useEffect(() => {
@@ -269,7 +227,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   }, [activeLyricIndex, activeTab]);
 
   // Reset tab when player closes
-  useEffect(() => { if (!visible) { setActiveTab("player"); setSwipeY(0); } }, [visible]);
+  useEffect(() => { if (!visible) { setActiveTab("player"); setSwipeY(0); setShowVizSettings(false); } }, [visible]);
 
   // Swipe-down to dismiss (only from top 150px)
   const onSwipeStart = useCallback((e: React.TouchEvent) => {
@@ -294,12 +252,17 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
   if (!visible || !currentTrack) return null;
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 20);
-  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
+
+  const TAB_PILLS: { id: FSTab; icon: typeof Disc3; label: string }[] = [
+    { id: "player", icon: Disc3, label: "Player" },
+    { id: "queue", icon: ListMusic, label: "Queue" },
+    { id: "lyrics", icon: AlignLeft, label: "Lyrics" },
+  ];
 
   return (
     <div
+      ref={fsRootRef}
       className={`fixed inset-0 z-fullscreen-player flex flex-col ease-out ${
         animating
           ? "opacity-100"
@@ -315,208 +278,126 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       onTouchMove={onSwipeMove}
       onTouchEnd={onSwipeEnd}
     >
+      {/* WebGL canvas — positioned at root level, floats above cover */}
+      <div
+        className={`pointer-events-none absolute ${showVizSettings ? "z-30" : "z-50"} ${
+          vizCfg.vizEnabled && activeTab === "player" && canvasRect ? "" : "hidden"
+        }`}
+        style={canvasRect ? { top: canvasRect.top, left: canvasRect.left, width: canvasRect.width, height: canvasRect.height } : undefined}
+      >
+        <canvas
+          ref={canvasRef}
+          className="h-full w-full"
+          style={{ background: "transparent" }}
+        />
+      </div>
+
       {/* Drag handle */}
       <div className="flex justify-center pt-3 pb-1">
         <div className="w-10 h-1 rounded-full bg-white/20" />
       </div>
 
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-[env(safe-area-inset-top,12px)] pb-2">
+      {/* Header row 1: close + artist pill + viz settings */}
+      <div className="flex items-center justify-between px-4 pt-[env(safe-area-inset-top,8px)] pb-1">
         <button
           onClick={onClose}
+          aria-label="Close player"
           className="w-11 h-11 flex items-center justify-center -ml-2 text-white/60 active:text-white"
         >
           <ChevronDown size={28} />
         </button>
-        <div className="flex gap-4">
-          {(["player", "queue", "lyrics"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setActiveTab(t)}
-              className={`text-xs uppercase tracking-widest font-medium transition-colors ${activeTab === t ? "text-white" : "text-white/30 active:text-white/60"}`}
-            >
-              {t === "player" ? <Disc3 size={14} /> : t === "queue" ? <ListMusic size={14} /> : <AlignLeft size={14} />}
-            </button>
-          ))}
-        </div>
+
+        {/* Artist pill */}
         <button
-          onClick={() => setShowSleepMenu(!showSleepMenu)}
-          className={`w-11 h-11 flex items-center justify-center -mr-2 transition-colors ${sleepTimer.active ? "text-primary" : "text-white/40 active:text-white/60"}`}
+          onClick={goToArtist}
+          aria-label={`Go to ${currentTrack.artist}`}
+          className="flex items-center gap-2 rounded-full bg-white/8 border border-white/10 pl-1 pr-3 py-1 active:bg-white/12 transition-colors"
         >
-          <Moon size={18} />
-          {sleepTimer.active && sleepTimer.remainingSeconds > 0 && (
-            <span className="absolute text-[8px] font-mono text-primary mt-7">{formatRemaining(sleepTimer.remainingSeconds)}</span>
+          {artistPhotoUrl ? (
+            <img src={artistPhotoUrl} alt={currentTrack.artist} className="w-6 h-6 rounded-full object-cover" />
+          ) : (
+            <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
+              <User size={12} className="text-white/40" />
+            </div>
           )}
+          <span className="text-[12px] font-medium text-white/80 truncate max-w-[140px]">
+            {currentTrack.artist}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setShowVizSettings(!showVizSettings)}
+          aria-label="Visualizer settings"
+          className={`w-11 h-11 flex items-center justify-center -mr-2 transition-colors ${showVizSettings ? "text-primary" : "text-white/40 active:text-white/60"}`}
+        >
+          <Settings size={18} />
         </button>
       </div>
 
-      {/* Sleep timer menu */}
-      {showSleepMenu && (
-        <div className="mx-4 mb-2 rounded-xl bg-white/5 p-3 flex flex-wrap gap-2">
-          {(["15min", "30min", "45min", "1hr", "end_of_track"] as const).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => { startSleepTimer(mode, pause); setShowSleepMenu(false); }}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                sleepTimer.mode === mode ? "bg-primary text-white" : "bg-white/10 text-white/60 active:bg-white/15"
-              }`}
-            >
-              {mode === "end_of_track" ? "End of track" : mode.replace("min", " min").replace("hr", " hour")}
-            </button>
-          ))}
-          {sleepTimer.active && (
-            <button
-              onClick={() => { cancelSleepTimer(); setShowSleepMenu(false); }}
-              className="rounded-full px-3 py-1.5 text-xs font-medium bg-red-500/20 text-red-400 active:bg-red-500/30"
-            >
-              Cancel timer
-            </button>
-          )}
+      {/* Header row 2: tab pills */}
+      <div className="flex items-center gap-2 px-4 pb-3">
+        {TAB_PILLS.map(({ id, icon: Icon, label }) => (
+          <button
+            key={id}
+            onClick={() => { setActiveTab(id); setShowVizSettings(false); }}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
+              activeTab === id
+                ? "bg-white/12 text-white border border-white/15"
+                : "text-white/35 border border-transparent active:text-white/60"
+            }`}
+          >
+            <Icon size={13} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Visualizer settings panel */}
+      {showVizSettings && (
+        <div className="relative z-40 mx-4 mb-2 rounded-xl bg-white/5 backdrop-blur-md p-4 animate-fade-slide-up">
+          <VisualizerSettingsPanel config={vizCfg} />
         </div>
       )}
 
-      {/* Tab content */}
+      {/* ── Player tab ── */}
       {activeTab === "player" && (
-      <div className="flex-1 flex flex-col items-center justify-center px-6 overflow-y-auto">
-        {/* Album Cover */}
-        <div className="w-[280px] h-[280px] rounded-xl overflow-hidden shadow-2xl shadow-black/60 shrink-0">
+      <div className="relative flex-1 flex flex-col items-center justify-center px-6 overflow-hidden pb-24">
+        {/* Album cover — large, centered */}
+        <div ref={coverRef} className="relative shrink-0 mx-auto rounded-xl overflow-hidden" style={{ width: "min(360px, 92%)", aspectRatio: "1" }}>
           {currentTrack.albumCover ? (
             <img
               src={currentTrack.albumCover}
               alt=""
-              className="w-full h-full object-cover"
+              className="h-full w-full object-cover shadow-2xl shadow-black/60"
+              style={{ filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none" }}
             />
           ) : (
-            <div className="w-full h-full bg-white/5 flex items-center justify-center">
+            <div className="h-full w-full bg-white/5 flex items-center justify-center shadow-2xl shadow-black/60">
               <ListMusic size={64} className="text-white/10" />
             </div>
           )}
         </div>
 
         {/* Track info */}
-        <div className="w-full mt-8 text-center">
-          <h2 className="text-xl font-bold text-white truncate">
+        <div className="w-full mt-5 text-center">
+          <h2 className="text-lg font-bold text-white truncate">
             {currentTrack.title}
           </h2>
-          <button
-            onClick={goToArtist}
-            className="mt-1 text-sm text-white/50 transition-colors hover:text-primary active:text-primary"
-          >
-            {currentTrack.artist}
-          </button>
           {currentTrack.album && (
-            <p className="mt-0.5 text-xs text-white/30 truncate">{currentTrack.album}</p>
+            <p className="mt-1 text-xs text-white/30 truncate">{currentTrack.album}</p>
           )}
-        </div>
-
-        {/* Progress bar */}
-        <div className="w-full mt-8">
-          <div
-            ref={progressRef}
-            className="w-full h-3 bg-white/10 rounded-full cursor-pointer relative group"
-            onClick={onProgressClick}
-            onTouchStart={onProgressTouchStart}
-            onTouchMove={onProgressTouchMove}
-            onTouchEnd={onProgressTouchEnd}
-          >
-            <div
-              className="h-full bg-cyan-400 rounded-full relative"
-              style={{ width: `${progress}%` }}
-            >
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-md" />
-            </div>
-          </div>
-          <div className="flex justify-between mt-2">
-            <span className="text-xs text-white/40 tabular-nums">
-              {formatDuration(currentTime)}
-            </span>
-            <span className="text-xs text-white/40 tabular-nums">
-              {formatDuration(duration)}
-            </span>
-          </div>
-        </div>
-
-        {/* Main controls */}
-        <div className="flex items-center justify-center gap-8 mt-6">
-          <button
-            onClick={prev}
-            className="w-12 h-12 flex items-center justify-center text-white/70 active:text-white transition-colors"
-          >
-            <SkipBack size={28} fill="currentColor" />
-          </button>
-          <button
-            onClick={isPlaying ? pause : resume}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/25 transition-colors active:bg-primary/90"
-          >
-            {isPlaying ? (
-              <Pause size={28} className="text-white" fill="white" />
-            ) : (
-              <Play size={28} className="text-white ml-1" fill="white" />
-            )}
-          </button>
-          <button
-            onClick={next}
-            className="w-12 h-12 flex items-center justify-center text-white/70 active:text-white transition-colors"
-          >
-            <SkipForward size={28} fill="currentColor" />
-          </button>
-        </div>
-
-        {/* Secondary controls */}
-        <div className="flex items-center justify-center gap-10 mt-6">
-          <button
-            onClick={toggleShuffle}
-            className={`w-11 h-11 flex items-center justify-center transition-colors ${
-              shuffle ? "text-primary" : "text-white/40 active:text-white/70"
-            }`}
-          >
-            <Shuffle size={20} />
-          </button>
-          <button
-            onClick={toggleLike}
-            className={`w-11 h-11 flex items-center justify-center transition-colors ${
-              liked ? "text-red-400" : "text-white/40 active:text-white/70"
-            }`}
-          >
-            <Heart size={20} fill={liked ? "currentColor" : "none"} />
-          </button>
-          <button
-            onClick={() => setActiveTab("queue")}
-            className="w-11 h-11 flex items-center justify-center transition-colors text-white/40 active:text-white/70"
-          >
-            <ListMusic size={20} />
-          </button>
-          <button
-            onClick={cycleRepeat}
-            className={`w-11 h-11 flex items-center justify-center transition-colors ${
-              repeat !== "off"
-                ? "text-primary"
-                : "text-white/40 active:text-white/70"
-            }`}
-          >
-            {repeat === "one" ? <Repeat1 size={20} /> : <Repeat size={20} />}
-          </button>
-        </div>
-
-        {/* Volume */}
-        <div className="flex items-center gap-3 mt-6 px-4 w-full max-w-[280px]">
-          <Volume2 size={14} className="text-white/30 flex-shrink-0" />
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-            className="w-full h-1 appearance-none bg-white/10 rounded-full accent-primary"
-          />
+          {vizCfg.vizEnabled && vizCfg.trackAdaptiveViz && vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
+            <p className="mt-1 text-[9px] font-medium uppercase tracking-[0.18em] text-white/40">
+              {vizCfg.trackVizProfile.summary}
+            </p>
+          ) : null}
         </div>
       </div>
       )}
 
-      {/* Queue tab */}
+      {/* ── Queue tab ── */}
       {activeTab === "queue" && (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-28">
           <div className="px-4 py-3">
             <p className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2">
               Up Next · {upcomingTracks.length} tracks
@@ -538,9 +419,9 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
         </div>
       )}
 
-      {/* Lyrics tab */}
+      {/* ── Lyrics tab ── */}
       {activeTab === "lyrics" && (
-        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4">
+        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4 pb-28">
           {!lyrics ? (
             <p className="text-center text-white/30 text-sm mt-20">Loading lyrics...</p>
           ) : lyrics.synced ? (

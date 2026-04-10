@@ -159,6 +159,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     saveQueue(queue, currentIndex);
   }, [queue, currentIndex]);
 
+  // Persist currentTime every 5s so reload can restore position
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const t = audioRef.current?.currentTime;
+      if (t != null && t > 0) saveQueue(queue, currentIndex, t);
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [queue, currentIndex]);
+
   const addToRecentlyPlayed = useCallback((track: Track) => {
     setRecentlyPlayed((prev) => {
       const filtered = prev.filter((t) => t.id !== track.id);
@@ -242,6 +251,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (restoredRef.current) {
       restoredRef.current = false;
       audio.src = streamUrl;
+      const savedTime = stored.current.currentTime;
+      if (savedTime > 0) {
+        const onLoaded = () => {
+          audio.currentTime = savedTime;
+          setCurrentTime(savedTime);
+          audio.removeEventListener("loadedmetadata", onLoaded);
+        };
+        audio.addEventListener("loadedmetadata", onLoaded);
+      }
       return;
     }
 

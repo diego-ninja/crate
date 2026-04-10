@@ -100,7 +100,7 @@ interface HistoryTrack {
 
 export function Home() {
   const navigate = useNavigate();
-  const { currentTrack } = usePlayer();
+  const { currentTrack, isPlaying } = usePlayer();
   const { play, playAll } = usePlayerActions();
 
   const { data: curatedPlaylists, loading: curatedLoading, refetch: refetchCurated } =
@@ -161,7 +161,7 @@ export function Home() {
     return tracks;
   }, [historyRaw]);
 
-  const continueItems = currentTrack
+  const continueItems = currentTrack && isPlaying
     ? [currentTrack, ...recentlyPlayed.filter((track) => track.id !== currentTrack.id)]
     : recentlyPlayed;
   const continueLead = continueItems[0];

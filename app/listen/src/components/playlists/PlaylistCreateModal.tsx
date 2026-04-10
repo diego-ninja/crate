@@ -184,6 +184,16 @@ export function PlaylistCreateModal({
     };
   }, [open, search]);
 
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setTracks((items) => {
+      const oldIdx = items.findIndex((t) => getTrackKey(t) === active.id);
+      const newIdx = items.findIndex((t) => getTrackKey(t) === over.id);
+      return arrayMove(items, oldIdx, newIdx);
+    });
+  }, []);
+
   if (!open) return null;
 
   const isEditMode = mode === "edit";
@@ -214,16 +224,6 @@ export function PlaylistCreateModal({
     const keyToRemove = getTrackKey(track);
     setTracks((current) => current.filter((item) => getTrackKey(item) !== keyToRemove));
   }
-
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    setTracks((items) => {
-      const oldIdx = items.findIndex((t) => getTrackKey(t) === active.id);
-      const newIdx = items.findIndex((t) => getTrackKey(t) === over.id);
-      return arrayMove(items, oldIdx, newIdx);
-    });
-  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

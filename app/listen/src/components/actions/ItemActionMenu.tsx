@@ -198,7 +198,7 @@ export function ItemActionMenu({
   return createPortal((
     <AppPopover
       ref={menuRef}
-      className="fixed z-[1300] w-60 origin-top-left p-1 duration-150 animate-in fade-in zoom-in-95"
+      className="fixed z-[1300] w-60 origin-top-left p-1 animate-pop-in"
       style={{
         left: position?.x ?? 12,
         top: position?.y ?? 12,
@@ -239,6 +239,7 @@ export function ItemActionMenuButton({
       }}
       onClick={onClick}
       onContextMenu={onContextMenu}
+      aria-label={title}
       title={title}
       className={className}
     >

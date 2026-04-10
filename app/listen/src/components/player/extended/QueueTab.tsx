@@ -75,7 +75,7 @@ function QueueTabRow({
         buttonRef={actionMenu.triggerRef}
         hasActions={actionMenu.hasActions}
         onClick={actionMenu.openFromTrigger}
-        className="h-8 w-8 shrink-0 opacity-80 transition-opacity hover:opacity-100"
+        className="h-9 w-9 shrink-0 opacity-80 transition-opacity hover:opacity-100"
       />
       <ItemActionMenu
         actions={actions}
@@ -162,7 +162,7 @@ export function QueueTab() {
               {currentIndex + 1}
             </span>
             {currentTrack.albumCover ? (
-              <img src={currentTrack.albumCover} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
+              <img src={currentTrack.albumCover} alt="" loading="lazy" className="h-8 w-8 shrink-0 rounded object-cover" />
             ) : (
               <div className="h-8 w-8 shrink-0 rounded bg-white/10" />
             )}

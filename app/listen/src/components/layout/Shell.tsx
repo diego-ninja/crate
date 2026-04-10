@@ -7,7 +7,6 @@ import {
 import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { PlayerBar } from "@/components/player/PlayerBar";
-import { MiniPlayer } from "@/components/player/MiniPlayer";
 import { TopBar } from "@/components/layout/TopBar";
 
 const SIDEBAR_KEY = "listen-sidebar-expanded";
@@ -62,7 +61,7 @@ function Sidebar() {
               <span className="text-sm font-bold text-primary-foreground">C</span>
             </div>
             <span className="text-sm font-bold text-white flex-1">Crate</span>
-            <button onClick={toggleExpanded} className="text-white/30 hover:text-white/60 transition-colors">
+            <button onClick={toggleExpanded} aria-label="Collapse sidebar" className="text-white/30 hover:text-white/60 transition-colors">
               <PanelLeftClose size={18} />
             </button>
           </>
@@ -70,7 +69,7 @@ function Sidebar() {
           <button
             onClick={() => { toggleExpanded(); navigate("/"); }}
             className="w-10 h-10 rounded-lg flex items-center justify-center text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
-            title="Expand sidebar"
+            aria-label="Expand sidebar"
           >
             <Home size={22} />
           </button>
@@ -83,6 +82,7 @@ function Sidebar() {
         <NavLink
           to="/"
           end
+          viewTransition
           title="Music"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
@@ -95,6 +95,7 @@ function Sidebar() {
         {/* Explore */}
         <NavLink
           to="/explore"
+          viewTransition
           title="Explore"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
@@ -107,6 +108,7 @@ function Sidebar() {
         {/* Upcoming */}
         <NavLink
           to="/upcoming"
+          viewTransition
           title="Upcoming"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
@@ -118,6 +120,7 @@ function Sidebar() {
 
         <NavLink
           to="/stats"
+          viewTransition
           title="Stats"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
@@ -144,7 +147,7 @@ function Sidebar() {
           </button>
 
           {collectionOpen && (
-            <div className={`${expanded ? "mt-1 ml-3 border-l border-white/5 pl-3" : "absolute left-full top-0 ml-2 w-44 rounded-xl border border-white/10 bg-raised-surface py-2 shadow-2xl"}`}>
+            <div className={`animate-submenu-in ${expanded ? "mt-1 ml-3 border-l border-white/5 pl-3" : "absolute left-full top-0 ml-2 w-44 rounded-xl border border-white/10 bg-raised-surface py-2 shadow-2xl"}`}>
               {[
                 { to: "/library?tab=playlists", icon: ListMusic, label: "Playlists" },
                 { to: "/library?tab=albums", icon: Disc, label: "Albums" },
@@ -168,7 +171,7 @@ function Sidebar() {
       {/* Bottom: collapse toggle (only in expanded mode) */}
       {!expanded && (
         <div className="mt-auto flex justify-center pb-4">
-          <button onClick={toggleExpanded} className="text-white/20 hover:text-white/40 transition-colors" title="Expand">
+          <button onClick={toggleExpanded} aria-label="Expand sidebar" className="text-white/20 hover:text-white/40 transition-colors">
             <PanelLeftOpen size={16} />
           </button>
         </div>
@@ -197,13 +200,14 @@ export function Shell() {
   const hasTrack = !!currentTrack;
   const [sidebarExpanded, setSidebarExpanded] = useState(getStoredExpanded);
   const overlayHeader =
-    /^\/artist\/[^/]+$/.test(location.pathname) ||
-    /^\/artist\/[^/]+\/top-tracks$/.test(location.pathname) ||
-    /^\/album\/[^/]+\/[^/]+$/.test(location.pathname);
+    /^\/artists\/[^/]+\/[^/]+$/.test(location.pathname) ||
+    /^\/artists\/[^/]+\/[^/]+\/top-tracks$/.test(location.pathname) ||
+    /^\/albums\/[^/]+\/[^/]+$/.test(location.pathname);
   const headerOffsetClass = overlayHeader ? "" : "pt-16";
-  const headerChromeClass = overlayHeader
-    ? "bg-transparent border-transparent border-b-0 shadow-none"
-    : "bg-[var(--gradient-bg-90)] backdrop-blur-md border-b-0";
+  // Header container is always transparent — individual elements (search bar,
+  // nav buttons) carry their own backdrop. On overlay pages (artist/album hero)
+  // this lets the hero bleed through fully.
+  const headerChromeClass = "bg-transparent border-transparent border-b-0 shadow-none";
 
   // Sync with sidebar toggle without polling localStorage.
   useEffect(() => {
@@ -233,8 +237,8 @@ export function Shell() {
           <TopBar />
         </div>
 
-        <main className={`flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[80px]" : ""}`}>
-          <div className={`p-6 ${headerOffsetClass}`}>
+        <main className={`flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[90px]" : ""}`}>
+          <div className={`py-6 ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
             <Outlet />
           </div>
         </main>
@@ -245,36 +249,40 @@ export function Shell() {
   }
 
   // Mobile layout
+  // Bottom nav height: 64px + safe area. PlayerBar: 82px floating at bottom-3 (12px).
+  // Total clearance needed: 64px nav + 82px player + 12px gap + safe area ≈ 170px when track present.
+  const mobileBottomPad = hasTrack ? "pb-[170px]" : "pb-20";
+
   return (
     <div className="flex min-h-screen flex-col bg-app-surface">
       <div className={`z-app-header fixed top-0 left-0 right-0 ${headerChromeClass}`}>
         <TopBar />
       </div>
 
-      <main className={`flex-1 overflow-x-hidden ${hasTrack ? "pb-[116px]" : "pb-16"}`}>
-        <div className={`p-4 ${headerOffsetClass}`}>
+      <main className={`flex-1 overflow-x-hidden ${mobileBottomPad}`}>
+        <div className={`py-4 px-[max(1rem,env(safe-area-inset-left))] ${headerOffsetClass}`}>
           <Outlet />
         </div>
       </main>
 
-      <div className="z-app-player fixed bottom-0 left-0 right-0">
-        <MiniPlayer />
-        <nav className="flex items-center justify-around border-t border-white/5 bg-app-surface px-2" style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))", height: "calc(64px + env(safe-area-inset-bottom, 0px))" }}>
-          {MOBILE_NAV.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === "/"}
-              className={({ isActive }) =>
-                `flex flex-col items-center gap-1 py-1 px-3 transition-colors ${isActive ? "text-primary" : "text-white/40 hover:text-white/70"}`
-              }
-            >
-              <Icon size={20} />
-              <span className="text-[10px]">{label}</span>
-            </NavLink>
-          ))}
-        </nav>
-      </div>
+      <PlayerBar />
+
+      <nav className="z-app-player fixed bottom-0 left-0 right-0 flex items-center justify-around border-t border-white/5 bg-app-surface px-2" style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))", height: "calc(64px + env(safe-area-inset-bottom, 0px))" }}>
+        {MOBILE_NAV.map(({ to, icon: Icon, label }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={to === "/"}
+            viewTransition
+            className={({ isActive }) =>
+              `flex flex-col items-center gap-1 py-1 px-3 transition-colors ${isActive ? "text-primary" : "text-white/40 hover:text-white/70"}`
+            }
+          >
+            <Icon size={20} />
+            <span className="text-[10px]">{label}</span>
+          </NavLink>
+        ))}
+      </nav>
     </div>
   );
 }

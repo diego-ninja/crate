@@ -159,7 +159,7 @@ export function TopBarSearch() {
           onFocus={() => setShowDropdown(true)}
           onKeyDown={handleKeyDown}
           placeholder="Search artists, albums, tracks..."
-          className="h-11 w-full rounded-lg bg-white/5 pl-9 pr-9 text-sm text-white outline-none transition-colors placeholder:text-white/25 focus:bg-white/8"
+          className="h-11 w-full rounded-lg bg-black/25 backdrop-blur-sm pl-9 pr-9 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:bg-black/40"
         />
       </div>
 

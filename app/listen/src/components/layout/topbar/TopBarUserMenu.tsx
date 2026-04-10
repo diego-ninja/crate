@@ -27,7 +27,8 @@ export function TopBarUserMenu() {
       <button
         ref={userMenuButtonRef}
         onClick={() => setShowUserMenu(!showUserMenu)}
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-medium text-white/60 transition-colors hover:bg-white/15 hover:text-white"
+        aria-label="User menu"
+        className="flex h-10 w-10 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-sm font-medium text-white/60 transition-colors hover:bg-black/50 hover:text-white"
       >
         {userInitial || <User size={16} />}
       </button>

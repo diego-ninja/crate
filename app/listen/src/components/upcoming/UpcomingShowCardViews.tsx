@@ -52,6 +52,7 @@ export function UpcomingShowCollapsedView({
         <img
           src={artistImageUrl}
           alt=""
+          loading="lazy"
           className="h-full w-full object-cover"
           onError={(event) => {
             (event.target as HTMLImageElement).style.display = "none";

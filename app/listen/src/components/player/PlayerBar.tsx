@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
   Heart, Airplay, ListMusic, Mic2, Maximize2, Loader2,
@@ -6,11 +6,13 @@ import {
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
+import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { toast } from "sonner";
 import { QueuePanel } from "@/components/player/QueuePanel";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
 import { ExtendedPlayer } from "@/components/player/ExtendedPlayer";
+import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
 import { PlayerTrackMenu } from "@/components/player/bar/PlayerTrackMenu";
 import { PlayerVolumeControl } from "@/components/player/bar/PlayerVolumeControl";
 import { WaveformCanvas } from "@/components/player/bar/WaveformCanvas";
@@ -19,6 +21,12 @@ import {
   formatPlayerTrackBadge,
   generateWaveformBars,
 } from "@/components/player/bar/player-bar-utils";
+
+const FS_OPEN_KEY = "listen-fs-player-open";
+
+function getStoredFsOpen(): boolean {
+  try { return localStorage.getItem(FS_OPEN_KEY) === "true"; } catch { return false; }
+}
 
 export function PlayerBar() {
   const { currentTime, duration, isPlaying, isBuffering, volume } = usePlayer();
@@ -32,11 +40,18 @@ export function PlayerBar() {
   // on first play, enabling the WebGL visualizer in ExtendedPlayer to work.
   const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
 
+  const isDesktop = useIsDesktop();
   const [extendedOpen, setExtendedOpen] = useState(false);
+  const [fsOpen, setFsOpenRaw] = useState(getStoredFsOpen);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [hasFloatingOverlayOpen, setHasFloatingOverlayOpen] = useState(false);
   const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
+
+  const setFsOpen = useCallback((open: boolean) => {
+    setFsOpenRaw(open);
+    try { localStorage.setItem(FS_OPEN_KEY, String(open)); } catch { /* ignore */ }
+  }, []);
 
   useDismissibleLayer({
     active: hasFloatingOverlayOpen || showQueue || showLyrics,
@@ -107,17 +122,30 @@ export function PlayerBar() {
 
   return (
     <>
+      {/* Screen reader announcement for track changes */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {isPlaying ? `Now playing ${currentTrack.title} by ${currentTrack.artist}` : `Paused: ${currentTrack.title} by ${currentTrack.artist}`}
+      </div>
+
       <div
-        className={`fixed bottom-0 left-0 right-0 h-[72px] border-t border-white/5 bg-panel-surface ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
+        className={`fixed left-2 right-2 md:left-3 md:right-3 h-[66px] md:h-[82px] rounded-2xl border border-white/10 bg-black/50 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-200 ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
+        style={{ bottom: isDesktop ? 12 : "calc(64px + env(safe-area-inset-bottom, 0px) + 8px)" }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="h-full flex items-center px-4 gap-2">
+        <div className="h-full flex items-center px-3 lg:px-4 gap-2">
 
           {/* ── Block 1: Track Info ── */}
-          <div className="flex items-center gap-3 w-[280px] shrink-0">
+          <div
+            role={isDesktop ? undefined : "button"}
+            tabIndex={isDesktop ? undefined : 0}
+            aria-label={isDesktop ? undefined : "Open fullscreen player"}
+            className="flex items-center gap-3 min-w-0 flex-1 md:flex-none md:w-[240px] xl:w-[280px] shrink-0 cursor-pointer md:cursor-default"
+            onClick={() => { if (!isDesktop) setFsOpen(true); }}
+            onKeyDown={(e) => { if (!isDesktop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setFsOpen(true); } }}
+          >
             {/* Album art */}
-            <div className="relative w-12 h-12 rounded-md overflow-hidden shrink-0 bg-white/5">
+            <div className="relative w-10 h-10 md:w-12 md:h-12 rounded-md overflow-hidden shrink-0 bg-white/5">
               {currentTrack.albumCover ? (
                 <img src={currentTrack.albumCover} alt="" className="w-full h-full object-cover" />
               ) : (
@@ -125,8 +153,8 @@ export function PlayerBar() {
               )}
             </div>
 
-            {/* Text */}
-            <div className="min-w-0 flex-1">
+            {/* Text — animate on track change */}
+            <div key={currentTrack.id} className="min-w-0 flex-1 animate-track-in">
               <p className="text-[13px] font-semibold text-white truncate leading-tight">
                 {currentTrack.title}
               </p>
@@ -134,7 +162,7 @@ export function PlayerBar() {
                 {currentTrack.artist}
               </p>
               {playSource && (
-                <p className="text-[10px] text-white/30 truncate leading-tight mt-0.5">
+                <p className="text-[10px] text-white/30 truncate leading-tight mt-0.5 hidden lg:block">
                   Playing from: {playSource.name}
                 </p>
               )}
@@ -146,33 +174,37 @@ export function PlayerBar() {
             </div>
 
             {/* Heart */}
-            <button onClick={toggleLike} className="shrink-0 p-1.5 hover:bg-white/5 rounded-md transition-colors">
+            <button onClick={(e) => { e.stopPropagation(); toggleLike(); }} className="shrink-0 p-1.5 hover:bg-white/5 rounded-md transition-colors">
               <Heart size={16} className={liked ? "text-primary fill-primary" : "text-white/30 hover:text-white/60"} />
             </button>
 
-            <PlayerTrackMenu
-              currentTrack={currentTrack}
-              duration={duration}
-              onOverlayChange={setHasFloatingOverlayOpen}
-              onAddToCollection={handleAddToCollection}
-            />
+            <div onClick={(e) => e.stopPropagation()}>
+              <PlayerTrackMenu
+                currentTrack={currentTrack}
+                duration={duration}
+                onOverlayChange={setHasFloatingOverlayOpen}
+                onAddToCollection={handleAddToCollection}
+              />
+            </div>
           </div>
 
           {/* ── Block 2: Controls + Progress ── */}
-          <div className="flex-1 flex flex-col items-center justify-center max-w-[600px] mx-auto gap-1">
+          <div className="hidden md:flex flex-1 flex-col items-center justify-center max-w-[600px] mx-auto gap-1">
             {/* Controls */}
-            <div className="flex items-center gap-5">
+            <div className="flex items-center gap-3 lg:gap-5">
               <button
                 onClick={toggleShuffle}
+                aria-label={shuffle ? "Disable shuffle" : "Enable shuffle"}
                 className={`transition-colors ${shuffle ? "text-primary" : "text-white/30 hover:text-white/60"}`}
               >
                 <Shuffle size={15} />
               </button>
-              <button onClick={prev} className="text-white/50 hover:text-white transition-colors">
+              <button onClick={prev} aria-label="Previous track" className="text-white/50 hover:text-white transition-colors">
                 <SkipBack size={18} fill="currentColor" />
               </button>
               <button
                 onClick={isPlaying ? pause : resume}
+                aria-label={isPlaying ? "Pause" : "Play"}
                 className="w-9 h-9 rounded-full bg-white flex items-center justify-center hover:scale-105 transition-transform"
               >
                 {isBuffering ? (
@@ -183,11 +215,12 @@ export function PlayerBar() {
                   <Play size={16} className="text-black ml-0.5" fill="black" />
                 )}
               </button>
-              <button onClick={next} className="text-white/50 hover:text-white transition-colors">
+              <button onClick={next} aria-label="Next track" className="text-white/50 hover:text-white transition-colors">
                 <SkipForward size={18} fill="currentColor" />
               </button>
               <button
                 onClick={cycleRepeat}
+                aria-label={`Repeat: ${repeat}`}
                 className={`transition-colors ${repeat !== "off" ? "text-primary" : "text-white/30 hover:text-white/60"}`}
               >
                 {repeat === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
@@ -215,8 +248,31 @@ export function PlayerBar() {
             </div>
           </div>
 
-          {/* ── Block 3: Action Buttons ── */}
-          <div className="flex items-center gap-1 w-[280px] shrink-0 justify-end">
+          {/* ── Mobile/tablet play controls (md only, no progress) ── */}
+          <div className="flex md:hidden items-center gap-1">
+            <button onClick={prev} aria-label="Previous track" className="w-10 h-10 flex items-center justify-center text-white/50">
+              <SkipBack size={18} fill="currentColor" />
+            </button>
+            <button
+              onClick={isPlaying ? pause : resume}
+              aria-label={isPlaying ? "Pause" : "Play"}
+              className="w-10 h-10 rounded-full bg-white flex items-center justify-center"
+            >
+              {isBuffering ? (
+                <Loader2 size={15} className="animate-spin text-black" />
+              ) : isPlaying ? (
+                <Pause size={16} className="text-black" />
+              ) : (
+                <Play size={16} className="text-black ml-0.5" fill="black" />
+              )}
+            </button>
+            <button onClick={next} aria-label="Next track" className="w-10 h-10 flex items-center justify-center text-white/50">
+              <SkipForward size={18} fill="currentColor" />
+            </button>
+          </div>
+
+          {/* ── Block 3: Action Buttons (lg+) ── */}
+          <div className="hidden lg:flex items-center gap-1 w-[200px] xl:w-[280px] shrink-0 justify-end">
             {/* Format badge */}
             {fmt && (
               <span className="text-[9px] font-bold tracking-wider text-primary/70 border border-primary/30 rounded px-1.5 py-0.5 mr-1">
@@ -232,7 +288,7 @@ export function PlayerBar() {
             />
 
             {/* Device (placeholder) */}
-            <button className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60" title="Connect device">
+            <button className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60 hidden xl:block" aria-label="Connect device">
               <Airplay size={16} />
             </button>
 
@@ -241,7 +297,7 @@ export function PlayerBar() {
               <button
                 onClick={() => { setShowQueue(!showQueue); setShowLyrics(false); }}
                 className={`p-1.5 hover:bg-white/5 rounded-md transition-colors relative ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-                title="Queue"
+                aria-label="Queue"
               >
                 <ListMusic size={16} />
                 {queue.length > 1 && (
@@ -256,8 +312,8 @@ export function PlayerBar() {
             {!extendedOpen && (
               <button
                 onClick={() => { setShowLyrics(!showLyrics); setShowQueue(false); }}
-                className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${showLyrics ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-                title="Lyrics"
+                className={`p-1.5 hover:bg-white/5 rounded-md transition-colors hidden xl:block ${showLyrics ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                aria-label="Lyrics"
               >
                 <Mic2 size={16} />
               </button>
@@ -270,7 +326,30 @@ export function PlayerBar() {
                 if (!extendedOpen) { setShowQueue(false); setShowLyrics(false); }
               }}
               className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${extendedOpen ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-              title="Extended player"
+              aria-label="Expand player"
+            >
+              <Maximize2 size={16} />
+            </button>
+          </div>
+
+          {/* ── Compact action buttons (md only, no lg) ── */}
+          <div className="hidden md:flex lg:hidden items-center gap-1">
+            {!extendedOpen && (
+              <button
+                onClick={() => { setShowQueue(!showQueue); setShowLyrics(false); }}
+                aria-label="Queue"
+                className={`p-1.5 hover:bg-white/5 rounded-md transition-colors relative ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+              >
+                <ListMusic size={16} />
+              </button>
+            )}
+            <button
+              onClick={() => {
+                setExtendedOpen(!extendedOpen);
+                if (!extendedOpen) { setShowQueue(false); setShowLyrics(false); }
+              }}
+              aria-label="Expand player"
+              className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${extendedOpen ? "text-primary" : "text-white/30 hover:text-white/60"}`}
             >
               <Maximize2 size={16} />
             </button>
@@ -281,6 +360,7 @@ export function PlayerBar() {
       <QueuePanel open={showQueue} onClose={() => setShowQueue(false)} />
       <LyricsPanel open={showLyrics} onClose={() => setShowLyrics(false)} />
       <ExtendedPlayer open={extendedOpen} onClose={() => setExtendedOpen(false)} />
+      {!isDesktop && <FullscreenPlayer open={fsOpen} onClose={() => setFsOpen(false)} />}
     </>
   );
 }

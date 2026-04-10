@@ -46,7 +46,7 @@
   --scrollbar-hover: #353545;
   --z-header: 30;
   --z-sidebar: 40;
-  --z-player: 50;
+  --z-player: 1350;
   --z-player-drawer: 55;
   --z-extended-player: 1200;
   --z-popover: 1400;
@@ -123,6 +123,69 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
   50% { box-shadow: 0 0 16px rgba(6,182,212,0.25); }
 }
 .animate-pulse-subtle { animation: pulse-subtle 3s ease-in-out infinite; }
+
+/* ── Transitions & animations ── */
+
+/* Popover / menu entrance */
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes popOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.92); }
+}
+.animate-pop-in { animation: popIn 0.15s ease-out forwards; }
+.animate-pop-out { animation: popOut 0.12s ease-in forwards; }
+
+/* Bottom sheet slide-up (modals on mobile) */
+@keyframes sheetUp {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sheetDown {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(100%); }
+}
+.animate-sheet-up { animation: sheetUp 0.3s cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+
+/* Fade in/out (generic) */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.18s ease-out forwards; }
+.animate-fade-slide-up { animation: fadeSlideUp 0.2s ease-out forwards; }
+
+/* Submenu expand (sidebar collection) */
+@keyframes submenuIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-submenu-in { animation: submenuIn 0.15s ease-out forwards; }
+
+/* Track info crossfade (player bar track change) */
+@keyframes trackFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-track-in { animation: trackFade 0.25s ease-out; }
+
+/* View Transitions API (page navigation) */
+::view-transition-old(root) {
+  animation: 0.2s ease-out fadeOut;
+}
+::view-transition-new(root) {
+  animation: 0.2s ease-out fadeIn;
+}
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
 
 /* Lyric line gradient mask */
 .lyrics-mask { -webkit-mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); mask-image: linear-gradient(transparent, black 15%, black 85%, transparent); }

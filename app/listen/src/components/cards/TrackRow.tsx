@@ -135,12 +135,12 @@ export const TrackRow = memo(function TrackRow({
           {isActive && isPlaying ? (
             <Pause size={14} className="text-primary mx-auto" />
           ) : (
-            <span className="text-xs text-muted-foreground group-hover:hidden">
-              {index != null ? index : track.track_number || "-"}
-            </span>
-          )}
-          {!(isActive && isPlaying) && (
-            <Play size={14} className="text-foreground mx-auto hidden group-hover:block" />
+            <>
+              <span className="text-xs text-muted-foreground md:group-hover:hidden">
+                {index != null ? index : track.track_number || "-"}
+              </span>
+              <Play size={14} className="text-foreground mx-auto hidden md:group-hover:block" />
+            </>
           )}
         </div>
       )}
@@ -170,7 +170,7 @@ export const TrackRow = memo(function TrackRow({
       <ActionIconButton
         variant="row"
         active={liked}
-        className={`h-8 w-8 flex-shrink-0 transition-opacity ${
+        className={`h-9 w-9 flex-shrink-0 transition-opacity ${
           liked ? "opacity-100" : "md:opacity-0 md:group-hover:opacity-100"
         }`}
         title={liked ? "Unlike" : "Like"}
@@ -197,7 +197,7 @@ export const TrackRow = memo(function TrackRow({
           buttonRef={actionMenu.triggerRef}
           hasActions={actionMenu.hasActions}
           onClick={actionMenu.openFromTrigger}
-          className="h-8 w-8"
+          className="h-9 w-9"
         />
       </div>
       <ItemActionMenu

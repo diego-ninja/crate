@@ -17,24 +17,24 @@ export function getStoredVolume(): number {
   return 0.8;
 }
 
-export function getStoredQueue(): { queue: Track[]; currentIndex: number } {
+export function getStoredQueue(): { queue: Track[]; currentIndex: number; currentTime: number } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed.queue) && parsed.queue.length > 0) {
-        return { queue: parsed.queue, currentIndex: parsed.currentIndex ?? 0 };
+        return { queue: parsed.queue, currentIndex: parsed.currentIndex ?? 0, currentTime: parsed.currentTime ?? 0 };
       }
     }
   } catch {
     /* ignore */
   }
-  return { queue: [], currentIndex: 0 };
+  return { queue: [], currentIndex: 0, currentTime: 0 };
 }
 
-export function saveQueue(queue: Track[], currentIndex: number) {
+export function saveQueue(queue: Track[], currentIndex: number, currentTime?: number) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ queue, currentIndex }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ queue, currentIndex, currentTime: currentTime ?? 0 }));
   } catch {
     /* ignore */
   }
