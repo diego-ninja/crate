@@ -503,7 +503,13 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
         photo = artist_dir / photo_name
         if photo.exists():
             media_type = "image/jpeg" if photo.suffix == ".jpg" else "image/png"
-            return Response(content=photo.read_bytes(), media_type=media_type)
+            return Response(
+                content=photo.read_bytes(),
+                media_type=media_type,
+                headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
+            )
+
+    _IMG_CACHE = {"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"}
 
     if random_pick:
         fanart = get_fanart_all_images(name)
@@ -512,7 +518,7 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
             url = _random.choice(thumbs)
             image_data = download_artist_image(url)
             if image_data:
-                return Response(content=image_data, media_type="image/jpeg")
+                return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
 
     image_data = get_best_artist_image(name)
     if image_data:
@@ -521,7 +527,7 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
             save_path.write_bytes(image_data)
         except OSError:
             pass
-        return Response(content=image_data, media_type="image/jpeg")
+        return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
 
     exts = extensions()
     for album_dir in sorted(artist_dir.iterdir()):
@@ -531,13 +537,13 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
             cover = album_dir / cover_name
             if cover.exists():
                 media_type = "image/jpeg" if cover.suffix == ".jpg" else "image/png"
-                return Response(content=cover.read_bytes(), media_type=media_type)
+                return Response(content=cover.read_bytes(), media_type=media_type, headers=_IMG_CACHE)
         tracks = get_audio_files(album_dir, exts)
         if tracks:
             audio = mutagen.File(tracks[0])
             if audio and hasattr(audio, "pictures") and audio.pictures:
                 pic = audio.pictures[0]
-                return Response(content=pic.data, media_type=pic.mime)
+                return Response(content=pic.data, media_type=pic.mime, headers=_IMG_CACHE)
             if audio and hasattr(audio, "tags") and audio.tags:
                 for key in audio.tags:
                     # Guard against FLAC VComment which yields tuples.

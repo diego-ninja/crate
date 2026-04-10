@@ -291,11 +291,13 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None):
     if not album_dir:
         return _placeholder_cover(album or artist)
 
+    _IMG_CACHE = {"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"}
+
     for cover_name in COVER_NAMES:
         cover = album_dir / cover_name
         if cover.exists():
             media_type = "image/jpeg" if cover.suffix == ".jpg" else "image/png"
-            return Response(content=cover.read_bytes(), media_type=media_type)
+            return Response(content=cover.read_bytes(), media_type=media_type, headers=_IMG_CACHE)
 
     exts = extensions()
     tracks = get_audio_files(album_dir, exts)
@@ -303,7 +305,7 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None):
         extracted = _extract_embedded_cover(track)
         if extracted:
             data, mime = extracted
-            return Response(content=data, media_type=mime)
+            return Response(content=data, media_type=mime, headers=_IMG_CACHE)
 
     return _placeholder_cover(album or artist)
 
