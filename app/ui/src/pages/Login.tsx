@@ -65,11 +65,12 @@ export function Login() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <img src="/assets/logo.svg" alt="Crate" className="w-20 mx-auto mb-8" />
+        <div className="flex flex-col items-center gap-2 mb-8">
+          <img src="/assets/logo.svg" alt="Crate" className="w-20" />
+          <h1 className="text-2xl font-bold text-foreground">Crate</h1>
+          <p className="text-sm text-muted-foreground">Own your music</p>
+        </div>
         <div className="bg-card border border-border rounded-lg p-8 shadow-xl">
-          <div className="text-center mb-6">
-            <p className="text-sm text-muted-foreground">Sign in to your account</p>
-          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

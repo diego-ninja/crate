@@ -53,9 +53,10 @@ export function Login() {
         onSubmit={handleSubmit}
         className="w-full max-w-sm space-y-5"
       >
-        <div className="flex flex-col items-center gap-3 pb-2">
+        <div className="flex flex-col items-center gap-2 pb-4">
           <img src="/icons/logo.svg" alt="Crate" className="h-16 w-16" />
-          <h1 className="text-2xl font-bold text-white">Listen</h1>
+          <h1 className="text-2xl font-bold text-white">Crate</h1>
+          <p className="text-sm text-white/40">Own your music</p>
         </div>
 
         {error && (
