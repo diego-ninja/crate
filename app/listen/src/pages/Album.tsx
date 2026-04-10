@@ -90,7 +90,7 @@ function buildPlayerTracks(data: AlbumData): Track[] {
 export function Album() {
   const { albumId: albumIdParam } = useParams<{ albumId?: string }>();
   const navigate = useNavigate();
-  const { playAll, addToQueue, playNext } = usePlayerActions();
+  const { playAll, playNext } = usePlayerActions();
   const { openCreatePlaylist } = usePlaylistComposer();
   const { isSaved, saveAlbum, unsaveAlbum } = useSavedAlbums();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -187,10 +187,6 @@ export function Album() {
       toast.error("Failed to start album radio");
     }
   }
-
-  const handleAddToQueue = () => {
-    playerTracks.forEach((t) => addToQueue(t));
-  };
 
   const handlePlayNextAlbum = () => {
     [...playerTracks].reverse().forEach((track) => playNext(track));
@@ -304,7 +300,7 @@ export function Album() {
   return (
     <div className="-mx-4 -mt-4 sm:-mx-6 sm:-mt-6">
       {/* Header */}
-      <div className="px-4 sm:px-6 pt-6 pb-4">
+      <div className="px-4 sm:px-6 pb-4" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 5rem)" }}>
         <div className="flex flex-col sm:flex-row gap-6">
           {/* Cover */}
           <div className="flex-shrink-0 w-[200px] sm:w-[240px] lg:w-[280px] mx-auto sm:mx-0">
@@ -363,60 +359,47 @@ export function Album() {
       </div>
 
       {/* Action Row */}
-      <div className="flex flex-wrap items-center gap-3 px-4 sm:px-6 pb-4">
+      <div className="flex items-center gap-2 px-4 sm:px-6 pb-4">
         <button
           className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
           onClick={() => handlePlay()}
+          aria-label="Play"
         >
           <Play size={16} fill="currentColor" />
           Play
         </button>
         <button
-          className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
           onClick={handleShuffle}
+          aria-label="Shuffle"
         >
-          <Shuffle size={15} />
-          Shuffle
+          <Shuffle size={16} />
         </button>
         <button
-          className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
           onClick={handleAlbumRadio}
+          aria-label="Album Radio"
         >
-          <Radio size={15} />
-          Album Radio
+          <Radio size={16} />
         </button>
         <button
-          className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"
-          onClick={handleAddToQueue}
-        >
-          <ListPlus size={15} />
-          Queue
-        </button>
-        <button
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-full border text-sm transition-colors ${
+          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
             saved
-              ? "border-primary/30 bg-primary/15 text-primary"
-              : "border-white/15 text-foreground hover:bg-white/5"
+              ? "border border-primary/30 bg-primary/15 text-primary"
+              : "border border-white/15 text-foreground hover:bg-white/5"
           }`}
           onClick={handleToggleSaved}
+          aria-label={saved ? "Remove from collection" : "Add to collection"}
         >
-          <Heart size={15} className={saved ? "fill-current" : ""} />
-          {saved ? "In Collection" : "Add to Collection"}
-        </button>
-        <button
-          className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"
-          onClick={handleShare}
-        >
-          <Share2 size={15} />
-          Share
+          <Heart size={16} className={saved ? "fill-current" : ""} />
         </button>
         <div className="relative" ref={menuRef}>
           <button
-            className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-white/15 text-sm text-foreground hover:bg-white/5 transition-colors"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/50 transition-colors hover:bg-white/5 hover:text-foreground"
             onClick={() => setMenuOpen((open) => !open)}
+            aria-label="More"
           >
-            <MoreHorizontal size={15} />
-            More
+            <MoreHorizontal size={16} />
           </button>
           {menuOpen && (
             <AppPopover className="absolute top-full left-0 mt-2 w-72 overflow-hidden rounded-2xl">

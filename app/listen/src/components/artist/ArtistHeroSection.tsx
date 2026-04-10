@@ -1,9 +1,9 @@
 import {
   ChevronDown,
   ListMusic,
+  MoreHorizontal,
   Play,
   Radio,
-  Share2,
   Shuffle,
   UserCheck,
   UserPlus,
@@ -144,53 +144,54 @@ export function ArtistHeroSection({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 px-4 py-4 sm:px-6">
+      <div className="flex items-center gap-2 px-4 py-4 sm:px-6">
         <button
           className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           onClick={onPlay}
+          aria-label="Play"
         >
           <Play size={16} fill="currentColor" />
           Play
         </button>
         <button
-          className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-white/5"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
           onClick={onShuffle}
+          aria-label="Shuffle"
         >
-          <Shuffle size={15} />
-          Shuffle
+          <Shuffle size={16} />
         </button>
         <button
-          className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-white/5"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5"
           onClick={onArtistRadio}
+          aria-label="Artist Radio"
         >
-          <Radio size={15} />
-          Artist Radio
+          <Radio size={16} />
         </button>
         <button
-          className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-foreground transition-colors hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
           onClick={onPlaySetlist}
           disabled={!hasSetlist}
+          aria-label="Setlist"
         >
-          <ListMusic size={15} />
-          Setlist
+          <ListMusic size={16} />
         </button>
         <button
-          className={`flex items-center gap-2 rounded-full px-4 py-2.5 text-sm transition-colors ${
+          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
             following
               ? "border border-primary/30 bg-primary/15 text-primary"
               : "border border-white/15 text-foreground hover:bg-white/5"
           }`}
           onClick={onToggleFollow}
+          aria-label={following ? "Unfollow" : "Follow"}
         >
-          {following ? <UserCheck size={15} /> : <UserPlus size={15} />}
-          {following ? "Following" : "Follow"}
+          {following ? <UserCheck size={16} /> : <UserPlus size={16} />}
         </button>
         <button
-          className="flex items-center gap-2 rounded-full border border-white/15 px-4 py-2.5 text-sm text-foreground transition-colors hover:bg-white/5"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/50 transition-colors hover:bg-white/5 hover:text-foreground"
           onClick={onShare}
+          aria-label="More"
         >
-          <Share2 size={15} />
-          Share
+          <MoreHorizontal size={16} />
         </button>
       </div>
     </>
