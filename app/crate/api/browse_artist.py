@@ -288,7 +288,7 @@ def api_artists(
         "name": "la.name ASC",
         "popularity": "la.listeners DESC NULLS LAST",
         "albums": "la.album_count DESC",
-        "recent": "la.dir_mtime DESC NULLS LAST",
+        "recent": "COALESCE(la.dir_mtime, EXTRACT(EPOCH FROM la.updated_at)::bigint) DESC",
         "size": "la.total_size DESC",
         "tracks": "la.track_count DESC",
     }
