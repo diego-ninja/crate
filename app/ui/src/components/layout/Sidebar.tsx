@@ -108,8 +108,9 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   return (
     <nav className="w-[220px] bg-card border-r border-border flex-shrink-0 fixed h-screen overflow-y-auto flex flex-col">
       <div className="px-4 pb-4 pt-4 border-b border-border mb-4">
-        <Link to="/">
-          <img src="/assets/logo.png" alt="Crate" className="w-full h-auto" />
+        <Link to="/" className="flex items-center gap-3">
+          <img src="/assets/logo.svg" alt="Crate" className="w-8 h-8" />
+          <span className="text-lg font-bold text-foreground">Crate</span>
         </Link>
         {navidrome && (
           <div className="flex items-center gap-1.5 mt-2" title={navidrome.connected ? `Navidrome ${navidrome.version}` : "Navidrome disconnected"}>
