@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { BarChart3, LogOut, Settings, Upload, User } from "lucide-react";
 import { useNavigate } from "react-router";
 
@@ -61,29 +62,32 @@ export function TopBarUserMenu() {
   );
 
   return (
-    <div className="relative pointer-events-auto">
-      <button
-        ref={userMenuButtonRef}
-        onClick={() => setShowUserMenu(!showUserMenu)}
-        aria-label="User menu"
-        className="flex h-10 w-10 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-sm font-medium text-white/60 transition-colors hover:bg-black/50 hover:text-white"
-      >
-        {userInitial || <User size={16} />}
-      </button>
+    <>
+      <div className="relative pointer-events-auto">
+        <button
+          ref={userMenuButtonRef}
+          onClick={() => setShowUserMenu(!showUserMenu)}
+          aria-label="User menu"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-sm font-medium text-white/60 transition-colors hover:bg-black/50 hover:text-white"
+        >
+          {userInitial || <User size={16} />}
+        </button>
 
-      {showUserMenu && isDesktop && (
-        <AppPopover ref={userMenuRef} className="absolute right-0 top-full mt-2 w-60 py-1">
-          {menuContent}
-        </AppPopover>
-      )}
+        {showUserMenu && isDesktop && (
+          <AppPopover ref={userMenuRef} className="absolute right-0 top-full mt-2 w-60 py-1">
+            {menuContent}
+          </AppPopover>
+        )}
+      </div>
 
-      {showUserMenu && !isDesktop && (
+      {showUserMenu && !isDesktop && createPortal(
         <AppModal open={showUserMenu} onClose={() => setShowUserMenu(false)} maxWidthClassName="sm:max-w-sm">
           <ModalBody className="py-2">
             {menuContent}
           </ModalBody>
-        </AppModal>
+        </AppModal>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
