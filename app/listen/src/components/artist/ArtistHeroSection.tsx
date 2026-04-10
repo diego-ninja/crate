@@ -1,9 +1,11 @@
+import { useRef, useState } from "react";
 import {
   ChevronDown,
   ListMusic,
   MoreHorizontal,
   Play,
   Radio,
+  Share2,
   Shuffle,
   UserCheck,
   UserPlus,
@@ -12,6 +14,9 @@ import {
 import { useNavigate } from "react-router";
 
 import { artistGenreSlug, type ArtistData, type ArtistInfo } from "@/components/artist/artist-model";
+import { AppMenuButton } from "@/components/ui/AppPopover";
+import { AppModal, ModalBody } from "@/components/ui/AppModal";
+import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { formatCompact } from "@/lib/utils";
 
 interface ArtistHeroSectionProps {
@@ -46,6 +51,9 @@ export function ArtistHeroSection({
   onOpenBio,
 }: ArtistHeroSectionProps) {
   const navigate = useNavigate();
+  const isDesktop = useIsDesktop();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const bio = artistInfo?.bio ?? "";
 
   return (
@@ -186,13 +194,86 @@ export function ArtistHeroSection({
         >
           {following ? <UserCheck size={16} /> : <UserPlus size={16} />}
         </button>
-        <button
-          className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/50 transition-colors hover:bg-white/5 hover:text-foreground"
-          onClick={onShare}
-          aria-label="More"
-        >
-          <MoreHorizontal size={16} />
-        </button>
+        <div className="relative" ref={menuRef}>
+          <button
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/50 transition-colors hover:bg-white/5 hover:text-foreground"
+            onClick={() => setMenuOpen(!menuOpen)}
+            aria-label="More"
+          >
+            <MoreHorizontal size={16} />
+          </button>
+          {menuOpen && !isDesktop && (
+            <AppModal open={menuOpen} onClose={() => setMenuOpen(false)} maxWidthClassName="sm:max-w-sm">
+              <ModalBody className="pb-4">
+                <ArtistMenuContent
+                  artist={artist}
+                  photoUrl={photoUrl}
+                  following={following}
+                  hasSetlist={hasSetlist}
+                  onPlay={() => { onPlay(); setMenuOpen(false); }}
+                  onShuffle={() => { onShuffle(); setMenuOpen(false); }}
+                  onArtistRadio={() => { onArtistRadio(); setMenuOpen(false); }}
+                  onPlaySetlist={onPlaySetlist ? () => { onPlaySetlist(); setMenuOpen(false); } : undefined}
+                  onToggleFollow={() => { onToggleFollow(); setMenuOpen(false); }}
+                  onShare={() => { onShare(); setMenuOpen(false); }}
+                />
+              </ModalBody>
+            </AppModal>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ArtistMenuContent({
+  artist, photoUrl, following, hasSetlist,
+  onPlay, onShuffle, onArtistRadio, onPlaySetlist, onToggleFollow, onShare,
+}: {
+  artist: ArtistData;
+  photoUrl: string;
+  following: boolean;
+  hasSetlist?: boolean;
+  onPlay: () => void;
+  onShuffle: () => void;
+  onArtistRadio: () => void;
+  onPlaySetlist?: () => void;
+  onToggleFollow: () => void;
+  onShare: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
+        <div className="w-12 h-12 rounded-full overflow-hidden bg-white/5 flex-shrink-0">
+          <img src={photoUrl} alt={artist.name} className="w-full h-full object-cover" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-foreground truncate">{artist.name}</div>
+          <div className="text-xs text-muted-foreground">{artist.total_tracks} tracks · {artist.albums.length} albums</div>
+        </div>
+      </div>
+      <div className="p-1.5">
+        <AppMenuButton onClick={onPlay}>
+          <Play size={15} /> Play top tracks
+        </AppMenuButton>
+        <AppMenuButton onClick={onShuffle}>
+          <Shuffle size={15} /> Shuffle
+        </AppMenuButton>
+        <AppMenuButton onClick={onArtistRadio}>
+          <Radio size={15} /> Artist radio
+        </AppMenuButton>
+        {onPlaySetlist ? (
+          <AppMenuButton onClick={onPlaySetlist} disabled={!hasSetlist}>
+            <ListMusic size={15} /> Play setlist
+          </AppMenuButton>
+        ) : null}
+        <AppMenuButton onClick={onToggleFollow}>
+          {following ? <UserCheck size={15} /> : <UserPlus size={15} />}
+          {following ? "Unfollow" : "Follow"}
+        </AppMenuButton>
+        <AppMenuButton onClick={onShare}>
+          <Share2 size={15} /> Share
+        </AppMenuButton>
       </div>
     </>
   );
