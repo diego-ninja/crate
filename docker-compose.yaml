@@ -335,6 +335,14 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    labels:
+      traefik.enable: true
+      traefik.docker.network: crate
+      traefik.http.routers.crate-api.rule: Host(`api.${DOMAIN}`)
+      traefik.http.routers.crate-api.entryPoints: websecure
+      traefik.http.services.crate-api.loadbalancer.server.port: 8585
+      traefik.http.routers.crate-api.tls: true
+      traefik.http.routers.crate-api.tls.certresolver: letsencrypt
     command: ["api"]
 
   crate-worker:

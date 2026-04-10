@@ -30,10 +30,16 @@ def create_app() -> FastAPI:
     domain = os.environ.get("DOMAIN", "localhost")
     allowed_origins = [
         f"https://admin.{domain}",
+        f"https://listen.{domain}",
+        f"https://api.{domain}",
         f"https://{domain}",
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://localhost:5174",
         "http://localhost:8585",
+        # Capacitor native shells
+        "capacitor://localhost",
+        "https://localhost",
     ]
     app.add_middleware(
         CORSMiddleware,

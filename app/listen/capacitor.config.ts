@@ -6,14 +6,11 @@ const config: CapacitorConfig = {
   webDir: "dist",
 
   server: {
-    // In production, load from the deployed backend (same origin for cookies).
-    // For local dev, override with your machine's IP + Vite dev port.
-    url: process.env.CAPACITOR_SERVER_URL || "https://listen.lespedants.org",
+    // Load app from local bundle (fast, works offline).
+    // API calls go to api.lespedants.org via VITE_API_URL baked at build time.
     androidScheme: "https",
     iosScheme: "https",
     allowMixedContent: true,
-    // Clear cookies/cache between sessions for clean state during development
-    cleartext: true,
   },
 
   ios: {

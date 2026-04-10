@@ -42,12 +42,14 @@ def _is_secure() -> bool:
 
 
 def _set_auth_cookie(response: Response, token: str):
+    # SameSite=None allows cross-origin requests (Capacitor native app).
+    # Requires Secure=True always.
     response.set_cookie(
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        secure=_is_secure(),
-        samesite="lax",
+        secure=True,
+        samesite="none",
         domain=_cookie_domain(),
         max_age=JWT_EXPIRY_HOURS * 3600,
         path="/",
@@ -59,7 +61,7 @@ def _clear_auth_cookie(response: Response):
         key=COOKIE_NAME,
         httponly=True,
         secure=True,
-        samesite="lax",
+        samesite="none",
         domain=_cookie_domain(),
         path="/",
     )
