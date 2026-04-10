@@ -313,6 +313,14 @@ export class MusicVisualizer {
     const bins = this.analyser.frequencyBinCount;
     const lowEnd = Math.max(4, Math.floor(bins * 0.12));
     const midEnd = Math.max(lowEnd + 4, Math.floor(bins * 0.45));
+
+    // Volume compensation: attenuate at high volume, pass through at low.
+    // Never amplify (cap at 1.0) so low volumes don't get noisy.
+    // At vol=1.0 → 0.25x (attenuate). At vol=0.25 → 1.0x (pass). At vol=0.1 → 1.0x (pass).
+    const vol = Math.max(this.audioElement.volume, 0.01);
+    const targetLevel = 0.25;
+    const volCompensation = Math.min(targetLevel / vol, 1.0);
+
     let rawFreqAvg = 0;
     let timeAvg = 0;
     let rawLow = 0;
@@ -320,7 +328,7 @@ export class MusicVisualizer {
     let rawHigh = 0;
 
     for (let i = 0; i < bins; i++) {
-      const freq = this.freqDomain[i]! / 255;
+      const freq = clamp((this.freqDomain[i]! / 255) * volCompensation, 0, 1);
       rawFreqAvg += freq;
       timeAvg += this.timeDomain[i]! / 255;
 

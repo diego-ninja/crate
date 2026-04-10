@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, Settings } from "lucide-react";
 
 import { InfoTab } from "@/components/player/extended/InfoTab";
@@ -35,10 +35,46 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const [showVizSettings, setShowVizSettings] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const coverRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const vizSettingsRef = useRef<HTMLDivElement>(null);
   const vizSettingsButtonRef = useRef<HTMLButtonElement>(null);
   const vizRef = useMusicVisualizer(canvasRef, audioElement, open && isDesktop);
   const vizCfg = useVisualizerConfig(vizRef, currentTrack, open && isDesktop);
+  const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+
+  // Measure cover position relative to the left panel, expand 15%
+  useEffect(() => {
+    if (!open || !isDesktop) return;
+    const measure = () => {
+      const cover = coverRef.current;
+      const panel = panelRef.current;
+      if (!cover || !panel) return;
+      const cr = cover.getBoundingClientRect();
+      const pr = panel.getBoundingClientRect();
+      // Skip measurement if panel is still animating (off-screen)
+      if (pr.top > window.innerHeight * 0.5) return;
+      const expand = 0.40;
+      const ew = cr.width * expand;
+      const eh = cr.height * expand;
+      setCanvasRect({
+        top: cr.top - pr.top - eh / 2,
+        left: cr.left - pr.left - ew / 2,
+        width: cr.width + ew,
+        height: cr.height + eh,
+      });
+    };
+    // Wait for open animation to settle before first measure
+    const t1 = window.setTimeout(measure, 550);
+    const resizeObs = new ResizeObserver(measure);
+    if (coverRef.current) resizeObs.observe(coverRef.current);
+    window.addEventListener("resize", measure);
+    return () => {
+      window.clearTimeout(t1);
+      resizeObs.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [open, isDesktop, showVizSettings]);
 
   useDismissibleLayer({
     active: showVizSettings,
@@ -70,7 +106,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
         open ? "top-0 opacity-100" : "pointer-events-none top-[100vh] opacity-0"
       }`}
     >
-      <div className="relative flex w-1/2 flex-col items-center justify-center overflow-hidden bg-app-surface">
+      <div ref={panelRef} className="relative flex w-1/2 flex-col items-center justify-center overflow-hidden bg-app-surface">
         <div className="z-app-header absolute top-4 right-4 left-4 flex justify-between">
           <button
             onClick={onClose}
@@ -99,7 +135,8 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
           </AppPopover>
         ) : null}
 
-        <div className="relative z-0 aspect-square w-[70%] max-w-[480px] shrink-0">
+        {/* Album cover */}
+        <div ref={coverRef} className="relative z-0 aspect-square w-[70%] max-w-[480px] shrink-0">
           <div className="absolute inset-6 rounded-[28px] bg-primary/10 opacity-70 blur-3xl" />
           <div className="absolute inset-2 rounded-[26px] border border-white/10 bg-white/[0.02]" />
           {currentTrack.albumCover ? (
@@ -114,13 +151,19 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
           )}
         </div>
 
-        <canvas
-          ref={canvasRef}
-          className={`pointer-events-none absolute inset-0 z-10 h-full w-full ${
-            vizCfg.vizEnabled ? "" : "hidden"
+        {/* WebGL canvas — 15% larger than cover, centered, maintains aspect ratio on resize */}
+        <div
+          className={`pointer-events-none absolute ${showVizSettings ? "z-30" : "z-10"} ${
+            vizCfg.vizEnabled && canvasRect ? "" : "hidden"
           }`}
-          style={{ background: "transparent" }}
-        />
+          style={canvasRect ? { top: canvasRect.top, left: canvasRect.left, width: canvasRect.width, height: canvasRect.height } : undefined}
+        >
+          <canvas
+            ref={canvasRef}
+            className="h-full w-full"
+            style={{ background: "transparent" }}
+          />
+        </div>
 
         <div className="relative z-20 mt-6 max-w-full px-8 text-center">
           <h2 className="truncate text-xl font-bold leading-tight text-white">

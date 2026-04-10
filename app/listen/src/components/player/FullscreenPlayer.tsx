@@ -130,8 +130,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const vizCfg = useVisualizerConfig(vizRef, currentTrack, visible && activeTab === "player");
   const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
-  // Measure cover position relative to FS root, expand 15%.
-  // Re-runs when viz settings panel toggles (shifts cover position).
+  // Measure cover position relative to FS root, expand canvas 25%.
+  // Re-runs on viz settings toggle, tab change, and window resize.
   useEffect(() => {
     if (!visible || activeTab !== "player") return;
     const measure = () => {
@@ -140,7 +140,9 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       if (!cover || !root) return;
       const cr = cover.getBoundingClientRect();
       const rr = root.getBoundingClientRect();
-      const expand = 0.30;
+      // Skip if still animating in (root off-screen)
+      if (rr.top > window.innerHeight * 0.5) return;
+      const expand = 0.25;
       const ew = cr.width * expand;
       const eh = cr.height * expand;
       setCanvasRect({
@@ -150,13 +152,15 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
         height: cr.height + eh,
       });
     };
-    // Measure after layout settles (two rAFs for DOM + paint)
-    const t1 = requestAnimationFrame(() => requestAnimationFrame(measure));
+    // Wait for open animation to settle before first measure
+    const t1 = window.setTimeout(measure, 350);
     const resizeObs = new ResizeObserver(measure);
     if (coverRef.current) resizeObs.observe(coverRef.current);
+    window.addEventListener("resize", measure);
     return () => {
-      cancelAnimationFrame(t1);
+      window.clearTimeout(t1);
       resizeObs.disconnect();
+      window.removeEventListener("resize", measure);
     };
   }, [visible, activeTab, showVizSettings]);
 
