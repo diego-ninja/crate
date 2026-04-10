@@ -1,9 +1,87 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-import { createUseApi } from "../../../shared/web/use-api";
 import { api } from "@/lib/api";
+import { cacheGet, cacheSet, onCacheInvalidation } from "@/lib/cache";
 
-export const useApi = createUseApi(
-  { useState, useEffect, useCallback, useRef },
-  api,
-);
+export interface UseApiState<T> {
+  data: T | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+}
+
+/**
+ * SWR-enabled API hook.
+ * - Returns cached data immediately (no skeleton flash)
+ * - Fetches fresh data in background
+ * - Updates if response differs from cache
+ * - Listens to SSE invalidation events and refetches when scope matches
+ */
+export function useApi<T>(
+  url: string | null,
+  method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
+  body?: unknown,
+): UseApiState<T> {
+  const cached = url ? cacheGet<T>(url) : null;
+  const [data, setData] = useState<T | null>(cached);
+  const [loading, setLoading] = useState(!cached && !!url);
+  const [error, setError] = useState<string | null>(null);
+  const [trigger, setTrigger] = useState(0);
+  const urlRef = useRef(url);
+
+  const refetch = useCallback(() => setTrigger((t) => t + 1), []);
+
+  // Reset on URL change
+  useEffect(() => {
+    if (url !== urlRef.current) {
+      urlRef.current = url;
+      const freshCache = url ? cacheGet<T>(url) : null;
+      setData(freshCache);
+      setLoading(!freshCache && !!url);
+      setError(null);
+    }
+  }, [url]);
+
+  // Fetch + SWR
+  useEffect(() => {
+    if (!url) return;
+    const controller = new AbortController();
+    let cancelled = false;
+
+    // Only show loading if no cached data
+    if (!data) setLoading(true);
+    setError(null);
+
+    api<T>(url, method, body, { signal: controller.signal })
+      .then((freshData) => {
+        if (cancelled) return;
+        cacheSet(url, freshData);
+        setData(freshData);
+      })
+      .catch((e: Error) => {
+        if (!cancelled && !controller.signal.aborted) {
+          setError(e.message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, method, trigger]);
+
+  // Listen to SSE invalidation events — refetch when our URL's scope is invalidated
+  useEffect(() => {
+    if (!url) return;
+    return onCacheInvalidation(() => {
+      // cacheInvalidate() already cleared matching entries — if ours is gone, refetch
+      if (!cacheGet(url)) refetch();
+    });
+  }, [url, refetch]);
+
+  return { data, loading, error, refetch };
+}

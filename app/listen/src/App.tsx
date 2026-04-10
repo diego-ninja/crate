@@ -1,6 +1,7 @@
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router";
 import { Loader2 } from "lucide-react";
+import { connectCacheEvents } from "@/lib/cache";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ArtistFollowsProvider } from "@/contexts/ArtistFollowsContext";
 import { LikedTracksProvider } from "@/contexts/LikedTracksContext";
@@ -75,6 +76,13 @@ function Spinner() {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+
+  // Connect to cache invalidation SSE when authenticated
+  useEffect(() => {
+    if (!user) return;
+    return connectCacheEvents();
+  }, [user]);
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-app-surface">

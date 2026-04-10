@@ -50,7 +50,9 @@ def create_app() -> FastAPI:
     )
 
     from crate.api.auth import AuthMiddleware
+    from crate.api.cache_events import CacheInvalidationMiddleware
     app.add_middleware(AuthMiddleware)
+    app.add_middleware(CacheInvalidationMiddleware)
 
     from crate.api.setup import router as setup_router
     from crate.api.auth import router as auth_router
@@ -81,6 +83,7 @@ def create_app() -> FastAPI:
     from crate.api.me import router as me_router
     from crate.api.radio import router as radio_router
     from crate.api.lyrics import router as lyrics_router
+    from crate.api.cache_events import router as cache_events_router
 
     # Auth + management + settings + enrichment + audiomuse BEFORE browse (browse has {name:path} catch-all)
     app.include_router(setup_router)
@@ -110,6 +113,7 @@ def create_app() -> FastAPI:
     app.include_router(imports_router)
     app.include_router(batch_router)
     app.include_router(events_router)
+    app.include_router(cache_events_router)
     app.include_router(tasks_router)
     app.include_router(stack_router)
 
