@@ -57,9 +57,7 @@ function Sidebar() {
       <div className={`flex items-center ${expanded ? "px-4 py-5 gap-3" : "justify-center py-5"}`}>
         {expanded ? (
           <>
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
-              <span className="text-sm font-bold text-primary-foreground">C</span>
-            </div>
+            <img src="/icons/logo.svg" alt="Crate" className="w-8 h-8 shrink-0" />
             <span className="text-sm font-bold text-white flex-1">Crate</span>
             <button onClick={toggleExpanded} aria-label="Collapse sidebar" className="text-white/30 hover:text-white/60 transition-colors">
               <PanelLeftClose size={18} />
@@ -68,10 +66,10 @@ function Sidebar() {
         ) : (
           <button
             onClick={() => { toggleExpanded(); navigate("/"); }}
-            className="w-10 h-10 rounded-lg flex items-center justify-center text-white/40 hover:text-white/70 hover:bg-white/5 transition-colors"
+            className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-white/5 transition-colors"
             aria-label="Expand sidebar"
           >
-            <Home size={22} />
+            <img src="/icons/logo.svg" alt="Crate" className="w-6 h-6" />
           </button>
         )}
       </div>

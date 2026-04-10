@@ -53,7 +53,10 @@ export function Login() {
         onSubmit={handleSubmit}
         className="w-full max-w-sm space-y-5"
       >
-        <h1 className="text-2xl font-bold text-white text-center">Listen</h1>
+        <div className="flex flex-col items-center gap-3 pb-2">
+          <img src="/icons/logo.svg" alt="Crate" className="h-16 w-16" />
+          <h1 className="text-2xl font-bold text-white">Listen</h1>
+        </div>
 
         {error && (
           <p className="text-sm text-red-400 text-center">{error}</p>
