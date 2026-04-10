@@ -1,2 +1,4 @@
 .vite/
 tsconfig.tsbuildinfo
+ios/
+android/

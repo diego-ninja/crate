@@ -28,6 +28,7 @@ import {
 } from "@/contexts/player-utils";
 import { usePlayEventTracker } from "@/contexts/use-play-event-tracker";
 import { usePlaybackIntelligence } from "@/contexts/use-playback-intelligence";
+import { apiUrl } from "@/lib/api";
 import { usePlayerShortcuts } from "@/contexts/use-player-shortcuts";
 import { useMediaSession } from "@/contexts/use-media-session";
 import {
@@ -397,7 +398,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const endedTrack = currentTrackRef.current;
       if (endedTrack) {
         flushCurrentPlayEvent("completed");
-        fetch("/api/navidrome/scrobble", {
+        fetch(apiUrl("/api/navidrome/scrobble"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
@@ -408,7 +409,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           }),
         }).catch(() => {});
 
-        fetch("/api/me/history", {
+        fetch(apiUrl("/api/me/history"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",

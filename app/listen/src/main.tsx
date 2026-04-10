@@ -3,7 +3,10 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { Toaster } from "sonner";
 import { App } from "./App";
+import { initCapacitor } from "./lib/capacitor";
 import "./index.css";
+
+initCapacitor();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

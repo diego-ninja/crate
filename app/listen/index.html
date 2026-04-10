@@ -15,7 +15,8 @@
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
   <script>
-    if ("serviceWorker" in navigator) {
+    // Register service worker only in browsers, not in Capacitor native shell
+    if ("serviceWorker" in navigator && !window.Capacitor) {
       window.addEventListener("load", () => {
         navigator.serviceWorker.register("/sw.js").catch(() => {});
       });

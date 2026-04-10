@@ -67,20 +67,27 @@ export function getSharedAudio(key: string): HTMLAudioElement {
 }
 
 export function getStreamUrl(track: Track): string {
+  const base = _apiBase();
+
   if (track.libraryTrackId != null) {
-    return `/api/tracks/${track.libraryTrackId}/stream`;
+    return `${base}/api/tracks/${track.libraryTrackId}/stream`;
   }
 
   if (track.navidromeId) {
-    return `/api/navidrome/stream/${track.navidromeId}`;
+    return `${base}/api/navidrome/stream/${track.navidromeId}`;
   }
 
   const playbackPath = track.path || track.id;
   if (playbackPath.includes("/")) {
-    return `/api/stream/${encodeURIComponent(playbackPath).replace(/%2F/g, "/")}`;
+    return `${base}/api/stream/${encodeURIComponent(playbackPath).replace(/%2F/g, "/")}`;
   }
 
-  return `/api/navidrome/stream/${track.id}`;
+  return `${base}/api/navidrome/stream/${track.id}`;
+}
+
+/** Lazy-read API base so this module doesn't import from lib/api (circular risk). */
+function _apiBase(): string {
+  return import.meta.env.VITE_API_URL || "";
 }
 
 export function getTrackCacheKey(track: Track): string {
