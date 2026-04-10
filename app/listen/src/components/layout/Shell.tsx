@@ -207,11 +207,9 @@ export function Shell() {
   // Desktop: always transparent — individual elements carry their own backdrop.
   // Mobile: subtle backdrop so the header stays visible while scrolling.
   // On overlay pages (artist/album hero) both are fully transparent.
-  const headerChromeClass = overlayHeader
+  const headerChromeClass = isDesktop
     ? "bg-transparent border-transparent border-b-0 shadow-none"
-    : isDesktop
-      ? "bg-transparent border-transparent border-b-0 shadow-none"
-      : "bg-app-surface/80 backdrop-blur-lg border-transparent border-b-0";
+    : "bg-app-surface/80 backdrop-blur-lg border-transparent border-b-0";
 
   // Sync with sidebar toggle without polling localStorage.
   useEffect(() => {

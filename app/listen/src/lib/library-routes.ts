@@ -11,25 +11,31 @@ import {
 } from "../../../shared/web/library-routes";
 export type { ArtistRouteInput, AlbumRouteInput } from "../../../shared/web/library-routes";
 
-import { API_BASE } from "@/lib/api";
+import { API_BASE, getAuthToken } from "@/lib/api";
 
 // Page routes — no prefix needed (local navigation)
 export const artistPagePath = _artistPagePath;
 export const artistTopTracksPath = _artistTopTracksPath;
 export const albumPagePath = _albumPagePath;
 
-// API routes — prefix with API_BASE for Capacitor (absolute URL needed for images)
+// Image/media URLs — prefix with API_BASE + append ?token= for <img> elements that can't send headers
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function prefixed<F extends (...args: any[]) => string>(fn: F): F {
+function authedUrl<F extends (...args: any[]) => string>(fn: F): F {
   return ((...args: Parameters<F>) => {
     const path = fn(...args);
-    return path ? `${API_BASE}${path}` : path;
+    if (!path) return path;
+    const url = `${API_BASE}${path}`;
+    if (!API_BASE) return url;
+    const token = getAuthToken();
+    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
   }) as F;
 }
 
-export const artistApiPath = prefixed(_artistApiPath);
-export const artistPhotoApiUrl = prefixed(_artistPhotoApiUrl);
-export const artistBackgroundApiUrl = prefixed(_artistBackgroundApiUrl);
-export const albumApiPath = prefixed(_albumApiPath);
-export const albumRelatedApiPath = prefixed(_albumRelatedApiPath);
-export const albumCoverApiUrl = prefixed(_albumCoverApiUrl);
+// These are passed to useApi/api() which already prepends API_BASE — no prefix here
+export const artistApiPath = _artistApiPath;
+export const albumApiPath = _albumApiPath;
+export const albumRelatedApiPath = _albumRelatedApiPath;
+
+export const artistPhotoApiUrl = authedUrl(_artistPhotoApiUrl);
+export const artistBackgroundApiUrl = authedUrl(_artistBackgroundApiUrl);
+export const albumCoverApiUrl = authedUrl(_albumCoverApiUrl);

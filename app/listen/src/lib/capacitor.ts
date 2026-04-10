@@ -10,11 +10,12 @@ export const platform = Capacitor.getPlatform(); // "ios" | "android" | "web"
 export async function initCapacitor() {
   if (!isNative) return;
 
-  // Dark status bar to match app theme
+  // Dark status bar, overlays WebView content (no black gap)
   try {
     await StatusBar.setStyle({ style: Style.Dark });
+    await StatusBar.setOverlaysWebView({ overlay: true });
     if (platform === "android") {
-      await StatusBar.setBackgroundColor({ color: "#0a0a0f" });
+      await StatusBar.setBackgroundColor({ color: "#00000000" });
     }
   } catch {
     // Silently ignore — status bar API may not be available in all contexts

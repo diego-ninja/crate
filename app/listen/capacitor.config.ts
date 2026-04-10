@@ -14,7 +14,7 @@ const config: CapacitorConfig = {
   },
 
   ios: {
-    contentInset: "automatic",
+    contentInset: "always",
     backgroundColor: "#0a0a0f",
     preferredContentMode: "mobile",
   },
@@ -33,7 +33,7 @@ const config: CapacitorConfig = {
     },
     StatusBar: {
       style: "DARK",
-      backgroundColor: "#0a0a0f",
+      overlaysWebView: true,
     },
   },
 };

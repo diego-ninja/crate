@@ -50,14 +50,11 @@ export function ArtistHeroSection({
 
   return (
     <>
-      <div className="relative h-[340px] overflow-hidden sm:h-[400px]">
+      <div className="relative h-[420px] overflow-hidden sm:h-[400px]">
         <img
           src={photoUrl}
           alt=""
-          className="absolute inset-0 h-full w-full scale-105 object-cover opacity-30 blur-[6px]"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = "none";
-          }}
+          className="absolute inset-0 h-full w-full scale-105 object-cover opacity-40 blur-[6px]"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/78 to-background/35" />
 

@@ -61,7 +61,10 @@ export function saveRecentlyPlayed(tracks: Track[]) {
 export function getSharedAudio(key: string): HTMLAudioElement {
   const w = window as unknown as Record<string, HTMLAudioElement | undefined>;
   if (!w[key]) {
-    w[key] = new Audio();
+    const el = new Audio();
+    // Enable cross-origin playback for Capacitor (streams come from api.* domain)
+    el.crossOrigin = "anonymous";
+    w[key] = el;
   }
   return w[key]!;
 }

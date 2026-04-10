@@ -2,6 +2,12 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Prevent iOS overscroll bounce revealing black background behind content */
+html, body {
+  overscroll-behavior: none;
+  background: #0a0a0f;
+}
+
 /* Prevent iOS WebView auto-zoom on input focus (requires font-size >= 16px) */
 @media screen and (max-width: 767px) {
   input[type="text"],
