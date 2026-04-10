@@ -10,6 +10,12 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <title>Crate Listen</title>
+  <style>
+    /* Prevent iOS auto-zoom on input focus — must be in HTML head, not CSS bundle */
+    @supports (-webkit-touch-callout: none) {
+      input, textarea, select { font-size: 16px !important; }
+    }
+  </style>
 </head>
 <body>
   <div id="root"></div>
