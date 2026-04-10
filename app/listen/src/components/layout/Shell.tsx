@@ -204,10 +204,14 @@ export function Shell() {
     /^\/artists\/[^/]+\/[^/]+\/top-tracks$/.test(location.pathname) ||
     /^\/albums\/[^/]+\/[^/]+$/.test(location.pathname);
   const headerOffsetClass = overlayHeader ? "" : "pt-16";
-  // Header container is always transparent — individual elements (search bar,
-  // nav buttons) carry their own backdrop. On overlay pages (artist/album hero)
-  // this lets the hero bleed through fully.
-  const headerChromeClass = "bg-transparent border-transparent border-b-0 shadow-none";
+  // Desktop: always transparent — individual elements carry their own backdrop.
+  // Mobile: subtle backdrop so the header stays visible while scrolling.
+  // On overlay pages (artist/album hero) both are fully transparent.
+  const headerChromeClass = overlayHeader
+    ? "bg-transparent border-transparent border-b-0 shadow-none"
+    : isDesktop
+      ? "bg-transparent border-transparent border-b-0 shadow-none"
+      : "bg-app-surface/80 backdrop-blur-lg border-transparent border-b-0";
 
   // Sync with sidebar toggle without polling localStorage.
   useEffect(() => {
@@ -255,12 +259,15 @@ export function Shell() {
 
   return (
     <div className="flex min-h-screen flex-col bg-app-surface">
-      <div className={`z-app-header fixed top-0 left-0 right-0 ${headerChromeClass}`}>
+      <div
+        className={`z-app-header fixed top-0 left-0 right-0 ${headerChromeClass}`}
+        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+      >
         <TopBar />
       </div>
 
       <main className={`flex-1 overflow-x-hidden ${mobileBottomPad}`}>
-        <div className={`py-4 px-[max(1rem,env(safe-area-inset-left))] ${headerOffsetClass}`}>
+        <div className={`py-4 px-[max(1rem,env(safe-area-inset-left))] ${overlayHeader ? "" : "pt-[calc(4rem+env(safe-area-inset-top,0px))]"}`}>
           <Outlet />
         </div>
       </main>
