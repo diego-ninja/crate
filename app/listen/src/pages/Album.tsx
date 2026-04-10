@@ -4,6 +4,8 @@ import { Clock, Disc, Heart, ListPlus, MoreHorizontal, Play, Radio, Share2, Shuf
 import { toast } from "sonner";
 
 import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
+import { AppModal, ModalBody } from "@/components/ui/AppModal";
+import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { useApi } from "@/hooks/use-api";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { api } from "@/lib/api";
@@ -90,6 +92,7 @@ function buildPlayerTracks(data: AlbumData): Track[] {
 export function Album() {
   const { albumId: albumIdParam } = useParams<{ albumId?: string }>();
   const navigate = useNavigate();
+  const isDesktop = useIsDesktop();
   const { playAll, playNext } = usePlayerActions();
   const { openCreatePlaylist } = usePlaylistComposer();
   const { isSaved, saveAlbum, unsaveAlbum } = useSavedAlbums();
@@ -401,105 +404,47 @@ export function Album() {
           >
             <MoreHorizontal size={16} />
           </button>
-          {menuOpen && (
-            <AppPopover className="absolute top-full left-0 mt-2 w-72 overflow-hidden rounded-2xl">
-              <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
-                <div className="w-12 h-12 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
-                  {data.has_cover ? (
-                    <img src={coverUrl} alt={displayName} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <Disc size={20} className="text-white/20" />
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-foreground truncate">{displayName}</div>
-                  <div className="text-xs text-muted-foreground truncate">{data.artist}</div>
-                </div>
-              </div>
-
-              <div className="p-1.5">
-                <AppMenuButton
-                  onClick={() => {
-                    handlePlay();
-                    setMenuOpen(false);
-                  }}
-                >
-                  <Play size={15} />
-                  Play now
-                </AppMenuButton>
-                <AppMenuButton
-                  onClick={handlePlayNextAlbum}
-                >
-                  <ListPlus size={15} />
-                  Play next
-                </AppMenuButton>
-                <AppMenuButton
-                  className="justify-between"
-                  onClick={() => setPlaylistPickerOpen((open) => !open)}
-                >
-                  <span className="flex items-center gap-3">
-                    <ListPlus size={15} />
-                    Add to playlist
-                  </span>
-                  <span className="text-white/35">{playlistPickerOpen ? "−" : "+"}</span>
-                </AppMenuButton>
-                {playlistPickerOpen && (
-                  <div className="px-3 pb-2 space-y-1">
-                    <button
-                      className="w-full text-left rounded-lg px-3 py-2 text-sm text-foreground hover:bg-white/5 transition-colors"
-                      onClick={handleCreatePlaylistFromAlbum}
-                    >
-                      Add new playlist
-                    </button>
-                    {playlists && playlists.length > 0 ? (
-                      <AppPopoverDivider className="mx-1" />
-                    ) : null}
-                    {playlists && playlists.length > 0 ? (
-                      playlists.map((playlist) => (
-                        <button
-                          key={playlist.id}
-                          className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
-                          onClick={() => handleAddToPlaylist(playlist.id)}
-                        >
-                          {playlist.name}
-                        </button>
-                      ))
-                    ) : (
-                      <div className="px-3 py-2 text-xs text-muted-foreground">No playlists yet</div>
-                    )}
-                  </div>
-                )}
-                <AppMenuButton
-                  onClick={async () => {
-                    await handleToggleSaved();
-                    setMenuOpen(false);
-                  }}
-                >
-                  <Heart size={15} className={saved ? "fill-current text-primary" : ""} />
-                  {saved ? "Remove from my collection" : "Add to my collection"}
-                </AppMenuButton>
-                <AppMenuButton
-                  onClick={() => {
-                    navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug }));
-                    setMenuOpen(false);
-                  }}
-                >
-                  <User size={15} />
-                  Go to artist
-                </AppMenuButton>
-                <AppMenuButton
-                  onClick={async () => {
-                    await handleShare();
-                    setMenuOpen(false);
-                  }}
-                >
-                  <Share2 size={15} />
-                  Share
-                </AppMenuButton>
-              </div>
+          {menuOpen && isDesktop && (
+            <AppPopover className="absolute top-full right-0 mt-2 w-72 overflow-hidden rounded-2xl">
+              <AlbumMenuContent
+                data={data}
+                coverUrl={coverUrl}
+                displayName={displayName}
+                saved={saved}
+                playlists={playlists}
+                playlistPickerOpen={playlistPickerOpen}
+                setPlaylistPickerOpen={setPlaylistPickerOpen}
+                onPlay={() => { handlePlay(); setMenuOpen(false); }}
+                onPlayNext={handlePlayNextAlbum}
+                onCreatePlaylist={handleCreatePlaylistFromAlbum}
+                onAddToPlaylist={handleAddToPlaylist}
+                onToggleSaved={async () => { await handleToggleSaved(); setMenuOpen(false); }}
+                onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
+                onShare={async () => { await handleShare(); setMenuOpen(false); }}
+              />
             </AppPopover>
+          )}
+          {menuOpen && !isDesktop && (
+            <AppModal open={menuOpen} onClose={() => setMenuOpen(false)} maxWidthClassName="sm:max-w-sm">
+              <ModalBody className="pb-4">
+                <AlbumMenuContent
+                  data={data}
+                  coverUrl={coverUrl}
+                  displayName={displayName}
+                  saved={saved}
+                  playlists={playlists}
+                  playlistPickerOpen={playlistPickerOpen}
+                  setPlaylistPickerOpen={setPlaylistPickerOpen}
+                  onPlay={() => { handlePlay(); setMenuOpen(false); }}
+                  onPlayNext={handlePlayNextAlbum}
+                  onCreatePlaylist={handleCreatePlaylistFromAlbum}
+                  onAddToPlaylist={handleAddToPlaylist}
+                  onToggleSaved={async () => { await handleToggleSaved(); setMenuOpen(false); }}
+                  onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
+                  onShare={async () => { await handleShare(); setMenuOpen(false); }}
+                />
+              </ModalBody>
+            </AppModal>
           )}
         </div>
       </div>
@@ -573,5 +518,80 @@ export function Album() {
         )}
       </div>
     </div>
+  );
+}
+
+function AlbumMenuContent({
+  data, coverUrl, displayName, saved, playlists, playlistPickerOpen, setPlaylistPickerOpen,
+  onPlay, onPlayNext, onCreatePlaylist, onAddToPlaylist, onToggleSaved, onGoToArtist, onShare,
+}: {
+  data: { has_cover: boolean; artist: string };
+  coverUrl: string;
+  displayName: string;
+  saved: boolean;
+  playlists: { id: number; name: string }[] | null;
+  playlistPickerOpen: boolean;
+  setPlaylistPickerOpen: (fn: (open: boolean) => boolean) => void;
+  onPlay: () => void;
+  onPlayNext: () => void;
+  onCreatePlaylist: () => void;
+  onAddToPlaylist: (id: number) => void;
+  onToggleSaved: () => void;
+  onGoToArtist: () => void;
+  onShare: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-3 px-4 py-4 border-b border-white/10">
+        <div className="w-12 h-12 rounded-lg overflow-hidden bg-white/5 flex-shrink-0">
+          {data.has_cover ? (
+            <img src={coverUrl} alt={displayName} className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Disc size={20} className="text-white/20" />
+            </div>
+          )}
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-foreground truncate">{displayName}</div>
+          <div className="text-xs text-muted-foreground truncate">{data.artist}</div>
+        </div>
+      </div>
+      <div className="p-1.5">
+        <AppMenuButton onClick={onPlay}>
+          <Play size={15} /> Play now
+        </AppMenuButton>
+        <AppMenuButton onClick={onPlayNext}>
+          <ListPlus size={15} /> Play next
+        </AppMenuButton>
+        <AppMenuButton className="justify-between" onClick={() => setPlaylistPickerOpen((o) => !o)}>
+          <span className="flex items-center gap-3"><ListPlus size={15} /> Add to playlist</span>
+          <span className="text-white/35">{playlistPickerOpen ? "−" : "+"}</span>
+        </AppMenuButton>
+        {playlistPickerOpen && (
+          <div className="px-3 pb-2 space-y-1">
+            <button className="w-full text-left rounded-lg px-3 py-2 text-sm text-foreground hover:bg-white/5 transition-colors" onClick={onCreatePlaylist}>
+              Add new playlist
+            </button>
+            {playlists && playlists.length > 0 ? <AppPopoverDivider className="mx-1" /> : null}
+            {playlists?.map((p) => (
+              <button key={p.id} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors" onClick={() => onAddToPlaylist(p.id)}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+        <AppMenuButton onClick={onToggleSaved}>
+          <Heart size={15} className={saved ? "fill-current text-primary" : ""} />
+          {saved ? "Remove from collection" : "Add to collection"}
+        </AppMenuButton>
+        <AppMenuButton onClick={onGoToArtist}>
+          <User size={15} /> Go to artist
+        </AppMenuButton>
+        <AppMenuButton onClick={onShare}>
+          <Share2 size={15} /> Share
+        </AppMenuButton>
+      </div>
+    </>
   );
 }
