@@ -151,6 +151,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             auth_header = request.headers.get("Authorization", "")
             if auth_header.startswith("Bearer "):
                 token = auth_header[7:]
+        # 3. Query param token (audio/image streams where headers can't be set)
+        if not token:
+            token = request.query_params.get("token")
 
         if token:
             payload = verify_jwt(token)

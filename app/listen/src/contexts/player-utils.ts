@@ -68,21 +68,34 @@ export function getSharedAudio(key: string): HTMLAudioElement {
 
 export function getStreamUrl(track: Track): string {
   const base = _apiBase();
+  const suffix = _tokenSuffix();
 
   if (track.libraryTrackId != null) {
-    return `${base}/api/tracks/${track.libraryTrackId}/stream`;
+    return `${base}/api/tracks/${track.libraryTrackId}/stream${suffix}`;
   }
 
   if (track.navidromeId) {
-    return `${base}/api/navidrome/stream/${track.navidromeId}`;
+    return `${base}/api/navidrome/stream/${track.navidromeId}${suffix}`;
   }
 
   const playbackPath = track.path || track.id;
   if (playbackPath.includes("/")) {
-    return `${base}/api/stream/${encodeURIComponent(playbackPath).replace(/%2F/g, "/")}`;
+    return `${base}/api/stream/${encodeURIComponent(playbackPath).replace(/%2F/g, "/")}${suffix}`;
   }
 
-  return `${base}/api/navidrome/stream/${track.id}`;
+  return `${base}/api/navidrome/stream/${track.id}${suffix}`;
+}
+
+/** Append ?token= for native apps where audio element can't send Bearer headers. */
+function _tokenSuffix(): string {
+  const base = _apiBase();
+  if (!base) return ""; // web: cookies work, no token needed
+  try {
+    const token = localStorage.getItem("crate-auth-token");
+    return token ? `?token=${encodeURIComponent(token)}` : "";
+  } catch {
+    return "";
+  }
 }
 
 /** Lazy-read API base so this module doesn't import from lib/api (circular risk). */
