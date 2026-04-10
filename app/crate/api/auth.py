@@ -144,7 +144,14 @@ class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         user = None
 
+        # 1. Cookie auth (web browsers)
         token = request.cookies.get(COOKIE_NAME)
+        # 2. Bearer token auth (Capacitor native app)
+        if not token:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+
         if token:
             payload = verify_jwt(token)
             if payload:
@@ -200,7 +207,8 @@ async def login(body: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     update_user_last_login(user["id"])
     token = create_jwt(user["id"], user["email"], user["role"], username=user.get("username"), name=user.get("name"))
-    response = JSONResponse(content=_user_public(user))
+    body = {**_user_public(user), "token": token}
+    response = JSONResponse(content=body)
     _set_auth_cookie(response, token)
     return response
 

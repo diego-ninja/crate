@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 
 import type { PlaySource, Track } from "@/contexts/player-types";
 import { getTrackCacheKey } from "@/contexts/player-utils";
-import { apiUrl } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 interface PlayEventSession {
   trackKey: string;
@@ -74,7 +74,7 @@ export function usePlayEventTracker(
     const wasCompleted = reason === "completed";
     const wasSkipped = reason === "skipped";
 
-    fetch(apiUrl("/api/me/play-events"), {
+    apiFetch("/api/me/play-events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",

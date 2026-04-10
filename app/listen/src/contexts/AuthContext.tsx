@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router";
 
-import { api } from "@/lib/api";
+import { authedApi, setAuthToken } from "@/lib/api";
 
 export interface AuthUser {
   id: number;
@@ -48,11 +48,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authRequestRef.current = controller;
     setLoading(true);
     try {
-      const data = await api<AuthUser>("/api/auth/me", "GET", undefined, {
-        signal: controller.signal,
-      });
+      const data = await authedApi<AuthUser>("/api/auth/me", "GET");
       if (data && data.id) {
-        // Clear player state if a different user logged in
         const prevUserId = localStorage.getItem("listen-auth-user-id");
         if (prevUserId && prevUserId !== String(data.id)) {
           try {
@@ -86,11 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await api("/api/auth/logout", "POST");
+      await authedApi("/api/auth/logout", "POST");
     } catch {
-      // ignore logout errors and clear local auth state anyway
+      // ignore logout errors
     }
-    // Clear per-session player state so the next user doesn't see stale data
+    setAuthToken(null);
     try {
       localStorage.removeItem("listen-player-state");
       localStorage.removeItem("listen-recently-played");

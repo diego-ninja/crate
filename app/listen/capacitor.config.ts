@@ -6,8 +6,8 @@ const config: CapacitorConfig = {
   webDir: "dist",
 
   server: {
-    // Load app from local bundle (fast, works offline).
-    // API calls go to api.lespedants.org via VITE_API_URL baked at build time.
+    // App loads from local bundle. Auth uses Bearer token (not cookies)
+    // so cross-origin is not a problem.
     androidScheme: "https",
     iosScheme: "https",
     allowMixedContent: true,

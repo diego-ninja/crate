@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, setAuthToken } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 export function Login() {
@@ -28,7 +28,8 @@ export function Login() {
     setSubmitting(true);
 
     try {
-      await api("/api/auth/login", "POST", { email, password });
+      const res = await api<{ token?: string }>("/api/auth/login", "POST", { email, password });
+      if (res?.token) setAuthToken(res.token);
       await refetch();
     } catch (err) {
       if (err instanceof ApiError) {
