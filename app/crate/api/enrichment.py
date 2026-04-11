@@ -2,11 +2,10 @@ import logging
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from thefuzz import fuzz
 
-from crate.api.auth import _require_admin
+from crate.api.auth import _require_admin, _require_auth
 from crate.api._deps import artist_name_from_id
-from crate import spotify, setlistfm, musicbrainz_ext, navidrome
+from crate import spotify, setlistfm, musicbrainz_ext
 from crate.db import get_db_ctx
 from crate.lastfm import get_artist_info, get_fanart_all_images
 
@@ -229,52 +228,104 @@ def _fetch_enrichment(name: str) -> dict:
 
 
 def create_setlist_playlist(request: Request, name: str):
-    _require_admin(request)
+    user = _require_auth(request)
+    if user.get("id") is None:
+        return JSONResponse({"error": "User account required"}, status_code=403)
+
     setlist = setlistfm.get_probable_setlist(name)
     if not setlist:
         return JSONResponse({"error": "No setlist data found"}, status_code=404)
 
-    matched_ids: list[str] = []
+    from crate.api.browse_artist import _match_setlist_track
+    from crate.db import create_playlist, update_playlist
+    from crate.db.playlists import replace_playlist_tracks
+
+    matched_tracks: list[dict] = []
     unmatched: list[str] = []
+    used_ids: set[int] = set()
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                t.id,
+                t.title,
+                t.path,
+                t.duration,
+                a.name AS album
+            FROM library_tracks t
+            JOIN library_albums a ON a.id = t.album_id
+            WHERE a.artist = %s
+            ORDER BY a.year NULLS LAST, a.name, t.disc_number NULLS LAST, t.track_number NULLS LAST, t.title
+            """,
+            (name,),
+        )
+        library_tracks = [dict(row) for row in cur.fetchall()]
 
     for song in setlist:
-        title = song["title"]
-        try:
-            results = navidrome.search(f"{name} {title}", artist_count=0, album_count=0, song_count=10)
-            songs = results.get("song", [])
-
-            best_match = None
-            best_score = 0
-            for s in songs:
-                artist_score = fuzz.ratio(name.lower(), s.get("artist", "").lower())
-                title_score = fuzz.ratio(title.lower(), s.get("title", "").lower())
-                score = (artist_score + title_score) // 2
-                if score > best_score:
-                    best_score = score
-                    best_match = s
-
-            if best_match and best_score >= 70:
-                matched_ids.append(best_match["id"])
-            else:
-                unmatched.append(title)
-        except Exception:
+        title = song.get("title", "")
+        match = _match_setlist_track(title, library_tracks, used_ids)
+        if not match:
             unmatched.append(title)
+            continue
+        used_ids.add(match["id"])
+        matched_tracks.append(
+            {
+                "path": match.get("path", ""),
+                "title": match.get("title", ""),
+                "artist": name,
+                "album": match.get("album", ""),
+                "duration": match.get("duration") or 0,
+            }
+        )
 
-    if not matched_ids:
+    if not matched_tracks:
         return JSONResponse({"error": "No songs matched in library"}, status_code=404)
 
     playlist_name = f"{name} - Probable Setlist"
-    try:
-        playlist_id = navidrome.create_playlist(playlist_name, matched_ids)
-    except Exception:
-        return JSONResponse({"error": "Failed to create playlist"}, status_code=500)
+    playlist_description = f"Probable setlist generated from Setlist.fm for {name}"
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT id
+            FROM playlists
+            WHERE user_id = %s
+              AND scope = 'user'
+              AND name = %s
+            ORDER BY updated_at DESC NULLS LAST, id DESC
+            LIMIT 1
+            """,
+            (user["id"], playlist_name),
+        )
+        existing = cur.fetchone()
+
+    created = existing is None
+    if existing:
+        playlist_id = existing["id"]
+        replace_playlist_tracks(playlist_id, matched_tracks)
+        update_playlist(
+            playlist_id,
+            description=playlist_description,
+            visibility="private",
+            is_collaborative=False,
+        )
+    else:
+        playlist_id = create_playlist(
+            name=playlist_name,
+            description=playlist_description,
+            user_id=user["id"],
+            visibility="private",
+            is_collaborative=False,
+        )
+        replace_playlist_tracks(playlist_id, matched_tracks)
 
     return {
         "playlist_id": playlist_id,
         "playlist_name": playlist_name,
-        "matched": len(matched_ids),
+        "matched": len(matched_tracks),
         "unmatched": unmatched,
         "total_setlist": len(setlist),
+        "created": created,
     }
 
 

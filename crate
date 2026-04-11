@@ -222,7 +222,6 @@ def _generate_env(music_path: str, data_path: str, extra: dict):
         "SPOTIFY_SECRET": extra.get("SPOTIFY_SECRET", ""),
         "SETLISTFM_API_KEY": extra.get("SETLISTFM_API_KEY", ""),
         "TICKETMASTER_API_KEY": extra.get("TICKETMASTER_API_KEY", ""),
-        "NAVIDROME_PASSWORD": extra.get("NAVIDROME_PASSWORD", secrets.token_urlsafe(12)),
     }
 
     lines = []

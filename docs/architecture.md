@@ -15,10 +15,10 @@ Traefik (TLS + forward-auth)
   |
   +-- crate-api (FastAPI, port 8585)
   |     +-- /music (read-only mount)
+  |     +-- /rest (Open Subsonic API)
   |     +-- PostgreSQL (connection pool)
   |     +-- Redis (L2 cache)
   |     +-- slskd API (Soulseek)
-  |     +-- Navidrome API (Subsonic)
   |
   +-- crate-worker (Python, 5 thread slots)
   |     +-- /music (read-write mount)
@@ -30,7 +30,6 @@ Traefik (TLS + forward-auth)
   |
   +-- PostgreSQL 15
   +-- Redis 7 (256MB, allkeys-lru)
-  +-- Navidrome (streaming)
   +-- slskd (Soulseek)
 ```
 
@@ -99,14 +98,14 @@ Key tables:
 | Table | Purpose |
 |-------|---------|
 | `library_artists` | Artist metadata + enrichment data (name PK) |
-| `library_albums` | Album metadata, MusicBrainz IDs, Navidrome IDs |
+| `library_albums` | Album metadata, MusicBrainz IDs |
 | `library_tracks` | Track metadata + audio analysis (BPM, key, energy, mood, bliss_vector) |
 | `genres` / `artist_genres` / `album_genres` | Genre taxonomy |
 | `playlists` / `playlist_tracks` | Manual and smart playlists |
 | `tasks` / `task_events` | Task queue + SSE events |
 | `audit_log` | Destructive operation tracking |
 | `tidal_downloads` | Tidal download queue + wishlist |
-| `favorites` | Local + Navidrome favorites sync |
+| `favorites` | Local user favorites |
 | `cache` | L3 persistent cache |
 | `users` / `sessions` | Authentication |
 | `settings` | App configuration |
@@ -116,7 +115,7 @@ Schema migrations run in `init_db()` using idempotent `CREATE TABLE IF NOT EXIST
 ## Authentication
 
 - JWT tokens stored in HTTP-only cookies
-- Forward-auth middleware for Traefik (shared with Navidrome, Tidarr)
+- Forward-auth middleware for Traefik (shared with Tidarr and other bypassed services)
 - Google OAuth support (optional)
 - Role-based access: `admin` and `user` roles
 - Admin-only routes: management, settings, tasks, stack, users
@@ -133,6 +132,6 @@ Schema migrations run in `init_db()` using idempotent `CREATE TABLE IF NOT EXIST
 | Deezer | HTTP scraping | Artist photos, album covers |
 | Tidal | tiddl library | Search, download |
 | slskd | REST API | Soulseek search, download |
-| Navidrome | Subsonic API | Streaming, top tracks, playlists |
+| Crate Subsonic API | Open Subsonic | Third-party players and compatible streaming clients |
 | Cover Art Archive | REST API | Album covers by MBID |
 | lrclib.net | REST API | Synced lyrics (LRC format) |

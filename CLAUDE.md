@@ -49,7 +49,7 @@ test-music/             Local dev music (3 artists, not committed)
 ### Infrastructure
 - Docker Compose (4 containers + AudioMuse via profile)
 - Traefik reverse proxy (production)
-- Navidrome as streaming backend (Subsonic API)
+- Crate exposes its own Open Subsonic-compatible API for streaming clients
 
 ## Database Patterns
 
@@ -190,4 +190,4 @@ Login: yosoy@diego.ninja / admin (dev), same email in production.
 
 - Host: root@104.152.210.73
 - Path: /home/crate/crate
-- Domain: admin.lespedants.org (UI), play.lespedants.org (Navidrome)
+- Domain: admin.lespedants.org (UI), api.lespedants.org/rest (Open Subsonic API)

@@ -199,19 +199,9 @@ def my_library(request: Request):
 
 @router.get("/sync")
 def my_sync_status(request: Request):
-    """External service sync status. Navidrome removed — returns empty for backwards compat."""
+    """External service sync status. Returns an empty service list for backwards compat."""
     _require_auth(request)
-    return {
-        "navidrome_connected": False,
-        "navidrome": {
-            "provider": "navidrome",
-            "status": "unlinked",
-            "external_username": None,
-            "last_error": None,
-            "last_task_id": None,
-            "last_synced_at": None,
-        },
-    }
+    return {"services": []}
 
 
 @router.get("/followed-playlists")

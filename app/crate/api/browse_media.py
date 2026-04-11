@@ -57,7 +57,7 @@ def api_search(request: Request, q: str = "", limit: int = 20):
             """
             SELECT t.id, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
                    a.name AS album, ar.id AS artist_id, ar.slug AS artist_slug,
-                   t.path, t.duration, t.navidrome_id
+                   t.path, t.duration
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
             LEFT JOIN library_artists ar ON ar.name = t.artist
@@ -105,7 +105,6 @@ def api_search(request: Request, q: str = "", limit: int = 20):
             "album": row["album"],
             "path": row["path"],
             "duration": row["duration"],
-            "navidrome_id": row["navidrome_id"],
         }
         for row in track_rows
     ]
@@ -116,7 +115,7 @@ def api_search(request: Request, q: str = "", limit: int = 20):
 def api_favorites_list(request: Request):
     _require_auth(request)
     with get_db_ctx() as cur:
-        cur.execute("SELECT item_type, item_id, navidrome_id, created_at FROM favorites ORDER BY created_at DESC")
+        cur.execute("SELECT item_type, item_id, created_at FROM favorites ORDER BY created_at DESC")
         items = [dict(row) for row in cur.fetchall()]
     return {"items": items}
 
@@ -451,7 +450,7 @@ def api_browse_mood_tracks(request: Request, mood: str, limit: int = Query(50, g
             f"""SELECT t.id, t.title, t.artist, a.name AS album, t.path, t.duration,
                        ar.id AS artist_id, ar.slug AS artist_slug,
                        a.id AS album_id, a.slug AS album_slug,
-                       t.bpm, t.energy, t.danceability, t.valence, t.navidrome_id
+                       t.bpm, t.energy, t.danceability, t.valence
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
                 LEFT JOIN library_artists ar ON ar.name = t.artist

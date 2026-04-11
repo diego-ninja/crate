@@ -236,7 +236,7 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
 
         start_scan()
     except Exception:
-        log.debug("Failed to start Navidrome scan after Tidal download", exc_info=True)
+        log.debug("Failed to start library scan after Tidal download", exc_info=True)
 
     emit_task_event(
         task_id,
@@ -964,7 +964,7 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
 
         start_scan()
     except Exception:
-        log.debug("Failed to start Navidrome scan after library upload", exc_info=True)
+        log.debug("Failed to start library scan after library upload", exc_info=True)
 
     shutil.rmtree(staging_dir, ignore_errors=True)
     return {

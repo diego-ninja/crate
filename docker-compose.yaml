@@ -435,7 +435,7 @@ services:
     depends_on:
       - audiomuse-redis
       - audiomuse-postgres
-      - navidrome
+      - crate-api
     networks:
       - crate
     labels:

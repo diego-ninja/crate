@@ -16,8 +16,6 @@ def _normalize_playlist_row(row: dict) -> dict:
     d["is_active"] = True if d.get("is_active") is None else bool(d.get("is_active"))
     d["visibility"] = d.get("visibility") or ("public" if d["scope"] == "system" else "private")
     d["is_collaborative"] = bool(d.get("is_collaborative"))
-    d["navidrome_public"] = bool(d.get("navidrome_public"))
-    d["navidrome_projection_status"] = d.get("navidrome_projection_status") or "unprojected"
     d["is_system"] = d["scope"] == "system"
     if d.get("cover_path"):
         d["cover_data_url"] = f"/api/playlists/{d['id']}/cover"
@@ -203,9 +201,7 @@ def update_playlist(playlist_id: int, **kwargs):
         "name", "description", "cover_data_url", "cover_path", "scope", "visibility",
         "is_collaborative", "generation_mode",
         "is_curated", "is_active", "managed_by_user_id", "curation_key",
-        "featured_rank", "category", "navidrome_playlist_id",
-        "navidrome_public", "navidrome_projection_status",
-        "navidrome_projection_error", "navidrome_projected_at",
+        "featured_rank", "category",
     ):
         if key in kwargs:
             fields.append(f"{key} = %s")
@@ -226,30 +222,6 @@ def delete_playlist(playlist_id: int):
         cur.execute("DELETE FROM playlists WHERE id = %s", (playlist_id,))
 
 
-def set_playlist_navidrome_projection(
-    playlist_id: int,
-    *,
-    navidrome_playlist_id: str | None = None,
-    navidrome_public: bool | None = None,
-    status: str | None = None,
-    error: str | None = None,
-    projected_at: str | None = None,
-):
-    kwargs: dict = {}
-    if navidrome_playlist_id is not None:
-        kwargs["navidrome_playlist_id"] = navidrome_playlist_id
-    if navidrome_public is not None:
-        kwargs["navidrome_public"] = navidrome_public
-    if status is not None:
-        kwargs["navidrome_projection_status"] = status
-    if error is not None:
-        kwargs["navidrome_projection_error"] = error
-    if projected_at is not None:
-        kwargs["navidrome_projected_at"] = projected_at
-    if kwargs:
-        update_playlist(playlist_id, **kwargs)
-
-
 def get_playlist_tracks(playlist_id: int) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute(
@@ -257,14 +229,13 @@ def get_playlist_tracks(playlist_id: int) -> list[dict]:
             SELECT
                 pt.*,
                 lt.id AS track_id,
-                lt.navidrome_id,
                 ar.id AS artist_id,
                 ar.slug AS artist_slug,
                 alb.id AS album_id,
                 alb.slug AS album_slug
             FROM playlist_tracks pt
             LEFT JOIN LATERAL (
-                SELECT id, navidrome_id, path, artist, album, album_id
+                SELECT id, path, artist, album, album_id
                 FROM library_tracks lt
                 WHERE lt.path = pt.track_path
                    OR lt.path LIKE ('%%/' || pt.track_path)

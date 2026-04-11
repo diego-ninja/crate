@@ -19,10 +19,10 @@ from crate.auth import (
     hash_password, verify_password, create_jwt, verify_jwt, JWT_EXPIRY_HOURS,
 )
 from crate.db import (
-    create_user, get_user_by_email, get_user_by_google_id, get_user_by_id,
+    create_user, get_user_by_email, get_user_by_id,
     get_user_by_external_identity, update_user_last_login, update_user, list_users, delete_user, get_db_ctx,
-    get_user_external_identity, suggest_username, upsert_user_external_identity, list_user_external_identities,
-    unlink_user_external_identity, create_task, create_session, list_sessions, touch_session, revoke_session,
+    get_user_external_identity, upsert_user_external_identity, list_user_external_identities,
+    unlink_user_external_identity, create_session, list_sessions, touch_session, revoke_session,
     revoke_other_sessions, get_session, get_setting, set_setting,
     create_auth_invite, list_auth_invites, consume_auth_invite,
 )
@@ -250,39 +250,6 @@ def _resolve_provider_subject(provider: str, payload: dict) -> tuple[str, str, s
     raise HTTPException(status_code=400, detail="Unsupported provider")
 
 
-def _schedule_navidrome_sync(user: dict, username: str | None = None) -> str:
-    """Navidrome sync removed — no-op stub."""
-    return ""
-
-
-def _default_navidrome_username(user: dict) -> str:
-    return user.get("username") or suggest_username(user["email"])
-
-
-def _DEAD_schedule_navidrome_sync(user: dict, username: str | None = None) -> str:
-    target_username = username or _default_navidrome_username(user)
-    upsert_user_external_identity(
-        user["id"],
-        "navidrome",
-        external_username=target_username,
-        status="pending",
-        last_error=None,
-    )
-    task_id = create_task(
-        "sync_user_navidrome",
-        {"user_id": user["id"], "username": target_username},
-    )
-    upsert_user_external_identity(
-        user["id"],
-        "navidrome",
-        external_username=target_username,
-        status="pending",
-        last_task_id=task_id,
-        last_error=None,
-    )
-    return task_id
-
-
 def _iso_datetime(value):
     return value.isoformat() if hasattr(value, "isoformat") else value
 
@@ -306,11 +273,6 @@ class CreateUserRequest(BaseModel):
     password: str
     name: Optional[str] = None
     role: str = "user"
-
-
-class AdminNavidromeLinkRequest(BaseModel):
-    username: str
-    create_if_missing: bool = False
 
 
 class OAuthStartRequest(BaseModel):
@@ -463,7 +425,6 @@ async def register(request: Request, body: RegisterRequest):
         password_hash=pw_hash,
         role="user",
     )
-    _schedule_navidrome_sync(user)
     update_user_last_login(user["id"])
     token, _ = _create_login_session(user, request)
     response = JSONResponse(content={**_user_public(user), "token": token}, status_code=201)
@@ -504,7 +465,7 @@ async def auth_verify(request: Request):
     if not user:
         domain = os.environ.get("DOMAIN", "localhost")
         # Validate X-Forwarded-Host against allowed domains to prevent open redirect
-        allowed_hosts = {f"admin.{domain}", f"listen.{domain}", f"play.{domain}", domain}
+        allowed_hosts = {f"admin.{domain}", f"listen.{domain}", domain}
         original_host = request.headers.get("X-Forwarded-Host", f"admin.{domain}")
         if original_host not in allowed_hosts:
             original_host = f"admin.{domain}"
@@ -522,19 +483,11 @@ async def auth_verify(request: Request):
 
 @router.get("/verify-soft")
 async def auth_verify_soft(request: Request):
-    """Soft verify: always 200, injects Remote-User if authenticated (for play, search).
-    This allows services with their own auth to work — but auto-logs in if MusicDock cookie exists.
-    Uses username (not email) as Remote-User for Navidrome compatibility."""
+    """Soft verify: always 200 and injects identity headers if authenticated."""
     user = getattr(request.state, "user", None)
     response = Response(status_code=200)
     if user:
-        linked = get_user_external_identity(user["id"], "navidrome") if user.get("id") else None
-        username = (
-            linked.get("external_username")
-            if linked and linked.get("status") != "unlinked" and linked.get("external_username")
-            else user.get("username") or user.get("email", "").split("@")[0]
-        )
-        response.headers["Remote-User"] = username or "unknown"
+        response.headers["Remote-User"] = user.get("username") or user.get("email") or "unknown"
         response.headers["Remote-Name"] = user.get("name") or ""
         response.headers["Remote-Email"] = user.get("email") or ""
         response.headers["Remote-Role"] = user.get("role") or "user"
@@ -861,7 +814,6 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
                 last_error=None,
                 metadata={"email": email},
             )
-            _schedule_navidrome_sync(user)
 
     update_user_last_login(user["id"])
     token, _ = _create_login_session(user, request)
@@ -986,10 +938,7 @@ async def admin_create_user(request: Request, body: CreateUserRequest):
         raise HTTPException(status_code=409, detail="Email already registered")
     pw_hash = hash_password(body.password)
     user = create_user(email=body.email, name=body.name, password_hash=pw_hash, role=body.role)
-    task_id = _schedule_navidrome_sync(user)
-    result = _user_public(user)
-    result["navidrome_task_id"] = task_id
-    return result
+    return _user_public(user)
 
 
 @router.get("/users/{user_id}")
@@ -1047,94 +996,4 @@ async def admin_delete_user(request: Request, user_id: int):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     delete_user(user_id)
-    return {"ok": True}
-
-
-@router.get("/navidrome/users")
-async def admin_list_navidrome_users(request: Request):
-    _require_admin(request)
-    from crate import navidrome
-
-    try:
-        users = navidrome.get_users()
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Navidrome unavailable: {exc}") from exc
-
-    return [
-        {
-            "username": user.get("username") or user.get("userName") or "",
-            "email": user.get("email") or "",
-            "admin_role": bool(user.get("adminRole")),
-        }
-        for user in users
-        if user.get("username") or user.get("userName")
-    ]
-
-
-@router.get("/users/{user_id}/sync")
-async def admin_user_sync_status(request: Request, user_id: int):
-    _require_admin(request)
-    user = get_user_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    from crate import navidrome
-
-    identity = get_user_external_identity(user_id, "navidrome")
-    return {
-        "user_id": user_id,
-        "navidrome_connected": navidrome.ping(),
-        "navidrome": identity or {
-            "provider": "navidrome",
-            "status": "unlinked",
-            "external_username": None,
-            "last_error": None,
-            "last_task_id": None,
-            "last_synced_at": None,
-        },
-    }
-
-
-@router.post("/users/{user_id}/navidrome-link")
-async def admin_link_navidrome_user(request: Request, user_id: int, body: AdminNavidromeLinkRequest):
-    _require_admin(request)
-    user = get_user_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    username = body.username.strip()
-    if not username:
-        raise HTTPException(status_code=422, detail="Username is required")
-
-    if body.create_if_missing:
-        task_id = _schedule_navidrome_sync(user, username=username)
-        return {"task_id": task_id, "identity": get_user_external_identity(user_id, "navidrome")}
-
-    from datetime import datetime, timezone
-    from crate import navidrome
-
-    nd_user = navidrome.get_user(username)
-    if not nd_user:
-        raise HTTPException(status_code=404, detail="Navidrome user not found")
-
-    identity = upsert_user_external_identity(
-        user_id,
-        "navidrome",
-        external_username=username,
-        external_user_id=str(nd_user.get("id") or ""),
-        status="synced",
-        last_error=None,
-        last_task_id=None,
-        last_synced_at=datetime.now(timezone.utc).isoformat(),
-    )
-    return {"ok": True, "identity": identity}
-
-
-@router.post("/users/{user_id}/navidrome-unlink")
-async def admin_unlink_navidrome_user(request: Request, user_id: int):
-    _require_admin(request)
-    user = get_user_by_id(user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    unlink_user_external_identity(user_id, "navidrome")
     return {"ok": True}

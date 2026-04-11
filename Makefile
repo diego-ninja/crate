@@ -15,7 +15,7 @@ DC_LOCAL      := $(DC) -f docker-compose.yaml -f docker-compose.override.yaml
 
 # Dominios locales
 LOCAL_DOMAIN  := crate.local
-LOCAL_HOSTS   := traefik auth collection play search web api admin ai
+LOCAL_HOSTS   := traefik auth collection search web api admin ai
 
 # Colores
 GREEN  := \033[0;32m
@@ -139,7 +139,7 @@ down: ## Parar stack local
 restart: down up ## Reiniciar stack local
 
 .PHONY: logs
-logs: ## Ver logs (uso: make logs o make logs s=navidrome)
+logs: ## Ver logs (uso: make logs o make logs s=crate-api)
 	@if [ -n "$(s)" ]; then \
 		$(DC_LOCAL) logs -f $(s); \
 	else \
@@ -160,8 +160,8 @@ pull: ## Pull de imagenes en local
 	@echo "$(GREEN)Imagenes actualizadas$(NC)"
 
 .PHONY: shell
-shell: ## Shell en un servicio (uso: make shell s=navidrome)
-	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make shell s=navidrome$(NC)"; exit 1; fi
+shell: ## Shell en un servicio (uso: make shell s=crate-api)
+	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make shell s=crate-api$(NC)"; exit 1; fi
 	@$(DC_LOCAL) exec $(s) sh
 
 # ===========================================================================
@@ -209,7 +209,7 @@ _setup-hosts:
 
 .PHONY: _create-dirs
 _create-dirs:
-	@mkdir -p data/{traefik/local/certs,authelia/{secrets,config,logs},lidarr,navidrome,tidarr,tidalrr,slskd,soulsync/{config,logs},nginx/{html,conf.d,logs}}
+	@mkdir -p data/{traefik/local/certs,authelia/{secrets,config,logs},lidarr,tidarr,tidalrr,slskd,soulsync/{config,logs},nginx/{html,conf.d,logs}}
 	@mkdir -p media/{music,downloads/{tidal/{incomplete,albums,tracks,playlists,videos},soulseek/incomplete}}
 	@echo "$(GREEN)Directorios creados$(NC)"
 
@@ -270,7 +270,7 @@ deploy-pull: ## Pull de imagenes en remoto
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
 
 .PHONY: deploy-logs
-deploy-logs: ## Ver logs en remoto (uso: make deploy-logs s=navidrome)
+deploy-logs: ## Ver logs en remoto (uso: make deploy-logs s=crate-api)
 	@if [ -n "$(s)" ]; then \
 		$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml logs -f --tail=100 $(s)"; \
 	else \
@@ -282,8 +282,8 @@ deploy-ps: ## Estado de servicios en remoto
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml ps --format 'table {{.Name}}\t{{.Status}}'"
 
 .PHONY: deploy-shell
-deploy-shell: ## Shell remoto en un servicio (uso: make deploy-shell s=navidrome)
-	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make deploy-shell s=navidrome$(NC)"; exit 1; fi
+deploy-shell: ## Shell remoto en un servicio (uso: make deploy-shell s=crate-api)
+	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make deploy-shell s=crate-api$(NC)"; exit 1; fi
 	@$(SSH) -t "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml exec $(s) sh"
 
 .PHONY: deploy-ssh
@@ -409,5 +409,5 @@ help: ## Mostrar esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo ""
-	@echo "Ejemplo: $(YELLOW)make logs s=navidrome$(NC)"
+	@echo "Ejemplo: $(YELLOW)make logs s=crate-api$(NC)"
 	@echo ""

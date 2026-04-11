@@ -8,8 +8,8 @@ from crate.playlist_covers import delete_playlist_cover, playlist_cover_abspath
 from crate.db import (
     create_playlist, get_playlists, get_playlist, update_playlist,
     delete_playlist, get_playlist_tracks, add_playlist_tracks,
-    remove_playlist_track, reorder_playlist, get_db_ctx, create_task,
-    get_user_external_identity, can_view_playlist, can_edit_playlist, is_playlist_owner,
+    remove_playlist_track, reorder_playlist, get_db_ctx,
+    can_view_playlist, can_edit_playlist, is_playlist_owner,
     get_playlist_members, add_playlist_member, remove_playlist_member,
     create_playlist_invite, consume_playlist_invite,
 )
@@ -42,10 +42,6 @@ class AddTracksRequest(BaseModel):
 
 class ReorderRequest(BaseModel):
     track_ids: list[int]
-
-
-class SyncNavidromeRequest(BaseModel):
-    playlist_id: int
 
 
 class PlaylistMemberRequest(BaseModel):
@@ -255,35 +251,6 @@ def generate_smart(request: Request, playlist_id: int):
     replace_playlist_tracks(playlist_id, tracks or [])
 
     return {"ok": True, "track_count": len(tracks)}
-# ── Navidrome sync ───────────────────────────────────────────────
-
-@router.post("/{playlist_id}/sync-navidrome")
-def sync_to_navidrome(request: Request, playlist_id: int):
-    """Create/update this playlist in Navidrome."""
-    user = _require_auth(request)
-    pl = get_playlist(playlist_id)
-    if not pl:
-        raise HTTPException(status_code=404, detail="Playlist not found")
-    owner_id = pl.get("user_id")
-    if owner_id != user["id"] and user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Not your playlist")
-
-    identity = get_user_external_identity(owner_id, "navidrome")
-    if not identity or identity.get("status") != "synced" or not identity.get("external_username"):
-        raise HTTPException(
-            status_code=409,
-            detail="Navidrome user is not linked yet for this playlist owner",
-        )
-
-    task_id = create_task(
-        "sync_playlist_navidrome",
-        {
-            "playlist_id": playlist_id,
-            "user_id": owner_id,
-            "navidrome_username": identity["external_username"],
-        },
-    )
-    return {"task_id": task_id}
 
 
 @router.get("/{playlist_id}/members")

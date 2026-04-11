@@ -41,13 +41,13 @@ Crate indexes your music collection, enriches it with metadata from multiple sou
 - Web audio player with direct file streaming
 - 4 real-time visualizer modes (bars, wave, radial, glow) via Web Audio API
 - Queue management, shuffle, repeat, playback speed, sleep timer
-- Playlist export (.m3u), save to playlist, scrobble to Navidrome
+- Playlist export (.m3u), save to playlist, native play history
 - Synced lyrics from lrclib.net
 
 **Smart Playlists**
 - Composable rules: genre, BPM, energy, danceability, valence, year, key, artist, format, popularity
 - Match all/any conditions
-- Auto-sync to Navidrome
+- Native playlist generation and refresh
 
 **Discovery**
 - Discography completeness (local vs MusicBrainz)
@@ -95,7 +95,6 @@ Crate indexes your music collection, enriches it with metadata from multiple sou
 | **crate-listen** | React 19 + Vite + Tailwind 4 | Consumer-facing listening app, built as a PWA and intended to ship via Capacitor |
 | **PostgreSQL 15** | | Persistent storage |
 | **Redis 7** | | Multi-tier cache (256MB, allkeys-lru) |
-| **Navidrome** | Subsonic API | Streaming backend, top tracks, playlist sync |
 | **slskd** | | Soulseek client (REST API) |
 
 The API container mounts the music library as **read-only**. All filesystem modifications (tag writes, file moves, downloads) go through the worker via the task queue.
@@ -112,7 +111,7 @@ The API container mounts the music library as **read-only**. All filesystem modi
 
 **Audio Analysis**: Essentia (signal processing), PANNs CNN14 (AudioSet classification), bliss-rs (Rust, song similarity vectors)
 
-**Infrastructure**: Docker Compose, Traefik, Navidrome, slskd, Redis, PostgreSQL
+**Infrastructure**: Docker Compose, Traefik, slskd, Redis, PostgreSQL
 
 ## Quick Start
 
@@ -154,7 +153,6 @@ make deploy
 | `SPOTIFY_ID` / `SPOTIFY_SECRET` | No | Spotify API credentials |
 | `SLSKD_API_KEY` | No | slskd API key (for Soulseek) |
 | `JWT_SECRET` | Yes | Secret for JWT tokens |
-| `NAVIDROME_PASSWORD` | Yes | Navidrome admin password |
 
 ## Makefile Commands
 

@@ -33,7 +33,7 @@ def audiomuse_status(request: Request):
 
 @router.get("/api/audiomuse/tracks")
 def audiomuse_track_data(request: Request, ids: str = ""):
-    """Get analysis data for tracks by Navidrome song IDs (comma-separated).
+    """Get analysis data for tracks by AudioMuse item IDs (comma-separated).
     Returns {item_id: {tempo, key, scale, energy, mood}} for analyzed tracks."""
     _require_auth(request)
     if not ids:

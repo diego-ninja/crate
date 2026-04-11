@@ -29,10 +29,6 @@ def get_settings(request: Request):
         "schedules": get_schedules(),
         "worker": {"max_workers": int(get_setting("max_workers", "5"))},
         "enrichment": json.loads(get_setting("enrichment_sources", DEFAULT_ENRICHMENT)),
-        "navidrome": {
-            "connected": navidrome.ping(),
-            "version": navidrome.get_server_version(),
-        },
         "cache_stats": get_cache_stats(),
         "db_stats": get_db_table_stats(),
         "library": {
@@ -118,15 +114,6 @@ def update_enrichment(request: Request, body: dict[str, bool]):
         raise HTTPException(status_code=422, detail=f"Invalid sources: {', '.join(sorted(invalid))}")
     set_setting("enrichment_sources", json.dumps(body))
     return {"ok": True}
-
-
-@router.post("/navidrome/test")
-def test_navidrome(request: Request):
-    _require_admin(request)
-    return {
-        "connected": navidrome.ping(),
-        "version": navidrome.get_server_version(),
-    }
 
 
 @router.post("/cache/clear")

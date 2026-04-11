@@ -7,14 +7,12 @@ from crate.playlist_covers import delete_playlist_cover
 from crate.db import (
     add_playlist_tracks,
     create_playlist,
-    create_task,
     delete_playlist,
     get_db_ctx,
     get_playlist,
     get_playlist_followers_count,
     get_playlist_tracks,
     list_system_playlists,
-    set_playlist_navidrome_projection,
     update_playlist,
 )
 
@@ -199,23 +197,3 @@ def admin_generate_system_playlist(request: Request, playlist_id: int):
     item = _serialize_admin_playlist(playlist, include_tracks=True)
     item["generated_track_count"] = len(tracks)
     return item
-
-
-@router.post("/{playlist_id}/project-navidrome")
-def admin_project_system_playlist_navidrome(request: Request, playlist_id: int):
-    _require_admin(request)
-    playlist = _require_system_playlist(playlist_id)
-    if not playlist.get("is_active"):
-        raise HTTPException(status_code=409, detail="Activate the playlist before projecting it")
-
-    set_playlist_navidrome_projection(
-        playlist_id,
-        navidrome_public=True,
-        status="pending",
-        error="",
-    )
-    task_id = create_task(
-        "sync_system_playlist_navidrome",
-        {"playlist_id": playlist_id},
-    )
-    return {"task_id": task_id, "playlist_id": playlist_id}

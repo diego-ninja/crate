@@ -503,8 +503,7 @@ def _create_schema(cur):
             discogs_profile TEXT,
             discogs_members_json JSONB,
             latest_release_date TEXT,
-            content_hash TEXT,
-            navidrome_id TEXT
+            content_hash TEXT
         )
     """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_id ON library_artists(id)")
@@ -534,7 +533,6 @@ def _create_schema(cur):
             lastfm_listeners INTEGER,
             lastfm_playcount BIGINT,
             popularity INTEGER,
-            navidrome_id TEXT,
             UNIQUE(artist, name)
         )
     """)
@@ -583,8 +581,7 @@ def _create_schema(cur):
             lastfm_listeners INTEGER,
             lastfm_playcount BIGINT,
             popularity INTEGER,
-            rating INTEGER DEFAULT 0,
-            navidrome_id TEXT
+            rating INTEGER DEFAULT 0
         )
     """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_slug ON library_tracks(slug)")
@@ -685,11 +682,6 @@ def _create_schema(cur):
             curation_key TEXT,
             featured_rank INTEGER,
             category TEXT,
-            navidrome_playlist_id TEXT,
-            navidrome_public BOOLEAN NOT NULL DEFAULT FALSE,
-            navidrome_projection_status TEXT NOT NULL DEFAULT 'unprojected',
-            navidrome_projection_error TEXT,
-            navidrome_projected_at TIMESTAMPTZ,
             track_count INTEGER DEFAULT 0,
             total_duration DOUBLE PRECISION DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL,
@@ -808,7 +800,6 @@ def _create_schema(cur):
             id SERIAL PRIMARY KEY,
             item_type TEXT NOT NULL,
             item_id TEXT NOT NULL,
-            navidrome_id TEXT,
             user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
             created_at TIMESTAMPTZ NOT NULL,
             UNIQUE(item_type, item_id)
@@ -1287,11 +1278,6 @@ def _m09_add_playlist_extended_columns(cur):
         ("curation_key", "TEXT", None),
         ("featured_rank", "INTEGER", None),
         ("category", "TEXT", None),
-        ("navidrome_playlist_id", "TEXT", None),
-        ("navidrome_public", "BOOLEAN", "FALSE"),
-        ("navidrome_projection_status", "TEXT", "'unprojected'"),
-        ("navidrome_projection_error", "TEXT", None),
-        ("navidrome_projected_at", "TEXT", None),
     ]:
         default_clause = f" DEFAULT {default}" if default is not None else ""
         cur.execute(f"""
@@ -1342,17 +1328,6 @@ def _m10_fix_user_followed_playlists_fk(cur):
             END IF;
         END $$;
     """)
-
-
-def _m11_add_navidrome_ids(cur):
-    for table in ("library_tracks", "library_albums", "library_artists"):
-        cur.execute(f"""
-            DO $$ BEGIN
-                ALTER TABLE {table} ADD COLUMN navidrome_id TEXT;
-            EXCEPTION WHEN duplicate_column THEN NULL;
-            END $$
-        """)
-
 
 def _m12_add_shows_address_columns(cur):
     for col, col_type in [("address_line1", "TEXT"), ("postal_code", "TEXT")]:
@@ -1496,7 +1471,6 @@ def _m20_convert_to_timestamptz(cur):
         ("tidal_downloads", "created_at", "TIMESTAMPTZ"),
         ("tidal_downloads", "completed_at", "TIMESTAMPTZ"),
         ("tidal_monitored_artists", "last_checked", "TIMESTAMPTZ"),
-        ("playlists", "navidrome_projected_at", "TIMESTAMPTZ"),
         ("playlists", "created_at", "TIMESTAMPTZ"),
         ("playlists", "updated_at", "TIMESTAMPTZ"),
         ("playlist_tracks", "added_at", "TIMESTAMPTZ"),
@@ -1752,7 +1726,6 @@ _MIGRATIONS = [
     (8, "add_task_events_fk", _m08_add_task_events_fk),
     (9, "add_playlist_extended_columns", _m09_add_playlist_extended_columns),
     (10, "fix_user_followed_playlists_fk", _m10_fix_user_followed_playlists_fk),
-    (11, "add_navidrome_ids", _m11_add_navidrome_ids),
     (12, "add_shows_address_columns", _m12_add_shows_address_columns),
     (13, "add_track_rating", _m13_add_track_rating),
     (14, "add_tasks_dramatiq_columns", _m14_add_tasks_dramatiq_columns),

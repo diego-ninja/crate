@@ -35,7 +35,7 @@ def ping() -> dict | None:
 
 
 def start_collection_sync() -> dict | None:
-    """Trigger collection sync (fetches tracks from Navidrome)."""
+    """Trigger collection sync against the configured media server."""
     return _post("/api/collection/start")
 
 

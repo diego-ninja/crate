@@ -101,7 +101,6 @@ All endpoints require authentication (JWT cookie) unless noted. Admin-only endpo
 | PUT | `/playlists/{id}` | Update playlist |
 | DELETE | `/playlists/{id}` | Delete playlist |
 | POST | `/playlists/{id}/generate` | Regenerate smart playlist |
-| POST | `/playlists/{id}/sync-navidrome` | Sync to Navidrome |
 
 ## Genres
 
@@ -139,7 +138,6 @@ All endpoints require authentication (JWT cookie) unless noted. Admin-only endpo
 |--------|----------|-------------|
 | GET | `/settings` | Full configuration |
 | PUT | `/settings/{section}` | Update section (worker, schedules, enrichment, etc.) |
-| POST | `/settings/navidrome/test` | Test Navidrome connection |
 | POST | `/settings/cache/clear` | Clear cache (all or by type) |
 
 ## Tasks (admin)

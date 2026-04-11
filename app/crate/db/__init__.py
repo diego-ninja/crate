@@ -64,7 +64,7 @@ from crate.db.playlists import (
     remove_playlist_track, reorder_playlist,
     list_system_playlists, is_playlist_followed, follow_playlist,
     unfollow_playlist, get_playlist_followers_count, get_followed_system_playlists,
-    set_playlist_navidrome_projection, get_playlist_members, get_playlist_member,
+    get_playlist_members, get_playlist_member,
     can_view_playlist, can_edit_playlist, is_playlist_owner,
     add_playlist_member, remove_playlist_member,
     create_playlist_invite, consume_playlist_invite,

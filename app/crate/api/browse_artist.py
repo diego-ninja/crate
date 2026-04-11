@@ -861,8 +861,7 @@ def api_artist_setlist_playable(request: Request, name: str):
                 t.album,
                 t.album_id,
                 a.slug AS album_slug,
-                t.duration,
-                t.navidrome_id
+                t.duration
             FROM library_tracks t
             JOIN library_albums a ON a.id = t.album_id
             WHERE a.artist = %s
@@ -891,7 +890,6 @@ def api_artist_setlist_playable(request: Request, name: str):
                 "album_slug": match.get("album_slug"),
                 "path": match.get("path", ""),
                 "duration": match.get("duration"),
-                "navidrome_id": match.get("navidrome_id"),
                 "setlist_title": song.get("title", ""),
                 "position": song.get("position"),
             }

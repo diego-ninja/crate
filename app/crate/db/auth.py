@@ -144,15 +144,13 @@ def list_users() -> list[dict]:
                     FROM user_external_identities
                     WHERE user_id = u.id
                 ), '[]'::json) AS connected_accounts,
-                uei.external_username AS navidrome_username,
-                uei.status AS navidrome_status,
-                uei.last_error AS navidrome_last_error,
-                uei.last_task_id AS navidrome_last_task_id,
-                uei.last_synced_at AS navidrome_last_synced_at
+                COALESCE((
+                    SELECT MAX(COALESCE(last_seen_at, created_at))
+                    FROM sessions s
+                    WHERE s.user_id = u.id
+                      AND s.revoked_at IS NULL
+                ), u.last_login) AS last_seen_at
             FROM users u
-            LEFT JOIN user_external_identities uei
-              ON uei.user_id = u.id
-             AND uei.provider = 'navidrome'
             ORDER BY u.id
             """
         )

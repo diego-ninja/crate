@@ -8,7 +8,6 @@ class TestRadioApiContracts:
         tracks = [
             {
                 "track_id": 42,
-                "navidrome_id": "nd-42",
                 "track_path": "Converge/Jane Doe/01 - Concubine.flac",
                 "title": "Concubine",
                 "artist": "Converge",
@@ -35,7 +34,6 @@ class TestRadioApiContracts:
         tracks = [
             {
                 "track_id": 99,
-                "navidrome_id": "nd-99",
                 "track_path": "Converge/Jane Doe/01 - Concubine.flac",
                 "title": "Concubine",
                 "artist": "Converge",
@@ -45,7 +43,6 @@ class TestRadioApiContracts:
             },
             {
                 "track_id": 123,
-                "navidrome_id": "nd-123",
                 "track_path": "Botch/We Are the Romans/02 - To Our Friends in the Great White North.flac",
                 "title": "To Our Friends in the Great White North",
                 "artist": "Botch",
@@ -70,7 +67,6 @@ class TestRadioApiContracts:
         tracks = [
             {
                 "track_id": 10,
-                "navidrome_id": "nd-10",
                 "track_path": "Converge/Jane Doe/01 - Concubine.flac",
                 "title": "Concubine",
                 "artist": "Converge",
@@ -100,7 +96,6 @@ class TestRadioApiContracts:
         tracks = [
             {
                 "track_id": 77,
-                "navidrome_id": "nd-77",
                 "track_path": "Converge/Jane Doe/11 - Jane Doe.flac",
                 "title": "Jane Doe",
                 "artist": "Converge",
