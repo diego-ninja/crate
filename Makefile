@@ -29,7 +29,7 @@ NC     := \033[0m
 # DEV (entorno de desarrollo local)
 # ===========================================================================
 
-DC_DEV := $(DC) -f docker-compose.dev.yaml
+DC_DEV := $(DC) -p crate-dev -f docker-compose.dev.yaml
 
 .PHONY: dev
 dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend dev servers
