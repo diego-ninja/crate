@@ -252,7 +252,7 @@ def api_artists(
         start = (page - 1) * per_page
         return {"items": artists[start : start + per_page], "total": total, "page": page, "per_page": per_page}
 
-    select_cols = "la.*"
+    select_cols = "la.*, COALESCE(la.dir_mtime, EXTRACT(EPOCH FROM la.updated_at)::bigint) AS recent_sort"
     joins = ""
     where_clauses = ["1=1"]
     params: list = []
@@ -288,7 +288,7 @@ def api_artists(
         "name": "la.name ASC",
         "popularity": "la.listeners DESC NULLS LAST",
         "albums": "la.album_count DESC",
-        "recent": "COALESCE(la.dir_mtime, EXTRACT(EPOCH FROM la.updated_at)::bigint) DESC",
+        "recent": "recent_sort DESC",
         "size": "la.total_size DESC",
         "tracks": "la.track_count DESC",
     }
