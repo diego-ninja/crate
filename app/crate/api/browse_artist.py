@@ -369,6 +369,58 @@ def api_artist_background_by_id(request: Request, artist_id: int, random_pick: b
     return api_artist_background(request, artist_name, random_pick)
 
 
+@router.get("/api/artists/{artist_id}/top-tracks")
+def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(20, ge=1, le=50)):
+    """Top tracks for an artist, ranked by global play count across all users.
+    Falls back to track listing ordered by album year + track number if no plays exist."""
+    _require_auth(request)
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse([], status_code=200)
+
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT
+                t.id, t.title, t.artist, t.album, t.path, t.duration,
+                t.track_number, t.format,
+                a.id as album_id, a.slug as album_slug,
+                ar.id as artist_id, ar.slug as artist_slug,
+                COALESCE(pc.play_count, 0) as play_count
+            FROM library_tracks t
+            LEFT JOIN library_albums a ON a.id = t.album_id
+            LEFT JOIN library_artists ar ON ar.name = t.artist
+            LEFT JOIN (
+                SELECT track_id, COUNT(*) as play_count
+                FROM user_play_events
+                WHERE track_id IS NOT NULL
+                GROUP BY track_id
+            ) pc ON pc.track_id = t.id
+            WHERE t.artist = %s
+            ORDER BY pc.play_count DESC NULLS LAST, a.year DESC NULLS LAST, t.track_number
+            LIMIT %s
+        """, (artist_name, count))
+        rows = cur.fetchall()
+
+    return [
+        {
+            "id": str(r["id"]) if r["path"] else str(r["id"]),
+            "track_id": r["id"],
+            "title": r["title"],
+            "artist": r["artist"],
+            "artist_id": r["artist_id"],
+            "artist_slug": r["artist_slug"],
+            "album": r["album"],
+            "album_id": r["album_id"],
+            "album_slug": r["album_slug"],
+            "duration": r["duration"] or 0,
+            "track": r["track_number"] or 0,
+            "format": r["format"],
+            "play_count": r["play_count"],
+        }
+        for r in rows
+    ]
+
+
 @router.get("/api/artists/{artist_id}/photo")
 def api_artist_photo_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
     artist_name = artist_name_from_id(artist_id)
