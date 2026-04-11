@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router";
 import { useApi } from "@/hooks/use-api";
 import {
-  useNavidromeLink,
   useTopTracks,
   useArtistEnrichment,
   type EnrichmentData,
@@ -52,7 +51,6 @@ export function Artist() {
   const [bgCacheBust, setBgCacheBust] = useState("");
   const [bgLoaded, setBgLoaded] = useState(false);
   // Data fetching hooks (replace manual useEffect + useState)
-  const navidromeLink = useNavidromeLink(data?.id);
   const topTracks = useTopTracks(data?.id);
   const [enriching, setEnriching] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
@@ -163,7 +161,7 @@ export function Artist() {
   }
 
   const mergedSimilar = buildMergedSimilarArtists(enrichment);
-  const externalLinks = buildExternalLinks(enrichment, navidromeLink?.navidrome_url);
+  const externalLinks = buildExternalLinks(enrichment);
   const tabs = buildArtistTabs(upcomingShows.length);
   const activeMembers = mb?.members?.filter((m) => !m.end) ?? [];
   const popularityScore = computePopularityScore(spotify?.popularity, lastfm?.listeners);
@@ -306,7 +304,6 @@ export function Artist() {
         upcomingShow={upcomingShows[0]}
         popularityScore={popularityScore}
         tags={allTags}
-        navidromeUrl={navidromeLink?.navidrome_url}
         topTracksAvailable={topTracks.length > 0}
         enriching={enriching}
         isAdmin={isAdmin}

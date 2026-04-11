@@ -65,12 +65,6 @@ interface EnrichmentData {
   };
 }
 
-interface NavidromeArtistLink {
-  id: string;
-  name: string;
-  navidrome_url: string;
-}
-
 interface TopTrack {
   id: string;
   title: string;
@@ -103,28 +97,13 @@ export function useArtistEnrichment(artistId: number | undefined) {
   return { enrichment, loading };
 }
 
-export function useNavidromeLink(artistId: number | undefined) {
-  const [data, setData] = useState<NavidromeArtistLink | null>(null);
-
-  useEffect(() => {
-    if (artistId == null) return;
-    let cancelled = false;
-    api<NavidromeArtistLink>(`/api/navidrome/artists/${artistId}/link`)
-      .then((d) => { if (!cancelled) setData(d); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [artistId]);
-
-  return data;
-}
-
 export function useTopTracks(artistId: number | undefined) {
   const [tracks, setTracks] = useState<TopTrack[]>([]);
 
   useEffect(() => {
     if (artistId == null) return;
     let cancelled = false;
-    api<TopTrack[]>(`/api/navidrome/artists/${artistId}/top-tracks?count=10`)
+    api<TopTrack[]>(`/api/artists/${artistId}/top-tracks?count=10`)
       .then((d) => { if (!cancelled && Array.isArray(d)) setTracks(d); })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -133,4 +112,4 @@ export function useTopTracks(artistId: number | undefined) {
   return tracks;
 }
 
-export type { EnrichmentData, NavidromeArtistLink, TopTrack };
+export type { EnrichmentData, TopTrack };

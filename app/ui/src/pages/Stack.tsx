@@ -37,7 +37,6 @@ interface ContainerLogs {
 }
 
 const SERVICE_URLS: Record<string, string> = {
-  navidrome: "https://play.lespedants.org",
   lidarr: "https://collection.lespedants.org",
   tidarr: "https://search.lespedants.org",
   traefik: "https://traefik.lespedants.org",

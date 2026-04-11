@@ -56,7 +56,7 @@ export function buildMergedSimilarArtists(enrichment: EnrichmentData | null): Ar
   return result;
 }
 
-export function buildExternalLinks(enrichment: EnrichmentData | null, navidromeUrl?: string): ArtistExternalLink[] {
+export function buildExternalLinks(enrichment: EnrichmentData | null): ArtistExternalLink[] {
   const links: ArtistExternalLink[] = [];
   const spotify = enrichment?.spotify;
   const lastfm = enrichment?.lastfm;
@@ -70,7 +70,6 @@ export function buildExternalLinks(enrichment: EnrichmentData | null, navidromeU
   if (musicbrainz?.urls?.spotify && !spotify?.url) {
     links.push({ label: "Spotify", url: musicbrainz.urls.spotify, color: "text-green-400" });
   }
-  if (navidromeUrl) links.push({ label: "Navidrome", url: navidromeUrl, color: "text-primary" });
 
   return links;
 }

@@ -52,7 +52,6 @@ interface LiveActivity {
   worker_slots: { max: number; active: number };
   systems: {
     postgres: boolean;
-    navidrome: boolean;
     watcher: boolean;
   };
 }
@@ -245,13 +244,6 @@ export function Dashboard() {
                   <span>PostgreSQL</span>
                 </div>
                 <div className={`w-2 h-2 rounded-full ${systems?.postgres ? "bg-green-500" : "bg-red-500"}`} />
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <Radio size={14} className="text-muted-foreground" />
-                  <span>Navidrome</span>
-                </div>
-                <div className={`w-2 h-2 rounded-full ${systems?.navidrome ? "bg-green-500" : "bg-red-500"}`} />
               </div>
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">

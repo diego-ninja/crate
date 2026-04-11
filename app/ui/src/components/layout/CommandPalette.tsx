@@ -220,18 +220,6 @@ export function CommandPalette() {
                 <Command.Item
                   onSelect={() =>
                     action(
-                      () => api("/api/navidrome/map-ids", "POST"),
-                      "Map Navidrome IDs",
-                    )
-                  }
-                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
-                >
-                  <Link2 size={14} className="text-muted-foreground" />
-                  Map Navidrome IDs
-                </Command.Item>
-                <Command.Item
-                  onSelect={() =>
-                    action(
                       () => api("/api/tasks/backfill-similarities", "POST"),
                       "Backfill Similarities",
                     )

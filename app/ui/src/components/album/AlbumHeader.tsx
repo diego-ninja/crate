@@ -23,13 +23,6 @@ import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
-interface NavidromeAlbumData {
-  id: string;
-  name: string;
-  songs: { id: string; title: string; track: number; duration: number }[];
-  navidrome_url: string;
-}
-
 interface AlbumHeaderProps {
   albumId?: number;
   albumSlug?: string;
@@ -49,7 +42,6 @@ interface AlbumHeaderProps {
   totalLengthSec: number;
   totalSizeMb: number;
   hasCover: boolean;
-  navidromeData?: NavidromeAlbumData | null;
   genres?: string[];
   hasAnalysis?: boolean;
   onAnalysisComplete?: () => void;
@@ -70,7 +62,6 @@ export function AlbumHeader({
   totalLengthSec,
   totalSizeMb,
   hasCover,
-  navidromeData,
   genres: _genres,
   hasAnalysis: _hasAnalysis,
   onAnalysisComplete,
@@ -82,7 +73,7 @@ export function AlbumHeader({
   const [coverCacheBust, setCoverCacheBust] = useState("");
   const baseCoverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
   const coverUrl = `${baseCoverUrl}${coverCacheBust ? `${baseCoverUrl.includes("?") ? "&" : "?"}t=${coverCacheBust}` : ""}`;
-  const albumFavId = navidromeData?.id || `${artist}/${album}`;
+  const albumFavId = `${artist}/${album}`;
   const [coverLoaded, setCoverLoaded] = useState(false);
   const [coverError, setCoverError] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -124,21 +115,7 @@ export function AlbumHeader({
   const letter = resolvedDisplayName.charAt(0).toUpperCase();
 
   function handlePlayAll() {
-    // Prefer Navidrome streaming, fallback to direct file streaming
-    if (navidromeData?.songs.length) {
-      const tracks: Track[] = navidromeData.songs.map((s) => ({
-        id: s.id,
-        title: s.title,
-        artist: displayArtist,
-        artistId,
-        artistSlug,
-        album,
-        albumId,
-        albumSlug,
-        albumCover: coverUrl,
-      }));
-      playAll(tracks);
-    } else if (trackList?.length) {
+    if (trackList?.length) {
       const tracks: Track[] = trackList.map((t) => ({
         id: (t.path || "").replace(/^\/music\//, ""),
         title: t.title || t.filename.replace(/\.\w+$/, ""),
@@ -271,7 +248,7 @@ export function AlbumHeader({
 
             {/* Action buttons */}
             <div className="flex gap-2 flex-wrap">
-              {(navidromeData?.songs.length || trackList?.length) ? (
+              {trackList?.length ? (
                 <Button
                   size="sm"
                   className="bg-primary hover:bg-primary/80 text-white"
@@ -280,13 +257,6 @@ export function AlbumHeader({
                   <Play size={14} className="mr-1 fill-current" /> Play All
                 </Button>
               ) : null}
-              {navidromeData?.navidrome_url && (
-                <Button size="sm" variant="outline" className="border-white/20 text-white/70 hover:text-white hover:bg-white/10" asChild>
-                  <a href={navidromeData.navidrome_url} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink size={14} className="mr-1" /> Navidrome
-                  </a>
-                </Button>
-              )}
               <Button
                 size="sm"
                 variant="outline"
