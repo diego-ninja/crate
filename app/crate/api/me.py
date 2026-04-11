@@ -785,3 +785,129 @@ def change_password(request: Request, body: dict):
     from crate.db.auth import update_user
     update_user(user["id"], password_hash=new_hash)
     return {"ok": True}
+
+
+# ── Scrobble Services ──────────────────────────────────────────
+
+
+@router.get("/scrobble/status")
+def scrobble_status(request: Request):
+    """Get current scrobble service connections."""
+    user = _require_auth(request)
+    from crate.db import get_db_ctx
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT provider, status, metadata_json
+            FROM user_external_identities
+            WHERE user_id = %s AND provider IN ('lastfm', 'listenbrainz')
+        """, (user["id"],))
+        rows = cur.fetchall()
+
+    result = {}
+    for row in rows:
+        meta = row.get("metadata_json") or {}
+        result[row["provider"]] = {
+            "connected": row["status"] == "linked",
+            "username": meta.get("username") or meta.get("name"),
+        }
+    return result
+
+
+class ListenBrainzConnectRequest(BaseModel):
+    token: str
+
+
+@router.post("/scrobble/listenbrainz")
+def connect_listenbrainz(request: Request, body: ListenBrainzConnectRequest):
+    """Connect ListenBrainz with a personal API token."""
+    user = _require_auth(request)
+    import requests as req
+
+    # Validate the token
+    try:
+        resp = req.get(
+            "https://api.listenbrainz.org/1/validate-token",
+            headers={"Authorization": f"Token {body.token}"},
+            timeout=10,
+        )
+        if resp.status_code != 200 or not resp.json().get("valid"):
+            raise HTTPException(status_code=400, detail="Invalid ListenBrainz token")
+        lb_user = resp.json().get("user_name", "")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not validate token with ListenBrainz")
+
+    from crate.db.auth import upsert_user_external_identity
+    upsert_user_external_identity(
+        user_id=user["id"],
+        provider="listenbrainz",
+        external_user_id=lb_user,
+        external_username=lb_user,
+        status="linked",
+        metadata={"token": body.token, "username": lb_user},
+    )
+    return {"ok": True, "username": lb_user}
+
+
+@router.delete("/scrobble/listenbrainz")
+def disconnect_listenbrainz(request: Request):
+    """Disconnect ListenBrainz."""
+    user = _require_auth(request)
+    from crate.db.auth import unlink_user_external_identity
+    unlink_user_external_identity(user["id"], "listenbrainz")
+    return {"ok": True}
+
+
+@router.get("/scrobble/lastfm/auth-url")
+def lastfm_auth_url(request: Request):
+    """Get the Last.fm authorization URL for the user to approve."""
+    import os
+    _require_auth(request)
+    api_key = os.environ.get("LASTFM_APIKEY", "")
+    if not api_key:
+        raise HTTPException(status_code=501, detail="Last.fm API key not configured")
+    callback = request.headers.get("origin", "") + "/settings?lastfm=callback"
+    return {
+        "url": f"https://www.last.fm/api/auth/?api_key={api_key}&cb={callback}",
+    }
+
+
+class LastfmCallbackRequest(BaseModel):
+    token: str
+
+
+@router.post("/scrobble/lastfm")
+def connect_lastfm(request: Request, body: LastfmCallbackRequest):
+    """Exchange Last.fm auth token for a session key and store it."""
+    import os
+    user = _require_auth(request)
+    api_key = os.environ.get("LASTFM_APIKEY", "")
+    api_secret = os.environ.get("LASTFM_API_SECRET", "")
+    if not api_key or not api_secret:
+        raise HTTPException(status_code=501, detail="Last.fm API not fully configured")
+
+    from crate.scrobble import lastfm_get_session
+    session_key = lastfm_get_session(api_key, api_secret, body.token)
+    if not session_key:
+        raise HTTPException(status_code=400, detail="Failed to get Last.fm session — token may have expired")
+
+    from crate.db.auth import upsert_user_external_identity
+    upsert_user_external_identity(
+        user_id=user["id"],
+        provider="lastfm",
+        external_user_id=session_key[:8],
+        external_username="",
+        status="linked",
+        metadata={"session_key": session_key},
+    )
+    return {"ok": True}
+
+
+@router.delete("/scrobble/lastfm")
+def disconnect_lastfm(request: Request):
+    """Disconnect Last.fm scrobbling."""
+    user = _require_auth(request)
+    from crate.db.auth import unlink_user_external_identity
+    unlink_user_external_identity(user["id"], "lastfm")
+    return {"ok": True}

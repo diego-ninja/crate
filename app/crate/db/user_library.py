@@ -357,6 +357,21 @@ def record_play_event(
             ),
         )
         event_id = cur.fetchone()["id"]
+
+        # Scrobble to external services (best-effort, async-ish)
+        if was_completed and title and artist:
+            try:
+                from crate.scrobble import scrobble_play_event
+                scrobble_play_event(
+                    user_id,
+                    artist=artist,
+                    track=title,
+                    album=album,
+                    timestamp=int(datetime.fromisoformat(started_at).timestamp()) if started_at else None,
+                )
+            except Exception:
+                pass  # Never block play event recording for scrobble failures
+
         return event_id
 
 
