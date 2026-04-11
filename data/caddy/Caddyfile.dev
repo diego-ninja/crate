@@ -2,17 +2,17 @@
 	local_certs
 }
 
-https://admin.crate.local {
+https://admin.dev.lespedants.org {
 	tls internal
 	reverse_proxy host.docker.internal:5173
 }
 
-https://listen.crate.local {
+https://listen.dev.lespedants.org {
 	tls internal
 	reverse_proxy host.docker.internal:5174
 }
 
-https://api.crate.local {
+https://api.dev.lespedants.org {
 	tls internal
 	reverse_proxy api:8585
 }

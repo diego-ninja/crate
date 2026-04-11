@@ -47,9 +47,9 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo ""
-	@echo "  $(GREEN)Admin:$(NC)  https://admin.crate.local"
-	@echo "  $(GREEN)Listen:$(NC) https://listen.crate.local"
-	@echo "  $(GREEN)API:$(NC)    https://api.crate.local"
+	@echo "  $(GREEN)Admin:$(NC)  https://admin.dev.lespedants.org"
+	@echo "  $(GREEN)Listen:$(NC) https://listen.dev.lespedants.org"
+	@echo "  $(GREEN)API:$(NC)    https://api.dev.lespedants.org"
 	@echo "  Login:  yosoy@diego.ninja / admin"
 	@echo ""
 	@echo "$(GREEN)Todo arrancado. make dev-down para parar.$(NC)"
