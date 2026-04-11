@@ -1728,6 +1728,15 @@ def _m21_identity_social_collab_foundation(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_room_events_room ON jam_room_events(room_id, id DESC)")
 
 
+def _m22_add_subsonic_token(cur):
+    cur.execute("""
+        DO $$ BEGIN
+            ALTER TABLE users ADD COLUMN subsonic_token TEXT;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+
+
 # ---------------------------------------------------------------------------
 # Migration registry — (version, name, handler)
 # ---------------------------------------------------------------------------
@@ -1754,4 +1763,5 @@ _MIGRATIONS = [
     (19, "add_username_column", _m00_add_username_column),
     (20, "convert_to_timestamptz", _m20_convert_to_timestamptz),
     (21, "identity_social_collab_foundation", _m21_identity_social_collab_foundation),
+    (22, "add_subsonic_token", _m22_add_subsonic_token),
 ]

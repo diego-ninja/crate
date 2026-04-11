@@ -161,7 +161,7 @@ def list_users() -> list[dict]:
 
 
 _USER_UPDATABLE_FIELDS = frozenset({
-    "email", "name", "username", "bio", "role", "password_hash", "google_id", "avatar",
+    "email", "name", "username", "bio", "role", "password_hash", "google_id", "avatar", "subsonic_token",
 })
 
 
