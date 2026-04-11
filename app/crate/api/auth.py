@@ -805,6 +805,10 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
     external_payload = _google_userinfo(code, redirect_uri, verifier) if provider == "google" else _apple_userinfo(code, redirect_uri, verifier)
     external_user_id, email, name, avatar = _resolve_provider_subject(provider, external_payload)
     user = get_user_by_external_identity(provider, external_user_id)
+    # Always sync avatar from OAuth provider
+    if user and avatar:
+        update_user(user["id"], avatar=avatar)
+        user = get_user_by_id(user["id"])
     if parsed_state.get("mode") == "link":
         target_user_id = parsed_state.get("user_id")
         if not target_user_id:
