@@ -9,7 +9,6 @@ export interface Track {
   albumSlug?: string;
   albumCover?: string;
   path?: string;
-  navidromeId?: string;
   libraryTrackId?: number;
   isSuggested?: boolean;
   suggestionSource?: "playlist";

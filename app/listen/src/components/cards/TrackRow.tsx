@@ -22,7 +22,6 @@ export interface TrackRowData {
   path?: string;
   track_number?: number;
   format?: string;
-  navidrome_id?: string;
   library_track_id?: number;
 }
 
@@ -58,7 +57,7 @@ export const TrackRow = memo(function TrackRow({
   const { currentTrack, play, pause, resume } = usePlayerActions();
   const { isLiked, toggleTrackLike } = useLikedTracks();
 
-  const playbackId = track.path || String(track.id || track.navidrome_id || "");
+  const playbackId = track.path || String(track.id  || "");
   const liked = isLiked(track.library_track_id ?? (typeof track.id === "number" ? track.id : null), track.path);
   const isActive = currentTrack?.id === playbackId;
   const cover = albumCover || (track.album_id != null
@@ -76,7 +75,6 @@ export const TrackRow = memo(function TrackRow({
     albumSlug: track.album_slug,
     albumCover: cover,
     path: track.path,
-    navidromeId: track.navidrome_id,
     libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
   };
   const actions = useTrackActionEntries({

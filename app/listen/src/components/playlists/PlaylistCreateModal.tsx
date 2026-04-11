@@ -16,7 +16,6 @@ export interface PlaylistComposerTrack {
   duration?: number;
   path?: string;
   libraryTrackId?: number;
-  navidromeId?: string;
   playlistEntryId?: number;
   playlistPosition?: number;
 }
@@ -28,7 +27,6 @@ interface SearchTrackResult {
   album: string;
   path: string;
   duration: number;
-  navidrome_id?: string;
 }
 
 interface PlaylistCreateModalProps {
@@ -37,6 +35,8 @@ interface PlaylistCreateModalProps {
   initialName?: string;
   initialDescription?: string;
   initialCoverDataUrl?: string | null;
+  initialVisibility?: "public" | "private";
+  initialCollaborative?: boolean;
   initialTracks: PlaylistComposerTrack[];
   submitting: boolean;
   onClose: () => void;
@@ -44,6 +44,8 @@ interface PlaylistCreateModalProps {
     name: string;
     description: string;
     coverDataUrl: string | null;
+    visibility: "public" | "private";
+    isCollaborative: boolean;
     tracks: PlaylistComposerTrack[];
   }) => Promise<void>;
 }
@@ -51,7 +53,6 @@ interface PlaylistCreateModalProps {
 function getTrackKey(track: PlaylistComposerTrack): string {
   if (track.libraryTrackId != null) return `id:${track.libraryTrackId}`;
   if (track.path) return `path:${track.path}`;
-  if (track.navidromeId) return `nav:${track.navidromeId}`;
   return `${track.artist}:${track.album}:${track.title}`;
 }
 
@@ -108,6 +109,8 @@ export function PlaylistCreateModal({
   initialName = "",
   initialDescription = "",
   initialCoverDataUrl = null,
+  initialVisibility = "private",
+  initialCollaborative = false,
   initialTracks,
   submitting,
   onClose,
@@ -116,6 +119,8 @@ export function PlaylistCreateModal({
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState(initialDescription);
   const [coverDataUrl, setCoverDataUrl] = useState<string | null>(null);
+  const [visibility, setVisibility] = useState<"public" | "private">(initialVisibility);
+  const [isCollaborative, setIsCollaborative] = useState(initialCollaborative);
   const [tracks, setTracks] = useState<PlaylistComposerTrack[]>(initialTracks);
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
@@ -131,12 +136,14 @@ export function PlaylistCreateModal({
     setName(initialName);
     setDescription(initialDescription);
     setCoverDataUrl(initialCoverDataUrl);
+    setVisibility(initialVisibility);
+    setIsCollaborative(initialCollaborative);
     setTracks(initialTracks);
     setSearch("");
     setResults([]);
     setTitleEditing(false);
     setDescriptionEditing(false);
-  }, [initialCoverDataUrl, initialDescription, initialName, initialTracks, open]);
+  }, [initialCollaborative, initialCoverDataUrl, initialDescription, initialName, initialTracks, initialVisibility, open]);
 
   useEffect(() => {
     if (!open || !titleEditing) return;
@@ -233,6 +240,8 @@ export function PlaylistCreateModal({
       name: trimmedName,
       description: description.trim(),
       coverDataUrl,
+      visibility,
+      isCollaborative,
       tracks,
     });
   }
@@ -343,6 +352,30 @@ export function PlaylistCreateModal({
                   Use collage instead
                 </button>
               ) : null}
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${visibility === "private" ? "bg-primary text-primary-foreground" : "bg-white/5 text-muted-foreground"}`}
+                  onClick={() => setVisibility("private")}
+                >
+                  Private
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${visibility === "public" ? "bg-primary text-primary-foreground" : "bg-white/5 text-muted-foreground"}`}
+                  onClick={() => setVisibility("public")}
+                >
+                  Public
+                </button>
+                <button
+                  type="button"
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${isCollaborative ? "bg-primary text-primary-foreground" : "bg-white/5 text-muted-foreground"}`}
+                  onClick={() => setIsCollaborative((current) => !current)}
+                >
+                  Collaborative
+                </button>
+              </div>
             </div>
           </div>
 
@@ -376,7 +409,6 @@ export function PlaylistCreateModal({
                             duration: track.duration,
                             path: track.path,
                             libraryTrackId: track.id,
-                            navidromeId: track.navidrome_id,
                           })
                         }
                       >

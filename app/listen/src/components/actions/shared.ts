@@ -32,7 +32,6 @@ export interface TrackMenuData {
   album_slug?: string;
   duration?: number;
   path?: string;
-  navidrome_id?: string;
   library_track_id?: number;
   is_suggested?: boolean;
   suggestion_source?: "playlist";
@@ -76,7 +75,6 @@ export function trackToMenuData(track: Track): TrackMenuData {
     album_id: track.albumId,
     album_slug: track.albumSlug,
     path: track.path,
-    navidrome_id: track.navidromeId,
     library_track_id: track.libraryTrackId,
     is_suggested: track.isSuggested,
     suggestion_source: track.suggestionSource,
@@ -85,7 +83,7 @@ export function trackToMenuData(track: Track): TrackMenuData {
 
 /** Rebuild a player-ready Track from menu data, honoring optional cover override and carrying metadata. */
 export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string): Track {
-  const playbackId = track.path || String(track.id || track.navidrome_id || "");
+  const playbackId = track.path || String(track.id  || "");
   const resolvedCover = cover || (track.album_id != null
     ? albumCoverApiUrl({
         albumId: track.album_id,
@@ -106,7 +104,6 @@ export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string):
     albumSlug: track.album_slug,
     albumCover: resolvedCover,
     path: track.path,
-    navidromeId: track.navidrome_id,
     libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
     isSuggested: track.is_suggested,
     suggestionSource: track.suggestion_source,
@@ -182,7 +179,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
 
 export async function fetchArtistTopTracks(artist: ArtistMenuData): Promise<Track[]> {
   if (artist.artistId == null) return [];
-  const topTracks = await api<ArtistTopTrack[]>(`/api/navidrome/artists/${artist.artistId}/top-tracks?count=12`);
+  const topTracks = await api<ArtistTopTrack[]>(`/api/artists/${artist.artistId}/top-tracks?count=12`);
   const coverFallback = artistPhotoApiUrl({
     artistId: artist.artistId,
     artistSlug: artist.artistSlug,

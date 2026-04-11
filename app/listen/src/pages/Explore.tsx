@@ -286,7 +286,6 @@ function MoodBrowseSection() {
         album_id?: number;
         album_slug?: string;
         path: string;
-        navidrome_id?: string;
       }> }>(`/api/browse/mood/${mood}?limit=50`);
       if (data.tracks.length > 0) {
         playAll(
@@ -300,7 +299,6 @@ function MoodBrowseSection() {
             albumId: t.album_id,
             albumSlug: t.album_slug,
             path: t.path,
-            navidromeId: t.navidrome_id,
             libraryTrackId: t.id,
             albumCover: albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }),
           })),

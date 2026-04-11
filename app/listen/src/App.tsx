@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect } from "react";
-import { Navigate, Route, Routes } from "react-router";
+import { Navigate, Route, Routes, useLocation } from "react-router";
 import { Loader2 } from "lucide-react";
 import { connectCacheEvents } from "@/lib/cache";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -42,6 +42,24 @@ const Shows = React.lazy(() =>
 const SearchResults = React.lazy(() =>
   import("@/pages/SearchResults").then((m) => ({ default: m.SearchResults })),
 );
+const People = React.lazy(() =>
+  import("@/pages/People").then((m) => ({ default: m.People })),
+);
+const UserProfile = React.lazy(() =>
+  import("@/pages/UserProfile").then((m) => ({ default: m.UserProfile })),
+);
+const UserConnections = React.lazy(() =>
+  import("@/pages/UserConnections").then((m) => ({ default: m.UserConnections })),
+);
+const JamSession = React.lazy(() =>
+  import("@/pages/JamSession").then((m) => ({ default: m.JamSession })),
+);
+const JamInvite = React.lazy(() =>
+  import("@/pages/JamInvite").then((m) => ({ default: m.JamInvite })),
+);
+const PlaylistInvite = React.lazy(() =>
+  import("@/pages/PlaylistInvite").then((m) => ({ default: m.PlaylistInvite })),
+);
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode; fallback?: React.ReactNode },
@@ -76,6 +94,7 @@ function Spinner() {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   // Connect to cache invalidation SSE when authenticated
   useEffect(() => {
@@ -91,7 +110,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) {
-    return <Navigate to="/login" replace />;
+    const returnTo = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to={`/login?return_to=${encodeURIComponent(returnTo)}`} replace />;
   }
   return <>{children}</>;
 }
@@ -136,6 +156,70 @@ export function App() {
                     />
                     <Route path="upload" element={<Upload />} />
                     <Route path="settings" element={<Settings />} />
+                    <Route
+                      path="people"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <People />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="users/:username"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <UserProfile />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="users/:username/followers"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <UserConnections />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="users/:username/following"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <UserConnections />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="jam"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <JamSession />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="jam/rooms/:roomId"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <JamSession />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="jam/invite/:token"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <JamInvite />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="playlist/invite/:token"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <PlaylistInvite />
+                        </Suspense>
+                      }
+                    />
                     <Route path="shows" element={<Navigate to="/upcoming" replace />} />
                     <Route
                       path="upcoming"

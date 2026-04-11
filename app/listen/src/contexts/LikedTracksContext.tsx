@@ -24,7 +24,6 @@ export interface LikedTrack {
   album_id?: number;
   album_slug?: string;
   duration: number;
-  navidrome_id?: string;
 }
 
 interface LikedTracksContextValue {
@@ -91,7 +90,6 @@ export function LikedTracksProvider({ children }: { children: ReactNode }) {
       ids.add(track.track_id);
       for (const key of getComparableKeys(track.path)) paths.add(key);
       for (const key of getComparableKeys(track.relative_path)) paths.add(key);
-      for (const key of getComparableKeys(track.navidrome_id)) paths.add(key);
     }
     return { ids, paths };
   }, [likedTracks]);
@@ -126,7 +124,6 @@ export function LikedTracksProvider({ children }: { children: ReactNode }) {
         const trackKeys = new Set([
           ...getComparableKeys(track.path),
           ...getComparableKeys(track.relative_path),
-          ...getComparableKeys(track.navidrome_id),
         ]);
         return !getComparableKeys(trackPath).some((key) => trackKeys.has(key));
       }),

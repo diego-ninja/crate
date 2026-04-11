@@ -398,16 +398,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const endedTrack = currentTrackRef.current;
       if (endedTrack) {
         flushCurrentPlayEvent("completed");
-        apiFetch("/api/navidrome/scrobble", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            navidrome_id: endedTrack.navidromeId || (endedTrack.id.includes("/") ? "" : endedTrack.id),
-            title: endedTrack.title,
-            artist: endedTrack.artist,
-          }),
-        }).catch(() => {});
 
         apiFetch("/api/me/history", {
           method: "POST",

@@ -34,7 +34,6 @@ export interface SearchTrack {
   album_slug?: string;
   path: string;
   duration: number;
-  navidrome_id: string;
 }
 
 export interface SearchResults {
@@ -73,7 +72,6 @@ interface PlaylistDetailTrack {
   album_id?: number;
   album_slug?: string;
   duration: number;
-  navidrome_id?: string;
 }
 
 interface PlaylistDetailData {
@@ -140,7 +138,6 @@ export async function loadSystemPlaylistTracks(playlistId: number): Promise<{
           : data.cover_data_url || undefined,
       path: track.track_path,
       libraryTrackId: track.track_id,
-      navidromeId: track.navidrome_id,
       artistId: track.artist_id,
       artistSlug: track.artist_slug,
       albumId: track.album_id,

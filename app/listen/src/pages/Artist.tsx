@@ -79,7 +79,7 @@ export function Artist() {
     artistId != null ? `/api/artists/${artistId}/info` : null,
   );
   const { data: topTracks } = useApi<ArtistTopTrack[]>(
-    artistId != null ? `/api/navidrome/artists/${artistId}/top-tracks?count=12` : null,
+    artistId != null ? `/api/artists/${artistId}/top-tracks?count=12` : null,
   );
   const { data: showsData } = useApi<{ events: ArtistShowEvent[] }>(
     artistId != null ? `/api/artists/${artistId}/shows?limit=12` : null,

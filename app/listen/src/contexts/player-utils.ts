@@ -77,16 +77,12 @@ export function getStreamUrl(track: Track): string {
     return `${base}/api/tracks/${track.libraryTrackId}/stream${suffix}`;
   }
 
-  if (track.navidromeId) {
-    return `${base}/api/navidrome/stream/${track.navidromeId}${suffix}`;
-  }
-
   const playbackPath = track.path || track.id;
   if (playbackPath.includes("/")) {
     return `${base}/api/stream/${encodeURIComponent(playbackPath).replace(/%2F/g, "/")}${suffix}`;
   }
 
-  return `${base}/api/navidrome/stream/${track.id}${suffix}`;
+  return `${base}/api/tracks/${track.id}/stream${suffix}`;
 }
 
 /** Append ?token= for native apps where audio element can't send Bearer headers. */
@@ -107,7 +103,7 @@ function _apiBase(): string {
 }
 
 export function getTrackCacheKey(track: Track): string {
-  return [track.libraryTrackId ?? "", track.navidromeId ?? "", track.path ?? "", track.id].join("::");
+  return [track.libraryTrackId ?? "",  track.path ?? "", track.id].join("::");
 }
 
 export function areTracksFromSameAlbum(currentTrack: Track | undefined, nextTrack: Track | null | undefined): boolean {

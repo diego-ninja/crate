@@ -23,7 +23,6 @@ interface PlaylistTrackResponse {
   album_id?: number;
   album_slug?: string;
   duration: number;
-  navidrome_id?: string;
 }
 
 interface PlaylistDetailResponse {
@@ -71,7 +70,6 @@ function toPlayerTracks(tracks: PlaylistTrackResponse[]): Track[] {
         ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
         : undefined,
     path: track.track_path,
-    navidromeId: track.navidrome_id,
     libraryTrackId: track.track_id,
   }));
 }

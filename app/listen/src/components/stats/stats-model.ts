@@ -35,7 +35,6 @@ export interface StatsTrends {
 export interface StatsTrack {
   track_id: number | null;
   track_path: string | null;
-  navidrome_id?: string | null;
   title: string;
   artist: string;
   artist_id?: number | null;
@@ -125,7 +124,6 @@ export function toPlayerTrack(item: StatsTrack): Track {
     album: item.album,
     path: item.track_path || undefined,
     libraryTrackId: item.track_id || undefined,
-    navidromeId: item.navidrome_id || undefined,
     artistId: item.artist_id || undefined,
     artistSlug: item.artist_slug || undefined,
     albumId: item.album_id || undefined,

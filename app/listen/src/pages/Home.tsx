@@ -94,7 +94,6 @@ interface HistoryTrack {
   album: string;
   album_id?: number;
   album_slug?: string;
-  navidrome_id?: string;
   played_at: string;
 }
 
@@ -151,7 +150,6 @@ export function Home() {
         albumId: h.album_id,
         albumSlug: h.album_slug,
         path: h.track_path,
-        navidromeId: h.navidrome_id,
         libraryTrackId: h.track_id ?? undefined,
         albumCover: h.album_id != null
           ? albumCoverApiUrl({ albumId: h.album_id, albumSlug: h.album_slug, artistName: h.artist, albumName: h.album })
@@ -196,7 +194,6 @@ export function Home() {
             : data.cover_data_url || undefined,
         path: track.track_path,
         libraryTrackId: track.track_id,
-        navidromeId: track.navidrome_id,
         artistId: track.artist_id,
         artistSlug: track.artist_slug,
         albumId: track.album_id,

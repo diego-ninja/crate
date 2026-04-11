@@ -28,7 +28,6 @@ interface CuratedPlaylistTrack {
   duration: number;
   position: number;
   added_at: string;
-  navidrome_id?: string;
 }
 
 interface CuratedPlaylistData {
@@ -78,7 +77,6 @@ export function CuratedPlaylist() {
             ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
             : undefined,
         path: t.track_path,
-        navidromeId: t.navidrome_id,
         libraryTrackId: t.track_id,
       }),
     );
@@ -162,7 +160,6 @@ export function CuratedPlaylist() {
     duration?: number;
     path?: string;
     library_track_id?: number;
-    navidrome_id?: string;
   }) {
     openCreatePlaylist({
       tracks: track.path ? [{
@@ -172,7 +169,6 @@ export function CuratedPlaylist() {
         duration: track.duration,
         path: track.path,
         libraryTrackId: track.library_track_id,
-        navidromeId: track.navidrome_id,
       }] : [],
     });
   }
@@ -318,7 +314,6 @@ export function CuratedPlaylist() {
               album_slug: track.album_slug,
               duration: track.duration,
               path: track.track_path,
-              navidrome_id: track.navidrome_id,
               library_track_id: track.track_id,
             }}
             index={index + 1}

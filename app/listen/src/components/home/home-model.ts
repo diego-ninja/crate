@@ -151,7 +151,6 @@ export interface PlaylistDetailTrack {
   album_id?: number;
   album_slug?: string;
   duration: number;
-  navidrome_id?: string;
 }
 
 export interface PlaylistDetailData {

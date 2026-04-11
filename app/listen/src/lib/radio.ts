@@ -5,7 +5,6 @@ import { albumCoverApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
 export interface RadioTrackPayload {
   track_id?: number | null;
   track_slug?: string | null;
-  navidrome_id?: string | null;
   track_path?: string | null;
   title: string;
   artist: string;
@@ -40,10 +39,8 @@ interface RadioRequestOptions {
 
 function toTrack(payload: RadioTrackPayload): Track {
   const trackPath = payload.track_path || "";
-  const navidromeId = payload.navidrome_id || undefined;
   const playbackId =
     trackPath ||
-    navidromeId ||
     (payload.track_id != null
       ? String(payload.track_id)
       : `radio:${payload.artist || "unknown"}:${payload.album || "unknown"}:${payload.title || "unknown"}`);
@@ -74,7 +71,6 @@ function toTrack(payload: RadioTrackPayload): Track {
           artistName: payload.artist,
         }) || undefined,
     path: trackPath || undefined,
-    navidromeId,
     libraryTrackId: payload.track_id || undefined,
   };
 }

@@ -75,7 +75,6 @@ function trackToPayload(track: Track) {
     albumSlug: track.albumSlug,
     albumCover: track.albumCover,
     path: track.path,
-    navidromeId: track.navidromeId,
     libraryTrackId: track.libraryTrackId,
   };
 }
@@ -95,7 +94,6 @@ function payloadToTrack(payload: Record<string, unknown> | null | undefined): Tr
     albumSlug: typeof payload.albumSlug === "string" ? payload.albumSlug : undefined,
     albumCover: typeof payload.albumCover === "string" ? payload.albumCover : undefined,
     path: typeof payload.path === "string" ? payload.path : undefined,
-    navidromeId: typeof payload.navidromeId === "string" ? payload.navidromeId : undefined,
     libraryTrackId: typeof payload.libraryTrackId === "number" ? payload.libraryTrackId : undefined,
   };
 }

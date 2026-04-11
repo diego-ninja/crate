@@ -12,6 +12,17 @@ export function apiUrl(path: string): string {
   return `${API_BASE}${path}`;
 }
 
+/** Resolve an API path to a full WebSocket URL. */
+export function apiWsUrl(path: string): string {
+  const baseOrigin = API_BASE
+    ? API_BASE.replace(/^http/i, "ws")
+    : window.location.origin.replace(/^http/i, "ws");
+  const token = isNative ? getAuthToken() : null;
+  if (!token) return `${baseOrigin}${path}`;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${baseOrigin}${path}${separator}token=${encodeURIComponent(token)}`;
+}
+
 // ── Token storage for Capacitor (cookies don't work cross-origin) ──
 
 const TOKEN_KEY = "crate-auth-token";

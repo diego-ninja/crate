@@ -287,7 +287,6 @@ export function Album() {
         duration: track.duration,
         path: track.path,
         libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
-        navidromeId: track.navidrome_id,
       }],
     });
   }
@@ -476,7 +475,6 @@ export function Album() {
                       path: t.path,
                       track_number: parseInt(t.tags.tracknumber) || idx + 1,
                       format: t.format,
-                      navidrome_id: undefined,
                       library_track_id: t.id,
                     }}
                     index={parseInt(t.tags.tracknumber) || idx + 1}
@@ -505,7 +503,6 @@ export function Album() {
                 path: t.path,
                 track_number: parseInt(t.tags.tracknumber) || idx + 1,
                 format: t.format,
-                navidrome_id: undefined,
                 library_track_id: t.id,
               }}
               index={parseInt(t.tags.tracknumber) || idx + 1}

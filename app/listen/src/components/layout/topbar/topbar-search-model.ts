@@ -15,7 +15,6 @@ export interface SearchResult {
     album_id?: number;
     album_slug?: string;
     path?: string;
-    navidrome_id?: string;
   }[];
 }
 
@@ -88,7 +87,6 @@ export function flattenTopBarSearchResults(data: SearchResult): TopBarSearchItem
         album: track.album,
         albumId: track.album_id,
         albumSlug: track.album_slug,
-        navidromeId: track.navidrome_id,
         libraryTrackId: typeof track.id === "number" ? track.id : undefined,
       },
     });
