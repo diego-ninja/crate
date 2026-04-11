@@ -39,7 +39,6 @@ interface SidebarStats {
   running_tasks?: number;
 }
 
-interface NavidromeStatus {
   connected: boolean;
   version: string;
 }
@@ -73,7 +72,6 @@ const navItems = [
 
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [stats, setStats] = useState<SidebarStats>({});
-  const [navidrome, setNavidrome] = useState<NavidromeStatus | null>(null);
   const { user, isAdmin, logout } = useAuth();
 
   const fetchStats = useCallback(async () => {
@@ -99,12 +97,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     return () => clearInterval(interval);
   }, [fetchStats]);
 
-  useEffect(() => {
-    api<NavidromeStatus>("/api/navidrome/status")
-      .then(setNavidrome)
-      .catch(() => setNavidrome({ connected: false, version: "" }));
-  }, []);
-
   return (
     <nav className="w-[220px] bg-card border-r border-border flex-shrink-0 fixed h-screen overflow-y-auto flex flex-col">
       <div className="px-4 pb-4 pt-4 border-b border-border mb-4">
@@ -112,14 +104,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           <img src="/assets/logo.svg" alt="Crate" className="w-8 h-8" />
           <span className="text-lg font-bold text-foreground">Crate</span>
         </Link>
-        {navidrome && (
-          <div className="flex items-center gap-1.5 mt-2" title={navidrome.connected ? `Navidrome ${navidrome.version}` : "Navidrome disconnected"}>
-            <span className={cn("w-2 h-2 rounded-full", navidrome.connected ? "bg-green-500" : "bg-red-500")} />
-            <span className="text-[10px] text-muted-foreground">
-              {navidrome.connected ? `Navidrome ${navidrome.version}` : "Navidrome offline"}
-            </span>
-          </div>
-        )}
       </div>
       <div className="flex-1 overflow-y-auto">
       {navItems.map((item, i) => {
