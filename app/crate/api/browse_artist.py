@@ -371,8 +371,9 @@ def api_artist_background_by_id(request: Request, artist_id: int, random_pick: b
 
 @router.get("/api/artists/{artist_id}/top-tracks")
 def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(20, ge=1, le=50)):
-    """Top tracks for an artist, ranked by global play count across all users.
-    Falls back to track listing ordered by album year + track number if no plays exist."""
+    """Top tracks for an artist. Uses Last.fm global popularity to rank,
+    matched against tracks in the local library. Falls back to local play
+    counts if Last.fm data doesn't match, then to album track order."""
     _require_auth(request)
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -383,27 +384,38 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
             SELECT
                 t.id, t.title, t.artist, t.album, t.path, t.duration,
                 t.track_number, t.format,
-                a.id as album_id, a.slug as album_slug,
-                ar.id as artist_id, ar.slug as artist_slug,
-                COALESCE(pc.play_count, 0) as play_count
+                a.id as album_id, a.slug as album_slug, a.year,
+                ar.id as artist_id, ar.slug as artist_slug
             FROM library_tracks t
             LEFT JOIN library_albums a ON a.id = t.album_id
             LEFT JOIN library_artists ar ON ar.name = t.artist
-            LEFT JOIN (
-                SELECT track_id, COUNT(*) as play_count
-                FROM user_play_events
-                WHERE track_id IS NOT NULL
-                GROUP BY track_id
-            ) pc ON pc.track_id = t.id
             WHERE t.artist = %s
-            ORDER BY pc.play_count DESC NULLS LAST, a.year DESC NULLS LAST, t.track_number
-            LIMIT %s
-        """, (artist_name, count))
-        rows = cur.fetchall()
+        """, (artist_name,))
+        all_tracks = {r["title"].lower(): dict(r) for r in cur.fetchall()}
 
-    return [
-        {
-            "id": str(r["id"]) if r["path"] else str(r["id"]),
+    # Rank by Last.fm global popularity, matched to local library
+    from crate.lastfm import get_top_tracks
+    lastfm_top = get_top_tracks(artist_name, limit=count * 2) or []
+
+    ranked = []
+    seen_ids: set[int] = set()
+    for lfm in lastfm_top:
+        match = all_tracks.get(lfm["title"].lower())
+        if match and match["id"] not in seen_ids:
+            seen_ids.add(match["id"])
+            ranked.append(match)
+            if len(ranked) >= count:
+                break
+
+    # Fill remaining with unmatched tracks (newest albums first)
+    if len(ranked) < count:
+        remaining = [t for t in all_tracks.values() if t["id"] not in seen_ids]
+        remaining.sort(key=lambda t: (t.get("year") or "0", t.get("track_number") or 0), reverse=True)
+        ranked.extend(remaining[:count - len(ranked)])
+
+    def _fmt(r: dict) -> dict:
+        return {
+            "id": str(r["id"]),
             "track_id": r["id"],
             "title": r["title"],
             "artist": r["artist"],
@@ -415,10 +427,9 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
             "duration": r["duration"] or 0,
             "track": r["track_number"] or 0,
             "format": r["format"],
-            "play_count": r["play_count"],
         }
-        for r in rows
-    ]
+
+    return [_fmt(r) for r in ranked]
 
 
 @router.get("/api/artists/{artist_id}/photo")
