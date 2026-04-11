@@ -16,23 +16,39 @@ const memoryCache = new Map<string, CacheEntry>();
 function scopesForUrl(url: string): string[] {
   const scopes: string[] = [];
 
+  // User-specific data
   if (url.startsWith("/api/me/likes")) scopes.push("likes");
   else if (url.startsWith("/api/me/follows")) scopes.push("follows");
   else if (url.startsWith("/api/me/albums")) scopes.push("saved_albums");
   else if (url.startsWith("/api/me/history")) scopes.push("history");
   else if (url.startsWith("/api/me/stats")) scopes.push("history");
+  else if (url.startsWith("/api/me/upcoming")) scopes.push("library");
+  // Playlists
   else if (url.startsWith("/api/playlists")) {
     scopes.push("playlists");
     const m = url.match(/^\/api\/playlists\/(\d+)/);
     if (m) scopes.push(`playlist:${m[1]}`);
-  } else if (url.startsWith("/api/curation")) scopes.push("curation");
+  }
+  // Curation
+  else if (url.startsWith("/api/curation")) scopes.push("curation");
+  // Artist detail
   else if (url.match(/^\/api\/artists\/\d+/)) {
     const m = url.match(/^\/api\/artists\/(\d+)/);
     if (m) scopes.push(`artist:${m[1]}`);
-  } else if (url.match(/^\/api\/albums\/\d+/)) {
+    scopes.push("library");
+  }
+  // Album detail
+  else if (url.match(/^\/api\/albums\/\d+/)) {
     const m = url.match(/^\/api\/albums\/(\d+)/);
     if (m) scopes.push(`album:${m[1]}`);
+    scopes.push("library");
   }
+  // Artist/album listings (Home "Just Landed", Explore, etc.)
+  else if (url.startsWith("/api/artists")) scopes.push("library");
+  else if (url.startsWith("/api/albums")) scopes.push("library");
+  // Search, browse, genres
+  else if (url.startsWith("/api/browse")) scopes.push("library");
+  else if (url.startsWith("/api/genres")) scopes.push("library");
 
   return scopes;
 }

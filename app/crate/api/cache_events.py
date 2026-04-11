@@ -96,6 +96,14 @@ _INVALIDATION_RULES: list[tuple[re.Pattern[str], list[str]]] = [
     (re.compile(r"^/api/playlists/(\d+)"), ["playlists", "playlist:{1}"]),
     # Curation
     (re.compile(r"^/api/curation"), ["curation"]),
+    # Library mutations (tags, artwork, enrichment, scanner, matcher)
+    (re.compile(r"^/api/artists/(\d+)/enrich"), ["library", "artist:{1}"]),
+    (re.compile(r"^/api/albums/(\d+)/cover"), ["library", "album:{1}"]),
+    (re.compile(r"^/api/tags"), ["library"]),
+    (re.compile(r"^/api/scan"), ["library"]),
+    (re.compile(r"^/api/import"), ["library"]),
+    # Internal: worker cache invalidation
+    (re.compile(r"^/api/cache/invalidate$"), []),
 ]
 
 
