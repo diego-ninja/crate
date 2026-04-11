@@ -140,11 +140,6 @@ def api_favorites_add(request: Request, body: dict):
             (item_type, item_id, now),
         )
 
-    if "/" not in item_id and len(item_id) < 40:
-        try:
-
-        except Exception:
-            pass
     return {"ok": True}
 
 
@@ -161,11 +156,6 @@ def api_favorites_remove(request: Request, body: dict):
     with get_db_ctx() as cur:
         cur.execute("DELETE FROM favorites WHERE item_id = %s AND item_type = %s", (item_id, item_type))
 
-    if "/" not in item_id and len(item_id) < 40:
-        try:
-
-        except Exception:
-            pass
     return {"ok": True}
 
 
@@ -191,12 +181,6 @@ def api_rate_track(request: Request, body: dict):
         return JSONResponse({"error": "Track not found"}, status_code=404)
 
     set_track_rating(track_id, rating)
-
-    try:
-
-    except Exception:
-        pass
-
     return {"ok": True, "rating": rating}
 
 

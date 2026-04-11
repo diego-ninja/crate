@@ -270,9 +270,6 @@ def api_activity_live(request: Request):
 
     # System health checks
     pg_ok = True  # if we got here, postgres is up
-    try:
-    except Exception:
-        nd_ok = False
     watcher_ok = True  # watcher runs in-process with worker
 
     return {
@@ -281,7 +278,6 @@ def api_activity_live(request: Request):
         "worker_slots": worker_slots,
         "systems": {
             "postgres": pg_ok,
-            "navidrome": nd_ok,
             "watcher": watcher_ok,
         },
     }

@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from crate.db import get_db_ctx, get_user_by_email
 from crate.auth import verify_password
-from crate.api._deps import library_path, extensions, get_audio_files, find_album_dir
+from crate.api._deps import library_path
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/rest", tags=["subsonic"])
