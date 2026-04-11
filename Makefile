@@ -33,14 +33,18 @@ DC_DEV := $(DC) -f docker-compose.dev.yaml
 
 .PHONY: dev
 dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend dev servers
+	@# Kill any leftover Vite processes from previous runs
+	@-pkill -f "vite.*app/ui" 2>/dev/null || true
+	@-pkill -f "vite.*app/listen" 2>/dev/null || true
+	@sleep 0.5
 	@$(DC_DEV) up -d --build
 	@echo "$(GREEN)Backend levantado (Postgres, Redis, API, Worker, Caddy)$(NC)"
 	@echo ""
 	@echo "Arrancando frontends..."
 	@cd app/ui && npm install --silent 2>/dev/null; cd ../..
 	@cd app/listen && npm install --silent 2>/dev/null; cd ../..
-	@(cd app/ui && npx vite --port 5173 --host > /dev/null 2>&1 &)
-	@(cd app/listen && npx vite --port 5174 --host > /dev/null 2>&1 &)
+	@(cd app/ui && npx vite --port 5173 --strictPort --host > /dev/null 2>&1 &)
+	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo ""
 	@echo "  $(GREEN)Admin:$(NC)  https://admin.crate.local"
@@ -68,7 +72,8 @@ dev-listen: ## Arrancar solo Listen dev server (:5174)
 .PHONY: dev-down
 dev-down: ## Parar todo (backend + frontends)
 	@$(DC_DEV) down
-	@-pkill -f "vite.*517" 2>/dev/null || true
+	@-pkill -f "vite.*app/ui" 2>/dev/null || true
+	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@echo "$(GREEN)Todo parado$(NC)"
 
 .PHONY: dev-logs
@@ -81,10 +86,12 @@ dev-logs: ## Ver logs de backend (uso: make dev-logs o make dev-logs s=worker)
 
 .PHONY: dev-rebuild
 dev-rebuild: ## Rebuild y restart todo
+	@-pkill -f "vite.*app/ui" 2>/dev/null || true
+	@-pkill -f "vite.*app/listen" 2>/dev/null || true
+	@sleep 0.5
 	@$(DC_DEV) up -d --build --force-recreate
-	@-pkill -f "vite.*517" 2>/dev/null || true
-	@(cd app/ui && npx vite --port 5173 --host > /dev/null 2>&1 &)
-	@(cd app/listen && npx vite --port 5174 --host > /dev/null 2>&1 &)
+	@(cd app/ui && npx vite --port 5173 --strictPort --host > /dev/null 2>&1 &)
+	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo "$(GREEN)Todo rebuildeado$(NC)"
 
