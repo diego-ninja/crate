@@ -336,6 +336,14 @@ hosts-show: ## Mostrar dominios locales configurados
 	done
 
 # ===========================================================================
+# LOCAL DNS (*.crate.local wildcard)
+# ===========================================================================
+
+.PHONY: dns-setup
+dns-setup: ## Setup local DNS wildcard for *.crate.local → 127.0.0.1 (requires sudo)
+	@./scripts/setup-local-dns.sh
+
+# ===========================================================================
 # CAPACITOR (mobile native builds)
 # ===========================================================================
 

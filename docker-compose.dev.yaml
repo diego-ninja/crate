@@ -62,7 +62,7 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
-      - DOMAIN=localhost
+      - DOMAIN=${DEV_DOMAIN:-crate.local}
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
       - LASTFM_APIKEY=${LASTFM_APIKEY:-}
@@ -103,7 +103,7 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
-      - DOMAIN=localhost
+      - DOMAIN=${DEV_DOMAIN:-crate.local}
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
       - LASTFM_APIKEY=${LASTFM_APIKEY:-}
