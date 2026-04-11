@@ -337,7 +337,7 @@ export function AudioPlayer() {
       lines.push(`#EXTINF:-1,${track.artist} - ${track.title}`);
       const url = track.id.includes("/")
         ? `${window.location.origin}/api/stream/${encodeURIComponent(track.id).replace(/%2F/g, "/")}`
-        : `${window.location.origin}/api/navidrome/stream/${track.id}`;
+        : `${window.location.origin}/api/tracks/${track.id}/stream`;
       lines.push(url);
     }
     const blob = new Blob([lines.join("\n")], { type: "audio/x-mpegurl" });

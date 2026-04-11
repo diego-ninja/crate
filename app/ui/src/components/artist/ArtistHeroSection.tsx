@@ -7,7 +7,6 @@ import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
 import {
   Calendar,
   Disc3,
-  ExternalLink,
   HardDrive,
   Headphones,
   MapPin,
@@ -44,7 +43,6 @@ interface ArtistHeroSectionProps {
   upcomingShow?: ArtistShowEvent;
   popularityScore: number;
   tags: string[];
-  navidromeUrl?: string;
   topTracksAvailable: boolean;
   enriching: boolean;
   isAdmin: boolean;
@@ -80,7 +78,6 @@ export function ArtistHeroSection({
   upcomingShow,
   popularityScore,
   tags,
-  navidromeUrl,
   topTracksAvailable,
   enriching,
   isAdmin,
@@ -262,13 +259,6 @@ export function ArtistHeroSection({
               >
                 <Radio size={14} className="mr-1" /> Artist Radio
               </Button>
-              {navidromeUrl && (
-                <Button size="sm" variant="outline" className="border-white/20 text-white/70 hover:text-white hover:bg-white/10" asChild>
-                  <a href={navidromeUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink size={14} className="mr-1" /> Navidrome
-                  </a>
-                </Button>
-              )}
               <Button
                 size="sm"
                 variant="outline"

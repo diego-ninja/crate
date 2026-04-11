@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import {
   Play,
-  ExternalLink,
   Music,
   HardDrive,
   Clock,

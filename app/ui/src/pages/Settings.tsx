@@ -213,7 +213,6 @@ export function Settings() {
 function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: () => void }) {
   const [workers, setWorkers] = useState(settings.worker.max_workers);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [folderPattern, setFolderPattern] = useState(settings.library?.folder_pattern ?? "artist/album");
 
   async function saveWorkers(value: number) {

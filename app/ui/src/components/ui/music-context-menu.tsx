@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router";
-import { usePlayer, type Track } from "@/contexts/PlayerContext";
+import { usePlayer } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl, albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { toast } from "sonner";
@@ -27,19 +27,7 @@ interface MusicContextMenuProps {
   onFindSimilar?: () => void;
 }
 
-interface NavidromeSong {
-  id: string;
-  title: string;
-  track: number;
-  duration: number;
-}
 
-interface NavidromeAlbumLink {
-  id: string;
-  name: string;
-  songs: NavidromeSong[];
-  navidrome_url: string;
-}
 
 export function MusicContextMenu({
   children,
@@ -56,7 +44,7 @@ export function MusicContextMenu({
   onFindSimilar,
 }: MusicContextMenuProps) {
   const navigate = useNavigate();
-  const { play, playAll, playNext, addToQueue } = usePlayer();
+  const { play, playNext, addToQueue } = usePlayer();
   const resolvedAlbumCover = albumCover || albumCoverApiUrl({
     albumId,
     albumSlug,
@@ -80,28 +68,7 @@ export function MusicContextMenu({
       return;
     }
     if (type === "album" && album) {
-      try {
-        if (albumId == null) throw new Error("missing album id");
-        const data = await api<NavidromeAlbumLink>(
-          `/api/navidrome/albums/${albumId}/link`,
-        );
-        if (data?.songs?.length) {
-          const tracks: Track[] = data.songs.map((s) => ({
-            id: s.id,
-            title: s.title,
-            artist,
-            artistId,
-            artistSlug,
-            album,
-            albumId,
-            albumSlug,
-            albumCover: resolvedAlbumCover,
-          }));
-          playAll(tracks);
-        }
-      } catch {
-        navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }));
-      }
+      navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }));
     }
   }
 

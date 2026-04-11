@@ -15,6 +15,9 @@ export interface AuthUser {
   name: string;
   role: string;
   avatar?: string;
+  username?: string | null;
+  bio?: string | null;
+  connected_accounts?: Array<{ provider: string; status: string }>;
 }
 
 interface AuthContextValue {
@@ -53,6 +56,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetchUser();
   }, [fetchUser]);
+
+  useEffect(() => {
+    if (!user) return;
+    const timer = window.setInterval(() => {
+      void api("/api/auth/heartbeat", "POST", { app_id: "admin-web" }).catch(() => {});
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [user]);
 
   const logout = useCallback(async () => {
     try {

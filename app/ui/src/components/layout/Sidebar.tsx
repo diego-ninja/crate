@@ -39,10 +39,6 @@ interface SidebarStats {
   running_tasks?: number;
 }
 
-  connected: boolean;
-  version: string;
-}
-
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/browse", icon: Library, label: "Browse" },

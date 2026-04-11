@@ -2,9 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router";
 import { formatBadgeClass } from "@/lib/utils";
 import { Music, Play, Heart, ListPlus } from "lucide-react";
-import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { useFavorites } from "@/hooks/use-favorites";
-import { api } from "@/lib/api";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 
@@ -31,19 +29,7 @@ function hashColor(str: string): string {
   return `hsl(${h}, 30%, 15%)`;
 }
 
-interface NavidromeSong {
-  id: string;
-  title: string;
-  track: number;
-  duration: number;
-}
 
-interface NavidromeAlbumLink {
-  id: string;
-  name: string;
-  songs: NavidromeSong[];
-  navidrome_url: string;
-}
 
 export const AlbumCard = React.memo(function AlbumCard({
   albumId,
@@ -62,36 +48,14 @@ export const AlbumCard = React.memo(function AlbumCard({
   const navigate = useNavigate();
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
-  const player = usePlayer();
+  
   const { isFavorite, toggleFavorite } = useFavorites();
   const coverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: name });
   const favId = `${artist}/${name}`;
 
-  async function handlePlay(e: React.MouseEvent) {
+  function handlePlay(e: React.MouseEvent) {
     e.stopPropagation();
-    try {
-      if (albumId == null) throw new Error("missing album id");
-      const data = await api<NavidromeAlbumLink>(
-        `/api/navidrome/albums/${albumId}/link`,
-      );
-      if (data?.songs?.length) {
-        const playerTracks: Track[] = data.songs.map((s) => ({
-          id: s.id,
-          title: s.title,
-          artist,
-          artistId,
-          artistSlug,
-          album: name,
-          albumId,
-          albumSlug,
-          albumCover: coverUrl,
-        }));
-        player.playAll(playerTracks);
-      }
-    } catch {
-      // navidrome not linked, navigate instead
-      navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: name }));
-    }
+    navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: name }));
   }
 
   return (

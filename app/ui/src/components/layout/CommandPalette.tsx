@@ -23,7 +23,6 @@ import {
   BarChart2,
   Sparkles,
   Compass,
-  Link2,
 } from "lucide-react";
 
 interface SearchResults {

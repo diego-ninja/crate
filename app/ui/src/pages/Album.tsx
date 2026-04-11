@@ -67,13 +67,6 @@ interface AlbumData {
   genres?: string[];
 }
 
-interface NavidromeAlbumLink {
-  id: string;
-  name: string;
-  songs: { id: string; title: string; track: number; duration: number }[];
-  navidrome_url: string;
-}
-
 interface MatchResult {
   title: string;
   artist: string;
@@ -98,20 +91,10 @@ export function Album() {
   const [matches, setMatches] = useState<MatchResult[] | null>(null);
   const [matching, setMatching] = useState(false);
   const [pendingMatch, setPendingMatch] = useState<MatchResult | null>(null);
-  const [navidromeData, setNavidromeData] = useState<NavidromeAlbumLink | null>(null);
   const [audiomuseData, setAudiomuseData] = useState<Record<string, AudioMuseTrack> | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (data?.id == null) return;
-    let cancelled = false;
-    api<NavidromeAlbumLink>(`/api/navidrome/albums/${data.id}/link`)
-      .then((d) => { if (!cancelled) setNavidromeData(d); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [data?.id]);
 
   function fetchAudiomuseData(artistId?: number) {
     if (artistId == null) return;
@@ -199,7 +182,6 @@ export function Album() {
           totalLengthSec={data.total_length_sec}
           totalSizeMb={data.total_size_mb}
           hasCover={data.has_cover}
-          navidromeData={navidromeData}
           tracks={data.tracks}
           genres={data.genres}
           hasAnalysis={audiomuseData != null && Object.values(audiomuseData).some((t) => t.tempo != null)}
@@ -328,7 +310,6 @@ export function Album() {
           <h3 className="font-semibold mb-3">Tracks</h3>
           <TrackTable
             tracks={data.tracks}
-            navidromeSongs={navidromeData?.songs}
             artist={data.artist}
             artistId={data.artist_id}
             artistSlug={data.artist_slug}
