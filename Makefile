@@ -43,9 +43,9 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@(cd app/listen && npx vite --port 5174 --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo ""
-	@echo "  $(GREEN)Admin:$(NC)  http://admin.crate.local"
-	@echo "  $(GREEN)Listen:$(NC) http://listen.crate.local"
-	@echo "  $(GREEN)API:$(NC)    http://api.crate.local"
+	@echo "  $(GREEN)Admin:$(NC)  https://admin.crate.local"
+	@echo "  $(GREEN)Listen:$(NC) https://listen.crate.local"
+	@echo "  $(GREEN)API:$(NC)    https://api.crate.local"
 	@echo "  Login:  yosoy@diego.ninja / admin"
 	@echo ""
 	@echo "$(GREEN)Todo arrancado. make dev-down para parar.$(NC)"
@@ -343,6 +343,12 @@ hosts-show: ## Mostrar dominios locales configurados
 .PHONY: dns-setup
 dns-setup: ## Setup local DNS wildcard for *.crate.local → 127.0.0.1 (requires sudo)
 	@./scripts/setup-local-dns.sh
+
+.PHONY: trust-local-ca
+trust-local-ca: ## Trust Caddy's local CA for HTTPS (run after first 'make dev', requires sudo)
+	@docker cp crate-dev-caddy:/data/caddy/pki/authorities/local/root.crt /tmp/caddy-root.crt
+	@sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/caddy-root.crt
+	@echo "$(GREEN)Caddy local CA trusted. Restart your browser.$(NC)"
 
 # ===========================================================================
 # CAPACITOR (mobile native builds)

@@ -1,15 +1,18 @@
 {
-	auto_https off
+	local_certs
 }
 
-http://admin.crate.local {
+https://admin.crate.local {
+	tls internal
 	reverse_proxy host.docker.internal:5173
 }
 
-http://listen.crate.local {
+https://listen.crate.local {
+	tls internal
 	reverse_proxy host.docker.internal:5174
 }
 
-http://api.crate.local {
+https://api.crate.local {
+	tls internal
 	reverse_proxy api:8585
 }

@@ -52,10 +52,14 @@ EOF
     fi
 
     echo ""
-    echo "Available domains:"
-    echo "  http://admin.${LOCAL_TLD}:5173   → Admin UI"
-    echo "  http://listen.${LOCAL_TLD}:5174  → Listen UI"
-    echo "  http://api.${LOCAL_TLD}:8585     → API"
+    echo "Available domains (HTTPS via Caddy):"
+    echo "  https://admin.${LOCAL_TLD}   → Admin UI"
+    echo "  https://listen.${LOCAL_TLD}  → Listen UI"
+    echo "  https://api.${LOCAL_TLD}     → API"
+    echo ""
+    echo "To trust Caddy's local CA (run after first 'make dev'):"
+    echo "  docker cp crate-dev-caddy:/data/caddy/pki/authorities/local/root.crt /tmp/caddy-root.crt"
+    echo "  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/caddy-root.crt"
 
 elif [ "$OS" = "Linux" ]; then
     sudo apt-get install -y dnsmasq

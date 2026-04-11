@@ -135,6 +135,7 @@ services:
     container_name: crate-dev-caddy
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./data/caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
     networks:
