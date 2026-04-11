@@ -1,0 +1,53 @@
+# Override para entorno LOCAL
+# Docker Compose carga este fichero automaticamente junto con docker-compose.yaml
+# Para produccion, usar: docker compose -f docker-compose.yaml (sin override)
+
+services:
+  traefik:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data/traefik/local/traefik.yml:/traefik.yml:ro
+      - ./data/traefik/local/certs:/certs:ro
+    environment:
+      - TZ=${TZ}
+    labels:
+      traefik.http.routers.traefik-secure.rule: Host(`traefik.crate.local`)
+
+  authelia:
+    labels:
+      traefik.http.routers.authelia.rule: Host(`auth.crate.local`)
+
+  lidarr:
+    labels:
+      traefik.http.routers.lidarr.rule: Host(`collection.crate.local`)
+
+  navidrome:
+    labels:
+      traefik.http.routers.navidrome.rule: Host(`play.crate.local`)
+      traefik.http.routers.navidrome-secure.rule: Host(`play.crate.local`)
+      traefik.http.routers.navidrome-subsonic.rule: Host(`api.crate.local`) && PathPrefix(`/rest/`)
+
+  tidarr:
+    labels:
+      traefik.http.routers.tidarr.rule: Host(`search.crate.local`)
+
+  crate-api:
+    ports:
+      - "${MUSICDOCK_API_PORT}:8585"
+
+  crate-ui:
+    ports:
+      - "${MUSICDOCK_UI_PORT:-8580}:80"
+    labels:
+      traefik.http.routers.admin.rule: Host(`admin.crate.local`)
+
+  audiomuse:
+    labels:
+      traefik.http.routers.audiomuse.rule: Host(`ai.crate.local`)
+
+  nginx:
+    labels:
+      traefik.http.routers.diego-ninja.rule: Host(`web.crate.local`)
