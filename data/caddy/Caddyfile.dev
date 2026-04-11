@@ -1,0 +1,15 @@
+{
+	auto_https off
+}
+
+http://admin.crate.local {
+	reverse_proxy host.docker.internal:5173
+}
+
+http://listen.crate.local {
+	reverse_proxy host.docker.internal:5174
+}
+
+http://api.crate.local {
+	reverse_proxy api:8585
+}

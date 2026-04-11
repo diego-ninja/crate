@@ -32,12 +32,9 @@ NC     := \033[0m
 DC_DEV := $(DC) -f docker-compose.dev.yaml
 
 .PHONY: dev
-dev: ## Levantar backend (Postgres + Redis + API + Worker) + frontend dev servers
+dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend dev servers
 	@$(DC_DEV) up -d --build
-	@echo "$(GREEN)Backend levantado (Postgres, Redis, API :8585, Worker)$(NC)"
-	@echo ""
-	@echo "  API:    http://localhost:8585"
-	@echo "  Login:  yosoy@diego.ninja / admin"
+	@echo "$(GREEN)Backend levantado (Postgres, Redis, API, Worker, Caddy)$(NC)"
 	@echo ""
 	@echo "Arrancando frontends..."
 	@cd app/ui && npm install --silent 2>/dev/null; cd ../..
@@ -45,10 +42,14 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker) + frontend dev server
 	@(cd app/ui && npx vite --port 5173 --host > /dev/null 2>&1 &)
 	@(cd app/listen && npx vite --port 5174 --host > /dev/null 2>&1 &)
 	@sleep 2
-	@echo "  $(GREEN)Admin:$(NC)  http://localhost:5173"
-	@echo "  $(GREEN)Listen:$(NC) http://localhost:5174"
+	@echo ""
+	@echo "  $(GREEN)Admin:$(NC)  http://admin.crate.local"
+	@echo "  $(GREEN)Listen:$(NC) http://listen.crate.local"
+	@echo "  $(GREEN)API:$(NC)    http://api.crate.local"
+	@echo "  Login:  yosoy@diego.ninja / admin"
 	@echo ""
 	@echo "$(GREEN)Todo arrancado. make dev-down para parar.$(NC)"
+	@echo "$(YELLOW)Nota: ejecuta 'make dns-setup' si *.crate.local no resuelve$(NC)"
 
 .PHONY: dev-back
 dev-back: ## Solo backend (Postgres + Redis + API + Worker) sin frontends

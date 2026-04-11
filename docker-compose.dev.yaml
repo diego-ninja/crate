@@ -130,6 +130,20 @@ services:
       - slskd
     command: ["worker"]
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: crate-dev-caddy
+    ports:
+      - "80:80"
+    volumes:
+      - ./data/caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+    networks:
+      - crate-dev
+    depends_on:
+      - api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
   dev_postgres:
   dev_data:
