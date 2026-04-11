@@ -66,6 +66,7 @@ services:
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
       - LASTFM_APIKEY=${LASTFM_APIKEY:-}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
       - FANART_API_KEY=${FANART_API_KEY:-}
       - SPOTIFY_ID=${SPOTIFY_ID:-}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
@@ -107,6 +108,7 @@ services:
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
       - LASTFM_APIKEY=${LASTFM_APIKEY:-}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
       - FANART_API_KEY=${FANART_API_KEY:-}
       - SPOTIFY_ID=${SPOTIFY_ID:-}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}

@@ -289,6 +289,7 @@ services:
       - CRATE_CONFIG=/app/config.yaml
       - DATA_DIR=/data
       - LASTFM_APIKEY=${LASTFM_APIKEY}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
       - FANART_API_KEY=${FANART_API_KEY:-}
       - NAVIDROME_URL=http://navidrome:4533
       - NAVIDROME_USER=admin
@@ -356,6 +357,7 @@ services:
       - CRATE_CONFIG=/app/config.yaml
       - DATA_DIR=/data
       - LASTFM_APIKEY=${LASTFM_APIKEY}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
       - FANART_API_KEY=${FANART_API_KEY:-}
       - NAVIDROME_URL=http://navidrome:4533
       - NAVIDROME_USER=admin
