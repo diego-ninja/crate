@@ -1,14 +1,25 @@
-import { useState, type FormEvent } from "react";
-import { Link, Navigate } from "react-router";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
+import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { api, ApiError, setAuthToken } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 export function Login() {
+  const navigate = useNavigate();
   const { user, loading: authLoading, refetch } = useAuth();
+  const [searchParams] = useSearchParams();
+  const returnTo = searchParams.get("return_to") || "/";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [authConfig, setAuthConfig] = useState<{ invite_only?: boolean }>({});
+
+  useEffect(() => {
+    api<{ invite_only?: boolean }>("/api/auth/config")
+      .then(setAuthConfig)
+      .catch(() => {});
+  }, []);
 
   if (authLoading) {
     return (
@@ -19,7 +30,7 @@ export function Login() {
   }
 
   if (user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo} replace />;
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -31,6 +42,7 @@ export function Login() {
       const res = await api<{ token?: string }>("/api/auth/login", "POST", { email, password });
       if (res?.token) setAuthToken(res.token);
       await refetch();
+      navigate(returnTo, { replace: true });
     } catch (err) {
       if (err instanceof ApiError) {
         try {
@@ -58,6 +70,12 @@ export function Login() {
           <h1 className="text-2xl font-bold text-white">Crate</h1>
           <p className="text-sm text-white/40 -mt-0.5">Own your music</p>
         </div>
+
+        {authConfig.invite_only ? (
+          <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
+            New accounts are invite-only right now. If you are joining a private beta, open your invite link to register.
+          </div>
+        ) : null}
 
         {error && (
           <p className="text-sm text-red-400 text-center">{error}</p>
@@ -99,9 +117,11 @@ export function Login() {
           {submitting ? "Signing in..." : "Sign in"}
         </button>
 
+        <OAuthButtons returnTo={returnTo} />
+
         <p className="text-center text-sm text-white/40">
           No account?{" "}
-          <Link to="/register" className="text-primary hover:underline">Create one</Link>
+          <Link to={`/register?return_to=${encodeURIComponent(returnTo)}`} className="text-primary hover:underline">Create one</Link>
         </p>
       </form>
     </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { Loader2 } from "lucide-react";
+import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -16,14 +17,9 @@ export function Register() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [inviteOnly, setInviteOnly] = useState(false);
-  const [providers, setProviders] = useState<Record<string, { enabled: boolean; configured: boolean; login_url: string | null }>>({});
-
   useEffect(() => {
     api<{ invite_only?: boolean }>("/api/auth/config")
       .then((config) => setInviteOnly(Boolean(config.invite_only)))
-      .catch(() => {});
-    api<Record<string, { enabled: boolean; configured: boolean; login_url: string | null }>>("/api/auth/providers")
-      .then(setProviders)
       .catch(() => {});
   }, []);
 
@@ -62,10 +58,6 @@ export function Register() {
       setLoading(false);
     }
   }
-
-  const oauthProviders = Object.entries(providers).filter(
-    ([key, item]) => key !== "password" && item.enabled && item.configured && item.login_url,
-  );
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-app-surface px-4">
@@ -134,25 +126,7 @@ export function Register() {
           {loading ? "Creating..." : "Create Account"}
         </button>
 
-        {oauthProviders.length > 0 ? (
-          <div className="space-y-2">
-            {oauthProviders.map(([provider, item]) => (
-              <button
-                key={provider}
-                type="button"
-                onClick={() => {
-                  const target = new URL(item.login_url || "", window.location.origin);
-                  target.searchParams.set("return_to", `${window.location.origin}${returnTo}`);
-                  if (inviteToken) target.searchParams.set("invite", inviteToken);
-                  window.location.href = target.toString();
-                }}
-                className="w-full h-10 rounded-lg border border-white/10 bg-white/5 text-white font-medium text-sm hover:bg-white/10 transition-colors"
-              >
-                Continue with {provider.charAt(0).toUpperCase() + provider.slice(1)}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <OAuthButtons returnTo={returnTo} inviteToken={inviteToken} />
 
         <p className="text-center text-sm text-white/40">
           Already have an account?{" "}
