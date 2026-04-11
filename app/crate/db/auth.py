@@ -2,7 +2,8 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 
 from crate.db.core import get_db_ctx
 
@@ -79,6 +80,23 @@ def get_user_by_google_id(google_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+def get_user_by_external_identity(provider: str, external_user_id: str) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT u.*
+            FROM user_external_identities uei
+            JOIN users u ON u.id = uei.user_id
+            WHERE uei.provider = %s
+              AND uei.external_user_id = %s
+            LIMIT 1
+            """,
+            (provider, external_user_id),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
 def get_user_by_id(user_id: int) -> dict | None:
     with get_db_ctx() as cur:
         cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
@@ -104,8 +122,28 @@ def list_users() -> list[dict]:
                 u.avatar,
                 u.role,
                 u.google_id,
+                u.bio,
                 u.created_at,
                 u.last_login,
+                COALESCE((
+                    SELECT COUNT(*)
+                    FROM sessions s
+                    WHERE s.user_id = u.id
+                      AND s.revoked_at IS NULL
+                      AND COALESCE(s.last_seen_at, s.created_at) >= NOW() - INTERVAL '10 minutes'
+                ), 0)::INTEGER AS active_sessions,
+                COALESCE((
+                    SELECT json_agg(
+                        json_build_object(
+                            'provider', provider,
+                            'status', status,
+                            'external_username', external_username
+                        )
+                        ORDER BY provider
+                    )
+                    FROM user_external_identities
+                    WHERE user_id = u.id
+                ), '[]'::json) AS connected_accounts,
                 uei.external_username AS navidrome_username,
                 uei.status AS navidrome_status,
                 uei.last_error AS navidrome_last_error,
@@ -123,7 +161,7 @@ def list_users() -> list[dict]:
 
 
 _USER_UPDATABLE_FIELDS = frozenset({
-    "email", "name", "username", "role", "password_hash", "google_id",
+    "email", "name", "username", "bio", "role", "password_hash", "google_id", "avatar",
 })
 
 
@@ -148,12 +186,27 @@ def delete_user(user_id: int):
 
 # ── Sessions ─────────────────────────────────────────────────────
 
-def create_session(session_id: str, user_id: int, expires_at: str) -> dict:
+def create_session(
+    session_id: str,
+    user_id: int,
+    expires_at: str,
+    *,
+    last_seen_ip: str | None = None,
+    user_agent: str | None = None,
+    app_id: str | None = None,
+    device_label: str | None = None,
+) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
         cur.execute(
-            "INSERT INTO sessions (id, user_id, expires_at, created_at) VALUES (%s, %s, %s, %s) RETURNING *",
-            (session_id, user_id, expires_at, now),
+            """
+            INSERT INTO sessions (
+                id, user_id, expires_at, created_at, last_seen_at, last_seen_ip, user_agent, app_id, device_label
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (session_id, user_id, expires_at, now, now, last_seen_ip, user_agent, app_id, device_label),
         )
         return dict(cur.fetchone())
 
@@ -163,6 +216,78 @@ def get_session(session_id: str) -> dict | None:
         cur.execute("SELECT * FROM sessions WHERE id = %s", (session_id,))
         row = cur.fetchone()
     return dict(row) if row else None
+
+
+def list_sessions(user_id: int, *, include_revoked: bool = False) -> list[dict]:
+    with get_db_ctx() as cur:
+        query = [
+            "SELECT * FROM sessions WHERE user_id = %s",
+        ]
+        params: list[object] = [user_id]
+        if not include_revoked:
+            query.append("AND revoked_at IS NULL")
+        query.append("ORDER BY COALESCE(last_seen_at, created_at) DESC")
+        cur.execute("\n".join(query), params)
+        return [dict(row) for row in cur.fetchall()]
+
+
+def touch_session(
+    session_id: str,
+    *,
+    last_seen_ip: str | None = None,
+    user_agent: str | None = None,
+    app_id: str | None = None,
+    device_label: str | None = None,
+) -> dict | None:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            UPDATE sessions
+            SET last_seen_at = %s,
+                last_seen_ip = COALESCE(%s, last_seen_ip),
+                user_agent = COALESCE(%s, user_agent),
+                app_id = COALESCE(%s, app_id),
+                device_label = COALESCE(%s, device_label)
+            WHERE id = %s
+            RETURNING *
+            """,
+            (now, last_seen_ip, user_agent, app_id, device_label, session_id),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def revoke_session(session_id: str) -> bool:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            "UPDATE sessions SET revoked_at = %s WHERE id = %s AND revoked_at IS NULL",
+            (now, session_id),
+        )
+        return cur.rowcount > 0
+
+
+def revoke_other_sessions(user_id: int, current_session_id: str | None = None) -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        if current_session_id:
+            cur.execute(
+                """
+                UPDATE sessions
+                SET revoked_at = %s
+                WHERE user_id = %s
+                  AND id != %s
+                  AND revoked_at IS NULL
+                """,
+                (now, user_id, current_session_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE sessions SET revoked_at = %s WHERE user_id = %s AND revoked_at IS NULL",
+                (now, user_id),
+            )
+        return cur.rowcount
 
 
 def delete_session(session_id: str):
@@ -178,6 +303,15 @@ def get_user_external_identity(user_id: int, provider: str) -> dict | None:
         )
         row = cur.fetchone()
     return dict(row) if row else None
+
+
+def list_user_external_identities(user_id: int) -> list[dict]:
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT * FROM user_external_identities WHERE user_id = %s ORDER BY provider",
+            (user_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]
 
 
 def upsert_user_external_identity(
@@ -248,3 +382,91 @@ def unlink_user_external_identity(user_id: int, provider: str) -> None:
             """,
             (user_id, provider, now, now),
         )
+
+
+def create_auth_invite(
+    created_by: int | None,
+    *,
+    email: str | None = None,
+    expires_in_hours: int = 168,
+    max_uses: int | None = 1,
+) -> dict:
+    now = datetime.now(timezone.utc)
+    token = secrets.token_urlsafe(24)
+    expires_at = (now + timedelta(hours=expires_in_hours)).isoformat() if expires_in_hours > 0 else None
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            INSERT INTO auth_invites (token, email, created_by, expires_at, max_uses, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (token, email, created_by, expires_at, max_uses, now.isoformat()),
+        )
+        return dict(cur.fetchone())
+
+
+def get_auth_invite(token: str) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM auth_invites WHERE token = %s", (token,))
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def list_auth_invites(created_by: int | None = None) -> list[dict]:
+    with get_db_ctx() as cur:
+        if created_by is None:
+            cur.execute("SELECT * FROM auth_invites ORDER BY created_at DESC")
+        else:
+            cur.execute("SELECT * FROM auth_invites WHERE created_by = %s ORDER BY created_at DESC", (created_by,))
+        return [dict(row) for row in cur.fetchall()]
+
+
+def consume_auth_invite(token: str) -> dict | None:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            UPDATE auth_invites
+            SET use_count = use_count + 1,
+                accepted_at = COALESCE(accepted_at, %s)
+            WHERE token = %s
+              AND (expires_at IS NULL OR expires_at > %s)
+              AND (max_uses IS NULL OR use_count < max_uses)
+            RETURNING *
+            """,
+            (now, token, now),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def cleanup_expired_sessions(max_age_days: int = 7) -> int:
+    """Delete sessions that expired or were revoked more than max_age_days ago."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            DELETE FROM sessions
+            WHERE (expires_at < %s)
+               OR (revoked_at IS NOT NULL AND revoked_at < %s)
+            """,
+            (cutoff, cutoff),
+        )
+        return cur.rowcount
+
+
+def cleanup_ended_jam_rooms(max_age_days: int = 30) -> int:
+    """Delete jam rooms, members, events, and invites for rooms ended more than max_age_days ago."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute("SELECT id FROM jam_rooms WHERE status = 'ended' AND ended_at < %s", (cutoff,))
+        room_ids = [r["id"] for r in cur.fetchall()]
+        if not room_ids:
+            return 0
+        placeholders = ",".join(["%s"] * len(room_ids))
+        cur.execute(f"DELETE FROM jam_room_events WHERE room_id IN ({placeholders})", room_ids)
+        cur.execute(f"DELETE FROM jam_room_invites WHERE room_id IN ({placeholders})", room_ids)
+        cur.execute(f"DELETE FROM jam_room_members WHERE room_id IN ({placeholders})", room_ids)
+        cur.execute(f"DELETE FROM jam_rooms WHERE id IN ({placeholders})", room_ids)
+        return len(room_ids)

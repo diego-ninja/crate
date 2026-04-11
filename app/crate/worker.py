@@ -170,8 +170,11 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
             last_cleanup = now
             try:
                 from crate.db.events import cleanup_old_events, cleanup_old_tasks
+                from crate.db.auth import cleanup_expired_sessions, cleanup_ended_jam_rooms
                 cleanup_old_events(max_age_hours=48)
                 cleanup_old_tasks(max_age_days=7)
+                cleanup_expired_sessions(max_age_days=7)
+                cleanup_ended_jam_rooms(max_age_days=30)
             except Exception:
                 log.debug("Auto-cleanup failed")
 
