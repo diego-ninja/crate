@@ -1,4 +1,5 @@
 import json
+import secrets
 from datetime import datetime, timezone
 
 from crate.db.core import get_db_ctx
@@ -13,6 +14,8 @@ def _normalize_playlist_row(row: dict) -> dict:
     d["generation_mode"] = d.get("generation_mode") or ("smart" if d.get("is_smart") else "static")
     d["is_curated"] = bool(d.get("is_curated"))
     d["is_active"] = True if d.get("is_active") is None else bool(d.get("is_active"))
+    d["visibility"] = d.get("visibility") or ("public" if d["scope"] == "system" else "private")
+    d["is_collaborative"] = bool(d.get("is_collaborative"))
     d["navidrome_public"] = bool(d.get("navidrome_public"))
     d["navidrome_projection_status"] = d.get("navidrome_projection_status") or "unprojected"
     d["is_system"] = d["scope"] == "system"
@@ -61,6 +64,8 @@ def create_playlist(name: str, description: str = "", user_id: int | None = None
                     cover_data_url: str | None = None,
                     cover_path: str | None = None,
                     scope: str | None = None,
+                    visibility: str | None = None,
+                    is_collaborative: bool = False,
                     generation_mode: str | None = None,
                     is_curated: bool = False,
                     is_active: bool = True,
@@ -70,16 +75,17 @@ def create_playlist(name: str, description: str = "", user_id: int | None = None
                     category: str | None = None) -> int:
     now = datetime.now(timezone.utc).isoformat()
     final_scope = scope or ("system" if user_id is None else "user")
+    final_visibility = visibility or ("public" if final_scope == "system" else "private")
     final_generation_mode = generation_mode or ("smart" if is_smart else "static")
     with get_db_ctx() as cur:
         cur.execute(
             """
             INSERT INTO playlists (
                 name, description, cover_data_url, user_id, is_smart, smart_rules_json,
-                cover_path, scope, generation_mode, is_curated, is_active, managed_by_user_id,
+                cover_path, scope, visibility, is_collaborative, generation_mode, is_curated, is_active, managed_by_user_id,
                 curation_key, featured_rank, category, created_at, updated_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
             (
@@ -91,6 +97,8 @@ def create_playlist(name: str, description: str = "", user_id: int | None = None
                 json.dumps(smart_rules) if smart_rules else None,
                 cover_path,
                 final_scope,
+                final_visibility,
+                is_collaborative,
                 final_generation_mode,
                 is_curated,
                 is_active,
@@ -102,13 +110,32 @@ def create_playlist(name: str, description: str = "", user_id: int | None = None
                 now,
             ),
         )
-        return cur.fetchone()["id"]
+        playlist_id = cur.fetchone()["id"]
+        if user_id is not None:
+            cur.execute(
+                """
+                INSERT INTO playlist_members (playlist_id, user_id, role, invited_by, created_at)
+                VALUES (%s, %s, 'owner', %s, %s)
+                ON CONFLICT (playlist_id, user_id) DO NOTHING
+                """,
+                (playlist_id, user_id, user_id, now),
+            )
+        return playlist_id
 
 
 def get_playlists(user_id: int | None = None) -> list[dict]:
     with get_db_ctx() as cur:
         if user_id:
-            cur.execute("SELECT * FROM playlists WHERE user_id = %s ORDER BY updated_at DESC", (user_id,))
+            cur.execute(
+                """
+                SELECT DISTINCT p.*
+                FROM playlists p
+                LEFT JOIN playlist_members pm ON pm.playlist_id = p.id
+                WHERE p.user_id = %s OR pm.user_id = %s
+                ORDER BY p.updated_at DESC
+                """,
+                (user_id, user_id),
+            )
         else:
             cur.execute("SELECT * FROM playlists ORDER BY updated_at DESC")
         rows = cur.fetchall()
@@ -173,7 +200,8 @@ def update_playlist(playlist_id: int, **kwargs):
     fields = ["updated_at = %s"]
     values: list = [now]
     for key in (
-        "name", "description", "cover_data_url", "cover_path", "scope", "generation_mode",
+        "name", "description", "cover_data_url", "cover_path", "scope", "visibility",
+        "is_collaborative", "generation_mode",
         "is_curated", "is_active", "managed_by_user_id", "curation_key",
         "featured_rank", "category", "navidrome_playlist_id",
         "navidrome_public", "navidrome_projection_status",
@@ -404,3 +432,136 @@ def get_followed_system_playlists(user_id: int) -> list[dict]:
             item["artwork_tracks"] = _fetch_artwork_tracks(cur, item["id"])
             results.append(item)
     return results
+
+
+def get_playlist_members(playlist_id: int) -> list[dict]:
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                pm.playlist_id,
+                pm.user_id,
+                pm.role,
+                pm.invited_by,
+                pm.created_at,
+                u.username,
+                u.name AS display_name,
+                u.avatar
+            FROM playlist_members pm
+            JOIN users u ON u.id = pm.user_id
+            WHERE pm.playlist_id = %s
+            ORDER BY CASE pm.role WHEN 'owner' THEN 0 ELSE 1 END, pm.created_at ASC
+            """,
+            (playlist_id,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def get_playlist_member(playlist_id: int, user_id: int) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT * FROM playlist_members WHERE playlist_id = %s AND user_id = %s",
+            (playlist_id, user_id),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def can_view_playlist(playlist: dict | None, user_id: int | None) -> bool:
+    if not playlist:
+        return False
+    if playlist.get("scope") == "system":
+        return True
+    if playlist.get("visibility") == "public":
+        return True
+    if user_id is None:
+        return False
+    if playlist.get("user_id") == user_id:
+        return True
+    return get_playlist_member(playlist["id"], user_id) is not None
+
+
+def can_edit_playlist(playlist: dict | None, user_id: int | None) -> bool:
+    if not playlist or user_id is None:
+        return False
+    if playlist.get("scope") == "system":
+        return False
+    if playlist.get("user_id") == user_id:
+        return True
+    member = get_playlist_member(playlist["id"], user_id)
+    return bool(member and member.get("role") in {"owner", "collab"})
+
+
+def is_playlist_owner(playlist: dict | None, user_id: int | None) -> bool:
+    if not playlist or user_id is None:
+        return False
+    if playlist.get("user_id") == user_id:
+        return True
+    member = get_playlist_member(playlist["id"], user_id)
+    return bool(member and member.get("role") == "owner")
+
+
+def add_playlist_member(playlist_id: int, user_id: int, role: str = "collab", invited_by: int | None = None) -> bool:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            INSERT INTO playlist_members (playlist_id, user_id, role, invited_by, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (playlist_id, user_id) DO UPDATE SET
+                role = EXCLUDED.role,
+                invited_by = COALESCE(EXCLUDED.invited_by, playlist_members.invited_by)
+            """,
+            (playlist_id, user_id, role, invited_by, now),
+        )
+        return True
+
+
+def remove_playlist_member(playlist_id: int, user_id: int) -> bool:
+    with get_db_ctx() as cur:
+        cur.execute(
+            "DELETE FROM playlist_members WHERE playlist_id = %s AND user_id = %s",
+            (playlist_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def create_playlist_invite(
+    playlist_id: int,
+    created_by: int | None,
+    *,
+    expires_in_hours: int = 168,
+    max_uses: int | None = 20,
+) -> dict:
+    now = datetime.now(timezone.utc)
+    token = secrets.token_urlsafe(24)
+    expires_at = (now.timestamp() + expires_in_hours * 3600) if expires_in_hours > 0 else None
+    expires_at_iso = datetime.fromtimestamp(expires_at, timezone.utc).isoformat() if expires_at else None
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            INSERT INTO playlist_invites (token, playlist_id, created_by, expires_at, max_uses, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (token, playlist_id, created_by, expires_at_iso, max_uses, now.isoformat()),
+        )
+        return dict(cur.fetchone())
+
+
+def consume_playlist_invite(token: str) -> dict | None:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            UPDATE playlist_invites
+            SET use_count = use_count + 1
+            WHERE token = %s
+              AND (expires_at IS NULL OR expires_at > %s)
+              AND (max_uses IS NULL OR use_count < max_uses)
+            RETURNING *
+            """,
+            (token, now),
+        )
+        row = cur.fetchone()
+    return dict(row) if row else None

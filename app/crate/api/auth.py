@@ -839,7 +839,7 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
             )
             if provider == "google" and not user.get("google_id"):
                 update_user(user["id"], google_id=external_user_id)
-            if avatar and not user.get("avatar"):
+            if avatar:
                 update_user(user["id"], avatar=avatar)
             user = get_user_by_id(user["id"])
         else:
