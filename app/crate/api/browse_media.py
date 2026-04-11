@@ -142,9 +142,7 @@ def api_favorites_add(request: Request, body: dict):
 
     if "/" not in item_id and len(item_id) < 40:
         try:
-            from crate import navidrome
 
-            navidrome.star(item_id, item_type)
         except Exception:
             pass
     return {"ok": True}
@@ -165,9 +163,7 @@ def api_favorites_remove(request: Request, body: dict):
 
     if "/" not in item_id and len(item_id) < 40:
         try:
-            from crate import navidrome
 
-            navidrome.unstar(item_id, item_type)
         except Exception:
             pass
     return {"ok": True}
@@ -197,9 +193,7 @@ def api_rate_track(request: Request, body: dict):
     set_track_rating(track_id, rating)
 
     try:
-        from crate.navidrome import set_navidrome_rating
 
-        set_navidrome_rating(track_id, rating)
     except Exception:
         pass
 

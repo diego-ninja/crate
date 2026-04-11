@@ -50,9 +50,6 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "upload_image":         ("default", 0, 60, 0),
     "library_upload":       ("default", 0, 7200, 1),
     "reset_enrichment":     ("fast",    1, 120, 0),
-    "sync_playlist_navidrome": ("fast", 1, 120, 0),
-    "sync_user_navidrome":  ("fast",    1, 120, 5),
-    "sync_system_playlist_navidrome": ("fast", 1, 300, 2),
     "refresh_user_listening_stats": ("fast", 1, 300, 0),
 
     # New content processing (priority 1)
@@ -88,7 +85,6 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "fetch_artwork_all":    ("fast",    3, 3600, 0),
     "backfill_similarities": ("fast",   3, 3600, 0),
     "sync_shows":           ("fast",    3, 600, 1),
-    "map_navidrome_ids":    ("default", 3, 600, 0),
     "cleanup_incomplete_downloads": ("default", 3, 600, 0),
 }
 

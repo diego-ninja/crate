@@ -71,7 +71,6 @@ services:
       - SPOTIFY_ID=${SPOTIFY_ID:-}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
-      - NAVIDROME_URL=
       - NUMBA_CACHE_DIR=/tmp/numba_cache
       - REDIS_URL=redis://redis:6379/0
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
@@ -113,7 +112,6 @@ services:
       - SPOTIFY_ID=${SPOTIFY_ID:-}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
-      - NAVIDROME_URL=
       - NUMBA_CACHE_DIR=/tmp/numba_cache
       - REDIS_URL=redis://redis:6379/0
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}

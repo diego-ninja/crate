@@ -199,14 +199,11 @@ def my_library(request: Request):
 
 @router.get("/sync")
 def my_sync_status(request: Request):
-    user = _require_auth(request)
-    from crate import navidrome
-    from crate.db import get_user_external_identity
-
-    identity = get_user_external_identity(user["id"], "navidrome")
+    """External service sync status. Navidrome removed — returns empty for backwards compat."""
+    _require_auth(request)
     return {
-        "navidrome_connected": navidrome.ping(),
-        "navidrome": identity or {
+        "navidrome_connected": False,
+        "navidrome": {
             "provider": "navidrome",
             "status": "unlinked",
             "external_username": None,

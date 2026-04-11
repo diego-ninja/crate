@@ -453,7 +453,6 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
 
     if img_type == "cover":
         try:
-            from crate.navidrome import start_scan
 
             start_scan()
         except Exception:

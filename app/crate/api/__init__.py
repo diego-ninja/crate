@@ -68,7 +68,6 @@ def create_app() -> FastAPI:
     from crate.api.analytics import router as analytics_router
     from crate.api.events import router as events_router
     from crate.api.tasks import router as tasks_router
-    from crate.api.navidrome import router as navidrome_router
     from crate.api.stack import router as stack_router
     from crate.api.audiomuse import router as audiomuse_router
     from crate.api.enrichment import router as enrichment_router
@@ -107,7 +106,6 @@ def create_app() -> FastAPI:
     app.include_router(acquisition_router)
     app.include_router(enrichment_router)
     app.include_router(audiomuse_router)
-    app.include_router(navidrome_router)
     app.include_router(analytics_router)
     app.include_router(artwork_router)
     app.include_router(scanner_router)

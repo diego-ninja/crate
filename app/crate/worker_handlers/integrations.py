@@ -404,10 +404,6 @@ def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> d
 
 
 INTEGRATION_TASK_HANDLERS: dict[str, TaskHandler] = {
-    "sync_user_navidrome": _handle_sync_user_navidrome,
-    "sync_playlist_navidrome": _handle_sync_playlist_navidrome,
-    "sync_system_playlist_navidrome": _handle_sync_system_playlist_navidrome,
-    "map_navidrome_ids": _handle_map_navidrome_ids,
     "sync_shows": _handle_sync_shows,
     "backfill_similarities": _handle_backfill_similarities,
 }

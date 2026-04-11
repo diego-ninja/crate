@@ -250,13 +250,16 @@ def _resolve_provider_subject(provider: str, payload: dict) -> tuple[str, str, s
     raise HTTPException(status_code=400, detail="Unsupported provider")
 
 
-def _default_navidrome_username(user: dict) -> str:
-    if user.get("username"):
-        return str(user["username"])
-    return suggest_username(user["email"])
-
-
 def _schedule_navidrome_sync(user: dict, username: str | None = None) -> str:
+    """Navidrome sync removed — no-op stub."""
+    return ""
+
+
+def _default_navidrome_username(user: dict) -> str:
+    return user.get("username") or suggest_username(user["email"])
+
+
+def _DEAD_schedule_navidrome_sync(user: dict, username: str | None = None) -> str:
     target_username = username or _default_navidrome_username(user)
     upsert_user_external_identity(
         user["id"],

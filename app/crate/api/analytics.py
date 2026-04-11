@@ -11,7 +11,6 @@ from crate.db import (
     get_db_ctx, get_setting,
 )
 from crate.importer import ImportQueue
-from crate import navidrome
 
 router = APIRouter()
 
@@ -272,7 +271,6 @@ def api_activity_live(request: Request):
     # System health checks
     pg_ok = True  # if we got here, postgres is up
     try:
-        nd_ok = navidrome.ping()
     except Exception:
         nd_ok = False
     watcher_ok = True  # watcher runs in-process with worker

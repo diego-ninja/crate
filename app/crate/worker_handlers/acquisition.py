@@ -233,7 +233,6 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
             delete_cache(f"processing:{name.lower()}")
 
     try:
-        from crate.navidrome import start_scan
 
         start_scan()
     except Exception:
@@ -962,7 +961,6 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
             log.debug("Failed to queue process_new_content for uploaded artist %s", artist, exc_info=True)
 
     try:
-        from crate.navidrome import start_scan
 
         start_scan()
     except Exception:

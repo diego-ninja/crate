@@ -81,61 +81,6 @@ services:
       traefik.http.routers.lidarr.entryPoints: websecure
       traefik.http.services.lidarr.loadbalancer.server.port: 8686
 
-  navidrome:
-    image: deluan/navidrome:latest
-    container_name: navidrome
-    restart: always
-    volumes:
-      - ${DATA_DIR}/navidrome:/data
-      - ${MEDIA_DIR}/music:/music:ro
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - UMASK=0002
-      - TZ=${TZ}
-      - ND_LOGLEVEL=${NAVIDROME_LOG_LEVEL}
-      - ND_SESSIONTIMEOUT=24h
-      - ND_BASEURL=/
-      - ND_ENABLEGRAVATAR=true
-      - ND_ENABLESHARING=true
-      - ND_SCANSCHEDULE=@every 1h
-      - ND_AUTOIMPORTPLAYLISTS=true
-      - ND_ENABLETRANSCODINGCONFIG=true
-      - ND_TRANSCODINGCACHESIZE=150MB
-      - ND_FFMPEGPATH=/usr/bin/ffmpeg
-      - ND_IMAGECACHESIZE=300MB
-      - ND_MAXMPDCLIENTS=10
-      - ND_CACHESIZE=200MB
-      - ND_MAXSIDELOADEDASSETS=500
-      - ND_DEFAULTTHEME=DARK
-      - ND_DEFAULTLANGUAGE=${LANGUAGE}
-      - ND_ENABLEDOWNLOADS=true
-      - ND_GATRACKINGID=
-      - ND_PASSWORDREQUIREMENT=8^(?=.*[a-z])(?=.*[A-Z])
-      - ND_REVERSEPROXYWHITELIST=0.0.0.0/0
-      - ND_ENABLEUSEREDITING=false
-      - ND_LASTFM_ENABLED=true
-      - ND_LASTFM_APIKEY=${LASTFM_APIKEY}
-      - ND_LASTFM_SECRET=${LASTFM_SECRET}
-      - ND_LASTFM_LANGUAGE=${LANGUAGE}
-      - ND_SPOTIFY_ID=${SPOTIFY_ID}
-      - ND_SPOTIFY_SECRET=${SPOTIFY_SECRET}
-    ports:
-      - "${NAVIDROME_PORT}:4533"
-    networks:
-      - crate
-    labels:
-      traefik.enable: true
-      traefik.docker.network: crate
-      traefik.http.services.navidrome.loadbalancer.server.port: 4533
-      traefik.http.routers.navidrome.entryPoints: websecure
-      traefik.http.routers.navidrome.rule: Host(`play.${DOMAIN}`)
-      traefik.http.routers.navidrome.tls: true
-      traefik.http.routers.navidrome.tls.certresolver: letsencrypt
-      traefik.http.routers.navidrome.middlewares: crate-auth-soft@docker
-      traefik.http.routers.navidrome-subsonic.rule: Host(`api.${DOMAIN}`) && PathPrefix(`/rest/`) && !Query(`c`, `NavidromeUI`)
-      traefik.http.routers.navidrome-subsonic.entryPoints: websecure
-
   tidarr:
     image: cstaelen/tidarr:latest
     container_name: tidarr
@@ -291,9 +236,6 @@ services:
       - LASTFM_APIKEY=${LASTFM_APIKEY}
       - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
       - FANART_API_KEY=${FANART_API_KEY:-}
-      - NAVIDROME_URL=http://navidrome:4533
-      - NAVIDROME_USER=admin
-      - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD}
       - DOMAIN=${DOMAIN}
       - SPOTIFY_ID=${SPOTIFY_ID}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET}
@@ -359,9 +301,6 @@ services:
       - LASTFM_APIKEY=${LASTFM_APIKEY}
       - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
       - FANART_API_KEY=${FANART_API_KEY:-}
-      - NAVIDROME_URL=http://navidrome:4533
-      - NAVIDROME_USER=admin
-      - NAVIDROME_PASSWORD=${NAVIDROME_PASSWORD}
       - DOMAIN=${DOMAIN}
       - SPOTIFY_ID=${SPOTIFY_ID}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET}
@@ -480,9 +419,6 @@ services:
       - SERVICE_TYPE=flask
       - TZ=${TZ}
       - MEDIASERVER_TYPE=navidrome
-      - NAVIDROME_URL=http://navidrome:4533
-      - NAVIDROME_USER=${AUDIOMUSE_NAVIDROME_USER}
-      - NAVIDROME_PASSWORD=${AUDIOMUSE_NAVIDROME_PASSWORD}
       - POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
       - POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
       - POSTGRES_DB=${AUDIOMUSE_POSTGRES_DB}
@@ -521,9 +457,6 @@ services:
       - SERVICE_TYPE=worker
       - TZ=${TZ}
       - MEDIASERVER_TYPE=navidrome
-      - NAVIDROME_URL=http://navidrome:4533
-      - NAVIDROME_USER=${AUDIOMUSE_NAVIDROME_USER}
-      - NAVIDROME_PASSWORD=${AUDIOMUSE_NAVIDROME_PASSWORD}
       - POSTGRES_USER=${AUDIOMUSE_POSTGRES_USER}
       - POSTGRES_PASSWORD=${AUDIOMUSE_POSTGRES_PASSWORD}
       - POSTGRES_DB=${AUDIOMUSE_POSTGRES_DB}

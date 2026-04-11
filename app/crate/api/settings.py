@@ -7,7 +7,6 @@ from pydantic import BaseModel
 from crate.api.auth import _require_admin
 from crate.db import get_setting, set_setting, get_db_table_stats, get_db_ctx, get_cache_stats, delete_cache_prefix
 from crate.scheduler import get_schedules, set_schedules
-from crate import navidrome
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
