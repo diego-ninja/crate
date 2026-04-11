@@ -186,6 +186,32 @@ def delete_user(user_id: int):
 
 # ── Sessions ─────────────────────────────────────────────────────
 
+def _parse_device_label(user_agent: str | None) -> str | None:
+    """Parse user-agent into a human-readable device label using device-detector."""
+    if not user_agent:
+        return None
+    try:
+        from device_detector import DeviceDetector
+        device = DeviceDetector(user_agent).parse()
+        parts = []
+        client = device.client_name()
+        if client:
+            parts.append(client)
+        os_name = device.os_name()
+        if os_name:
+            parts.append(os_name)
+        device_name = device.device_brand_name()
+        model = device.device_model()
+        if device_name and device_name != "Unknown":
+            label = device_name
+            if model and model != "Unknown":
+                label += f" {model}"
+            parts.append(label)
+        return " · ".join(parts) if parts else None
+    except Exception:
+        return None
+
+
 def create_session(
     session_id: str,
     user_id: int,
@@ -196,6 +222,9 @@ def create_session(
     app_id: str | None = None,
     device_label: str | None = None,
 ) -> dict:
+    # Auto-detect device label from user-agent if not provided
+    if not device_label and user_agent:
+        device_label = _parse_device_label(user_agent)
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
         cur.execute(
