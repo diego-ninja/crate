@@ -8,7 +8,6 @@ import { LikedTracksProvider } from "@/contexts/LikedTracksContext";
 import { PlayerProvider } from "@/contexts/PlayerContext";
 import { PlaylistComposerProvider } from "@/contexts/PlaylistComposerContext";
 import { SavedAlbumsProvider } from "@/contexts/SavedAlbumsContext";
-import { UserSyncProvider } from "@/contexts/UserSyncContext";
 import { Shell } from "@/components/layout/Shell";
 import { Home } from "@/pages/Home";
 import { Explore } from "@/pages/Explore";
@@ -129,13 +128,11 @@ export function App() {
               <PlayerProvider>
                 <ArtistFollowsProvider>
                   <LikedTracksProvider>
-                    <UserSyncProvider>
-                      <SavedAlbumsProvider>
-                        <PlaylistComposerProvider>
-                          <Shell />
-                        </PlaylistComposerProvider>
-                      </SavedAlbumsProvider>
-                    </UserSyncProvider>
+                    <SavedAlbumsProvider>
+                      <PlaylistComposerProvider>
+                        <Shell />
+                      </PlaylistComposerProvider>
+                    </SavedAlbumsProvider>
                   </LikedTracksProvider>
                 </ArtistFollowsProvider>
               </PlayerProvider>
