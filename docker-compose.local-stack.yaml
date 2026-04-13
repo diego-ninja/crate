@@ -38,10 +38,6 @@ services:
     labels:
       traefik.http.routers.admin.rule: Host(`admin.crate.local`)
 
-  audiomuse:
-    labels:
-      traefik.http.routers.audiomuse.rule: Host(`ai.crate.local`)
-
   nginx:
     labels:
       traefik.http.routers.diego-ninja.rule: Host(`web.crate.local`)

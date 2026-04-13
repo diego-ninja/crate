@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2, Share2, Radio, Users, Copy, UserMinus } from "lucide-react";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { PlaylistTrackFilterBar, filterPlaylistTracks } from "@/components/playlists/PlaylistTrackFilterBar";
 import {
   PlaylistCreateModal,
   type PlaylistComposerTrack,
@@ -23,6 +24,7 @@ interface PlaylistTrack {
   id: number;
   playlist_id: number;
   track_id?: number;
+  track_storage_id?: string;
   track_path: string;
   title: string;
   artist: string;
@@ -93,12 +95,15 @@ export function Playlist() {
   const [creatingInvite, setCreatingInvite] = useState(false);
   const [inviteData, setInviteData] = useState<PlaylistInvite | null>(null);
   const [removingMemberId, setRemovingMemberId] = useState<number | null>(null);
+  const [filterQuery, setFilterQuery] = useState("");
+  const deferredFilterQuery = useDeferredValue(filterQuery);
 
   const playerTracks = useMemo(() => {
     if (!data?.tracks?.length) return [];
     return data.tracks.map(
       (t): Track => ({
-        id: t.track_path,
+        id: t.track_storage_id || t.track_path,
+        storageId: t.track_storage_id,
         title: t.title || "Unknown",
         artist: t.artist || "",
         artistId: t.artist_id,
@@ -133,6 +138,11 @@ export function Playlist() {
       playlistPosition: track.position,
     }));
   }, [data]);
+
+  const filteredTracks = useMemo(
+    () => filterPlaylistTracks(data?.tracks || [], deferredFilterQuery),
+    [data?.tracks, deferredFilterQuery],
+  );
 
   function handlePlay() {
     if (playerTracks.length === 0) return;
@@ -186,12 +196,13 @@ export function Playlist() {
 
   async function handleAddTrackToPlaylist(
     playlistId: number,
-    track: { title: string; artist: string; album?: string; duration?: number; path?: string },
+    track: { title: string; artist: string; album?: string; duration?: number; path?: string; libraryTrackId?: number },
   ) {
-    if (!track.path) return;
+    if (!track.path && track.libraryTrackId == null) return;
     try {
       await api(`/api/playlists/${playlistId}/tracks`, "POST", {
         tracks: [{
+          track_id: track.libraryTrackId,
           path: track.path,
           title: track.title,
           artist: track.artist,
@@ -475,6 +486,13 @@ export function Playlist() {
         </div>
       </div>
 
+      <PlaylistTrackFilterBar
+        query={filterQuery}
+        onQueryChange={setFilterQuery}
+        totalCount={data.tracks.length}
+        filteredCount={filteredTracks.length}
+      />
+
       {/* Track list */}
       {data.tracks.length === 0 ? (
         <div className="flex items-center justify-center py-16">
@@ -482,13 +500,20 @@ export function Playlist() {
             This playlist has no tracks yet
           </p>
         </div>
+      ) : filteredTracks.length === 0 ? (
+        <div className="flex items-center justify-center py-16">
+          <p className="text-sm text-muted-foreground">
+            No tracks match this filter
+          </p>
+        </div>
       ) : (
         <div>
-          {data.tracks.map((t, i) => (
+          {filteredTracks.map((t, i) => (
             <TrackRow
-              key={`${t.track_path}-${t.position}`}
+              key={t.id ?? `${t.track_path}-${t.position}`}
               track={{
-                id: t.track_id,
+                id: t.track_storage_id ?? t.track_id,
+                storage_id: t.track_storage_id,
                 title: t.title,
                 artist: t.artist,
                 artist_id: t.artist_id,

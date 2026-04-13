@@ -480,6 +480,7 @@ def _create_schema(cur):
             dir_mtime DOUBLE PRECISION,
             updated_at TIMESTAMPTZ,
             id BIGINT DEFAULT nextval('library_artists_id_seq'),
+            storage_id UUID NOT NULL,
             slug TEXT,
             folder_name TEXT,
             bio TEXT,
@@ -507,12 +508,21 @@ def _create_schema(cur):
         )
     """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_id ON library_artists(id)")
+    # storage_id index created in _m23 migration for existing DBs; here for fresh installs only
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_artists' AND column_name='storage_id') THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_storage_id ON library_artists(storage_id)';
+            END IF;
+        END $$
+    """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_slug ON library_artists(slug)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_artists_name_trgm ON library_artists USING gin(name gin_trgm_ops)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS library_albums (
             id SERIAL PRIMARY KEY,
+            storage_id UUID NOT NULL,
             artist TEXT NOT NULL REFERENCES library_artists(name),
             name TEXT NOT NULL,
             path TEXT UNIQUE NOT NULL,
@@ -537,6 +547,13 @@ def _create_schema(cur):
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_albums_artist ON library_albums(artist)")
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_albums' AND column_name='storage_id') THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_storage_id ON library_albums(storage_id)';
+            END IF;
+        END $$
+    """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_slug ON library_albums(slug)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_albums_name_trgm ON library_albums USING gin(name gin_trgm_ops)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_albums_artist_name ON library_albums(artist, name)")
@@ -544,6 +561,7 @@ def _create_schema(cur):
     cur.execute("""
         CREATE TABLE IF NOT EXISTS library_tracks (
             id SERIAL PRIMARY KEY,
+            storage_id UUID NOT NULL,
             album_id INTEGER REFERENCES library_albums(id) ON DELETE CASCADE,
             artist TEXT NOT NULL,
             album TEXT NOT NULL,
@@ -583,6 +601,13 @@ def _create_schema(cur):
             popularity INTEGER,
             rating INTEGER DEFAULT 0
         )
+    """)
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_tracks' AND column_name='storage_id') THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_storage_id ON library_tracks(storage_id)';
+            END IF;
+        END $$
     """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_slug ON library_tracks(slug)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_tracks_album ON library_tracks(album_id)")
@@ -705,6 +730,7 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS playlist_tracks (
             id SERIAL PRIMARY KEY,
             playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
             track_path TEXT NOT NULL,
             title TEXT,
             artist TEXT,
@@ -715,6 +741,13 @@ def _create_schema(cur):
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id, position)")
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='playlist_tracks' AND column_name='track_id') THEN
+                EXECUTE 'CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id)';
+            END IF;
+        END $$
+    """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS playlist_members (
@@ -1711,6 +1744,63 @@ def _m22_add_subsonic_token(cur):
     """)
 
 
+def _m23_add_storage_ids_and_playlist_track_id(cur):
+    for table in ("library_artists", "library_albums", "library_tracks"):
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE {table} ADD COLUMN storage_id UUID;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
+    cur.execute("""
+        DO $$ BEGIN
+            ALTER TABLE playlist_tracks ADD COLUMN track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+
+    for table, pk in (
+        ("library_artists", "name"),
+        ("library_albums", "id"),
+        ("library_tracks", "id"),
+    ):
+        cur.execute(f"SELECT {pk} AS pk FROM {table} WHERE storage_id IS NULL")
+        for row in cur.fetchall():
+            cur.execute(
+                f"UPDATE {table} SET storage_id = %s WHERE {pk} = %s",
+                (str(uuid.uuid4()), row["pk"]),
+            )
+
+    cur.execute("""
+        UPDATE playlist_tracks pt
+        SET track_id = (
+            SELECT lt.id
+            FROM library_tracks lt
+            WHERE lt.path = pt.track_path
+               OR (pt.track_path != '' AND pt.track_path IS NOT NULL
+                   AND lt.path LIKE ('%%/' || pt.track_path)
+                   AND LENGTH(pt.track_path) > 5)
+            ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
+            LIMIT 1
+        )
+        WHERE pt.track_id IS NULL
+    """)
+
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_storage_id ON library_artists(storage_id)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_storage_id ON library_albums(storage_id)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_storage_id ON library_tracks(storage_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id)")
+
+    cur.execute("ALTER TABLE library_artists ALTER COLUMN storage_id SET NOT NULL")
+    cur.execute("ALTER TABLE library_albums ALTER COLUMN storage_id SET NOT NULL")
+    cur.execute("ALTER TABLE library_tracks ALTER COLUMN storage_id SET NOT NULL")
+
+    # Additional indexes for common query patterns
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_artist_genres_artist ON artist_genres(artist_name)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_members_composite ON playlist_members(playlist_id, user_id)")
+
+
 # ---------------------------------------------------------------------------
 # Migration registry — (version, name, handler)
 # ---------------------------------------------------------------------------
@@ -1737,4 +1827,5 @@ _MIGRATIONS = [
     (20, "convert_to_timestamptz", _m20_convert_to_timestamptz),
     (21, "identity_social_collab_foundation", _m21_identity_social_collab_foundation),
     (22, "add_subsonic_token", _m22_add_subsonic_token),
+    (23, "add_storage_ids_and_playlist_track_id", _m23_add_storage_ids_and_playlist_track_id),
 ]

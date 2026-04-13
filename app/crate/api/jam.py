@@ -240,7 +240,11 @@ async def jam_room_ws(websocket: WebSocket, room_id: str):
     try:
         while True:
             raw = await websocket.receive_text()
-            data = json.loads(raw)
+            try:
+                data = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                await websocket.send_json({"type": "error", "detail": "Invalid JSON"})
+                continue
             event_type = data.get("type")
             # Heartbeat: respond immediately, don't process as event
             if event_type == "ping":

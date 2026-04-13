@@ -1,4 +1,13 @@
-import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
 import { Check, MoreHorizontal, type LucideIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 
@@ -47,6 +56,8 @@ export function useItemActionMenu(actions: ItemActionMenuEntry[], options: UseIt
   const { disabled = false } = options;
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
   const [open, setOpen] = useState(false);
   const [rawPosition, setRawPosition] = useState<{ x: number; y: number } | null>(null);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -89,6 +100,46 @@ export function useItemActionMenu(actions: ItemActionMenuEntry[], options: UseIt
     openAtPoint(event.clientX + 4, event.clientY + 4);
   };
 
+  const clearLongPress = () => {
+    if (longPressTimerRef.current != null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleLongPressPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (isDesktop || !hasActions || disabled) return;
+    if (event.pointerType === "mouse") return;
+    longPressTriggeredRef.current = false;
+    clearLongPress();
+    const target = event.currentTarget;
+    longPressTimerRef.current = window.setTimeout(() => {
+      const rect = target.getBoundingClientRect();
+      longPressTriggeredRef.current = true;
+      openAtPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    }, 420);
+  };
+
+  const handleLongPressPointerUp = () => {
+    clearLongPress();
+  };
+
+  const handleLongPressClickCapture = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!longPressTriggeredRef.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    longPressTriggeredRef.current = false;
+  };
+
+  const handleKeyboardTrigger = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!hasActions || disabled) return;
+    if (!(event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    openAtPoint(rect.right - 8, rect.bottom + 8);
+  };
+
   useDismissibleLayer({
     active: open,
     refs: [menuRef, triggerRef],
@@ -120,6 +171,14 @@ export function useItemActionMenu(actions: ItemActionMenuEntry[], options: UseIt
     close,
     openFromTrigger,
     handleContextMenu,
+    handleKeyboardTrigger,
+    longPressHandlers: {
+      onPointerDown: handleLongPressPointerDown,
+      onPointerUp: handleLongPressPointerUp,
+      onPointerCancel: handleLongPressPointerUp,
+      onPointerLeave: handleLongPressPointerUp,
+      onClickCapture: handleLongPressClickCapture,
+    },
   };
 }
 

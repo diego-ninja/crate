@@ -5,6 +5,7 @@ Each service requires user-level credentials stored in user_external_identities.
 """
 
 import hashlib
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -224,7 +225,15 @@ def scrobble_play_event(
 
         for identity in identities:
             provider = identity["provider"]
-            metadata = identity.get("metadata_json") or {}
+            raw_meta = identity.get("metadata_json")
+            if isinstance(raw_meta, str):
+                try:
+                    metadata = json.loads(raw_meta)
+                except (json.JSONDecodeError, ValueError):
+                    log.warning("Corrupted metadata_json for user %s provider %s", user_id, provider)
+                    continue
+            else:
+                metadata = raw_meta or {}
 
             if provider == "lastfm":
                 api_key = os.environ.get("LASTFM_APIKEY", "")

@@ -55,7 +55,7 @@ def api_search(request: Request, q: str = "", limit: int = 20):
         album_rows = cur.fetchall()
         cur.execute(
             """
-            SELECT t.id, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
+            SELECT t.id, t.storage_id, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
                    a.name AS album, ar.id AS artist_id, ar.slug AS artist_slug,
                    t.path, t.duration
             FROM library_tracks t
@@ -95,6 +95,7 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     tracks = [
         {
             "id": row["id"],
+            "storage_id": str(row["storage_id"]) if row.get("storage_id") is not None else None,
             "slug": row.get("slug"),
             "title": row["title"],
             "artist": row["artist"],
@@ -238,6 +239,17 @@ def api_track_info_by_id(request: Request, track_id: int):
     return _serialize_track_info_row(row)
 
 
+@router.get("/api/tracks/by-storage/{storage_id}/info")
+def api_track_info_by_storage_id(request: Request, storage_id: str):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute(f"SELECT {_TRACK_INFO_QUERY_COLS} FROM library_tracks WHERE storage_id = %s", (storage_id,))
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _serialize_track_info_row(row)
+
+
 @router.get("/api/track-info/{filepath:path}")
 def api_track_info(request: Request, filepath: str):
     _require_auth(request)
@@ -321,6 +333,17 @@ def api_stream_by_id(request: Request, track_id: int):
     return _stream_file(request, row["path"])
 
 
+@router.get("/api/tracks/by-storage/{storage_id}/stream")
+def api_stream_by_storage_id(request: Request, storage_id: str):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT path FROM library_tracks WHERE storage_id = %s", (storage_id,))
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _stream_file(request, row["path"])
+
+
 @router.get("/api/stream/{filepath:path}")
 def api_stream_file(request: Request, filepath: str):
     return _stream_file(request, filepath)
@@ -380,6 +403,17 @@ def api_download_track_by_id(request: Request, track_id: int):
     _require_auth(request)
     with get_db_ctx() as cur:
         cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _download_track(request, row["path"])
+
+
+@router.get("/api/tracks/by-storage/{storage_id}/download")
+def api_download_track_by_storage_id(request: Request, storage_id: str):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT path FROM library_tracks WHERE storage_id = %s", (storage_id,))
         row = cur.fetchone()
     if not row:
         return Response(status_code=404)
@@ -447,7 +481,7 @@ def api_browse_mood_tracks(request: Request, mood: str, limit: int = Query(50, g
     params.append(limit)
     with get_db_ctx() as cur:
         cur.execute(
-            f"""SELECT t.id, t.title, t.artist, a.name AS album, t.path, t.duration,
+            f"""SELECT t.id, t.storage_id, t.title, t.artist, a.name AS album, t.path, t.duration,
                        ar.id AS artist_id, ar.slug AS artist_slug,
                        a.id AS album_id, a.slug AS album_slug,
                        t.bpm, t.energy, t.danceability, t.valence

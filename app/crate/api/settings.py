@@ -33,7 +33,7 @@ def get_settings(request: Request):
         "db_stats": get_db_table_stats(),
         "library": {
             "path": "/music",
-            "folder_pattern": get_setting("folder_pattern", "artist/year/album"),
+            "storage_layout": "v2-uuid",
             "audio_extensions": json.loads(get_setting("audio_extensions", '[".flac",".mp3",".m4a",".ogg",".opus"]')),
         },
         "processing": {
@@ -160,11 +160,6 @@ def clear_cache(request: Request, body: CacheClearRequest):
 @router.put("/library")
 def update_library(request: Request, body: dict):
     _require_admin(request)
-    if "folder_pattern" in body:
-        valid_patterns = ["artist/album", "artist/year/album", "artist/year-album"]
-        if body["folder_pattern"] not in valid_patterns:
-            raise HTTPException(status_code=422, detail=f"Invalid pattern: must be one of {valid_patterns}")
-        set_setting("folder_pattern", body["folder_pattern"])
     if "audio_extensions" in body:
         if not isinstance(body["audio_extensions"], list):
             raise HTTPException(status_code=422, detail="audio_extensions must be a list")

@@ -97,17 +97,18 @@ export function PlayerBar() {
 
   if (!currentTrack) return null;
 
-  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
+  const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.storageId ?? null, currentTrack.path || currentTrack.id);
 
   async function toggleLike() {
     if (!currentTrack) return;
     const trackId = currentTrack.libraryTrackId ?? null;
+    const trackStorageId = currentTrack.storageId ?? null;
     const trackPath = currentTrack.path || currentTrack.id;
     try {
       if (liked) {
-        await unlikeTrack(trackId, trackPath);
+        await unlikeTrack(trackId, trackStorageId, trackPath);
       } else {
-        await likeTrack(trackId, trackPath);
+        await likeTrack(trackId, trackStorageId, trackPath);
       }
     } catch { /* ignore */ }
   }
@@ -115,7 +116,7 @@ export function PlayerBar() {
   async function handleAddToCollection() {
     if (!currentTrack) return;
     try {
-      await likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.path || currentTrack.id);
+      await likeTrack(currentTrack.libraryTrackId ?? null, currentTrack.storageId ?? null, currentTrack.path || currentTrack.id);
       toast.success("Added to collection");
     } catch { /* ignore */ }
   }
@@ -128,33 +129,33 @@ export function PlayerBar() {
       </div>
 
       <div
-        className={`fixed left-2 right-2 md:left-3 md:right-3 h-[66px] md:h-[82px] rounded-2xl border border-white/10 bg-black/50 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-200 ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
-        style={{ bottom: isDesktop ? 12 : "calc(64px + env(safe-area-inset-bottom, 0px) + 8px)" }}
+        className={`fixed left-2 right-2 md:left-3 md:right-3 isolate h-[66px] md:h-[82px] overflow-hidden rounded-2xl border border-white/10 bg-black/50 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-200 ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
+        style={{ bottom: isDesktop ? 12 : "calc(64px + env(safe-area-inset-bottom, 0px) + 8px)", contain: "paint" }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="h-full flex items-center px-3 lg:px-4 gap-2">
+        <div className="flex h-full items-center gap-2 px-3 lg:px-4">
 
-          {/* ── Block 1: Track Info ── */}
-          <div
-            role={isDesktop ? undefined : "button"}
-            tabIndex={isDesktop ? undefined : 0}
-            aria-label={isDesktop ? undefined : "Open fullscreen player"}
-            className="flex items-center gap-3 min-w-0 flex-1 md:flex-none md:w-[240px] xl:w-[280px] shrink-0 cursor-pointer md:cursor-default"
-            onClick={() => { if (!isDesktop) setFsOpen(true); }}
-            onKeyDown={(e) => { if (!isDesktop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setFsOpen(true); } }}
-          >
+            {/* ── Block 1: Track Info ── */}
+            <div
+              role={isDesktop ? undefined : "button"}
+              tabIndex={isDesktop ? undefined : 0}
+              aria-label={isDesktop ? undefined : "Open fullscreen player"}
+              className="flex min-w-0 shrink-0 flex-1 cursor-pointer items-center gap-3 md:w-[240px] md:flex-none md:cursor-default xl:w-[280px]"
+              onClick={() => { if (!isDesktop) setFsOpen(true); }}
+              onKeyDown={(e) => { if (!isDesktop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setFsOpen(true); } }}
+            >
             {/* Album art */}
-            <div className="relative w-10 h-10 md:w-12 md:h-12 rounded-md overflow-hidden shrink-0 bg-white/5">
+              <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-white/5 md:h-12 md:w-12">
               {currentTrack.albumCover ? (
                 <img src={currentTrack.albumCover} alt="" className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full bg-white/10" />
               )}
-            </div>
+              </div>
 
             {/* Text — animate on track change */}
-            <div key={currentTrack.id} className="min-w-0 flex-1 animate-track-in">
+              <div key={currentTrack.id} className="min-w-0 flex-1 animate-track-in">
               <p className="text-[13px] font-semibold text-white truncate leading-tight">
                 {currentTrack.title}
               </p>
@@ -171,13 +172,14 @@ export function PlayerBar() {
                   Buffering...
                 </p>
               )}
-            </div>
+              </div>
 
             {/* Heart */}
-            <button onClick={(e) => { e.stopPropagation(); toggleLike(); }} className="shrink-0 p-1.5 hover:bg-white/5 rounded-md transition-colors">
+              <button onClick={(e) => { e.stopPropagation(); toggleLike(); }} className="shrink-0 rounded-md p-1.5 transition-colors hover:bg-white/5">
               <Heart size={16} className={liked ? "text-primary fill-primary" : "text-white/30 hover:text-white/60"} />
-            </button>
+              </button>
 
+            </div>
             <div onClick={(e) => e.stopPropagation()}>
               <PlayerTrackMenu
                 currentTrack={currentTrack}
@@ -186,10 +188,9 @@ export function PlayerBar() {
                 onAddToCollection={handleAddToCollection}
               />
             </div>
-          </div>
 
           {/* ── Block 2: Controls + Progress ── */}
-          <div className="hidden md:flex flex-1 flex-col items-center justify-center max-w-[600px] mx-auto gap-1">
+          <div className="mx-auto hidden max-w-[600px] flex-1 flex-col items-center justify-center gap-1 md:flex">
             {/* Controls */}
             <div className="flex items-center gap-3 lg:gap-5">
               <button
@@ -249,7 +250,7 @@ export function PlayerBar() {
           </div>
 
           {/* ── Mobile/tablet play controls (md only, no progress) ── */}
-          <div className="flex md:hidden items-center gap-1">
+          <div className="flex items-center gap-1 md:hidden">
             <button onClick={prev} aria-label="Previous track" className="w-10 h-10 flex items-center justify-center text-white/50">
               <SkipBack size={18} fill="currentColor" />
             </button>
@@ -272,7 +273,7 @@ export function PlayerBar() {
           </div>
 
           {/* ── Block 3: Action Buttons (lg+) ── */}
-          <div className="hidden lg:flex items-center gap-1 w-[200px] xl:w-[280px] shrink-0 justify-end">
+          <div className="hidden w-[200px] shrink-0 items-center justify-end gap-1 lg:flex xl:w-[280px]">
             {/* Format badge */}
             {fmt && (
               <span className="text-[9px] font-bold tracking-wider text-primary/70 border border-primary/30 rounded px-1.5 py-0.5 mr-1">
@@ -333,7 +334,7 @@ export function PlayerBar() {
           </div>
 
           {/* ── Compact action buttons (md only, no lg) ── */}
-          <div className="hidden md:flex lg:hidden items-center gap-1">
+          <div className="hidden items-center gap-1 md:flex lg:hidden">
             {!extendedOpen && (
               <button
                 onClick={() => { setShowQueue(!showQueue); setShowLyrics(false); }}

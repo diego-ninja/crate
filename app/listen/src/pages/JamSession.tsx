@@ -188,7 +188,7 @@ export function JamSession() {
 
   const roomIsActive = room?.status === "active";
   const canEditQueue = roomIsActive && (myRole === "host" || myRole === "collab");
-  const roomCurrentTrack = payloadToTrack((room?.current_track_payload || {}).track as Record<string, unknown> | undefined);
+  const roomCurrentTrack = payloadToTrack(room?.current_track_payload?.track as Record<string, unknown> | undefined);
 
   useEffect(() => {
     if (!roomId) return;

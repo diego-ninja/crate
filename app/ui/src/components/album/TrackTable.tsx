@@ -37,7 +37,7 @@ interface Track {
   path?: string;
 }
 
-interface AudioMuseTrack {
+export interface AudioAnalysisTrack {
   tempo: number | null;
   key: string | null;
   scale: string | null;
@@ -61,7 +61,7 @@ interface TrackTableProps {
   albumId?: number;
   albumSlug?: string;
   albumCover?: string;
-  audiomuseData?: Record<string, AudioMuseTrack>;
+  analysisData?: Record<string, AudioAnalysisTrack>;
 }
 
 
@@ -77,7 +77,7 @@ function EnergyBar({ value }: { value: number }) {
   );
 }
 
-const FEATURE_BARS: { key: keyof AudioMuseTrack; label: string }[] = [
+const FEATURE_BARS: { key: keyof AudioAnalysisTrack; label: string }[] = [
   { key: "danceability", label: "Danceability" },
   { key: "valence", label: "Valence" },
   { key: "acousticness", label: "Acousticness" },
@@ -86,7 +86,7 @@ const FEATURE_BARS: { key: keyof AudioMuseTrack; label: string }[] = [
   { key: "spectral_complexity", label: "Complexity" },
 ];
 
-function TrackAudioInfo({ track }: { track: AudioMuseTrack }) {
+function TrackAudioInfo({ track }: { track: AudioAnalysisTrack }) {
   const hasFeatures = FEATURE_BARS.some((f) => track[f.key] != null);
   if (!hasFeatures && track.loudness == null && !track.mood) return null;
 
@@ -194,7 +194,7 @@ export function TrackTable({
   albumId,
   albumSlug,
   albumCover,
-  audiomuseData,
+  analysisData,
 }: TrackTableProps) {
   const { play, playAll, pause, resume, isPlaying, queue, currentIndex } = usePlayer();
   const { isFavorite, toggleFavorite } = useFavorites();
@@ -247,11 +247,11 @@ export function TrackTable({
     }
   }
 
-  // Only show AudioMuse columns if at least one track has data
+  // Only show AudioAnalysis columns if at least one track has data
   // Only show audio columns if at least one track in THIS album has data
-  const hasAudiomuse = audiomuseData && tracks.some((t) => {
+  const hasAnalysis = analysisData && tracks.some((t) => {
     const title = (t.tags.title || t.filename).toLowerCase();
-    return audiomuseData[title] != null;
+    return analysisData[title] != null;
   });
 
   return (
@@ -267,10 +267,10 @@ export function TrackTable({
           <TableHead>Duration</TableHead>
           <TableHead className="w-28">Rating</TableHead>
           <TableHead>Size</TableHead>
-          {hasAudiomuse && <TableHead className="text-muted-foreground font-mono text-xs">BPM</TableHead>}
-          {hasAudiomuse && <TableHead className="text-muted-foreground text-xs">Key</TableHead>}
-          {hasAudiomuse && <TableHead className="text-muted-foreground text-xs">Energy</TableHead>}
-          {hasAudiomuse && <TableHead className="w-8" />}
+          {hasAnalysis && <TableHead className="text-muted-foreground font-mono text-xs">BPM</TableHead>}
+          {hasAnalysis && <TableHead className="text-muted-foreground text-xs">Key</TableHead>}
+          {hasAnalysis && <TableHead className="text-muted-foreground text-xs">Energy</TableHead>}
+          {hasAnalysis && <TableHead className="w-8" />}
           <TableHead className="w-8" />
           <TableHead className="w-8" />
         </TableRow>
@@ -282,7 +282,7 @@ export function TrackTable({
           const isCurrentPlaying = isCurrentTrack && isPlaying;
           const trackTitle = (t.tags.title || t.filename).toLowerCase();
           
-          const amTrack = audiomuseData ? (audiomuseData[trackTitle] ?? undefined) : undefined;
+          const amTrack = analysisData ? (analysisData[trackTitle] ?? undefined) : undefined;
           return (
             <MusicContextMenu
               key={t.filename}
@@ -351,12 +351,12 @@ export function TrackTable({
               <TableCell className="text-muted-foreground font-mono text-sm">
                 {t.size_mb} MB
               </TableCell>
-              {hasAudiomuse && (
+              {hasAnalysis && (
                 <TableCell className="text-muted-foreground font-mono text-sm">
                   {amTrack?.tempo != null ? Math.round(amTrack.tempo) : null}
                 </TableCell>
               )}
-              {hasAudiomuse && (
+              {hasAnalysis && (
                 <TableCell>
                   {amTrack?.key != null ? (
                     <Badge variant="outline" className="text-[11px] px-1.5 py-0 font-mono border-white/15 text-white/60">
@@ -365,12 +365,12 @@ export function TrackTable({
                   ) : null}
                 </TableCell>
               )}
-              {hasAudiomuse && (
+              {hasAnalysis && (
                 <TableCell>
                   {amTrack?.energy != null ? <EnergyBar value={amTrack.energy} /> : null}
                 </TableCell>
               )}
-              {hasAudiomuse && (
+              {hasAnalysis && (
                 <TableCell>
                   {amTrack ? <TrackAudioInfo track={amTrack} /> : null}
                 </TableCell>

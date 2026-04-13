@@ -67,3 +67,12 @@ def mark_processing(key: str) -> bool:
 
 def unmark_processing(key: str):
     _processing.discard(key)
+
+
+def start_scan():
+    """Queue a library scan task. Used by handlers after filesystem changes."""
+    try:
+        from crate.db.tasks import create_task_dedup
+        create_task_dedup("scan")
+    except Exception:
+        log.debug("Failed to queue scan task", exc_info=True)

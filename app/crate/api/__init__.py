@@ -69,7 +69,6 @@ def create_app() -> FastAPI:
     from crate.api.events import router as events_router
     from crate.api.tasks import router as tasks_router
     from crate.api.stack import router as stack_router
-    from crate.api.audiomuse import router as audiomuse_router
     from crate.api.enrichment import router as enrichment_router
     from crate.api.management import router as management_router
     from crate.api.settings import router as settings_router
@@ -87,7 +86,7 @@ def create_app() -> FastAPI:
     from crate.api.jam import router as jam_router
     from crate.api.subsonic import router as subsonic_router
 
-    # Auth + management + settings + enrichment + audiomuse BEFORE browse (browse has {name:path} catch-all)
+    # Auth + management + settings + enrichment BEFORE browse (browse has {name:path} catch-all)
     app.include_router(setup_router)
     app.include_router(auth_router)
     app.include_router(admin_auth_router)
@@ -105,7 +104,6 @@ def create_app() -> FastAPI:
     app.include_router(tidal_router)
     app.include_router(acquisition_router)
     app.include_router(enrichment_router)
-    app.include_router(audiomuse_router)
     app.include_router(analytics_router)
     app.include_router(artwork_router)
     app.include_router(scanner_router)

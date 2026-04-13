@@ -278,6 +278,7 @@ function MoodBrowseSection() {
     try {
       const data = await api<{ tracks: Array<{
         id: number;
+        storage_id?: string;
         title: string;
         artist: string;
         artist_id?: number;
@@ -290,7 +291,8 @@ function MoodBrowseSection() {
       if (data.tracks.length > 0) {
         playAll(
           data.tracks.map((t) => ({
-            id: t.path || String(t.id),
+            id: t.storage_id || t.path || String(t.id),
+            storageId: t.storage_id,
             title: t.title,
             artist: t.artist,
             artistId: t.artist_id,

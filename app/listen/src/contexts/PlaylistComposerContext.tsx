@@ -57,8 +57,9 @@ export function PlaylistComposerProvider({ children }: { children: ReactNode }) 
       });
 
       const tracksPayload = payload.tracks
-        .filter((track) => track.path)
+        .filter((track) => track.path || track.libraryTrackId != null)
         .map((track) => ({
+          track_id: track.libraryTrackId,
           path: track.path,
           title: track.title,
           artist: track.artist,

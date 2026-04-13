@@ -80,6 +80,7 @@ def enrich_radio_tracks(tracks: list[dict]) -> list[dict]:
                 """
                 SELECT
                     t.id AS track_id,
+                    t.storage_id::text AS track_storage_id,
                     t.slug AS track_slug,
                     a.id AS album_id,
                     a.slug AS album_slug,
@@ -99,6 +100,7 @@ def enrich_radio_tracks(tracks: list[dict]) -> list[dict]:
         current = dict(track)
         ref = refs_by_track_id.get(track.get("track_id"))
         if ref:
+            current.setdefault("track_storage_id", ref.get("track_storage_id"))
             current.setdefault("track_slug", ref.get("track_slug"))
             current.setdefault("album_id", ref.get("album_id"))
             current.setdefault("album_slug", ref.get("album_slug"))

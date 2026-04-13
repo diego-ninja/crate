@@ -77,6 +77,10 @@ export function getStreamUrl(track: Track): string {
     return `${base}/api/tracks/${track.libraryTrackId}/stream${suffix}`;
   }
 
+  if (track.storageId) {
+    return `${base}/api/tracks/by-storage/${encodeURIComponent(track.storageId)}/stream${suffix}`;
+  }
+
   const playbackPath = track.path || track.id;
   if (playbackPath.includes("/")) {
     return `${base}/api/stream/${encodeURIComponent(playbackPath).replace(/%2F/g, "/")}${suffix}`;
@@ -103,7 +107,7 @@ function _apiBase(): string {
 }
 
 export function getTrackCacheKey(track: Track): string {
-  return [track.libraryTrackId ?? "",  track.path ?? "", track.id].join("::");
+  return [track.libraryTrackId ?? "", track.storageId ?? "", track.path ?? "", track.id].join("::");
 }
 
 export function areTracksFromSameAlbum(currentTrack: Track | undefined, nextTrack: Track | null | undefined): boolean {

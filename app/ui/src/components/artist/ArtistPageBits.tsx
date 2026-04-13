@@ -51,7 +51,7 @@ export function SimilarArtistCard({
   const [imgLoaded, setImgLoaded] = useState(false);
   const letter = name.charAt(0).toUpperCase();
   const targetPath = id != null ? artistPagePath({ artistId: id, artistSlug: slug, artistName: name }) : null;
-  const imageUrl = image || (id != null ? `${artistPhotoApiUrl({ artistId: id, artistSlug: slug, artistName: name })}?random=true` : "");
+  const imageUrl = image || (id != null ? `${artistPhotoApiUrl({ artistId: id, artistSlug: slug, artistName: name })}?v=stable-similar-photo` : "");
 
   const content = (
     <>

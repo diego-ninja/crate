@@ -227,6 +227,8 @@ export function Settings() {
 
       <AccountSection />
 
+      <ScrobbleSection />
+
       <Section title="Quick links">
         <div className="flex flex-col gap-2">
           <Link to={publicProfilePath} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-foreground hover:bg-white/5 transition-colors">
@@ -299,6 +301,153 @@ function SleepTimerSection() {
           </button>
         </div>
       ) : null}
+    </Section>
+  );
+}
+
+function ScrobbleSection() {
+  const [status, setStatus] = useState<Record<string, { connected: boolean; username?: string }>>({});
+  const [lbToken, setLbToken] = useState("");
+  const [connecting, setConnecting] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<Record<string, { connected: boolean; username?: string }>>("/api/me/scrobble/status")
+      .then(setStatus)
+      .catch(() => {});
+  }, []);
+
+  const handleLastfmConnect = async () => {
+    setConnecting("lastfm");
+    try {
+      const { api_key } = await api<{ api_key: string }>("/api/me/scrobble/lastfm/auth-url");
+      const cb = encodeURIComponent(`${window.location.origin}/settings?lastfm=callback`);
+      window.location.href = `https://www.last.fm/api/auth/?api_key=${api_key}&cb=${cb}`;
+    } catch {
+      toast.error("Last.fm is not configured on this server");
+      setConnecting(null);
+    }
+  };
+
+  const handleLastfmCallback = async (token: string) => {
+    setConnecting("lastfm");
+    try {
+      await api("/api/me/scrobble/lastfm", "POST", { token });
+      toast.success("Last.fm connected");
+      const updated = await api<Record<string, { connected: boolean; username?: string }>>("/api/me/scrobble/status");
+      setStatus(updated);
+    } catch {
+      toast.error("Failed to connect Last.fm — token may have expired");
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  const handleListenBrainzConnect = async () => {
+    if (!lbToken.trim()) return;
+    setConnecting("listenbrainz");
+    try {
+      const result = await api<{ ok: boolean; username: string }>("/api/me/scrobble/listenbrainz", "POST", { token: lbToken.trim() });
+      toast.success(`ListenBrainz connected as ${result.username}`);
+      setLbToken("");
+      const updated = await api<Record<string, { connected: boolean; username?: string }>>("/api/me/scrobble/status");
+      setStatus(updated);
+    } catch {
+      toast.error("Invalid ListenBrainz token");
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  const handleDisconnect = async (provider: string) => {
+    try {
+      await api(`/api/me/scrobble/${provider}`, "DELETE");
+      setStatus((prev) => ({ ...prev, [provider]: { connected: false } }));
+      toast.success(`${provider === "lastfm" ? "Last.fm" : "ListenBrainz"} disconnected`);
+    } catch {
+      toast.error("Failed to disconnect");
+    }
+  };
+
+  // Handle Last.fm callback redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const lastfmToken = params.get("token");
+    if (params.get("lastfm") === "callback" && lastfmToken) {
+      window.history.replaceState({}, "", "/settings");
+      handleLastfmCallback(lastfmToken);
+    }
+  }, []);
+
+  const lastfm = status.lastfm;
+  const listenbrainz = status.listenbrainz;
+
+  return (
+    <Section title="Scrobbling" description="Sync your listening activity to external services.">
+      {/* Last.fm */}
+      <div className="flex items-center justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">Last.fm</p>
+          {lastfm?.connected ? (
+            <p className="text-xs text-green-400">Connected{lastfm.username ? ` as ${lastfm.username}` : ""}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">Not connected</p>
+          )}
+        </div>
+        {lastfm?.connected ? (
+          <button
+            onClick={() => handleDisconnect("lastfm")}
+            className="rounded-full px-4 py-2 text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
+          >
+            Disconnect
+          </button>
+        ) : (
+          <button
+            onClick={handleLastfmConnect}
+            disabled={connecting === "lastfm"}
+            className="rounded-full px-4 py-2 text-xs font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors disabled:opacity-50"
+          >
+            {connecting === "lastfm" ? "Connecting..." : "Connect"}
+          </button>
+        )}
+      </div>
+
+      {/* ListenBrainz */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">ListenBrainz</p>
+          {listenbrainz?.connected ? (
+            <p className="text-xs text-green-400">Connected{listenbrainz.username ? ` as ${listenbrainz.username}` : ""}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">Not connected</p>
+          )}
+        </div>
+        {listenbrainz?.connected ? (
+          <button
+            onClick={() => handleDisconnect("listenbrainz")}
+            className="rounded-full px-4 py-2 text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors"
+          >
+            Disconnect
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={lbToken}
+              onChange={(e) => setLbToken(e.target.value)}
+              placeholder="API token"
+              className="w-36 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground placeholder:text-white/30 focus:outline-none focus:border-primary/50"
+              onKeyDown={(e) => e.key === "Enter" && handleListenBrainzConnect()}
+            />
+            <button
+              onClick={handleListenBrainzConnect}
+              disabled={connecting === "listenbrainz" || !lbToken.trim()}
+              className="rounded-full px-4 py-2 text-xs font-medium bg-primary/15 text-primary hover:bg-primary/25 transition-colors disabled:opacity-50"
+            >
+              {connecting === "listenbrainz" ? "..." : "Connect"}
+            </button>
+          </div>
+        )}
+      </div>
     </Section>
   );
 }

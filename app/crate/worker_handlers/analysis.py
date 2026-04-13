@@ -131,7 +131,7 @@ def _handle_analyze_album_full(task_id: str, params: dict, config: dict) -> dict
 def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
     """Analyze audio tracks for BPM, key, energy, mood with batched inference."""
     from crate.audio_analysis import PANNS_BATCH_SIZE, analyze_batch, analyze_track
-    from crate.db import get_library_album, get_library_albums, get_library_artists, get_library_tracks, update_track_audiomuse
+    from crate.db import get_library_album, get_library_albums, get_library_artists, get_library_tracks, update_track_analysis
 
     artist = params.get("artist")
     album_name = params.get("album")
@@ -219,7 +219,7 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
             results = analyze_batch(batch_paths)
             for (path, _track), result in zip(batch, results):
                 if result.get("bpm") is not None:
-                    update_track_audiomuse(
+                    update_track_analysis(
                         path,
                         bpm=result["bpm"],
                         key=result["key"],
@@ -243,7 +243,7 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
                 try:
                     result = analyze_track(path)
                     if result.get("bpm") is not None:
-                        update_track_audiomuse(
+                        update_track_analysis(
                             path,
                             bpm=result["bpm"],
                             key=result["key"],

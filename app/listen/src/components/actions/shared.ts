@@ -23,6 +23,7 @@ export interface MenuActionConfig {
 
 export interface TrackMenuData {
   id?: string | number;
+  storage_id?: string;
   title: string;
   artist: string;
   artist_id?: number;
@@ -67,6 +68,7 @@ export interface PlaylistMenuData {
 export function trackToMenuData(track: Track): TrackMenuData {
   return {
     id: track.id,
+    storage_id: track.storageId,
     title: track.title,
     artist: track.artist,
     artist_id: track.artistId,
@@ -83,7 +85,7 @@ export function trackToMenuData(track: Track): TrackMenuData {
 
 /** Rebuild a player-ready Track from menu data, honoring optional cover override and carrying metadata. */
 export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string): Track {
-  const playbackId = track.path || String(track.id  || "");
+  const playbackId = track.storage_id || track.path || String(track.id || "");
   const resolvedCover = cover || (track.album_id != null
     ? albumCoverApiUrl({
         albumId: track.album_id,
@@ -95,6 +97,7 @@ export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string):
 
   return {
     id: playbackId,
+    storageId: track.storage_id,
     title: track.title || "Unknown",
     artist: track.artist,
     artistId: track.artist_id,
@@ -145,6 +148,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
     display_name: string;
     tracks: Array<{
       id: number;
+      storage_id?: string;
       filename: string;
       path: string;
       length_sec: number;
@@ -165,7 +169,8 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
   });
 
   return (response.tracks || []).map((track) => ({
-    id: track.path || String(track.id),
+    id: track.storage_id || track.path || String(track.id),
+    storageId: track.storage_id,
     title: track.tags?.title || track.filename || "Unknown",
     artist: response.artist,
     album: response.display_name || response.name,

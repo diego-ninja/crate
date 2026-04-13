@@ -100,6 +100,8 @@ export function ArtistHeroSection({
 }: ArtistHeroSectionProps) {
   const backgroundUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName });
   const photoUrl = artistPhotoApiUrl({ artistId, artistSlug, artistName });
+  const backgroundSrc = `${backgroundUrl}?v=stable-hero-bg-v2${bgCacheBust ? `&t=${bgCacheBust}` : ""}`;
+  const photoSrc = `${photoUrl}?v=stable-hero-photo${photoCacheBust ? `&t=${photoCacheBust}` : ""}`;
 
   return (
     <div
@@ -108,7 +110,7 @@ export function ArtistHeroSection({
     >
       <img
         key={bgCacheBust || "bg"}
-        src={`${backgroundUrl}?random=true${bgCacheBust ? `&t=${bgCacheBust}` : ""}`}
+        src={backgroundSrc}
         alt=""
         className={`absolute inset-0 w-full h-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
         onLoad={onBackgroundLoad}
@@ -146,7 +148,7 @@ export function ArtistHeroSection({
             {!photoError ? (
               <img
                 key={photoCacheBust || "photo"}
-                src={`${photoUrl}?random=true${photoCacheBust ? `&t=${photoCacheBust}` : ""}`}
+                src={photoSrc}
                 alt={artistName}
                 className={`w-full h-full object-cover transition-opacity duration-500 ${photoLoaded ? "opacity-100" : "opacity-0"}`}
                 onLoad={onPhotoLoad}

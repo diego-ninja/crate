@@ -7,6 +7,7 @@ Spec: http://www.subsonic.org/pages/api.jsp
 """
 
 import hashlib
+import hmac
 import logging
 from pathlib import Path
 
@@ -58,14 +59,17 @@ def _subsonic_auth(request: Request) -> dict | None:
         stored_token = user.get("subsonic_token")
         if stored_token:
             expected = hashlib.md5((stored_token + salt).encode()).hexdigest()
-            if token == expected:
+            if hmac.compare_digest(token, expected):
                 return user
         return None
     elif password:
         # Plain password (deprecated but simpler)
         pw = password
         if pw.startswith("enc:"):
-            pw = bytes.fromhex(pw[4:]).decode("utf-8")
+            try:
+                pw = bytes.fromhex(pw[4:]).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                return None
         if verify_password(pw, user["password_hash"]):
             return user
 
@@ -486,19 +490,23 @@ def stream(request: Request, id: str = Query("")):
         if not track:
             return Response(status_code=404)
 
+    from fastapi.responses import FileResponse
+
     lib = library_path()
     filepath = Path(track["path"])
     if not filepath.is_absolute():
         filepath = lib / filepath
+    # Prevent path traversal
+    if not filepath.resolve().is_relative_to(lib.resolve()):
+        return Response(status_code=403)
     if not filepath.is_file():
         return Response(status_code=404)
 
     media_type = _content_type(track["format"])
-    return Response(
-        content=filepath.read_bytes(),
+    return FileResponse(
+        path=str(filepath),
         media_type=media_type,
         headers={
-            "Accept-Ranges": "bytes",
             "Cache-Control": "public, max-age=86400",
         },
     )

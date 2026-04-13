@@ -27,3 +27,5 @@ app/bin/grooveyard-bliss-linux-amd64
 *.tsbuildinfo
 worktrees/
 .vite/
+# Added by code-review-graph
+.code-review-graph/

@@ -1606,3 +1606,43 @@ def generate_playlist_radio(
         limit=limit,
         source_mix_ratio=source_mix_ratio,
     )
+
+
+def generate_virtual_playlist_radio(
+    playlist_tracks: list[dict],
+    limit: int = 50,
+    source_mix_ratio: float = 0.3,
+    *,
+    user_id: int | None = None,
+) -> list[dict]:
+    source_rows: list[dict] = []
+    for track in playlist_tracks:
+        current = dict(track)
+        if current.get("track_path") and not current.get("path"):
+            current["path"] = current["track_path"]
+        source_rows.append(current)
+
+    source_tracks = [_radio_track_payload(track) for track in source_rows if track.get("path")]
+    if not source_tracks:
+        return []
+
+    seed_tracks = _select_seed_tracks(source_rows, max_count=min(5, len(source_rows)), require_bliss=True)
+    if not seed_tracks:
+        seed_tracks = _select_seed_tracks(source_rows, max_count=min(5, len(source_rows)), require_bliss=False)
+    seed_paths = [
+        track.get("path") or track.get("track_path")
+        for track in seed_tracks
+        if track.get("path") or track.get("track_path")
+    ]
+    recommended_tracks = _aggregate_similar_candidates(
+        seed_paths,
+        per_seed_limit=max(limit, 40),
+        user_id=user_id,
+    )
+
+    return _interleave_radio_queue(
+        source_tracks,
+        recommended_tracks,
+        limit=limit,
+        source_mix_ratio=source_mix_ratio,
+    )

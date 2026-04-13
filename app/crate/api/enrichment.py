@@ -93,6 +93,42 @@ def get_artist_enrichment(request: Request, name: str):
     return result or {}
 
 
+@router.get("/api/artists/{artist_id}/analysis-data")
+def get_artist_analysis_data(request: Request, artist_id: int):
+    """Return audio analysis data (BPM, key, energy, mood, etc.) for all tracks of an artist."""
+    _require_auth(request)
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT t.title, t.bpm AS tempo, t.audio_key AS key, t.audio_scale AS scale,
+                   t.energy, t.danceability, t.valence, t.acousticness,
+                   t.instrumentalness, t.loudness, t.dynamic_range,
+                   t.spectral_complexity, t.mood_json
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.artist = %s AND t.bpm IS NOT NULL
+        """, (artist_name,))
+        rows = cur.fetchall()
+    result = {}
+    for row in rows:
+        title = (row.get("title") or "").lower()
+        if not title:
+            continue
+        entry = dict(row)
+        mood = entry.pop("mood_json", None)
+        if isinstance(mood, str):
+            import json as _json
+            try:
+                mood = _json.loads(mood)
+            except Exception:
+                mood = None
+        entry["mood"] = mood
+        result[title] = entry
+    return result
+
+
 @router.get("/api/artists/{artist_id}/enrichment")
 def get_artist_enrichment_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)

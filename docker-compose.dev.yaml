@@ -138,6 +138,8 @@ services:
       - "443:443"
     volumes:
       - ./data/caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - dev_caddy_data:/data
+      - dev_caddy_config:/config
     networks:
       - crate-dev
     depends_on:
@@ -150,3 +152,5 @@ volumes:
   dev_data:
   dev_slskd:
   dev_slskd_downloads:
+  dev_caddy_data:
+  dev_caddy_config:

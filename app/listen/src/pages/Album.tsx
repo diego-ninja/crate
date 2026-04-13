@@ -19,6 +19,7 @@ import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPagePath, artistPh
 
 interface AlbumTrack {
   id: number;
+  storage_id?: string;
   filename: string;
   format: string;
   size_mb: number;
@@ -74,7 +75,8 @@ interface Playlist {
 function buildPlayerTracks(data: AlbumData): Track[] {
   const cover = albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name });
   return data.tracks.map((t) => ({
-    id: t.path || String(t.id),
+    id: t.storage_id || t.path || String(t.id),
+      storageId: t.storage_id,
       title: t.tags.title || t.filename,
       artist: data.artist,
       artistId: data.artist_id,
@@ -249,6 +251,7 @@ export function Album() {
     try {
       await api(`/api/playlists/${playlistId}/tracks`, "POST", {
         tracks: [{
+          track_id: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
           path: track.path,
           title: track.title,
           artist: track.artist,

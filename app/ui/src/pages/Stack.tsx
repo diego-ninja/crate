@@ -41,7 +41,6 @@ const SERVICE_URLS: Record<string, string> = {
   tidarr: "https://search.lespedants.org",
   traefik: "https://traefik.lespedants.org",
   authelia: "https://auth.lespedants.org",
-  audiomuse: "https://ai.lespedants.org",
 };
 
 function stateColor(state: string): string {

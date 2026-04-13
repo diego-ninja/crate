@@ -53,6 +53,18 @@ def get_tidal_downloads(status: str | None = None, limit: int = 100) -> list[dic
     return results
 
 
+def get_tidal_download(dl_id: int) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM tidal_downloads WHERE id = %s", (dl_id,))
+        row = cur.fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    meta = d.pop("metadata_json", {})
+    d["metadata"] = meta if isinstance(meta, dict) else json.loads(meta or "{}")
+    return d
+
+
 def update_tidal_download(dl_id: int, **kwargs):
     fields = []
     values: list = []
@@ -109,5 +121,4 @@ def is_artist_monitored(artist_name: str) -> bool:
         cur.execute("SELECT enabled FROM tidal_monitored_artists WHERE artist_name = %s", (artist_name,))
         row = cur.fetchone()
     return row["enabled"] if row else False
-
 

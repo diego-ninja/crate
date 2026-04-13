@@ -17,7 +17,7 @@ from crate.db import (
     set_cache,
     update_task,
 )
-from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
+from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled, start_scan
 
 log = logging.getLogger(__name__)
 
@@ -581,15 +581,23 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
 
             with get_db_ctx() as cur:
                 cur.execute(
-                    "UPDATE library_albums SET musicbrainz_albumid = %s WHERE path = %s",
+                    "UPDATE library_albums SET musicbrainz_albumid = %s WHERE path = %s RETURNING id",
                     (mbid, album_db_path),
                 )
+                album_row = cur.fetchone()
                 if release_group_id:
                     cur.execute(
                         "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE path = %s",
                         (release_group_id, album_db_path),
                     )
-                updated = cur.rowcount
+                updated = 1 if album_row else 0
+                # Propagate MBID to tracks
+                if album_row:
+                    cur.execute(
+                        "UPDATE library_tracks SET musicbrainz_albumid = %s "
+                        "WHERE album_id = %s AND (musicbrainz_albumid IS NULL OR musicbrainz_albumid = '')",
+                        (mbid, album_row["id"]),
+                    )
 
             if updated:
                 emit_task_event(task_id, "info", {"message": f"Synced MBID {mbid[:8]}... to DB"})

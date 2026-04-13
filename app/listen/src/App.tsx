@@ -32,6 +32,12 @@ const Playlist = React.lazy(() =>
 const CuratedPlaylist = React.lazy(() =>
   import("@/pages/CuratedPlaylist").then((m) => ({ default: m.CuratedPlaylist })),
 );
+const HomePlaylist = React.lazy(() =>
+  import("@/pages/HomePlaylist").then((m) => ({ default: m.HomePlaylist })),
+);
+const HomeSection = React.lazy(() =>
+  import("@/pages/HomeSection").then((m) => ({ default: m.HomeSection })),
+);
 const Stats = React.lazy(() =>
   import("@/pages/Stats").then((m) => ({ default: m.Stats })),
 );
@@ -255,6 +261,22 @@ export function App() {
                       element={
                         <Suspense fallback={<Spinner />}>
                           <Playlist />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="home/playlist/:playlistId"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <HomePlaylist />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="home/section/:sectionId"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <HomeSection />
                         </Suspense>
                       }
                     />

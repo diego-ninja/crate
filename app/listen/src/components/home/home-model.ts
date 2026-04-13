@@ -117,6 +117,7 @@ export interface HomeUpcomingResponse {
 
 export interface ReplayTrack {
   track_id: number | null;
+  track_storage_id?: string | null;
   track_path: string | null;
   title: string;
   artist: string;
@@ -142,6 +143,7 @@ export interface ReplayMix {
 export interface PlaylistDetailTrack {
   id?: number;
   track_id?: number;
+  track_storage_id?: string;
   track_path: string;
   title: string;
   artist: string;
@@ -159,3 +161,165 @@ export interface PlaylistDetailData {
   cover_data_url?: string | null;
   tracks: PlaylistDetailTrack[];
 }
+
+export interface HomeHeroArtist {
+  id: number;
+  slug?: string;
+  name: string;
+  listeners: number;
+  scrobbles: number;
+  album_count: number;
+  track_count: number;
+  bio: string;
+}
+
+export interface HomeRecentPlaylistItem {
+  type: "playlist";
+  playlist_id: number;
+  playlist_name: string;
+  playlist_description?: string;
+  playlist_scope?: "user" | "system";
+  playlist_cover_data_url?: string | null;
+  playlist_tracks?: PlaylistArtworkTrack[];
+  subtitle?: string;
+  played_at?: string;
+}
+
+export interface HomeRecentArtistItem {
+  type: "artist";
+  artist_id?: number;
+  artist_slug?: string;
+  artist_name: string;
+  subtitle?: string;
+  played_at?: string;
+}
+
+export interface HomeRecentAlbumItem {
+  type: "album";
+  album_id?: number;
+  album_slug?: string;
+  album_name: string;
+  artist_name: string;
+  artist_id?: number;
+  artist_slug?: string;
+  subtitle?: string;
+  played_at?: string;
+}
+
+export type HomeRecentItem =
+  | HomeRecentPlaylistItem
+  | HomeRecentArtistItem
+  | HomeRecentAlbumItem;
+
+export interface HomeGeneratedPlaylistSummary {
+  id: string;
+  name: string;
+  description: string;
+  artwork_tracks: PlaylistArtworkTrack[];
+  artwork_artists: HomeArtworkArtist[];
+  track_count: number;
+  badge: string;
+  kind: "mix" | "core";
+}
+
+export interface HomeArtworkArtist {
+  artist_name: string;
+  artist_id?: number;
+  artist_slug?: string;
+}
+
+export interface HomeSuggestedAlbum {
+  album_id?: number;
+  album_slug?: string;
+  artist_name: string;
+  artist_id?: number;
+  artist_slug?: string;
+  album_name: string;
+  year?: string;
+  release_date?: string;
+  release_type?: string;
+}
+
+export interface HomeRecommendedTrack {
+  track_id?: number | null;
+  track_storage_id?: string | null;
+  track_path?: string | null;
+  title: string;
+  artist: string;
+  artist_id?: number | null;
+  artist_slug?: string | null;
+  album?: string | null;
+  album_id?: number | null;
+  album_slug?: string | null;
+  duration?: number | null;
+}
+
+export interface HomeRadioStation {
+  type: "artist" | "album";
+  title: string;
+  subtitle: string;
+  play_count: number;
+  artist_name: string;
+  artist_id?: number;
+  artist_slug?: string;
+  album_name?: string;
+  album_id?: number;
+  album_slug?: string;
+}
+
+export interface HomeFavoriteArtist {
+  artist_id?: number;
+  artist_slug?: string;
+  artist_name: string;
+  play_count: number;
+  minutes_listened: number;
+}
+
+export interface HomeDiscoveryPayload {
+  hero: HomeHeroArtist | null;
+  recently_played: HomeRecentItem[];
+  custom_mixes: HomeGeneratedPlaylistSummary[];
+  suggested_albums: HomeSuggestedAlbum[];
+  recommended_tracks: HomeRecommendedTrack[];
+  radio_stations: HomeRadioStation[];
+  favorite_artists: HomeFavoriteArtist[];
+  essentials: HomeGeneratedPlaylistSummary[];
+}
+
+export interface HomeGeneratedPlaylistDetail {
+  id: string;
+  name: string;
+  description: string;
+  artwork_tracks: PlaylistArtworkTrack[];
+  artwork_artists: HomeArtworkArtist[];
+  track_count: number;
+  total_duration: number;
+  badge: string;
+  kind: "mix" | "core";
+  tracks: HomeRecommendedTrack[];
+}
+
+export type HomeSectionId =
+  | "recently-played"
+  | "custom-mixes"
+  | "suggested-albums"
+  | "recommended-tracks"
+  | "radio-stations"
+  | "favorite-artists"
+  | "core-tracks";
+
+interface HomeSectionBase<TId extends HomeSectionId, TItems> {
+  id: TId;
+  title: string;
+  subtitle: string;
+  items: TItems[];
+}
+
+export type HomeSectionDetailPayload =
+  | HomeSectionBase<"recently-played", HomeRecentItem>
+  | HomeSectionBase<"custom-mixes", HomeGeneratedPlaylistSummary>
+  | HomeSectionBase<"suggested-albums", HomeSuggestedAlbum>
+  | HomeSectionBase<"recommended-tracks", HomeRecommendedTrack>
+  | HomeSectionBase<"radio-stations", HomeRadioStation>
+  | HomeSectionBase<"favorite-artists", HomeFavoriteArtist>
+  | HomeSectionBase<"core-tracks", HomeGeneratedPlaylistSummary>;

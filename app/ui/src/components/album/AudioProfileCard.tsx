@@ -2,10 +2,10 @@ import { ResponsiveRadar } from "@nivo/radar";
 import { ResponsiveBar } from "@nivo/bar";
 import { Badge } from "@/components/ui/badge";
 import { Music, Gauge, Key, Volume2 } from "lucide-react";
-import type { AudioMuseTrack } from "@/pages/Album";
+import type { AudioAnalysisTrack } from "@/components/album/TrackTable";
 
 interface AudioProfileCardProps {
-  audiomuseData: Record<string, AudioMuseTrack>;
+  analysisData: Record<string, AudioAnalysisTrack>;
 }
 
 function avg(values: (number | null | undefined)[]): number {
@@ -13,7 +13,7 @@ function avg(values: (number | null | undefined)[]): number {
   return valid.length > 0 ? valid.reduce((a, b) => a + b, 0) / valid.length : 0;
 }
 
-function dominantKey(tracks: AudioMuseTrack[]): string | null {
+function dominantKey(tracks: AudioAnalysisTrack[]): string | null {
   const counts: Record<string, number> = {};
   for (const t of tracks) {
     if (t.key) {
@@ -32,11 +32,10 @@ const NIVO_THEME = {
   labels: { text: { fill: "#9ca3af", fontSize: 10 } },
 };
 
-// All features use primary color with varying opacity
 const PRIMARY_COLOR = "#06b6d4";
 
-export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
-  const tracks = Object.values(audiomuseData);
+export function AudioProfileCard({ analysisData }: AudioProfileCardProps) {
+  const tracks = Object.values(analysisData);
   const withData = tracks.filter((t) => t.tempo != null || t.energy != null);
   if (withData.length === 0) return null;
 
@@ -65,7 +64,6 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
   const avgLoudness = avg(tracks.map((t) => t.loudness));
   const avgEnergy = avg(tracks.map((t) => t.energy));
 
-  // Aggregate moods
   const moodSums: Record<string, number> = {};
   let moodCount = 0;
   for (const t of tracks) {
@@ -85,7 +83,6 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
 
   return (
     <div className="mb-8 rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
-      {/* Header */}
       <div className="px-5 py-3 border-b border-border flex items-center justify-between">
         <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <Music size={14} className="text-primary" />
@@ -96,15 +93,13 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
 
       <div className="p-5">
         <div className="flex flex-col md:flex-row gap-6 items-start">
-          {/* Left: Key metrics */}
           <div className="grid grid-cols-2 gap-3 md:w-[220px] shrink-0">
-            <StatBox icon={<Gauge size={16} />} label="Avg BPM" value={avgBpm > 0 ? String(Math.round(avgBpm)) : "—"} color="text-primary" />
-            <StatBox icon={<Key size={16} />} label="Key" value={key || "—"} color="text-primary" />
-            <StatBox icon={<Volume2 size={16} />} label="Loudness" value={avgLoudness ? `${avgLoudness.toFixed(1)} dB` : "—"} color="text-primary" />
-            <StatBox icon={<Music size={16} />} label="Energy" value={avgEnergy > 0 ? `${Math.round(avgEnergy * 100)}%` : "—"} color="text-primary" />
+            <StatBox icon={<Gauge size={16} />} label="Avg BPM" value={avgBpm > 0 ? String(Math.round(avgBpm)) : "\u2014"} color="text-primary" />
+            <StatBox icon={<Key size={16} />} label="Key" value={key || "\u2014"} color="text-primary" />
+            <StatBox icon={<Volume2 size={16} />} label="Loudness" value={avgLoudness ? `${avgLoudness.toFixed(1)} dB` : "\u2014"} color="text-primary" />
+            <StatBox icon={<Music size={16} />} label="Energy" value={avgEnergy > 0 ? `${Math.round(avgEnergy * 100)}%` : "\u2014"} color="text-primary" />
           </div>
 
-          {/* Center: Nivo Radar */}
           {hasRadarData && (
             <div className="hidden md:block flex-1">
               <div className="h-[220px] max-w-[300px] mx-auto">
@@ -129,7 +124,6 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
             </div>
           )}
 
-          {/* Right: Nivo Bar */}
           <div className="flex-1 md:max-w-[280px]">
             <div className="hidden md:block h-[200px]">
               <ResponsiveBar
@@ -153,7 +147,6 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
               />
             </div>
 
-            {/* Mobile: simple bars */}
             <div className="md:hidden space-y-2">
               {barData.map((d) => (
                 <div key={d.name} className="flex items-center gap-2">
@@ -171,7 +164,6 @@ export function AudioProfileCard({ audiomuseData }: AudioProfileCardProps) {
           </div>
         </div>
 
-        {/* Mood tags */}
         {topMoods.length > 0 && (
           <div className="mt-4 pt-4 border-t border-border">
             <div className="flex items-center gap-2 flex-wrap">

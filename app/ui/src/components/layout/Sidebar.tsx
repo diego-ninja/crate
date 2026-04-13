@@ -50,8 +50,6 @@ const navItems = [
   { to: "/new-releases", icon: Sparkles, label: "New Releases" },
   { to: "/playlists", icon: ListMusic, label: "System Playlists" },
   { to: "/download", icon: Download, label: "Acquisition" },
-  // AudioMuse AI — disabled (profile not active)
-  // { external: "https://ai.lespedants.org", icon: BrainCircuit, label: "AudioMuse AI" },
   { section: "Insights" },
   { to: "/insights", icon: BarChart3, label: "Insights" },
   { to: "/genres", icon: Tag, label: "Genres" },

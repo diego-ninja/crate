@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams } from "react-router";
 import { useApi } from "@/hooks/use-api";
 import { AlbumHeader } from "@/components/album/AlbumHeader";
-import { TrackTable } from "@/components/album/TrackTable";
 import { AudioProfileCard } from "@/components/album/AudioProfileCard";
+import { TrackTable, type AudioAnalysisTrack } from "@/components/album/TrackTable";
 import { TagEditor } from "@/components/album/TagEditor";
 import { RelatedAlbums } from "@/components/album/RelatedAlbums";
 import { MatchCard } from "@/components/scanner/MatchCard";
@@ -17,21 +17,6 @@ import { AudioWaveform, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
 import { useAuth } from "@/contexts/AuthContext";
-
-export interface AudioMuseTrack {
-  tempo: number | null;
-  key: string | null;
-  scale: string | null;
-  energy: number | null;
-  mood: Record<string, number> | null;
-  danceability: number | null;
-  valence: number | null;
-  acousticness: number | null;
-  instrumentalness: number | null;
-  loudness: number | null;
-  dynamic_range: number | null;
-  spectral_complexity: number | null;
-}
 
 interface AlbumData {
   id?: number;
@@ -91,23 +76,17 @@ export function Album() {
   const [matches, setMatches] = useState<MatchResult[] | null>(null);
   const [matching, setMatching] = useState(false);
   const [pendingMatch, setPendingMatch] = useState<MatchResult | null>(null);
-  const [audiomuseData, setAudiomuseData] = useState<Record<string, AudioMuseTrack> | null>(null);
+  const [analysisData, setAnalysisData] = useState<Record<string, AudioAnalysisTrack> | null>(null);
+
+  useEffect(() => {
+    if (data?.artist_id == null) return;
+    api<Record<string, AudioAnalysisTrack>>(`/api/artists/${data.artist_id}/analysis-data`)
+      .then((d) => { if (d && Object.keys(d).length > 0) setAnalysisData(d); })
+      .catch(() => {});
+  }, [data?.artist_id]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
-
-  function fetchAudiomuseData(artistId?: number) {
-    if (artistId == null) return;
-    api<Record<string, AudioMuseTrack>>(`/api/artists/${artistId}/analysis-data`)
-      .then((d) => {
-        if (d && Object.keys(d).length > 0) setAudiomuseData(d);
-      })
-      .catch(() => {});
-  }
-
-  useEffect(() => {
-    fetchAudiomuseData(data?.artist_id);
-  }, [data?.artist_id]);
 
   async function findMatches() {
     if (data?.id == null) return;
@@ -184,8 +163,13 @@ export function Album() {
           hasCover={data.has_cover}
           tracks={data.tracks}
           genres={data.genres}
-          hasAnalysis={audiomuseData != null && Object.values(audiomuseData).some((t) => t.tempo != null)}
-          onAnalysisComplete={() => fetchAudiomuseData(data?.artist_id)}
+          hasAnalysis={analysisData != null && Object.values(analysisData).some((t) => t.tempo != null)}
+          onAnalysisComplete={() => {
+            if (data?.artist_id == null) return;
+            api<Record<string, AudioAnalysisTrack>>(`/api/artists/${data.artist_id}/analysis-data`)
+              .then((d) => { if (d && Object.keys(d).length > 0) setAnalysisData(d); })
+              .catch(() => {});
+          }}
         >
           <Button
             size="sm"
@@ -299,11 +283,10 @@ export function Album() {
           </div>
         )}
 
-        {audiomuseData && data && (() => {
-          // Filter audiomuse data to only tracks in this album
+        {analysisData && data && (() => {
           const albumTitles = new Set(data.tracks.map((t: { tags: { title?: string }; filename: string }) => (t.tags.title || t.filename).toLowerCase()));
-          const filtered = Object.fromEntries(Object.entries(audiomuseData).filter(([k]) => albumTitles.has(k)));
-          return Object.keys(filtered).length > 0 ? <AudioProfileCard audiomuseData={filtered} /> : null;
+          const filtered = Object.fromEntries(Object.entries(analysisData).filter(([k]) => albumTitles.has(k)));
+          return Object.keys(filtered).length > 0 ? <AudioProfileCard analysisData={filtered} /> : null;
         })()}
 
         <div>
@@ -317,7 +300,7 @@ export function Album() {
             albumId={data.id}
             albumSlug={data.slug}
             albumCover={albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name })}
-            audiomuseData={audiomuseData ?? undefined}
+            analysisData={analysisData ?? undefined}
           />
         </div>
 

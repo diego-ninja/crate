@@ -13,6 +13,7 @@ import { api } from "@/lib/api";
 
 export interface LikedTrack {
   track_id: number;
+  track_storage_id?: string;
   path: string;
   relative_path?: string;
   liked_at: string;
@@ -29,10 +30,10 @@ export interface LikedTrack {
 interface LikedTracksContextValue {
   likedTracks: LikedTrack[];
   loading: boolean;
-  isLiked: (trackId?: number | null, trackPath?: string | null) => boolean;
-  likeTrack: (trackId?: number | null, trackPath?: string | null) => Promise<boolean>;
-  unlikeTrack: (trackId?: number | null, trackPath?: string | null) => Promise<boolean>;
-  toggleTrackLike: (trackId?: number | null, trackPath?: string | null) => Promise<boolean>;
+  isLiked: (trackId?: number | null, trackStorageId?: string | null, trackPath?: string | null) => boolean;
+  likeTrack: (trackId?: number | null, trackStorageId?: string | null, trackPath?: string | null) => Promise<boolean>;
+  unlikeTrack: (trackId?: number | null, trackStorageId?: string | null, trackPath?: string | null) => Promise<boolean>;
+  toggleTrackLike: (trackId?: number | null, trackStorageId?: string | null, trackPath?: string | null) => Promise<boolean>;
   refetch: () => Promise<void>;
 }
 
@@ -85,42 +86,48 @@ export function LikedTracksProvider({ children }: { children: ReactNode }) {
 
   const likedIndex = useMemo(() => {
     const ids = new Set<number>();
+    const storageIds = new Set<string>();
     const paths = new Set<string>();
     for (const track of likedTracks) {
       ids.add(track.track_id);
+      if (track.track_storage_id) storageIds.add(track.track_storage_id);
       for (const key of getComparableKeys(track.path)) paths.add(key);
       for (const key of getComparableKeys(track.relative_path)) paths.add(key);
     }
-    return { ids, paths };
+    return { ids, storageIds, paths };
   }, [likedTracks]);
 
-  const isLiked = useCallback((trackId?: number | null, trackPath?: string | null) => {
+  const isLiked = useCallback((trackId?: number | null, trackStorageId?: string | null, trackPath?: string | null) => {
     if (trackId != null && likedIndex.ids.has(trackId)) return true;
+    if (trackStorageId && likedIndex.storageIds.has(trackStorageId)) return true;
     for (const key of getComparableKeys(trackPath)) {
       if (likedIndex.paths.has(key)) return true;
     }
     return false;
   }, [likedIndex]);
 
-  const likeTrack = useCallback(async (trackId?: number | null, trackPath?: string | null) => {
-    if (trackId == null && !trackPath) return false;
+  const likeTrack = useCallback(async (trackId?: number | null, trackStorageId?: string | null, trackPath?: string | null) => {
+    if (trackId == null && !trackStorageId && !trackPath) return false;
     await api("/api/me/likes", "POST", {
       track_id: trackId ?? undefined,
+      track_storage_id: trackStorageId ?? undefined,
       track_path: trackPath ?? undefined,
     });
     await refetch();
     return true;
   }, [refetch]);
 
-  const unlikeTrack = useCallback(async (trackId?: number | null, trackPath?: string | null) => {
-    if (trackId == null && !trackPath) return false;
+  const unlikeTrack = useCallback(async (trackId?: number | null, trackStorageId?: string | null, trackPath?: string | null) => {
+    if (trackId == null && !trackStorageId && !trackPath) return false;
     await api("/api/me/likes", "DELETE", {
       track_id: trackId ?? undefined,
+      track_storage_id: trackStorageId ?? undefined,
       track_path: trackPath ?? undefined,
     });
     setLikedTracks((prev) =>
       prev.filter((track) => {
         if (trackId != null && track.track_id === trackId) return false;
+        if (trackStorageId && track.track_storage_id === trackStorageId) return false;
         const trackKeys = new Set([
           ...getComparableKeys(track.path),
           ...getComparableKeys(track.relative_path),
@@ -131,12 +138,12 @@ export function LikedTracksProvider({ children }: { children: ReactNode }) {
     return true;
   }, []);
 
-  const toggleTrackLike = useCallback(async (trackId?: number | null, trackPath?: string | null) => {
-    if (trackId == null && !trackPath) return false;
-    if (isLiked(trackId, trackPath)) {
-      return unlikeTrack(trackId, trackPath);
+  const toggleTrackLike = useCallback(async (trackId?: number | null, trackStorageId?: string | null, trackPath?: string | null) => {
+    if (trackId == null && !trackStorageId && !trackPath) return false;
+    if (isLiked(trackId, trackStorageId, trackPath)) {
+      return unlikeTrack(trackId, trackStorageId, trackPath);
     }
-    return likeTrack(trackId, trackPath);
+    return likeTrack(trackId, trackStorageId, trackPath);
   }, [isLiked, likeTrack, unlikeTrack]);
 
   const value = useMemo<LikedTracksContextValue>(() => ({

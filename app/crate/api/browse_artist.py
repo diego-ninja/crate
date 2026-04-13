@@ -16,6 +16,7 @@ from crate.db import (
     get_library_artist,
 )
 from crate.lastfm import get_artist_info
+from crate.storage_layout import resolve_artist_dir
 
 log = logging.getLogger(__name__)
 
@@ -495,12 +496,15 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
 
     from crate.lastfm import _deezer_artist_image, download_artist_image, get_fanart_all_images, get_fanart_background
 
+    _IMG_CACHE = {"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"}
+
     lib = library_path()
-    artist_dir = safe_path(lib, name)
+    artist_row = get_library_artist(name)
+    artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=name, existing_only=True)
     if artist_dir and artist_dir.is_dir():
         bg_file = artist_dir / "background.jpg"
         if bg_file.exists():
-            return Response(content=bg_file.read_bytes(), media_type="image/jpeg")
+            return Response(content=bg_file.read_bytes(), media_type="image/jpeg", headers=_IMG_CACHE)
 
     fanart = get_fanart_all_images(name)
     backgrounds = fanart.get("backgrounds", []) if fanart else []
@@ -508,25 +512,25 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
         url = _random.choice(backgrounds) if random_pick else backgrounds[0]
         image_data = download_artist_image(url)
         if image_data:
-            return Response(content=image_data, media_type="image/jpeg")
+            return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
 
     url = get_fanart_background(name)
     if url:
         image_data = download_artist_image(url)
         if image_data:
-            return Response(content=image_data, media_type="image/jpeg")
+            return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
 
     from crate.lastfm import get_lastfm_best_background
 
     lfm_bg = get_lastfm_best_background(name)
     if lfm_bg:
-        return Response(content=lfm_bg, media_type="image/jpeg")
+        return Response(content=lfm_bg, media_type="image/jpeg", headers=_IMG_CACHE)
 
     deezer_url = _deezer_artist_image(name)
     if deezer_url:
         image_data = download_artist_image(deezer_url)
         if image_data:
-            return Response(content=image_data, media_type="image/jpeg")
+            return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
 
     try:
         from crate.spotify import search_artist as spotify_search
@@ -537,7 +541,7 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
             if img_url:
                 image_data = download_artist_image(img_url)
                 if image_data:
-                    return Response(content=image_data, media_type="image/jpeg")
+                    return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
     except Exception:
         pass
 
@@ -558,7 +562,8 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
     from crate.lastfm import download_artist_image, get_fanart_all_images, get_best_artist_image
 
     lib = library_path()
-    artist_dir = safe_path(lib, name)
+    artist_row = get_library_artist(name)
+    artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=name, existing_only=True)
     if not artist_dir or not artist_dir.is_dir():
         return Response(status_code=404)
 
@@ -856,6 +861,7 @@ def api_artist_setlist_playable(request: Request, name: str):
             """
             SELECT
                 t.id,
+                t.storage_id::text AS track_storage_id,
                 t.title,
                 t.path,
                 t.album,
@@ -881,6 +887,7 @@ def api_artist_setlist_playable(request: Request, name: str):
         matched_tracks.append(
             {
                 "library_track_id": match["id"],
+                "track_storage_id": match.get("track_storage_id"),
                 "title": match.get("title", ""),
                 "artist": name,
                 "artist_id": artist_id,
@@ -1046,6 +1053,7 @@ def api_artist(request: Request, name: str):
                 "size_mb": round(album["total_size"] / (1024**2)) if album["total_size"] else 0,
                 "year": album.get("year", ""),
                 "has_cover": bool(album.get("has_cover")),
+                "musicbrainz_albumid": album.get("musicbrainz_albumid"),
             }
         )
 

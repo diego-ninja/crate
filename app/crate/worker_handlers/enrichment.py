@@ -3,7 +3,9 @@ import logging
 import shutil
 import time
 from pathlib import Path
-from crate.db import delete_cache, emit_task_event, get_db_ctx, get_setting, get_task, set_cache, update_task
+
+from crate.db import delete_cache, emit_task_event, get_db_ctx, get_library_artist, get_setting, get_task, set_cache, update_task
+from crate.storage_layout import looks_like_storage_id, resolve_artist_dir
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
@@ -420,8 +422,15 @@ def _reorganize_artist_folders(
 
     from crate.audio import get_audio_files, read_tags
 
-    artist_dir = lib / artist_name
-    if not artist_dir.is_dir():
+    artist_row = get_library_artist(artist_name)
+    artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist_name, existing_only=True)
+    if artist_row and looks_like_storage_id(str(artist_row.get("folder_name") or "")):
+        log.info("Skip folder reorganization for managed-storage artist %s", artist_name)
+        return
+    if not artist_dir or not artist_dir.is_dir():
+        return
+    if any(looks_like_storage_id(part.name) for part in artist_dir.iterdir() if part.is_dir()):
+        log.info("Skip folder reorganization for %s because managed-storage album dirs were detected", artist_name)
         return
 
     year_prefix_re = _re.compile(r"^(\d{4})\s*[-–]\s*(.+)$")
@@ -592,14 +601,21 @@ def _process_new_content_album_mbids(
                 clean_name,
                 track_count,
                 local_info,
-                max_candidates=2,
+                max_candidates=5,
             )
 
             if best_release and best_score >= 70:
+                mbid = best_release["mbid"]
                 with get_db_ctx() as cur:
                     cur.execute(
                         "UPDATE library_albums SET musicbrainz_albumid = %s WHERE id = %s",
-                        (best_release["mbid"], album["id"]),
+                        (mbid, album["id"]),
+                    )
+                    # Propagate to tracks that don't have it
+                    cur.execute(
+                        "UPDATE library_tracks SET musicbrainz_albumid = %s "
+                        "WHERE album_id = %s AND (musicbrainz_albumid IS NULL OR musicbrainz_albumid = '')",
+                        (mbid, album["id"]),
                     )
                 mbid_count += 1
             time.sleep(1)
@@ -774,13 +790,23 @@ def _process_new_content_inner(
 
     artist_row = get_library_artist(artist_name)
     folder = (artist_row.get("folder_name") if artist_row else None) or artist_name
+    force = params.get("force", False)
     artist_dir = lib / folder
-    if artist_dir.is_dir():
+    if artist_dir.is_dir() and not force:
         new_hash = _compute_dir_hash(artist_dir)
         old_hash = artist_row.get("content_hash") if artist_row else None
         if old_hash and new_hash == old_hash:
             log.info("Skipping %s - content unchanged (hash: %s)", artist_name, new_hash[:12])
             return {"artist": artist_name, "skipped": True, "reason": "content_unchanged"}
+
+    # Ensure artist content is synced (may be missing after migration or fresh download)
+    if artist_dir.is_dir():
+        try:
+            from crate.library_sync import LibrarySync
+            sync = LibrarySync(config)
+            sync.sync_artist(artist_dir)
+        except Exception:
+            log.warning("Pre-enrichment sync failed for %s", artist_name, exc_info=True)
 
     _process_new_content_organize_folders(task_id, result, artist_name, lib, config)
     _process_new_content_enrich_artist(task_id, result, artist_name, config)

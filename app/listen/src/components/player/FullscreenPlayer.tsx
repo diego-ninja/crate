@@ -18,6 +18,8 @@ import {
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useEscapeKey } from "@/hooks/use-escape-key";
+import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
+import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
 
 type FSTab = "player" | "queue" | "lyrics";
 
@@ -106,7 +108,7 @@ function FullscreenQueueRow({
 }
 
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
-  const { currentTrack, queue, currentIndex, currentTime, seek, jumpTo } = usePlayer();
+  const { currentTrack, queue, currentIndex, currentTime, duration, seek, jumpTo } = usePlayer();
   const { audioElement } = usePlayerActions();
   const navigate = useNavigate();
 
@@ -257,6 +259,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   if (!visible || !currentTrack) return null;
 
   const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 20);
+  const remainingTime = Math.max(0, duration - currentTime);
 
   const TAB_PILLS: { id: FSTab; icon: typeof Disc3; label: string }[] = [
     { id: "player", icon: Disc3, label: "Player" },
@@ -365,21 +368,24 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* ── Player tab ── */}
       {activeTab === "player" && (
-      <div className="relative flex-1 flex flex-col items-center justify-center px-6 overflow-hidden pb-24">
-        {/* Album cover — large, centered */}
-        <div ref={coverRef} className="relative shrink-0 mx-auto rounded-xl overflow-hidden" style={{ width: "min(360px, 92%)", aspectRatio: "1" }}>
-          {currentTrack.albumCover ? (
-            <img
-              src={currentTrack.albumCover}
-              alt=""
-              className="h-full w-full object-cover shadow-2xl shadow-black/60"
-              style={{ filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none" }}
-            />
-          ) : (
-            <div className="h-full w-full bg-white/5 flex items-center justify-center shadow-2xl shadow-black/60">
-              <ListMusic size={64} className="text-white/10" />
-            </div>
-          )}
+      <div className="relative flex-1 flex flex-col items-center justify-center overflow-hidden px-6 pb-40">
+        <div className="mx-auto w-full max-w-[360px]">
+          {/* Album cover — large, centered */}
+          <div ref={coverRef} className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "1" }}>
+            {currentTrack.albumCover ? (
+              <img
+                src={currentTrack.albumCover}
+                alt=""
+                className="h-full w-full object-cover shadow-2xl shadow-black/60"
+                style={{ filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none" }}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-white/5 shadow-2xl shadow-black/60">
+                <ListMusic size={64} className="text-white/10" />
+              </div>
+            )}
+          </div>
+
         </div>
 
         {/* Track info */}
@@ -395,13 +401,26 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
               {vizCfg.trackVizProfile.summary}
             </p>
           ) : null}
+
+          <div className="mx-auto mt-4 w-full max-w-[360px]">
+            <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium tabular-nums text-white/45">
+              <span>{formatPlayerTime(currentTime)}</span>
+              <span>-{formatPlayerTime(remainingTime)}</span>
+            </div>
+            <PlayerSeekBar
+              currentTime={currentTime}
+              duration={duration}
+              onSeek={seek}
+              thin
+            />
+          </div>
         </div>
       </div>
       )}
 
       {/* ── Queue tab ── */}
       {activeTab === "queue" && (
-        <div className="flex-1 overflow-y-auto pb-28">
+        <div className="flex-1 overflow-y-auto pb-40">
           <div className="px-4 py-3">
             <p className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2">
               Up Next · {upcomingTracks.length} tracks
@@ -425,7 +444,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* ── Lyrics tab ── */}
       {activeTab === "lyrics" && (
-        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4 pb-28">
+        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4 pb-40">
           {!lyrics ? (
             <p className="text-center text-white/30 text-sm mt-20">Loading lyrics...</p>
           ) : lyrics.synced ? (

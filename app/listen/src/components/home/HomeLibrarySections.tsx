@@ -167,21 +167,42 @@ export function JustLandedSection({
       {loading ? (
         <SectionLoading />
       ) : artists?.length ? (
-        <SectionRail>
-          {artists.map((artist) => {
-            const albumCount = artist.albums ?? artist.album_count ?? 0;
-            const trackCount = artist.tracks ?? artist.track_count ?? 0;
-            return (
-              <ArtistCard
-                key={`just-landed-${artist.id ?? artist.name}`}
-                name={artist.name}
-                artistId={artist.id}
-                artistSlug={artist.slug}
-                subtitle={`${albumCount} album${albumCount === 1 ? "" : "s"} · ${trackCount} tracks`}
-              />
-            );
-          })}
-        </SectionRail>
+        <>
+          <div className="xl:hidden">
+            <SectionRail>
+              {artists.slice(0, 7).map((artist) => {
+                const albumCount = artist.albums ?? artist.album_count ?? 0;
+                const trackCount = artist.tracks ?? artist.track_count ?? 0;
+                return (
+                  <ArtistCard
+                    key={`just-landed-${artist.id ?? artist.name}`}
+                    name={artist.name}
+                    artistId={artist.id}
+                    artistSlug={artist.slug}
+                    subtitle={`${albumCount} album${albumCount === 1 ? "" : "s"} · ${trackCount} tracks`}
+                  />
+                );
+              })}
+            </SectionRail>
+          </div>
+          <div className="hidden xl:grid xl:grid-cols-7 xl:gap-4">
+            {artists.slice(0, 7).map((artist) => {
+              const albumCount = artist.albums ?? artist.album_count ?? 0;
+              const trackCount = artist.tracks ?? artist.track_count ?? 0;
+              return (
+                <ArtistCard
+                  key={`just-landed-grid-${artist.id ?? artist.name}`}
+                  name={artist.name}
+                  artistId={artist.id}
+                  artistSlug={artist.slug}
+                  subtitle={`${albumCount} album${albumCount === 1 ? "" : "s"} · ${trackCount} tracks`}
+                  layout="grid"
+                  fillGrid
+                />
+              );
+            })}
+          </div>
+        </>
       ) : (
         <div className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-sm text-muted-foreground">
           No recent global additions yet.

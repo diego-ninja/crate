@@ -29,13 +29,16 @@ NC     := \033[0m
 # DEV (entorno de desarrollo local)
 # ===========================================================================
 
-DC_DEV := $(DC) -p crate-dev -f docker-compose.dev.yaml
+DC_DEV := $(DC) -f docker-compose.dev.yaml
+DEV_CONTAINERS := crate-dev-api crate-dev-worker crate-dev-postgres crate-dev-redis crate-dev-slskd crate-dev-caddy
 
 .PHONY: dev
 dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend dev servers
-	@# Kill any leftover Vite processes from previous runs
+	@# Kill any leftover Vite processes from previous runs (by port AND pattern)
+	@-lsof -ti :5173,:5174 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
+	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build
 	@echo "$(GREEN)Backend levantado (Postgres, Redis, API, Worker, Caddy)$(NC)"
@@ -72,6 +75,8 @@ dev-listen: ## Arrancar solo Listen dev server (:5174)
 .PHONY: dev-down
 dev-down: ## Parar todo (backend + frontends)
 	@$(DC_DEV) down
+	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
+	@-lsof -ti :5173,:5174 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@echo "$(GREEN)Todo parado$(NC)"
@@ -88,6 +93,7 @@ dev-logs: ## Ver logs de backend (uso: make dev-logs o make dev-logs s=worker)
 dev-rebuild: ## Rebuild y restart todo
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
+	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build --force-recreate
 	@(cd app/ui && npx vite --port 5173 --strictPort --host > /dev/null 2>&1 &)
@@ -98,6 +104,7 @@ dev-rebuild: ## Rebuild y restart todo
 .PHONY: dev-reset
 dev-reset: ## Reset entorno dev (borra datos, para todo)
 	@$(DC_DEV) down -v
+	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@-pkill -f "vite.*517" 2>/dev/null || true
 	@echo "$(GREEN)Dev reseteado (datos borrados)$(NC)"
 

@@ -6,6 +6,7 @@ export interface SearchResult {
   albums: { id?: number; slug?: string; artist: string; artist_id?: number; artist_slug?: string; name: string }[];
   tracks: {
     id?: number;
+    storage_id?: string;
     slug?: string;
     title: string;
     artist: string;
@@ -78,7 +79,8 @@ export function flattenTopBarSearchResults(data: SearchResult): TopBarSearchItem
         albumName: track.album,
       }) : undefined,
       trackData: {
-        id: track.path || String(track.id),
+        id: track.storage_id || track.path || String(track.id),
+        storageId: track.storage_id,
         path: track.path,
         title: track.title,
         artist: track.artist,

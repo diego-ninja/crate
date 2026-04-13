@@ -34,11 +34,12 @@ def _fetch_artwork_tracks(cur, playlist_id: int) -> list[dict]:
             alb.slug AS album_slug
         FROM playlist_tracks pt
         LEFT JOIN LATERAL (
-            SELECT id, path, artist, album, album_id
+            SELECT id, storage_id, path, artist, album, album_id
             FROM library_tracks lt
-            WHERE lt.path = pt.track_path
+            WHERE lt.id = pt.track_id
+               OR lt.path = pt.track_path
                OR lt.path LIKE ('%%/' || pt.track_path)
-            ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
+            ORDER BY CASE WHEN lt.id = pt.track_id THEN 0 WHEN lt.path = pt.track_path THEN 1 ELSE 2 END
             LIMIT 1
         ) lt ON TRUE
         LEFT JOIN library_albums alb
@@ -229,17 +230,19 @@ def get_playlist_tracks(playlist_id: int) -> list[dict]:
             SELECT
                 pt.*,
                 lt.id AS track_id,
+                lt.storage_id::text AS track_storage_id,
                 ar.id AS artist_id,
                 ar.slug AS artist_slug,
                 alb.id AS album_id,
                 alb.slug AS album_slug
             FROM playlist_tracks pt
             LEFT JOIN LATERAL (
-                SELECT id, path, artist, album, album_id
+                SELECT id, storage_id, path, artist, album, album_id
                 FROM library_tracks lt
-                WHERE lt.path = pt.track_path
+                WHERE lt.id = pt.track_id
+                   OR lt.path = pt.track_path
                    OR lt.path LIKE ('%%/' || pt.track_path)
-                ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
+                ORDER BY CASE WHEN lt.id = pt.track_id THEN 0 WHEN lt.path = pt.track_path THEN 1 ELSE 2 END
                 LIMIT 1
             ) lt ON TRUE
             LEFT JOIN library_albums alb
@@ -263,10 +266,19 @@ def add_playlist_tracks(playlist_id: int, tracks: list[dict]):
         for t in tracks:
             pos += 1
             cur.execute(
-                "INSERT INTO playlist_tracks (playlist_id, track_path, title, artist, album, duration, position, added_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (playlist_id, t["path"], t.get("title", ""), t.get("artist", ""),
-                 t.get("album", ""), t.get("duration", 0), pos, now),
+                "INSERT INTO playlist_tracks (playlist_id, track_id, track_path, title, artist, album, duration, position, added_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    playlist_id,
+                    t.get("track_id") or t.get("libraryTrackId"),
+                    t.get("path") or "",
+                    t.get("title", ""),
+                    t.get("artist", ""),
+                    t.get("album", ""),
+                    t.get("duration", 0),
+                    pos,
+                    now,
+                ),
             )
         # Update counts
         cur.execute(
@@ -286,10 +298,19 @@ def replace_playlist_tracks(playlist_id: int, tracks: list[dict]):
         for t in tracks:
             pos += 1
             cur.execute(
-                "INSERT INTO playlist_tracks (playlist_id, track_path, title, artist, album, duration, position, added_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                (playlist_id, t["path"], t.get("title", ""), t.get("artist", ""),
-                 t.get("album", ""), t.get("duration", 0), pos, now),
+                "INSERT INTO playlist_tracks (playlist_id, track_id, track_path, title, artist, album, duration, position, added_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    playlist_id,
+                    t.get("track_id") or t.get("libraryTrackId"),
+                    t.get("path") or "",
+                    t.get("title", ""),
+                    t.get("artist", ""),
+                    t.get("album", ""),
+                    t.get("duration", 0),
+                    pos,
+                    now,
+                ),
             )
         cur.execute(
             "UPDATE playlists SET track_count = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = %s), "

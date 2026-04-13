@@ -24,6 +24,7 @@ export interface SearchAlbum {
 
 export interface SearchTrack {
   id: number;
+  storage_id?: string;
   slug?: string;
   title: string;
   artist: string;
@@ -63,6 +64,7 @@ export interface SystemPlaylist {
 interface PlaylistDetailTrack {
   id?: number;
   track_id?: number;
+  track_storage_id?: string;
   track_path: string;
   title: string;
   artist: string;
@@ -123,7 +125,8 @@ export async function loadSystemPlaylistTracks(playlistId: number): Promise<{
   const data = await api<PlaylistDetailData>(`/api/curation/playlists/${playlistId}`);
   return {
     tracks: (data.tracks || []).map((track) => ({
-      id: track.track_path || String(track.id || track.track_id || Math.random()),
+      id: track.track_storage_id || track.track_path || String(track.id || track.track_id || Math.random()),
+      storageId: track.track_storage_id || undefined,
       title: track.title || "Unknown",
       artist: track.artist || "",
       album: track.album || "",

@@ -32,7 +32,7 @@ import { useApi } from "@/hooks/use-api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchArtistRadio } from "@/lib/radio";
 import { shuffleArray } from "@/lib/utils";
-import { artistApiPath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { artistApiPath, artistBackgroundApiUrl, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export function Artist() {
   const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
@@ -181,6 +181,7 @@ export function Artist() {
 
   const photoUrl = buildArtistPhotoUrl(data.name, data.id, data.slug);
   const canonicalPhotoUrl = artistPhotoApiUrl({ artistId: data.id, artistSlug: data.slug, artistName: data.name });
+  const backgroundUrl = artistBackgroundApiUrl({ artistId: data.id, artistSlug: data.slug, artistName: data.name });
   const tags = data.genres.length > 0 ? data.genres : (info?.tags ?? []);
 
   return (
@@ -189,6 +190,7 @@ export function Artist() {
         artist={data}
         artistInfo={info ?? undefined}
         photoUrl={canonicalPhotoUrl || photoUrl}
+        backgroundUrl={backgroundUrl || undefined}
         tags={tags}
         following={following}
         onPlay={() => handlePlayTopTracks()}

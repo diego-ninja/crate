@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
 import { formatBadgeClass } from "@/lib/utils";
-import { Music, Play, Heart, ListPlus } from "lucide-react";
+import { Music, Play, Heart, ImageDown, ListPlus, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { useFavorites } from "@/hooks/use-favorites";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
+import { api } from "@/lib/api";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 
 interface AlbumCardProps {
@@ -50,8 +52,28 @@ export const AlbumCard = React.memo(function AlbumCard({
   const [imgError, setImgError] = useState(false);
   
   const { isFavorite, toggleFavorite } = useFavorites();
+  const [fetchingCover, setFetchingCover] = useState(false);
   const coverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: name });
   const favId = `${artist}/${name}`;
+
+  async function handleFetchCover(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!albumId || fetchingCover) return;
+    setFetchingCover(true);
+    try {
+      await api(`/api/albums/${albumId}/fetch-cover`, "POST");
+      toast.success("Searching for cover...");
+      // Poll for completion then reload image
+      setTimeout(() => {
+        setImgError(false);
+        setImgLoaded(false);
+        setFetchingCover(false);
+      }, 8000);
+    } catch {
+      toast.error("Failed to search for cover");
+      setFetchingCover(false);
+    }
+  }
 
   function handlePlay(e: React.MouseEvent) {
     e.stopPropagation();
@@ -89,7 +111,17 @@ export const AlbumCard = React.memo(function AlbumCard({
               style={{ background: `linear-gradient(135deg, ${hashColor(name)}, ${hashColor(name + name)})` }}
             >
               <span className="text-3xl font-bold text-white/25">{name.charAt(0).toUpperCase()}</span>
-              <Music size={16} className="text-white/10 absolute bottom-2 right-2" />
+              {imgError && albumId && (
+                <button
+                  onClick={handleFetchCover}
+                  disabled={fetchingCover}
+                  className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition-colors"
+                  title="Search for cover"
+                >
+                  {fetchingCover ? <Loader2 size={13} className="text-white/50 animate-spin" /> : <ImageDown size={13} className="text-white/40" />}
+                </button>
+              )}
+              {!imgError && <Music size={16} className="text-white/10 absolute bottom-2 right-2" />}
             </div>
           )}
           {/* Hover overlay */}

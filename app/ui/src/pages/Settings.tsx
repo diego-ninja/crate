@@ -31,7 +31,6 @@ import {
   XCircle,
   RefreshCw,
   FolderOpen,
-  FolderTree,
   Database,
   Clock,
   Wifi,
@@ -49,7 +48,7 @@ interface SettingsData {
   db_stats: Record<string, { size: number; rows: number }>;
   library: {
     path: string;
-    folder_pattern: string;
+    storage_layout: string;
     audio_extensions: string[];
   };
   processing: {
@@ -213,8 +212,6 @@ export function Settings() {
 function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: () => void }) {
   const [workers, setWorkers] = useState(settings.worker.max_workers);
   const [saving, setSaving] = useState(false);
-  const [folderPattern, setFolderPattern] = useState(settings.library?.folder_pattern ?? "artist/album");
-
   async function saveWorkers(value: number) {
     setSaving(true);
     try {
@@ -240,32 +237,6 @@ function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: ()
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">Path</span>
             <code className="text-sm bg-muted px-2 py-1 rounded">/music</code>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="bg-card">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <FolderTree size={14} /> Folder Organization
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-            <span className="text-sm text-muted-foreground sm:w-32">Structure</span>
-            <Select value={folderPattern} onValueChange={(v) => { setFolderPattern(v); saveSetting("library", { folder_pattern: v }); }}>
-              <SelectTrigger className="w-full sm:w-[250px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="artist/album">Artist / Album</SelectItem>
-                <SelectItem value="artist/year/album">Artist / Year / Album</SelectItem>
-                <SelectItem value="artist/year-album">Artist / Year - Album</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="text-xs text-muted-foreground">
-            Example: {folderPattern === "artist/year/album" ? "Quicksand/1993/Slip/" : folderPattern === "artist/year-album" ? "Quicksand/1993 - Slip/" : "Quicksand/Slip/"}
           </div>
         </CardContent>
       </Card>

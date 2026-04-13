@@ -238,7 +238,7 @@ export function Shell() {
         </div>
 
         <main className={`flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[90px]" : ""}`}>
-          <div className={`py-6 ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
+          <div className={`mx-auto w-full max-w-[1440px] py-6 ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
             <Outlet />
           </div>
         </main>
@@ -263,14 +263,24 @@ export function Shell() {
       </div>
 
       <main className={`flex-1 overflow-x-hidden ${mobileBottomPad}`}>
-        <div className={`py-4 px-[max(1rem,env(safe-area-inset-left))] ${overlayHeader ? "" : "pt-[calc(4rem+env(safe-area-inset-top,0px))]"}`}>
+        <div className={`mx-auto w-full max-w-[1440px] py-4 px-[max(1rem,env(safe-area-inset-left))] ${overlayHeader ? "" : "pt-[calc(4rem+env(safe-area-inset-top,0px))]"}`}>
           <Outlet />
         </div>
       </main>
 
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-x-0 bottom-0 z-20 bg-app-surface"
+        style={{
+          height: hasTrack
+            ? "calc(64px + env(safe-area-inset-bottom, 0px) + 82px + 20px)"
+            : "calc(64px + env(safe-area-inset-bottom, 0px))",
+        }}
+      />
+
       <PlayerBar />
 
-      <nav className="z-app-player fixed bottom-0 left-0 right-0 flex items-center justify-around border-t border-white/5 bg-app-surface px-2" style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))", height: "calc(64px + env(safe-area-inset-bottom, 0px))" }}>
+      <nav className="z-app-player fixed bottom-0 left-0 right-0 isolate flex items-center justify-around border-t border-white/5 bg-app-surface px-2" style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom))", height: "calc(64px + env(safe-area-inset-bottom, 0px))", contain: "paint" }}>
         {MOBILE_NAV.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}

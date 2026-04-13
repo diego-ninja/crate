@@ -1,11 +1,12 @@
-import type { ReactNode } from "react";
-import { ArrowRight, Clock3, Loader2, Play } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { ArrowRight, ChevronLeft, ChevronRight, Clock3, Loader2, Play } from "lucide-react";
 
-import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { ItemActionMenu, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { usePlaylistActionEntries } from "@/components/actions/playlist-actions";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { TrackCoverThumb } from "@/components/cards/TrackCoverThumb";
 import type { Track } from "@/contexts/PlayerContext";
+import { cn } from "@/lib/utils";
 
 import type { HomeUpcomingItem } from "./home-model";
 
@@ -29,11 +30,18 @@ export function SectionHeader({
   subtitle,
   actionLabel,
   onAction,
+  railControls,
 }: {
   title: string;
   subtitle?: string;
   actionLabel?: string;
   onAction?: () => void;
+  railControls?: {
+    canScrollLeft: boolean;
+    canScrollRight: boolean;
+    onScrollLeft: () => void;
+    onScrollRight: () => void;
+  };
 }) {
   return (
     <div className="flex items-end justify-between gap-4">
@@ -41,22 +49,104 @@ export function SectionHeader({
         <h2 className="text-lg font-bold text-foreground">{title}</h2>
         {subtitle ? <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
-      {actionLabel && onAction ? (
-        <button
-          onClick={onAction}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-        >
-          {actionLabel}
-          <ArrowRight size={15} />
-        </button>
-      ) : null}
+      <div className="flex items-center gap-2">
+        {railControls ? (
+          <div className="hidden items-center gap-2 md:flex">
+            <button
+              type="button"
+              onClick={railControls.onScrollLeft}
+              disabled={!railControls.canScrollLeft}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+              aria-label={`Scroll ${title} left`}
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={railControls.onScrollRight}
+              disabled={!railControls.canScrollRight}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/65 transition-colors hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+              aria-label={`Scroll ${title} right`}
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        ) : null}
+        {actionLabel && onAction ? (
+          <button
+            onClick={onAction}
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            {actionLabel}
+            <ArrowRight size={15} />
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
 
-export function SectionRail({ children }: { children: ReactNode }) {
+export function useSectionRail(itemCount: number) {
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateButtons = useCallback(() => {
+    const node = railRef.current;
+    if (!node) return;
+    const maxScrollLeft = node.scrollWidth - node.clientWidth;
+    setCanScrollLeft(node.scrollLeft > 8);
+    setCanScrollRight(maxScrollLeft - node.scrollLeft > 8);
+  }, []);
+
+  useEffect(() => {
+    const node = railRef.current;
+    if (!node) return;
+    updateButtons();
+    const handleScroll = () => updateButtons();
+    node.addEventListener("scroll", handleScroll, { passive: true });
+    const resizeObserver = new ResizeObserver(() => updateButtons());
+    resizeObserver.observe(node);
+    Array.from(node.children).forEach((child) => resizeObserver.observe(child));
+    return () => {
+      node.removeEventListener("scroll", handleScroll);
+      resizeObserver.disconnect();
+    };
+  }, [itemCount, updateButtons]);
+
+  const scrollByDirection = useCallback((direction: -1 | 1) => {
+    const node = railRef.current;
+    if (!node) return;
+    const delta = Math.max(node.clientWidth - 120, 260);
+    node.scrollBy({ left: delta * direction, behavior: "smooth" });
+  }, []);
+
+  return {
+    railRef,
+    canScrollLeft,
+    canScrollRight,
+    onScrollLeft: () => scrollByDirection(-1),
+    onScrollRight: () => scrollByDirection(1),
+  };
+}
+
+export function SectionRail({
+  children,
+  railRef,
+  className,
+}: {
+  children: ReactNode;
+  railRef?: RefObject<HTMLDivElement | null>;
+  className?: string;
+}) {
   return (
-    <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      ref={railRef}
+      className={cn(
+        "hide-rail-scrollbar flex snap-x snap-mandatory gap-4 overflow-x-auto overflow-y-hidden pb-2",
+        className,
+      )}
+    >
       {children}
     </div>
   );
@@ -159,12 +249,14 @@ export function FeaturedPlaylistCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(event) => {
+        actionMenu.handleKeyboardTrigger(event);
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onClick();
         }
       }}
       onContextMenu={actionMenu.handleContextMenu}
+      {...actionMenu.longPressHandlers}
       className="group w-[180px] flex-shrink-0 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-3xl"
     >
       <div className="relative">
@@ -179,12 +271,6 @@ export function FeaturedPlaylistCard({
             {badge}
           </div>
         ) : null}
-        <ItemActionMenuButton
-          buttonRef={actionMenu.triggerRef}
-          hasActions={actionMenu.hasActions}
-          onClick={actionMenu.openFromTrigger}
-          className="absolute bottom-3 left-3 z-10 opacity-80 transition-opacity hover:opacity-100"
-        />
       </div>
       <div className="px-1 pt-3">
         <div className="truncate text-sm font-bold text-foreground">{name}</div>

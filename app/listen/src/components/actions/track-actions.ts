@@ -44,7 +44,8 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
 
   const libraryTrackId =
     input.track.library_track_id ?? (typeof input.track.id === "number" ? input.track.id : null);
-  const liked = isLiked(libraryTrackId, input.track.path);
+  const trackStorageId = input.track.storage_id ?? null;
+  const liked = isLiked(libraryTrackId, trackStorageId, input.track.path);
 
   return useMemo<ItemActionMenuEntry[]>(() => {
     const playerTrack = buildTrackMenuPlayerTrack(input.track, input.albumCover);
@@ -73,9 +74,9 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
         label: liked ? "Unlike track" : "Like track",
         icon: Heart,
         active: liked,
-        disabled: libraryTrackId == null && !input.track.path,
+        disabled: libraryTrackId == null && !trackStorageId,
         onSelect: async () => {
-          await toggleTrackLike(libraryTrackId, input.track.path);
+          await toggleTrackLike(libraryTrackId, trackStorageId, input.track.path);
           toast.success(liked ? "Removed from liked tracks" : "Added to liked tracks");
         },
       }),
@@ -83,11 +84,12 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
         key: "radio",
         label: "Start track radio",
         icon: Radio,
-        disabled: libraryTrackId == null && !input.track.path,
+        disabled: libraryTrackId == null && !trackStorageId && !input.track.path,
         onSelect: async () => {
           try {
             const radio = await fetchTrackRadio({
               libraryTrackId,
+              storageId: trackStorageId,
               path: input.track.path,
               title: input.track.title,
             });
@@ -171,6 +173,7 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
     input.track,
     liked,
     libraryTrackId,
+    trackStorageId,
     navigate,
     play,
     playAll,

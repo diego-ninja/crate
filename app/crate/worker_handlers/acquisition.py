@@ -3,13 +3,17 @@ import logging
 import re
 import shutil
 import time
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+
 from crate.audio import get_audio_files, read_tags
 from crate.db import create_task, create_task_dedup, emit_task_event, get_db_ctx, get_setting, get_task, update_task
 from crate.db.user_library import follow_artist, like_track, save_album
-from crate.worker_handlers import TaskHandler, is_cancelled
+from crate.storage_import import resolve_import_album_target
+from crate.storage_layout import resolve_artist_dir
+from crate.worker_handlers import TaskHandler, is_cancelled, start_scan
 
 log = logging.getLogger(__name__)
 
@@ -18,6 +22,118 @@ def _sanitize_import_name(name: str) -> str:
     cleaned = re.sub(r'[<>:"/\\|?*]', "", (name or "").strip())
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
     return cleaned or "Unknown"
+
+
+def _normalize_artist_folder_key(name: str) -> str:
+    return re.sub(r"^[.\s]+", "", (name or "").strip()).casefold()
+
+
+def _safe_artist_folder_name(name: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*]', "", (name or "").strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = re.sub(r"^[.\s]+", "", cleaned)
+    cleaned = cleaned.rstrip(" .")
+    return cleaned or "Unknown Artist"
+
+
+def _resolve_library_artist_folder_name(lib: Path, preferred_artist: str = "", staged_artist: str = "") -> str:
+    from crate.db import get_library_artist
+
+    candidates = [
+        preferred_artist,
+        staged_artist,
+        _safe_artist_folder_name(preferred_artist),
+        _safe_artist_folder_name(staged_artist),
+    ]
+    seen: set[str] = set()
+    filtered_candidates: list[str] = []
+    for candidate in candidates:
+        if not candidate:
+            continue
+        key = candidate.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        filtered_candidates.append(candidate)
+
+    existing_dirs = [d.name for d in lib.iterdir() if d.is_dir()]
+    existing_by_exact: dict[str, str] = {}
+    existing_by_normalized: dict[str, str] = {}
+    for name in existing_dirs:
+        exact_key = name.casefold()
+        normalized_key = _normalize_artist_folder_key(name)
+        current_exact = existing_by_exact.get(exact_key)
+        current_normalized = existing_by_normalized.get(normalized_key)
+        if current_exact is None or (current_exact.startswith(".") and not name.startswith(".")):
+            existing_by_exact[exact_key] = name
+        if current_normalized is None or (current_normalized.startswith(".") and not name.startswith(".")):
+            existing_by_normalized[normalized_key] = name
+
+    for candidate in filtered_candidates:
+        exact = existing_by_exact.get(candidate.casefold())
+        if exact:
+            return exact
+    for candidate in filtered_candidates:
+        normalized = existing_by_normalized.get(_normalize_artist_folder_key(candidate))
+        if normalized:
+            return normalized
+
+    for candidate in filtered_candidates:
+        existing = get_library_artist(candidate)
+        if existing and existing.get("folder_name"):
+            return existing["folder_name"]
+
+    return _safe_artist_folder_name(preferred_artist or staged_artist)
+
+
+def _resolve_tidal_preferred_artist_name(url: str, params: dict, download_id: int | None) -> str:
+    from crate.db.tidal import get_tidal_download
+
+    if params.get("artist"):
+        return params["artist"]
+
+    row = get_tidal_download(download_id) if download_id else None
+    content_type = (params.get("content_type") or (row or {}).get("content_type") or "").lower()
+
+    if row and row.get("artist"):
+        return row["artist"]
+    if content_type == "artist":
+        if row and row.get("title"):
+            return row["title"]
+        if params.get("album"):
+            return params["album"]
+    if "/artist/" in url and row and row.get("title"):
+        return row["title"]
+    return ""
+
+
+def _align_tidal_staged_artist_dirs(processing_path: str, lib: Path, preferred_artist: str) -> list[str]:
+    processing_root = Path(processing_path)
+    if not processing_root.is_dir():
+        return []
+
+    artist_dirs = [p for p in processing_root.iterdir() if p.is_dir()]
+    if not artist_dirs:
+        return []
+
+    if preferred_artist and len(artist_dirs) == 1:
+        current_dir = artist_dirs[0]
+        target_name = _resolve_library_artist_folder_name(lib, preferred_artist, current_dir.name)
+        if current_dir.name != target_name:
+            target_dir = processing_root / target_name
+            if not target_dir.exists():
+                current_dir.rename(target_dir)
+                artist_dirs = [target_dir]
+            else:
+                for child in list(current_dir.iterdir()):
+                    shutil.move(str(child), str(target_dir / child.name))
+                try:
+                    current_dir.rmdir()
+                except OSError:
+                    pass
+                artist_dirs = [target_dir]
+
+    return [p.name for p in artist_dirs]
 
 
 def _find_album_dirs_recursive(root: Path, extensions: set[str]) -> list[Path]:
@@ -126,6 +242,12 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
 
     if download_id:
         update_tidal_download(download_id, status="processing")
+    if result.get("warning"):
+        emit_task_event(task_id, "info", {"message": f"Tidal reported partial issues but files were produced: {result['warning']}"})
+
+    preferred_artist_name = _resolve_tidal_preferred_artist_name(url, params, download_id)
+    staged_artists = _align_tidal_staged_artist_dirs(result["path"], lib, preferred_artist_name)
+
     emit_task_event(
         task_id,
         "info",
@@ -145,11 +267,8 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # names (tiddl writes to /tmp/.../<task_id>/<ArtistName>/) because the
     # params.artist field is empty for artist-wide URL downloads.
     processing_root = Path(result["path"])
-    staged_artists: list[str] = []
-    if processing_root.is_dir():
-        staged_artists = [
-            p.name for p in processing_root.iterdir() if p.is_dir()
-        ]
+    if not staged_artists and processing_root.is_dir():
+        staged_artists = [p.name for p in processing_root.iterdir() if p.is_dir()]
     for staged in staged_artists:
         set_cache(f"processing:{staged.lower()}", True, ttl=3600)
 
@@ -172,26 +291,29 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # All post-move work runs under the processing flag so the watcher's
     # debounce loop treats any filesystem activity as ours and stays out.
     try:
+        from crate.db import get_library_artist as _get_artist
+
+        # Download Tidal cover for specific album if provided
         cover_url = params.get("cover_url", "")
-        if cover_url and modified_artists:
+        current_album = params.get("album", "")
+        if cover_url and current_album and modified_artists:
             for current_artist in modified_artists:
-                current_album = params.get("album", "")
-                if not current_album:
+                artist_row = _get_artist(current_artist)
+                found_artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=current_artist, existing_only=True)
+                if not found_artist_dir:
                     continue
-                album_dir = lib / current_artist / current_album
-                if not album_dir.is_dir():
-                    artist_dir = lib / current_artist
-                    if artist_dir.is_dir():
-                        for candidate in artist_dir.iterdir():
-                            if candidate.is_dir() and current_album.lower() in candidate.name.lower():
-                                album_dir = candidate
-                                break
+                # Search all subdirs for the album (V2: subdirs are UUIDs)
+                from crate.db import get_library_album
+                album_row = get_library_album(current_artist, current_album)
+                if album_row and album_row.get("path"):
+                    album_dir = Path(album_row["path"])
+                else:
+                    album_dir = found_artist_dir / current_album
                 if album_dir.is_dir():
                     cover_path = album_dir / "cover.jpg"
                     if not cover_path.exists():
                         try:
                             import requests
-
                             resp = requests.get(cover_url, timeout=15)
                             if resp.status_code == 200 and len(resp.content) > 1000:
                                 cover_path.write_bytes(resp.content)
@@ -207,10 +329,11 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         update_task(task_id, progress=json.dumps({"phase": "syncing", "artists": modified_artists}))
         sync = LibrarySync(config)
         for current_artist in modified_artists:
-            artist_dir = lib / current_artist
-            if artist_dir.is_dir():
+            artist_row = _get_artist(current_artist)
+            found_artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=current_artist, existing_only=True)
+            if found_artist_dir and found_artist_dir.is_dir():
                 try:
-                    sync.sync_artist(artist_dir)
+                    sync.sync_artist(found_artist_dir)
                 except Exception:
                     # Sync failures here must not trigger a Dramatiq retry —
                     # the files are already on disk, re-downloading 5 GB
@@ -665,17 +788,12 @@ def _move_soulseek_completed_files(
     slsk_download_dir = Path("/downloads/soulseek")
     moved = 0
 
-    year = ""
-    year_match = re.search(r"(\d{4})", album)
-    if year_match:
-        year = year_match.group(1)
-
     clean_album = re.sub(r"^\d{4}\s*[-–]\s*", "", album).strip()
     clean_album = re.sub(r"\s*[\[\(](?:FLAC|flac|MP3|320).*?[\]\)]", "", clean_album).strip()
     if not clean_album:
         clean_album = album
-
-    target_dir = lib / artist / year / clean_album if year else lib / artist / clean_album
+    clean_album = _sanitize_import_name(clean_album)
+    _, target_dir, managed_track_names = resolve_import_album_target(lib, artist, clean_album)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if not slsk_download_dir.is_dir():
@@ -694,7 +812,11 @@ def _move_soulseek_completed_files(
                 break
 
         if found:
-            dest = target_dir / found.name
+            dest = (
+                target_dir / f"{uuid.uuid4()}{found.suffix.lower()}"
+                if managed_track_names
+                else target_dir / found.name
+            )
             try:
                 shutil.move(str(found), str(dest))
                 moved += 1
@@ -759,20 +881,37 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     moved = 0
 
     if not all_complete:
-        emit_task_event(
-            task_id,
-            "info",
-            {
-                "message": f"Album incomplete: {len(completed_files)}/{file_count} files. Not moving to library."
-            },
-        )
+        if completed_files and artist:
+            moved = _move_soulseek_completed_files(config, artist, album, completed_files)
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "message": f"Album incomplete: moved {moved}/{file_count} completed files to library."
+                },
+            )
+        else:
+            emit_task_event(
+                task_id,
+                "info",
+                {
+                    "message": f"Album incomplete: {len(completed_files)}/{file_count} files. Not moving to library."
+                },
+            )
+        if artist and moved > 0:
+            from crate.content import queue_process_new_content_if_needed
+            if queue_process_new_content_if_needed(
+                artist, library_path=config.get("library_path"), force=True
+            ):
+                emit_task_event(task_id, "info", {"message": f"Processing partial content for {artist}"})
         return {
             "artist": artist,
             "album": album,
             "source": "soulseek",
-            "moved": 0,
+            "moved": moved,
             "completed": len(completed_files),
             "incomplete": True,
+            "partial": moved > 0,
         }
 
     if completed_files and artist:
@@ -942,10 +1081,12 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
     emit_task_event(task_id, "info", {"message": "Syncing imported music to library", "artists": modified_artists})
     update_task(task_id, progress=json.dumps({"phase": "syncing", "artists": modified_artists}))
     for artist in modified_artists:
-        artist_dir = lib / artist
-        if artist_dir.is_dir():
+        from crate.db import get_library_artist as _get_artist_fn
+        artist_row = _get_artist_fn(artist)
+        found_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist, existing_only=True)
+        if found_dir and found_dir.is_dir():
             try:
-                sync.sync_artist(artist_dir)
+                sync.sync_artist(found_dir)
             except Exception:
                 log.warning("Sync failed for uploaded artist %s", artist, exc_info=True)
 

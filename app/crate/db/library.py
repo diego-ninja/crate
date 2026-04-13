@@ -1,4 +1,5 @@
 import json
+import uuid
 from datetime import datetime, timezone
 from psycopg2 import sql
 
@@ -82,6 +83,20 @@ def get_library_album_by_id(album_id: int) -> dict | None:
     return _row_to_lib_album(row) if row else None
 
 
+def get_library_track_by_id(track_id: int) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    return _row_to_lib_track(row) if row else None
+
+
+def get_library_track_by_storage_id(storage_id: str) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM library_tracks WHERE storage_id = %s", (storage_id,))
+        row = cur.fetchone()
+    return _row_to_lib_track(row) if row else None
+
+
 def get_library_tracks(album_id: int) -> list[dict]:
     with get_db_ctx() as cur:
         cur.execute(
@@ -111,6 +126,10 @@ def _allocate_unique_slug(cur, table: str, base_slug: str) -> str:
             return candidate
         candidate = f"{base_slug}-{suffix}"
         suffix += 1
+
+
+def _new_storage_id() -> str:
+    return str(uuid.uuid4())
 
 
 def get_library_stats() -> dict:
@@ -146,16 +165,22 @@ def get_library_track_count() -> int:
 def upsert_artist(data: dict):
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
-        cur.execute("SELECT slug FROM library_artists WHERE name = %s", (data["name"],))
+        cur.execute("SELECT slug, storage_id FROM library_artists WHERE name = %s", (data["name"],))
         existing = cur.fetchone()
         slug = existing["slug"] if existing and existing.get("slug") else _allocate_unique_slug(
             cur, "library_artists", build_artist_slug(data["name"])
         )
+        storage_id = (
+            str(existing["storage_id"])
+            if existing and existing.get("storage_id")
+            else data.get("storage_id") or _new_storage_id()
+        )
         cur.execute("""
-            INSERT INTO library_artists (name, slug, folder_name, album_count, track_count, total_size,
+            INSERT INTO library_artists (name, storage_id, slug, folder_name, album_count, track_count, total_size,
                 formats_json, primary_format, has_photo, dir_mtime, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(name) DO UPDATE SET
+                storage_id=COALESCE(library_artists.storage_id, EXCLUDED.storage_id),
                 slug=COALESCE(library_artists.slug, EXCLUDED.slug),
                 folder_name=COALESCE(library_artists.folder_name, EXCLUDED.folder_name),
                 album_count=EXCLUDED.album_count, track_count=EXCLUDED.track_count,
@@ -163,7 +188,7 @@ def upsert_artist(data: dict):
                 primary_format=EXCLUDED.primary_format, has_photo=EXCLUDED.has_photo,
                 dir_mtime=EXCLUDED.dir_mtime, updated_at=EXCLUDED.updated_at
         """, (
-            data["name"], slug, data.get("folder_name") or data["name"],
+            data["name"], storage_id, slug, data.get("folder_name") or data["name"],
             data.get("album_count", 0), data.get("track_count", 0),
             data.get("total_size", 0), json.dumps(data.get("formats", [])),
             data.get("primary_format"), data.get("has_photo", 0),
@@ -174,17 +199,23 @@ def upsert_artist(data: dict):
 def upsert_album(data: dict) -> int:
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
-        cur.execute("SELECT slug FROM library_albums WHERE path = %s", (data["path"],))
+        cur.execute("SELECT slug, storage_id FROM library_albums WHERE path = %s", (data["path"],))
         existing = cur.fetchone()
         slug = existing["slug"] if existing and existing.get("slug") else _allocate_unique_slug(
             cur, "library_albums", build_album_slug(data["artist"], data["name"])
         )
+        storage_id = (
+            str(existing["storage_id"])
+            if existing and existing.get("storage_id")
+            else data.get("storage_id") or _new_storage_id()
+        )
         cur.execute("""
-            INSERT INTO library_albums (artist, name, slug, path, track_count, total_size,
+            INSERT INTO library_albums (storage_id, artist, name, slug, path, track_count, total_size,
                 total_duration, formats_json, year, genre, has_cover,
                 musicbrainz_albumid, tag_album, dir_mtime, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(path) DO UPDATE SET
+                storage_id=COALESCE(library_albums.storage_id, EXCLUDED.storage_id),
                 artist=EXCLUDED.artist, name=EXCLUDED.name, slug=COALESCE(library_albums.slug, EXCLUDED.slug),
                 track_count=EXCLUDED.track_count, total_size=EXCLUDED.total_size,
                 total_duration=EXCLUDED.total_duration, formats_json=EXCLUDED.formats_json,
@@ -193,7 +224,7 @@ def upsert_album(data: dict) -> int:
                 tag_album=COALESCE(EXCLUDED.tag_album, library_albums.tag_album),
                 dir_mtime=EXCLUDED.dir_mtime, updated_at=EXCLUDED.updated_at
         """, (
-            data["artist"], data["name"], slug, data["path"],
+            storage_id, data["artist"], data["name"], slug, data["path"],
             data.get("track_count", 0), data.get("total_size", 0),
             data.get("total_duration", 0), json.dumps(data.get("formats", [])),
             data.get("year"), data.get("genre"), data.get("has_cover", 0),
@@ -208,20 +239,26 @@ def upsert_album(data: dict) -> int:
 def upsert_track(data: dict):
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
-        cur.execute("SELECT slug FROM library_tracks WHERE path = %s", (data["path"],))
+        cur.execute("SELECT slug, storage_id FROM library_tracks WHERE path = %s", (data["path"],))
         existing = cur.fetchone()
         slug = existing["slug"] if existing and existing.get("slug") else _allocate_unique_slug(
             cur,
             "library_tracks",
             build_track_slug(data["artist"], data.get("title"), data.get("filename")),
         )
+        storage_id = (
+            str(existing["storage_id"])
+            if existing and existing.get("storage_id")
+            else data.get("storage_id") or _new_storage_id()
+        )
         cur.execute("""
-            INSERT INTO library_tracks (album_id, artist, album, slug, filename, title,
+            INSERT INTO library_tracks (storage_id, album_id, artist, album, slug, filename, title,
                 track_number, disc_number, format, bitrate, duration, size,
                 year, genre, albumartist, musicbrainz_albumid, musicbrainz_trackid,
                 path, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(path) DO UPDATE SET
+                storage_id=COALESCE(library_tracks.storage_id, EXCLUDED.storage_id),
                 album_id=EXCLUDED.album_id, artist=EXCLUDED.artist, album=EXCLUDED.album,
                 slug=COALESCE(library_tracks.slug, EXCLUDED.slug),
                 filename=EXCLUDED.filename, title=EXCLUDED.title,
@@ -232,10 +269,10 @@ def upsert_track(data: dict):
                 musicbrainz_albumid=COALESCE(NULLIF(EXCLUDED.musicbrainz_albumid, ''), library_tracks.musicbrainz_albumid),
                 musicbrainz_trackid=COALESCE(NULLIF(EXCLUDED.musicbrainz_trackid, ''), library_tracks.musicbrainz_trackid),
                 updated_at=EXCLUDED.updated_at
-                -- Preserve AudioMuse fields (don't overwrite with NULL)
+                -- Preserve analysis fields (don't overwrite with NULL)
                 -- bpm, audio_key, audio_scale, energy, mood_json are NOT touched
         """, (
-            data.get("album_id"), data["artist"], data["album"], slug,
+            storage_id, data.get("album_id"), data["artist"], data["album"], slug,
             data["filename"], data.get("title"), data.get("track_number"),
             data.get("disc_number", 1), data.get("format"), data.get("bitrate"),
             data.get("duration"), data.get("size"), data.get("year"),
@@ -245,7 +282,7 @@ def upsert_track(data: dict):
         ))
 
 
-def update_track_audiomuse(path: str, bpm: float | None, key: str | None,
+def update_track_analysis(path: str, bpm: float | None, key: str | None,
                           scale: str | None, energy: float | None, mood: dict | None,
                           danceability: float | None = None, valence: float | None = None,
                           acousticness: float | None = None, instrumentalness: float | None = None,
@@ -346,6 +383,8 @@ def get_track_rating(track_id: int) -> int:
 
 def _row_to_lib_artist(row: dict) -> dict:
     d = dict(row)
+    if d.get("storage_id") is not None:
+        d["storage_id"] = str(d["storage_id"])
     fmt = d.pop("formats_json", [])
     d["formats"] = fmt if isinstance(fmt, list) else json.loads(fmt or "[]")
     return d
@@ -353,7 +392,20 @@ def _row_to_lib_artist(row: dict) -> dict:
 
 def _row_to_lib_album(row: dict) -> dict:
     d = dict(row)
+    if d.get("storage_id") is not None:
+        d["storage_id"] = str(d["storage_id"])
     fmt = d.pop("formats_json", [])
     d["formats"] = fmt if isinstance(fmt, list) else json.loads(fmt or "[]")
     return d
 
+
+def _row_to_lib_track(row: dict | None) -> dict | None:
+    if not row:
+        return None
+    d = dict(row)
+    if d.get("storage_id") is not None:
+        d["storage_id"] = str(d["storage_id"])
+    mood = d.get("mood_json")
+    if mood is not None and isinstance(mood, str):
+        d["mood_json"] = json.loads(mood)
+    return d

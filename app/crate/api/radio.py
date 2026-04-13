@@ -9,8 +9,14 @@ from crate.bliss import (
     generate_artist_radio,
     generate_playlist_radio,
     generate_track_radio,
+    generate_virtual_playlist_radio,
 )
-from crate.db import get_db_ctx, get_library_artist_by_id, get_user_by_email
+from crate.db import (
+    get_db_ctx,
+    get_library_artist_by_id,
+    get_library_track_by_storage_id,
+    get_user_by_email,
+)
 
 router = APIRouter()
 
@@ -29,11 +35,15 @@ def _effective_user_id(user: dict) -> int | None:
     return existing["id"] if existing else None
 
 
-def _resolve_track_path(track_id: int = 0, path: str = "") -> str | None:
+def _resolve_track_path(track_id: int = 0, path: str = "", storage_id: str = "") -> str | None:
     if track_id:
         with get_db_ctx() as cur:
             cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
             row = cur.fetchone()
+        return row["path"] if row else None
+
+    if storage_id:
+        row = get_library_track_by_storage_id(storage_id)
         return row["path"] if row else None
 
     if not path:
@@ -96,12 +106,13 @@ def api_artist_radio_by_id(request: Request, artist_id: int, limit: int = Query(
 def api_track_radio(
     request: Request,
     track_id: int = 0,
+    storage_id: str = "",
     path: str = "",
     limit: int = Query(50, ge=1, le=100),
 ):
     user = _require_auth(request)
     effective_user_id = _effective_user_id(user)
-    resolved_path = _resolve_track_path(track_id=track_id, path=path)
+    resolved_path = _resolve_track_path(track_id=track_id, path=path, storage_id=storage_id)
     if not resolved_path:
         raise HTTPException(status_code=404, detail="Track not found")
 
@@ -122,6 +133,7 @@ def api_track_radio(
             "name": f"{seed_track.get('title') or 'Track'} Radio",
             "seed": {
                 "track_id": seed_track.get("track_id"),
+                "track_storage_id": seed_track.get("track_storage_id"),
                 "track_path": seed_track.get("track_path"),
                 "title": seed_track.get("title"),
                 "artist": seed_track.get("artist"),
@@ -204,6 +216,41 @@ def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50
             "seed": {
                 "playlist_id": playlist_id,
                 "name": row["name"],
+            },
+        },
+        "tracks": enriched_tracks,
+    }
+    set_cache(cache_key, result, ttl=_RADIO_CACHE_TTL)
+    return result
+
+
+@router.get("/api/radio/home-playlist/{playlist_id}")
+def api_home_playlist_radio(request: Request, playlist_id: str, limit: int = Query(50, ge=1, le=100)):
+    user = _require_auth(request)
+    effective_user_id = _effective_user_id(user)
+    from crate.db.home import get_home_playlist
+
+    playlist = get_home_playlist(effective_user_id or user["id"], playlist_id, limit=max(limit, 40))
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    cache_key = f"radio:home-playlist:{effective_user_id or 'anon'}:{playlist_id}:{limit}"
+    cached = get_cache(cache_key, max_age_seconds=_RADIO_CACHE_TTL)
+    if cached:
+        return cached
+
+    tracks = generate_virtual_playlist_radio(playlist.get("tracks") or [], limit=limit, user_id=effective_user_id)
+    if not tracks:
+        return JSONResponse({"error": "No radio data available yet"}, status_code=404)
+
+    enriched_tracks = _enrich_radio_tracks(tracks)
+    result = {
+        "session": {
+            "type": "playlist",
+            "name": f"{playlist['name']} Radio",
+            "seed": {
+                "playlist_id": playlist_id,
+                "name": playlist["name"],
             },
         },
         "tracks": enriched_tracks,

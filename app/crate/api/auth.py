@@ -156,14 +156,50 @@ def _provider_available(provider: str) -> bool:
     return bool(item and item["enabled"] and item["configured"])
 
 
+def _allowed_redirect_origins() -> set[str]:
+    domain = os.environ.get("DOMAIN", "localhost")
+    origins = set()
+    if domain == "localhost":
+        origins.update({"http://localhost:5173", "http://localhost:5174"})
+    else:
+        origins.update({
+            f"https://admin.{domain}",
+            f"https://listen.{domain}",
+        })
+    dev_domain = os.environ.get("DEV_DOMAIN")
+    if dev_domain:
+        origins.update({
+            f"https://admin.{dev_domain}",
+            f"https://listen.{dev_domain}",
+        })
+    return origins
+
+
 def _callback_origin(return_to: str | None = None) -> str:
+    allowed = _allowed_redirect_origins()
     if return_to and return_to.startswith(("http://", "https://")):
         parts = return_to.split("/", 3)
-        return "/".join(parts[:3])
+        origin = "/".join(parts[:3])
+        if origin in allowed:
+            return origin
     domain = os.environ.get("DOMAIN", "localhost")
     if domain == "localhost":
         return "http://localhost:5173"
     return f"https://admin.{domain}"
+
+
+def _validate_return_to(return_to: str | None) -> str:
+    """Validate return_to against allowed origins. Returns safe URL or fallback."""
+    if not return_to:
+        return "/"
+    if return_to.startswith("/") and not return_to.startswith("//"):
+        return return_to
+    if return_to.startswith(("http://", "https://")):
+        parts = return_to.split("/", 3)
+        origin = "/".join(parts[:3])
+        if origin in _allowed_redirect_origins():
+            return return_to
+    return "/"
 
 
 def _oauth_callback_url(provider: str, return_to: str | None = None) -> str:
@@ -415,6 +451,8 @@ async def register(request: Request, body: RegisterRequest):
             raise HTTPException(status_code=403, detail="Invite token required")
         if not consume_auth_invite(body.invite_token):
             raise HTTPException(status_code=403, detail="Invite token invalid or expired")
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     existing = get_user_by_email(body.email)
     if existing:
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -604,8 +642,8 @@ async def change_password(request: Request, body: ChangePasswordRequest):
     if db_user.get("password_hash"):
         if not verify_password(body.current_password, db_user["password_hash"]):
             raise HTTPException(status_code=401, detail="Current password is incorrect")
-    if len(body.new_password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
     new_hash = hash_password(body.new_password)
     update_user(user["id"], password_hash=new_hash)
     return {"ok": True}
@@ -778,7 +816,8 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
             last_error=None,
             metadata={"email": email},
         )
-        response = RedirectResponse(url=parsed_state.get("return_to") or "/profile")
+        redirect_to = _validate_return_to(parsed_state.get("return_to"))
+        response = RedirectResponse(url=redirect_to)
         return response
 
     if not user:
@@ -817,7 +856,7 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
 
     update_user_last_login(user["id"])
     token, _ = _create_login_session(user, request)
-    response = RedirectResponse(url=parsed_state.get("return_to") or "/")
+    response = RedirectResponse(url=_validate_return_to(parsed_state.get("return_to")))
     _set_auth_cookie(response, token)
     return response
 
