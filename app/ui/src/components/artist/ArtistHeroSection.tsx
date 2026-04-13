@@ -7,7 +7,6 @@ import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
 import {
   Calendar,
   Disc3,
-  ExternalLink,
   HardDrive,
   Headphones,
   MapPin,
@@ -44,7 +43,6 @@ interface ArtistHeroSectionProps {
   upcomingShow?: ArtistShowEvent;
   popularityScore: number;
   tags: string[];
-  navidromeUrl?: string;
   topTracksAvailable: boolean;
   enriching: boolean;
   isAdmin: boolean;
@@ -80,7 +78,6 @@ export function ArtistHeroSection({
   upcomingShow,
   popularityScore,
   tags,
-  navidromeUrl,
   topTracksAvailable,
   enriching,
   isAdmin,
@@ -103,6 +100,8 @@ export function ArtistHeroSection({
 }: ArtistHeroSectionProps) {
   const backgroundUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName });
   const photoUrl = artistPhotoApiUrl({ artistId, artistSlug, artistName });
+  const backgroundSrc = `${backgroundUrl}?v=stable-hero-bg-v2${bgCacheBust ? `&t=${bgCacheBust}` : ""}`;
+  const photoSrc = `${photoUrl}?v=stable-hero-photo${photoCacheBust ? `&t=${photoCacheBust}` : ""}`;
 
   return (
     <div
@@ -111,7 +110,7 @@ export function ArtistHeroSection({
     >
       <img
         key={bgCacheBust || "bg"}
-        src={`${backgroundUrl}?random=true${bgCacheBust ? `&t=${bgCacheBust}` : ""}`}
+        src={backgroundSrc}
         alt=""
         className={`absolute inset-0 w-full h-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
         onLoad={onBackgroundLoad}
@@ -149,7 +148,7 @@ export function ArtistHeroSection({
             {!photoError ? (
               <img
                 key={photoCacheBust || "photo"}
-                src={`${photoUrl}?random=true${photoCacheBust ? `&t=${photoCacheBust}` : ""}`}
+                src={photoSrc}
                 alt={artistName}
                 className={`w-full h-full object-cover transition-opacity duration-500 ${photoLoaded ? "opacity-100" : "opacity-0"}`}
                 onLoad={onPhotoLoad}
@@ -262,13 +261,6 @@ export function ArtistHeroSection({
               >
                 <Radio size={14} className="mr-1" /> Artist Radio
               </Button>
-              {navidromeUrl && (
-                <Button size="sm" variant="outline" className="border-white/20 text-white/70 hover:text-white hover:bg-white/10" asChild>
-                  <a href={navidromeUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink size={14} className="mr-1" /> Navidrome
-                  </a>
-                </Button>
-              )}
               <Button
                 size="sm"
                 variant="outline"

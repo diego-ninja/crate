@@ -17,9 +17,15 @@ from crate.db import (
     upsert_artist,
     upsert_track,
 )
+from crate.storage_layout import looks_like_storage_id
 from crate.utils import COVER_NAMES, PHOTO_NAMES, normalize_key, to_datetime
 
 log = logging.getLogger(__name__)
+
+
+def _storage_id_from_name(value: str | None) -> str | None:
+    candidate = (value or "").strip()
+    return candidate if looks_like_storage_id(candidate) else None
 
 
 class LibrarySync:
@@ -146,9 +152,16 @@ class LibrarySync:
         if existing:
             artist_name = existing["name"]
         else:
-            upsert_artist({"name": artist_name, "folder_name": primary_folder,
-                           "album_count": 0, "track_count": 0,
-                           "total_size": 0, "formats": [], "dir_mtime": primary_dir.stat().st_mtime})
+            upsert_artist({
+                "name": artist_name,
+                "storage_id": _storage_id_from_name(primary_folder),
+                "folder_name": primary_folder,
+                "album_count": 0,
+                "track_count": 0,
+                "total_size": 0,
+                "formats": [],
+                "dir_mtime": primary_dir.stat().st_mtime,
+            })
 
         # Collect album dirs from ALL folders for this artist
         # Supports both 2-level (Artist/Album) and 3-level (Artist/Year/Album) structures
@@ -234,6 +247,7 @@ class LibrarySync:
 
         upsert_artist({
             "name": artist_name,
+            "storage_id": existing.get("storage_id") if existing else _storage_id_from_name(primary_folder),
             "folder_name": primary_folder,
             "album_count": len(all_albums),
             "track_count": db_track_count,
@@ -283,6 +297,7 @@ class LibrarySync:
         mb_albumid = None
         tag_album = None
         track_data_list = []
+        album_storage_id = _storage_id_from_name(album_dir.name)
 
         for f in audio_files:
             fpath = str(f)
@@ -312,6 +327,7 @@ class LibrarySync:
                         track_data_list.append({
                             "artist": existing["artist"],
                             "album": existing["album"],
+                            "storage_id": existing.get("storage_id"),
                             "filename": existing["filename"],
                             "title": existing.get("title"),
                             "track_number": existing.get("track_number"),
@@ -354,6 +370,7 @@ class LibrarySync:
             track_data_list.append({
                 "artist": tags.get("artist") or artist_name,
                 "album": tags.get("album") or album_dir.name,
+                "storage_id": _storage_id_from_name(f.stem),
                 "filename": f.name,
                 "title": tags.get("title"),
                 "track_number": _parse_int(tags.get("tracknumber")),
@@ -369,6 +386,8 @@ class LibrarySync:
                 "musicbrainz_trackid": tags.get("musicbrainz_trackid"),
                 "path": fpath,
             })
+
+        album_name = tag_album or (track_data_list[0]["album"] if track_data_list else None) or album_dir.name
 
         # Detect cover — check files on disk first, then embedded in audio
         has_cover = int(any((album_dir / name).exists() for name in COVER_NAMES))
@@ -389,7 +408,8 @@ class LibrarySync:
         # Upsert album
         album_id = upsert_album({
             "artist": artist_name,
-            "name": album_dir.name,
+            "name": album_name,
+            "storage_id": album_storage_id,
             "path": str(album_dir),
             "track_count": len(track_data_list),
             "total_size": total_size,

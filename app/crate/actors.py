@@ -47,12 +47,10 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "match_apply":          ("default", 0, 300, 0),
     "fetch_cover":          ("fast",    0, 120, 2),
     "apply_cover":          ("fast",    0, 60, 0),
+    "fetch_album_cover":    ("fast",    0, 120, 1),
     "upload_image":         ("default", 0, 60, 0),
     "library_upload":       ("default", 0, 7200, 1),
     "reset_enrichment":     ("fast",    1, 120, 0),
-    "sync_playlist_navidrome": ("fast", 1, 120, 0),
-    "sync_user_navidrome":  ("fast",    1, 120, 5),
-    "sync_system_playlist_navidrome": ("fast", 1, 300, 2),
     "refresh_user_listening_stats": ("fast", 1, 300, 0),
 
     # New content processing (priority 1)
@@ -88,14 +86,21 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "fetch_artwork_all":    ("fast",    3, 3600, 0),
     "backfill_similarities": ("fast",   3, 3600, 0),
     "sync_shows":           ("fast",    3, 600, 1),
-    "map_navidrome_ids":    ("default", 3, 600, 0),
     "cleanup_incomplete_downloads": ("default", 3, 600, 0),
+
+    # Storage migration (priority 1 — user-initiated, long-running)
+    "migrate_storage_v2":   ("default", 1, 14400, 0),
+    "verify_storage_v2":    ("default", 2, 3600, 0),
+
+    # Library completeness check
+    "compute_completeness": ("fast",    3, 3600, 0),
 }
 
 # DB-heavy tasks — only one at a time via Redis mutex
 DB_HEAVY_TASK_TYPES = frozenset({
     "library_sync", "library_pipeline", "wipe_library",
     "rebuild_library", "repair", "enrich_mbids",
+    "migrate_storage_v2",
 })
 
 

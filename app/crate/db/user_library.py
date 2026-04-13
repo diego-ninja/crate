@@ -47,9 +47,35 @@ def _relative_track_path(track_path: str) -> str:
     return ""
 
 
-def _resolve_track_id(cur, track_id: int | None = None, track_path: str | None = None) -> int | None:
-    if track_id:
+@lru_cache(maxsize=1)
+def _has_legacy_stream_id_column() -> bool:
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'library_tracks'
+              AND column_name = 'navidrome_id'
+            LIMIT 1
+            """
+        )
+        return cur.fetchone() is not None
+
+
+def _resolve_track_id(
+    cur,
+    track_id: int | None = None,
+    track_path: str | None = None,
+    track_storage_id: str | None = None,
+) -> int | None:
+    if track_id is not None:
         cur.execute("SELECT id FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+        if row:
+            return row["id"]
+
+    if track_storage_id:
+        cur.execute("SELECT id FROM library_tracks WHERE storage_id = %s", (track_storage_id,))
         row = cur.fetchone()
         if row:
             return row["id"]
@@ -63,33 +89,58 @@ def _resolve_track_id(cur, track_id: int | None = None, track_path: str | None =
     music_candidate = f"/music/{relative_path}" if relative_path else track_path
 
     should_match_external_id = "/" not in track_path and "\\" not in track_path
-    cur.execute(
-        """
-        SELECT id
-        FROM library_tracks
-        WHERE path = %s
-           OR path = %s
-           OR path = %s
-           OR (%s AND navidrome_id = %s)
-        ORDER BY CASE
-            WHEN path = %s THEN 0
-            WHEN path = %s THEN 1
-            WHEN path = %s THEN 2
-            ELSE 3
-        END
-        LIMIT 1
-        """,
-        (
-            track_path,
-            absolute_candidate,
-            music_candidate,
-            should_match_external_id,
-            track_path,
-            track_path,
-            absolute_candidate,
-            music_candidate,
-        ),
-    )
+    if should_match_external_id and _has_legacy_stream_id_column():
+        cur.execute(
+            """
+            SELECT id
+            FROM library_tracks
+            WHERE path = %s
+               OR path = %s
+               OR path = %s
+               OR navidrome_id = %s
+            ORDER BY CASE
+                WHEN path = %s THEN 0
+                WHEN path = %s THEN 1
+                WHEN path = %s THEN 2
+                ELSE 3
+            END
+            LIMIT 1
+            """,
+            (
+                track_path,
+                absolute_candidate,
+                music_candidate,
+                track_path,
+                track_path,
+                absolute_candidate,
+                music_candidate,
+            ),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT id
+            FROM library_tracks
+            WHERE path = %s
+               OR path = %s
+               OR path = %s
+            ORDER BY CASE
+                WHEN path = %s THEN 0
+                WHEN path = %s THEN 1
+                WHEN path = %s THEN 2
+                ELSE 3
+            END
+            LIMIT 1
+            """,
+            (
+                track_path,
+                absolute_candidate,
+                music_candidate,
+                track_path,
+                absolute_candidate,
+                music_candidate,
+            ),
+        )
     row = cur.fetchone()
     return row["id"] if row else None
 
@@ -186,10 +237,20 @@ def is_album_saved(user_id: int, album_id: int) -> bool:
 
 # ── Liked Tracks ─────────────────────────────────────────────
 
-def like_track(user_id: int, track_id: int | None = None, track_path: str | None = None) -> bool | None:
+def like_track(
+    user_id: int,
+    track_id: int | None = None,
+    track_path: str | None = None,
+    track_storage_id: str | None = None,
+) -> bool | None:
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
-        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
+        resolved_track_id = _resolve_track_id(
+            cur,
+            track_id=track_id,
+            track_path=track_path,
+            track_storage_id=track_storage_id,
+        )
         if not resolved_track_id:
             return None
         cur.execute(
@@ -198,9 +259,19 @@ def like_track(user_id: int, track_id: int | None = None, track_path: str | None
         return cur.rowcount > 0
 
 
-def unlike_track(user_id: int, track_id: int | None = None, track_path: str | None = None) -> bool:
+def unlike_track(
+    user_id: int,
+    track_id: int | None = None,
+    track_path: str | None = None,
+    track_storage_id: str | None = None,
+) -> bool:
     with get_db_ctx() as cur:
-        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
+        resolved_track_id = _resolve_track_id(
+            cur,
+            track_id=track_id,
+            track_path=track_path,
+            track_storage_id=track_storage_id,
+        )
         if not resolved_track_id:
             return False
         cur.execute(
@@ -215,6 +286,7 @@ def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
         cur.execute("""
             SELECT
                 ult.track_id,
+                lt.storage_id AS track_storage_id,
                 ult.created_at AS liked_at,
                 lt.path,
                 lt.title,
@@ -224,8 +296,7 @@ def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
                 lt.album,
                 alb.id AS album_id,
                 alb.slug AS album_slug,
-                lt.duration,
-                lt.navidrome_id
+                lt.duration
             FROM user_liked_tracks ult
             JOIN library_tracks lt ON lt.id = ult.track_id
             LEFT JOIN library_albums alb ON alb.id = lt.album_id
@@ -242,9 +313,19 @@ def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
         return rows
 
 
-def is_track_liked(user_id: int, track_id: int | None = None, track_path: str | None = None) -> bool:
+def is_track_liked(
+    user_id: int,
+    track_id: int | None = None,
+    track_path: str | None = None,
+    track_storage_id: str | None = None,
+) -> bool:
     with get_db_ctx() as cur:
-        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
+        resolved_track_id = _resolve_track_id(
+            cur,
+            track_id=track_id,
+            track_path=track_path,
+            track_storage_id=track_storage_id,
+        )
         if not resolved_track_id:
             return False
         cur.execute("SELECT 1 FROM user_liked_tracks WHERE user_id = %s AND track_id = %s", (user_id, resolved_track_id))
@@ -260,10 +341,16 @@ def record_play(
     artist: str = "",
     album: str = "",
     track_id: int | None = None,
+    track_storage_id: str | None = None,
 ):
     now = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
-        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
+        resolved_track_id = _resolve_track_id(
+            cur,
+            track_id=track_id,
+            track_path=track_path,
+            track_storage_id=track_storage_id,
+        )
         cur.execute(
             """
             INSERT INTO play_history (user_id, track_id, track_path, title, artist, album, played_at)
@@ -278,6 +365,7 @@ def record_play_event(
     *,
     track_id: int | None = None,
     track_path: str | None = None,
+    track_storage_id: str | None = None,
     title: str = "",
     artist: str = "",
     album: str = "",
@@ -299,7 +387,12 @@ def record_play_event(
 ) -> int:
     created_at = datetime.now(timezone.utc).isoformat()
     with get_db_ctx() as cur:
-        resolved_track_id = _resolve_track_id(cur, track_id=track_id, track_path=track_path)
+        resolved_track_id = _resolve_track_id(
+            cur,
+            track_id=track_id,
+            track_path=track_path,
+            track_storage_id=track_storage_id,
+        )
         cur.execute(
             """
             INSERT INTO user_play_events (
@@ -357,6 +450,21 @@ def record_play_event(
             ),
         )
         event_id = cur.fetchone()["id"]
+
+        # Scrobble to external services (best-effort, async-ish)
+        if was_completed and title and artist:
+            try:
+                from crate.scrobble import scrobble_play_event
+                scrobble_play_event(
+                    user_id,
+                    artist=artist,
+                    track=title,
+                    album=album,
+                    timestamp=int(datetime.fromisoformat(started_at).timestamp()) if started_at else None,
+                )
+            except Exception:
+                pass  # Never block play event recording for scrobble failures
+
         return event_id
 
 
@@ -581,38 +689,69 @@ def _recompute_user_genre_stats(cur, user_id: int, window: str, cutoff: str | No
 
 def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
     # Resolving library_tracks from play_history is best-effort: old rows
-    # may have NULL track_id if the client recorded a Navidrome-streamed
-    # play before our DB had a navidrome_id for that track. We do two
+    # may have NULL track_id if the client recorded a streamed play before
+    # our DB had linked the historical external track id. We do two
     # passes:
-    #   1) SQL join on exact keys (id, path, navidrome_id) — cheap.
+    #   1) SQL join on exact keys (id, path, legacy external id) — cheap.
     #   2) In-Python fallback on (artist, title) for any row still missing
     #      an album_id. This is limited to the history page size so it's
     #      fine even with 48k tracks in the library.
     with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT
-                COALESCE(lt.id, ph.track_id) AS track_id,
-                COALESCE(lt.path, ph.track_path) AS track_path,
-                COALESCE(lt.title, ph.title) AS title,
-                COALESCE(lt.artist, ph.artist) AS artist,
-                ar.id AS artist_id,
-                ar.slug AS artist_slug,
-                COALESCE(lt.album, ph.album) AS album,
-                alb.id AS album_id,
-                alb.slug AS album_slug,
-                lt.navidrome_id,
-                ph.played_at
-            FROM play_history ph
-            LEFT JOIN library_tracks lt
-              ON lt.id = ph.track_id
-              OR (ph.track_id IS NULL AND lt.navidrome_id = ph.track_path)
-              OR (ph.track_id IS NULL AND lt.path = ph.track_path)
-            LEFT JOIN library_albums alb ON alb.id = lt.album_id
-            LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, ph.artist)
-            WHERE ph.user_id = %s
-            ORDER BY ph.played_at DESC
-            LIMIT %s
-        """, (user_id, limit))
+        if _has_legacy_stream_id_column():
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(lt.id, ph.track_id) AS track_id,
+                    lt.storage_id AS track_storage_id,
+                    COALESCE(lt.path, ph.track_path) AS track_path,
+                    COALESCE(lt.title, ph.title) AS title,
+                    COALESCE(lt.artist, ph.artist) AS artist,
+                    ar.id AS artist_id,
+                    ar.slug AS artist_slug,
+                    COALESCE(lt.album, ph.album) AS album,
+                    alb.id AS album_id,
+                    alb.slug AS album_slug,
+                    ph.played_at
+                FROM play_history ph
+                LEFT JOIN library_tracks lt
+                  ON lt.id = ph.track_id
+                  OR (ph.track_id IS NULL AND lt.navidrome_id = ph.track_path)
+                  OR (ph.track_id IS NULL AND lt.path = ph.track_path)
+                LEFT JOIN library_albums alb ON alb.id = lt.album_id
+                LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, ph.artist)
+                WHERE ph.user_id = %s
+                ORDER BY ph.played_at DESC
+                LIMIT %s
+                """,
+                (user_id, limit),
+            )
+        else:
+            cur.execute(
+                """
+                SELECT
+                    COALESCE(lt.id, ph.track_id) AS track_id,
+                    lt.storage_id AS track_storage_id,
+                    COALESCE(lt.path, ph.track_path) AS track_path,
+                    COALESCE(lt.title, ph.title) AS title,
+                    COALESCE(lt.artist, ph.artist) AS artist,
+                    ar.id AS artist_id,
+                    ar.slug AS artist_slug,
+                    COALESCE(lt.album, ph.album) AS album,
+                    alb.id AS album_id,
+                    alb.slug AS album_slug,
+                    ph.played_at
+                FROM play_history ph
+                LEFT JOIN library_tracks lt
+                  ON lt.id = ph.track_id
+                  OR (ph.track_id IS NULL AND lt.path = ph.track_path)
+                LEFT JOIN library_albums alb ON alb.id = lt.album_id
+                LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, ph.artist)
+                WHERE ph.user_id = %s
+                ORDER BY ph.played_at DESC
+                LIMIT %s
+                """,
+                (user_id, limit),
+            )
         rows: list[dict] = []
         needs_title_fallback: list[tuple[int, str, str]] = []
         for idx, row in enumerate(cur.fetchall()):
@@ -631,10 +770,10 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
                 """
                 SELECT DISTINCT ON (LOWER(lt.artist), LOWER(lt.title))
                     lt.id AS track_id,
+                    lt.storage_id AS track_storage_id,
                     lt.path,
                     lt.title,
                     lt.artist,
-                    lt.navidrome_id,
                     alb.id AS album_id,
                     alb.slug AS album_slug,
                     alb.name AS album,
@@ -660,8 +799,8 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
                 item = rows[idx]
                 # Backfill everything the first pass left empty.
                 item["track_id"] = hit["track_id"]
+                item["track_storage_id"] = hit.get("track_storage_id")
                 item["track_path"] = item.get("track_path") or hit.get("path")
-                item["navidrome_id"] = item.get("navidrome_id") or hit.get("navidrome_id")
                 item["album_id"] = hit.get("album_id")
                 item["album_slug"] = hit.get("album_slug")
                 item["album"] = item.get("album") or hit.get("album")
@@ -810,11 +949,11 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
             """
             SELECT
                 uts.track_id,
+                lt.storage_id::text AS track_storage_id,
                 COALESCE(lt.path, uts.track_path) AS track_path,
                 COALESCE(lt.title, uts.title) AS title,
                 COALESCE(lt.artist, uts.artist) AS artist,
                 COALESCE(lt.album, uts.album) AS album,
-                lt.navidrome_id,
                 art.id AS artist_id,
                 art.slug AS artist_slug,
                 COALESCE(alb_by_id.id, alb_by_name.id) AS album_id,

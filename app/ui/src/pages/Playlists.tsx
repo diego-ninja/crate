@@ -19,7 +19,6 @@ import { formatDuration } from "@/lib/utils";
 import {
   ChevronDown,
   ChevronUp,
-  CloudUpload,
   Eye,
   EyeOff,
   ListMusic,
@@ -35,7 +34,6 @@ interface PlaylistTrack {
   id: number;
   track_path: string;
   track_id?: number;
-  navidrome_id?: string | null;
   title: string;
   artist: string;
   artist_id?: number;
@@ -68,11 +66,6 @@ interface SystemPlaylist {
   featured_rank?: number | null;
   category?: string | null;
   follower_count: number;
-  navidrome_playlist_id?: string | null;
-  navidrome_public: boolean;
-  navidrome_projection_status: "unprojected" | "pending" | "syncing" | "projected" | "errored";
-  navidrome_projection_error?: string | null;
-  navidrome_projected_at?: string | null;
   track_count: number;
   total_duration: number;
   created_at: string;
@@ -175,7 +168,7 @@ export function Playlists() {
   function playPlaylist(playlist: SystemPlaylist) {
     if (!playlist.tracks || playlist.tracks.length === 0) return;
     const tracks: PlayerTrack[] = playlist.tracks.map((track) => ({
-      id: track.navidrome_id || track.track_path,
+      id: track.track_path,
       title: track.title,
       artist: track.artist,
       artistId: track.artist_id,
@@ -240,24 +233,6 @@ export function Playlists() {
       void fetchPlaylists();
     } catch {
       toast.error("Failed to regenerate smart system playlist");
-    }
-  }
-
-  async function projectToNavidrome(playlistId: number) {
-    try {
-      await api<{ task_id: string }>(
-        `/api/admin/system-playlists/${playlistId}/project-navidrome`,
-        "POST",
-      );
-      toast.success("Navidrome projection queued");
-      if (expanded === playlistId) {
-        void loadPlaylist(playlistId);
-      }
-      void fetchPlaylists();
-    } catch (error) {
-      const message =
-        error instanceof Error && error.message ? error.message : "Failed to queue Navidrome projection";
-      toast.error(message);
     }
   }
 
@@ -374,26 +349,6 @@ export function Playlists() {
                         smart
                       </Badge>
                     )}
-                    {playlist.navidrome_projection_status === "projected" && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        navidrome
-                      </Badge>
-                    )}
-                    {playlist.navidrome_projection_status === "pending" && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        nd pending
-                      </Badge>
-                    )}
-                    {playlist.navidrome_projection_status === "syncing" && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        nd syncing
-                      </Badge>
-                    )}
-                    {playlist.navidrome_projection_status === "errored" && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 text-destructive">
-                        nd error
-                      </Badge>
-                    )}
                     {!playlist.is_active && (
                       <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                         inactive
@@ -461,9 +416,6 @@ export function Playlists() {
                       await loadPlaylist(expandedData.id);
                       await fetchPlaylists();
                     }}
-                    onProjectToNavidrome={async () => {
-                      await projectToNavidrome(expandedData.id);
-                    }}
                     onRegenerate={
                       expandedData.generation_mode === "smart"
                         ? async () => regenerateSmart(expandedData.id)
@@ -494,7 +446,7 @@ export function Playlists() {
                               className="h-7 w-7"
                               onClick={() =>
                                 player.play({
-                                  id: track.navidrome_id || track.track_path,
+                                  id: track.track_path,
                                   title: track.title,
                                   artist: track.artist,
                                   artistId: track.artist_id,
@@ -638,12 +590,10 @@ function CreateSystemPlaylistForm({
 function SystemPlaylistEditor({
   playlist,
   onUpdated,
-  onProjectToNavidrome,
   onRegenerate,
 }: {
   playlist: SystemPlaylist;
   onUpdated: () => Promise<void>;
-  onProjectToNavidrome: () => Promise<void>;
   onRegenerate?: () => Promise<void>;
 }) {
   const [name, setName] = useState(playlist.name);
@@ -655,7 +605,6 @@ function SystemPlaylistEditor({
   const [isCurated, setIsCurated] = useState(playlist.is_curated);
   const [saving, setSaving] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
-  const [projecting, setProjecting] = useState(false);
 
   useEffect(() => {
     setName(playlist.name);
@@ -691,15 +640,6 @@ function SystemPlaylistEditor({
       await onRegenerate();
     } finally {
       setRegenerating(false);
-    }
-  }
-
-  async function project() {
-    setProjecting(true);
-    try {
-      await onProjectToNavidrome();
-    } finally {
-      setProjecting(false);
     }
   }
 
@@ -742,21 +682,7 @@ function SystemPlaylistEditor({
           />
           Curated / public in listen
         </label>
-        <div className="min-w-[220px] text-xs text-muted-foreground">
-          Navidrome:{" "}
-          <span className="font-medium text-foreground">{playlist.navidrome_projection_status}</span>
-          {playlist.navidrome_playlist_id ? ` · id ${playlist.navidrome_playlist_id}` : ""}
-          {playlist.navidrome_projection_error ? ` · ${playlist.navidrome_projection_error}` : ""}
-        </div>
         <div className="flex-1" />
-        <Button variant="outline" onClick={project} disabled={projecting || !playlist.is_active}>
-          {projecting ? (
-            <Loader2 size={14} className="mr-1 animate-spin" />
-          ) : (
-            <CloudUpload size={14} className="mr-1" />
-          )}
-          Sync to Navidrome
-        </Button>
         {playlist.generation_mode === "smart" && (
           <Button variant="outline" onClick={regenerate} disabled={regenerating}>
             {regenerating ? (

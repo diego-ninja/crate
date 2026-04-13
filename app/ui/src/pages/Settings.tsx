@@ -31,7 +31,6 @@ import {
   XCircle,
   RefreshCw,
   FolderOpen,
-  FolderTree,
   Database,
   Clock,
   Wifi,
@@ -46,11 +45,10 @@ interface SettingsData {
   schedules: Record<string, number>;
   worker: { max_workers: number };
   enrichment: Record<string, boolean>;
-  navidrome: { connected: boolean; version: string | null };
   db_stats: Record<string, { size: number; rows: number }>;
   library: {
     path: string;
-    folder_pattern: string;
+    storage_layout: string;
     audio_extensions: string[];
   };
   processing: {
@@ -214,10 +212,6 @@ export function Settings() {
 function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: () => void }) {
   const [workers, setWorkers] = useState(settings.worker.max_workers);
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [navStatus, setNavStatus] = useState(settings.navidrome);
-  const [folderPattern, setFolderPattern] = useState(settings.library?.folder_pattern ?? "artist/album");
-
   async function saveWorkers(value: number) {
     setSaving(true);
     try {
@@ -228,26 +222,6 @@ function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: ()
       toast.error("Failed to save worker settings");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function testNavidrome() {
-    setTesting(true);
-    try {
-      const result = await api<{ connected: boolean; version: string | null }>(
-        "/api/settings/navidrome/test",
-        "POST",
-      );
-      setNavStatus(result);
-      if (result.connected) {
-        toast.success(`Navidrome connected (v${result.version})`);
-      } else {
-        toast.error("Navidrome connection failed");
-      }
-    } catch {
-      toast.error("Connection test failed");
-    } finally {
-      setTesting(false);
     }
   }
 
@@ -263,32 +237,6 @@ function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: ()
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">Path</span>
             <code className="text-sm bg-muted px-2 py-1 rounded">/music</code>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="bg-card">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <FolderTree size={14} /> Folder Organization
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-            <span className="text-sm text-muted-foreground sm:w-32">Structure</span>
-            <Select value={folderPattern} onValueChange={(v) => { setFolderPattern(v); saveSetting("library", { folder_pattern: v }); }}>
-              <SelectTrigger className="w-full sm:w-[250px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="artist/album">Artist / Album</SelectItem>
-                <SelectItem value="artist/year/album">Artist / Year / Album</SelectItem>
-                <SelectItem value="artist/year-album">Artist / Year - Album</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="text-xs text-muted-foreground">
-            Example: {folderPattern === "artist/year/album" ? "Quicksand/1993/Slip/" : folderPattern === "artist/year-album" ? "Quicksand/1993 - Slip/" : "Quicksand/Slip/"}
           </div>
         </CardContent>
       </Card>
@@ -324,43 +272,6 @@ function GeneralTab({ settings, refetch }: { settings: SettingsData; refetch: ()
             <span className="text-xs text-muted-foreground">
               Currently {workers} slot{workers !== 1 ? "s" : ""}
             </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="bg-card">
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <Wifi size={14} /> Navidrome
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-2.5 h-2.5 rounded-full ${
-                  navStatus.connected ? "bg-green-500" : "bg-red-500"
-                }`}
-              />
-              <span className="text-sm">
-                {navStatus.connected
-                  ? `Connected (v${navStatus.version})`
-                  : "Disconnected"}
-              </span>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={testNavidrome}
-              disabled={testing}
-            >
-              {testing ? (
-                <Loader2 size={12} className="animate-spin mr-1" />
-              ) : (
-                <RefreshCw size={12} className="mr-1" />
-              )}
-              Test Connection
-            </Button>
           </div>
         </CardContent>
       </Card>

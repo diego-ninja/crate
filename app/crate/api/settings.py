@@ -7,7 +7,6 @@ from pydantic import BaseModel
 from crate.api.auth import _require_admin
 from crate.db import get_setting, set_setting, get_db_table_stats, get_db_ctx, get_cache_stats, delete_cache_prefix
 from crate.scheduler import get_schedules, set_schedules
-from crate import navidrome
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -30,15 +29,11 @@ def get_settings(request: Request):
         "schedules": get_schedules(),
         "worker": {"max_workers": int(get_setting("max_workers", "5"))},
         "enrichment": json.loads(get_setting("enrichment_sources", DEFAULT_ENRICHMENT)),
-        "navidrome": {
-            "connected": navidrome.ping(),
-            "version": navidrome.get_server_version(),
-        },
         "cache_stats": get_cache_stats(),
         "db_stats": get_db_table_stats(),
         "library": {
             "path": "/music",
-            "folder_pattern": get_setting("folder_pattern", "artist/year/album"),
+            "storage_layout": "v2-uuid",
             "audio_extensions": json.loads(get_setting("audio_extensions", '[".flac",".mp3",".m4a",".ogg",".opus"]')),
         },
         "processing": {
@@ -121,15 +116,6 @@ def update_enrichment(request: Request, body: dict[str, bool]):
     return {"ok": True}
 
 
-@router.post("/navidrome/test")
-def test_navidrome(request: Request):
-    _require_admin(request)
-    return {
-        "connected": navidrome.ping(),
-        "version": navidrome.get_server_version(),
-    }
-
-
 @router.post("/cache/clear")
 def clear_cache(request: Request, body: CacheClearRequest):
     _require_admin(request)
@@ -174,11 +160,6 @@ def clear_cache(request: Request, body: CacheClearRequest):
 @router.put("/library")
 def update_library(request: Request, body: dict):
     _require_admin(request)
-    if "folder_pattern" in body:
-        valid_patterns = ["artist/album", "artist/year/album", "artist/year-album"]
-        if body["folder_pattern"] not in valid_patterns:
-            raise HTTPException(status_code=422, detail=f"Invalid pattern: must be one of {valid_patterns}")
-        set_setting("folder_pattern", body["folder_pattern"])
     if "audio_extensions" in body:
         if not isinstance(body["audio_extensions"], list):
             raise HTTPException(status_code=422, detail="audio_extensions must be a list")

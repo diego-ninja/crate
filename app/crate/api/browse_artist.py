@@ -16,6 +16,7 @@ from crate.db import (
     get_library_artist,
 )
 from crate.lastfm import get_artist_info
+from crate.storage_layout import resolve_artist_dir
 
 log = logging.getLogger(__name__)
 
@@ -369,6 +370,69 @@ def api_artist_background_by_id(request: Request, artist_id: int, random_pick: b
     return api_artist_background(request, artist_name, random_pick)
 
 
+@router.get("/api/artists/{artist_id}/top-tracks")
+def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(20, ge=1, le=50)):
+    """Top tracks for an artist. Uses Last.fm global popularity to rank,
+    matched against tracks in the local library. Falls back to local play
+    counts if Last.fm data doesn't match, then to album track order."""
+    _require_auth(request)
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse([], status_code=200)
+
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT
+                t.id, t.title, t.artist, t.album, t.path, t.duration,
+                t.track_number, t.format,
+                a.id as album_id, a.slug as album_slug, a.year,
+                ar.id as artist_id, ar.slug as artist_slug
+            FROM library_tracks t
+            LEFT JOIN library_albums a ON a.id = t.album_id
+            LEFT JOIN library_artists ar ON ar.name = t.artist
+            WHERE t.artist = %s
+        """, (artist_name,))
+        all_tracks = {r["title"].lower(): dict(r) for r in cur.fetchall()}
+
+    # Rank by Last.fm global popularity, matched to local library
+    from crate.lastfm import get_top_tracks
+    lastfm_top = get_top_tracks(artist_name, limit=count * 2) or []
+
+    ranked = []
+    seen_ids: set[int] = set()
+    for lfm in lastfm_top:
+        match = all_tracks.get(lfm["title"].lower())
+        if match and match["id"] not in seen_ids:
+            seen_ids.add(match["id"])
+            ranked.append(match)
+            if len(ranked) >= count:
+                break
+
+    # Fill remaining with unmatched tracks (newest albums first)
+    if len(ranked) < count:
+        remaining = [t for t in all_tracks.values() if t["id"] not in seen_ids]
+        remaining.sort(key=lambda t: (t.get("year") or "0", t.get("track_number") or 0), reverse=True)
+        ranked.extend(remaining[:count - len(ranked)])
+
+    def _fmt(r: dict) -> dict:
+        return {
+            "id": str(r["id"]),
+            "track_id": r["id"],
+            "title": r["title"],
+            "artist": r["artist"],
+            "artist_id": r["artist_id"],
+            "artist_slug": r["artist_slug"],
+            "album": r["album"],
+            "album_id": r["album_id"],
+            "album_slug": r["album_slug"],
+            "duration": r["duration"] or 0,
+            "track": r["track_number"] or 0,
+            "format": r["format"],
+        }
+
+    return [_fmt(r) for r in ranked]
+
+
 @router.get("/api/artists/{artist_id}/photo")
 def api_artist_photo_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
     artist_name = artist_name_from_id(artist_id)
@@ -432,12 +496,15 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
 
     from crate.lastfm import _deezer_artist_image, download_artist_image, get_fanart_all_images, get_fanart_background
 
+    _IMG_CACHE = {"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"}
+
     lib = library_path()
-    artist_dir = safe_path(lib, name)
+    artist_row = get_library_artist(name)
+    artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=name, existing_only=True)
     if artist_dir and artist_dir.is_dir():
         bg_file = artist_dir / "background.jpg"
         if bg_file.exists():
-            return Response(content=bg_file.read_bytes(), media_type="image/jpeg")
+            return Response(content=bg_file.read_bytes(), media_type="image/jpeg", headers=_IMG_CACHE)
 
     fanart = get_fanart_all_images(name)
     backgrounds = fanart.get("backgrounds", []) if fanart else []
@@ -445,25 +512,25 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
         url = _random.choice(backgrounds) if random_pick else backgrounds[0]
         image_data = download_artist_image(url)
         if image_data:
-            return Response(content=image_data, media_type="image/jpeg")
+            return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
 
     url = get_fanart_background(name)
     if url:
         image_data = download_artist_image(url)
         if image_data:
-            return Response(content=image_data, media_type="image/jpeg")
+            return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
 
     from crate.lastfm import get_lastfm_best_background
 
     lfm_bg = get_lastfm_best_background(name)
     if lfm_bg:
-        return Response(content=lfm_bg, media_type="image/jpeg")
+        return Response(content=lfm_bg, media_type="image/jpeg", headers=_IMG_CACHE)
 
     deezer_url = _deezer_artist_image(name)
     if deezer_url:
         image_data = download_artist_image(deezer_url)
         if image_data:
-            return Response(content=image_data, media_type="image/jpeg")
+            return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
 
     try:
         from crate.spotify import search_artist as spotify_search
@@ -474,7 +541,7 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
             if img_url:
                 image_data = download_artist_image(img_url)
                 if image_data:
-                    return Response(content=image_data, media_type="image/jpeg")
+                    return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
     except Exception:
         pass
 
@@ -495,7 +562,8 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
     from crate.lastfm import download_artist_image, get_fanart_all_images, get_best_artist_image
 
     lib = library_path()
-    artist_dir = safe_path(lib, name)
+    artist_row = get_library_artist(name)
+    artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=name, existing_only=True)
     if not artist_dir or not artist_dir.is_dir():
         return Response(status_code=404)
 
@@ -793,13 +861,13 @@ def api_artist_setlist_playable(request: Request, name: str):
             """
             SELECT
                 t.id,
+                t.storage_id::text AS track_storage_id,
                 t.title,
                 t.path,
                 t.album,
                 t.album_id,
                 a.slug AS album_slug,
-                t.duration,
-                t.navidrome_id
+                t.duration
             FROM library_tracks t
             JOIN library_albums a ON a.id = t.album_id
             WHERE a.artist = %s
@@ -819,6 +887,7 @@ def api_artist_setlist_playable(request: Request, name: str):
         matched_tracks.append(
             {
                 "library_track_id": match["id"],
+                "track_storage_id": match.get("track_storage_id"),
                 "title": match.get("title", ""),
                 "artist": name,
                 "artist_id": artist_id,
@@ -828,7 +897,6 @@ def api_artist_setlist_playable(request: Request, name: str):
                 "album_slug": match.get("album_slug"),
                 "path": match.get("path", ""),
                 "duration": match.get("duration"),
-                "navidrome_id": match.get("navidrome_id"),
                 "setlist_title": song.get("title", ""),
                 "position": song.get("position"),
             }
@@ -985,6 +1053,7 @@ def api_artist(request: Request, name: str):
                 "size_mb": round(album["total_size"] / (1024**2)) if album["total_size"] else 0,
                 "year": album.get("year", ""),
                 "has_cover": bool(album.get("has_cover")),
+                "musicbrainz_albumid": album.get("musicbrainz_albumid"),
             }
         )
 

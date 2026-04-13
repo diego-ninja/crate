@@ -15,7 +15,7 @@ DC_LOCAL      := $(DC) -f docker-compose.yaml -f docker-compose.override.yaml
 
 # Dominios locales
 LOCAL_DOMAIN  := crate.local
-LOCAL_HOSTS   := traefik auth collection play search web api admin ai
+LOCAL_HOSTS   := traefik auth collection search web api admin ai
 
 # Colores
 GREEN  := \033[0;32m
@@ -30,25 +30,33 @@ NC     := \033[0m
 # ===========================================================================
 
 DC_DEV := $(DC) -f docker-compose.dev.yaml
+DEV_CONTAINERS := crate-dev-api crate-dev-worker crate-dev-postgres crate-dev-redis crate-dev-slskd crate-dev-caddy
 
 .PHONY: dev
-dev: ## Levantar backend (Postgres + Redis + API + Worker) + frontend dev servers
+dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend dev servers
+	@# Kill any leftover Vite processes from previous runs (by port AND pattern)
+	@-lsof -ti :5173,:5174 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@-pkill -f "vite.*app/ui" 2>/dev/null || true
+	@-pkill -f "vite.*app/listen" 2>/dev/null || true
+	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
+	@sleep 0.5
 	@$(DC_DEV) up -d --build
-	@echo "$(GREEN)Backend levantado (Postgres, Redis, API :8585, Worker)$(NC)"
-	@echo ""
-	@echo "  API:    http://localhost:8585"
-	@echo "  Login:  yosoy@diego.ninja / admin"
+	@echo "$(GREEN)Backend levantado (Postgres, Redis, API, Worker, Caddy)$(NC)"
 	@echo ""
 	@echo "Arrancando frontends..."
 	@cd app/ui && npm install --silent 2>/dev/null; cd ../..
 	@cd app/listen && npm install --silent 2>/dev/null; cd ../..
-	@(cd app/ui && npx vite --port 5173 --host > /dev/null 2>&1 &)
-	@(cd app/listen && npx vite --port 5174 --host > /dev/null 2>&1 &)
+	@(cd app/ui && npx vite --port 5173 --strictPort --host > /dev/null 2>&1 &)
+	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
-	@echo "  $(GREEN)Admin:$(NC)  http://localhost:5173"
-	@echo "  $(GREEN)Listen:$(NC) http://localhost:5174"
+	@echo ""
+	@echo "  $(GREEN)Admin:$(NC)  https://admin.dev.lespedants.org"
+	@echo "  $(GREEN)Listen:$(NC) https://listen.dev.lespedants.org"
+	@echo "  $(GREEN)API:$(NC)    https://api.dev.lespedants.org"
+	@echo "  Login:  yosoy@diego.ninja / admin"
 	@echo ""
 	@echo "$(GREEN)Todo arrancado. make dev-down para parar.$(NC)"
+	@echo "$(YELLOW)Nota: ejecuta 'make dns-setup' si *.crate.local no resuelve$(NC)"
 
 .PHONY: dev-back
 dev-back: ## Solo backend (Postgres + Redis + API + Worker) sin frontends
@@ -67,7 +75,10 @@ dev-listen: ## Arrancar solo Listen dev server (:5174)
 .PHONY: dev-down
 dev-down: ## Parar todo (backend + frontends)
 	@$(DC_DEV) down
-	@-pkill -f "vite.*517" 2>/dev/null || true
+	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
+	@-lsof -ti :5173,:5174 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@-pkill -f "vite.*app/ui" 2>/dev/null || true
+	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@echo "$(GREEN)Todo parado$(NC)"
 
 .PHONY: dev-logs
@@ -80,16 +91,20 @@ dev-logs: ## Ver logs de backend (uso: make dev-logs o make dev-logs s=worker)
 
 .PHONY: dev-rebuild
 dev-rebuild: ## Rebuild y restart todo
+	@-pkill -f "vite.*app/ui" 2>/dev/null || true
+	@-pkill -f "vite.*app/listen" 2>/dev/null || true
+	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
+	@sleep 0.5
 	@$(DC_DEV) up -d --build --force-recreate
-	@-pkill -f "vite.*517" 2>/dev/null || true
-	@(cd app/ui && npx vite --port 5173 --host > /dev/null 2>&1 &)
-	@(cd app/listen && npx vite --port 5174 --host > /dev/null 2>&1 &)
+	@(cd app/ui && npx vite --port 5173 --strictPort --host > /dev/null 2>&1 &)
+	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo "$(GREEN)Todo rebuildeado$(NC)"
 
 .PHONY: dev-reset
 dev-reset: ## Reset entorno dev (borra datos, para todo)
 	@$(DC_DEV) down -v
+	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@-pkill -f "vite.*517" 2>/dev/null || true
 	@echo "$(GREEN)Dev reseteado (datos borrados)$(NC)"
 
@@ -131,7 +146,7 @@ down: ## Parar stack local
 restart: down up ## Reiniciar stack local
 
 .PHONY: logs
-logs: ## Ver logs (uso: make logs o make logs s=navidrome)
+logs: ## Ver logs (uso: make logs o make logs s=crate-api)
 	@if [ -n "$(s)" ]; then \
 		$(DC_LOCAL) logs -f $(s); \
 	else \
@@ -152,8 +167,8 @@ pull: ## Pull de imagenes en local
 	@echo "$(GREEN)Imagenes actualizadas$(NC)"
 
 .PHONY: shell
-shell: ## Shell en un servicio (uso: make shell s=navidrome)
-	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make shell s=navidrome$(NC)"; exit 1; fi
+shell: ## Shell en un servicio (uso: make shell s=crate-api)
+	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make shell s=crate-api$(NC)"; exit 1; fi
 	@$(DC_LOCAL) exec $(s) sh
 
 # ===========================================================================
@@ -201,7 +216,7 @@ _setup-hosts:
 
 .PHONY: _create-dirs
 _create-dirs:
-	@mkdir -p data/{traefik/local/certs,authelia/{secrets,config,logs},lidarr,navidrome,tidarr,tidalrr,slskd,soulsync/{config,logs},nginx/{html,conf.d,logs}}
+	@mkdir -p data/{traefik/local/certs,authelia/{secrets,config,logs},lidarr,tidarr,tidalrr,slskd,soulsync/{config,logs},nginx/{html,conf.d,logs}}
 	@mkdir -p media/{music,downloads/{tidal/{incomplete,albums,tracks,playlists,videos},soulseek/incomplete}}
 	@echo "$(GREEN)Directorios creados$(NC)"
 
@@ -262,7 +277,7 @@ deploy-pull: ## Pull de imagenes en remoto
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
 
 .PHONY: deploy-logs
-deploy-logs: ## Ver logs en remoto (uso: make deploy-logs s=navidrome)
+deploy-logs: ## Ver logs en remoto (uso: make deploy-logs s=crate-api)
 	@if [ -n "$(s)" ]; then \
 		$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml logs -f --tail=100 $(s)"; \
 	else \
@@ -274,8 +289,8 @@ deploy-ps: ## Estado de servicios en remoto
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml ps --format 'table {{.Name}}\t{{.Status}}'"
 
 .PHONY: deploy-shell
-deploy-shell: ## Shell remoto en un servicio (uso: make deploy-shell s=navidrome)
-	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make deploy-shell s=navidrome$(NC)"; exit 1; fi
+deploy-shell: ## Shell remoto en un servicio (uso: make deploy-shell s=crate-api)
+	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make deploy-shell s=crate-api$(NC)"; exit 1; fi
 	@$(SSH) -t "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml exec $(s) sh"
 
 .PHONY: deploy-ssh
@@ -336,6 +351,20 @@ hosts-show: ## Mostrar dominios locales configurados
 	done
 
 # ===========================================================================
+# LOCAL DNS (*.crate.local wildcard)
+# ===========================================================================
+
+.PHONY: dns-setup
+dns-setup: ## Setup local DNS wildcard for *.crate.local → 127.0.0.1 (requires sudo)
+	@./scripts/setup-local-dns.sh
+
+.PHONY: trust-local-ca
+trust-local-ca: ## Trust Caddy's local CA for HTTPS (run after first 'make dev', requires sudo)
+	@docker cp crate-dev-caddy:/data/caddy/pki/authorities/local/root.crt /tmp/caddy-root.crt
+	@sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/caddy-root.crt
+	@echo "$(GREEN)Caddy local CA trusted. Restart your browser.$(NC)"
+
+# ===========================================================================
 # CAPACITOR (mobile native builds)
 # ===========================================================================
 
@@ -387,5 +416,5 @@ help: ## Mostrar esta ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo ""
-	@echo "Ejemplo: $(YELLOW)make logs s=navidrome$(NC)"
+	@echo "Ejemplo: $(YELLOW)make logs s=crate-api$(NC)"
 	@echo ""

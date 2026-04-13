@@ -34,8 +34,8 @@ export interface StatsTrends {
 
 export interface StatsTrack {
   track_id: number | null;
+  track_storage_id?: string | null;
   track_path: string | null;
-  navidrome_id?: string | null;
   title: string;
   artist: string;
   artist_id?: number | null;
@@ -119,13 +119,13 @@ export function formatStatsPercent(value: number): string {
 
 export function toPlayerTrack(item: StatsTrack): Track {
   return {
-    id: item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
+    id: item.track_storage_id || item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
+    storageId: item.track_storage_id || undefined,
     title: item.title,
     artist: item.artist,
     album: item.album,
     path: item.track_path || undefined,
     libraryTrackId: item.track_id || undefined,
-    navidromeId: item.navidrome_id || undefined,
     artistId: item.artist_id || undefined,
     artistSlug: item.artist_slug || undefined,
     albumId: item.album_id || undefined,

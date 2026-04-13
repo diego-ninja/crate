@@ -112,7 +112,6 @@ export function buildArtistPlayerTrack(
       ? buildArtistAlbumCover(track.artist, track.album, track.album_id, track.album_slug)
       : coverFallback,
     path: isPath ? track.id : undefined,
-    navidromeId: isPath ? undefined : track.id,
   };
 }
 

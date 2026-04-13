@@ -550,7 +550,6 @@ def _radio_track_payload(track: dict) -> dict:
 
     return {
         "track_id": track.get("track_id") or track.get("id"),
-        "navidrome_id": track.get("navidrome_id"),
         "track_path": track_path,
         "title": track.get("title"),
         "artist": track.get("artist"),
@@ -749,7 +748,7 @@ def _merge_ranked_tracks(*track_lists: list[dict], limit: int) -> list[dict]:
             if track_score > float(entry.get("score") or 0.0):
                 entry["score"] = round(track_score, 4)
 
-            for field in ("track_id", "navidrome_id", "title", "artist", "album", "duration"):
+            for field in ("track_id", "title", "artist", "album", "duration"):
                 if entry.get(field) is None and track.get(field) is not None:
                     entry[field] = track.get(field)
 
@@ -820,7 +819,6 @@ def _recommend_without_bliss(
                     a.name AS album,
                     a.year,
                     t.duration,
-                    t.navidrome_id,
                     t.bliss_vector,
                     t.bpm,
                     t.audio_key,
@@ -955,7 +953,6 @@ def _get_artist_radio_recommendations(
                     a.name AS album,
                     a.year,
                     t.duration,
-                    t.navidrome_id,
                     t.bliss_vector,
                     t.bpm,
                     t.audio_key,
@@ -1043,7 +1040,6 @@ def generate_artist_radio(
                 a.name AS album,
                 a.year,
                 t.duration,
-                t.navidrome_id,
                 t.bliss_vector,
                 t.bpm,
                 t.audio_key,
@@ -1108,7 +1104,7 @@ def get_similar_from_db(track_path: str, limit: int = 20, *, user_id: int | None
     with get_db_ctx() as cur:
         cur.execute("""
             SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
+                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
                    ar.id AS artist_id
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
@@ -1138,7 +1134,7 @@ def get_similar_from_db(track_path: str, limit: int = 20, *, user_id: int | None
         # Get candidates via broad bliss distance (top 200), then re-rank in Python
         cur.execute("""
             SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
+                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
                    SQRT(
                        (SELECT SUM(POW(x - y, 2))
                         FROM UNNEST(t.bliss_vector, %s::float8[]) AS v(x, y))
@@ -1206,7 +1202,7 @@ def generate_track_radio(
     with get_db_ctx() as cur:
         cur.execute("""
             SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                   t.navidrome_id, t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
+                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
                    ar.id AS artist_id
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
@@ -1229,8 +1225,7 @@ def generate_track_radio(
                     a.artist AS album_artist,
                     a.name AS album,
                     a.year,
-                    t.duration,
-                    t.navidrome_id
+                    t.duration
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
                 JOIN library_artists ar ON LOWER(a.artist) = LOWER(ar.name)
@@ -1251,8 +1246,7 @@ def generate_track_radio(
                     a.artist AS album_artist,
                     a.name AS album,
                     a.year,
-                    t.duration,
-                    t.navidrome_id
+                    t.duration
                 FROM library_tracks t
                 JOIN library_albums a ON t.album_id = a.id
                 WHERE LOWER(a.artist) = LOWER(%s) AND t.path != %s
@@ -1332,7 +1326,6 @@ def _aggregate_similar_candidates(
                 a.name AS album,
                 a.year,
                 t.duration,
-                t.navidrome_id,
                 t.bliss_vector,
                 t.bpm,
                 t.audio_key,
@@ -1380,7 +1373,6 @@ def _aggregate_similar_candidates(
                     a.name AS album,
                     a.year,
                     t.duration,
-                    t.navidrome_id,
                     t.bliss_vector,
                     t.bpm,
                     t.audio_key,
@@ -1526,7 +1518,7 @@ def generate_album_radio(
     with get_db_ctx() as cur:
         cur.execute("""
             SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                   t.navidrome_id, t.bliss_vector, t.rating
+                   t.bliss_vector, t.rating
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
             WHERE a.id = %s
@@ -1577,12 +1569,11 @@ def generate_playlist_radio(
                 COALESCE(pt.album, lt.album) AS album,
                 la.year,
                 COALESCE(pt.duration, lt.duration, 0) AS duration,
-                lt.navidrome_id,
                 lt.bliss_vector,
                 lt.rating
             FROM playlist_tracks pt
             LEFT JOIN LATERAL (
-                SELECT lt.id, lt.path, lt.title, lt.artist, lt.album, lt.duration, lt.navidrome_id, lt.bliss_vector, lt.album_id
+                SELECT lt.id, lt.path, lt.title, lt.artist, lt.album, lt.duration, lt.bliss_vector, lt.album_id
                 FROM library_tracks lt
                 WHERE lt.path = pt.track_path
                    OR lt.path LIKE ('%%/' || pt.track_path)
@@ -1603,6 +1594,46 @@ def generate_playlist_radio(
     if not seed_tracks:
         seed_tracks = _select_seed_tracks(playlist_tracks, max_count=min(5, len(playlist_tracks)), require_bliss=False)
     seed_paths = [track["path"] for track in seed_tracks if track.get("path")]
+    recommended_tracks = _aggregate_similar_candidates(
+        seed_paths,
+        per_seed_limit=max(limit, 40),
+        user_id=user_id,
+    )
+
+    return _interleave_radio_queue(
+        source_tracks,
+        recommended_tracks,
+        limit=limit,
+        source_mix_ratio=source_mix_ratio,
+    )
+
+
+def generate_virtual_playlist_radio(
+    playlist_tracks: list[dict],
+    limit: int = 50,
+    source_mix_ratio: float = 0.3,
+    *,
+    user_id: int | None = None,
+) -> list[dict]:
+    source_rows: list[dict] = []
+    for track in playlist_tracks:
+        current = dict(track)
+        if current.get("track_path") and not current.get("path"):
+            current["path"] = current["track_path"]
+        source_rows.append(current)
+
+    source_tracks = [_radio_track_payload(track) for track in source_rows if track.get("path")]
+    if not source_tracks:
+        return []
+
+    seed_tracks = _select_seed_tracks(source_rows, max_count=min(5, len(source_rows)), require_bliss=True)
+    if not seed_tracks:
+        seed_tracks = _select_seed_tracks(source_rows, max_count=min(5, len(source_rows)), require_bliss=False)
+    seed_paths = [
+        track.get("path") or track.get("track_path")
+        for track in seed_tracks
+        if track.get("path") or track.get("track_path")
+    ]
     recommended_tracks = _aggregate_similar_candidates(
         seed_paths,
         per_seed_limit=max(limit, 40),

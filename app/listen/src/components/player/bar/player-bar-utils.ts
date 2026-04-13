@@ -40,6 +40,5 @@ export function currentTrackToPlaylistSeed(track: Track, duration: number) {
     duration: duration || 0,
     path: track.path,
     libraryTrackId: track.libraryTrackId,
-    navidromeId: track.navidromeId,
   };
 }

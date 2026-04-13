@@ -62,7 +62,7 @@ def stack_restart_container(request: Request, name: str):
     _require_admin(request)
     # Safety: only allow restarting crate containers
     allowed_prefixes = [
-        "librarian-", "navidrome", "lidarr", "tidarr", "tidalrr",
+        "librarian-", "lidarr", "tidarr", "tidalrr",
         "slskd", "soulsync", "traefik", "authelia", "nginx",
     ]
     if not any(name.startswith(p) for p in allowed_prefixes):
@@ -78,7 +78,7 @@ def stack_restart_container(request: Request, name: str):
 
 
 ALLOWED_PREFIXES = [
-    "librarian-", "navidrome", "lidarr", "tidarr", "tidalrr",
+    "librarian-", "lidarr", "tidarr", "tidalrr",
     "slskd", "soulsync", "traefik", "authelia", "nginx",
 ]
 

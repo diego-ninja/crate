@@ -83,7 +83,7 @@ def _get_dsn() -> str:
 
 def _ensure_database():
     """Create the app user and database if they don't exist.
-    Connects as the Postgres superuser (MUSICDOCK_POSTGRES_*) to provision
+    Connects as the Postgres superuser (POSTGRES_SUPERUSER_*) to provision
     the app-level role (CRATE_POSTGRES_*). Idempotent and safe to call on
     every startup. Skips silently if superuser creds are not available."""
     global _db_provisioned
@@ -91,8 +91,8 @@ def _ensure_database():
         return
     _db_provisioned = True
 
-    su_user = os.environ.get("MUSICDOCK_POSTGRES_USER")
-    su_pass = os.environ.get("MUSICDOCK_POSTGRES_PASSWORD")
+    su_user = os.environ.get("POSTGRES_SUPERUSER_USER") or os.environ.get("MUSICDOCK_POSTGRES_USER")
+    su_pass = os.environ.get("POSTGRES_SUPERUSER_PASSWORD") or os.environ.get("MUSICDOCK_POSTGRES_PASSWORD")
     if not su_user:
         return  # No superuser creds — assume app user already exists
 
@@ -106,9 +106,10 @@ def _ensure_database():
         return  # Same user, nothing to provision
 
     try:
+        su_db = os.environ.get("POSTGRES_SUPERUSER_DB") or os.environ.get("MUSICDOCK_POSTGRES_DB", "postgres")
         conn = psycopg2.connect(
             host=host, port=port, user=su_user, password=su_pass,
-            dbname=os.environ.get("MUSICDOCK_POSTGRES_DB", "musicdock"),
+            dbname=su_db,
         )
         conn.autocommit = True
         cur = conn.cursor()
@@ -389,6 +390,7 @@ def _create_schema(cur):
             email TEXT UNIQUE NOT NULL,
             username TEXT UNIQUE,
             name TEXT,
+            bio TEXT,
             password_hash TEXT,
             avatar TEXT,
             role TEXT NOT NULL DEFAULT 'user',
@@ -405,10 +407,29 @@ def _create_schema(cur):
             id TEXT PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             expires_at TIMESTAMPTZ NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL
+            created_at TIMESTAMPTZ NOT NULL,
+            revoked_at TIMESTAMPTZ,
+            last_seen_at TIMESTAMPTZ,
+            last_seen_ip TEXT,
+            user_agent TEXT,
+            app_id TEXT,
+            device_label TEXT
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)")
+    cur.execute("""
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'sessions'
+                  AND column_name = 'last_seen_at'
+            ) THEN
+                EXECUTE 'CREATE INDEX IF NOT EXISTS idx_sessions_last_seen ON sessions(last_seen_at DESC)';
+            END IF;
+        END $$;
+    """)
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_external_identities (
@@ -429,6 +450,21 @@ def _create_schema(cur):
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_external_identities_provider ON user_external_identities(provider)")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_external_identities_provider_username ON user_external_identities(provider, external_username) WHERE external_username IS NOT NULL")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_external_identities_provider_user_id ON user_external_identities(provider, external_user_id) WHERE external_user_id IS NOT NULL")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS auth_invites (
+            token TEXT PRIMARY KEY,
+            email TEXT,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            expires_at TIMESTAMPTZ,
+            max_uses INTEGER,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL,
+            accepted_at TIMESTAMPTZ
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_auth_invites_created_by ON auth_invites(created_by, created_at DESC)")
 
     # ── Library ───────────────────────────────────────────────────
 
@@ -444,6 +480,7 @@ def _create_schema(cur):
             dir_mtime DOUBLE PRECISION,
             updated_at TIMESTAMPTZ,
             id BIGINT DEFAULT nextval('library_artists_id_seq'),
+            storage_id UUID NOT NULL,
             slug TEXT,
             folder_name TEXT,
             bio TEXT,
@@ -467,17 +504,25 @@ def _create_schema(cur):
             discogs_profile TEXT,
             discogs_members_json JSONB,
             latest_release_date TEXT,
-            content_hash TEXT,
-            navidrome_id TEXT
+            content_hash TEXT
         )
     """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_id ON library_artists(id)")
+    # storage_id index created in _m23 migration for existing DBs; here for fresh installs only
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_artists' AND column_name='storage_id') THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_storage_id ON library_artists(storage_id)';
+            END IF;
+        END $$
+    """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_slug ON library_artists(slug)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_artists_name_trgm ON library_artists USING gin(name gin_trgm_ops)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS library_albums (
             id SERIAL PRIMARY KEY,
+            storage_id UUID NOT NULL,
             artist TEXT NOT NULL REFERENCES library_artists(name),
             name TEXT NOT NULL,
             path TEXT UNIQUE NOT NULL,
@@ -498,11 +543,17 @@ def _create_schema(cur):
             lastfm_listeners INTEGER,
             lastfm_playcount BIGINT,
             popularity INTEGER,
-            navidrome_id TEXT,
             UNIQUE(artist, name)
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_albums_artist ON library_albums(artist)")
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_albums' AND column_name='storage_id') THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_storage_id ON library_albums(storage_id)';
+            END IF;
+        END $$
+    """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_slug ON library_albums(slug)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_albums_name_trgm ON library_albums USING gin(name gin_trgm_ops)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_albums_artist_name ON library_albums(artist, name)")
@@ -510,6 +561,7 @@ def _create_schema(cur):
     cur.execute("""
         CREATE TABLE IF NOT EXISTS library_tracks (
             id SERIAL PRIMARY KEY,
+            storage_id UUID NOT NULL,
             album_id INTEGER REFERENCES library_albums(id) ON DELETE CASCADE,
             artist TEXT NOT NULL,
             album TEXT NOT NULL,
@@ -547,9 +599,15 @@ def _create_schema(cur):
             lastfm_listeners INTEGER,
             lastfm_playcount BIGINT,
             popularity INTEGER,
-            rating INTEGER DEFAULT 0,
-            navidrome_id TEXT
+            rating INTEGER DEFAULT 0
         )
+    """)
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_tracks' AND column_name='storage_id') THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_storage_id ON library_tracks(storage_id)';
+            END IF;
+        END $$
     """)
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_slug ON library_tracks(slug)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_lib_tracks_album ON library_tracks(album_id)")
@@ -640,6 +698,8 @@ def _create_schema(cur):
             is_smart BOOLEAN DEFAULT FALSE,
             smart_rules_json JSONB,
             scope TEXT NOT NULL DEFAULT 'user',
+            visibility TEXT NOT NULL DEFAULT 'private',
+            is_collaborative BOOLEAN NOT NULL DEFAULT FALSE,
             generation_mode TEXT NOT NULL DEFAULT 'static',
             is_curated BOOLEAN NOT NULL DEFAULT FALSE,
             is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -647,11 +707,6 @@ def _create_schema(cur):
             curation_key TEXT,
             featured_rank INTEGER,
             category TEXT,
-            navidrome_playlist_id TEXT,
-            navidrome_public BOOLEAN NOT NULL DEFAULT FALSE,
-            navidrome_projection_status TEXT NOT NULL DEFAULT 'unprojected',
-            navidrome_projection_error TEXT,
-            navidrome_projected_at TIMESTAMPTZ,
             track_count INTEGER DEFAULT 0,
             total_duration DOUBLE PRECISION DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL,
@@ -675,6 +730,7 @@ def _create_schema(cur):
         CREATE TABLE IF NOT EXISTS playlist_tracks (
             id SERIAL PRIMARY KEY,
             playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
             track_path TEXT NOT NULL,
             title TEXT,
             artist TEXT,
@@ -685,6 +741,38 @@ def _create_schema(cur):
         )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id, position)")
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='playlist_tracks' AND column_name='track_id') THEN
+                EXECUTE 'CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id)';
+            END IF;
+        END $$
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS playlist_members (
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role TEXT NOT NULL DEFAULT 'collab',
+            invited_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (playlist_id, user_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_members_user ON playlist_members(user_id, created_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS playlist_invites (
+            token TEXT PRIMARY KEY,
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            expires_at TIMESTAMPTZ,
+            max_uses INTEGER,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_invites_playlist ON playlist_invites(playlist_id, created_at DESC)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_followed_playlists (
@@ -696,6 +784,31 @@ def _create_schema(cur):
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_followed_playlists_user ON user_followed_playlists(user_id, followed_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_followed_playlists_playlist ON user_followed_playlists(playlist_id)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_relationships (
+            follower_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            followed_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (follower_user_id, followed_user_id),
+            CHECK (follower_user_id != followed_user_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_relationships_followed ON user_relationships(followed_user_id, created_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_affinity_cache (
+            user_a_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_b_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            affinity_score INTEGER NOT NULL DEFAULT 0,
+            affinity_band TEXT NOT NULL DEFAULT 'low',
+            reasons_json JSONB DEFAULT '[]',
+            computed_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (user_a_id, user_b_id),
+            CHECK (user_a_id < user_b_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_affinity_cache_score ON user_affinity_cache(affinity_score DESC, computed_at DESC)")
 
     # ── Audit ─────────────────────────────────────────────────────
 
@@ -720,7 +833,6 @@ def _create_schema(cur):
             id SERIAL PRIMARY KEY,
             item_type TEXT NOT NULL,
             item_id TEXT NOT NULL,
-            navidrome_id TEXT,
             user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
             created_at TIMESTAMPTZ NOT NULL,
             UNIQUE(item_type, item_id)
@@ -968,6 +1080,56 @@ def _create_schema(cur):
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_genre_stats_lookup ON user_genre_stats(user_id, stat_window, play_count DESC)")
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jam_rooms (
+            id UUID PRIMARY KEY,
+            host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            current_track_payload JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL,
+            ended_at TIMESTAMPTZ
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_rooms_host ON jam_rooms(host_user_id, created_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jam_room_members (
+            room_id UUID NOT NULL REFERENCES jam_rooms(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role TEXT NOT NULL DEFAULT 'collab',
+            joined_at TIMESTAMPTZ NOT NULL,
+            last_seen_at TIMESTAMPTZ,
+            PRIMARY KEY (room_id, user_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_room_members_user ON jam_room_members(user_id, joined_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jam_room_invites (
+            token TEXT PRIMARY KEY,
+            room_id UUID NOT NULL REFERENCES jam_rooms(id) ON DELETE CASCADE,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            expires_at TIMESTAMPTZ,
+            max_uses INTEGER,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_room_invites_room ON jam_room_invites(room_id, created_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jam_room_events (
+            id BIGSERIAL PRIMARY KEY,
+            room_id UUID NOT NULL REFERENCES jam_rooms(id) ON DELETE CASCADE,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            event_type TEXT NOT NULL,
+            payload_json JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_room_events_room ON jam_room_events(room_id, id DESC)")
+
 
 # ---------------------------------------------------------------------------
 # Migration runner
@@ -1149,11 +1311,6 @@ def _m09_add_playlist_extended_columns(cur):
         ("curation_key", "TEXT", None),
         ("featured_rank", "INTEGER", None),
         ("category", "TEXT", None),
-        ("navidrome_playlist_id", "TEXT", None),
-        ("navidrome_public", "BOOLEAN", "FALSE"),
-        ("navidrome_projection_status", "TEXT", "'unprojected'"),
-        ("navidrome_projection_error", "TEXT", None),
-        ("navidrome_projected_at", "TEXT", None),
     ]:
         default_clause = f" DEFAULT {default}" if default is not None else ""
         cur.execute(f"""
@@ -1204,17 +1361,6 @@ def _m10_fix_user_followed_playlists_fk(cur):
             END IF;
         END $$;
     """)
-
-
-def _m11_add_navidrome_ids(cur):
-    for table in ("library_tracks", "library_albums", "library_artists"):
-        cur.execute(f"""
-            DO $$ BEGIN
-                ALTER TABLE {table} ADD COLUMN navidrome_id TEXT;
-            EXCEPTION WHEN duplicate_column THEN NULL;
-            END $$
-        """)
-
 
 def _m12_add_shows_address_columns(cur):
     for col, col_type in [("address_line1", "TEXT"), ("postal_code", "TEXT")]:
@@ -1358,7 +1504,6 @@ def _m20_convert_to_timestamptz(cur):
         ("tidal_downloads", "created_at", "TIMESTAMPTZ"),
         ("tidal_downloads", "completed_at", "TIMESTAMPTZ"),
         ("tidal_monitored_artists", "last_checked", "TIMESTAMPTZ"),
-        ("playlists", "navidrome_projected_at", "TIMESTAMPTZ"),
         ("playlists", "created_at", "TIMESTAMPTZ"),
         ("playlists", "updated_at", "TIMESTAMPTZ"),
         ("playlist_tracks", "added_at", "TIMESTAMPTZ"),
@@ -1423,6 +1568,239 @@ def _m20_convert_to_timestamptz(cur):
         log.warning("Could not create TIMESTAMPTZ-based index on user_play_events.ended_at")
 
 
+def _m21_identity_social_collab_foundation(cur):
+    cur.execute("""
+        DO $$ BEGIN
+            ALTER TABLE users ADD COLUMN bio TEXT;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+    for col, col_type in [
+        ("revoked_at", "TIMESTAMPTZ"),
+        ("last_seen_at", "TIMESTAMPTZ"),
+        ("last_seen_ip", "TEXT"),
+        ("user_agent", "TEXT"),
+        ("app_id", "TEXT"),
+        ("device_label", "TEXT"),
+    ]:
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE sessions ADD COLUMN {col} {col_type};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sessions_last_seen ON sessions(last_seen_at DESC)")
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_user_external_identities_provider_user_id
+        ON user_external_identities(provider, external_user_id)
+        WHERE external_user_id IS NOT NULL
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS auth_invites (
+            token TEXT PRIMARY KEY,
+            email TEXT,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            expires_at TIMESTAMPTZ,
+            max_uses INTEGER,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL,
+            accepted_at TIMESTAMPTZ
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_auth_invites_created_by ON auth_invites(created_by, created_at DESC)")
+
+    for col, col_type, default in [
+        ("visibility", "TEXT", "'private'"),
+        ("is_collaborative", "BOOLEAN", "FALSE"),
+    ]:
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE playlists ADD COLUMN {col} {col_type} DEFAULT {default};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
+    cur.execute("""
+        UPDATE playlists
+        SET visibility = CASE WHEN scope = 'system' THEN 'public' ELSE COALESCE(visibility, 'private') END
+        WHERE visibility IS NULL OR visibility = ''
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS playlist_members (
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role TEXT NOT NULL DEFAULT 'collab',
+            invited_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            created_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (playlist_id, user_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_members_user ON playlist_members(user_id, created_at DESC)")
+    cur.execute("""
+        INSERT INTO playlist_members (playlist_id, user_id, role, created_at)
+        SELECT id, user_id, 'owner', COALESCE(created_at, NOW())
+        FROM playlists
+        WHERE user_id IS NOT NULL
+        ON CONFLICT (playlist_id, user_id) DO NOTHING
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS playlist_invites (
+            token TEXT PRIMARY KEY,
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            expires_at TIMESTAMPTZ,
+            max_uses INTEGER,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_invites_playlist ON playlist_invites(playlist_id, created_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_relationships (
+            follower_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            followed_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (follower_user_id, followed_user_id),
+            CHECK (follower_user_id != followed_user_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_relationships_followed ON user_relationships(followed_user_id, created_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_affinity_cache (
+            user_a_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_b_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            affinity_score INTEGER NOT NULL DEFAULT 0,
+            affinity_band TEXT NOT NULL DEFAULT 'low',
+            reasons_json JSONB DEFAULT '[]',
+            computed_at TIMESTAMPTZ NOT NULL,
+            PRIMARY KEY (user_a_id, user_b_id),
+            CHECK (user_a_id < user_b_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_affinity_cache_score ON user_affinity_cache(affinity_score DESC, computed_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jam_rooms (
+            id UUID PRIMARY KEY,
+            host_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            current_track_payload JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL,
+            ended_at TIMESTAMPTZ
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_rooms_host ON jam_rooms(host_user_id, created_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jam_room_members (
+            room_id UUID NOT NULL REFERENCES jam_rooms(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            role TEXT NOT NULL DEFAULT 'collab',
+            joined_at TIMESTAMPTZ NOT NULL,
+            last_seen_at TIMESTAMPTZ,
+            PRIMARY KEY (room_id, user_id)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_room_members_user ON jam_room_members(user_id, joined_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jam_room_invites (
+            token TEXT PRIMARY KEY,
+            room_id UUID NOT NULL REFERENCES jam_rooms(id) ON DELETE CASCADE,
+            created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            expires_at TIMESTAMPTZ,
+            max_uses INTEGER,
+            use_count INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_room_invites_room ON jam_room_invites(room_id, created_at DESC)")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS jam_room_events (
+            id BIGSERIAL PRIMARY KEY,
+            room_id UUID NOT NULL REFERENCES jam_rooms(id) ON DELETE CASCADE,
+            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            event_type TEXT NOT NULL,
+            payload_json JSONB DEFAULT '{}'::jsonb,
+            created_at TIMESTAMPTZ NOT NULL
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_jam_room_events_room ON jam_room_events(room_id, id DESC)")
+
+
+def _m22_add_subsonic_token(cur):
+    cur.execute("""
+        DO $$ BEGIN
+            ALTER TABLE users ADD COLUMN subsonic_token TEXT;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+
+
+def _m23_add_storage_ids_and_playlist_track_id(cur):
+    for table in ("library_artists", "library_albums", "library_tracks"):
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE {table} ADD COLUMN storage_id UUID;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
+    cur.execute("""
+        DO $$ BEGIN
+            ALTER TABLE playlist_tracks ADD COLUMN track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL;
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+
+    for table, pk in (
+        ("library_artists", "name"),
+        ("library_albums", "id"),
+        ("library_tracks", "id"),
+    ):
+        cur.execute(f"SELECT {pk} AS pk FROM {table} WHERE storage_id IS NULL")
+        for row in cur.fetchall():
+            cur.execute(
+                f"UPDATE {table} SET storage_id = %s WHERE {pk} = %s",
+                (str(uuid.uuid4()), row["pk"]),
+            )
+
+    cur.execute("""
+        UPDATE playlist_tracks pt
+        SET track_id = (
+            SELECT lt.id
+            FROM library_tracks lt
+            WHERE lt.path = pt.track_path
+               OR (pt.track_path != '' AND pt.track_path IS NOT NULL
+                   AND lt.path LIKE ('%%/' || pt.track_path)
+                   AND LENGTH(pt.track_path) > 5)
+            ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
+            LIMIT 1
+        )
+        WHERE pt.track_id IS NULL
+    """)
+
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_storage_id ON library_artists(storage_id)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_storage_id ON library_albums(storage_id)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_storage_id ON library_tracks(storage_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id)")
+
+    cur.execute("ALTER TABLE library_artists ALTER COLUMN storage_id SET NOT NULL")
+    cur.execute("ALTER TABLE library_albums ALTER COLUMN storage_id SET NOT NULL")
+    cur.execute("ALTER TABLE library_tracks ALTER COLUMN storage_id SET NOT NULL")
+
+    # Additional indexes for common query patterns
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_artist_genres_artist ON artist_genres(artist_name)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_members_composite ON playlist_members(playlist_id, user_id)")
+
+
 # ---------------------------------------------------------------------------
 # Migration registry — (version, name, handler)
 # ---------------------------------------------------------------------------
@@ -1438,7 +1816,6 @@ _MIGRATIONS = [
     (8, "add_task_events_fk", _m08_add_task_events_fk),
     (9, "add_playlist_extended_columns", _m09_add_playlist_extended_columns),
     (10, "fix_user_followed_playlists_fk", _m10_fix_user_followed_playlists_fk),
-    (11, "add_navidrome_ids", _m11_add_navidrome_ids),
     (12, "add_shows_address_columns", _m12_add_shows_address_columns),
     (13, "add_track_rating", _m13_add_track_rating),
     (14, "add_tasks_dramatiq_columns", _m14_add_tasks_dramatiq_columns),
@@ -1448,4 +1825,7 @@ _MIGRATIONS = [
     (18, "add_favorites_user_id", _m18_add_favorites_user_id),
     (19, "add_username_column", _m00_add_username_column),
     (20, "convert_to_timestamptz", _m20_convert_to_timestamptz),
+    (21, "identity_social_collab_foundation", _m21_identity_social_collab_foundation),
+    (22, "add_subsonic_token", _m22_add_subsonic_token),
+    (23, "add_storage_ids_and_playlist_track_id", _m23_add_storage_ids_and_playlist_track_id),
 ]

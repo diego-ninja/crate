@@ -8,6 +8,7 @@ from pathlib import Path
 from crate.audio import read_tags
 from crate.db import get_db_ctx
 from crate.db.health import upsert_health_issue, resolve_stale_issues
+from crate.storage_layout import looks_like_storage_id
 from crate.utils import PHOTO_NAMES, normalize_key
 
 log = logging.getLogger(__name__)
@@ -389,6 +390,12 @@ class LibraryHealthCheck:
             artist = row["artist"]
             year = row["year"][:4]
             album_path = row["path"]
+
+            # Skip V2 managed-storage albums — their paths are UUID-based by design
+            if album_path:
+                parts = Path(album_path).parts
+                if len(parts) >= 2 and looks_like_storage_id(parts[-1]):
+                    continue
 
             # Strip year prefix from folder name to get clean album name
             m = year_prefix_re.match(folder_name)

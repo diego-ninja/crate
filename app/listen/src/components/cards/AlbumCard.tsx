@@ -2,7 +2,7 @@ import { memo, useState } from "react";
 import { useNavigate } from "react-router";
 import { Heart, Loader2, Play } from "lucide-react";
 
-import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
+import { ItemActionMenu, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { useAlbumActionEntries } from "@/components/actions/album-actions";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
@@ -28,6 +28,7 @@ interface AlbumData {
   display_name: string;
   tracks: Array<{
     id: number;
+    storage_id?: string;
     filename: string;
     path: string;
     length_sec: number;
@@ -68,7 +69,8 @@ export const AlbumCard = memo(function AlbumCard({
     try {
       const data = await api<AlbumData>(albumApiPath({ albumId, albumSlug, artistName: artist, albumName: album }));
       const playerTracks: Track[] = (data.tracks || []).map((track) => ({
-        id: track.path || String(track.id),
+        id: track.storage_id || track.path || String(track.id),
+        storageId: track.storage_id,
         title: track.tags?.title || track.filename || "Unknown",
         artist: data.artist,
         album: data.display_name || data.name,
@@ -99,8 +101,10 @@ export const AlbumCard = memo(function AlbumCard({
           : `flex-shrink-0 ${compact ? "w-[120px]" : "w-[160px]"}`,
       )}
       onContextMenu={actionMenu.handleContextMenu}
+      {...actionMenu.longPressHandlers}
       onClick={() => navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }))}
       onKeyDown={(event) => {
+        actionMenu.handleKeyboardTrigger(event);
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }));
@@ -132,15 +136,9 @@ export const AlbumCard = memo(function AlbumCard({
             <Heart size={16} className={saved ? "fill-current" : ""} />
           </ActionIconButton>
         )}
-        <ItemActionMenuButton
-          buttonRef={actionMenu.triggerRef}
-          hasActions={actionMenu.hasActions}
-          onClick={actionMenu.openFromTrigger}
-          className="absolute bottom-2 left-2 z-10 opacity-80 transition-opacity hover:opacity-100 md:opacity-65 md:group-hover:opacity-100"
-        />
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end justify-end p-2 md:items-center md:justify-center md:p-0">
+        <div className="absolute inset-0 hidden bg-black/0 transition-colors md:flex md:items-center md:justify-center md:p-0 md:group-hover:bg-black/40">
           <button
-            className="w-10 h-10 rounded-full bg-primary flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity md:translate-y-2 md:group-hover:translate-y-0 shadow-lg"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-primary opacity-0 shadow-lg transition-all md:translate-y-2 md:group-hover:translate-y-0 md:group-hover:opacity-100"
             onClick={handlePlayOverlay}
           >
             {playing ? (

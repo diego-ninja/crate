@@ -350,3 +350,67 @@ def read_audit_log(request: Request, limit: int = 100, offset: int = 0, action: 
     _require_admin(request)
     entries, total = get_audit_log(limit=limit, offset=offset, action=action)
     return {"entries": entries, "total": total, "limit": limit, "offset": offset}
+
+
+# ── Storage Migration ───────────────────────────────────────────
+
+@router.post("/migrate-storage-v2")
+def migrate_storage_v2(request: Request, body: dict | None = None):
+    """Start V2 storage migration. Optionally pass {"artist": "Name"} for single artist."""
+    _require_admin(request)
+    params = {}
+    if body and body.get("artist"):
+        params["artist"] = body["artist"]
+    task_id = create_task("migrate_storage_v2", params)
+    return {"task_id": task_id}
+
+
+@router.post("/verify-storage-v2")
+def verify_storage_v2(request: Request):
+    """Verify storage integrity after V2 migration."""
+    _require_admin(request)
+    task_id = create_task("verify_storage_v2")
+    return {"task_id": task_id}
+
+
+@router.get("/storage-v2-status")
+def storage_v2_status(request: Request):
+    """Get migration progress: how many artists/albums/tracks are on V2 layout."""
+    _require_admin(request)
+    from crate.db import get_db_ctx
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT
+                COUNT(*) AS total_artists,
+                COUNT(*) FILTER (WHERE storage_id IS NOT NULL AND folder_name = storage_id::text) AS migrated_artists
+            FROM library_artists
+        """)
+        artist_stats = dict(cur.fetchone())
+
+        cur.execute("""
+            SELECT
+                COUNT(*) AS total_albums,
+                COUNT(*) FILTER (
+                    WHERE storage_id IS NOT NULL
+                    AND path LIKE '%%/' || storage_id::text
+                ) AS migrated_albums
+            FROM library_albums
+        """)
+        album_stats = dict(cur.fetchone())
+
+        cur.execute("""
+            SELECT
+                COUNT(*) AS total_tracks,
+                COUNT(*) FILTER (
+                    WHERE storage_id IS NOT NULL
+                    AND filename = storage_id::text || SUBSTRING(filename FROM '\\.[^.]+$')
+                ) AS migrated_tracks
+            FROM library_tracks
+        """)
+        track_stats = dict(cur.fetchone())
+
+    return {
+        **artist_stats,
+        **album_stats,
+        **track_stats,
+    }

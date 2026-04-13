@@ -106,7 +106,6 @@ const TYPE_LABELS: Record<string, string> = {
   analyze_all: "Analyze All Audio",
   compute_popularity: "Compute Popularity",
   index_genres: "Index Genres",
-  sync_playlist_navidrome: "Sync Playlist",
   process_new_content: "Process New Content",
   compute_bliss: "Compute Bliss Vectors",
   tidal_download: "Tidal Download",

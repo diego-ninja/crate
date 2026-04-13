@@ -43,7 +43,6 @@ class TestExploreSearchContract:
                 "album": "Jane Doe",
                 "path": "/music/Converge/Jane Doe/01 - Concubine.flac",
                 "duration": 94.0,
-                "navidrome_id": "nd-track-99",
             }],
         ]
 
@@ -68,4 +67,3 @@ class TestExploreSearchContract:
                 "has_cover": True,
             }
             assert data["tracks"][0]["title"] == "Concubine"
-            assert data["tracks"][0]["navidrome_id"] == "nd-track-99"

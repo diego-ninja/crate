@@ -278,6 +278,7 @@ function MoodBrowseSection() {
     try {
       const data = await api<{ tracks: Array<{
         id: number;
+        storage_id?: string;
         title: string;
         artist: string;
         artist_id?: number;
@@ -286,12 +287,12 @@ function MoodBrowseSection() {
         album_id?: number;
         album_slug?: string;
         path: string;
-        navidrome_id?: string;
       }> }>(`/api/browse/mood/${mood}?limit=50`);
       if (data.tracks.length > 0) {
         playAll(
           data.tracks.map((t) => ({
-            id: t.path || String(t.id),
+            id: t.storage_id || t.path || String(t.id),
+            storageId: t.storage_id,
             title: t.title,
             artist: t.artist,
             artistId: t.artist_id,
@@ -300,7 +301,6 @@ function MoodBrowseSection() {
             albumId: t.album_id,
             albumSlug: t.album_slug,
             path: t.path,
-            navidromeId: t.navidrome_id,
             libraryTrackId: t.id,
             albumCover: albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }),
           })),

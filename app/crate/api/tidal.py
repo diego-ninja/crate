@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
+from urllib.parse import urlparse
 
 from crate.api.auth import _require_auth, _require_admin
 from crate.api._deps import artist_name_from_id
@@ -11,6 +12,17 @@ from crate.db import (
 from crate import tidal
 
 router = APIRouter(prefix="/api/tidal", tags=["tidal"])
+
+
+def _infer_tidal_content_type(url: str) -> str:
+    path = urlparse(url).path.lower()
+    if "/artist/" in path:
+        return "artist"
+    if "/track/" in path:
+        return "track"
+    if "/playlist/" in path:
+        return "playlist"
+    return "album"
 
 
 class DownloadRequest(BaseModel):
@@ -176,26 +188,38 @@ def tidal_download(request: Request, body: DownloadRequest):
         raise HTTPException(status_code=422, detail="URL is required")
 
     # Extract tidal_id from URL
-    tidal_id = body.url.strip().rstrip("/").split("/")[-1]
+    clean_url = body.url.strip()
+    tidal_id = clean_url.rstrip("/").split("/")[-1]
+    content_type = _infer_tidal_content_type(clean_url)
 
-    display_title = body.title or body.url.strip()
+    display_title = body.title or clean_url
+    artist_hint = ""
+    album_hint = display_title
+    if content_type == "artist":
+        artist_hint = display_title
+        album_hint = display_title
+    elif " - " in display_title:
+        artist_hint = display_title.split(" - ", 1)[0]
+        album_hint = display_title.split(" - ", 1)[1]
 
     dl_id = add_tidal_download(
-        tidal_url=body.url.strip(),
+        tidal_url=clean_url,
         tidal_id=tidal_id,
-        content_type="album",
+        content_type=content_type,
         title=display_title,
+        artist=artist_hint or None,
         quality=body.quality,
         status="queued",
         source=body.source,
     )
 
     task_id = create_task("tidal_download", {
-        "url": body.url.strip(),
+        "url": clean_url,
         "quality": body.quality,
         "download_id": dl_id,
-        "artist": display_title.split(" - ")[0] if " - " in display_title else "",
-        "album": display_title.split(" - ", 1)[1] if " - " in display_title else display_title,
+        "content_type": content_type,
+        "artist": artist_hint,
+        "album": album_hint,
     })
     update_tidal_download(dl_id, task_id=task_id)
     return {"task_id": task_id, "download_id": dl_id}
@@ -229,6 +253,9 @@ def tidal_download_batch(request: Request, body: BatchDownloadRequest):
             "url": url,
             "quality": item.get("quality", "max"),
             "download_id": dl_id,
+            "content_type": item.get("content_type", _infer_tidal_content_type(url)),
+            "artist": item.get("artist", ""),
+            "album": item.get("title", url),
         })
         update_tidal_download(dl_id, task_id=task_id)
         queued.append({"download_id": dl_id, "task_id": task_id, "title": item.get("title", "")})

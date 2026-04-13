@@ -4,8 +4,8 @@ import { albumCoverApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export interface RadioTrackPayload {
   track_id?: number | null;
+  track_storage_id?: string | null;
   track_slug?: string | null;
-  navidrome_id?: string | null;
   track_path?: string | null;
   title: string;
   artist: string;
@@ -24,6 +24,7 @@ interface RadioResponse {
     name?: string;
     seed?: {
       track_id?: number | null;
+      track_storage_id?: string | null;
       track_path?: string | null;
       artist_id?: number | null;
       artist_name?: string | null;
@@ -40,16 +41,16 @@ interface RadioRequestOptions {
 
 function toTrack(payload: RadioTrackPayload): Track {
   const trackPath = payload.track_path || "";
-  const navidromeId = payload.navidrome_id || undefined;
   const playbackId =
+    payload.track_storage_id ||
     trackPath ||
-    navidromeId ||
     (payload.track_id != null
       ? String(payload.track_id)
       : `radio:${payload.artist || "unknown"}:${payload.album || "unknown"}:${payload.title || "unknown"}`);
 
   return {
     id: playbackId,
+    storageId: payload.track_storage_id || undefined,
     title: payload.title || "Unknown",
     artist: payload.artist || "Unknown",
     artistId: payload.artist_id || undefined,
@@ -74,7 +75,6 @@ function toTrack(payload: RadioTrackPayload): Track {
           artistName: payload.artist,
         }) || undefined,
     path: trackPath || undefined,
-    navidromeId,
     libraryTrackId: payload.track_id || undefined,
   };
 }
@@ -115,6 +115,7 @@ export async function fetchArtistRadio(
 
 export async function fetchTrackRadio(seed: {
   libraryTrackId?: number | null;
+  storageId?: string | null;
   path?: string | null;
   title: string;
 }, options: RadioRequestOptions = {}): Promise<{
@@ -124,10 +125,12 @@ export async function fetchTrackRadio(seed: {
   const params = new URLSearchParams();
   if (seed.libraryTrackId != null) {
     params.set("track_id", String(seed.libraryTrackId));
+  } else if (seed.storageId) {
+    params.set("storage_id", seed.storageId);
   } else if (seed.path) {
     params.set("path", seed.path);
   } else {
-    throw new Error("track radio requires libraryTrackId or path");
+    throw new Error("track radio requires libraryTrackId, storageId or path");
   }
   params.set("limit", "50");
 
@@ -140,6 +143,7 @@ export async function fetchTrackRadio(seed: {
       radio: {
         seedType: "track",
         seedId: data.session?.seed?.track_id ?? seed.libraryTrackId ?? null,
+        seedStorageId: data.session?.seed?.track_storage_id ?? seed.storageId ?? null,
         seedPath: data.session?.seed?.track_path ?? seed.path ?? null,
       },
     },
@@ -189,6 +193,27 @@ export async function fetchPlaylistRadio(seed: {
   };
 }
 
+export async function fetchHomePlaylistRadio(seed: {
+  playlistId: string;
+  playlistName: string;
+}, options: RadioRequestOptions = {}): Promise<{
+  tracks: Track[];
+  source: PlaySource;
+}> {
+  const data = await requestRadio(`/api/radio/home-playlist/${encodeURIComponent(seed.playlistId)}?limit=50`, options);
+  return {
+    tracks: (data.tracks || []).map(toTrack),
+    source: {
+      type: "radio",
+      name: data.session?.name || `${seed.playlistName} Radio`,
+      radio: {
+        seedType: "playlist",
+        seedId: data.session?.seed?.playlist_id ?? seed.playlistId,
+      },
+    },
+  };
+}
+
 export async function fetchRadioContinuation(
   source: PlaySource,
   limit = 30,
@@ -207,6 +232,8 @@ export async function fetchRadioContinuation(
     const params = new URLSearchParams({ limit: String(limit) });
     if (radio.seedId != null) {
       params.set("track_id", String(radio.seedId));
+    } else if (radio.seedStorageId) {
+      params.set("storage_id", radio.seedStorageId);
     } else if (radio.seedPath) {
       params.set("path", radio.seedPath);
     } else {
@@ -222,7 +249,10 @@ export async function fetchRadioContinuation(
   }
 
   if (radio.seedType === "playlist" && radio.seedId != null) {
-    const data = await requestRadio(`/api/radio/playlist/${radio.seedId}?limit=${limit}`, options);
+    const path = typeof radio.seedId === "number"
+      ? `/api/radio/playlist/${radio.seedId}?limit=${limit}`
+      : `/api/radio/home-playlist/${encodeURIComponent(String(radio.seedId))}?limit=${limit}`;
+    const data = await requestRadio(path, options);
     return (data.tracks || []).map(toTrack);
   }
 
@@ -243,7 +273,10 @@ export async function fetchInfiniteContinuation(
   }
 
   if (source.type === "playlist" && seed.seedType === "playlist" && seed.seedId != null) {
-    const data = await requestRadio(`/api/radio/playlist/${seed.seedId}?limit=${limit}`, options);
+    const path = typeof seed.seedId === "number"
+      ? `/api/radio/playlist/${seed.seedId}?limit=${limit}`
+      : `/api/radio/home-playlist/${encodeURIComponent(String(seed.seedId))}?limit=${limit}`;
+    const data = await requestRadio(path, options);
     return (data.tracks || []).map(toTrack);
   }
 

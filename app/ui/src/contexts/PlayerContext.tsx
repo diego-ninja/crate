@@ -21,7 +21,6 @@ export interface Track {
   albumCover?: string;
   libraryTrackId?: number;
   path?: string;
-  navidromeId?: string;
 }
 
 type RepeatMode = "off" | "one" | "all";
@@ -172,7 +171,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     return track.id.includes("/")
       ? `/api/stream/${encodeURIComponent(track.id).replace(/%2F/g, "/")}`
-      : `/api/navidrome/stream/${track.id}`;
+      : `/api/tracks/${track.id}/stream`;
   }
 
   function addToRecentlyPlayed(track: Track) {
@@ -213,20 +212,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const onDurationChange = () => setDuration(audio.duration || 0);
     const onEnded = () => {
-      // Scrobble completed track
-      const endedTrack = queue[currentIndex];
-      if (endedTrack) {
-        fetch("/api/navidrome/scrobble", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            navidrome_id: endedTrack.id.includes("/") ? "" : endedTrack.id,
-            title: endedTrack.title,
-            artist: endedTrack.artist,
-          }),
-        }).catch(() => {});
-      }
-
       if (repeat === "one") {
         audio.currentTime = 0;
         audio.play().catch(() => {});

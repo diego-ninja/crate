@@ -103,6 +103,17 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
 * { scrollbar-width: thin; scrollbar-color: var(--scrollbar-thumb) transparent; }
 
+.hide-rail-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+.hide-rail-scrollbar::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
 .bg-app-surface { background-color: var(--surface-app); }
 .bg-panel-surface { background-color: var(--surface-panel); }
 .bg-raised-surface { background-color: var(--surface-raised); }

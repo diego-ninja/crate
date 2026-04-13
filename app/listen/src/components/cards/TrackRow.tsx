@@ -11,6 +11,7 @@ import { albumCoverApiUrl } from "@/lib/library-routes";
 
 export interface TrackRowData {
   id?: string | number;
+  storage_id?: string;
   title: string;
   artist: string;
   artist_id?: number;
@@ -22,7 +23,6 @@ export interface TrackRowData {
   path?: string;
   track_number?: number;
   format?: string;
-  navidrome_id?: string;
   library_track_id?: number;
 }
 
@@ -58,8 +58,12 @@ export const TrackRow = memo(function TrackRow({
   const { currentTrack, play, pause, resume } = usePlayerActions();
   const { isLiked, toggleTrackLike } = useLikedTracks();
 
-  const playbackId = track.path || String(track.id || track.navidrome_id || "");
-  const liked = isLiked(track.library_track_id ?? (typeof track.id === "number" ? track.id : null), track.path);
+  const playbackId = track.storage_id || track.path || String(track.id || "");
+  const liked = isLiked(
+    track.library_track_id ?? (typeof track.id === "number" ? track.id : null),
+    track.storage_id,
+    track.path,
+  );
   const isActive = currentTrack?.id === playbackId;
   const cover = albumCover || (track.album_id != null
     ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
@@ -67,6 +71,7 @@ export const TrackRow = memo(function TrackRow({
 
   const playerTrack: Track = {
     id: playbackId,
+    storageId: track.storage_id,
     title: track.title || "Unknown",
     artist: track.artist,
     artistId: track.artist_id,
@@ -76,7 +81,6 @@ export const TrackRow = memo(function TrackRow({
     albumSlug: track.album_slug,
     albumCover: cover,
     path: track.path,
-    navidromeId: track.navidrome_id,
     libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
   };
   const actions = useTrackActionEntries({
@@ -177,10 +181,11 @@ export const TrackRow = memo(function TrackRow({
         onClick={async (e) => {
           e.stopPropagation();
           const path = track.path || "";
+          const trackStorageId = track.storage_id ?? null;
           const libraryTrackId = track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined);
-          if (!path && libraryTrackId == null) return;
+          if (!path && !trackStorageId && libraryTrackId == null) return;
           try {
-            await toggleTrackLike(libraryTrackId ?? null, path);
+            await toggleTrackLike(libraryTrackId ?? null, trackStorageId, path);
           } catch {
             // Keep row interaction non-blocking; caller surfaces persistence elsewhere.
           }

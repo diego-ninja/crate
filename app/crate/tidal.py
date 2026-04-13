@@ -6,11 +6,13 @@ import os
 import re
 import subprocess
 import shutil
+import uuid
 from pathlib import Path
 
 import requests
 
 from crate.db import get_setting, set_setting
+from crate.storage_import import infer_album_identity, move_album_tree, resolve_import_album_target
 
 log = logging.getLogger(__name__)
 
@@ -210,6 +212,33 @@ def _tidal_cover(cover_id: str | None) -> str | None:
     return f"https://resources.tidal.com/images/{clean}/750x750.jpg"
 
 
+def _normalize_library_segment_key(name: str) -> str:
+    return re.sub(r"^[.\s]+", "", (name or "").strip()).casefold()
+
+
+def _safe_library_segment(name: str) -> str:
+    cleaned = re.sub(r'[<>:"/\\|?*]', "", (name or "").strip())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = re.sub(r"^[.\s]+", "", cleaned)
+    cleaned = cleaned.rstrip(" .")
+    return cleaned or "Unknown"
+
+
+def _resolve_child_dir_name(parent: Path, raw_name: str) -> str:
+    safe_name = _safe_library_segment(raw_name)
+    existing_dirs = [d.name for d in parent.iterdir() if d.is_dir()] if parent.exists() else []
+    if existing_dirs:
+        normalized_matches = [
+            name for name in existing_dirs if _normalize_library_segment_key(name) == _normalize_library_segment_key(raw_name)
+        ]
+        visible_matches = [name for name in normalized_matches if not name.startswith(".")]
+        if visible_matches:
+            return visible_matches[0]
+        if normalized_matches:
+            return normalized_matches[0]
+    return safe_name
+
+
 # ── Download ─────────────────────────────────────────────────────
 
 def download(url: str, quality: str = "max", task_id: str = "",
@@ -226,7 +255,6 @@ def download(url: str, quality: str = "max", task_id: str = "",
 
     cmd = [
         "tiddl", "download",
-        "--skip-errors",
         "--path", str(processing_dir),
         "-q", q,
         "url", url,
@@ -261,18 +289,34 @@ def download(url: str, quality: str = "max", task_id: str = "",
 
         proc.wait(timeout=3600)
 
-        if proc.returncode != 0:
-            return {
-                "success": False,
-                "error": "\n".join(output_lines[-10:]),
-                "path": str(processing_dir),
-            }
-
-        # Collect downloaded files
         files = []
         for f in processing_dir.rglob("*"):
             if f.is_file():
                 files.append(str(f.relative_to(processing_dir)))
+
+        if proc.returncode != 0:
+            error_tail = "\n".join(output_lines[-10:])
+            if files:
+                log.warning(
+                    "tiddl download returned non-zero for %s but produced %d files: %s",
+                    url,
+                    len(files),
+                    error_tail,
+                )
+                return {
+                    "success": True,
+                    "path": str(processing_dir),
+                    "files": files,
+                    "file_count": len(files),
+                    "partial": True,
+                    "warning": error_tail,
+                }
+            log.warning("tiddl download failed for %s: %s", url, error_tail)
+            return {
+                "success": False,
+                "error": error_tail,
+                "path": str(processing_dir),
+            }
 
         return {
             "success": True,
@@ -316,54 +360,40 @@ def move_to_library(processing_path: str, library_path: str) -> list[str]:
         if not item.is_dir():
             continue
         # item is an "ArtistName" directory.
-        dest_dir = dst / item.name
-        dest_dir.mkdir(parents=True, exist_ok=True)
-
-        # Snapshot the album list before we start mutating the directory.
-        album_dirs = [d for d in sorted(item.iterdir())]
-        for album_dir in album_dirs:
-            if album_dir.is_dir():
-                final = dest_dir / album_dir.name
-                final.mkdir(parents=True, exist_ok=True)
-                album_files = [f for f in sorted(album_dir.iterdir())]
-                for f in album_files:
-                    if not f.exists():
-                        continue  # already moved or vanished
-                    dest_file = final / f.name
-                    try:
-                        if dest_file.exists():
-                            if dest_file.is_dir():
-                                shutil.rmtree(str(dest_file), ignore_errors=True)
-                            else:
-                                dest_file.unlink()
-                        shutil.move(str(f), str(dest_file))
-                    except FileNotFoundError:
-                        log.warning(
-                            "move_to_library: missing file during move %s -> %s",
-                            f,
-                            dest_file,
-                        )
-                    except Exception:
-                        log.warning(
-                            "move_to_library: failed to move %s -> %s",
-                            f,
-                            dest_file,
-                            exc_info=True,
-                        )
+        album_items = [d for d in sorted(item.iterdir())]
+        for album_item in album_items:
+            if album_item.is_dir():
+                artist_name, album_name = infer_album_identity(album_item, fallback_artist=item.name)
+                _, target_album_dir, managed_track_names = resolve_import_album_target(dst, artist_name, album_name)
                 try:
-                    album_dir.rmdir()
-                except OSError:
-                    pass
-            elif album_dir.is_file():
-                dest_file = dest_dir / album_dir.name
+                    move_album_tree(album_item, target_album_dir, managed_track_names=managed_track_names)
+                    modified_artists.add(artist_name)
+                except Exception:
+                    log.warning(
+                        "move_to_library: failed to import %s for %s / %s",
+                        album_item,
+                        artist_name,
+                        album_name,
+                        exc_info=True,
+                    )
+            elif album_item.is_file():
+                artist_name, album_name = infer_album_identity(item, fallback_artist=item.name)
+                _, target_album_dir, managed_track_names = resolve_import_album_target(dst, artist_name, album_name)
+                target_album_dir.mkdir(parents=True, exist_ok=True)
+                dest_file = (
+                    target_album_dir / f"{uuid.uuid4()}{album_item.suffix.lower()}"
+                    if managed_track_names
+                    else target_album_dir / album_item.name
+                )
                 try:
                     if dest_file.exists():
                         dest_file.unlink()
-                    shutil.move(str(album_dir), str(dest_file))
+                    shutil.move(str(album_item), str(dest_file))
+                    modified_artists.add(artist_name)
                 except Exception:
                     log.warning(
                         "move_to_library: failed to move file %s -> %s",
-                        album_dir,
+                        album_item,
                         dest_file,
                         exc_info=True,
                     )
@@ -371,7 +401,6 @@ def move_to_library(processing_path: str, library_path: str) -> list[str]:
             item.rmdir()
         except OSError:
             pass
-        modified_artists.add(item.name)
 
     # Clean up processing dir (best-effort — it may still contain files
     # we couldn't move, and those will be cleaned on retry / manually).

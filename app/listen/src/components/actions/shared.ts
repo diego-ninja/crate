@@ -23,6 +23,7 @@ export interface MenuActionConfig {
 
 export interface TrackMenuData {
   id?: string | number;
+  storage_id?: string;
   title: string;
   artist: string;
   artist_id?: number;
@@ -32,7 +33,6 @@ export interface TrackMenuData {
   album_slug?: string;
   duration?: number;
   path?: string;
-  navidrome_id?: string;
   library_track_id?: number;
   is_suggested?: boolean;
   suggestion_source?: "playlist";
@@ -68,6 +68,7 @@ export interface PlaylistMenuData {
 export function trackToMenuData(track: Track): TrackMenuData {
   return {
     id: track.id,
+    storage_id: track.storageId,
     title: track.title,
     artist: track.artist,
     artist_id: track.artistId,
@@ -76,7 +77,6 @@ export function trackToMenuData(track: Track): TrackMenuData {
     album_id: track.albumId,
     album_slug: track.albumSlug,
     path: track.path,
-    navidrome_id: track.navidromeId,
     library_track_id: track.libraryTrackId,
     is_suggested: track.isSuggested,
     suggestion_source: track.suggestionSource,
@@ -85,7 +85,7 @@ export function trackToMenuData(track: Track): TrackMenuData {
 
 /** Rebuild a player-ready Track from menu data, honoring optional cover override and carrying metadata. */
 export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string): Track {
-  const playbackId = track.path || String(track.id || track.navidrome_id || "");
+  const playbackId = track.storage_id || track.path || String(track.id || "");
   const resolvedCover = cover || (track.album_id != null
     ? albumCoverApiUrl({
         albumId: track.album_id,
@@ -97,6 +97,7 @@ export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string):
 
   return {
     id: playbackId,
+    storageId: track.storage_id,
     title: track.title || "Unknown",
     artist: track.artist,
     artistId: track.artist_id,
@@ -106,7 +107,6 @@ export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string):
     albumSlug: track.album_slug,
     albumCover: resolvedCover,
     path: track.path,
-    navidromeId: track.navidrome_id,
     libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
     isSuggested: track.is_suggested,
     suggestionSource: track.suggestion_source,
@@ -148,6 +148,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
     display_name: string;
     tracks: Array<{
       id: number;
+      storage_id?: string;
       filename: string;
       path: string;
       length_sec: number;
@@ -168,7 +169,8 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
   });
 
   return (response.tracks || []).map((track) => ({
-    id: track.path || String(track.id),
+    id: track.storage_id || track.path || String(track.id),
+    storageId: track.storage_id,
     title: track.tags?.title || track.filename || "Unknown",
     artist: response.artist,
     album: response.display_name || response.name,
@@ -182,7 +184,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
 
 export async function fetchArtistTopTracks(artist: ArtistMenuData): Promise<Track[]> {
   if (artist.artistId == null) return [];
-  const topTracks = await api<ArtistTopTrack[]>(`/api/navidrome/artists/${artist.artistId}/top-tracks?count=12`);
+  const topTracks = await api<ArtistTopTrack[]>(`/api/artists/${artist.artistId}/top-tracks?count=12`);
   const coverFallback = artistPhotoApiUrl({
     artistId: artist.artistId,
     artistSlug: artist.artistSlug,

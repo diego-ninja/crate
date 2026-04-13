@@ -470,9 +470,7 @@ async def get_artists(
 async function handlePlay(e: React.MouseEvent) {
   e.stopPropagation();
   // Fetch happens AFTER click - adds 200-500ms latency
-  const data = await api<NavidromeAlbumLink>(
-    `/api/navidrome/album/${encPath(artist)}/${encPath(name)}/link`,
-  );
+  const data = await api<AlbumPlaybackPayload>(albumPlaybackHref);
 ```
 
 **Impact:**
@@ -481,21 +479,19 @@ async function handlePlay(e: React.MouseEvent) {
 
 **Fix:**
 ```tsx
-const [prefetchData, setPrefetchData] = useState<NavidromeAlbumLink | null>(null);
+const [prefetchData, setPrefetchData] = useState<AlbumPlaybackPayload | null>(null);
 
 const handleHover = useCallback(() => {
   // Prefetch on hover
-  api<NavidromeAlbumLink>(
-    `/api/navidrome/album/${encPath(artist)}/${encPath(name)}/link`
-  ).then(setPrefetchData).catch(() => {});
-}, [artist, name]);
+  api<AlbumPlaybackPayload>(albumPlaybackHref).then(setPrefetchData).catch(() => {});
+}, [albumPlaybackHref]);
 
 const handlePlay = useCallback((e: React.MouseEvent) => {
   e.stopPropagation();
   // Use prefetched data if available
-  const data = prefetchData ?? await api<NavidromeAlbumLink>(...);
+  const data = prefetchData ?? await api<AlbumPlaybackPayload>(albumPlaybackHref);
   // ... play logic
-}, [prefetchData, artist, name]);
+}, [albumPlaybackHref, prefetchData]);
 
 return (
   <div

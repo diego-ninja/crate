@@ -14,10 +14,10 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [authConfig, setAuthConfig] = useState<{ google?: boolean; discogs?: boolean }>({});
+  const [authConfig, setAuthConfig] = useState<Record<string, { enabled: boolean; configured: boolean; login_url: string | null }>>({});
 
   useEffect(() => {
-    api<{ google: boolean; discogs: boolean }>("/api/auth/config")
+    api<Record<string, { enabled: boolean; configured: boolean; login_url: string | null }>>("/api/auth/providers")
       .then(setAuthConfig)
       .catch(() => {});
   }, []);
@@ -60,7 +60,10 @@ export function Login() {
     }
   }
 
-  const hasOAuth = authConfig.google || authConfig.discogs;
+  const oauthProviders = Object.entries(authConfig).filter(
+    ([key, item]) => key !== "password" && item.enabled && item.configured && item.login_url,
+  );
+  const hasOAuth = oauthProviders.length > 0;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -116,24 +119,18 @@ export function Login() {
               </div>
 
               <div className="space-y-2">
-                {authConfig.google && (
+                {oauthProviders.map(([provider, item]) => (
                   <Button
+                    key={provider}
                     variant="outline"
                     className="w-full"
-                    onClick={() => { window.location.href = "/api/auth/google"; }}
+                    onClick={() => {
+                      window.location.href = `${item.login_url}${item.login_url?.includes("?") ? "&" : "?"}return_to=${encodeURIComponent(redirectTo || window.location.origin + "/")}`;
+                    }}
                   >
-                    Sign in with Google
+                    Sign in with {provider.charAt(0).toUpperCase() + provider.slice(1)}
                   </Button>
-                )}
-                {authConfig.discogs && (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => { window.location.href = "/api/auth/discogs"; }}
-                  >
-                    Sign in with Discogs
-                  </Button>
-                )}
+                ))}
               </div>
             </>
           )}

@@ -98,7 +98,7 @@ def analysis_daemon(config: dict):
 
     # Import analysis functions (loads Essentia/PANNs on first use)
     from crate.audio_analysis import analyze_track
-    from crate.db.library import update_track_audiomuse
+    from crate.db.library import update_track_analysis
 
     consecutive_failures = 0
 
@@ -116,7 +116,7 @@ def analysis_daemon(config: dict):
                 result = analyze_track(path)
 
                 if result and result.get("bpm") is not None:
-                    update_track_audiomuse(
+                    update_track_analysis(
                         path,
                         bpm=result["bpm"],
                         key=result.get("key"),

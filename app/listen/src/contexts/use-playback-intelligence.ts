@@ -17,6 +17,7 @@ function getPlaySourceSignature(source: PlaySource | null): string | null {
     source.name,
     source.radio?.seedType ?? "",
     source.radio?.seedId ?? "",
+    source.radio?.seedStorageId ?? "",
     source.radio?.seedPath ?? "",
   ].join("::");
 }

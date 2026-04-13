@@ -62,20 +62,22 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
-      - DOMAIN=localhost
+      - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
       - LASTFM_APIKEY=${LASTFM_APIKEY:-}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
       - FANART_API_KEY=${FANART_API_KEY:-}
       - SPOTIFY_ID=${SPOTIFY_ID:-}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
-      - NAVIDROME_URL=
       - NUMBA_CACHE_DIR=/tmp/numba_cache
       - REDIS_URL=redis://redis:6379/0
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music:ro
@@ -101,15 +103,15 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
-      - DOMAIN=localhost
+      - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
       - LASTFM_APIKEY=${LASTFM_APIKEY:-}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
       - FANART_API_KEY=${FANART_API_KEY:-}
       - SPOTIFY_ID=${SPOTIFY_ID:-}
       - SPOTIFY_SECRET=${SPOTIFY_SECRET:-}
       - SETLISTFM_API_KEY=${SETLISTFM_API_KEY:-}
-      - NAVIDROME_URL=
       - NUMBA_CACHE_DIR=/tmp/numba_cache
       - REDIS_URL=redis://redis:6379/0
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
@@ -128,8 +130,27 @@ services:
       - slskd
     command: ["worker"]
 
+  caddy:
+    image: caddy:2-alpine
+    container_name: crate-dev-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./data/caddy/Caddyfile.dev:/etc/caddy/Caddyfile:ro
+      - dev_caddy_data:/data
+      - dev_caddy_config:/config
+    networks:
+      - crate-dev
+    depends_on:
+      - api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 volumes:
   dev_postgres:
   dev_data:
   dev_slskd:
   dev_slskd_downloads:
+  dev_caddy_data:
+  dev_caddy_config:

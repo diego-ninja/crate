@@ -9,11 +9,12 @@ from crate.worker_handlers.enrichment import ENRICHMENT_TASK_HANDLERS
 from crate.worker_handlers.integrations import INTEGRATION_TASK_HANDLERS
 from crate.worker_handlers.library import LIBRARY_TASK_HANDLERS
 from crate.worker_handlers.management import MANAGEMENT_TASK_HANDLERS
+from crate.worker_handlers.migration import MIGRATION_TASK_HANDLERS
 
 log = logging.getLogger(__name__)
 
 # DB_HEAVY_TASKS moved to db/tasks.py for claim_next_task logic
-DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids"}
+DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_library", "repair", "enrich_mbids", "migrate_storage_v2"}
 
 
 def _is_cancelled(task_id: str) -> bool:
@@ -170,8 +171,11 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
             last_cleanup = now
             try:
                 from crate.db.events import cleanup_old_events, cleanup_old_tasks
+                from crate.db.auth import cleanup_expired_sessions, cleanup_ended_jam_rooms
                 cleanup_old_events(max_age_hours=48)
                 cleanup_old_tasks(max_age_days=7)
+                cleanup_expired_sessions(max_age_days=7)
+                cleanup_ended_jam_rooms(max_age_days=30)
             except Exception:
                 log.debug("Auto-cleanup failed")
 
@@ -196,3 +200,4 @@ TASK_HANDLERS.update(ENRICHMENT_TASK_HANDLERS)
 TASK_HANDLERS.update(INTEGRATION_TASK_HANDLERS)
 TASK_HANDLERS.update(LIBRARY_TASK_HANDLERS)
 TASK_HANDLERS.update(MANAGEMENT_TASK_HANDLERS)
+TASK_HANDLERS.update(MIGRATION_TASK_HANDLERS)

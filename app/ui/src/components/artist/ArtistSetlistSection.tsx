@@ -116,7 +116,7 @@ export function ArtistSetlistSection({
     }
     try {
       await api(`/api/artists/${artistId}/setlist-playlist`, "POST");
-      toast.success("Setlist playlist created in Navidrome");
+      toast.success("Setlist playlist created");
     } catch {
       toast.error("Failed to create playlist");
     }

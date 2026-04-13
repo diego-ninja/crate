@@ -14,8 +14,9 @@ import {
 import { useNavigate } from "react-router";
 
 import { artistGenreSlug, type ArtistData, type ArtistInfo } from "@/components/artist/artist-model";
-import { AppMenuButton } from "@/components/ui/AppPopover";
+import { AppMenuButton, AppPopover } from "@/components/ui/AppPopover";
 import { AppModal, ModalBody } from "@/components/ui/AppModal";
+import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { formatCompact } from "@/lib/utils";
 
@@ -23,6 +24,7 @@ interface ArtistHeroSectionProps {
   artist: ArtistData;
   artistInfo?: ArtistInfo;
   photoUrl: string;
+  backgroundUrl?: string;
   tags: string[];
   following: boolean;
   onPlay: () => void;
@@ -39,6 +41,7 @@ export function ArtistHeroSection({
   artist,
   artistInfo,
   photoUrl,
+  backgroundUrl,
   tags,
   following,
   onPlay,
@@ -55,15 +58,42 @@ export function ArtistHeroSection({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const bio = artistInfo?.bio ?? "";
+  const heroBackgroundSrc = backgroundUrl
+    ? `${backgroundUrl}${backgroundUrl.includes("?") ? "&" : "?"}v=artist-hero-bg-v1`
+    : undefined;
+  const closeMenu = () => setMenuOpen(false);
+
+  useDismissibleLayer({
+    active: menuOpen && isDesktop,
+    refs: [menuRef],
+    onDismiss: closeMenu,
+  });
+
+  const menuContent = (
+    <ArtistMenuContent
+      artist={artist}
+      photoUrl={photoUrl}
+      following={following}
+      hasSetlist={hasSetlist}
+      onPlay={() => { onPlay(); closeMenu(); }}
+      onShuffle={() => { onShuffle(); closeMenu(); }}
+      onArtistRadio={() => { onArtistRadio(); closeMenu(); }}
+      onPlaySetlist={onPlaySetlist ? () => { onPlaySetlist(); closeMenu(); } : undefined}
+      onToggleFollow={() => { onToggleFollow(); closeMenu(); }}
+      onShare={() => { onShare(); closeMenu(); }}
+    />
+  );
 
   return (
     <>
       <div className="relative h-[420px] overflow-hidden sm:h-[400px]">
-        <img
-          src={photoUrl}
-          alt=""
-          className="absolute inset-0 h-full w-full scale-105 object-cover opacity-40 blur-[6px]"
-        />
+        {heroBackgroundSrc ? (
+          <img
+            src={heroBackgroundSrc}
+            alt=""
+            className="absolute inset-0 h-full w-full scale-105 object-cover opacity-40 blur-[3px]"
+          />
+        ) : null}
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/78 to-background/35" />
 
         <div className="relative flex h-full items-end px-4 pb-6 sm:px-6">
@@ -197,29 +227,23 @@ export function ArtistHeroSection({
         <div className="relative" ref={menuRef}>
           <button
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/50 transition-colors hover:bg-white/5 hover:text-foreground"
-            onClick={() => setMenuOpen(!menuOpen)}
+            onClick={() => setMenuOpen((current) => !current)}
             aria-label="More"
           >
             <MoreHorizontal size={16} />
           </button>
-          {menuOpen && !isDesktop && (
+          {menuOpen && isDesktop ? (
+            <AppPopover className="absolute right-0 top-12 z-[1200] w-64 p-1">
+              {menuContent}
+            </AppPopover>
+          ) : null}
+          {menuOpen && !isDesktop ? (
             <AppModal open={menuOpen} onClose={() => setMenuOpen(false)} maxWidthClassName="sm:max-w-sm">
               <ModalBody className="pb-4">
-                <ArtistMenuContent
-                  artist={artist}
-                  photoUrl={photoUrl}
-                  following={following}
-                  hasSetlist={hasSetlist}
-                  onPlay={() => { onPlay(); setMenuOpen(false); }}
-                  onShuffle={() => { onShuffle(); setMenuOpen(false); }}
-                  onArtistRadio={() => { onArtistRadio(); setMenuOpen(false); }}
-                  onPlaySetlist={onPlaySetlist ? () => { onPlaySetlist(); setMenuOpen(false); } : undefined}
-                  onToggleFollow={() => { onToggleFollow(); setMenuOpen(false); }}
-                  onShare={() => { onShare(); setMenuOpen(false); }}
-                />
+                {menuContent}
               </ModalBody>
             </AppModal>
-          )}
+          ) : null}
         </div>
       </div>
     </>

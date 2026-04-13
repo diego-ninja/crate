@@ -55,9 +55,9 @@ def api_search(request: Request, q: str = "", limit: int = 20):
         album_rows = cur.fetchall()
         cur.execute(
             """
-            SELECT t.id, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
+            SELECT t.id, t.storage_id, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
                    a.name AS album, ar.id AS artist_id, ar.slug AS artist_slug,
-                   t.path, t.duration, t.navidrome_id
+                   t.path, t.duration
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
             LEFT JOIN library_artists ar ON ar.name = t.artist
@@ -95,6 +95,7 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     tracks = [
         {
             "id": row["id"],
+            "storage_id": str(row["storage_id"]) if row.get("storage_id") is not None else None,
             "slug": row.get("slug"),
             "title": row["title"],
             "artist": row["artist"],
@@ -105,7 +106,6 @@ def api_search(request: Request, q: str = "", limit: int = 20):
             "album": row["album"],
             "path": row["path"],
             "duration": row["duration"],
-            "navidrome_id": row["navidrome_id"],
         }
         for row in track_rows
     ]
@@ -116,7 +116,7 @@ def api_search(request: Request, q: str = "", limit: int = 20):
 def api_favorites_list(request: Request):
     _require_auth(request)
     with get_db_ctx() as cur:
-        cur.execute("SELECT item_type, item_id, navidrome_id, created_at FROM favorites ORDER BY created_at DESC")
+        cur.execute("SELECT item_type, item_id, created_at FROM favorites ORDER BY created_at DESC")
         items = [dict(row) for row in cur.fetchall()]
     return {"items": items}
 
@@ -140,13 +140,6 @@ def api_favorites_add(request: Request, body: dict):
             (item_type, item_id, now),
         )
 
-    if "/" not in item_id and len(item_id) < 40:
-        try:
-            from crate import navidrome
-
-            navidrome.star(item_id, item_type)
-        except Exception:
-            pass
     return {"ok": True}
 
 
@@ -163,13 +156,6 @@ def api_favorites_remove(request: Request, body: dict):
     with get_db_ctx() as cur:
         cur.execute("DELETE FROM favorites WHERE item_id = %s AND item_type = %s", (item_id, item_type))
 
-    if "/" not in item_id and len(item_id) < 40:
-        try:
-            from crate import navidrome
-
-            navidrome.unstar(item_id, item_type)
-        except Exception:
-            pass
     return {"ok": True}
 
 
@@ -195,14 +181,6 @@ def api_rate_track(request: Request, body: dict):
         return JSONResponse({"error": "Track not found"}, status_code=404)
 
     set_track_rating(track_id, rating)
-
-    try:
-        from crate.navidrome import set_navidrome_rating
-
-        set_navidrome_rating(track_id, rating)
-    except Exception:
-        pass
-
     return {"ok": True, "rating": rating}
 
 
@@ -255,6 +233,17 @@ def api_track_info_by_id(request: Request, track_id: int):
     _require_auth(request)
     with get_db_ctx() as cur:
         cur.execute(f"SELECT {_TRACK_INFO_QUERY_COLS} FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _serialize_track_info_row(row)
+
+
+@router.get("/api/tracks/by-storage/{storage_id}/info")
+def api_track_info_by_storage_id(request: Request, storage_id: str):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute(f"SELECT {_TRACK_INFO_QUERY_COLS} FROM library_tracks WHERE storage_id = %s", (storage_id,))
         row = cur.fetchone()
     if not row:
         return Response(status_code=404)
@@ -344,6 +333,17 @@ def api_stream_by_id(request: Request, track_id: int):
     return _stream_file(request, row["path"])
 
 
+@router.get("/api/tracks/by-storage/{storage_id}/stream")
+def api_stream_by_storage_id(request: Request, storage_id: str):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT path FROM library_tracks WHERE storage_id = %s", (storage_id,))
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _stream_file(request, row["path"])
+
+
 @router.get("/api/stream/{filepath:path}")
 def api_stream_file(request: Request, filepath: str):
     return _stream_file(request, filepath)
@@ -403,6 +403,17 @@ def api_download_track_by_id(request: Request, track_id: int):
     _require_auth(request)
     with get_db_ctx() as cur:
         cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _download_track(request, row["path"])
+
+
+@router.get("/api/tracks/by-storage/{storage_id}/download")
+def api_download_track_by_storage_id(request: Request, storage_id: str):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT path FROM library_tracks WHERE storage_id = %s", (storage_id,))
         row = cur.fetchone()
     if not row:
         return Response(status_code=404)
@@ -470,10 +481,10 @@ def api_browse_mood_tracks(request: Request, mood: str, limit: int = Query(50, g
     params.append(limit)
     with get_db_ctx() as cur:
         cur.execute(
-            f"""SELECT t.id, t.title, t.artist, a.name AS album, t.path, t.duration,
+            f"""SELECT t.id, t.storage_id, t.title, t.artist, a.name AS album, t.path, t.duration,
                        ar.id AS artist_id, ar.slug AS artist_slug,
                        a.id AS album_id, a.slug AS album_slug,
-                       t.bpm, t.energy, t.danceability, t.valence, t.navidrome_id
+                       t.bpm, t.energy, t.danceability, t.valence
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
                 LEFT JOIN library_artists ar ON ar.name = t.artist

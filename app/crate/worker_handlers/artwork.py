@@ -4,8 +4,9 @@ import json
 import logging
 import time
 from pathlib import Path
-from crate.db import emit_task_event, get_db_ctx, get_task, set_cache, update_task
-from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
+from crate.db import emit_task_event, get_db_ctx, get_library_artist, get_task, set_cache, update_task
+from crate.storage_layout import resolve_artist_dir
+from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled, start_scan
 
 log = logging.getLogger(__name__)
 
@@ -99,10 +100,11 @@ def _handle_fetch_artist_covers(task_id: str, params: dict, config: dict) -> dic
 
     artist_name = params.get("artist", "")
     lib = Path(config["library_path"])
-    artist_dir = lib / artist_name
+    artist_row = get_library_artist(artist_name)
+    artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist_name, existing_only=True)
     exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a"]))
 
-    if not artist_dir.is_dir():
+    if not artist_dir or not artist_dir.is_dir():
         return {"error": "Artist not found"}
 
     fetched = failed = skipped = total = 0
@@ -439,12 +441,20 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
         dest = _safe_dest(Path(album_data["path"]) / "cover.jpg")
         img.save(str(dest), "JPEG", quality=92)
     elif img_type == "artist_photo":
-        dest = _safe_dest(lib / artist / "artist.jpg")
+        artist_row = get_library_artist(artist)
+        found_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist, existing_only=True)
+        if not found_dir or not found_dir.is_dir():
+            return {"error": "Artist directory not found"}
+        dest = _safe_dest(found_dir / "artist.jpg")
         img.save(str(dest), "JPEG", quality=92)
         with get_db_ctx() as cur:
             cur.execute("UPDATE library_artists SET has_photo = 1 WHERE name = %s", (artist,))
     elif img_type == "background":
-        dest = lib / artist / "background.jpg"
+        artist_row = get_library_artist(artist)
+        found_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist, existing_only=True)
+        if not found_dir or not found_dir.is_dir():
+            return {"error": "Artist directory not found"}
+        dest = found_dir / "background.jpg"
         img.save(str(dest), "JPEG", quality=90)
     else:
         return {"error": f"Unknown image type: {img_type}"}
@@ -453,17 +463,91 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
 
     if img_type == "cover":
         try:
-            from crate.navidrome import start_scan
 
             start_scan()
         except Exception:
-            log.debug("Failed to start Navidrome scan after cover upload", exc_info=True)
+            log.debug("Failed to start library scan after cover upload", exc_info=True)
 
     return {"type": img_type, "path": str(dest), "width": img.width, "height": img.height}
 
 
+def _handle_fetch_album_cover(task_id: str, params: dict, config: dict) -> dict:
+    """Search all sources for a cover for a specific album."""
+    from crate.artwork import extract_embedded_cover, fetch_cover_from_caa, save_cover
+
+    artist = params.get("artist", "")
+    album = params.get("album", "")
+    path = params.get("path", "")
+    mbid = params.get("mbid", "")
+    album_id = params.get("album_id")
+
+    album_dir = Path(path) if path else None
+    if not album_dir or not album_dir.is_dir():
+        return {"error": "Album directory not found"}
+
+    if any((album_dir / c).exists() for c in ("cover.jpg", "cover.png", "folder.jpg")):
+        return {"status": "already_has_cover"}
+
+    cover_data = None
+    source = None
+
+    # 1. CoverArtArchive (MBID)
+    if mbid and mbid.strip():
+        cover_data = fetch_cover_from_caa(mbid)
+        if cover_data:
+            source = "coverartarchive"
+
+    # 2. Embedded in audio files
+    if not cover_data:
+        audio_files = list(album_dir.glob("*.flac")) + list(album_dir.glob("*.mp3"))
+        for audio_file in audio_files[:1]:
+            embedded = extract_embedded_cover(audio_file)
+            if embedded:
+                cover_data = embedded
+                source = "embedded"
+                break
+
+    # 3. Deezer
+    if not cover_data:
+        cover_data = _fetch_deezer_cover(artist, album)
+        if cover_data:
+            source = "deezer"
+
+    # 4. iTunes
+    if not cover_data:
+        cover_data = _fetch_itunes_cover(artist, album)
+        if cover_data:
+            source = "itunes"
+
+    # 5. Last.fm
+    if not cover_data:
+        cover_data = _fetch_lastfm_cover(artist, album)
+        if cover_data:
+            source = "lastfm"
+
+    # 6. MusicBrainz search (if no MBID)
+    if not cover_data and not (mbid and mbid.strip()):
+        cover_data = _search_musicbrainz_cover(artist, album)
+        if cover_data:
+            source = "musicbrainz"
+
+    if cover_data:
+        save_cover(album_dir, cover_data)
+        if album_id:
+            with get_db_ctx() as cur:
+                cur.execute("UPDATE library_albums SET has_cover = 1 WHERE id = %s", (album_id,))
+        emit_task_event(task_id, "cover_applied", {
+            "message": f"Cover found for {artist} / {album} ({source})",
+            "source": source,
+        })
+        return {"status": "found", "source": source}
+
+    return {"status": "not_found", "sources_tried": ["coverartarchive", "embedded", "deezer", "itunes", "lastfm", "musicbrainz"]}
+
+
 ARTWORK_TASK_HANDLERS: dict[str, TaskHandler] = {
     "fetch_cover": _handle_fetch_cover,
+    "fetch_album_cover": _handle_fetch_album_cover,
     "fetch_artist_covers": _handle_fetch_artist_covers,
     "fetch_artwork_all": _handle_fetch_artwork_all,
     "batch_covers": _handle_batch_covers,

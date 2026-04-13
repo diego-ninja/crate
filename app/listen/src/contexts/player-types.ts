@@ -1,5 +1,6 @@
 export interface Track {
   id: string;
+  storageId?: string;
   title: string;
   artist: string;
   artistId?: number;
@@ -9,7 +10,6 @@ export interface Track {
   albumSlug?: string;
   albumCover?: string;
   path?: string;
-  navidromeId?: string;
   libraryTrackId?: number;
   isSuggested?: boolean;
   suggestionSource?: "playlist";
@@ -22,6 +22,7 @@ type RadioSeedType = "track" | "album" | "artist" | "playlist";
 interface RadioSession {
   seedType: RadioSeedType;
   seedId?: string | number | null;
+  seedStorageId?: string | null;
   seedPath?: string | null;
 }
 

@@ -51,7 +51,6 @@ export function ArtistTopTracksSection({
               album: track.album,
               duration: track.duration,
               path: track.id.includes("/") ? track.id : undefined,
-              navidrome_id: track.id.includes("/") ? undefined : track.id,
             }}
             index={track.track || index + 1}
             showAlbum

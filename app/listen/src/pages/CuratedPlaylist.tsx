@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Heart, Loader2, Play, Radio, Shuffle, Share2, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
@@ -7,6 +7,7 @@ import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { PlaylistTrackFilterBar, filterPlaylistTracks } from "@/components/playlists/PlaylistTrackFilterBar";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { fetchPlaylistRadio } from "@/lib/radio";
@@ -17,6 +18,7 @@ interface CuratedPlaylistTrack {
   id: number;
   playlist_id: number;
   track_id?: number;
+  track_storage_id?: string;
   track_path: string;
   title: string;
   artist: string;
@@ -28,7 +30,6 @@ interface CuratedPlaylistTrack {
   duration: number;
   position: number;
   added_at: string;
-  navidrome_id?: string;
 }
 
 interface CuratedPlaylistData {
@@ -60,12 +61,15 @@ export function CuratedPlaylist() {
   );
   const { data: playlistOptions } = useApi<Array<{ id: number; name: string }>>("/api/playlists");
   const [togglingFollow, setTogglingFollow] = useState(false);
+  const [filterQuery, setFilterQuery] = useState("");
+  const deferredFilterQuery = useDeferredValue(filterQuery);
 
   const playerTracks = useMemo(() => {
     if (!data?.tracks?.length) return [];
     return data.tracks.map(
       (t): Track => ({
-        id: t.track_path,
+        id: t.track_storage_id || t.track_path,
+        storageId: t.track_storage_id,
         title: t.title || "Unknown",
         artist: t.artist || "",
         artistId: t.artist_id,
@@ -78,11 +82,15 @@ export function CuratedPlaylist() {
             ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
             : undefined,
         path: t.track_path,
-        navidromeId: t.navidrome_id,
         libraryTrackId: t.track_id,
       }),
     );
   }, [data]);
+
+  const filteredTracks = useMemo(
+    () => filterPlaylistTracks(data?.tracks || [], deferredFilterQuery),
+    [data?.tracks, deferredFilterQuery],
+  );
 
   function handlePlay() {
     if (playerTracks.length === 0) return;
@@ -136,12 +144,13 @@ export function CuratedPlaylist() {
 
   async function handleAddTrackToPlaylist(
     playlistId: number,
-    track: { title: string; artist: string; album?: string; duration?: number; path?: string },
+    track: { title: string; artist: string; album?: string; duration?: number; path?: string; libraryTrackId?: number },
   ) {
-    if (!track.path) return;
+    if (!track.path && track.libraryTrackId == null) return;
     try {
       await api(`/api/playlists/${playlistId}/tracks`, "POST", {
         tracks: [{
+          track_id: track.libraryTrackId,
           path: track.path,
           title: track.title,
           artist: track.artist,
@@ -162,7 +171,6 @@ export function CuratedPlaylist() {
     duration?: number;
     path?: string;
     library_track_id?: number;
-    navidrome_id?: string;
   }) {
     openCreatePlaylist({
       tracks: track.path ? [{
@@ -172,7 +180,6 @@ export function CuratedPlaylist() {
         duration: track.duration,
         path: track.path,
         libraryTrackId: track.library_track_id,
-        navidromeId: track.navidrome_id,
       }] : [],
     });
   }
@@ -303,33 +310,50 @@ export function CuratedPlaylist() {
         </button>
       </div>
 
-      <div className="space-y-1">
-        {data.tracks.map((track, index) => (
-          <TrackRow
-            key={track.id}
-            track={{
-              id: track.track_id ?? track.track_path,
-              title: track.title || "Unknown",
-              artist: track.artist || "",
-              artist_id: track.artist_id,
-              artist_slug: track.artist_slug,
-              album: track.album,
-              album_id: track.album_id,
-              album_slug: track.album_slug,
-              duration: track.duration,
-              path: track.track_path,
-              navidrome_id: track.navidrome_id,
-              library_track_id: track.track_id,
-            }}
-            index={index + 1}
-            showArtist
-            showAlbum
-            playlistOptions={(playlistOptions || []).map((playlist) => ({ id: playlist.id, name: playlist.name }))}
-            onAddToPlaylist={handleAddTrackToPlaylist}
-            onCreatePlaylist={handleCreatePlaylistFromTrack}
-          />
-        ))}
-      </div>
+      <PlaylistTrackFilterBar
+        query={filterQuery}
+        onQueryChange={setFilterQuery}
+        totalCount={data.tracks.length}
+        filteredCount={filteredTracks.length}
+      />
+
+      {data.tracks.length === 0 ? (
+        <div className="flex items-center justify-center py-16">
+          <p className="text-sm text-muted-foreground">This playlist has no tracks yet</p>
+        </div>
+      ) : filteredTracks.length === 0 ? (
+        <div className="flex items-center justify-center py-16">
+          <p className="text-sm text-muted-foreground">No tracks match this filter</p>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {filteredTracks.map((track, index) => (
+            <TrackRow
+              key={track.id}
+              track={{
+                id: track.track_storage_id ?? track.track_id ?? track.track_path,
+                storage_id: track.track_storage_id,
+                title: track.title || "Unknown",
+                artist: track.artist || "",
+                artist_id: track.artist_id,
+                artist_slug: track.artist_slug,
+                album: track.album,
+                album_id: track.album_id,
+                album_slug: track.album_slug,
+                duration: track.duration,
+                path: track.track_path,
+                library_track_id: track.track_id,
+              }}
+              index={index + 1}
+              showArtist
+              showAlbum
+              playlistOptions={(playlistOptions || []).map((playlist) => ({ id: playlist.id, name: playlist.name }))}
+              onAddToPlaylist={handleAddTrackToPlaylist}
+              onCreatePlaylist={handleCreatePlaylistFromTrack}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

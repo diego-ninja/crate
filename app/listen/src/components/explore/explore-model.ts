@@ -24,6 +24,7 @@ export interface SearchAlbum {
 
 export interface SearchTrack {
   id: number;
+  storage_id?: string;
   slug?: string;
   title: string;
   artist: string;
@@ -34,7 +35,6 @@ export interface SearchTrack {
   album_slug?: string;
   path: string;
   duration: number;
-  navidrome_id: string;
 }
 
 export interface SearchResults {
@@ -64,6 +64,7 @@ export interface SystemPlaylist {
 interface PlaylistDetailTrack {
   id?: number;
   track_id?: number;
+  track_storage_id?: string;
   track_path: string;
   title: string;
   artist: string;
@@ -73,7 +74,6 @@ interface PlaylistDetailTrack {
   album_id?: number;
   album_slug?: string;
   duration: number;
-  navidrome_id?: string;
 }
 
 interface PlaylistDetailData {
@@ -125,7 +125,8 @@ export async function loadSystemPlaylistTracks(playlistId: number): Promise<{
   const data = await api<PlaylistDetailData>(`/api/curation/playlists/${playlistId}`);
   return {
     tracks: (data.tracks || []).map((track) => ({
-      id: track.track_path || String(track.id || track.track_id || Math.random()),
+      id: track.track_storage_id || track.track_path || String(track.id || track.track_id || Math.random()),
+      storageId: track.track_storage_id || undefined,
       title: track.title || "Unknown",
       artist: track.artist || "",
       album: track.album || "",
@@ -140,7 +141,6 @@ export async function loadSystemPlaylistTracks(playlistId: number): Promise<{
           : data.cover_data_url || undefined,
       path: track.track_path,
       libraryTrackId: track.track_id,
-      navidromeId: track.navidrome_id,
       artistId: track.artist_id,
       artistSlug: track.artist_slug,
       albumId: track.album_id,

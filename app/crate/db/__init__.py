@@ -39,10 +39,11 @@ from crate.db.cache import (
 from crate.db.library import (
     get_library_artists, get_library_artist, get_library_albums,
     get_library_artist_by_id, get_library_album,
-    get_library_album_by_id, get_library_tracks, get_library_stats,
+    get_library_album_by_id, get_library_track_by_id, get_library_track_by_storage_id,
+    get_library_tracks, get_library_stats,
     get_library_track_count,
     upsert_artist, upsert_album, upsert_track,
-    update_track_audiomuse, update_artist_enrichment,
+    update_track_analysis, update_artist_enrichment,
     delete_artist, delete_album, delete_track,
     set_track_rating, get_track_rating,
 )
@@ -50,10 +51,11 @@ from crate.db.library import (
 # Auth
 from crate.db.auth import (
     create_user, get_user_by_email, get_user_by_google_id,
-    get_user_by_id, update_user_last_login, update_user, list_users, delete_user,
-    create_session, get_session, delete_session,
+    get_user_by_external_identity, get_user_by_id, update_user_last_login, update_user, list_users, delete_user,
+    create_session, get_session, list_sessions, touch_session, revoke_session, revoke_other_sessions, delete_session,
     suggest_username, get_user_external_identity, upsert_user_external_identity,
-    unlink_user_external_identity,
+    list_user_external_identities, unlink_user_external_identity,
+    create_auth_invite, get_auth_invite, list_auth_invites, consume_auth_invite,
 )
 
 # Playlists
@@ -63,7 +65,10 @@ from crate.db.playlists import (
     remove_playlist_track, reorder_playlist,
     list_system_playlists, is_playlist_followed, follow_playlist,
     unfollow_playlist, get_playlist_followers_count, get_followed_system_playlists,
-    set_playlist_navidrome_projection,
+    get_playlist_members, get_playlist_member,
+    can_view_playlist, can_edit_playlist, is_playlist_owner,
+    add_playlist_member, remove_playlist_member,
+    create_playlist_invite, consume_playlist_invite,
 )
 
 # Tidal
@@ -90,6 +95,13 @@ from crate.db.health import (
     resolve_issue, resolve_issues_by_type, dismiss_issue,
     resolve_stale_issues, cleanup_old_resolved,
     get_artist_issues, get_artist_issue_count, get_all_artist_issue_counts,
+)
+
+from crate.db.jam import (
+    create_jam_room, get_jam_room, get_jam_room_members, get_jam_room_member,
+    is_jam_room_member, upsert_jam_room_member, touch_jam_room_member,
+    append_jam_room_event, list_jam_room_events, update_jam_room_state,
+    create_jam_room_invite, consume_jam_room_invite,
 )
 
 # New Releases
@@ -124,4 +136,12 @@ from crate.db.user_library import (
     like_track, unlike_track, get_liked_tracks, is_track_liked,
     record_play, record_play_event, recompute_user_listening_aggregates, get_play_history, get_play_stats,
     get_user_library_counts,
+)
+
+# Social
+from crate.db.social import (
+    follow_user, unfollow_user, get_relationship_state,
+    get_followers, get_following, search_users,
+    get_public_user_profile, get_public_user_profile_by_username,
+    get_public_playlists_for_user, get_me_social, get_affinity,
 )

@@ -31,7 +31,14 @@ def verify_password(password: str, password_hash: str) -> bool:
     return _bcrypt.checkpw(password.encode(), password_hash.encode())
 
 
-def create_jwt(user_id: int, email: str, role: str, username: str | None = None, name: str | None = None) -> str:
+def create_jwt(
+    user_id: int,
+    email: str,
+    role: str,
+    username: str | None = None,
+    name: str | None = None,
+    session_id: str | None = None,
+) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "user_id": user_id,
@@ -39,6 +46,7 @@ def create_jwt(user_id: int, email: str, role: str, username: str | None = None,
         "role": role,
         "username": username,
         "name": name,
+        "sid": session_id,
         "iat": now,
         "exp": now + timedelta(hours=JWT_EXPIRY_HOURS),
     }

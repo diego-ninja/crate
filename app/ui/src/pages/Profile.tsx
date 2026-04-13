@@ -10,6 +10,8 @@ import { User, Lock, Link2, Unlink } from "lucide-react";
 export function Profile() {
   const { user, refetch } = useAuth();
   const [name, setName] = useState(user?.name || "");
+  const [username, setUsername] = useState(user?.username || "");
+  const [bio, setBio] = useState(user?.bio || "");
   const [saving, setSaving] = useState(false);
 
   const [currentPw, setCurrentPw] = useState("");
@@ -17,19 +19,14 @@ export function Profile() {
   const [confirmPw, setConfirmPw] = useState("");
   const [changingPw, setChangingPw] = useState(false);
 
-  const [googleUser, setGoogleUser] = useState<{ linked: boolean } | null>(null);
-
-  // Load Google link status
-  useState(() => {
-    if (user?.avatar) setGoogleUser({ linked: true });
-    else setGoogleUser({ linked: false });
-  });
+  const connectedAccounts = user?.connected_accounts || [];
+  const linkedProviders = new Set(connectedAccounts.filter((item) => item.status !== "unlinked").map((item) => item.provider));
 
   async function handleSaveProfile(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api("/api/auth/profile", "PUT", { name });
+      await api("/api/auth/profile", "PUT", { name, username: username.trim() || null, bio });
       toast.success("Profile updated");
       await refetch();
     } catch (err) {
@@ -66,15 +63,18 @@ export function Profile() {
     }
   }
 
-  async function handleUnlinkGoogle() {
+  async function handleUnlinkProvider(provider: string) {
     try {
-      await api("/api/auth/unlink-google", "POST");
-      toast.success("Google account unlinked");
-      setGoogleUser({ linked: false });
+      await api(`/api/auth/oauth/${provider}/unlink`, "POST");
+      toast.success(`${provider} account unlinked`);
       await refetch();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Failed to unlink");
     }
+  }
+
+  function startProviderLink(provider: string) {
+    window.location.href = `/api/auth/${provider}?return_to=${encodeURIComponent(window.location.origin + "/profile")}`;
   }
 
   if (!user) return null;
@@ -104,6 +104,14 @@ export function Profile() {
           <div>
             <label className="text-sm text-muted-foreground mb-1 block">Display Name</label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Username</label>
+            <Input value={username} onChange={(e) => setUsername(e.target.value.replace(/\s+/g, "-"))} />
+          </div>
+          <div>
+            <label className="text-sm text-muted-foreground mb-1 block">Bio</label>
+            <Input value={bio} onChange={(e) => setBio(e.target.value)} />
           </div>
           <Button type="submit" size="sm" disabled={saving}>
             {saving ? "Saving..." : "Save"}
@@ -151,34 +159,31 @@ export function Profile() {
           <Link2 size={16} /> Connected Accounts
         </h2>
 
-        <div className="flex items-center justify-between py-3 border-b border-border">
-          <div>
-            <div className="text-sm font-medium">Google</div>
-            <div className="text-xs text-muted-foreground">
-              {googleUser?.linked ? "Linked" : "Not linked"}
+        {["google", "apple"].map((provider, index) => {
+          const linked = linkedProviders.has(provider);
+          return (
+            <div
+              key={provider}
+              className={`flex items-center justify-between py-3 ${index === 0 ? "border-b border-border" : ""}`}
+            >
+              <div>
+                <div className="text-sm font-medium">{provider.charAt(0).toUpperCase() + provider.slice(1)}</div>
+                <div className="text-xs text-muted-foreground">
+                  {linked ? "Linked" : "Not linked"}
+                </div>
+              </div>
+              {linked ? (
+                <Button size="sm" variant="outline" onClick={() => handleUnlinkProvider(provider)}>
+                  <Unlink size={14} className="mr-1" /> Unlink
+                </Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => startProviderLink(provider)}>
+                  <Link2 size={14} className="mr-1" /> Link
+                </Button>
+              )}
             </div>
-          </div>
-          {googleUser?.linked ? (
-            <Button size="sm" variant="outline" onClick={handleUnlinkGoogle}>
-              <Unlink size={14} className="mr-1" /> Unlink
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline"
-              onClick={() => { window.location.href = "/api/auth/google"; }}>
-              <Link2 size={14} className="mr-1" /> Link
-            </Button>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between py-3">
-          <div>
-            <div className="text-sm font-medium">Discogs</div>
-            <div className="text-xs text-muted-foreground">Not linked</div>
-          </div>
-          <Button size="sm" variant="outline" disabled>
-            Coming soon
-          </Button>
-        </div>
+          );
+        })}
       </div>
     </div>
   );

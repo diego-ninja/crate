@@ -34,7 +34,6 @@ function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
       ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
       : artistPhotoApiUrl({ artistId: track.artist_id, artistSlug: track.artist_slug, artistName: track.artist }),
     path: track.id.includes("/") ? track.id : undefined,
-    navidromeId: track.id.includes("/") ? undefined : track.id,
   }));
 }
 
@@ -48,7 +47,7 @@ export function ArtistTopTracks() {
   );
   const artistName = artist?.name || "";
   const { data: topTracks, loading } = useApi<ArtistTopTrack[]>(
-    artistId != null ? `/api/navidrome/artists/${artistId}/top-tracks?count=50` : null,
+    artistId != null ? `/api/artists/${artistId}/top-tracks?count=50` : null,
   );
 
   function handlePlayAll() {
@@ -108,7 +107,6 @@ export function ArtistTopTracks() {
               album_slug: track.album_slug,
               duration: track.duration,
               path: track.id.includes("/") ? track.id : undefined,
-              navidrome_id: track.id.includes("/") ? undefined : track.id,
             }}
             index={track.track || index + 1}
             showAlbum

@@ -80,6 +80,7 @@ export function usePlayEventTracker(
       credentials: "include",
       body: JSON.stringify({
         track_id: session.track.libraryTrackId ?? null,
+        track_storage_id: session.track.storageId ?? null,
         track_path: session.track.path || session.track.id,
         title: session.track.title,
         artist: session.track.artist,

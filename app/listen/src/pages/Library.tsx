@@ -36,6 +36,8 @@ interface Playlist {
   artwork_tracks?: PlaylistArtworkTrack[];
   track_count: number;
   is_smart: boolean;
+  visibility?: "public" | "private";
+  is_collaborative?: boolean;
   total_duration: number;
   created_at: string;
 }
@@ -53,7 +55,6 @@ interface PlaylistTrack {
   album_slug?: string;
   duration: number;
   position: number;
-  navidrome_id?: string;
 }
 
 interface PlaylistDetail extends Playlist {
@@ -173,6 +174,8 @@ function PlaylistsTab() {
     name: string;
     description: string;
     coverDataUrl: string | null;
+    visibility: "public" | "private";
+    isCollaborative: boolean;
     tracks: PlaylistComposerTrack[];
   }) {
     if (!editingPlaylist) return;
@@ -182,6 +185,8 @@ function PlaylistsTab() {
         name: payload.name,
         description: payload.description,
         cover_data_url: payload.coverDataUrl,
+        visibility: payload.visibility,
+        is_collaborative: payload.isCollaborative,
       });
 
       const originalByEntryId = new Map(
@@ -329,6 +334,8 @@ function PlaylistsTab() {
         initialName={editingPlaylist?.name}
         initialDescription={editingPlaylist?.description}
         initialCoverDataUrl={editingPlaylist?.cover_data_url}
+        initialVisibility={editingPlaylist?.visibility || "private"}
+        initialCollaborative={Boolean(editingPlaylist?.is_collaborative)}
         initialTracks={editingPlaylist ? editableTracks(editingPlaylist) : []}
         submitting={saving}
         onClose={() => setEditingPlaylist(null)}
@@ -380,7 +387,6 @@ function editableTracks(playlist: PlaylistDetail): PlaylistComposerTrack[] {
     duration: track.duration,
     path: track.track_path,
     libraryTrackId: track.track_id,
-    navidromeId: track.navidrome_id,
     playlistEntryId: track.id,
     playlistPosition: track.position,
   }));
@@ -481,7 +487,6 @@ function LikedTab() {
         ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
         : undefined,
       path: t.relative_path || t.path,
-      navidromeId: t.navidrome_id,
       libraryTrackId: t.track_id,
     }));
     playAll(playerTracks, 0);
@@ -533,7 +538,6 @@ function LikedTab() {
               album_slug: t.album_slug,
               duration: t.duration,
               path: t.relative_path || t.path,
-              navidrome_id: t.navidrome_id,
               library_track_id: t.track_id,
             }}
             index={i + 1}

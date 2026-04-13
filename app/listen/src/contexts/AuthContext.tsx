@@ -17,6 +17,10 @@ export interface AuthUser {
   name: string | null;
   role: string;
   avatar?: string | null;
+  username?: string | null;
+  bio?: string | null;
+  session_id?: string | null;
+  connected_accounts?: Array<{ provider: string; status: string }>;
 }
 
 interface AuthContextValue {
@@ -80,6 +84,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authRequestRef.current = null;
     };
   }, [refetch]);
+
+  useEffect(() => {
+    if (!user) return;
+    const timer = window.setInterval(() => {
+      void api("/api/auth/heartbeat", "POST", { app_id: "listen-web" }).catch(() => {});
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [user]);
 
   const logout = useCallback(async () => {
     try {

@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect } from "react";
-import { Navigate, Route, Routes } from "react-router";
+import { Navigate, Route, Routes, useLocation } from "react-router";
 import { Loader2 } from "lucide-react";
 import { connectCacheEvents } from "@/lib/cache";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -8,7 +8,6 @@ import { LikedTracksProvider } from "@/contexts/LikedTracksContext";
 import { PlayerProvider } from "@/contexts/PlayerContext";
 import { PlaylistComposerProvider } from "@/contexts/PlaylistComposerContext";
 import { SavedAlbumsProvider } from "@/contexts/SavedAlbumsContext";
-import { UserSyncProvider } from "@/contexts/UserSyncContext";
 import { Shell } from "@/components/layout/Shell";
 import { Home } from "@/pages/Home";
 import { Explore } from "@/pages/Explore";
@@ -33,6 +32,12 @@ const Playlist = React.lazy(() =>
 const CuratedPlaylist = React.lazy(() =>
   import("@/pages/CuratedPlaylist").then((m) => ({ default: m.CuratedPlaylist })),
 );
+const HomePlaylist = React.lazy(() =>
+  import("@/pages/HomePlaylist").then((m) => ({ default: m.HomePlaylist })),
+);
+const HomeSection = React.lazy(() =>
+  import("@/pages/HomeSection").then((m) => ({ default: m.HomeSection })),
+);
 const Stats = React.lazy(() =>
   import("@/pages/Stats").then((m) => ({ default: m.Stats })),
 );
@@ -41,6 +46,24 @@ const Shows = React.lazy(() =>
 );
 const SearchResults = React.lazy(() =>
   import("@/pages/SearchResults").then((m) => ({ default: m.SearchResults })),
+);
+const People = React.lazy(() =>
+  import("@/pages/People").then((m) => ({ default: m.People })),
+);
+const UserProfile = React.lazy(() =>
+  import("@/pages/UserProfile").then((m) => ({ default: m.UserProfile })),
+);
+const UserConnections = React.lazy(() =>
+  import("@/pages/UserConnections").then((m) => ({ default: m.UserConnections })),
+);
+const JamSession = React.lazy(() =>
+  import("@/pages/JamSession").then((m) => ({ default: m.JamSession })),
+);
+const JamInvite = React.lazy(() =>
+  import("@/pages/JamInvite").then((m) => ({ default: m.JamInvite })),
+);
+const PlaylistInvite = React.lazy(() =>
+  import("@/pages/PlaylistInvite").then((m) => ({ default: m.PlaylistInvite })),
 );
 
 class ErrorBoundary extends React.Component<
@@ -76,6 +99,7 @@ function Spinner() {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   // Connect to cache invalidation SSE when authenticated
   useEffect(() => {
@@ -91,7 +115,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     );
   }
   if (!user) {
-    return <Navigate to="/login" replace />;
+    const returnTo = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to={`/login?return_to=${encodeURIComponent(returnTo)}`} replace />;
   }
   return <>{children}</>;
 }
@@ -109,13 +134,11 @@ export function App() {
               <PlayerProvider>
                 <ArtistFollowsProvider>
                   <LikedTracksProvider>
-                    <UserSyncProvider>
-                      <SavedAlbumsProvider>
-                        <PlaylistComposerProvider>
-                          <Shell />
-                        </PlaylistComposerProvider>
-                      </SavedAlbumsProvider>
-                    </UserSyncProvider>
+                    <SavedAlbumsProvider>
+                      <PlaylistComposerProvider>
+                        <Shell />
+                      </PlaylistComposerProvider>
+                    </SavedAlbumsProvider>
                   </LikedTracksProvider>
                 </ArtistFollowsProvider>
               </PlayerProvider>
@@ -136,6 +159,70 @@ export function App() {
                     />
                     <Route path="upload" element={<Upload />} />
                     <Route path="settings" element={<Settings />} />
+                    <Route
+                      path="people"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <People />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="users/:username"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <UserProfile />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="users/:username/followers"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <UserConnections />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="users/:username/following"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <UserConnections />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="jam"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <JamSession />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="jam/rooms/:roomId"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <JamSession />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="jam/invite/:token"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <JamInvite />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="playlist/invite/:token"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <PlaylistInvite />
+                        </Suspense>
+                      }
+                    />
                     <Route path="shows" element={<Navigate to="/upcoming" replace />} />
                     <Route
                       path="upcoming"
@@ -174,6 +261,22 @@ export function App() {
                       element={
                         <Suspense fallback={<Spinner />}>
                           <Playlist />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="home/playlist/:playlistId"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <HomePlaylist />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="home/section/:sectionId"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <HomeSection />
                         </Suspense>
                       }
                     />

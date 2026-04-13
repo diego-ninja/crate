@@ -8,6 +8,8 @@ import { api } from "@/lib/api";
 interface OpenPlaylistComposerOptions {
   name?: string;
   description?: string;
+  visibility?: "public" | "private";
+  isCollaborative?: boolean;
   tracks?: PlaylistComposerTrack[];
 }
 
@@ -23,11 +25,15 @@ export function PlaylistComposerProvider({ children }: { children: ReactNode }) 
   const [submitting, setSubmitting] = useState(false);
   const [initialName, setInitialName] = useState("");
   const [initialDescription, setInitialDescription] = useState("");
+  const [initialVisibility, setInitialVisibility] = useState<"public" | "private">("private");
+  const [initialCollaborative, setInitialCollaborative] = useState(false);
   const [initialTracks, setInitialTracks] = useState<PlaylistComposerTrack[]>([]);
 
   const openCreatePlaylist = useCallback((options?: OpenPlaylistComposerOptions) => {
     setInitialName(options?.name ?? "");
     setInitialDescription(options?.description ?? "");
+    setInitialVisibility(options?.visibility ?? "private");
+    setInitialCollaborative(options?.isCollaborative ?? false);
     setInitialTracks(options?.tracks ?? []);
     setOpen(true);
   }, []);
@@ -36,6 +42,8 @@ export function PlaylistComposerProvider({ children }: { children: ReactNode }) 
     name: string;
     description: string;
     coverDataUrl: string | null;
+    visibility: "public" | "private";
+    isCollaborative: boolean;
     tracks: PlaylistComposerTrack[];
   }) => {
     setSubmitting(true);
@@ -44,11 +52,14 @@ export function PlaylistComposerProvider({ children }: { children: ReactNode }) 
         name: payload.name,
         description: payload.description,
         cover_data_url: payload.coverDataUrl,
+        visibility: payload.visibility,
+        is_collaborative: payload.isCollaborative,
       });
 
       const tracksPayload = payload.tracks
-        .filter((track) => track.path)
+        .filter((track) => track.path || track.libraryTrackId != null)
         .map((track) => ({
+          track_id: track.libraryTrackId,
           path: track.path,
           title: track.title,
           artist: track.artist,
@@ -86,6 +97,8 @@ export function PlaylistComposerProvider({ children }: { children: ReactNode }) 
         open={open}
         initialName={initialName}
         initialDescription={initialDescription}
+        initialVisibility={initialVisibility}
+        initialCollaborative={initialCollaborative}
         initialTracks={initialTracks}
         submitting={submitting}
         onClose={handleClose}

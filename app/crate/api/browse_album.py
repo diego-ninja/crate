@@ -9,6 +9,7 @@ from crate.api.auth import _require_auth
 from crate.api.browse_shared import display_name, find_album_dir, find_album_row, fs_album_detail, has_library_data
 from crate.audio import get_audio_files
 from crate.db import get_db_ctx, get_library_album_by_id, get_library_artist, get_library_tracks
+from crate.storage_layout import resolve_album_dir
 
 router = APIRouter()
 
@@ -144,6 +145,7 @@ def api_album(request: Request, artist: str, album: str):
         track_list.append(
             {
                 "id": track["id"],
+                "storage_id": track.get("storage_id"),
                 "filename": track["filename"],
                 "format": track.get("format", ""),
                 "size_mb": round(track["size"] / (1024**2), 1) if track.get("size") else 0,
@@ -188,6 +190,11 @@ def api_album(request: Request, artist: str, album: str):
     if album_genres:
         album_tags["genre"] = ", ".join(album_genres)
 
+    # Prefer DB MBID (set by matcher) over tag MBID
+    db_mbid = album_data.get("musicbrainz_albumid")
+    if db_mbid and db_mbid.strip():
+        album_tags["musicbrainz_albumid"] = db_mbid
+
     return {
         "id": album_data["id"],
         "slug": album_data.get("slug"),
@@ -204,6 +211,7 @@ def api_album(request: Request, artist: str, album: str):
         "cover_file": cover_file,
         "tracks": track_list,
         "album_tags": album_tags,
+        "musicbrainz_albumid": db_mbid,
         "genres": album_genres,
     }
 
@@ -310,13 +318,47 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None):
     return _placeholder_cover(album or artist)
 
 
+@router.post("/api/albums/{album_id}/enrich")
+def api_enrich_album(request: Request, album_id: int):
+    """Enrich an album: MBID lookup, cover fetch, audio analysis, bliss."""
+    _require_auth(request)
+    album = get_library_album_by_id(album_id)
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    from crate.db import create_task
+    task_id = create_task("process_new_content", {
+        "artist": album["artist"],
+        "album": album["name"],
+        "force": True,
+    })
+    return {"task_id": task_id}
+
+
+@router.post("/api/albums/{album_id}/fetch-cover")
+def api_fetch_cover(request: Request, album_id: int):
+    """Search and download a cover for an album from all available sources."""
+    _require_auth(request)
+    album = get_library_album_by_id(album_id)
+    if not album:
+        return JSONResponse({"error": "Album not found"}, status_code=404)
+    from crate.db import create_task
+    task_id = create_task("fetch_album_cover", {
+        "album_id": album_id,
+        "artist": album["artist"],
+        "album": album["name"],
+        "path": album.get("path", ""),
+        "mbid": album.get("musicbrainz_albumid", ""),
+    })
+    return {"task_id": task_id}
+
+
 @router.get("/api/albums/{album_id}/cover")
 def api_cover_by_id(album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
         return _placeholder_cover("?")
-    stored_path = album.get("path")
-    album_dir = Path(stored_path) if stored_path else None
+    artist = get_library_artist(album["artist"])
+    album_dir = resolve_album_dir(library_path(), album, artist=artist)
     return api_cover(album["artist"], album["name"], album_dir=album_dir)
 
 

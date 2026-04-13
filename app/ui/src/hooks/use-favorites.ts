@@ -30,14 +30,6 @@ export function useFavorites() {
         notifyAll();
       })
       .catch(() => {});
-    // Also load from Navidrome if available
-    api<{ songs?: { id: string }[]; albums?: { id: string }[] }>("/api/navidrome/favorites")
-      .then((data) => {
-        for (const s of data.songs || []) favoriteIds.add(s.id);
-        for (const a of data.albums || []) favoriteIds.add(a.id);
-        notifyAll();
-      })
-      .catch(() => {});
   }, []);
 
   const isFavorite = useCallback((id: string) => favoriteIds.has(id), []);

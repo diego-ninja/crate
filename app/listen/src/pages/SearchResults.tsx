@@ -11,7 +11,7 @@ import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 interface SearchData {
   artists: { id?: number; slug?: string; name: string }[];
   albums: { artist: string; artist_id?: number; artist_slug?: string; name: string; id?: number; slug?: string; year?: string }[];
-  tracks: { id?: number; slug?: string; title: string; artist: string; artist_id?: number; artist_slug?: string; album: string; album_id?: number; album_slug?: string; path?: string; navidrome_id?: string; duration?: number }[];
+  tracks: { id?: number; storage_id?: string; slug?: string; title: string; artist: string; artist_id?: number; artist_slug?: string; album: string; album_id?: number; album_slug?: string; path?: string; duration?: number }[];
 }
 
 export function SearchResults() {
@@ -37,7 +37,8 @@ export function SearchResults() {
   if (!data) return null;
 
   const trackToPlayer = (t: SearchData["tracks"][0]): Track => ({
-    id: t.path || String(t.id || `${t.artist}-${t.title}`),
+    id: t.storage_id || t.path || String(t.id || `${t.artist}-${t.title}`),
+    storageId: t.storage_id,
     title: t.title,
     artist: t.artist,
     artistId: t.artist_id,
@@ -46,7 +47,6 @@ export function SearchResults() {
     albumId: t.album_id,
     albumSlug: t.album_slug,
     path: t.path,
-    navidromeId: t.navidrome_id,
     libraryTrackId: typeof t.id === "number" ? t.id : undefined,
     albumCover: t.album ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }) : undefined,
   });
@@ -101,9 +101,9 @@ export function SearchResults() {
                   album: t.album,
                   album_id: t.album_id,
                   album_slug: t.album_slug,
+                  storage_id: t.storage_id,
                   duration: t.duration,
                   path: t.path,
-                  navidrome_id: t.navidrome_id,
                   library_track_id: typeof t.id === "number" ? t.id : undefined,
                 }}
                 index={i}

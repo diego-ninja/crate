@@ -17,6 +17,8 @@ import hashlib
 import logging
 from pathlib import Path
 
+from crate.storage_layout import resolve_artist_dir
+
 log = logging.getLogger(__name__)
 
 
@@ -66,9 +68,8 @@ def should_process_artist(artist_name: str, library_path: Path | str | None = No
     lib = Path(library_path)
 
     artist_row = get_library_artist(artist_name)
-    folder = (artist_row.get("folder_name") if artist_row else None) or artist_name
-    artist_dir = lib / folder
-    if not artist_dir.is_dir():
+    artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist_name, existing_only=True)
+    if not artist_dir or not artist_dir.is_dir():
         return False
 
     old_hash = artist_row.get("content_hash") if artist_row else None
@@ -102,4 +103,7 @@ def queue_process_new_content_if_needed(
         log.debug("Skip queuing process_new_content for %s — content unchanged", artist_name)
         return None
 
-    return create_task_dedup("process_new_content", {"artist": artist_name})
+    params: dict = {"artist": artist_name}
+    if force:
+        params["force"] = True
+    return create_task_dedup("process_new_content", params)

@@ -55,7 +55,7 @@ def create_app() -> FastAPI:
     app.add_middleware(CacheInvalidationMiddleware)
 
     from crate.api.setup import router as setup_router
-    from crate.api.auth import router as auth_router
+    from crate.api.auth import router as auth_router, admin_router as admin_auth_router
     from crate.api.browse import router as browse_router
     from crate.api.tags import router as tags_router
     from crate.api.scanner import router as scanner_router
@@ -68,9 +68,7 @@ def create_app() -> FastAPI:
     from crate.api.analytics import router as analytics_router
     from crate.api.events import router as events_router
     from crate.api.tasks import router as tasks_router
-    from crate.api.navidrome import router as navidrome_router
     from crate.api.stack import router as stack_router
-    from crate.api.audiomuse import router as audiomuse_router
     from crate.api.enrichment import router as enrichment_router
     from crate.api.management import router as management_router
     from crate.api.settings import router as settings_router
@@ -84,11 +82,17 @@ def create_app() -> FastAPI:
     from crate.api.radio import router as radio_router
     from crate.api.lyrics import router as lyrics_router
     from crate.api.cache_events import router as cache_events_router
+    from crate.api.social import router as social_router
+    from crate.api.jam import router as jam_router
+    from crate.api.subsonic import router as subsonic_router
 
-    # Auth + management + settings + enrichment + audiomuse BEFORE browse (browse has {name:path} catch-all)
+    # Auth + management + settings + enrichment BEFORE browse (browse has {name:path} catch-all)
     app.include_router(setup_router)
     app.include_router(auth_router)
+    app.include_router(admin_auth_router)
     app.include_router(me_router)
+    app.include_router(social_router)
+    app.include_router(jam_router)
     app.include_router(radio_router)
     app.include_router(lyrics_router)
     app.include_router(management_router)
@@ -100,13 +104,12 @@ def create_app() -> FastAPI:
     app.include_router(tidal_router)
     app.include_router(acquisition_router)
     app.include_router(enrichment_router)
-    app.include_router(audiomuse_router)
-    app.include_router(navidrome_router)
     app.include_router(analytics_router)
     app.include_router(artwork_router)
     app.include_router(scanner_router)
     app.include_router(matcher_router)
     app.include_router(duplicates_router)
+    app.include_router(subsonic_router)
     app.include_router(browse_router)
     app.include_router(tags_router)
     app.include_router(organizer_router)

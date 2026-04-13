@@ -1,16 +1,19 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2, Share2, Radio } from "lucide-react";
+import { Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2, Share2, Radio, Users, Copy, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
+import { PlaylistTrackFilterBar, filterPlaylistTracks } from "@/components/playlists/PlaylistTrackFilterBar";
 import {
   PlaylistCreateModal,
   type PlaylistComposerTrack,
 } from "@/components/playlists/PlaylistCreateModal";
 import { AppModal, ModalBody, ModalFooter, ModalHeader, ModalCloseButton } from "@/components/ui/AppModal";
+import { QrCodeImage } from "@/components/ui/QrCodeImage";
+import { useAuth } from "@/contexts/AuthContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { fetchPlaylistRadio } from "@/lib/radio";
@@ -21,6 +24,7 @@ interface PlaylistTrack {
   id: number;
   playlist_id: number;
   track_id?: number;
+  track_storage_id?: string;
   track_path: string;
   title: string;
   artist: string;
@@ -32,7 +36,6 @@ interface PlaylistTrack {
   duration: number;
   position: number;
   added_at: string;
-  navidrome_id?: string;
 }
 
 interface PlaylistData {
@@ -40,6 +43,8 @@ interface PlaylistData {
   name: string;
   description?: string;
   cover_data_url?: string | null;
+  visibility?: "public" | "private";
+  is_collaborative?: boolean;
   user_id: number;
   is_smart: boolean;
   smart_rules?: unknown;
@@ -48,14 +53,33 @@ interface PlaylistData {
   created_at: string;
   updated_at: string;
   artwork_tracks?: PlaylistArtworkTrack[];
+  members?: PlaylistMember[];
   tracks: PlaylistTrack[];
 }
 
+interface PlaylistMember {
+  playlist_id: number;
+  user_id: number;
+  role: "owner" | "collab";
+  invited_by?: number | null;
+  created_at: string;
+  username?: string | null;
+  display_name?: string | null;
+  avatar?: string | null;
+}
+
+interface PlaylistInvite {
+  token: string;
+  join_url: string;
+  qr_value: string;
+  expires_at?: string | null;
+}
 
 
 
 export function Playlist() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { id } = useParams<{ id: string }>();
   const { data, loading, refetch } = useApi<PlaylistData>(
     id ? `/api/playlists/${id}` : null,
@@ -65,14 +89,21 @@ export function Playlist() {
   const { openCreatePlaylist } = usePlaylistComposer();
   const [editorOpen, setEditorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [creatingInvite, setCreatingInvite] = useState(false);
+  const [inviteData, setInviteData] = useState<PlaylistInvite | null>(null);
+  const [removingMemberId, setRemovingMemberId] = useState<number | null>(null);
+  const [filterQuery, setFilterQuery] = useState("");
+  const deferredFilterQuery = useDeferredValue(filterQuery);
 
   const playerTracks = useMemo(() => {
     if (!data?.tracks?.length) return [];
     return data.tracks.map(
       (t): Track => ({
-        id: t.track_path,
+        id: t.track_storage_id || t.track_path,
+        storageId: t.track_storage_id,
         title: t.title || "Unknown",
         artist: t.artist || "",
         artistId: t.artist_id,
@@ -85,11 +116,14 @@ export function Playlist() {
             ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
             : undefined,
         path: t.track_path,
-        navidromeId: t.navidrome_id,
         libraryTrackId: t.track_id,
       }),
     );
   }, [data]);
+
+  const members = data?.members || [];
+  const isOwner = Boolean(user && members.some((member) => member.user_id === user.id && member.role === "owner"));
+  const inviteLink = inviteData ? `${window.location.origin}${inviteData.join_url}` : null;
 
   const editableTracks = useMemo<PlaylistComposerTrack[]>(() => {
     if (!data?.tracks?.length) return [];
@@ -100,11 +134,15 @@ export function Playlist() {
       duration: track.duration,
       path: track.track_path,
       libraryTrackId: track.track_id,
-      navidromeId: track.navidrome_id,
       playlistEntryId: track.id,
       playlistPosition: track.position,
     }));
   }, [data]);
+
+  const filteredTracks = useMemo(
+    () => filterPlaylistTracks(data?.tracks || [], deferredFilterQuery),
+    [data?.tracks, deferredFilterQuery],
+  );
 
   function handlePlay() {
     if (playerTracks.length === 0) return;
@@ -158,12 +196,13 @@ export function Playlist() {
 
   async function handleAddTrackToPlaylist(
     playlistId: number,
-    track: { title: string; artist: string; album?: string; duration?: number; path?: string },
+    track: { title: string; artist: string; album?: string; duration?: number; path?: string; libraryTrackId?: number },
   ) {
-    if (!track.path) return;
+    if (!track.path && track.libraryTrackId == null) return;
     try {
       await api(`/api/playlists/${playlistId}/tracks`, "POST", {
         tracks: [{
+          track_id: track.libraryTrackId,
           path: track.path,
           title: track.title,
           artist: track.artist,
@@ -184,7 +223,6 @@ export function Playlist() {
     duration?: number;
     path?: string;
     library_track_id?: number;
-    navidrome_id?: string;
   }) {
     openCreatePlaylist({
       tracks: track.path ? [{
@@ -194,7 +232,6 @@ export function Playlist() {
         duration: track.duration,
         path: track.path,
         libraryTrackId: track.library_track_id,
-        navidromeId: track.navidrome_id,
       }] : [],
     });
   }
@@ -214,6 +251,8 @@ export function Playlist() {
     name: string;
     description: string;
     coverDataUrl: string | null;
+    visibility: "public" | "private";
+    isCollaborative: boolean;
     tracks: PlaylistComposerTrack[];
   }) {
     if (!id || !data) return;
@@ -223,6 +262,8 @@ export function Playlist() {
         name: payload.name,
         description: payload.description,
         cover_data_url: payload.coverDataUrl,
+        visibility: payload.visibility,
+        is_collaborative: payload.isCollaborative,
       });
 
       const originalByEntryId = new Map(
@@ -285,6 +326,44 @@ export function Playlist() {
     }
   }
 
+  async function handleCreateCollaboratorInvite() {
+    if (!data) return;
+    setCreatingInvite(true);
+    try {
+      const invite = await api<PlaylistInvite>(`/api/playlists/${data.id}/invites`, "POST", {});
+      setInviteData(invite);
+      toast.success("Collaborator invite created");
+    } catch {
+      toast.error("Failed to create playlist invite");
+    } finally {
+      setCreatingInvite(false);
+    }
+  }
+
+  async function handleCopyInviteLink() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      toast.success("Invite link copied");
+    } catch {
+      toast.error("Failed to copy invite link");
+    }
+  }
+
+  async function handleRemoveMember(memberUserId: number) {
+    if (!data) return;
+    setRemovingMemberId(memberUserId);
+    try {
+      await api(`/api/playlists/${data.id}/members/${memberUserId}`, "DELETE");
+      toast.success("Collaborator removed");
+      refetch();
+    } catch {
+      toast.error("Failed to remove collaborator");
+    } finally {
+      setRemovingMemberId(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -320,6 +399,14 @@ export function Playlist() {
                   Smart
                 </span>
               )}
+              <span className="inline-flex items-center rounded-md border border-white/10 px-1.5 py-0 text-[10px] font-medium text-white/60">
+                {data.visibility === "public" ? "Public" : "Private"}
+              </span>
+              {data.is_collaborative ? (
+                <span className="inline-flex items-center rounded-md border border-cyan-400/20 bg-cyan-400/10 px-1.5 py-0 text-[10px] font-medium text-cyan-300">
+                  Collaborative
+                </span>
+              ) : null}
             </div>
             {data.description && (
               <p className="text-sm text-muted-foreground mb-2">{data.description}</p>
@@ -357,6 +444,15 @@ export function Playlist() {
           <Radio size={16} />
           Playlist Radio
         </button>
+        {data.is_collaborative ? (
+          <button
+            onClick={() => setMembersOpen(true)}
+            className="flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
+          >
+            <Users size={16} />
+            Collaborators
+          </button>
+        ) : null}
         <button
           onClick={() => setEditorOpen(true)}
           className="flex items-center gap-2 rounded-lg border border-white/20 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
@@ -390,6 +486,13 @@ export function Playlist() {
         </div>
       </div>
 
+      <PlaylistTrackFilterBar
+        query={filterQuery}
+        onQueryChange={setFilterQuery}
+        totalCount={data.tracks.length}
+        filteredCount={filteredTracks.length}
+      />
+
       {/* Track list */}
       {data.tracks.length === 0 ? (
         <div className="flex items-center justify-center py-16">
@@ -397,13 +500,20 @@ export function Playlist() {
             This playlist has no tracks yet
           </p>
         </div>
+      ) : filteredTracks.length === 0 ? (
+        <div className="flex items-center justify-center py-16">
+          <p className="text-sm text-muted-foreground">
+            No tracks match this filter
+          </p>
+        </div>
       ) : (
         <div>
-          {data.tracks.map((t, i) => (
+          {filteredTracks.map((t, i) => (
             <TrackRow
-              key={`${t.track_path}-${t.position}`}
+              key={t.id ?? `${t.track_path}-${t.position}`}
               track={{
-                id: t.track_id,
+                id: t.track_storage_id ?? t.track_id,
+                storage_id: t.track_storage_id,
                 title: t.title,
                 artist: t.artist,
                 artist_id: t.artist_id,
@@ -413,7 +523,6 @@ export function Playlist() {
                 album_slug: t.album_slug,
                 duration: t.duration,
                 path: t.track_path,
-                navidrome_id: t.navidrome_id,
                 library_track_id: t.track_id,
               }}
               index={i + 1}
@@ -435,6 +544,8 @@ export function Playlist() {
         initialName={data.name}
         initialDescription={data.description}
         initialCoverDataUrl={data.cover_data_url}
+        initialVisibility={data.visibility || "private"}
+        initialCollaborative={Boolean(data.is_collaborative)}
         initialTracks={editableTracks}
         submitting={saving}
         onClose={() => setEditorOpen(false)}
@@ -473,6 +584,103 @@ export function Playlist() {
             Delete playlist
           </button>
         </ModalFooter>
+      </AppModal>
+
+      <AppModal open={membersOpen} onClose={() => setMembersOpen(false)} maxWidthClassName="sm:max-w-lg">
+        <ModalHeader className="flex items-center justify-between gap-4 px-5 py-4">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">Collaborators</h2>
+            <p className="text-xs text-muted-foreground">
+              {data.is_collaborative
+                ? "Share a private invite link and manage the people who can edit this playlist."
+                : "This playlist is not collaborative yet."}
+            </p>
+          </div>
+          <ModalCloseButton onClick={() => setMembersOpen(false)} />
+        </ModalHeader>
+        <ModalBody className="space-y-5 px-5 py-5">
+          {data.is_collaborative && isOwner ? (
+            <div className="rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-foreground">Invite a collaborator</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Owners can create share links and QR codes for private beta-style collaboration.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateCollaboratorInvite}
+                  disabled={creatingInvite}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-60"
+                >
+                  {creatingInvite ? <Loader2 size={15} className="animate-spin" /> : <Users size={15} />}
+                  Create invite
+                </button>
+              </div>
+              {inviteLink ? (
+                <div className="mt-4 grid gap-4 sm:grid-cols-[0.9fr_1.1fr]">
+                  <div className="flex justify-center">
+                    <QrCodeImage
+                      value={inviteLink}
+                      size={160}
+                      className="rounded-2xl border border-white/10 bg-[#0f1116] p-3"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/70 break-all">
+                      {inviteLink}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCopyInviteLink}
+                      className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-medium text-foreground hover:bg-white/10 transition-colors"
+                    >
+                      <Copy size={15} />
+                      Copy invite link
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="space-y-3">
+            {members.map((member) => {
+              const label = member.display_name || member.username || `User ${member.user_id}`;
+              const isCurrentUser = user?.id === member.user_id;
+              return (
+                <div
+                  key={`${member.playlist_id}-${member.user_id}`}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-foreground">{label}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {member.username ? `@${member.username}` : "Profile"} · {member.role}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/55">
+                      {member.role === "owner" ? "Owner" : "Collab"}
+                    </div>
+                    {isOwner && member.role !== "owner" && !isCurrentUser ? (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMember(member.user_id)}
+                        disabled={removingMemberId === member.user_id}
+                        className="inline-flex items-center gap-1 rounded-full border border-red-500/20 px-2.5 py-1 text-[11px] text-red-300 hover:bg-red-500/10 transition-colors disabled:opacity-60"
+                      >
+                        {removingMemberId === member.user_id ? <Loader2 size={12} className="animate-spin" /> : <UserMinus size={12} />}
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </ModalBody>
       </AppModal>
     </div>
   );

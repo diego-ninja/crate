@@ -17,7 +17,7 @@ from crate.db import (
     set_cache,
     update_task,
 )
-from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
+from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled, start_scan
 
 log = logging.getLogger(__name__)
 
@@ -62,7 +62,6 @@ def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
     from crate.db import get_open_issues
-    from crate.navidrome import start_scan
     from crate.repair import LibraryRepair
 
     dry_run = params.get("dry_run", True)
@@ -174,7 +173,6 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     from crate.health_check import LibraryHealthCheck
-    from crate.navidrome import start_scan
     from crate.repair import LibraryRepair
     from crate.scheduler import mark_run
     from crate.db import get_library_artists
@@ -271,7 +269,6 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_delete_artist(task_id: str, params: dict, config: dict) -> dict:
     from crate.db import delete_artist as db_delete_artist, get_library_artist, log_audit
-    from crate.navidrome import start_scan
 
     name = params.get("name", "")
     mode = params.get("mode", "db_only")
@@ -307,7 +304,6 @@ def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
         log_audit,
         upsert_artist,
     )
-    from crate.navidrome import start_scan
 
     artist_name = params.get("artist", "")
     album_name = params.get("album", "")
@@ -368,7 +364,6 @@ def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_move_artist(task_id: str, params: dict, config: dict) -> dict:
     from crate.db import get_library_artist, log_audit
-    from crate.navidrome import start_scan
 
     name = params.get("name", "")
     new_name = params.get("new_name", "")
@@ -586,15 +581,23 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
 
             with get_db_ctx() as cur:
                 cur.execute(
-                    "UPDATE library_albums SET musicbrainz_albumid = %s WHERE path = %s",
+                    "UPDATE library_albums SET musicbrainz_albumid = %s WHERE path = %s RETURNING id",
                     (mbid, album_db_path),
                 )
+                album_row = cur.fetchone()
                 if release_group_id:
                     cur.execute(
                         "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE path = %s",
                         (release_group_id, album_db_path),
                     )
-                updated = cur.rowcount
+                updated = 1 if album_row else 0
+                # Propagate MBID to tracks
+                if album_row:
+                    cur.execute(
+                        "UPDATE library_tracks SET musicbrainz_albumid = %s "
+                        "WHERE album_id = %s AND (musicbrainz_albumid IS NULL OR musicbrainz_albumid = '')",
+                        (mbid, album_row["id"]),
+                    )
 
             if updated:
                 emit_task_event(task_id, "info", {"message": f"Synced MBID {mbid[:8]}... to DB"})
