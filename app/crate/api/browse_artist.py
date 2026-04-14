@@ -1057,6 +1057,10 @@ def api_artist(request: Request, name: str):
             }
         )
 
+    from crate.storage_layout import looks_like_storage_id
+    folder_name = artist.get("folder_name") or ""
+    is_v2 = bool(folder_name and looks_like_storage_id(folder_name))
+
     return {
         "id": artist.get("id"),
         "slug": artist.get("slug"),
@@ -1067,4 +1071,5 @@ def api_artist(request: Request, name: str):
         "primary_format": artist.get("primary_format"),
         "genres": top_genres,
         "issue_count": get_artist_issue_count(canonical),
+        "is_v2": is_v2,
     }

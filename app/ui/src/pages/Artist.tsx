@@ -53,6 +53,7 @@ export function Artist() {
   // Data fetching hooks (replace manual useEffect + useState)
   const topTracks = useTopTracks(data?.id);
   const [enriching, setEnriching] = useState(false);
+  const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [showMissing, setShowMissing] = useState(true);
   const [upcomingShows, setUpcomingShows] = useState<ArtistShowEvent[]>([]);
@@ -271,6 +272,33 @@ export function Artist() {
     }
   }
 
+  async function migrateToV2() {
+    if (!data) return;
+    setMigrating(true);
+    try {
+      const { task_id } = await api<{ task_id: string }>("/api/manage/migrate-storage-v2", "POST", { artist: data.name });
+      toast.success(`V2 migration started for ${data.name}`);
+      const poll = setInterval(async () => {
+        try {
+          const task = await api<{ status: string }>(`/api/tasks/${task_id}`);
+          if (task.status === "completed") {
+            clearInterval(poll);
+            setMigrating(false);
+            toast.success(`${data.name} migrated to V2`);
+            window.location.reload();
+          } else if (task.status === "failed") {
+            clearInterval(poll);
+            setMigrating(false);
+            toast.error("V2 migration failed");
+          }
+        } catch { /* polling */ }
+      }, 3000);
+    } catch {
+      setMigrating(false);
+      toast.error("Failed to start V2 migration");
+    }
+  }
+
   async function downloadMissingDiscography() {
     setDownloadingDiscog(true);
     try {
@@ -306,6 +334,9 @@ export function Artist() {
         tags={allTags}
         topTracksAvailable={topTracks.length > 0}
         enriching={enriching}
+        isV2={data?.is_v2}
+        migrating={migrating}
+        onMigrateV2={() => void migrateToV2()}
         isAdmin={isAdmin}
         photoLoaded={photoLoaded}
         photoError={photoError}

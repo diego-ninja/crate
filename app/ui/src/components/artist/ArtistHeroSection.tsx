@@ -15,6 +15,8 @@ import {
   Radio,
   AudioWaveform,
   RefreshCw,
+  FolderSync,
+  Loader2,
   Trash2,
   Users,
   Wrench,
@@ -38,6 +40,9 @@ interface ArtistHeroSectionProps {
   totalTracks: number;
   totalSizeMb: number;
   issueCount?: number;
+  isV2?: boolean;
+  migrating?: boolean;
+  onMigrateV2?: () => void;
   musicbrainz?: ArtistHeroMusicBrainz;
   lastfmListeners?: number;
   upcomingShow?: ArtistShowEvent;
@@ -73,6 +78,9 @@ export function ArtistHeroSection({
   totalTracks,
   totalSizeMb,
   issueCount,
+  isV2,
+  migrating,
+  onMigrateV2,
   musicbrainz,
   lastfmListeners,
   upcomingShow,
@@ -286,6 +294,20 @@ export function ArtistHeroSection({
                   onClick={onRepair}
                 >
                   <Wrench size={14} className="mr-1" /> Repair ({issueCount})
+                </Button>
+              )}
+              {isAdmin && isV2 === false && onMigrateV2 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-cyan-500/30 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                  disabled={migrating}
+                  onClick={onMigrateV2}
+                >
+                  {migrating
+                    ? <Loader2 size={14} className="mr-1 animate-spin" />
+                    : <FolderSync size={14} className="mr-1" />}
+                  {migrating ? "Migrating..." : "Migrate to V2"}
                 </Button>
               )}
               {isAdmin && (

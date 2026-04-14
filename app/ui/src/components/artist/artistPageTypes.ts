@@ -8,6 +8,7 @@ export interface ArtistData {
   total_size_mb?: number;
   primary_format?: string;
   issue_count?: number;
+  is_v2?: boolean;
 }
 
 export interface ArtistAlbumSummary {
