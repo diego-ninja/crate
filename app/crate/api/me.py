@@ -532,7 +532,12 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
         device_type=body.device_type,
         app_platform=body.app_platform,
     )
-    create_task_dedup("refresh_user_listening_stats", {"user_id": user["id"]})
+    # Debounce stats refresh — at most once per 10 minutes per user
+    from crate.db import get_cache, set_cache
+    debounce_key = f"stats_refresh_debounce:{user['id']}"
+    if not get_cache(debounce_key, max_age_seconds=600):
+        create_task_dedup("refresh_user_listening_stats", {"user_id": user["id"]})
+        set_cache(debounce_key, True, ttl=600)
     return {"ok": True, "id": event_id}
 
 

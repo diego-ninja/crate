@@ -10,12 +10,12 @@ log = logging.getLogger(__name__)
 
 # Default schedule: {task_type: interval_seconds}
 DEFAULT_SCHEDULES = {
-    "enrich_artists": 86400,      # 24h — full enrichment of all artists
-    "library_pipeline": 1800,     # 30min — health check + repair + sync
-    "compute_analytics": 3600,    # 1h — recompute analytics from DB
-    "check_new_releases": 21600,  # 6h — check Tidal for new releases
+    "enrich_artists": 86400,       # 24h — full enrichment of all artists
+    "library_pipeline": 21600,     # 6h — health check + repair + sync (watcher handles real-time)
+    "compute_analytics": 14400,    # 4h — recompute analytics from DB
+    "check_new_releases": 43200,   # 12h — check MusicBrainz for new releases
     "cleanup_incomplete_downloads": 172800,  # 48h — remove incomplete soulseek downloads
-    "sync_shows": 86400,  # 24h — sync shows from Ticketmaster
+    "sync_shows": 86400,           # 24h — sync shows from Ticketmaster
 }
 
 
