@@ -63,6 +63,12 @@ interface SettingsData {
     username: string;
     shares_music: boolean;
   };
+  telegram?: {
+    enabled: boolean;
+    bot_token: string;
+    chat_id: string;
+    has_token: boolean;
+  };
   about: {
     version: string;
     git_commit: string;
@@ -178,6 +184,7 @@ export function Settings() {
           <TabsTrigger value="schedules">Schedules</TabsTrigger>
           <TabsTrigger value="enrichment">Enrichment</TabsTrigger>
           <TabsTrigger value="processing">Processing</TabsTrigger>
+          <TabsTrigger value="telegram">Telegram</TabsTrigger>
           <TabsTrigger value="cache">Cache</TabsTrigger>
           <TabsTrigger value="audit">Audit Log</TabsTrigger>
           <TabsTrigger value="about">About</TabsTrigger>
@@ -194,6 +201,9 @@ export function Settings() {
         </TabsContent>
         <TabsContent value="processing">
           <ProcessingTab settings={settings} />
+        </TabsContent>
+        <TabsContent value="telegram">
+          <TelegramTab telegram={settings.telegram} refetch={refetch} />
         </TabsContent>
         <TabsContent value="cache">
           <CacheTab dbStats={settings.db_stats} />
@@ -1024,6 +1034,105 @@ function AboutTab({ about }: { about: SettingsData["about"] }) {
             <InfoRow label="Tracks" value={formatNumber(about.tracks)} />
             <InfoRow label="Library Size" value={`${about.total_size_gb} GB`} />
           </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+
+// ── Telegram Tab ───────────────────────────────────────────────────
+
+function TelegramTab({ telegram, refetch }: { telegram?: SettingsData["telegram"]; refetch: () => void }) {
+  const [enabled, setEnabled] = useState(telegram?.enabled ?? false);
+  const [token, setToken] = useState("");
+  const [chatId, setChatId] = useState(telegram?.chat_id ?? "");
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    setEnabled(telegram?.enabled ?? false);
+    setChatId(telegram?.chat_id ?? "");
+  }, [telegram]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = { enabled, chat_id: chatId };
+      if (token) body.bot_token = token;
+      await api("/api/settings/telegram", "PUT", body);
+      toast.success("Telegram settings saved");
+      setToken("");
+      refetch();
+    } catch { toast.error("Failed to save"); }
+    finally { setSaving(false); }
+  }
+
+  async function test() {
+    setTesting(true);
+    try {
+      await api("/api/settings/telegram/test", "POST");
+      toast.success("Test message sent");
+    } catch { toast.error("Test failed — check token and chat ID"); }
+    finally { setTesting(false); }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wifi size={18} /> Telegram Bot
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium min-w-[100px]">Enabled</label>
+            <button
+              onClick={() => setEnabled(!enabled)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? "bg-primary" : "bg-secondary"}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+            <Badge variant={enabled ? "default" : "outline"}>{enabled ? "Active" : "Disabled"}</Badge>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium min-w-[100px]">Bot Token</label>
+            <Input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder={telegram?.has_token ? `Current: ${telegram.bot_token}` : "Paste token from @BotFather"}
+              className="max-w-md"
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium min-w-[100px]">Chat ID</label>
+            <Input
+              value={chatId}
+              onChange={(e) => setChatId(e.target.value)}
+              placeholder="Auto-filled when you send /start to the bot"
+              className="max-w-md"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 pt-2">
+            <Button onClick={save} disabled={saving} size="sm">
+              {saving ? <Loader2 size={14} className="animate-spin mr-1" /> : <Save size={14} className="mr-1" />}
+              Save
+            </Button>
+            <Button onClick={test} disabled={testing || !telegram?.has_token} variant="outline" size="sm">
+              {testing ? <Loader2 size={14} className="animate-spin mr-1" /> : <Wifi size={14} className="mr-1" />}
+              Send Test Message
+            </Button>
+          </div>
+
+          <p className="text-xs text-muted-foreground pt-2">
+            Create a bot via @BotFather on Telegram, paste the token here, then send /start to your bot.
+            The chat ID will be filled automatically. Commands: /status, /server, /tasks, /cancel, /playing, /recent, /download, /search
+          </p>
         </CardContent>
       </Card>
     </div>

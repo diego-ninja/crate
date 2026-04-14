@@ -465,6 +465,7 @@ function AddUserDialog({
     e.preventDefault();
     setSubmitting(true);
     try {
+      await api("/api/auth/users", "POST", { email, name: name || undefined, password, role });
       toast.success("User created");
       onOpenChange(false);
       reset();

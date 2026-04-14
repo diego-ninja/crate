@@ -71,6 +71,13 @@ def run_worker(config: dict):
     bliss_thread.start()
     log.info("Background analysis daemons started")
 
+    # Start Telegram bot
+    from crate.telegram import telegram_bot_loop
+    telegram_thread = threading.Thread(
+        target=telegram_bot_loop, args=(config,), daemon=True, name="telegram-bot",
+    )
+    telegram_thread.start()
+
     # Start Dramatiq workers via CLI (this manages its own process pool)
     dramatiq_cmd = [
         sys.executable, "-m", "dramatiq",

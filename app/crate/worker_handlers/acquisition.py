@@ -502,6 +502,11 @@ def _register_new_release(
         "new_release_found",
         {"message": f"New: {artist_name} - {title} ({year})", "artist": artist_name, "album": title},
     )
+    try:
+        from crate.telegram import notify_new_release
+        notify_new_release(artist_name, title, year)
+    except Exception:
+        pass
 
     if auto_download and tidal_data["tidal_url"] and not is_future:
         mark_release_downloading(release_id)
