@@ -117,6 +117,7 @@ services:
       - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
       - SLSKD_API_KEY=${SLSKD_API_KEY:-}
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+      # SCRAPE_PROXY_URL not set in dev — VPN image is x86_64 only, scrapes go direct
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music

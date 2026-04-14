@@ -41,6 +41,7 @@ def get_settings(request: Request):
             "enrichment_min_age_hours": int(get_setting("enrichment_min_age_hours", "24")),
             "max_track_popularity": int(get_setting("max_track_popularity", "50")),
         },
+        "shows": _get_shows_settings(),
         "soulseek": {
             "url": get_setting("slskd_url", os.environ.get("SLSKD_URL", "http://slskd:5030")),
             "quality": get_setting("soulseek_quality", "flac"),
@@ -62,6 +63,32 @@ def _mask_token(token: str) -> str:
     if not token or len(token) < 10:
         return ""
     return token[:6] + "..." + token[-4:]
+
+
+def _get_shows_settings() -> dict:
+    from crate.db.shows import get_unique_user_cities
+    from crate.db.core import get_db_ctx
+    cities = []
+    try:
+        cities = get_unique_user_cities()
+    except Exception:
+        pass
+    show_count = 0
+    lastfm_count = 0
+    try:
+        with get_db_ctx() as cur:
+            cur.execute("SELECT COUNT(*)::INTEGER AS c FROM shows WHERE date >= CURRENT_DATE")
+            show_count = cur.fetchone()["c"]
+            cur.execute("SELECT COUNT(*)::INTEGER AS c FROM shows WHERE date >= CURRENT_DATE AND (source = 'lastfm' OR source = 'both')")
+            lastfm_count = cur.fetchone()["c"]
+    except Exception:
+        pass
+    return {
+        "lastfm_scraping_enabled": get_setting("lastfm_scraping_enabled", "true") == "true",
+        "active_cities": [{"city": c["city"], "country": c.get("country", "")} for c in cities],
+        "upcoming_shows": show_count,
+        "lastfm_shows": lastfm_count,
+    }
 
 
 def _get_about_info() -> dict:
@@ -222,6 +249,48 @@ def test_telegram(request: Request):
     if not ok:
         raise HTTPException(status_code=400, detail="Failed to send message. Check bot token and chat ID.")
     return {"ok": True}
+
+
+@router.put("/shows")
+def update_shows_settings(request: Request, body: dict):
+    _require_admin(request)
+    if "lastfm_scraping_enabled" in body:
+        set_setting("lastfm_scraping_enabled", "true" if body["lastfm_scraping_enabled"] else "false")
+    return {"ok": True}
+
+
+@router.post("/shows/sync-lastfm")
+def trigger_lastfm_sync(request: Request, body: dict | None = None):
+    """Manually trigger Last.fm scrape for a specific city or all user cities."""
+    _require_admin(request)
+    from crate.db import create_task
+    from crate.db.shows import get_unique_user_cities
+
+    payload = body or {}
+    city = (payload.get("city") or "").strip()
+
+    if city:
+        from crate.geolocation import geocode_city
+        geo = geocode_city(city)
+        if not geo:
+            raise HTTPException(status_code=422, detail=f"Could not geocode city: {city}")
+        task_id = create_task("sync_shows_lastfm", {
+            "city": geo["city"],
+            "latitude": geo["latitude"],
+            "longitude": geo["longitude"],
+        })
+        return {"task_id": task_id, "city": geo["city"]}
+
+    cities = get_unique_user_cities()
+    task_ids = []
+    for c in cities:
+        tid = create_task("sync_shows_lastfm", {
+            "city": c["city"],
+            "latitude": c["latitude"],
+            "longitude": c["longitude"],
+        })
+        task_ids.append(tid)
+    return {"task_ids": task_ids, "cities": [c["city"] for c in cities]}
 
 
 @router.put("/soulseek")

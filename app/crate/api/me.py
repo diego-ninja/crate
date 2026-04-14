@@ -98,11 +98,26 @@ def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[di
     from crate.db import get_cache
 
     result: dict[str, list[dict]] = {}
+    missing: list[str] = []
     for artist_name in artist_names:
         cached = get_cache(f"setlistfm:probable:{artist_name.lower()}", max_age_seconds=86400 * 7)
         songs = cached.get("songs") if isinstance(cached, dict) else None
         if songs:
             result[artist_name] = songs
+        else:
+            missing.append(artist_name)
+
+    # Lazy-fetch from setlist.fm for artists not yet cached
+    if missing:
+        from crate.setlistfm import get_probable_setlist
+        for artist_name in missing:
+            try:
+                songs = get_probable_setlist(artist_name)
+                if songs:
+                    result[artist_name] = songs
+            except Exception:
+                pass
+
     return result
 
 
@@ -611,6 +626,19 @@ def upcoming(request: Request, limit: int = 120):
     recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
     placeholders = ",".join(["%s"] * len(followed_names))
 
+    # Resolve user location for show filtering
+    user_lat, user_lon, user_radius = None, None, 60
+    location_mode = user.get("show_location_mode") or "fixed"
+    if location_mode == "near_me":
+        from crate.geolocation import detect_location_from_ip, get_client_ip
+        geo = detect_location_from_ip(get_client_ip(request))
+        if geo:
+            user_lat, user_lon = geo["latitude"], geo["longitude"]
+    else:
+        user_lat = user.get("latitude")
+        user_lon = user.get("longitude")
+    user_radius = user.get("show_radius_km") or 60
+
     items: list[dict] = []
     setlist_map: dict[str, list[dict]] = {}
     with get_db_ctx() as cur:
@@ -677,16 +705,22 @@ def upcoming(request: Request, limit: int = 120):
                    s.country_code,
                    s.date,
                    s.local_time,
-                   url, image_url, lineup, latitude, longitude
+                   s.url, s.image_url, s.lineup, s.latitude, s.longitude,
+                   s.source, s.lastfm_attendance, s.lastfm_url, s.tickets_url
             FROM shows s
             LEFT JOIN library_artists la ON la.name = s.artist_name
             WHERE s.artist_name IN ({placeholders})
-              AND date >= %s
-              AND status != 'cancelled'
-            ORDER BY date ASC
+              AND s.date >= %s
+              AND s.status != 'cancelled'
+              {"AND (s.latitude BETWEEN %s AND %s AND s.longitude BETWEEN %s AND %s OR s.latitude IS NULL)" if user_lat else ""}
+            ORDER BY s.date ASC
             LIMIT %s
             """,
-            followed_names + [today, limit],
+            followed_names + [today] + (
+                [user_lat - user_radius / 111.0, user_lat + user_radius / 111.0,
+                 user_lon - user_radius / 70.0, user_lon + user_radius / 70.0]
+                if user_lat else []
+            ) + [limit],
         )
         shows = cur.fetchall()
         attending_show_ids = get_attending_show_ids(
@@ -739,6 +773,10 @@ def upcoming(request: Request, limit: int = 120):
                 "longitude": show.get("longitude"),
                 "lineup": show.get("lineup"),
                 "genres": genre_map.get(artist_name, [])[:3],
+                "source": show.get("source"),
+                "lastfm_attendance": show.get("lastfm_attendance"),
+                "lastfm_url": show.get("lastfm_url"),
+                "tickets_url": show.get("tickets_url"),
                 "probable_setlist": (setlist_map.get(artist_name) or [])[:8],
                 "user_attending": show.get("id") in attending_show_ids,
                 "is_upcoming": True,
@@ -951,3 +989,109 @@ def disconnect_lastfm(request: Request):
     from crate.db.auth import unlink_user_external_identity
     unlink_user_external_identity(user["id"], "lastfm")
     return {"ok": True}
+
+
+# ── Location / Shows Preferences ──────────────────────────────
+
+
+@router.get("/geolocation")
+def detect_geolocation(request: Request):
+    """Detect user's city from their IP address."""
+    _require_auth(request)
+    from crate.geolocation import detect_location_from_ip, get_client_ip
+    ip = get_client_ip(request)
+    result = detect_location_from_ip(ip)
+    if not result:
+        raise HTTPException(status_code=404, detail="Could not detect location")
+    return result
+
+
+@router.get("/location")
+def get_location(request: Request):
+    """Get the user's saved location preferences."""
+    user = _require_auth(request)
+    return {
+        "city": user.get("city"),
+        "country": user.get("country"),
+        "country_code": user.get("country_code"),
+        "latitude": user.get("latitude"),
+        "longitude": user.get("longitude"),
+        "show_radius_km": user.get("show_radius_km") or 60,
+        "show_location_mode": user.get("show_location_mode") or "fixed",
+    }
+
+
+class UpdateLocationBody(BaseModel):
+    city: str | None = None
+    country: str | None = None
+    country_code: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    show_radius_km: int | None = None
+    show_location_mode: str | None = None
+
+
+@router.put("/location")
+def update_location(request: Request, body: UpdateLocationBody):
+    """Update the user's location preferences.
+
+    If only city is provided, geocodes it to fill lat/lon/country.
+    """
+    user = _require_auth(request)
+    from crate.db.core import get_db_ctx
+
+    city = (body.city or "").strip() or None
+    lat = body.latitude
+    lon = body.longitude
+    country = (body.country or "").strip() or None
+    country_code = (body.country_code or "").strip().upper() or None
+
+    # Geocode if city provided without coordinates
+    if city and (lat is None or lon is None):
+        from crate.geolocation import geocode_city
+        geo = geocode_city(city)
+        if geo:
+            lat = geo["latitude"]
+            lon = geo["longitude"]
+            country = country or geo.get("country")
+            country_code = country_code or geo.get("country_code")
+
+    radius = body.show_radius_km
+    if radius is not None:
+        radius = max(10, min(radius, 500))
+
+    mode = body.show_location_mode
+    if mode and mode not in ("fixed", "near_me"):
+        raise HTTPException(status_code=422, detail="show_location_mode must be 'fixed' or 'near_me'")
+
+    fields: list[str] = []
+    values: list[object] = []
+    if city is not None:
+        fields.append("city = %s"); values.append(city)
+    if country is not None:
+        fields.append("country = %s"); values.append(country)
+    if country_code is not None:
+        fields.append("country_code = %s"); values.append(country_code)
+    if lat is not None:
+        fields.append("latitude = %s"); values.append(lat)
+    if lon is not None:
+        fields.append("longitude = %s"); values.append(lon)
+    if radius is not None:
+        fields.append("show_radius_km = %s"); values.append(radius)
+    if mode is not None:
+        fields.append("show_location_mode = %s"); values.append(mode)
+
+    if fields:
+        values.append(user["id"])
+        with get_db_ctx() as cur:
+            cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", values)
+
+    return {"ok": True}
+
+
+@router.get("/cities/search")
+def search_cities_endpoint(request: Request, q: str = Query("", min_length=2)):
+    """Search cities for autocomplete."""
+    _require_auth(request)
+    from crate.geolocation import search_cities
+    return search_cities(q, limit=5)

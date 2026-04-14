@@ -1,6 +1,4 @@
-import { useMemo } from "react";
-import { MapContainer } from "react-leaflet";
-import "leaflet/dist/leaflet.css";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ItemActionMenu, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { useShowActionEntries } from "@/components/actions/show-actions";
@@ -10,9 +8,10 @@ import {
   UpcomingShowCollapsedView,
   UpcomingShowExpandedView,
 } from "./UpcomingShowCardViews";
-import { UpcomingShowMap } from "./UpcomingShowMap";
 import type { UpcomingItem } from "./upcoming-model";
 import { useUpcomingShowActions } from "./use-upcoming-show-actions";
+
+const COLLAPSED_HEIGHT = 88;
 
 export function UpcomingShowCard({
   item,
@@ -48,98 +47,59 @@ export function UpcomingShowCard({
     [actionMenu.hasActions, actionMenu.openFromTrigger, actionMenu.triggerRef],
   );
 
-  const position = useMemo<[number, number] | null>(() => {
-    if (item.latitude == null || item.longitude == null) return null;
-    return [item.latitude, item.longitude];
-  }, [item.latitude, item.longitude]);
+  // Measure expanded content height for smooth animation
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [measuredHeight, setMeasuredHeight] = useState<number>(0);
 
-  const dateLabel = item.date
-    ? new Date(`${item.date}T12:00:00`).toLocaleDateString("en-US", {
-        weekday: "long",
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "";
-  const timeLabel = item.time ? item.time.slice(0, 5) : "";
-  const locationLabel = [item.city, item.region, item.country].filter(Boolean).join(", ");
-  const addressLabel = [item.address_line1, item.postal_code].filter(Boolean).join(" · ");
+  const measure = useCallback(() => {
+    if (contentRef.current) {
+      setMeasuredHeight(contentRef.current.scrollHeight);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (expanded) measure();
+  }, [expanded, measure]);
+
+  const cardHeight = expanded
+    ? (measuredHeight > 0 ? measuredHeight : "auto")
+    : COLLAPSED_HEIGHT;
 
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-xl border transition-[height,transform,border-color,background-color,box-shadow] duration-300 ease-out",
+        "relative overflow-hidden rounded-xl border",
         expanded
-          ? "animate-upcoming-expand border-primary/20 shadow-[0_18px_60px_rgba(6,182,212,0.14)]"
-          : "border-primary/10 bg-white/[0.02] hover:border-primary/25 hover:bg-white/[0.04]",
+          ? "border-primary/20 shadow-[0_12px_40px_rgba(6,182,212,0.10)] transition-[height,border-color,box-shadow] duration-400 ease-out"
+          : "border-white/[0.06] bg-white/[0.02] transition-[height,border-color] duration-300 ease-out hover:border-primary/15 hover:bg-white/[0.03]",
       )}
-      style={{ height: expanded ? 320 : 92 }}
+      style={{ height: cardHeight }}
       onClick={!expanded ? onToggle : undefined}
       onContextMenu={actionMenu.handleContextMenu}
     >
-      <div className="absolute inset-0 bg-raised-surface" />
+      <div ref={contentRef}>
+        {!expanded && <div className="absolute inset-0 bg-raised-surface" />}
 
-      <div
-        className={cn(
-          "upcoming-map absolute inset-0 z-0 transition-opacity duration-300",
-          expanded ? "opacity-100" : "pointer-events-none opacity-0",
+        {!expanded ? (
+          <UpcomingShowCollapsedView
+            item={item}
+            attending={attending}
+            savingAttendance={savingAttendance}
+            actionMenu={actionMenuSlot}
+            onToggleAttendance={toggleAttendance}
+          />
+        ) : (
+          <UpcomingShowExpandedView
+            item={item}
+            attending={attending}
+            savingAttendance={savingAttendance}
+            playingSetlist={playingSetlist}
+            onToggleAttendance={toggleAttendance}
+            onPlaySetlist={playProbableSetlist}
+            onClose={onToggle}
+          />
         )}
-      >
-        {expanded && position ? (
-          <MapContainer
-            center={position}
-            zoom={14}
-            style={{ width: "100%", height: "100%" }}
-            zoomControl={false}
-            attributionControl={false}
-            dragging
-            scrollWheelZoom
-            doubleClickZoom
-            touchZoom
-            boxZoom
-            keyboard
-          >
-            <UpcomingShowMap
-              item={item}
-              position={position}
-              dateLabel={dateLabel}
-              timeLabel={timeLabel}
-              addressLabel={addressLabel}
-              locationLabel={locationLabel}
-            />
-          </MapContainer>
-        ) : null}
       </div>
-
-      {!expanded ? (
-        <UpcomingShowCollapsedView
-          item={item}
-          attending={attending}
-          savingAttendance={savingAttendance}
-          playingSetlist={playingSetlist}
-          dateLabel={dateLabel}
-          timeLabel={timeLabel}
-          addressLabel={addressLabel}
-          actionMenu={actionMenuSlot}
-          onToggleAttendance={toggleAttendance}
-          onPlaySetlist={playProbableSetlist}
-        />
-      ) : (
-        <UpcomingShowExpandedView
-          item={item}
-          attending={attending}
-          savingAttendance={savingAttendance}
-          playingSetlist={playingSetlist}
-          dateLabel={dateLabel}
-          timeLabel={timeLabel}
-          addressLabel={addressLabel}
-          locationLabel={locationLabel}
-          actionMenu={actionMenuSlot}
-          onToggleAttendance={toggleAttendance}
-          onPlaySetlist={playProbableSetlist}
-          onClose={onToggle}
-        />
-      )}
       <ItemActionMenu
         actions={menuActions}
         open={actionMenu.open}

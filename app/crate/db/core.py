@@ -1903,6 +1903,45 @@ def _m27_add_track_sample_rate_and_bit_depth(cur):
         """)
 
 
+def _m28_add_user_location_fields(cur):
+    for col, typedef in (
+        ("city", "TEXT"),
+        ("country", "TEXT"),
+        ("country_code", "TEXT"),
+        ("latitude", "DOUBLE PRECISION"),
+        ("longitude", "DOUBLE PRECISION"),
+        ("show_radius_km", "INTEGER DEFAULT 60"),
+        ("show_location_mode", "TEXT DEFAULT 'fixed'"),
+    ):
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE users ADD COLUMN {col} {typedef};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
+
+def _m29_add_shows_lastfm_fields(cur):
+    for col, typedef in (
+        ("lastfm_event_id", "TEXT"),
+        ("lastfm_url", "TEXT"),
+        ("lastfm_attendance", "INTEGER"),
+        ("tickets_url", "TEXT"),
+        ("scrape_city", "TEXT"),
+    ):
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE shows ADD COLUMN {col} {typedef};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_shows_lastfm_event
+        ON shows(lastfm_event_id) WHERE lastfm_event_id IS NOT NULL
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_scrape_city ON shows(scrape_city)")
+
+
 _MIGRATIONS = [
     (1, "add_artist_id_sequence", _m01_add_artist_id_sequence),
     (2, "add_slug_columns", _m02_add_slug_columns),
@@ -1930,4 +1969,7 @@ _MIGRATIONS = [
     (25, "genre_taxonomy_external_metadata", _m25_genre_taxonomy_external_metadata),
     (26, "genre_taxonomy_musicbrainz_index", _m26_genre_taxonomy_musicbrainz_index),
     (27, "add_track_sample_rate_and_bit_depth", _m27_add_track_sample_rate_and_bit_depth),
+    (28, "add_user_location_fields", _m28_add_user_location_fields),
+    (29, "add_shows_lastfm_fields", _m29_add_shows_lastfm_fields),
+
 ]

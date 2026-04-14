@@ -318,6 +318,7 @@ services:
       - DISCOGS_CONSUMER_KEY=${DISCOGS_CONSUMER_KEY:-}
       - DISCOGS_CONSUMER_SECRET=${DISCOGS_CONSUMER_SECRET:-}
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+      - SCRAPE_PROXY_URL=http://proton-vpn:3128
     volumes:
       - ./app/config.yaml:/app/config.yaml:ro
       - ${MEDIA_DIR}/music:/music
@@ -328,8 +329,27 @@ services:
     depends_on:
       - crate-postgres
       - crate-redis
+      - proton-vpn
     mem_limit: 4g
     command: ["worker"]
+
+  proton-vpn:
+    image: genericmale/protonvpn
+    container_name: proton-vpn
+    restart: unless-stopped
+    environment:
+      - OPENVPN_USER=${PROTONVPN_USER:-}
+      - OPENVPN_PASS=${PROTONVPN_PASS:-}
+      - PROTON_TIER=0
+      - HTTP_PROXY=1
+      - VPN_SERVER_COUNT=10
+      - VPN_RECONNECT=6h
+    devices:
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - crate
 
   crate-ui:
     image: ghcr.io/diego-ninja/crate-ui:${CRATE_IMAGE_TAG:-latest}

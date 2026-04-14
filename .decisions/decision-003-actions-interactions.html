@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision 3: Actions & Interactions — ShowCard Redesign</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1a1a2e; min-height: 100vh; padding: 2rem; line-height: 1.6; }
+    header { text-align: center; margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; max-width: 1200px; margin-left: auto; margin-right: auto; }
+    .decision-number { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
+    header h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; margin-top: 0.25rem; }
+    .category-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 0.5rem; }
+    .category-badge.interaction { background: #e0f2fe; color: #0369a1; }
+    .decision-description { font-size: 1rem; color: #475569; margin-top: 0.75rem; max-width: 700px; margin-left: auto; margin-right: auto; line-height: 1.7; }
+    .instruction { margin-top: 1rem; font-size: 0.85rem; background: #eff6ff; color: #1d4ed8; padding: 0.6rem 1.25rem; border-radius: 8px; display: inline-block; border: 1px solid #bfdbfe; }
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 1200px; margin: 0 auto 3rem; }
+    .option-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04); border: 2px solid #e2e8f0; transition: all 0.2s ease; display: flex; flex-direction: column; }
+    .option-card:hover { border-color: #6366f1; box-shadow: 0 4px 20px rgba(99,102,241,0.12); }
+    .card-header { padding: 1rem 1.25rem 0.75rem; border-bottom: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 0.2rem; }
+    .card-header-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .option-label { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+    .option-card.option-a .option-label { color: #7c3aed; }
+    .option-card.option-b .option-label { color: #0891b2; }
+    .option-card.option-c .option-label { color: #059669; }
+    .option-card.option-d .option-label { color: #dc2626; }
+    .option-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; }
+    .recommended-badge { background: #f59e0b; color: white; padding: 3px 10px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+    .card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    .chosen-badge { background: #059669; color: white; padding: 3px 10px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; display: none; }
+    .option-card.chosen .chosen-badge { display: inline-block; }
+    .option-card.not-chosen { opacity: 0.55; filter: grayscale(20%); }
+    .option-card.not-chosen:hover { opacity: 0.8; filter: none; }
+    .visual-preview { padding: 1rem 1.5rem; background: #f8fafc; min-height: 240px; display: flex; align-items: center; justify-content: center; flex: 1; }
+    .option-summary { padding: 1rem 1.25rem; font-size: 0.875rem; color: #334155; line-height: 1.65; border-top: 1px solid #f1f5f9; }
+    .verdict { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #f1f5f9; }
+    .pros, .cons { padding: 1rem 1.25rem; }
+    .pros { border-right: 1px solid #f1f5f9; }
+    .pros h3, .cons h3 { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; }
+    .pros h3 { color: #059669; } .cons h3 { color: #e11d48; }
+    .verdict ul { list-style: none; padding: 0; }
+    .verdict li { font-size: 0.8rem; color: #475569; line-height: 1.5; padding: 0.15rem 0; padding-left: 1rem; position: relative; }
+    .pros li::before { content: "✓ "; color: #059669; font-weight: 700; position: absolute; left: 0; }
+    .cons li::before { content: "! "; color: #e11d48; font-weight: 700; position: absolute; left: 0; }
+    .card-footer { padding: 0.75rem 1.25rem; background: #f8fafc; border-top: 1px solid #f1f5f9; }
+    .tell-claude { font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 0.35rem 0.65rem; border-radius: 6px; display: block; font-family: 'SF Mono', 'Fira Code', monospace; }
+    .page-footer { max-width: 1200px; margin: 0 auto; text-align: center; padding: 1.5rem; background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .page-footer p { font-size: 0.85rem; color: #64748b; margin: 0.3rem 0; }
+    .back-link { display: inline-block; margin-bottom: 1.5rem; font-size: 0.85rem; color: #6366f1; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+    @media (max-width: 768px) { .options-grid { grid-template-columns: 1fr; } body { padding: 1rem; } }
+    .flow-container { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0.5rem; width: 100%; max-width: 280px; }
+    .flow-step { display: flex; align-items: center; gap: 10px; background: white; border: 2px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; font-size: 0.7rem; font-weight: 600; color: #334155; text-align: left; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+    .flow-step.highlight { border-color: #6366f1; background: #eff6ff; color: #1d4ed8; }
+    .flow-step-number { width: 22px; height: 22px; border-radius: 50%; background: #e2e8f0; color: #475569; display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: 700; flex-shrink: 0; }
+    .flow-step.highlight .flow-step-number { background: #6366f1; color: white; }
+    .flow-step-label { flex: 1; }
+    .flow-down-arrow { font-size: 1rem; color: #94a3b8; padding: 2px 0; text-align: center; }
+    .comparison-section { max-width: 1200px; margin: 0 auto 3rem; }
+    .comparison-section h2 { font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; }
+    .comparison-table-wrapper { overflow-x: auto; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .comparison-table { width: 100%; border-collapse: collapse; background: white; font-size: 0.85rem; }
+    .comparison-table th { padding: 0.85rem 1rem; text-align: left; font-weight: 700; font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; }
+    .comparison-table th:first-child { background: #f8fafc; color: #64748b; }
+    .comparison-table th.col-a { color: #7c3aed; } .comparison-table th.col-b { color: #0891b2; } .comparison-table th.col-c { color: #059669; } .comparison-table th.col-d { color: #dc2626; }
+    .comparison-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    .comparison-table td:first-child { font-weight: 600; color: #475569; background: #f8fafc; }
+    .comparison-table .col-recommended { background: #fffbeb !important; }
+    .comparison-table tr:last-child td { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">&larr; All Decisions</a>
+  <header>
+    <span class="decision-number">Decision 3 of 3</span>
+    <h1>Actions & Interactions</h1>
+    <span class="category-badge interaction">Interaction</span>
+    <p class="decision-description">
+      How do the three key actions work? Play Setlist starts a queue of songs the artist is likely to play. Get Tickets opens Ticketmaster. Attendance marks whether you're going. The question is where these live and how they interact with the collapsed/expanded states.
+    </p>
+    <p class="instruction">Tell Claude: <strong>"Option B"</strong> &middot; <strong>"Option A but [change]"</strong> &middot; <strong>"more options"</strong></p>
+  </header>
+
+  <main class="options-grid">
+
+    <!-- A: Expand-Only Actions -->
+    <article class="option-card option-a not-chosen">
+      <div class="card-header">
+        <div class="card-header-top"><span class="option-label">Option A</span><div class="card-badges"><span class="recommended-badge">Recommended</span><span class="chosen-badge">Chosen</span></div></div>
+        <h2 class="option-title">Expand-Only Actions</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="flow-container">
+          <div class="flow-step"><span class="flow-step-number">1</span><span class="flow-step-label">See Poster Strip in list</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step highlight"><span class="flow-step-number">2</span><span class="flow-step-label">Tap card &rarr; Hero Reveal opens</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step"><span class="flow-step-number">3</span><span class="flow-step-label">See venue, time, lineup</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step highlight"><span class="flow-step-number">4</span><span class="flow-step-label">Tap "Play Setlist" or "Get Tickets"</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step"><span class="flow-step-number">5</span><span class="flow-step-label">Long-press card &rarr; context menu (attendance, share)</span></div>
+        </div>
+      </div>
+      <div class="option-summary">
+        <strong>Recommended.</strong> The collapsed card is clean — just info, no buttons. All actions live in the expanded Hero Reveal. Attendance and other secondary actions are in the long-press context menu (already implemented). This keeps the collapsed view maximally scannable and the expanded view action-focused.
+      </div>
+      <div class="verdict">
+        <div class="pros"><h3>Works well when</h3><ul><li>Cleanest collapsed view — pure info</li><li>Clear mental model: tap to see details + act</li><li>Context menu handles edge actions without clutter</li></ul></div>
+        <div class="cons"><h3>Watch out for</h3><ul><li>Extra tap to reach any action</li><li>Can't quick-mark attendance from list view</li></ul></div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option A"</code></div>
+    </article>
+
+    <!-- B: Quick Attendance -->
+    <article class="option-card option-b chosen">
+      <div class="card-header">
+        <div class="card-header-top"><span class="option-label">Option B</span><div class="card-badges"><span class="chosen-badge">Chosen</span></div></div>
+        <h2 class="option-title">Quick Attendance</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="flow-container">
+          <div class="flow-step"><span class="flow-step-number">1</span><span class="flow-step-label">See Poster Strip + small attendance icon (right)</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step highlight"><span class="flow-step-number">2</span><span class="flow-step-label">Tap attendance icon &rarr; toggle going/not going</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step"><span class="flow-step-number">3</span><span class="flow-step-label">Tap anywhere else &rarr; Hero Reveal opens</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step highlight"><span class="flow-step-number">4</span><span class="flow-step-label">Expanded: "Play Setlist" + "Get Tickets" buttons</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step"><span class="flow-step-number">5</span><span class="flow-step-label">Long-press &rarr; context menu (share, etc.)</span></div>
+        </div>
+      </div>
+      <div class="option-summary">
+        Same as Option A but with one addition: a small attendance toggle icon on the right edge of the collapsed Poster Strip. Tap it to quickly mark "going" without expanding. The rest of the card still expands on tap. Balances clean design with the most common quick action.
+      </div>
+      <div class="verdict">
+        <div class="pros"><h3>Works well when</h3><ul><li>Quickly mark shows from the list</li><li>Only one small icon — doesn't clutter</li><li>Most intuitive for "I'm scrolling, let me mark this"</li></ul></div>
+        <div class="cons"><h3>Watch out for</h3><ul><li>Small tap target on the collapsed card</li><li>Accidental taps (attendance vs expand)</li></ul></div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option B"</code></div>
+    </article>
+
+    <!-- C: Swipe Actions -->
+    <article class="option-card option-c not-chosen">
+      <div class="card-header">
+        <div class="card-header-top"><span class="option-label">Option C</span><div class="card-badges"><span class="chosen-badge">Chosen</span></div></div>
+        <h2 class="option-title">Swipe Actions</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="flow-container">
+          <div class="flow-step"><span class="flow-step-number">1</span><span class="flow-step-label">See clean Poster Strip (no icons)</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step highlight"><span class="flow-step-number">2</span><span class="flow-step-label">Swipe left &rarr; reveal "Tickets" + "Setlist" behind</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step highlight"><span class="flow-step-number">3</span><span class="flow-step-label">Swipe right &rarr; reveal "Going" toggle behind</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step"><span class="flow-step-number">4</span><span class="flow-step-label">Tap card &rarr; Hero Reveal with all details</span></div>
+        </div>
+      </div>
+      <div class="option-summary">
+        iOS-style swipe gestures on the collapsed card. Swipe left reveals action buttons (Tickets, Setlist). Swipe right reveals attendance toggle. Tap still opens the expanded view. The collapsed card stays perfectly clean — all actions are hidden behind gestures. Power-user friendly.
+      </div>
+      <div class="verdict">
+        <div class="pros"><h3>Works well when</h3><ul><li>Cleanest possible collapsed view</li><li>All actions accessible without expanding</li><li>Familiar iOS/Android pattern</li></ul></div>
+        <div class="cons"><h3>Watch out for</h3><ul><li>Hidden gestures — discoverability problem</li><li>Complex to implement well (spring physics, snap points)</li><li>Conflicts with page scroll on mobile</li></ul></div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option C"</code></div>
+    </article>
+
+    <!-- D: All Visible -->
+    <article class="option-card option-d not-chosen">
+      <div class="card-header">
+        <div class="card-header-top"><span class="option-label">Option D</span><div class="card-badges"><span class="chosen-badge">Chosen</span></div></div>
+        <h2 class="option-title">All Visible</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="flow-container">
+          <div class="flow-step"><span class="flow-step-number">1</span><span class="flow-step-label">Poster Strip + Play, Tickets, Attendance icons (right)</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step highlight"><span class="flow-step-number">2</span><span class="flow-step-label">Tap any icon &rarr; immediate action</span></div>
+          <div class="flow-down-arrow">&darr;</div>
+          <div class="flow-step"><span class="flow-step-number">3</span><span class="flow-step-label">Tap info area &rarr; Hero Reveal for details</span></div>
+        </div>
+      </div>
+      <div class="option-summary">
+        All three action icons visible on the collapsed card (Play, Tickets, Attendance) on the right side. Zero taps to act — everything is immediately accessible. The trade-off is a busier collapsed view with 3 icons competing with the date block for space on the right.
+      </div>
+      <div class="verdict">
+        <div class="pros"><h3>Works well when</h3><ul><li>Zero friction for any action</li><li>Power users who know what they want</li><li>Desktop/tablet where space is abundant</li></ul></div>
+        <div class="cons"><h3>Watch out for</h3><ul><li>Collapsed card feels busy with 3 icons</li><li>Small tap targets on mobile</li><li>Less room for artist/venue text</li></ul></div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option D"</code></div>
+    </article>
+
+  </main>
+
+  <section class="comparison-section">
+    <h2>How They Compare</h2>
+    <div class="comparison-table-wrapper">
+      <table class="comparison-table">
+        <thead><tr>
+          <th></th>
+          <th class="col-a col-recommended">A: Expand-Only</th>
+          <th class="col-b">B: Quick Attendance</th>
+          <th class="col-c">C: Swipe</th>
+          <th class="col-d">D: All Visible</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>Taps to "Get Tickets"</td><td class="col-recommended">2 (expand + tap)</td><td>2 (expand + tap)</td><td>1 (swipe + tap)</td><td>1 (direct tap)</td></tr>
+          <tr><td>Taps to "Attendance"</td><td class="col-recommended">Long-press + tap</td><td>1 (direct tap)</td><td>1 (swipe + tap)</td><td>1 (direct tap)</td></tr>
+          <tr><td>Collapsed cleanliness</td><td class="col-recommended">Pristine</td><td>Near-pristine (1 icon)</td><td>Pristine</td><td>Busy (3 icons)</td></tr>
+          <tr><td>Discoverability</td><td class="col-recommended">High (tap = expand)</td><td>High</td><td>Low (hidden gestures)</td><td>High</td></tr>
+          <tr><td>Implementation effort</td><td class="col-recommended">Low</td><td>Low</td><td>High (gestures)</td><td>Low</td></tr>
+          <tr><td>Mobile friendliness</td><td class="col-recommended">Excellent</td><td>Excellent</td><td>Good (scroll conflicts)</td><td>Tight</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="page-footer">
+    <p>Tell Claude: <strong>"Option A"</strong>, <strong>"Option C but [your change]"</strong>, or <strong>"more options"</strong></p>
+  </div>
+</body>
+</html>

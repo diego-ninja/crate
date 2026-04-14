@@ -40,7 +40,7 @@ export function ArtistTopTracksSection({
           View all
         </button>
       </div>
-      <div className="rounded-xl border border-white/5 bg-white/[0.02]">
+      <div className="rounded-xl">
         {tracks.map((track, index) => (
           <TrackRow
             key={`${track.id}-${index}`}

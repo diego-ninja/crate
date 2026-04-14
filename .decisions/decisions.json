@@ -1,21 +1,49 @@
 {
-  "projectName": "Crate Listen",
-  "projectDescription": "Self-hosted Spotify alternative PWA for small music communities — dark minimal theme with cyan accent",
-  "createdAt": "2026-03-28T20:45:00Z",
+  "projectName": "ShowCard Redesign",
+  "projectDescription": "Rediseñar el UpcomingShowCard de Listen para mobile-first, sin mapa, con info clara y acciones prominentes.",
+  "createdAt": "2026-04-14T20:30:00Z",
   "decisions": [
     {
       "id": "decision-001",
-      "slug": "ui-concept",
-      "title": "Overall UI Concept & Layout",
+      "slug": "collapsed-layout",
+      "title": "Collapsed Layout",
       "category": "visual",
       "status": "chosen",
-      "chosenOption": "custom",
-      "chosenTitle": "Adaptive: Sidebar (desktop) + Bottom Tabs (mobile)",
+      "chosenOption": "A",
+      "chosenTitle": "Poster Strip",
       "options": ["A", "B", "C", "D"],
       "recommended": "B",
-      "htmlFile": "decision-001-ui-concept.html",
-      "decidedAt": "2026-03-28T21:15:00Z",
-      "summary": "Sidebar Command Center on desktop (≥768px), Mobile-First Bottom Tabs on mobile (<768px). Same content, adaptive navigation."
+      "htmlFile": "decision-001-collapsed-layout.html",
+      "decidedAt": "2026-04-14T20:45:00Z",
+      "summary": "Artist photo left, info center, date block right"
+    },
+    {
+      "id": "decision-002",
+      "slug": "expanded-layout",
+      "title": "Expanded Layout",
+      "category": "visual",
+      "status": "chosen",
+      "chosenOption": "B",
+      "chosenTitle": "Hero Reveal",
+      "options": ["A", "B", "C", "D"],
+      "recommended": "A",
+      "htmlFile": "decision-002-expanded-layout.html",
+      "decidedAt": "2026-04-14T20:50:00Z",
+      "summary": "Collapsed transforms into hero image with artist background, venue + buttons below"
+    },
+    {
+      "id": "decision-003",
+      "slug": "actions-interactions",
+      "title": "Actions & Interactions",
+      "category": "interaction",
+      "status": "chosen",
+      "chosenOption": "B",
+      "chosenTitle": "Quick Attendance",
+      "options": ["A", "B", "C", "D"],
+      "recommended": "A",
+      "htmlFile": "decision-003-actions-interactions.html",
+      "decidedAt": "2026-04-14T21:00:00Z",
+      "summary": "Attendance icon on collapsed, Play Setlist + Get Tickets in expanded only"
     }
   ]
 }

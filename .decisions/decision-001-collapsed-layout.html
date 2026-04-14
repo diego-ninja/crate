@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision 1: Collapsed Layout — ShowCard Redesign</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1a1a2e; min-height: 100vh; padding: 2rem; line-height: 1.6; }
+    header { text-align: center; margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; max-width: 1200px; margin-left: auto; margin-right: auto; }
+    .decision-number { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
+    header h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; margin-top: 0.25rem; }
+    .category-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 0.5rem; }
+    .category-badge.visual { background: #fce7f3; color: #be185d; }
+    .decision-description { font-size: 1rem; color: #475569; margin-top: 0.75rem; max-width: 700px; margin-left: auto; margin-right: auto; line-height: 1.7; }
+    .instruction { margin-top: 1rem; font-size: 0.85rem; background: #eff6ff; color: #1d4ed8; padding: 0.6rem 1.25rem; border-radius: 8px; display: inline-block; border: 1px solid #bfdbfe; }
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 1200px; margin: 0 auto 3rem; }
+    .option-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04); border: 2px solid #e2e8f0; transition: all 0.2s ease; display: flex; flex-direction: column; position: relative; }
+    .option-card:hover { border-color: #6366f1; box-shadow: 0 4px 20px rgba(99,102,241,0.12); }
+    .card-header { padding: 1rem 1.25rem 0.75rem; border-bottom: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 0.2rem; }
+    .card-header-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .option-label { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+    .option-card.option-a .option-label { color: #7c3aed; }
+    .option-card.option-b .option-label { color: #0891b2; }
+    .option-card.option-c .option-label { color: #059669; }
+    .option-card.option-d .option-label { color: #dc2626; }
+    .option-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; }
+    .recommended-badge { background: #f59e0b; color: white; padding: 3px 10px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+    .card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    .chosen-badge { background: #059669; color: white; padding: 3px 10px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; display: none; }
+    .option-card.chosen .chosen-badge { display: inline-block; }
+    .option-card.not-chosen { opacity: 0.55; filter: grayscale(20%); }
+    .option-card.not-chosen:hover { opacity: 0.8; filter: none; }
+    .visual-preview { padding: 1.5rem; background: #f8fafc; min-height: 200px; display: flex; align-items: center; justify-content: center; flex: 1; }
+    .option-summary { padding: 1rem 1.25rem; font-size: 0.875rem; color: #334155; line-height: 1.65; border-top: 1px solid #f1f5f9; }
+    .verdict { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #f1f5f9; }
+    .pros, .cons { padding: 1rem 1.25rem; }
+    .pros { border-right: 1px solid #f1f5f9; }
+    .pros h3, .cons h3 { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; }
+    .pros h3 { color: #059669; }
+    .cons h3 { color: #e11d48; }
+    .verdict ul { list-style: none; padding: 0; }
+    .verdict li { font-size: 0.8rem; color: #475569; line-height: 1.5; padding: 0.15rem 0; padding-left: 1rem; position: relative; }
+    .pros li::before { content: "✓ "; color: #059669; font-weight: 700; position: absolute; left: 0; }
+    .cons li::before { content: "! "; color: #e11d48; font-weight: 700; position: absolute; left: 0; }
+    .card-footer { padding: 0.75rem 1.25rem; background: #f8fafc; border-top: 1px solid #f1f5f9; }
+    .tell-claude { font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 0.35rem 0.65rem; border-radius: 6px; display: block; font-family: 'SF Mono', 'Fira Code', monospace; }
+    .comparison-section { max-width: 1200px; margin: 0 auto 3rem; }
+    .comparison-section h2 { font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; }
+    .comparison-table-wrapper { overflow-x: auto; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04); }
+    .comparison-table { width: 100%; border-collapse: collapse; background: white; font-size: 0.85rem; }
+    .comparison-table th { padding: 0.85rem 1rem; text-align: left; font-weight: 700; font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+    .comparison-table th:first-child { background: #f8fafc; color: #64748b; }
+    .comparison-table th.col-a { color: #7c3aed; }
+    .comparison-table th.col-b { color: #0891b2; }
+    .comparison-table th.col-c { color: #059669; }
+    .comparison-table th.col-d { color: #dc2626; }
+    .comparison-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    .comparison-table td:first-child { font-weight: 600; color: #475569; background: #f8fafc; }
+    .comparison-table tr:nth-child(even) td { background: #fafbfc; }
+    .comparison-table tr:nth-child(even) td:first-child { background: #f1f5f9; }
+    .comparison-table .col-recommended { background: #fffbeb !important; }
+    .comparison-table tr:last-child td { border-bottom: none; }
+    .page-footer { max-width: 1200px; margin: 0 auto; text-align: center; padding: 1.5rem; background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .page-footer p { font-size: 0.85rem; color: #64748b; margin: 0.3rem 0; }
+    .page-footer strong { color: #334155; }
+    .back-link { display: inline-block; margin-bottom: 1.5rem; font-size: 0.85rem; color: #6366f1; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+    @media (max-width: 768px) { .options-grid { grid-template-columns: 1fr; } body { padding: 1rem; } }
+
+    /* Dark card simulation */
+    .show-card-sim {
+      width: 100%; max-width: 380px; border-radius: 12px; overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">&larr; All Decisions</a>
+  <header>
+    <span class="decision-number">Decision 1 of 3</span>
+    <h1>Collapsed Show Card Layout</h1>
+    <span class="category-badge visual">Visual</span>
+    <p class="decision-description">
+      This is what users see 90% of the time — the collapsed card in a list of upcoming shows. It needs to communicate artist, venue, date, and city at a glance without feeling cluttered. The card should invite tapping to expand. Think of it as the "headline" of a show.
+    </p>
+    <p class="instruction">
+      Tell Claude: <strong>"Option B"</strong> &middot; <strong>"Option A but [change]"</strong> &middot; <strong>"more options"</strong>
+    </p>
+  </header>
+
+  <main class="options-grid">
+
+    <!-- OPTION A: Poster Strip -->
+    <article class="option-card option-a chosen">
+      <div class="card-header">
+        <div class="card-header-top">
+          <span class="option-label">Option A</span>
+          <div class="card-badges"><span class="chosen-badge">Chosen</span></div>
+        </div>
+        <h2 class="option-title">Poster Strip</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="show-card-sim" style="background:#0c1222; border:1px solid rgba(6,182,212,0.12);">
+          <div style="display:flex; gap:0; height:88px;">
+            <!-- Artist image left -->
+            <div style="width:88px; height:88px; flex-shrink:0; background:linear-gradient(135deg,#1a1a3e,#2d1b4e); display:flex; align-items:center; justify-content:center;">
+              <div style="width:50px; height:50px; border-radius:50%; background:linear-gradient(135deg,#06b6d4,#7c3aed); opacity:0.7;"></div>
+            </div>
+            <!-- Info -->
+            <div style="flex:1; padding:10px 12px; display:flex; flex-direction:column; justify-content:center; min-width:0;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:14px; font-weight:700; color:#f1f5f9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Converge</span>
+                <span style="width:7px; height:7px; border-radius:50%; background:#06b6d4; flex-shrink:0;"></span>
+              </div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.45); margin-top:3px; display:flex; align-items:center; gap:4px;">
+                <span style="color:rgba(6,182,212,0.7);">&#9679;</span>
+                Razzmatazz &middot; Barcelona
+              </div>
+              <div style="font-size:10px; color:rgba(255,255,255,0.28); margin-top:2px;">w/ Coalesce, Nails</div>
+            </div>
+            <!-- Date right -->
+            <div style="padding:10px 14px; display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;">
+              <span style="font-size:9px; font-weight:700; color:rgba(6,182,212,0.65); letter-spacing:0.1em;">MAY</span>
+              <span style="font-size:22px; font-weight:900; color:#06b6d4; line-height:1;">23</span>
+              <span style="font-size:9px; color:rgba(255,255,255,0.3); margin-top:1px;">FRI</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="option-summary">
+        The artist photo takes the left edge like a poster or vinyl spine. Info fills the center, date block sits right. Has a visual anchor (the photo) that makes the list feel rich without being heavy. The photo doubles as a tap target that hints "there's more here".
+      </div>
+      <div class="verdict">
+        <div class="pros">
+          <h3>Works well when</h3>
+          <ul>
+            <li>Artists have good photos (most do)</li>
+            <li>Scanning a long list — photo gives instant recognition</li>
+            <li>Mobile — natural thumb reach for all zones</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h3>Watch out for</h3>
+          <ul>
+            <li>Artists without photos get a blank square</li>
+            <li>Image loading adds weight to the list</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option A"</code></div>
+    </article>
+
+    <!-- OPTION B: Ticket Stub -->
+    <article class="option-card option-b not-chosen">
+      <div class="card-header">
+        <div class="card-header-top">
+          <span class="option-label">Option B</span>
+          <div class="card-badges">
+            <span class="recommended-badge">Recommended</span>
+            <span class="chosen-badge">Chosen</span>
+          </div>
+        </div>
+        <h2 class="option-title">Ticket Stub</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="show-card-sim" style="background:#0c1222; border:1px solid rgba(6,182,212,0.12); border-radius:12px;">
+          <div style="display:flex; height:82px;">
+            <!-- Date pill left -->
+            <div style="width:56px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; justify-content:center; border-right:1px dashed rgba(6,182,212,0.15);">
+              <span style="font-size:9px; font-weight:700; color:rgba(6,182,212,0.55); letter-spacing:0.12em;">MAY</span>
+              <span style="font-size:24px; font-weight:900; color:#06b6d4; line-height:1;">23</span>
+              <span style="font-size:9px; color:rgba(255,255,255,0.3);">FRI</span>
+            </div>
+            <!-- Center -->
+            <div style="flex:1; padding:10px 14px; display:flex; flex-direction:column; justify-content:center; min-width:0;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="font-size:14px; font-weight:700; color:#f1f5f9; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Converge</span>
+                <span style="width:6px; height:6px; border-radius:50%; background:#06b6d4; flex-shrink:0;"></span>
+              </div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.45); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                Razzmatazz &middot; Barcelona
+              </div>
+              <div style="font-size:10px; color:rgba(255,255,255,0.25); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                w/ Coalesce &middot; Nails &middot; Candy
+              </div>
+            </div>
+            <!-- Right: subtle chevron -->
+            <div style="padding:0 10px; display:flex; align-items:center; color:rgba(255,255,255,0.15); font-size:18px;">
+              &rsaquo;
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="option-summary">
+        <strong>Recommended.</strong> Evokes a real ticket stub: date block on the left separated by a dashed "tear" line, info in the center. No images to load, pure typography. The dashed border gives it character without adding weight. A subtle chevron hints expandability. Feels native to a music app.
+      </div>
+      <div class="verdict">
+        <div class="pros">
+          <h3>Works well when</h3>
+          <ul>
+            <li>Fast rendering — no images, pure CSS</li>
+            <li>Strong visual identity from the "stub" metaphor</li>
+            <li>Works equally well for any artist</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h3>Watch out for</h3>
+          <ul>
+            <li>Less visual richness than photo-based options</li>
+            <li>Date block takes horizontal space on narrow screens</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option B"</code></div>
+    </article>
+
+    <!-- OPTION C: Gradient Bar -->
+    <article class="option-card option-c not-chosen">
+      <div class="card-header">
+        <div class="card-header-top">
+          <span class="option-label">Option C</span>
+          <div class="card-badges"><span class="chosen-badge">Chosen</span></div>
+        </div>
+        <h2 class="option-title">Gradient Bar</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="show-card-sim" style="background:linear-gradient(135deg, rgba(6,182,212,0.08), rgba(124,58,237,0.06)); border:1px solid rgba(6,182,212,0.15); border-radius:12px;">
+          <div style="padding:12px 16px; height:78px; display:flex; align-items:center; gap:12px;">
+            <!-- Accent line left -->
+            <div style="width:3px; height:48px; border-radius:2px; background:linear-gradient(180deg, #06b6d4, #7c3aed); flex-shrink:0;"></div>
+            <!-- Info -->
+            <div style="flex:1; min-width:0;">
+              <div style="display:flex; align-items:baseline; gap:8px;">
+                <span style="font-size:14px; font-weight:700; color:#f1f5f9;">Converge</span>
+                <span style="font-size:11px; color:rgba(6,182,212,0.7); font-weight:600;">Fri May 23</span>
+              </div>
+              <div style="font-size:11px; color:rgba(255,255,255,0.45); margin-top:4px;">
+                Razzmatazz &middot; Barcelona
+              </div>
+              <div style="font-size:10px; color:rgba(255,255,255,0.25); margin-top:2px;">w/ Coalesce, Nails</div>
+            </div>
+            <!-- Attending dot -->
+            <div style="flex-shrink:0;">
+              <div style="width:28px; height:28px; border-radius:8px; border:1px solid rgba(6,182,212,0.25); display:flex; align-items:center; justify-content:center;">
+                <span style="color:#06b6d4; font-size:13px; font-weight:700;">&#10003;</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="option-summary">
+        Minimal and elegant. A thin gradient accent line on the left gives each card color identity. Date is inline with the artist name. No separate date block — everything flows as text. The gradient background adds warmth without images. Attendance toggle is a small icon on the right.
+      </div>
+      <div class="verdict">
+        <div class="pros">
+          <h3>Works well when</h3>
+          <ul>
+            <li>Maximum density — smallest card height</li>
+            <li>Clean, modern aesthetic</li>
+            <li>Genre-colored accent line adds personality</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h3>Watch out for</h3>
+          <ul>
+            <li>Date is less scannable inline vs. in a block</li>
+            <li>Can feel too minimal for some tastes</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option C"</code></div>
+    </article>
+
+    <!-- OPTION D: Banner Card -->
+    <article class="option-card option-d not-chosen">
+      <div class="card-header">
+        <div class="card-header-top">
+          <span class="option-label">Option D</span>
+          <div class="card-badges"><span class="chosen-badge">Chosen</span></div>
+        </div>
+        <h2 class="option-title">Banner Card</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="show-card-sim" style="background:#0c1222; border:1px solid rgba(6,182,212,0.12); border-radius:12px; overflow:hidden;">
+          <!-- Top: artist bg image strip -->
+          <div style="height:44px; background:linear-gradient(135deg, #1a1a3e 0%, #2d1b4e 50%, #0c1222 100%); position:relative;">
+            <div style="position:absolute; inset:0; background:linear-gradient(to bottom, transparent, #0c1222); opacity:0.8;"></div>
+            <div style="position:absolute; top:8px; right:10px; font-size:9px; font-weight:700; color:rgba(6,182,212,0.6); letter-spacing:0.1em;">FRI MAY 23</div>
+          </div>
+          <!-- Bottom: info -->
+          <div style="padding:8px 14px 12px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-size:15px; font-weight:700; color:#f1f5f9;">Converge</span>
+              <span style="width:6px; height:6px; border-radius:50%; background:#06b6d4;"></span>
+            </div>
+            <div style="font-size:11px; color:rgba(255,255,255,0.4); margin-top:2px;">
+              Razzmatazz &middot; Barcelona &middot; w/ Coalesce, Nails
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="option-summary">
+        A mini banner at the top (artist background image with gradient fade) gives visual impact without taking much space. Date overlays the banner. Below it, artist name and venue in a compact text block. Feels like a mini event poster. More visual than the other options but taller.
+      </div>
+      <div class="verdict">
+        <div class="pros">
+          <h3>Works well when</h3>
+          <ul>
+            <li>Artists have background images — looks stunning</li>
+            <li>Strong visual presence in the feed</li>
+            <li>Date on the banner is easy to scan</li>
+          </ul>
+        </div>
+        <div class="cons">
+          <h3>Watch out for</h3>
+          <ul>
+            <li>Taller than other options — fewer cards visible</li>
+            <li>Image loading and missing-image fallback needed</li>
+            <li>Two zones (banner + text) can feel heavy</li>
+          </ul>
+        </div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option D"</code></div>
+    </article>
+
+  </main>
+
+  <section class="comparison-section">
+    <h2>How They Compare</h2>
+    <div class="comparison-table-wrapper">
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th class="col-a">A: Poster Strip</th>
+            <th class="col-b col-recommended">B: Ticket Stub</th>
+            <th class="col-c">C: Gradient Bar</th>
+            <th class="col-d">D: Banner Card</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Card height</td>
+            <td>88px</td>
+            <td class="col-recommended">82px</td>
+            <td>78px</td>
+            <td>~100px</td>
+          </tr>
+          <tr>
+            <td>Requires images</td>
+            <td>Yes (artist photo)</td>
+            <td class="col-recommended">No</td>
+            <td>No</td>
+            <td>Optional (background)</td>
+          </tr>
+          <tr>
+            <td>Date scannability</td>
+            <td>Right block</td>
+            <td class="col-recommended">Left block (prominent)</td>
+            <td>Inline text</td>
+            <td>Overlay on banner</td>
+          </tr>
+          <tr>
+            <td>Visual character</td>
+            <td>Photo-driven</td>
+            <td class="col-recommended">Ticket metaphor</td>
+            <td>Minimal/gradient</td>
+            <td>Poster/banner</td>
+          </tr>
+          <tr>
+            <td>Mobile friendliness</td>
+            <td>Good</td>
+            <td class="col-recommended">Excellent</td>
+            <td>Excellent</td>
+            <td>Good</td>
+          </tr>
+          <tr>
+            <td>Rendering weight</td>
+            <td>Medium (images)</td>
+            <td class="col-recommended">Light (CSS only)</td>
+            <td>Light (CSS only)</td>
+            <td>Medium (images)</td>
+          </tr>
+          <tr>
+            <td>Support acts visible</td>
+            <td>Yes, third line</td>
+            <td class="col-recommended">Yes, third line</td>
+            <td>Yes, third line</td>
+            <td>Yes, inline</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="page-footer">
+    <p>Tell Claude: <strong>"Option A"</strong>, <strong>"Option C but [your change]"</strong>, or <strong>"more options"</strong></p>
+    <p>To change a past decision: <strong>"for decision-001 I want Option B instead"</strong></p>
+  </div>
+
+</body>
+</html>

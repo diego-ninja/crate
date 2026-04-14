@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Decision 2: Expanded Layout — ShowCard Redesign</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1a1a2e; min-height: 100vh; padding: 2rem; line-height: 1.6; }
+    header { text-align: center; margin-bottom: 2.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid #e2e8f0; max-width: 1200px; margin-left: auto; margin-right: auto; }
+    .decision-number { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; }
+    header h1 { font-size: 1.6rem; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; margin-top: 0.25rem; }
+    .category-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; margin-top: 0.5rem; }
+    .category-badge.visual { background: #fce7f3; color: #be185d; }
+    .decision-description { font-size: 1rem; color: #475569; margin-top: 0.75rem; max-width: 700px; margin-left: auto; margin-right: auto; line-height: 1.7; }
+    .instruction { margin-top: 1rem; font-size: 0.85rem; background: #eff6ff; color: #1d4ed8; padding: 0.6rem 1.25rem; border-radius: 8px; display: inline-block; border: 1px solid #bfdbfe; }
+    .options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 1200px; margin: 0 auto 3rem; }
+    .option-card { background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04); border: 2px solid #e2e8f0; transition: all 0.2s ease; display: flex; flex-direction: column; }
+    .option-card:hover { border-color: #6366f1; box-shadow: 0 4px 20px rgba(99,102,241,0.12); }
+    .card-header { padding: 1rem 1.25rem 0.75rem; border-bottom: 1px solid #f1f5f9; display: flex; flex-direction: column; gap: 0.2rem; }
+    .card-header-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .option-label { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+    .option-card.option-a .option-label { color: #7c3aed; }
+    .option-card.option-b .option-label { color: #0891b2; }
+    .option-card.option-c .option-label { color: #059669; }
+    .option-card.option-d .option-label { color: #dc2626; }
+    .option-title { font-size: 1.05rem; font-weight: 600; color: #0f172a; }
+    .recommended-badge { background: #f59e0b; color: white; padding: 3px 10px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+    .card-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    .chosen-badge { background: #059669; color: white; padding: 3px 10px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; display: none; }
+    .option-card.chosen .chosen-badge { display: inline-block; }
+    .option-card.not-chosen { opacity: 0.55; filter: grayscale(20%); }
+    .option-card.not-chosen:hover { opacity: 0.8; filter: none; }
+    .visual-preview { padding: 1.25rem; background: #f8fafc; min-height: 280px; display: flex; align-items: center; justify-content: center; flex: 1; }
+    .option-summary { padding: 1rem 1.25rem; font-size: 0.875rem; color: #334155; line-height: 1.65; border-top: 1px solid #f1f5f9; }
+    .verdict { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #f1f5f9; }
+    .pros, .cons { padding: 1rem 1.25rem; }
+    .pros { border-right: 1px solid #f1f5f9; }
+    .pros h3, .cons h3 { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.5rem; }
+    .pros h3 { color: #059669; } .cons h3 { color: #e11d48; }
+    .verdict ul { list-style: none; padding: 0; }
+    .verdict li { font-size: 0.8rem; color: #475569; line-height: 1.5; padding: 0.15rem 0; padding-left: 1rem; position: relative; }
+    .pros li::before { content: "✓ "; color: #059669; font-weight: 700; position: absolute; left: 0; }
+    .cons li::before { content: "! "; color: #e11d48; font-weight: 700; position: absolute; left: 0; }
+    .card-footer { padding: 0.75rem 1.25rem; background: #f8fafc; border-top: 1px solid #f1f5f9; }
+    .tell-claude { font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 0.35rem 0.65rem; border-radius: 6px; display: block; font-family: 'SF Mono', 'Fira Code', monospace; }
+    .comparison-section { max-width: 1200px; margin: 0 auto 3rem; }
+    .comparison-section h2 { font-size: 1.1rem; font-weight: 700; color: #0f172a; margin-bottom: 1rem; }
+    .comparison-table-wrapper { overflow-x: auto; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .comparison-table { width: 100%; border-collapse: collapse; background: white; font-size: 0.85rem; }
+    .comparison-table th { padding: 0.85rem 1rem; text-align: left; font-weight: 700; font-size: 0.75rem; letter-spacing: 0.05em; text-transform: uppercase; border-bottom: 2px solid #e2e8f0; }
+    .comparison-table th:first-child { background: #f8fafc; color: #64748b; }
+    .comparison-table th.col-a { color: #7c3aed; } .comparison-table th.col-b { color: #0891b2; } .comparison-table th.col-c { color: #059669; } .comparison-table th.col-d { color: #dc2626; }
+    .comparison-table td { padding: 0.75rem 1rem; border-bottom: 1px solid #f1f5f9; color: #334155; }
+    .comparison-table td:first-child { font-weight: 600; color: #475569; background: #f8fafc; }
+    .comparison-table .col-recommended { background: #fffbeb !important; }
+    .comparison-table tr:last-child td { border-bottom: none; }
+    .page-footer { max-width: 1200px; margin: 0 auto; text-align: center; padding: 1.5rem; background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .page-footer p { font-size: 0.85rem; color: #64748b; margin: 0.3rem 0; }
+    .back-link { display: inline-block; margin-bottom: 1.5rem; font-size: 0.85rem; color: #6366f1; text-decoration: none; }
+    .back-link:hover { text-decoration: underline; }
+    @media (max-width: 768px) { .options-grid { grid-template-columns: 1fr; } body { padding: 1rem; } }
+    .show-card-sim { width: 100%; max-width: 380px; border-radius: 12px; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+    .sim-btn { display:flex; align-items:center; justify-content:center; gap:5px; flex:1; padding:9px 0; border-radius:8px; font-size:11px; font-weight:600; text-decoration:none; cursor:pointer; border:none; }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back-link">&larr; All Decisions</a>
+  <header>
+    <span class="decision-number">Decision 2 of 3</span>
+    <h1>Expanded Show Card Layout</h1>
+    <span class="category-badge visual">Visual</span>
+    <p class="decision-description">
+      When the user taps the Poster Strip card, it expands to reveal full details. This is where venue, address, time, full lineup, and the two main actions (Play Setlist + Get Tickets) live. The collapsed Poster Strip (artist photo, name, venue, date) stays on top. Below it, the detail unfolds.
+    </p>
+    <p class="instruction">Tell Claude: <strong>"Option B"</strong> &middot; <strong>"Option A but [change]"</strong> &middot; <strong>"more options"</strong></p>
+  </header>
+
+  <main class="options-grid">
+
+    <!-- A: Info Stack -->
+    <article class="option-card option-a not-chosen">
+      <div class="card-header">
+        <div class="card-header-top"><span class="option-label">Option A</span><div class="card-badges"><span class="recommended-badge">Recommended</span><span class="chosen-badge">Chosen</span></div></div>
+        <h2 class="option-title">Info Stack</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="show-card-sim" style="background:#0c1222; border:1px solid rgba(6,182,212,0.15);">
+          <!-- Collapsed header -->
+          <div style="display:flex; height:72px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <div style="width:72px; flex-shrink:0; background:linear-gradient(135deg,#1a1a3e,#2d1b4e); display:flex; align-items:center; justify-content:center;">
+              <div style="width:40px; height:40px; border-radius:50%; background:linear-gradient(135deg,#06b6d4,#7c3aed); opacity:0.6;"></div>
+            </div>
+            <div style="flex:1; padding:10px 12px; display:flex; flex-direction:column; justify-content:center;">
+              <span style="font-size:13px; font-weight:700; color:#f1f5f9;">Converge</span>
+              <span style="font-size:10px; color:rgba(255,255,255,0.4); margin-top:2px;">Razzmatazz &middot; Barcelona</span>
+            </div>
+            <div style="padding:10px; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+              <span style="font-size:8px; font-weight:700; color:rgba(6,182,212,0.55); letter-spacing:0.1em;">MAY</span>
+              <span style="font-size:18px; font-weight:900; color:#06b6d4; line-height:1;">23</span>
+            </div>
+          </div>
+          <!-- Expanded: stacked info rows -->
+          <div style="padding:12px;">
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <!-- Venue -->
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span style="color:rgba(6,182,212,0.6); font-size:12px; margin-top:1px;">&#9673;</span>
+                <div>
+                  <div style="font-size:12px; font-weight:600; color:#f1f5f9;">Razzmatazz</div>
+                  <div style="font-size:10px; color:rgba(255,255,255,0.35);">Carrer dels Almogàvers 122 &middot; Barcelona, Spain</div>
+                </div>
+              </div>
+              <!-- Time -->
+              <div style="display:flex; gap:8px; align-items:center;">
+                <span style="color:rgba(6,182,212,0.6); font-size:12px;">&#9202;</span>
+                <span style="font-size:11px; color:rgba(255,255,255,0.5);">Friday, May 23 &middot; 20:00</span>
+              </div>
+              <!-- Lineup -->
+              <div style="display:flex; gap:8px; align-items:flex-start;">
+                <span style="color:rgba(6,182,212,0.6); font-size:12px; margin-top:1px;">&#9835;</span>
+                <div style="font-size:11px; color:rgba(255,255,255,0.45);">
+                  <span style="font-weight:600; color:#f1f5f9;">Converge</span> &middot; Coalesce &middot; Nails &middot; Candy
+                </div>
+              </div>
+            </div>
+            <!-- Buttons -->
+            <div style="display:flex; gap:8px; margin-top:12px;">
+              <a class="sim-btn" style="background:rgba(6,182,212,0.08); color:#06b6d4; border:1px solid rgba(6,182,212,0.2);">&#9654; Play Setlist</a>
+              <a class="sim-btn" style="background:rgba(6,182,212,0.12); color:#06b6d4;">
+                &#8599; Get Tickets
+                <span style="width:5px; height:5px; border-radius:50%; background:#22c55e;"></span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="option-summary">
+        <strong>Recommended.</strong> Simple vertical stack below the collapsed header. Three icon-led rows: venue+address, date+time, lineup. Below them, the two action buttons side by side. Clean, scannable, no surprises. The collapsed header stays on top providing context.
+      </div>
+      <div class="verdict">
+        <div class="pros"><h3>Works well when</h3><ul><li>Straightforward — all info in reading order</li><li>Consistent with the rest of the app's list patterns</li><li>Actions are immediately visible</li></ul></div>
+        <div class="cons"><h3>Watch out for</h3><ul><li>Can feel plain — no visual punch</li><li>Longer cards if lineup is big</li></ul></div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option A"</code></div>
+    </article>
+
+    <!-- B: Hero Reveal -->
+    <article class="option-card option-b chosen">
+      <div class="card-header">
+        <div class="card-header-top"><span class="option-label">Option B</span><div class="card-badges"><span class="chosen-badge">Chosen</span></div></div>
+        <h2 class="option-title">Hero Reveal</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="show-card-sim" style="background:#0c1222; border:1px solid rgba(6,182,212,0.15);">
+          <!-- Artist background hero -->
+          <div style="height:110px; background:linear-gradient(135deg,#1a1a3e 0%,#2d1b4e 50%,#0c1222 100%); position:relative;">
+            <div style="position:absolute; inset:0; background:linear-gradient(to bottom, rgba(12,18,34,0.2), #0c1222);"></div>
+            <div style="position:absolute; bottom:10px; left:12px; display:flex; align-items:center; gap:8px;">
+              <div style="width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#06b6d4,#7c3aed); opacity:0.8; border:2px solid rgba(6,182,212,0.3);"></div>
+              <div>
+                <div style="font-size:15px; font-weight:700; color:#f1f5f9;">Converge</div>
+                <div style="font-size:10px; color:rgba(255,255,255,0.4);">w/ Coalesce &middot; Nails &middot; Candy</div>
+              </div>
+            </div>
+            <div style="position:absolute; top:10px; right:12px; font-size:10px; font-weight:700; color:rgba(6,182,212,0.6); letter-spacing:0.08em;">FRI MAY 23 &middot; 20:00</div>
+            <button style="position:absolute; top:10px; left:10px; width:24px; height:24px; border-radius:6px; background:rgba(0,0,0,0.4); border:none; color:rgba(255,255,255,0.6); font-size:14px; cursor:pointer;">&times;</button>
+          </div>
+          <!-- Details below -->
+          <div style="padding:10px 12px;">
+            <div style="display:flex; gap:8px; align-items:flex-start; font-size:11px; color:rgba(255,255,255,0.45);">
+              <span style="color:rgba(6,182,212,0.6);">&#9673;</span>
+              <div><span style="color:#f1f5f9; font-weight:500;">Razzmatazz</span> &middot; Carrer dels Almogàvers 122 &middot; Barcelona, Spain</div>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:10px;">
+              <a class="sim-btn" style="background:rgba(6,182,212,0.08); color:#06b6d4; border:1px solid rgba(6,182,212,0.2);">&#9654; Play Setlist</a>
+              <a class="sim-btn" style="background:rgba(6,182,212,0.12); color:#06b6d4;">&#8599; Get Tickets <span style="width:5px; height:5px; border-radius:50%; background:#22c55e;"></span></a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="option-summary">
+        The collapsed strip transforms into a hero image with the artist background. Artist name + lineup overlays the bottom. Date/time top-right. Close button top-left. Below the hero, venue address and the two action buttons. More cinematic, replaces the collapsed view entirely.
+      </div>
+      <div class="verdict">
+        <div class="pros"><h3>Works well when</h3><ul><li>Visually striking — feels like opening a poster</li><li>Artist backgrounds make each card unique</li><li>Strong sense of "opening something"</li></ul></div>
+        <div class="cons"><h3>Watch out for</h3><ul><li>Depends on artist background images</li><li>More complex layout to build</li><li>Loses the collapsed context (no date block visible)</li></ul></div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option B"</code></div>
+    </article>
+
+    <!-- C: Split Panel -->
+    <article class="option-card option-c not-chosen">
+      <div class="card-header">
+        <div class="card-header-top"><span class="option-label">Option C</span><div class="card-badges"><span class="chosen-badge">Chosen</span></div></div>
+        <h2 class="option-title">Split Panel</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="show-card-sim" style="background:#0c1222; border:1px solid rgba(6,182,212,0.15);">
+          <!-- Collapsed stays -->
+          <div style="display:flex; height:68px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <div style="width:68px; flex-shrink:0; background:linear-gradient(135deg,#1a1a3e,#2d1b4e); display:flex; align-items:center; justify-content:center;">
+              <div style="width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#06b6d4,#7c3aed); opacity:0.6;"></div>
+            </div>
+            <div style="flex:1; padding:10px; display:flex; flex-direction:column; justify-content:center;">
+              <span style="font-size:13px; font-weight:700; color:#f1f5f9;">Converge</span>
+              <span style="font-size:10px; color:rgba(255,255,255,0.4);">Razzmatazz &middot; Barcelona</span>
+            </div>
+            <div style="padding:8px; display:flex; align-items:center;">
+              <button style="width:24px; height:24px; border-radius:6px; background:rgba(255,255,255,0.06); border:none; color:rgba(255,255,255,0.4); font-size:14px; cursor:pointer;">&times;</button>
+            </div>
+          </div>
+          <!-- Expanded: two columns -->
+          <div style="display:flex; padding:10px; gap:10px;">
+            <!-- Left: info -->
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:10px; color:rgba(255,255,255,0.45); margin-bottom:4px;">
+                <span style="color:rgba(6,182,212,0.6);">&#9202;</span> Fri May 23 &middot; 20:00
+              </div>
+              <div style="font-size:10px; color:rgba(255,255,255,0.35); margin-bottom:6px;">
+                <span style="color:rgba(6,182,212,0.6);">&#9673;</span> Carrer dels Almogàvers 122, Barcelona
+              </div>
+              <div style="font-size:10px; color:rgba(255,255,255,0.3);">
+                <span style="color:rgba(6,182,212,0.6);">&#9835;</span> Coalesce &middot; Nails &middot; Candy
+              </div>
+            </div>
+            <!-- Right: actions stacked -->
+            <div style="display:flex; flex-direction:column; gap:6px; flex-shrink:0; width:110px;">
+              <a class="sim-btn" style="background:rgba(6,182,212,0.08); color:#06b6d4; border:1px solid rgba(6,182,212,0.2); font-size:10px; padding:7px 0;">&#9654; Setlist</a>
+              <a class="sim-btn" style="background:rgba(6,182,212,0.12); color:#06b6d4; font-size:10px; padding:7px 0;">&#8599; Tickets</a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="option-summary">
+        Collapsed header stays on top. Below, a two-column split: info on the left (time, address, lineup), action buttons stacked vertically on the right. Compact — everything visible without scrolling. Good for tablets/desktop where horizontal space is available.
+      </div>
+      <div class="verdict">
+        <div class="pros"><h3>Works well when</h3><ul><li>Very compact expanded height</li><li>Actions always visible, no scroll needed</li><li>Good for wide screens</li></ul></div>
+        <div class="cons"><h3>Watch out for</h3><ul><li>Info column gets cramped on narrow phones</li><li>Button labels have to be short</li><li>Less breathing room</li></ul></div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option C"</code></div>
+    </article>
+
+    <!-- D: Accordion Sections -->
+    <article class="option-card option-d not-chosen">
+      <div class="card-header">
+        <div class="card-header-top"><span class="option-label">Option D</span><div class="card-badges"><span class="chosen-badge">Chosen</span></div></div>
+        <h2 class="option-title">Card + Floating Actions</h2>
+      </div>
+      <div class="visual-preview">
+        <div class="show-card-sim" style="background:#0c1222; border:1px solid rgba(6,182,212,0.15);">
+          <!-- Collapsed stays -->
+          <div style="display:flex; height:68px; border-bottom:1px solid rgba(255,255,255,0.06);">
+            <div style="width:68px; flex-shrink:0; background:linear-gradient(135deg,#1a1a3e,#2d1b4e); display:flex; align-items:center; justify-content:center;">
+              <div style="width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,#06b6d4,#7c3aed); opacity:0.6;"></div>
+            </div>
+            <div style="flex:1; padding:10px; display:flex; flex-direction:column; justify-content:center;">
+              <span style="font-size:13px; font-weight:700; color:#f1f5f9;">Converge</span>
+              <span style="font-size:10px; color:rgba(255,255,255,0.4);">Razzmatazz &middot; Barcelona</span>
+            </div>
+            <div style="padding:8px; display:flex; align-items:center;"><button style="width:24px; height:24px; border-radius:6px; background:rgba(255,255,255,0.06); border:none; color:rgba(255,255,255,0.4); font-size:14px;">&times;</button></div>
+          </div>
+          <!-- Detail card -->
+          <div style="margin:10px; border-radius:10px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); padding:10px;">
+            <div style="display:flex; gap:6px; align-items:flex-start; font-size:10px; color:rgba(255,255,255,0.45); margin-bottom:6px;">
+              <span style="color:rgba(6,182,212,0.6);">&#9673;</span>
+              <div><span style="color:#f1f5f9; font-weight:600;">Razzmatazz</span><br>Carrer dels Almogàvers 122 &middot; Barcelona, Spain</div>
+            </div>
+            <div style="display:flex; gap:12px; font-size:10px; color:rgba(255,255,255,0.4); margin-bottom:6px;">
+              <span><span style="color:rgba(6,182,212,0.6);">&#9202;</span> Fri May 23 &middot; 20:00</span>
+            </div>
+            <div style="font-size:10px; color:rgba(255,255,255,0.35);">
+              <span style="font-weight:600; color:rgba(255,255,255,0.6);">Converge</span> &middot; Coalesce &middot; Nails &middot; Candy
+            </div>
+          </div>
+          <!-- Floating pill buttons -->
+          <div style="display:flex; justify-content:center; gap:6px; padding:0 10px 12px;">
+            <a class="sim-btn" style="background:rgba(6,182,212,0.06); color:#06b6d4; border:1px solid rgba(6,182,212,0.18); border-radius:20px; padding:8px 16px; font-size:11px;">&#9654; Play Setlist</a>
+            <a class="sim-btn" style="background:#06b6d4; color:#0c1222; border-radius:20px; padding:8px 16px; font-size:11px; font-weight:700;">&#8599; Get Tickets</a>
+          </div>
+        </div>
+      </div>
+      <div class="option-summary">
+        Collapsed header on top. Below, a contained "detail card" with venue, time, and lineup inside a subtle bordered box. Underneath, two pill-shaped buttons centered — "Get Tickets" as a solid primary CTA, "Play Setlist" as outline. The pill buttons give a more playful, app-native feel.
+      </div>
+      <div class="verdict">
+        <div class="pros"><h3>Works well when</h3><ul><li>Detail card creates visual separation</li><li>Pill buttons feel premium and tappable</li><li>"Get Tickets" stands out as primary CTA</li></ul></div>
+        <div class="cons"><h3>Watch out for</h3><ul><li>Slightly taller overall</li><li>More visual layers to process</li></ul></div>
+      </div>
+      <div class="card-footer"><code class="tell-claude">Tell Claude: "Option D"</code></div>
+    </article>
+
+  </main>
+
+  <section class="comparison-section">
+    <h2>How They Compare</h2>
+    <div class="comparison-table-wrapper">
+      <table class="comparison-table">
+        <thead><tr>
+          <th></th>
+          <th class="col-a col-recommended">A: Info Stack</th>
+          <th class="col-b">B: Hero Reveal</th>
+          <th class="col-c">C: Split Panel</th>
+          <th class="col-d">D: Card + Floating</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>Expanded height</td><td class="col-recommended">~200px</td><td>~230px</td><td>~170px</td><td>~220px</td></tr>
+          <tr><td>Collapsed visible</td><td class="col-recommended">Yes (header stays)</td><td>No (replaced by hero)</td><td>Yes</td><td>Yes</td></tr>
+          <tr><td>Requires images</td><td class="col-recommended">No (reuses collapsed photo)</td><td>Yes (background)</td><td>No</td><td>No</td></tr>
+          <tr><td>Action prominence</td><td class="col-recommended">Side by side, equal</td><td>Side by side, equal</td><td>Stacked right</td><td>Centered pills, tickets primary</td></tr>
+          <tr><td>Info density</td><td class="col-recommended">Medium</td><td>Low (venue only)</td><td>High (compact)</td><td>Medium (boxed)</td></tr>
+          <tr><td>Mobile fit</td><td class="col-recommended">Excellent</td><td>Good</td><td>Tight on small phones</td><td>Good</td></tr>
+          <tr><td>Visual character</td><td class="col-recommended">Clean, functional</td><td>Cinematic</td><td>Dense, utilitarian</td><td>Premium, layered</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="page-footer">
+    <p>Tell Claude: <strong>"Option A"</strong>, <strong>"Option C but [your change]"</strong>, or <strong>"more options"</strong></p>
+  </div>
+</body>
+</html>
