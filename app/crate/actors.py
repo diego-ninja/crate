@@ -296,6 +296,11 @@ def _execute_task(task_type: str, task_id: str):
         else:
             update_task(task_id, status="completed", result=result or {})
             log.info("Task %s (%s) completed", task_id, task_type)
+            try:
+                from crate.telegram import notify_task_completed
+                notify_task_completed(task_type, task_id, result)
+            except Exception:
+                pass
 
     except Exception as e:
         log.exception("Task %s (%s) failed", task_id, task_type)
@@ -303,6 +308,11 @@ def _execute_task(task_type: str, task_id: str):
             update_task(task_id, status="failed", error=str(e)[:500])
         except Exception:
             log.error("Could not mark task %s as failed", task_id)
+        try:
+            from crate.telegram import notify_task_failed
+            notify_task_failed(task_type, task_id, str(e)[:300])
+        except Exception:
+            pass
         raise  # let dramatiq handle retry logic
 
     finally:

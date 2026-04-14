@@ -48,8 +48,20 @@ def get_settings(request: Request):
             "username": get_setting("slskd_username", os.environ.get("SLSKD_SLSK_USERNAME", "")),
             "shares_music": get_setting("slskd_shares_music", "true") == "true",
         },
+        "telegram": {
+            "enabled": get_setting("telegram_enabled", "false") == "true",
+            "bot_token": _mask_token(get_setting("telegram_bot_token", "")),
+            "chat_id": get_setting("telegram_chat_id", ""),
+            "has_token": bool(get_setting("telegram_bot_token", "")),
+        },
         "about": _get_about_info(),
     }
+
+
+def _mask_token(token: str) -> str:
+    if not token or len(token) < 10:
+        return ""
+    return token[:6] + "..." + token[-4:]
 
 
 def _get_about_info() -> dict:
@@ -185,6 +197,30 @@ def update_processing(request: Request, body: dict):
         if val < 10 or val > 500:
             raise HTTPException(status_code=422, detail="Must be 10-500")
         set_setting("max_track_popularity", str(val))
+    return {"ok": True}
+
+
+@router.put("/telegram")
+def update_telegram(request: Request, body: dict):
+    _require_admin(request)
+    if "bot_token" in body:
+        token = (body["bot_token"] or "").strip()
+        if token and "..." not in token:
+            set_setting("telegram_bot_token", token)
+    if "enabled" in body:
+        set_setting("telegram_enabled", "true" if body["enabled"] else "false")
+    if "chat_id" in body:
+        set_setting("telegram_chat_id", str(body["chat_id"]).strip())
+    return {"ok": True}
+
+
+@router.post("/telegram/test")
+def test_telegram(request: Request):
+    _require_admin(request)
+    from crate.telegram import send_message
+    ok = send_message("\u2705 Crate bot test — connection working!")
+    if not ok:
+        raise HTTPException(status_code=400, detail="Failed to send message. Check bot token and chat ID.")
     return {"ok": True}
 
 
