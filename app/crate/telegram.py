@@ -547,10 +547,13 @@ def telegram_bot_loop(config: dict):
         try:
             # Poll for updates (long polling, 30s timeout)
             result = _api("getUpdates", offset=_LAST_UPDATE_ID + 1, timeout=30)
-            if result:
-                for update in result:
-                    _LAST_UPDATE_ID = update.get("update_id", _LAST_UPDATE_ID)
-                    _handle_update(update)
+            if result is None:
+                # API error (conflict, network, etc.) — back off before retry
+                time.sleep(5)
+                continue
+            for update in result:
+                _LAST_UPDATE_ID = update.get("update_id", _LAST_UPDATE_ID)
+                _handle_update(update)
 
             # Health check alerts every 5 min
             now = time.time()
