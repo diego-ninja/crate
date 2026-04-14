@@ -631,18 +631,22 @@ def upcoming(request: Request, limit: int = 120):
     recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
     placeholders = ",".join(["%s"] * len(followed_names))
 
-    # Resolve user location for show filtering
+    # Resolve user location for show filtering.
+    # The middleware user dict only has JWT fields (id, email, role) — location
+    # fields are in the DB, so we read the full user record here.
+    from crate.db.auth import get_user_by_id
+    full_user = get_user_by_id(user["id"]) or {}
     user_lat, user_lon, user_radius = None, None, 60
-    location_mode = user.get("show_location_mode") or "fixed"
+    location_mode = full_user.get("show_location_mode") or "fixed"
     if location_mode == "near_me":
         from crate.geolocation import detect_location_from_ip, get_client_ip
         geo = detect_location_from_ip(get_client_ip(request))
         if geo:
             user_lat, user_lon = geo["latitude"], geo["longitude"]
     else:
-        user_lat = user.get("latitude")
-        user_lon = user.get("longitude")
-    user_radius = user.get("show_radius_km") or 60
+        user_lat = full_user.get("latitude")
+        user_lon = full_user.get("longitude")
+    user_radius = full_user.get("show_radius_km") or 60
 
     items: list[dict] = []
     setlist_map: dict[str, list[dict]] = {}
