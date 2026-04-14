@@ -185,7 +185,8 @@ def api_rate_track(request: Request, body: dict):
 
 
 _TRACK_INFO_QUERY_COLS = (
-    "title, artist, album, bpm, audio_key, audio_scale, energy, "
+    "title, artist, album, format, bitrate, sample_rate, bit_depth, "
+    "bpm, audio_key, audio_scale, energy, "
     "danceability, valence, acousticness, instrumentalness, loudness, "
     "dynamic_range, mood_json, bliss_vector, lastfm_listeners, lastfm_playcount, popularity, rating"
 )

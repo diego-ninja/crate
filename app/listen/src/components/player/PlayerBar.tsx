@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
   Heart, Airplay, ListMusic, Mic2, Maximize2, Loader2,
@@ -94,7 +94,56 @@ export function PlayerBar() {
     () => currentTrack ? generateWaveformBars(currentTrack.id, 80) : [],
     [currentTrack],
   );
-  const qualityBadge = currentTrack ? getTrackQualityBadge(currentTrack) : null;
+  // Fetch quality metadata for the current track (format, bitrate, sample_rate, bit_depth).
+  // The Track object may not carry these fields depending on the source (playlist, radio, etc.)
+  // so we lazily fetch from the API when the track changes.
+  const [trackQuality, setTrackQuality] = useState<{
+    format?: string; bitrate?: number | null; sampleRate?: number | null; bitDepth?: number | null;
+  } | null>(null);
+
+  useEffect(() => {
+    setTrackQuality(null);
+    if (!currentTrack) return;
+
+    // If the track already has quality data, use it
+    if (currentTrack.format || currentTrack.sampleRate) {
+      setTrackQuality({
+        format: currentTrack.format,
+        bitrate: currentTrack.bitrate,
+        sampleRate: currentTrack.sampleRate,
+        bitDepth: currentTrack.bitDepth,
+      });
+      return;
+    }
+
+    // Otherwise fetch from API
+    const trackId = currentTrack.libraryTrackId;
+    const storageId = currentTrack.storageId;
+    if (!trackId && !storageId) return;
+
+    let cancelled = false;
+    const url = trackId
+      ? `/api/tracks/${trackId}/info`
+      : `/api/tracks/by-storage/${encodeURIComponent(storageId!)}/info`;
+
+    import("@/lib/api").then(({ api }) =>
+      api<Record<string, unknown>>(url).then((info) => {
+        if (cancelled) return;
+        setTrackQuality({
+          format: (info.format as string) || undefined,
+          bitrate: (info.bitrate as number) || undefined,
+          sampleRate: (info.sample_rate as number) || undefined,
+          bitDepth: (info.bit_depth as number) || undefined,
+        });
+      }).catch(() => {}),
+    );
+    return () => { cancelled = true; };
+  }, [currentTrack?.libraryTrackId, currentTrack?.storageId]);
+
+  const qualityBadge = getTrackQualityBadge({
+    ...currentTrack ?? { id: "", title: "", artist: "" },
+    ...trackQuality,
+  });
 
   if (!currentTrack) return null;
 
