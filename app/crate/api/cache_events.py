@@ -82,26 +82,39 @@ async def cache_invalidate_endpoint(request: Request):
 # Map mutation routes to cache scopes they invalidate.
 # Pattern → scopes (may include {id} placeholder replaced from URL).
 _INVALIDATION_RULES: list[tuple[re.Pattern[str], list[str]]] = [
-    # Likes
-    (re.compile(r"^/api/me/likes$"), ["likes"]),
-    # Follows
-    (re.compile(r"^/api/me/follows"), ["follows"]),
-    # Saved albums
-    (re.compile(r"^/api/me/albums(?:/(\d+))?$"), ["saved_albums"]),
-    # Play history
-    (re.compile(r"^/api/me/history$"), ["history"]),
-    (re.compile(r"^/api/me/play-events$"), ["history"]),
+    # Likes — any sub-path (POST /api/me/likes, DELETE /api/me/likes/{id})
+    (re.compile(r"^/api/me/likes"), ["likes"]),
+    # Follows — follow/unfollow invalidates follows + home + upcoming
+    (re.compile(r"^/api/me/follows"), ["follows", "home", "upcoming"]),
+    # Saved albums — also affects home recommendations
+    (re.compile(r"^/api/me/albums"), ["saved_albums", "home"]),
+    # Play history — affects home (continue listening, recently played)
+    (re.compile(r"^/api/me/history$"), ["history", "home"]),
+    (re.compile(r"^/api/me/play-events$"), ["history", "home"]),
+    # Show attendance
+    (re.compile(r"^/api/me/shows"), ["shows", "upcoming"]),
+    # Location changes affect show filtering
+    (re.compile(r"^/api/me/location$"), ["shows", "upcoming"]),
     # Playlists
     (re.compile(r"^/api/playlists$"), ["playlists"]),
     (re.compile(r"^/api/playlists/(\d+)"), ["playlists", "playlist:{1}"]),
     # Curation
     (re.compile(r"^/api/curation"), ["curation"]),
-    # Library mutations (tags, artwork, enrichment, scanner, matcher)
+    # Artist mutations
     (re.compile(r"^/api/artists/(\d+)/enrich"), ["library", "artist:{1}"]),
+    (re.compile(r"^/api/manage/artists/(\d+)/delete"), ["library", "artist:{1}", "home"]),
+    (re.compile(r"^/api/manage/artists/(\d+)/repair"), ["library", "artist:{1}"]),
+    (re.compile(r"^/api/manage/artists/(\d+)"), ["library", "artist:{1}"]),
+    # Album mutations
     (re.compile(r"^/api/albums/(\d+)/cover"), ["library", "album:{1}"]),
+    (re.compile(r"^/api/albums/(\d+)/tags"), ["library", "album:{1}"]),
+    (re.compile(r"^/api/albums/(\d+)"), ["library", "album:{1}"]),
+    # Track mutations
+    (re.compile(r"^/api/tracks/(\d+)/tags"), ["library"]),
+    # Library-wide mutations
     (re.compile(r"^/api/tags"), ["library"]),
-    (re.compile(r"^/api/scan"), ["library"]),
-    (re.compile(r"^/api/import"), ["library"]),
+    (re.compile(r"^/api/scan"), ["library", "home"]),
+    (re.compile(r"^/api/import"), ["library", "home"]),
     # Internal: worker cache invalidation
     (re.compile(r"^/api/cache/invalidate$"), []),
 ]

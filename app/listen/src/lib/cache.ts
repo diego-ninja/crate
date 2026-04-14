@@ -16,13 +16,18 @@ const memoryCache = new Map<string, CacheEntry>();
 function scopesForUrl(url: string): string[] {
   const scopes: string[] = [];
 
+  // Home — depends on follows, likes, history, library
+  if (url.startsWith("/api/me/home")) {
+    scopes.push("home", "follows", "likes", "history", "library");
+  }
   // User-specific data
-  if (url.startsWith("/api/me/likes")) scopes.push("likes");
+  else if (url.startsWith("/api/me/likes")) scopes.push("likes");
   else if (url.startsWith("/api/me/follows")) scopes.push("follows");
   else if (url.startsWith("/api/me/albums")) scopes.push("saved_albums");
   else if (url.startsWith("/api/me/history")) scopes.push("history");
   else if (url.startsWith("/api/me/stats")) scopes.push("history");
-  else if (url.startsWith("/api/me/upcoming")) scopes.push("library");
+  else if (url.startsWith("/api/me/upcoming")) scopes.push("upcoming", "follows", "library");
+  else if (url.startsWith("/api/me/shows")) scopes.push("shows");
   // Playlists
   else if (url.startsWith("/api/playlists")) {
     scopes.push("playlists");
@@ -43,12 +48,16 @@ function scopesForUrl(url: string): string[] {
     if (m) scopes.push(`album:${m[1]}`);
     scopes.push("library");
   }
-  // Artist/album listings (Home "Just Landed", Explore, etc.)
+  // Artist/album listings
   else if (url.startsWith("/api/artists")) scopes.push("library");
   else if (url.startsWith("/api/albums")) scopes.push("library");
   // Search, browse, genres
   else if (url.startsWith("/api/browse")) scopes.push("library");
   else if (url.startsWith("/api/genres")) scopes.push("library");
+  // Radio
+  else if (url.startsWith("/api/radio")) scopes.push("library");
+  // Shows
+  else if (url.startsWith("/api/shows")) scopes.push("shows");
 
   return scopes;
 }
@@ -94,7 +103,7 @@ export function cacheInvalidate(scope: string): void {
   const keysToRemove: string[] = [];
 
   for (const [key, entry] of memoryCache) {
-    if (entry.scopes.some((s) => s === scope || scope === "library")) {
+    if (entry.scopes.includes(scope)) {
       keysToRemove.push(key);
     }
   }
