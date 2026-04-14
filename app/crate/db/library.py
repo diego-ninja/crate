@@ -253,10 +253,11 @@ def upsert_track(data: dict):
         )
         cur.execute("""
             INSERT INTO library_tracks (storage_id, album_id, artist, album, slug, filename, title,
-                track_number, disc_number, format, bitrate, duration, size,
+                track_number, disc_number, format, bitrate, sample_rate, bit_depth,
+                duration, size,
                 year, genre, albumartist, musicbrainz_albumid, musicbrainz_trackid,
                 path, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(path) DO UPDATE SET
                 storage_id=COALESCE(library_tracks.storage_id, EXCLUDED.storage_id),
                 album_id=EXCLUDED.album_id, artist=EXCLUDED.artist, album=EXCLUDED.album,
@@ -264,17 +265,17 @@ def upsert_track(data: dict):
                 filename=EXCLUDED.filename, title=EXCLUDED.title,
                 track_number=EXCLUDED.track_number, disc_number=EXCLUDED.disc_number,
                 format=EXCLUDED.format, bitrate=EXCLUDED.bitrate,
+                sample_rate=EXCLUDED.sample_rate, bit_depth=EXCLUDED.bit_depth,
                 duration=EXCLUDED.duration, size=EXCLUDED.size,
                 year=EXCLUDED.year, genre=EXCLUDED.genre, albumartist=EXCLUDED.albumartist,
                 musicbrainz_albumid=COALESCE(NULLIF(EXCLUDED.musicbrainz_albumid, ''), library_tracks.musicbrainz_albumid),
                 musicbrainz_trackid=COALESCE(NULLIF(EXCLUDED.musicbrainz_trackid, ''), library_tracks.musicbrainz_trackid),
                 updated_at=EXCLUDED.updated_at
-                -- Preserve analysis fields (don't overwrite with NULL)
-                -- bpm, audio_key, audio_scale, energy, mood_json are NOT touched
         """, (
             storage_id, data.get("album_id"), data["artist"], data["album"], slug,
             data["filename"], data.get("title"), data.get("track_number"),
             data.get("disc_number", 1), data.get("format"), data.get("bitrate"),
+            data.get("sample_rate"), data.get("bit_depth"),
             data.get("duration"), data.get("size"), data.get("year"),
             data.get("genre"), data.get("albumartist"),
             data.get("musicbrainz_albumid"), data.get("musicbrainz_trackid"),

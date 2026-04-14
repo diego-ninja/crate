@@ -252,6 +252,10 @@ export interface HomeRecommendedTrack {
   album_id?: number | null;
   album_slug?: string | null;
   duration?: number | null;
+  format?: string | null;
+  bitrate?: number | null;
+  sample_rate?: number | null;
+  bit_depth?: number | null;
 }
 
 export interface HomeRadioStation {

@@ -70,6 +70,10 @@ function toPlayerTrack(item: HomeRecommendedTrack): Track {
       : undefined,
     path: item.track_path || undefined,
     libraryTrackId: item.track_id || undefined,
+    format: item.format || undefined,
+    bitrate: item.bitrate,
+    sampleRate: item.sample_rate,
+    bitDepth: item.bit_depth,
   };
 }
 

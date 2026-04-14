@@ -239,7 +239,9 @@ def _init_db_inner():
         """)
         _create_schema(cur)
         _run_migrations(cur)
+        from crate.genre_taxonomy import seed_genre_taxonomy
         from crate.db.auth import _seed_admin
+        seed_genre_taxonomy(cur)
         _seed_admin(cur)
 
 
@@ -571,6 +573,8 @@ def _create_schema(cur):
             disc_number INTEGER DEFAULT 1,
             format TEXT,
             bitrate INTEGER,
+            sample_rate INTEGER,
+            bit_depth INTEGER,
             duration DOUBLE PRECISION,
             size BIGINT,
             year TEXT,
@@ -650,6 +654,46 @@ def _create_schema(cur):
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_artist_genres_genre ON artist_genres(genre_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_album_genres_genre ON album_genres(genre_id)")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS genre_taxonomy_nodes (
+            id SERIAL PRIMARY KEY,
+            slug TEXT UNIQUE NOT NULL,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            external_description TEXT NOT NULL DEFAULT '',
+            external_description_source TEXT NOT NULL DEFAULT '',
+            musicbrainz_mbid TEXT,
+            wikidata_entity_id TEXT,
+            wikidata_url TEXT,
+            is_top_level BOOLEAN NOT NULL DEFAULT FALSE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS genre_taxonomy_aliases (
+            alias_slug TEXT PRIMARY KEY,
+            alias_name TEXT UNIQUE NOT NULL,
+            genre_id INTEGER NOT NULL REFERENCES genre_taxonomy_nodes(id) ON DELETE CASCADE
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS genre_taxonomy_edges (
+            source_genre_id INTEGER NOT NULL REFERENCES genre_taxonomy_nodes(id) ON DELETE CASCADE,
+            target_genre_id INTEGER NOT NULL REFERENCES genre_taxonomy_nodes(id) ON DELETE CASCADE,
+            relation_type TEXT NOT NULL,
+            weight DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            PRIMARY KEY (source_genre_id, target_genre_id, relation_type)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_genre_taxonomy_alias_genre_id ON genre_taxonomy_aliases(genre_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_genre_taxonomy_edges_source ON genre_taxonomy_edges(source_genre_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_genre_taxonomy_edges_target ON genre_taxonomy_edges(target_genre_id)")
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_genre_taxonomy_nodes_musicbrainz_mbid
+        ON genre_taxonomy_nodes(musicbrainz_mbid)
+        WHERE musicbrainz_mbid IS NOT NULL
+        """
+    )
 
     # ── Tidal ─────────────────────────────────────────────────────
 
@@ -1801,9 +1845,63 @@ def _m23_add_storage_ids_and_playlist_track_id(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_playlist_members_composite ON playlist_members(playlist_id, user_id)")
 
 
+def _m24_genre_taxonomy_descriptions_and_lowercase_names(cur):
+    cur.execute("""
+        DO $$ BEGIN
+            ALTER TABLE genre_taxonomy_nodes ADD COLUMN description TEXT NOT NULL DEFAULT '';
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+    cur.execute("UPDATE genre_taxonomy_nodes SET name = LOWER(BTRIM(name)), description = LOWER(BTRIM(COALESCE(description, '')))")
+    cur.execute("UPDATE genre_taxonomy_aliases SET alias_name = LOWER(BTRIM(alias_name))")
+    cur.execute("UPDATE genres SET name = LOWER(BTRIM(name))")
+
+
+def _m25_genre_taxonomy_external_metadata(cur):
+    cur.execute("""
+        DO $$ BEGIN
+            ALTER TABLE genre_taxonomy_nodes ADD COLUMN external_description TEXT NOT NULL DEFAULT '';
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+    cur.execute("""
+        DO $$ BEGIN
+            ALTER TABLE genre_taxonomy_nodes ADD COLUMN external_description_source TEXT NOT NULL DEFAULT '';
+        EXCEPTION WHEN duplicate_column THEN NULL;
+        END $$
+    """)
+    for column in ("musicbrainz_mbid", "wikidata_entity_id", "wikidata_url"):
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE genre_taxonomy_nodes ADD COLUMN {column} TEXT;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
+
+def _m26_genre_taxonomy_musicbrainz_index(cur):
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_genre_taxonomy_nodes_musicbrainz_mbid
+        ON genre_taxonomy_nodes(musicbrainz_mbid)
+        WHERE musicbrainz_mbid IS NOT NULL
+        """
+    )
+
+
 # ---------------------------------------------------------------------------
 # Migration registry — (version, name, handler)
 # ---------------------------------------------------------------------------
+
+def _m27_add_track_sample_rate_and_bit_depth(cur):
+    for col, typedef in (("sample_rate", "INTEGER"), ("bit_depth", "INTEGER")):
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE library_tracks ADD COLUMN {col} {typedef};
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
 
 _MIGRATIONS = [
     (1, "add_artist_id_sequence", _m01_add_artist_id_sequence),
@@ -1828,4 +1926,8 @@ _MIGRATIONS = [
     (21, "identity_social_collab_foundation", _m21_identity_social_collab_foundation),
     (22, "add_subsonic_token", _m22_add_subsonic_token),
     (23, "add_storage_ids_and_playlist_track_id", _m23_add_storage_ids_and_playlist_track_id),
+    (24, "genre_taxonomy_descriptions_and_lowercase_names", _m24_genre_taxonomy_descriptions_and_lowercase_names),
+    (25, "genre_taxonomy_external_metadata", _m25_genre_taxonomy_external_metadata),
+    (26, "genre_taxonomy_musicbrainz_index", _m26_genre_taxonomy_musicbrainz_index),
+    (27, "add_track_sample_rate_and_bit_depth", _m27_add_track_sample_rate_and_bit_depth),
 ]

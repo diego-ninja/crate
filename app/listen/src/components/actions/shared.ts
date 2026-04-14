@@ -152,6 +152,10 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
       filename: string;
       path: string;
       length_sec: number;
+      format?: string;
+      bitrate?: number | null;
+      sample_rate?: number | null;
+      bit_depth?: number | null;
       tags: { title: string };
     }>;
   }>(albumApiPath({
@@ -179,6 +183,10 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
     albumCover: coverUrl || undefined,
     path: track.path,
     libraryTrackId: track.id,
+    format: track.format || undefined,
+    bitrate: track.bitrate,
+    sampleRate: track.sample_rate,
+    bitDepth: track.bit_depth,
   }));
 }
 

@@ -493,6 +493,120 @@ def _handle_index_genres(task_id: str, params: dict, config: dict) -> dict:
     return result
 
 
+def _handle_infer_genre_taxonomy(task_id: str, params: dict, config: dict) -> dict:
+    from crate.genre_taxonomy_inference import infer_genre_taxonomy_batch
+
+    limit = max(1, min(int(params.get("limit") or 200), 500))
+    focus_slug = (params.get("focus_slug") or "").strip().lower() or None
+    aggressive = bool(params.get("aggressive", True))
+    include_external = bool(params.get("include_external", True))
+
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": "Inferring taxonomy for unmapped genres...",
+            "limit": limit,
+            "focus_slug": focus_slug,
+            "aggressive": aggressive,
+            "include_external": include_external,
+        },
+    )
+    result = infer_genre_taxonomy_batch(
+        limit=limit,
+        focus_slug=focus_slug,
+        aggressive=aggressive,
+        include_external=include_external,
+        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        event_callback=lambda data: emit_task_event(task_id, "info", data),
+    )
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": (
+                f"Genre taxonomy inference complete: {result.get('mapped', 0)} mapped, "
+                f"{result.get('remaining_unmapped', 0)} still unmapped"
+            )
+        },
+    )
+    return result
+
+
+def _handle_enrich_genre_descriptions(task_id: str, params: dict, config: dict) -> dict:
+    from crate.genre_descriptions import enrich_genre_descriptions_batch
+
+    limit = max(1, min(int(params.get("limit") or 120), 500))
+    focus_slug = (params.get("focus_slug") or "").strip().lower() or None
+    force = bool(params.get("force", False))
+
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": "Enriching genre descriptions from Wikidata...",
+            "limit": limit,
+            "focus_slug": focus_slug,
+            "force": force,
+        },
+    )
+    result = enrich_genre_descriptions_batch(
+        limit=limit,
+        focus_slug=focus_slug,
+        force=force,
+        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        event_callback=lambda data: emit_task_event(task_id, "info", data),
+    )
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": (
+                f"Genre description enrichment complete: {result.get('updated', 0)} updated, "
+                f"{result.get('remaining_without_external', 0)} still without external description"
+            )
+        },
+    )
+    return result
+
+
+def _handle_sync_musicbrainz_genre_graph(task_id: str, params: dict, config: dict) -> dict:
+    from crate.genre_descriptions import sync_musicbrainz_genre_graph_batch
+
+    limit = max(1, min(int(params.get("limit") or 80), 300))
+    focus_slug = (params.get("focus_slug") or "").strip().lower() or None
+    force = bool(params.get("force", False))
+
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": "Syncing MusicBrainz genre relationships...",
+            "limit": limit,
+            "focus_slug": focus_slug,
+            "force": force,
+        },
+    )
+    result = sync_musicbrainz_genre_graph_batch(
+        limit=limit,
+        focus_slug=focus_slug,
+        force=force,
+        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        event_callback=lambda data: emit_task_event(task_id, "info", data),
+    )
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": (
+                f"MusicBrainz genre graph sync complete: {result.get('edges_synced', 0)} edges, "
+                f"{result.get('matched_musicbrainz', 0)} genres matched"
+            )
+        },
+    )
+    return result
+
+
 def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
     """Reset analysis/bliss state to 'pending' so background daemons re-process tracks.
     Accepts: artist, album (name), album_id, track_id, or scope='all'."""
@@ -548,6 +662,9 @@ ANALYSIS_TASK_HANDLERS: dict[str, TaskHandler] = {
     "compute_analytics": _handle_compute_analytics,
     "refresh_user_listening_stats": _handle_refresh_user_listening_stats,
     "index_genres": _handle_index_genres,
+    "infer_genre_taxonomy": _handle_infer_genre_taxonomy,
+    "enrich_genre_descriptions": _handle_enrich_genre_descriptions,
+    "sync_musicbrainz_genre_graph": _handle_sync_musicbrainz_genre_graph,
     "compute_popularity": _handle_compute_popularity,
     # Re-analysis: just resets state, background daemons pick up the work
     "analyze_tracks": _handle_requeue_analysis,

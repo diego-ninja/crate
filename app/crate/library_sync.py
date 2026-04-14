@@ -1,4 +1,6 @@
+import json
 import logging
+import subprocess
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +28,31 @@ log = logging.getLogger(__name__)
 def _storage_id_from_name(value: str | None) -> str | None:
     candidate = (value or "").strip()
     return candidate if looks_like_storage_id(candidate) else None
+
+
+def _ffprobe_duration_bitrate(filepath: Path) -> tuple[float, int]:
+    """Use ffprobe to read duration and bitrate from files mutagen can't parse.
+
+    Returns (duration_seconds, bitrate_bps). Falls back to (0.0, 0) on error.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet",
+                "-print_format", "json",
+                "-show_format",
+                str(filepath),
+            ],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode != 0:
+            return 0.0, 0
+        info = json.loads(result.stdout).get("format", {})
+        duration = float(info.get("duration") or 0)
+        bitrate = int(info.get("bit_rate") or 0)
+        return duration, bitrate
+    except Exception:
+        return 0.0, 0
 
 
 class LibrarySync:
@@ -123,13 +150,21 @@ class LibrarySync:
         return self.sync_artist_dirs(artist_name, [artist_dir])
 
     def _iter_album_audio_files(self, album_dir: Path) -> list[Path]:
-        return sorted(
+        all_audio = sorted(
             file_path
             for file_path in album_dir.rglob("*")
             if file_path.is_file()
             and not any(part.startswith(".") for part in file_path.relative_to(album_dir).parts)
             and file_path.suffix.lower() in self.extensions
         )
+        # When an album directory contains both FLAC and M4A files, skip the
+        # M4A.  Tidal's lossless tier delivers FLAC-in-MP4 DASH containers
+        # without metadata alongside proper FLAC files.  Indexing both would
+        # double the track count and pollute tags with empty values.
+        has_flac = any(f.suffix.lower() == ".flac" for f in all_audio)
+        if has_flac:
+            all_audio = [f for f in all_audio if f.suffix.lower() != ".m4a"]
+        return all_audio
 
     def _album_tree_mtime(self, album_dir: Path) -> float:
         latest_mtime = album_dir.stat().st_mtime
@@ -355,6 +390,14 @@ class LibrarySync:
 
             duration = mf.info.length if mf and mf.info else 0.0
             bitrate = getattr(mf.info, "bitrate", 0) if mf and mf.info else 0
+            sample_rate = getattr(mf.info, "sample_rate", 0) if mf and mf.info else 0
+            bit_depth = getattr(mf.info, "bits_per_sample", 0) if mf and mf.info else 0
+
+            # M4A DASH containers (FLAC-in-MP4 from Tidal) report 0
+            # for both duration and bitrate.  Fall back to ffprobe.
+            if duration == 0.0 and fmt == "m4a":
+                duration, bitrate = _ffprobe_duration_bitrate(f)
+
             total_duration += duration
 
             tags = read_tags(f)
@@ -377,6 +420,8 @@ class LibrarySync:
                 "disc_number": _parse_int(tags.get("discnumber"), 1),
                 "format": fmt,
                 "bitrate": bitrate,
+                "sample_rate": sample_rate or None,
+                "bit_depth": bit_depth or None,
                 "duration": duration,
                 "size": fstat.st_size,
                 "year": tags.get("date", "")[:4] if tags.get("date") else None,
@@ -399,6 +444,9 @@ class LibrarySync:
                         has_cover = 1
                     elif hasattr(first, "tags") and first.tags:
                         if any(isinstance(k, str) and k.startswith("APIC") for k in first.tags):
+                            has_cover = 1
+                        # MP4/M4A embedded covers use the "covr" atom
+                        elif "covr" in first.tags:
                             has_cover = 1
             except Exception:
                 pass
