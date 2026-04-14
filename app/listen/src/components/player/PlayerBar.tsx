@@ -4,6 +4,7 @@ import {
   Heart, Airplay, ListMusic, Mic2, Maximize2, Loader2,
 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { api } from "@/lib/api";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useIsDesktop } from "@/hooks/use-breakpoint";
@@ -126,8 +127,8 @@ export function PlayerBar() {
       ? `/api/tracks/${trackId}/info`
       : `/api/tracks/by-storage/${encodeURIComponent(storageId!)}/info`;
 
-    import("@/lib/api").then(({ api }) =>
-      api<Record<string, unknown>>(url).then((info) => {
+    api<Record<string, unknown>>(url)
+      .then((info) => {
         if (cancelled) return;
         setTrackQuality({
           format: (info.format as string) || undefined,
@@ -135,15 +136,17 @@ export function PlayerBar() {
           sampleRate: (info.sample_rate as number) || undefined,
           bitDepth: (info.bit_depth as number) || undefined,
         });
-      }).catch(() => {}),
-    );
+      })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [currentTrack?.libraryTrackId, currentTrack?.storageId]);
 
-  const qualityBadge = getTrackQualityBadge({
+  const qualityTrack = {
     ...currentTrack ?? { id: "", title: "", artist: "" },
     ...trackQuality,
-  });
+  };
+  const qualityBadge = getTrackQualityBadge(qualityTrack);
+
 
   if (!currentTrack) return null;
 

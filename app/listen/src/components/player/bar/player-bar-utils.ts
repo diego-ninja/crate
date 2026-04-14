@@ -51,7 +51,9 @@ function classifyTier(fmt: string, bitDepth?: number | null, sampleRate?: number
 }
 
 export function getTrackQualityBadge(track: Track): QualityBadge | null {
-  const fmt = (track.format || "").toLowerCase() || inferFormatFromId(track.id);
+  const fmt = (track.format || "").toLowerCase()
+    || inferFormatFromId(track.path || "")
+    || inferFormatFromId(track.id);
   if (!fmt) return null;
 
   const sr = track.sampleRate;

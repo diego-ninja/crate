@@ -352,13 +352,18 @@ export function useTrackVisualizerProfile(track: Track | undefined, enabled: boo
     }
 
     const controller = new AbortController();
-    const infoUrl = track.libraryTrackId != null
-      ? `/api/tracks/${track.libraryTrackId}/info`
-      : `/api/track-info/${encodeURIComponent(
-          (track.path || track.id).startsWith("/music/")
-            ? (track.path || track.id).slice(7)
-            : (track.path || track.id),
-        ).replace(/%2F/g, "/")}`;
+    const resolvedId = track.libraryTrackId ?? (
+      /^\d+$/.test(track.id) ? Number(track.id) : null
+    );
+    const infoUrl = resolvedId != null
+      ? `/api/tracks/${resolvedId}/info`
+      : track.storageId
+        ? `/api/tracks/by-storage/${encodeURIComponent(track.storageId)}/info`
+        : `/api/track-info/${encodeURIComponent(
+            (track.path || track.id).startsWith("/music/")
+              ? (track.path || track.id).slice(7)
+              : (track.path || track.id),
+          ).replace(/%2F/g, "/")}`;
 
     api<TrackVisualizerInfo>(infoUrl, "GET", undefined, { signal: controller.signal })
       .then((data) => {

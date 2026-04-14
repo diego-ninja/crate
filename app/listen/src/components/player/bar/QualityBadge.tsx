@@ -44,7 +44,7 @@ export function QualityBadge({ badge }: { badge: QualityBadgeData }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-bold tracking-wider leading-none border ${style.border} ${style.text} ${style.bg} ${style.glow || ""}`}
+      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold tracking-wider leading-none border ${style.border} ${style.text} ${style.bg} ${style.glow || ""}`}
       title={badge.detail || badge.label}
     >
       {Icon && <Icon size={9} />}

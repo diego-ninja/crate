@@ -66,11 +66,16 @@ export function InfoTab() {
     if (!currentTrack) return;
     const controller = new AbortController();
 
-    const infoUrl = currentTrack.libraryTrackId != null
-      ? `/api/tracks/${currentTrack.libraryTrackId}/info`
-      : `/api/track-info/${encodeURIComponent(
-          currentTrack.id.startsWith("/music/") ? currentTrack.id.slice(7) : currentTrack.id,
-        ).replace(/%2F/g, "/")}`;
+    const resolvedId = currentTrack.libraryTrackId ?? (
+      /^\d+$/.test(currentTrack.id) ? Number(currentTrack.id) : null
+    );
+    const infoUrl = resolvedId != null
+      ? `/api/tracks/${resolvedId}/info`
+      : currentTrack.storageId
+        ? `/api/tracks/by-storage/${encodeURIComponent(currentTrack.storageId)}/info`
+        : `/api/track-info/${encodeURIComponent(
+            currentTrack.id.startsWith("/music/") ? currentTrack.id.slice(7) : currentTrack.id,
+          ).replace(/%2F/g, "/")}`;
 
     setInfo(null);
     setLoading(true);

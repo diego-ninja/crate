@@ -804,7 +804,7 @@ def _build_mix_rows(
             limit=max(limit * 6, 180),
         )
         return (
-            f"{genre_name} Mix",
+            f"{genre_name} mix",
             f"Tracks from your library matching {genre_name} and closely related scenes.",
             _select_diverse_tracks_with_backfill(rows, limit=limit, max_per_artist=2, max_per_album=2),
         )
