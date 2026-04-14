@@ -245,6 +245,22 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     if result.get("warning"):
         emit_task_event(task_id, "info", {"message": f"Tidal reported partial issues but files were produced: {result['warning']}"})
 
+    # Clean up tiddl intermediate M4A files before moving to the library.
+    # tiddl fetches raw DASH streams as .m4a, converts to .flac, but
+    # sometimes leaves the intermediates behind.  If we move them into
+    # the library, sync indexes them as ghost tracks with no metadata.
+    from crate.m4a_fix import cleanup_tidal_intermediates
+
+    cleanup = cleanup_tidal_intermediates(
+        Path(result["path"]),
+        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+    )
+    if cleanup.get("deleted"):
+        mb = cleanup["bytes_freed"] / (1024 * 1024)
+        emit_task_event(task_id, "info", {
+            "message": f"Cleaned up {cleanup['deleted']} tiddl intermediate M4A files ({mb:.0f} MB)",
+        })
+
     preferred_artist_name = _resolve_tidal_preferred_artist_name(url, params, download_id)
     staged_artists = _align_tidal_staged_artist_dirs(result["path"], lib, preferred_artist_name)
 
@@ -1118,10 +1134,101 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
     }
 
 
+def _handle_remux_m4a_dash(task_id: str, params: dict, config: dict) -> dict:
+    """Fix tiddl intermediate M4A files in the library.
+
+    tiddl fetches raw DASH streams as .m4a, converts to .flac with tags,
+    but sometimes leaves the intermediates behind.  These ghost files
+    have no metadata, zero duration, and pollute the library.
+
+    For each album directory:
+    - If FLAC files already exist alongside → delete the M4A intermediates
+    - If M4A-only (conversion failed) → remux to native FLAC via ffmpeg
+    """
+    from crate.m4a_fix import cleanup_tidal_intermediates, is_tidal_intermediate, remux_m4a_dash_to_flac
+
+    lib = Path(config.get("library_path", "/music"))
+    dry_run = bool(params.get("dry_run", False))
+
+    emit_task_event(task_id, "info", {"message": "Scanning library for tiddl intermediate M4A files..."})
+
+    # Phase 1: cleanup intermediates where FLACs exist
+    cleanup = cleanup_tidal_intermediates(
+        lib,
+        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+    )
+
+    deleted = cleanup["deleted"]
+    bytes_freed = cleanup["bytes_freed"]
+
+    # Phase 2: find M4A-only albums (conversion failed) and remux
+    m4a_only: dict[Path, list[Path]] = {}
+    for f in lib.rglob("*.m4a"):
+        if f.is_file() and is_tidal_intermediate(f):
+            parent = f.parent
+            has_flac = any(x.suffix.lower() == ".flac" for x in parent.iterdir() if x.is_file())
+            if not has_flac:
+                m4a_only.setdefault(parent, []).append(f)
+
+    converted = 0
+    failed = 0
+    total_remux = sum(len(files) for files in m4a_only.values())
+
+    if total_remux and not dry_run:
+        emit_task_event(task_id, "info", {
+            "message": f"Found {total_remux} M4A files in {len(m4a_only)} albums with no FLACs — remuxing",
+        })
+        done = 0
+        for album_dir, m4a_files in m4a_only.items():
+            try:
+                rel = album_dir.relative_to(lib)
+                parts = rel.parts
+                artist_guess = parts[0] if len(parts) >= 2 else ""
+                album_guess = parts[1] if len(parts) >= 3 else ""
+            except ValueError:
+                artist_guess = ""
+                album_guess = ""
+
+            for m4a_path in m4a_files:
+                done += 1
+                update_task(task_id, progress=json.dumps({
+                    "phase": "remuxing", "done": done, "total": total_remux, "file": m4a_path.name,
+                }))
+                if remux_m4a_dash_to_flac(m4a_path, artist=artist_guess, album=album_guess):
+                    converted += 1
+                else:
+                    failed += 1
+
+    mb_freed = bytes_freed / (1024 * 1024)
+    emit_task_event(task_id, "info", {
+        "message": (
+            f"M4A fix complete: {deleted} intermediates deleted ({mb_freed:.0f} MB freed), "
+            f"{converted} remuxed to FLAC, {failed} failed"
+        ),
+    })
+
+    if (deleted > 0 or converted > 0) and not dry_run:
+        from crate.library_sync import start_scan
+        try:
+            start_scan()
+        except Exception:
+            log.debug("Failed to start scan after M4A fix", exc_info=True)
+
+    return {
+        "deleted": deleted,
+        "bytes_freed": bytes_freed,
+        "converted": converted,
+        "failed": failed,
+        "m4a_only_albums": len(m4a_only),
+        "dry_run": dry_run,
+    }
+
+
 ACQUISITION_TASK_HANDLERS: dict[str, TaskHandler] = {
     "tidal_download": _handle_tidal_download,
     "check_new_releases": _handle_check_new_releases,
     "soulseek_download": _handle_soulseek_download,
     "cleanup_incomplete_downloads": _handle_cleanup_incomplete_downloads,
     "library_upload": _handle_library_upload,
+    "remux_m4a_dash": _handle_remux_m4a_dash,
 }

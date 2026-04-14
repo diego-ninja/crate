@@ -11,6 +11,10 @@ export interface Track {
   albumCover?: string;
   path?: string;
   libraryTrackId?: number;
+  format?: string;
+  bitrate?: number | null;
+  sampleRate?: number | null;
+  bitDepth?: number | null;
   isSuggested?: boolean;
   suggestionSource?: "playlist";
 }

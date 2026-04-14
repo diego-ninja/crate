@@ -13,11 +13,13 @@ from crate.db.user_library import (
     get_top_artists,
     get_top_genres,
 )
-
-
-def _slugify(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
-    return slug or "mix"
+from crate.genre_taxonomy import (
+    choose_mix_seed_genres,
+    expand_genre_terms_with_aliases,
+    get_genre_display_name,
+    get_related_genre_terms,
+    summarize_taste_genres,
+)
 
 
 def _coerce_datetime(value: object) -> datetime | None:
@@ -50,6 +52,66 @@ def _trim_bio(value: str, max_length: int = 280) -> str:
     return f"{trimmed}…"
 
 
+def _daily_rotation_index(pool_size: int, user_id: int) -> int:
+    if pool_size <= 1:
+        return 0
+    return (date.today().toordinal() + max(user_id, 0)) % pool_size
+
+
+def _genre_stat_rows_from_names(names: list[str]) -> list[dict]:
+    return [
+        {
+            "genre_name": name,
+            "play_count": 1,
+            "complete_play_count": 0,
+            "minutes_listened": 0,
+        }
+        for name in names
+        if (name or "").strip()
+    ]
+
+
+def _derive_home_genres(top_genres: list[dict], fallback_names: list[str], limit: int) -> tuple[list[str], list[dict]]:
+    genre_rows = [dict(row) for row in top_genres if row.get("genre_name")]
+    taste_genres = summarize_taste_genres(genre_rows, limit=limit)
+    mix_seed_genres = choose_mix_seed_genres(genre_rows, limit=limit)
+    if taste_genres or mix_seed_genres:
+        return taste_genres, mix_seed_genres
+
+    fallback_rows = _genre_stat_rows_from_names(fallback_names)
+    return (
+        summarize_taste_genres(fallback_rows, limit=limit),
+        choose_mix_seed_genres(fallback_rows, limit=limit),
+    )
+
+
+def _artist_identity(row: dict) -> object | None:
+    artist_slug = (row.get("artist_slug") or "").strip().lower()
+    if artist_slug:
+        return ("slug", artist_slug)
+    artist_id = row.get("artist_id")
+    if artist_id is not None:
+        return ("id", artist_id)
+    artist_name = (row.get("artist") or "").strip().lower()
+    if artist_name:
+        return ("name", artist_name)
+    return None
+
+
+def _album_identity(row: dict) -> object | None:
+    artist_identity = _artist_identity(row)
+    album_slug = (row.get("album_slug") or "").strip().lower()
+    if album_slug:
+        return ("slug", artist_identity, album_slug)
+    album_name = (row.get("album") or "").strip().lower()
+    if album_name:
+        return ("name", artist_identity, album_name)
+    album_id = row.get("album_id")
+    if album_id is not None:
+        return ("id", album_id)
+    return None
+
+
 def _track_payload(row: dict) -> dict:
     return {
         "track_id": row.get("track_id"),
@@ -63,6 +125,10 @@ def _track_payload(row: dict) -> dict:
         "album_id": row.get("album_id"),
         "album_slug": row.get("album_slug"),
         "duration": row.get("duration"),
+        "format": row.get("format"),
+        "bitrate": (row["bitrate"] // 1000) if row.get("bitrate") else None,
+        "sample_rate": row.get("sample_rate"),
+        "bit_depth": row.get("bit_depth"),
     }
 
 
@@ -260,7 +326,7 @@ def _build_recently_played(user_id: int, limit: int = 9) -> list[dict]:
     seen_albums: set[object] = set()
 
     for row in history:
-        artist_key = row.get("artist_id") or (row.get("artist") or "").lower()
+        artist_key = _artist_identity(row)
         if artist_key and artist_key not in seen_artists:
             seen_artists.add(artist_key)
             recent_artists.append(
@@ -273,10 +339,7 @@ def _build_recently_played(user_id: int, limit: int = 9) -> list[dict]:
                     "played_at": row.get("played_at"),
                 }
             )
-        album_key = row.get("album_id") or (
-            (row.get("artist") or "").lower(),
-            (row.get("album") or "").lower(),
-        )
+        album_key = _album_identity(row)
         if row.get("album") and album_key not in seen_albums:
             seen_albums.add(album_key)
             recent_albums.append(
@@ -352,6 +415,7 @@ def _build_recently_played(user_id: int, limit: int = 9) -> list[dict]:
 
 
 def _get_home_hero(
+    user_id: int,
     followed_names_lower: list[str],
     similar_target_names_lower: list[str],
     top_genres_lower: list[str],
@@ -384,7 +448,7 @@ def _get_home_hero(
                 COUNT(DISTINCT CASE WHEN LOWER(g.name) = ANY(%s) THEN g.name END) DESC,
                 COALESCE(la.listeners, 0) DESC,
                 COALESCE(la.lastfm_playcount, 0) DESC
-            LIMIT 1
+            LIMIT 7
             """,
             (
                 top_genres_lower,
@@ -413,16 +477,18 @@ def _get_home_hero(
                   AND COALESCE(bio, '') <> ''
                   AND NOT (LOWER(name) = ANY(%s))
                 ORDER BY COALESCE(listeners, 0) DESC, COALESCE(lastfm_playcount, 0) DESC
-                LIMIT 1
+                LIMIT 7
                 """,
                 (followed_names_lower,),
             )
-            row = cur.fetchone()
+            rows = [dict(item) for item in cur.fetchall()]
+        else:
+            rows = [dict(row)] + [dict(item) for item in cur.fetchall()]
 
-    if not row:
+    if not rows:
         return None
 
-    item = dict(row)
+    item = rows[_daily_rotation_index(len(rows), user_id)]
     item["bio"] = _trim_bio(item.get("bio") or "")
     return item
 
@@ -445,6 +511,10 @@ def _track_candidates_for_album_ids(user_id: int, album_ids: list[int], limit: i
                 alb.id AS album_id,
                 alb.slug AS album_slug,
                 t.duration,
+                t.format,
+                t.bitrate,
+                t.sample_rate,
+                t.bit_depth,
                 COALESCE(uts.play_count, 0) AS user_play_count,
                 CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END AS is_liked,
                 COALESCE(t.lastfm_playcount, 0) AS popularity
@@ -484,6 +554,9 @@ def _query_discovery_tracks(
 ) -> list[dict]:
     if not genres:
         return []
+    # Expand genre terms to include all known aliases so we match
+    # library tags like "hc" → "hardcore punk", "alt rock" → "alternative", etc.
+    genres = expand_genre_terms_with_aliases(genres)
     with get_db_ctx() as cur:
         cur.execute(
             """
@@ -499,15 +572,18 @@ def _query_discovery_tracks(
                 alb.id AS album_id,
                 alb.slug AS album_slug,
                 t.duration,
+                t.format,
+                t.bitrate,
+                t.sample_rate,
+                t.bit_depth,
                 COALESCE(uts.play_count, 0) AS user_play_count,
                 CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END AS is_liked,
-                COALESCE(la.listeners, 0) AS artist_listeners,
+                COALESCE(art.listeners, 0) AS artist_listeners,
                 COALESCE(t.lastfm_playcount, 0) AS popularity,
-                COUNT(DISTINCT g.name) AS genre_hits
+                genre_match.genre_hits
             FROM library_tracks t
-            JOIN library_albums alb ON alb.id = t.album_id
+            LEFT JOIN library_albums alb ON alb.id = t.album_id
             LEFT JOIN library_artists art ON art.name = t.artist
-            LEFT JOIN library_artists la ON la.name = t.artist
             LEFT JOIN user_track_stats uts
               ON uts.user_id = %s
              AND uts.stat_window = 'all_time'
@@ -518,24 +594,42 @@ def _query_discovery_tracks(
             LEFT JOIN user_liked_tracks ult
               ON ult.user_id = %s
              AND ult.track_id = t.id
-            JOIN artist_genres ag ON ag.artist_name = t.artist
-            JOIN genres g ON g.id = ag.genre_id
-            WHERE LOWER(g.name) = ANY(%s)
+            LEFT JOIN LATERAL (
+                SELECT COUNT(DISTINCT matched.genre_name)::INTEGER AS genre_hits
+                FROM (
+                    SELECT LOWER(g_artist.name) AS genre_name
+                    FROM artist_genres ag
+                    JOIN genres g_artist ON g_artist.id = ag.genre_id
+                    WHERE ag.artist_name = t.artist
+                      AND LOWER(g_artist.name) = ANY(%s)
+
+                    UNION
+
+                    SELECT LOWER(g_album.name) AS genre_name
+                    FROM album_genres alg
+                    JOIN genres g_album ON g_album.id = alg.genre_id
+                    WHERE alg.album_id = t.album_id
+                      AND LOWER(g_album.name) = ANY(%s)
+
+                    UNION
+
+                    SELECT BTRIM(track_genre.genre_name) AS genre_name
+                    FROM regexp_split_to_table(LOWER(COALESCE(t.genre, '')), '\s*,\s*') AS track_genre(genre_name)
+                    WHERE BTRIM(track_genre.genre_name) = ANY(%s)
+                ) matched
+            ) genre_match ON TRUE
+            WHERE genre_match.genre_hits > 0
               AND NOT (LOWER(t.artist) = ANY(%s))
-            GROUP BY
-                t.id, t.path, t.title, t.artist, art.id, art.slug, t.album,
-                alb.id, alb.slug, t.duration, uts.play_count, ult.track_id,
-                la.listeners, t.lastfm_playcount
             ORDER BY
                 COALESCE(uts.play_count, 0) ASC,
                 CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END ASC,
-                COUNT(DISTINCT g.name) DESC,
-                COALESCE(la.listeners, 0) DESC,
+                genre_match.genre_hits DESC,
+                COALESCE(art.listeners, 0) DESC,
                 COALESCE(t.lastfm_playcount, 0) DESC,
                 t.title ASC
             LIMIT %s
             """,
-            (user_id, user_id, genres, excluded_artist_names, limit),
+            (user_id, user_id, genres, genres, genres, excluded_artist_names, limit),
         )
         return [dict(row) for row in cur.fetchall()]
 
@@ -589,6 +683,10 @@ def _fallback_recent_interest_tracks(user_id: int, interest_artists_lower: list[
                 alb.id AS album_id,
                 alb.slug AS album_slug,
                 t.duration,
+                t.format,
+                t.bitrate,
+                t.sample_rate,
+                t.bit_depth,
                 COALESCE(uts.play_count, 0) AS user_play_count,
                 CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END AS is_liked,
                 COALESCE(t.lastfm_playcount, 0) AS popularity
@@ -695,18 +793,19 @@ def _build_mix_rows(
 
     if mix_id.startswith("genre-"):
         genre_slug = mix_id.removeprefix("genre-")
-        genre_name = next((genre for genre in top_genres_lower if _slugify(genre) == genre_slug), None)
-        if not genre_name:
+        genre_name = get_genre_display_name(genre_slug)
+        related_genres = get_related_genre_terms(genre_slug, limit=12, max_depth=1)
+        if not related_genres:
             return ("", "", [])
         rows = _query_discovery_tracks(
             user_id,
-            genres=[genre_name],
+            genres=related_genres,
             excluded_artist_names=[],
-            limit=max(limit * 5, 120),
+            limit=max(limit * 6, 180),
         )
         return (
-            f"{genre_name.title()} Mix",
-            "A dynamic mix from one of your most-played lanes.",
+            f"{genre_name} Mix",
+            f"Tracks from your library matching {genre_name} and closely related scenes.",
             _select_diverse_tracks_with_backfill(rows, limit=limit, max_per_artist=2, max_per_album=2),
         )
 
@@ -735,6 +834,10 @@ def _build_artist_core_rows(
                 alb.id AS album_id,
                 alb.slug AS album_slug,
                 t.duration,
+                t.format,
+                t.bitrate,
+                t.sample_rate,
+                t.bit_depth,
                 COALESCE(uts.play_count, 0) AS user_play_count,
                 CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END AS is_liked,
                 COALESCE(t.lastfm_playcount, 0) AS popularity,
@@ -812,22 +915,10 @@ def _get_home_context(
 
     followed_names_lower = [(row.get("artist_name") or "").lower() for row in followed if row.get("artist_name")]
     top_artist_names_lower = [(row.get("artist_name") or "").lower() for row in top_artists if row.get("artist_name")]
-    # Normalize genres — split comma-separated values from tags
-    top_genres_lower_raw = []
-    for row in top_genres:
-        genre_name = (row.get("genre_name") or "").strip()
-        if not genre_name:
-            continue
-        for part in genre_name.split(","):
-            part = part.strip().lower()
-            if part and part not in top_genres_lower_raw:
-                top_genres_lower_raw.append(part)
-    top_genres_lower = top_genres_lower_raw[:top_genre_limit]
     interest_artists_lower = list(dict.fromkeys(top_artist_names_lower + followed_names_lower))
     saved_album_ids = {row["id"] for row in saved_albums if row.get("id") is not None}
-
-    # Cold start: if no play-derived genres, get genres from followed artists
-    if not top_genres_lower and followed_names_lower:
+    fallback_genre_names: list[str] = []
+    if followed_names_lower:
         with get_db_ctx() as cur:
             placeholders = ",".join(["%s"] * len(followed_names_lower))
             cur.execute(
@@ -837,7 +928,8 @@ def _get_home_context(
                     GROUP BY g.name ORDER BY cnt DESC LIMIT %s""",
                 followed_names_lower + [top_genre_limit],
             )
-            top_genres_lower = [row["name"].lower() for row in cur.fetchall()]
+            fallback_genre_names = [row["name"].lower() for row in cur.fetchall()]
+    top_genres_lower, mix_seed_genres = _derive_home_genres(top_genres, fallback_genre_names, top_genre_limit)
 
     return {
         "followed": followed,
@@ -848,6 +940,7 @@ def _get_home_context(
         "followed_names_lower": followed_names_lower,
         "top_artist_names_lower": top_artist_names_lower,
         "top_genres_lower": top_genres_lower,
+        "mix_seed_genres": mix_seed_genres,
         "interest_artists_lower": interest_artists_lower,
         "saved_album_ids": saved_album_ids,
     }
@@ -911,14 +1004,18 @@ def _build_recommended_tracks(
 def _build_custom_mix_summaries(
     user_id: int,
     *,
-    top_genres_lower: list[str],
-    interest_artists_lower: list[str],
+    mix_seed_genres: list[dict],
     mix_count: int,
     track_limit: int = 36,
 ) -> list[dict]:
-    del interest_artists_lower  # derived mixes already use user context via get_home_mix()
     custom_mix_ids = ["daily-discovery", "my-new-arrivals"]
-    custom_mix_ids.extend([f"genre-{_slugify(genre)}" for genre in top_genres_lower[: max(mix_count - 2, 0)]])
+    custom_mix_ids.extend(
+        [
+            f"genre-{item['slug']}"
+            for item in mix_seed_genres[: max(mix_count - 2, 0)]
+            if item.get("slug")
+        ]
+    )
     mixes: list[dict] = []
     for mix_id in dict.fromkeys(custom_mix_ids):
         mix = get_home_playlist(user_id, mix_id, limit=track_limit)
@@ -1023,29 +1120,19 @@ def get_home_mix(user_id: int, mix_id: str, limit: int = 40) -> dict | None:
         *(row["artist_name"].lower() for row in top_artists if row.get("artist_name")),
         *(row["artist_name"].lower() for row in followed if row.get("artist_name")),
     ]
-    top_genres_lower = []
-    for row in top_genres:
-        genre_name = (row.get("genre_name") or "").strip()
-        if not genre_name:
-            continue
-        for part in genre_name.split(","):
-            part = part.strip().lower()
-            if part and part not in top_genres_lower:
-                top_genres_lower.append(part)
-
-    # Cold start: genres from followed artists
-    if not top_genres_lower and followed:
-        followed_lower = [r["artist_name"].lower() for r in followed if r.get("artist_name")]
-        if followed_lower:
-            with get_db_ctx() as cur:
-                placeholders = ",".join(["%s"] * len(followed_lower))
-                cur.execute(
-                    f"""SELECT g.name FROM artist_genres ag JOIN genres g ON g.id = ag.genre_id
-                        WHERE LOWER(ag.artist_name) IN ({placeholders})
-                        GROUP BY g.name ORDER BY COUNT(*) DESC LIMIT 8""",
-                    followed_lower,
-                )
-                top_genres_lower = [row["name"].lower() for row in cur.fetchall()]
+    followed_lower = [r["artist_name"].lower() for r in followed if r.get("artist_name")]
+    fallback_genre_names: list[str] = []
+    if followed_lower:
+        with get_db_ctx() as cur:
+            placeholders = ",".join(["%s"] * len(followed_lower))
+            cur.execute(
+                f"""SELECT g.name FROM artist_genres ag JOIN genres g ON g.id = ag.genre_id
+                    WHERE LOWER(ag.artist_name) IN ({placeholders})
+                    GROUP BY g.name ORDER BY COUNT(*) DESC LIMIT 8""",
+                followed_lower,
+            )
+            fallback_genre_names = [row["name"].lower() for row in cur.fetchall()]
+    top_genres_lower, _ = _derive_home_genres(top_genres, fallback_genre_names, 8)
 
     name, description, rows = _build_mix_rows(
         user_id,
@@ -1119,9 +1206,10 @@ def get_home_discovery(user_id: int) -> dict:
     followed_names_lower = context["followed_names_lower"]
     top_artist_names_lower = context["top_artist_names_lower"]
     top_genres_lower = context["top_genres_lower"]
+    mix_seed_genres = context["mix_seed_genres"]
     interest_artists_lower = context["interest_artists_lower"]
 
-    hero = _get_home_hero(followed_names_lower, top_artist_names_lower[:8], top_genres_lower[:4])
+    hero = _get_home_hero(user_id, followed_names_lower, top_artist_names_lower[:8], top_genres_lower[:4])
 
     recent_releases = _filter_interesting_releases(
         get_new_releases(limit=250),
@@ -1139,8 +1227,7 @@ def get_home_discovery(user_id: int) -> dict:
     )
     custom_mixes = _build_custom_mix_summaries(
         user_id,
-        top_genres_lower=top_genres_lower,
-        interest_artists_lower=interest_artists_lower,
+        mix_seed_genres=mix_seed_genres,
         mix_count=8,
         track_limit=36,
     )
@@ -1186,6 +1273,7 @@ def get_home_section(user_id: int, section_id: str, limit: int = 42) -> dict | N
     top_artists = context["top_artists"]
     top_albums = context["top_albums"]
     top_genres_lower = context["top_genres_lower"]
+    mix_seed_genres = context["mix_seed_genres"]
     interest_artists_lower = context["interest_artists_lower"]
     recent_releases = _filter_interesting_releases(
         get_new_releases(limit=max(limit * 8, 250)),
@@ -1209,8 +1297,7 @@ def get_home_section(user_id: int, section_id: str, limit: int = 42) -> dict | N
             "subtitle": "Dynamic playlists shaped around your own listening profile.",
             "items": _build_custom_mix_summaries(
                 user_id,
-                top_genres_lower=top_genres_lower,
-                interest_artists_lower=interest_artists_lower,
+                mix_seed_genres=mix_seed_genres,
                 mix_count=limit,
                 track_limit=36,
             ),

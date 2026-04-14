@@ -47,9 +47,10 @@ def run_worker(config: dict):
     init_musicbrainz()
     cleanup_orphaned_tasks()
 
-    # Clear stale DB-heavy lock from previous run
-    from crate.actors import clear_db_heavy_lock
+    # Clear stale locks from previous run
+    from crate.actors import clear_db_heavy_lock, clear_download_slots
     clear_db_heavy_lock()
+    clear_download_slots()
 
     # Start scheduler + watcher + zombie cleanup in background thread
     service_stop = threading.Event()

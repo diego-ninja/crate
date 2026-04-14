@@ -18,9 +18,10 @@ import { PlayerVolumeControl } from "@/components/player/bar/PlayerVolumeControl
 import { WaveformCanvas } from "@/components/player/bar/WaveformCanvas";
 import {
   formatPlayerTime,
-  formatPlayerTrackBadge,
+  getTrackQualityBadge,
   generateWaveformBars,
 } from "@/components/player/bar/player-bar-utils";
+import { QualityBadge } from "@/components/player/bar/QualityBadge";
 
 const FS_OPEN_KEY = "listen-fs-player-open";
 
@@ -93,7 +94,7 @@ export function PlayerBar() {
     () => currentTrack ? generateWaveformBars(currentTrack.id, 80) : [],
     [currentTrack],
   );
-  const fmt = currentTrack ? formatPlayerTrackBadge(currentTrack) : null;
+  const qualityBadge = currentTrack ? getTrackQualityBadge(currentTrack) : null;
 
   if (!currentTrack) return null;
 
@@ -274,10 +275,10 @@ export function PlayerBar() {
 
           {/* ── Block 3: Action Buttons (lg+) ── */}
           <div className="hidden w-[200px] shrink-0 items-center justify-end gap-1 lg:flex xl:w-[280px]">
-            {/* Format badge */}
-            {fmt && (
-              <span className="text-[9px] font-bold tracking-wider text-primary/70 border border-primary/30 rounded px-1.5 py-0.5 mr-1">
-                {fmt}
+            {/* Quality badge */}
+            {qualityBadge && (
+              <span className="mr-1">
+                <QualityBadge badge={qualityBadge} />
               </span>
             )}
 

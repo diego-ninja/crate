@@ -37,8 +37,8 @@ MAX_RSS_MB = 1500  # 1.5 GB — matches previous worker recycling limit
 
 TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     # User-initiated (priority 0) — these should run ASAP
-    "tidal_download":       ("default", 0, 1800, 0),
-    "soulseek_download":    ("default", 0, 1800, 2),
+    "tidal_download":       ("default", 0, 14400, 0),   # 4h — artist discographies in FLAC are huge
+    "soulseek_download":    ("default", 0, 7200, 2),    # 2h — soulseek transfers are slow
     "delete_artist":        ("default", 0, 300, 0),
     "delete_album":         ("default", 0, 300, 0),
     "move_artist":          ("default", 0, 600, 0),
@@ -82,6 +82,10 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "analyze_tracks":       ("fast",    2, 60, 0),   # just resets state for background daemon
     "analyze_all":          ("fast",    3, 60, 0),    # just resets state for background daemon
     "index_genres":         ("fast",    3, 600, 0),
+    "infer_genre_taxonomy": ("fast",    3, 3600, 0),
+    "enrich_genre_descriptions": ("fast", 3, 3600, 0),
+    "sync_musicbrainz_genre_graph": ("fast", 3, 5400, 0),
+    "remux_m4a_dash":       ("fast",    3, 7200, 0),
     "scan_missing_covers":  ("fast",    3, 3600, 0),
     "fetch_artwork_all":    ("fast",    3, 3600, 0),
     "backfill_similarities": ("fast",   3, 3600, 0),
@@ -184,6 +188,58 @@ def _release_db_heavy_lock(task_id: str):
         log.warning("Failed to release DB-heavy lock for task %s", task_id, exc_info=True)
 
 
+# ── Download concurrency limiter ──────────────────────────────────
+# Tidal/Soulseek downloads are I/O-heavy and Tidal rate-limits
+# aggressively.  Allow at most 2 concurrent downloads across all
+# workers via a Redis-based counting semaphore.
+
+DOWNLOAD_TASK_TYPES = frozenset({"tidal_download", "soulseek_download"})
+_DOWNLOAD_SEM_KEY = "crate:download_semaphore"
+_DOWNLOAD_SEM_MAX = 2
+_DOWNLOAD_SEM_TTL = 14400  # 4h — matches tidal_download timeout
+
+
+def _acquire_download_slot(task_id: str, timeout: int = 120) -> bool:
+    try:
+        from crate.db.cache import _get_redis
+        r = _get_redis()
+        if not r:
+            return True
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            current = r.scard(_DOWNLOAD_SEM_KEY)
+            if current < _DOWNLOAD_SEM_MAX:
+                r.sadd(_DOWNLOAD_SEM_KEY, task_id)
+                r.expire(_DOWNLOAD_SEM_KEY, _DOWNLOAD_SEM_TTL)
+                return True
+            time.sleep(10)
+        return False
+    except Exception:
+        log.warning("Failed to acquire download slot, proceeding", exc_info=True)
+        return True
+
+
+def _release_download_slot(task_id: str):
+    try:
+        from crate.db.cache import _get_redis
+        r = _get_redis()
+        if r:
+            r.srem(_DOWNLOAD_SEM_KEY, task_id)
+    except Exception:
+        log.warning("Failed to release download slot for %s", task_id, exc_info=True)
+
+
+def clear_download_slots():
+    """Force-clear download semaphore. Called on worker startup."""
+    try:
+        from crate.db.cache import _get_redis
+        r = _get_redis()
+        if r:
+            r.delete(_DOWNLOAD_SEM_KEY)
+    except Exception:
+        pass
+
+
 # ── Generic task executor ─────────────────────────────────────────
 
 def _execute_task(task_type: str, task_id: str):
@@ -210,7 +266,16 @@ def _execute_task(task_type: str, task_id: str):
     if is_db_heavy:
         if not _acquire_db_heavy_lock(task_id):
             log.info("Task %s (%s) waiting for DB-heavy lock, re-enqueueing in 30s", task_id, task_type)
-            # Re-send with a 30s delay (task stays pending in PG)
+            actor = _actors.get(task_type)
+            if actor:
+                actor.send_with_options(args=(task_id,), delay=30_000)
+            return
+
+    # Download concurrency limiter
+    is_download = task_type in DOWNLOAD_TASK_TYPES
+    if is_download:
+        if not _acquire_download_slot(task_id):
+            log.info("Task %s (%s) waiting for download slot, re-enqueueing in 30s", task_id, task_type)
             actor = _actors.get(task_type)
             if actor:
                 actor.send_with_options(args=(task_id,), delay=30_000)
@@ -245,6 +310,8 @@ def _execute_task(task_type: str, task_id: str):
         hb_thread.join(timeout=2)
         if is_db_heavy:
             _release_db_heavy_lock(task_id)
+        if is_download:
+            _release_download_slot(task_id)
         _check_memory()
 
 

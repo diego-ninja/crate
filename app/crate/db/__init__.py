@@ -81,7 +81,12 @@ from crate.db.tidal import (
 # Genres
 from crate.db.genres import (
     get_or_create_genre, set_artist_genres, set_album_genres,
-    get_all_genres, get_genre_detail,
+    get_all_genres, get_genre_detail, get_genre_graph, get_unmapped_genres,
+    list_genre_taxonomy_nodes_for_external_enrichment,
+    list_genre_taxonomy_nodes_for_musicbrainz_sync,
+    upsert_genre_taxonomy_edge,
+    upsert_genre_taxonomy_node,
+    update_genre_external_metadata,
 )
 
 # Audit & Management

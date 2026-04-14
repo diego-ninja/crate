@@ -3,6 +3,45 @@ from pathlib import Path
 import mutagen
 
 
+def _read_mp4_tags_raw(filepath: Path) -> dict:
+    """Fallback: read tags from an MP4/M4A using raw (non-easy) tag keys.
+
+    mutagen's EasyMP4 may return empty for some M4A variants.  The raw
+    MP4 tag namespace uses iTunes-style atoms like ``©nam``, ``©ART``,
+    etc.  This function translates them to the same keys that easy mode
+    returns.
+    """
+    try:
+        from mutagen.mp4 import MP4
+        audio = MP4(filepath)
+    except Exception:
+        return {}
+    if not audio or not audio.tags:
+        return {}
+
+    def first(keys):
+        for key in keys:
+            val = audio.tags.get(key)
+            if val and isinstance(val, list) and val[0]:
+                v = str(val[0]).strip()
+                if v:
+                    return v
+        return None
+
+    return {
+        "title": first(["©nam"]) or "",
+        "artist": first(["©ART", "aART"]) or "",
+        "album": first(["©alb"]) or "",
+        "albumartist": first(["aART", "©ART"]) or "",
+        "tracknumber": first(["trkn"]) or "",
+        "discnumber": first(["disk"]) or "1",
+        "date": first(["©day"]) or "",
+        "genre": first(["©gen"]) or "",
+        "musicbrainz_albumid": None,
+        "musicbrainz_trackid": None,
+    }
+
+
 def read_tags(filepath: Path) -> dict:
     """Read audio tags from a file. Returns normalized dict."""
     try:
@@ -19,7 +58,7 @@ def read_tags(filepath: Path) -> dict:
             val = val[0]
         return val if val and val.strip() else None
 
-    return {
+    tags = {
         "title": first("title") or "",
         "artist": first("artist") or first("albumartist") or "",
         "album": first("album") or "",
@@ -31,6 +70,20 @@ def read_tags(filepath: Path) -> dict:
         "musicbrainz_albumid": first("musicbrainz_albumid"),
         "musicbrainz_trackid": first("musicbrainz_trackid"),
     }
+
+    # If easy mode returned blank artist+title+album (common with M4A DASH
+    # containers), try the raw MP4 tag namespace as a fallback.
+    if (
+        filepath.suffix.lower() in (".m4a", ".mp4", ".aac")
+        and not tags["title"]
+        and not tags["artist"]
+        and not tags["album"]
+    ):
+        raw = _read_mp4_tags_raw(filepath)
+        if raw.get("title") or raw.get("artist") or raw.get("album"):
+            return raw
+
+    return tags
 
 
 def get_audio_files(directory: Path, extensions: list[str]) -> list[Path]:

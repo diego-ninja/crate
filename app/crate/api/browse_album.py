@@ -150,6 +150,8 @@ def api_album(request: Request, artist: str, album: str):
                 "format": track.get("format", ""),
                 "size_mb": round(track["size"] / (1024**2), 1) if track.get("size") else 0,
                 "bitrate": track.get("bitrate") // 1000 if track.get("bitrate") else None,
+                "sample_rate": track.get("sample_rate"),
+                "bit_depth": track.get("bit_depth"),
                 "length_sec": round(track["duration"]) if track.get("duration") else 0,
                 "rating": track.get("rating", 0) or 0,
                 "tags": {
