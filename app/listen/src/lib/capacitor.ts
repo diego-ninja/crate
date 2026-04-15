@@ -30,9 +30,13 @@ export async function initCapacitor() {
     }
   });
 
-  // Log network status changes
+  // Network status → trigger audio resume on reconnect
   Network.addListener("networkStatusChange", (status) => {
     console.log("[capacitor] network:", status.connected ? "online" : "offline");
+    if (status.connected) {
+      // Notify audio engine that network is back
+      window.dispatchEvent(new CustomEvent("crate:network-restored"));
+    }
   });
 }
 

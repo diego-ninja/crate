@@ -169,6 +169,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => window.clearInterval(id);
   }, [queue, currentIndex]);
 
+  // Network restored → resume stalled playback
+  useEffect(() => {
+    const handler = () => {
+      import("@/lib/audio-engine").then(({ onNetworkRestored }) => {
+        onNetworkRestored(audio);
+      });
+    };
+    window.addEventListener("crate:network-restored", handler);
+    window.addEventListener("online", handler); // browser-native fallback
+    return () => {
+      window.removeEventListener("crate:network-restored", handler);
+      window.removeEventListener("online", handler);
+    };
+  }, [audio]);
+
   const addToRecentlyPlayed = useCallback((track: Track) => {
     setRecentlyPlayed((prev) => {
       const filtered = prev.filter((t) => t.id !== track.id);
@@ -465,10 +480,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
     const onLoadStart = () => setIsBuffering(true);
     const onWaiting = () => setIsBuffering(true);
-    const onStalled = () => setIsBuffering(true);
+    const onStalled = () => {
+      setIsBuffering(true);
+      // If buffered data is running low, start network resilience
+      import("@/lib/audio-engine").then(({ handleStreamStall }) => {
+        handleStreamStall(audio, {
+          onFadingOut: () => setIsBuffering(true),
+          onRetrying: (attempt) => console.debug("[player] retry attempt", attempt),
+          onRecovered: () => { setIsBuffering(false); setIsPlaying(true); },
+          onGaveUp: () => { setIsPlaying(false); setIsBuffering(false); },
+        });
+      });
+    };
     const onPlaying = () => {
       setIsPlaying(true);
       setIsBuffering(false);
+      // Cancel any active retry since we're playing again
+      import("@/lib/audio-engine").then(({ cancelRetry }) => cancelRetry(audio));
     };
     const onCanPlay = () => setIsBuffering(false);
     const onSeeked = () => {
@@ -477,8 +505,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
     const onError = () => {
       console.error("[player] audio error:", audio.error?.code, audio.error?.message);
-      setIsPlaying(false);
-      setIsBuffering(false);
+      // Try to recover via retry instead of giving up immediately
+      import("@/lib/audio-engine").then(({ handleStreamStall }) => {
+        handleStreamStall(audio, {
+          onFadingOut: () => setIsBuffering(true),
+          onRetrying: (attempt) => console.debug("[player] error retry attempt", attempt),
+          onRecovered: () => { setIsBuffering(false); setIsPlaying(true); },
+          onGaveUp: () => { setIsPlaying(false); setIsBuffering(false); },
+        });
+      });
     };
 
     audio.addEventListener("timeupdate", onTimeUpdate);
@@ -523,6 +558,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (w.__crateAudioCtx.state === "suspended") w.__crateAudioCtx.resume();
     } catch { /* ok */ }
 
+    // Ensure the Web Audio gain node is set up for fade control
+    import("@/lib/audio-engine").then(({ ensureGainNode, cancelRetry }) => {
+      ensureGainNode(audio);
+      cancelRetry(audio);
+    }).catch(() => {});
+
     restoredRef.current = false;
     resetPlaybackIntelligence();
     flushCurrentPlayEvent("interrupted");
@@ -551,6 +592,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (w.__crateAudioCtx.state === "suspended") w.__crateAudioCtx.resume();
     } catch { /* ok */ }
 
+    import("@/lib/audio-engine").then(({ ensureGainNode, cancelRetry }) => {
+      ensureGainNode(audio);
+      cancelRetry(audio);
+    }).catch(() => {});
+
     restoredRef.current = false;
     resetPlaybackIntelligence();
     flushCurrentPlayEvent("interrupted");
@@ -569,7 +615,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [addToRecentlyPlayed, audio, clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
 
   const pause = useCallback(() => {
-    audio.pause();
+    import("@/lib/audio-engine").then(({ fadeOutAndPause }) => {
+      fadeOutAndPause(audio);
+    }).catch(() => audio.pause());
   }, [audio]);
 
   const resume = useCallback(() => {
@@ -580,8 +628,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     } catch { /* ok */ }
 
     setIsBuffering(true);
-    audio.play().catch(() => {
-      setIsBuffering(false);
+    import("@/lib/audio-engine").then(({ fadeInAndPlay }) => {
+      fadeInAndPlay(audio).catch(() => setIsBuffering(false));
+    }).catch(() => {
+      audio.play().catch(() => setIsBuffering(false));
     });
   }, [audio]);
 

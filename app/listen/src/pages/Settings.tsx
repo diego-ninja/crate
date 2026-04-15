@@ -973,7 +973,7 @@ function ShowsLocationSection() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs text-muted-foreground">City</label>
-            <button onClick={detectFromIp} disabled={detecting} className="flex items-center gap-1 text-[11px] text-primary hover:underline disabled:opacity-50">
+            <button onClick={() => detectFromIp()} disabled={detecting} className="flex items-center gap-1 text-[11px] text-primary hover:underline disabled:opacity-50">
               {detecting ? <Loader2 size={10} className="animate-spin" /> : <Navigation size={10} />}
               Detect from IP
             </button>
