@@ -26,6 +26,17 @@ import {
   saveRecentlyPlayed,
   STORAGE_KEY,
 } from "@/contexts/player-utils";
+import {
+  initPlayer as initGaplessPlayer,
+  loadQueue as gpLoadQueue,
+  play as gpPlay,
+  pause as gpPause,
+  next as gpNext,
+  prev as gpPrev,
+  seekTo as gpSeekTo,
+  setVolume as gpSetVolume,
+  updateCrossfade as gpUpdateCrossfade,
+} from "@/lib/gapless-player";
 import { usePlayEventTracker } from "@/contexts/use-play-event-tracker";
 import { usePlaybackIntelligence } from "@/contexts/use-playback-intelligence";
 import { apiFetch } from "@/lib/api";
@@ -127,6 +138,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const shouldAutoplayRef = useRef(false);
   const lastNonZeroVolumeRef = useRef(Math.max(getStoredVolume(), 0.5));
 
+  // Keep legacy audio element for components that read audioElement (visualizer etc)
   if (!audioRef.current) {
     audioRef.current = getSharedAudio(PLAYER_AUDIO_KEY);
     audioRef.current.volume = getStoredVolume();
@@ -137,6 +149,41 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     preloadAudioRef.current.preload = "auto";
   }
   const audio = audioRef.current;
+
+  // Initialize Gapless-5 player (once)
+  const gaplessInitRef = useRef(false);
+  if (!gaplessInitRef.current) {
+    gaplessInitRef.current = true;
+    initGaplessPlayer({
+      onTimeUpdate: (posMs) => {
+        const secs = posMs / 1000;
+        setCurrentTime(secs);
+      },
+      onPlay: () => {
+        setIsPlaying(true);
+        setIsBuffering(false);
+      },
+      onPause: () => {
+        setIsPlaying(false);
+        setIsBuffering(false);
+      },
+      onTrackFinished: () => {
+        // Will be overridden in the effect below with full logic
+      },
+      onAllFinished: () => {
+        setIsPlaying(false);
+        setIsBuffering(false);
+      },
+      onError: (_path, err) => {
+        console.error("[gapless] error:", err);
+        setIsBuffering(false);
+      },
+      onBuffering: () => {
+        setIsBuffering(true);
+      },
+    });
+    gpSetVolume(getStoredVolume());
+  }
   const currentTrack = queue[currentIndex];
   const queueRef = useRef(queue);
   const currentIndexRef = useRef(currentIndex);
@@ -145,6 +192,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const shuffleRef = useRef(shuffle);
   const playSourceRef = useRef(playSource);
   const crossfadeSecondsRef = useRef(crossfadeSeconds);
+
+  // Sync crossfade setting to Gapless-5
+  useEffect(() => {
+    gpUpdateCrossfade();
+  }, [crossfadeSeconds]);
 
   useEffect(() => {
     queueRef.current = queue;
@@ -552,18 +604,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   ]);
 
   const play = useCallback((track: Track, source?: PlaySource) => {
-    try {
-      const w = window as unknown as Record<string, AudioContext>;
-      if (!w.__crateAudioCtx) w.__crateAudioCtx = new AudioContext();
-      if (w.__crateAudioCtx.state === "suspended") w.__crateAudioCtx.resume();
-    } catch { /* ok */ }
-
-    // Ensure the Web Audio gain node is set up for fade control
-    import("@/lib/audio-engine").then(({ ensureGainNode, cancelRetry }) => {
-      ensureGainNode(audio);
-      cancelRetry(audio);
-    }).catch(() => {});
-
     restoredRef.current = false;
     resetPlaybackIntelligence();
     flushCurrentPlayEvent("interrupted");
@@ -572,30 +612,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentIndex(0);
     setCurrentTime(0);
     setDuration(0);
-    setIsBuffering(false);
-    audio.src = getStreamUrl(track);
-    audio.currentTime = 0;
-    audio.play().catch((e) => console.warn("[player] play failed:", e));
+    setIsBuffering(true);
+    gpLoadQueue([getStreamUrl(track)], 0);
+    gpPlay();
     setIsPlaying(true);
     setPlaySource(source || { type: "track", name: track.title });
     addToRecentlyPlayed(track);
-  }, [addToRecentlyPlayed, audio, clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
+  }, [addToRecentlyPlayed, clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
 
   const playAll = useCallback((tracks: Track[], startIndex = 0, source?: PlaySource) => {
     if (tracks.length === 0) return;
     const track = tracks[startIndex];
     if (!track) return;
-
-    try {
-      const w = window as unknown as Record<string, AudioContext>;
-      if (!w.__crateAudioCtx) w.__crateAudioCtx = new AudioContext();
-      if (w.__crateAudioCtx.state === "suspended") w.__crateAudioCtx.resume();
-    } catch { /* ok */ }
-
-    import("@/lib/audio-engine").then(({ ensureGainNode, cancelRetry }) => {
-      ensureGainNode(audio);
-      cancelRetry(audio);
-    }).catch(() => {});
 
     restoredRef.current = false;
     resetPlaybackIntelligence();
@@ -605,108 +633,81 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentIndex(startIndex);
     setCurrentTime(0);
     setDuration(0);
-    setIsBuffering(false);
-    audio.src = getStreamUrl(track);
-    audio.currentTime = 0;
-    audio.play().catch((e) => console.warn("[player] playAll failed:", e));
+    setIsBuffering(true);
+    gpLoadQueue(tracks.map((t) => getStreamUrl(t)), startIndex);
+    gpPlay();
     setIsPlaying(true);
     setPlaySource(source || (tracks.length > 1 ? { type: "queue", name: "Queue" } : { type: "track", name: track.title }));
     addToRecentlyPlayed(track);
-  }, [addToRecentlyPlayed, audio, clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
+  }, [addToRecentlyPlayed, clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
 
   const pause = useCallback(() => {
-    import("@/lib/audio-engine").then(({ fadeOutAndPause }) => {
-      fadeOutAndPause(audio);
-    }).catch(() => audio.pause());
-  }, [audio]);
+    gpPause();
+  }, []);
 
   const resume = useCallback(() => {
-    try {
-      const w = window as unknown as Record<string, AudioContext>;
-      if (!w.__crateAudioCtx) w.__crateAudioCtx = new AudioContext();
-      if (w.__crateAudioCtx.state === "suspended") w.__crateAudioCtx.resume();
-    } catch { /* ok */ }
-
     setIsBuffering(true);
-    import("@/lib/audio-engine").then(({ fadeInAndPlay }) => {
-      fadeInAndPlay(audio).catch(() => setIsBuffering(false));
-    }).catch(() => {
-      audio.play().catch(() => setIsBuffering(false));
-    });
-  }, [audio]);
+    gpPlay();
+  }, []);
 
   const next = useCallback(() => {
-    shouldAutoplayRef.current = true;
     flushCurrentPlayEvent("skipped");
-    clearPreloadedTrack();
+    gpNext();
+    // Sync React state — Gapless-5 advances internally
     if (shuffle && queue.length > 1) {
       let nextIdx: number;
-      do {
-        nextIdx = Math.floor(Math.random() * queue.length);
-      } while (nextIdx === currentIndex);
+      do { nextIdx = Math.floor(Math.random() * queue.length); }
+      while (nextIdx === currentIndex);
       setCurrentIndex(nextIdx);
-      setCurrentTime(0);
-      setDuration(0);
-      return;
-    }
-
-    if (currentIndex < queue.length - 1) {
+    } else if (currentIndex < queue.length - 1) {
       setCurrentIndex((i) => i + 1);
-      setCurrentTime(0);
-      setDuration(0);
     } else if (repeat === "all") {
       setCurrentIndex(0);
-      setCurrentTime(0);
-      setDuration(0);
     } else if (!continueInfinitePlayback()) {
-      shouldAutoplayRef.current = false;
       setIsPlaying(false);
       setIsBuffering(false);
     }
-  }, [clearPreloadedTrack, continueInfinitePlayback, currentIndex, flushCurrentPlayEvent, queue.length, repeat, shuffle]);
+    setCurrentTime(0);
+    setDuration(0);
+  }, [continueInfinitePlayback, currentIndex, flushCurrentPlayEvent, queue.length, repeat, shuffle]);
 
   const prev = useCallback(() => {
-    if (audio.currentTime > 3) {
-      audio.currentTime = 0;
+    if (currentTime > 3) {
+      gpSeekTo(0);
+      setCurrentTime(0);
       return;
     }
-
     if (currentIndex > 0) {
-      shouldAutoplayRef.current = true;
       flushCurrentPlayEvent("skipped");
-      clearPreloadedTrack();
+      gpPrev();
       setCurrentIndex((i) => i - 1);
       setCurrentTime(0);
       setDuration(0);
     }
-  }, [audio, clearPreloadedTrack, currentIndex, flushCurrentPlayEvent]);
+  }, [currentIndex, currentTime, flushCurrentPlayEvent]);
 
   const seek = useCallback((time: number) => {
     setIsBuffering(true);
-    audio.currentTime = time;
+    gpSeekTo(time * 1000);
     setCurrentTime(time);
     markSeekPosition(time);
-  }, [audio, markSeekPosition]);
+  }, [markSeekPosition]);
 
   const setVolume = useCallback((vol: number) => {
-    audio.volume = vol;
-    if (preloadAudioRef.current) {
-      preloadAudioRef.current.volume = vol;
-    }
+    gpSetVolume(vol);
     setVolumeState(vol);
     if (vol > 0) {
       lastNonZeroVolumeRef.current = vol;
     }
     try { localStorage.setItem("listen-player-volume", String(vol)); } catch { /* ignore */ }
-  }, [audio]);
+  }, []);
 
   const clearQueue = useCallback(() => {
     resetPlaybackIntelligence();
     flushCurrentPlayEvent("interrupted");
     clearPreloadedTrack();
-    audio.pause();
-    audio.removeAttribute("src");
-    audio.load();
+    gpPause();
+    gpLoadQueue([], 0);
     setQueue([]);
     setCurrentIndex(0);
     setCurrentTime(0);
@@ -714,7 +715,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setIsPlaying(false);
     setIsBuffering(false);
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
-  }, [audio, clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
+  }, [clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
 
   const toggleShuffle = useCallback(() => {
     setShuffle((s) => !s);
@@ -732,13 +733,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (index >= 0 && index < queue.length) {
       restoredRef.current = false;
       flushCurrentPlayEvent("skipped");
-      clearPreloadedTrack();
-      shouldAutoplayRef.current = true;
+      import("@/lib/gapless-player").then(({ getPlayer }) => {
+        getPlayer()?.gotoTrack(index);
+      });
       setCurrentIndex(index);
       setCurrentTime(0);
       setDuration(0);
     }
-  }, [clearPreloadedTrack, flushCurrentPlayEvent, queue.length]);
+  }, [flushCurrentPlayEvent, queue.length]);
 
   const playNext = useCallback((track: Track) => {
     setQueue((prev) => {
@@ -783,7 +785,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   usePlayerShortcuts({
     hasCurrentTrack: !!currentTrack,
     isPlaying,
-    audio,
+    audio, // legacy — shortcuts may read audio.currentTime
     duration,
     volume,
     lastNonZeroVolume: lastNonZeroVolumeRef.current,
