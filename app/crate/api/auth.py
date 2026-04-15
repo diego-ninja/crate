@@ -115,22 +115,11 @@ def _password_enabled() -> bool:
 
 def _provider_status(request: Request | None = None) -> dict[str, dict]:
     domain = os.environ.get("DOMAIN", "localhost")
-    base_origin = None
-    if request is not None:
-        origin = request.headers.get("origin")
-        if origin and origin.startswith(("http://", "https://")):
-            base_origin = origin.rstrip("/")
-        referer = request.headers.get("referer")
-        if not base_origin and referer and referer.startswith(("http://", "https://")):
-            parts = referer.split("/", 3)
-            base_origin = "/".join(parts[:3])
-        forwarded_proto = request.headers.get("x-forwarded-proto")
-        forwarded_host = request.headers.get("x-forwarded-host")
-        if not base_origin and forwarded_proto and forwarded_host:
-            base_origin = f"{forwarded_proto}://{forwarded_host}"
-    if not base_origin:
-        scheme = "http" if domain == "localhost" else "https"
-        base_origin = f"{scheme}://admin.{domain}" if domain != "localhost" else "http://localhost:5173"
+    # login_url must always point to the API host (admin.*) where OAuth
+    # callbacks are registered, not to the frontend origin (listen.*).
+    # The return_to parameter handles redirecting back to the calling frontend.
+    scheme = "http" if domain == "localhost" else "https"
+    base_origin = f"{scheme}://admin.{domain}" if domain != "localhost" else "http://localhost:5173"
     return {
         "password": {
             "enabled": _password_enabled(),

@@ -483,11 +483,19 @@ def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, 
 @router.get("/home/playlists/{playlist_id}")
 def home_playlist_detail(request: Request, playlist_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_playlist
+
+    # Cache home playlists for 5 minutes — they're expensive to compute
+    cache_key = f"home_playlist:{user['id']}:{playlist_id}:{limit}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached:
+        return cached
 
     playlist = get_home_playlist(user["id"], playlist_id, limit=limit)
     if not playlist:
         raise HTTPException(status_code=404, detail="Playlist not found")
+    set_cache(cache_key, playlist, ttl=300)
     return playlist
 
 

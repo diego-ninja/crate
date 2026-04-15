@@ -32,6 +32,10 @@ export function useDismissibleLayer({
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
       if (!closeOnPointerDownOutside) return;
       if (isInside(event.target as Node | null)) return;
+      // Prevent the dismiss click from reaching elements underneath
+      // (e.g. triggering playback on a track row behind the menu)
+      event.preventDefault();
+      event.stopPropagation();
       onDismissRef.current();
     };
 

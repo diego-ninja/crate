@@ -9,7 +9,7 @@ export function TopBar() {
 
   return (
     <div className="flex h-16 w-full items-center gap-4 px-4 pointer-events-none">
-      <div className="hidden items-center gap-2 flex-shrink-0 pointer-events-auto md:flex">
+      <div className="flex items-center gap-2 flex-shrink-0 pointer-events-auto">
         <button
           onClick={() => navigate(-1)}
           className="flex h-9 w-9 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-white/60 transition-colors hover:bg-black/50 hover:text-white"
@@ -20,7 +20,7 @@ export function TopBar() {
         </button>
         <button
           onClick={() => navigate(1)}
-          className="flex h-9 w-9 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-white/60 transition-colors hover:bg-black/50 hover:text-white"
+          className="hidden md:flex h-9 w-9 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-white/60 transition-colors hover:bg-black/50 hover:text-white"
           aria-label="Go forward"
           title="Go forward"
         >

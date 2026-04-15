@@ -1,7 +1,7 @@
 export { ApiError } from "../../../shared/web/api";
 
 import { createApiClient } from "../../../shared/web/api";
-import { isNative } from "@/lib/capacitor";
+import { isNative, platform } from "@/lib/capacitor";
 
 /** Base URL for the backend API. Empty string in web (relative paths),
  *  full URL in Capacitor builds. */
@@ -38,11 +38,18 @@ export function setAuthToken(token: string | null) {
   } catch { /* ignore */ }
 }
 
-/** Build headers with Bearer token for native, nothing for web (uses cookies). */
+/** Build headers with Bearer token for native, plus device identification. */
 function authHeaders(): Record<string, string> {
-  if (!isNative) return {};
-  const token = getAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  const headers: Record<string, string> = {};
+  if (isNative) {
+    const token = getAuthToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    headers["X-Crate-App"] = `listen-${platform}`;
+    headers["X-Device-Label"] = `${platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "Native"} (Listen)`;
+  } else {
+    headers["X-Crate-App"] = "listen-web";
+  }
+  return headers;
 }
 
 export const api = createApiClient({
