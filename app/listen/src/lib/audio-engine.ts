@@ -133,8 +133,8 @@ export async function fadeOutAndPause(audio: HTMLAudioElement, durationMs = FADE
     await rampGain(gain, 0, durationMs);
   }
   audio.pause();
-  // Reset gain for next play
-  if (gain) gain.gain.value = 0;
+  // Reset gain to 1 so next play() works even without fadeInAndPlay
+  if (gain) gain.gain.value = 1.0;
 }
 
 /**

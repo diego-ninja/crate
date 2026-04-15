@@ -26,6 +26,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@nivo/core": "^0.99.0",
     "@nivo/line": "^0.99.0",
+    "@regosen/gapless-5": "^1.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "gl-matrix": "^3.4.4",
