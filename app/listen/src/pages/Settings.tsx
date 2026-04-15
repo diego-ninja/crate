@@ -874,7 +874,7 @@ function ShowsLocationSection() {
   }, []);
 
   useEffect(() => {
-    if (location && !location.city) detectFromIp();
+    if (location && !location.city) detectFromIp(true);
   }, [location?.city]);
 
   useEffect(() => {
@@ -889,15 +889,15 @@ function ShowsLocationSection() {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  async function detectFromIp() {
+  async function detectFromIp(silent = false) {
     setDetecting(true);
     try {
       const geo = await api<{ city: string; country: string; country_code: string; latitude: number; longitude: number }>("/api/me/geolocation");
       setCity(geo.city);
       await api("/api/me/location", "PUT", { city: geo.city, country: geo.country, country_code: geo.country_code, latitude: geo.latitude, longitude: geo.longitude });
       setLocation((prev) => prev ? { ...prev, ...geo } : null);
-      toast.success(`Detected: ${geo.city}, ${geo.country}`);
-    } catch { toast.error("Could not detect your location"); }
+      if (!silent) toast.success(`Detected: ${geo.city}, ${geo.country}`);
+    } catch { if (!silent) toast.error("Could not detect your location"); }
     finally { setDetecting(false); }
   }
 

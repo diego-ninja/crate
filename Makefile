@@ -371,6 +371,10 @@ trust-local-ca: ## Trust Caddy's local CA for HTTPS (run after first 'make dev',
 CAP_DIR := app/listen
 CAP_IOS_TARGET ?= $(shell cd $(CAP_DIR) && npx cap run ios --list 2>/dev/null | grep "iPhone.*Pro " | head -1 | awk '{print $$NF}')
 
+# Android Studio JBR + SDK paths (required for Gradle/emulator)
+export JAVA_HOME ?= $(HOME)/Applications/Android Studio.app/Contents/jbr/Contents/Home
+export ANDROID_HOME ?= $(HOME)/Library/Android/sdk
+
 .PHONY: cap-build
 cap-build: ## Build Listen for Capacitor (bakes production API URL)
 	@cd $(CAP_DIR) && npm run build:cap
