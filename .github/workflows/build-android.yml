@@ -1,13 +1,13 @@
 name: Build Android APK
 
-# Triggers a debug APK build whenever we push a v*.*.* tag (the
-# canonical "there's a release" signal) or when manually dispatched.
-# We intentionally do NOT trigger on every push to main — it would
-# spam releases and take ~8 minutes per run.
+# Triggers a debug APK build whenever we push any v* tag (v1.0.0,
+# v1.0.0-beta, v0.2.0-rc1, …) or when manually dispatched. We
+# intentionally do NOT trigger on every push to main — it would spam
+# releases and take ~8 minutes per run.
 on:
   push:
     tags:
-      - "v*.*.*"
+      - "v*"
   workflow_dispatch:
     inputs:
       upload_to_release:
