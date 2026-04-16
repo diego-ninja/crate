@@ -1,8 +1,11 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "org.lespedants.crate.listen",
-  appName: "Crate Listen",
+  // Reverse-DNS of the project domain (cratemusic.app). The app itself is
+  // just "Crate" — not "Crate Listen" — so the id drops the old ".listen"
+  // segment that dated from a time when admin + listen were sibling apps.
+  appId: "app.cratemusic.crate",
+  appName: "Crate",
   webDir: "dist",
 
   server: {

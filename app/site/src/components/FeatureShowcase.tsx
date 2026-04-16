@@ -11,7 +11,7 @@ import { ArrowRight, Tag, Sparkles, Sun, Volume2, Activity } from "lucide-react"
 
 const EQ_BANDS = ["32", "64", "125", "250", "500", "1K", "2K", "4K", "8K", "16K"];
 
-// Preset curves to cycle through, matching what Listen ships with.
+// Preset curves to cycle through, matching what Crate ships with.
 const EQ_CURVES: Record<string, { label: string; gains: number[]; chip: string }> = {
   black_metal: {
     label: "Black Metal",

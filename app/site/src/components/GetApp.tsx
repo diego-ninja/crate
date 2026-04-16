@@ -20,7 +20,7 @@ export function GetApp() {
           Install it
         </div>
         <h2 className="text-3xl font-semibold tracking-tight text-white sm:text-[44px] sm:leading-[1.05]">
-          Listen is a phone app too.
+          Crate is a phone app too.
         </h2>
         <p className="mt-4 text-base leading-7 text-white/60 sm:text-lg">
           Same interface you have on the web, packaged for your pocket. Point it at
@@ -53,15 +53,15 @@ export function GetApp() {
           <ol className="mt-5 space-y-2.5 text-[14px] text-white/70">
             <Step n={1}>Download the APK below.</Step>
             <Step n={2}>Open it from your downloads; approve the install prompt.</Step>
-            <Step n={3}>Launch Listen, enter your Crate server URL, sign in.</Step>
+            <Step n={3}>Launch Crate, enter your server URL, sign in.</Step>
           </ol>
 
           <a
-            href="https://github.com/diego-ninja/crate/releases/latest/download/crate-listen.apk"
+            href="https://github.com/diego-ninja/crate/releases/latest/download/crate.apk"
             className="group mt-7 inline-flex items-center gap-2 rounded-full bg-cyan-400 px-5 py-3 text-sm font-semibold text-[#05161c] shadow-[0_0_24px_-6px_rgba(6,182,212,0.6)] transition hover:bg-cyan-300"
           >
             <Download size={16} />
-            Download crate-listen.apk
+            Download crate.apk
             <ArrowRight size={16} className="transition group-hover:translate-x-0.5" />
           </a>
           <p className="mt-3 text-[11px] text-white/35">
@@ -95,7 +95,7 @@ export function GetApp() {
               Safari — Chrome on iOS can't install PWAs).
             </IOSStep>
             <IOSStep n={2}>
-              Go to your Listen URL, e.g.{" "}
+              Go to your Crate URL, e.g.{" "}
               <code className="rounded bg-white/5 px-1.5 py-0.5 text-[12.5px] text-cyan-200">
                 listen.your-server.com
               </code>
@@ -110,7 +110,7 @@ export function GetApp() {
               <strong className="text-white">Add to Home Screen</strong>.
             </IOSStep>
             <IOSStep n={5}>
-              Tap <strong className="text-white">Add</strong>. Listen now lives next
+              Tap <strong className="text-white">Add</strong>. Crate now lives next
               to your other apps.
             </IOSStep>
           </ol>

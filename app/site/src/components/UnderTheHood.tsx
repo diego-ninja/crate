@@ -35,7 +35,7 @@ const GROUPS: Array<{ title: string; entries: Entry[] }> = [
       { name: "React 19 + Vite", reason: "Modern, fast, boring — and easy for contributors to jump into." },
       { name: "Tailwind CSS 4", reason: "@theme inline lets both admin and listen share a visual language." },
       { name: "Gapless-5 (vendored)", reason: "Real gapless + crossfade + our own patches for EQ and offline resilience." },
-      { name: "Capacitor", reason: "Same Listen codebase ships to iOS and Android when needed." },
+      { name: "Capacitor", reason: "Same codebase ships to iOS and Android when needed." },
     ],
   },
   {

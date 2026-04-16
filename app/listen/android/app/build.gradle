@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "org.lespedants.crate.listen"
+    namespace = "app.cratemusic.crate"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "org.lespedants.crate.listen"
+        applicationId "app.cratemusic.crate"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

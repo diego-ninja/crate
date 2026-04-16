@@ -1,6 +1,6 @@
 {
-  "name": "Crate Listen",
-  "short_name": "Listen",
+  "name": "Crate",
+  "short_name": "Crate",
   "description": "Your music, your way. Stream your self-hosted library.",
   "id": "/",
   "start_url": "/",

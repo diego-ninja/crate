@@ -71,12 +71,12 @@ jobs:
           if [[ "$TAG_NAME" == "" || "$TAG_NAME" == "main" ]]; then
             TAG_NAME="dev"
           fi
-          DEST="crate-listen-${TAG_NAME}.apk"
+          DEST="crate-${TAG_NAME}.apk"
           cp "${{ steps.locate.outputs.apk_path }}" "$DEST"
           # Also publish under a stable filename so the site can hard-link
-          # to /releases/latest/download/crate-listen.apk without knowing
-          # the tag name.
-          cp "$DEST" "crate-listen.apk"
+          # to /releases/latest/download/crate.apk without knowing the
+          # tag name.
+          cp "$DEST" "crate.apk"
           echo "dest=$DEST" >> "$GITHUB_OUTPUT"
 
       - name: Upload as build artifact (always)
@@ -92,9 +92,9 @@ jobs:
         with:
           files: |
             ${{ steps.rename.outputs.dest }}
-            crate-listen.apk
+            crate.apk
           body: |
-            ## Crate Listen — ${{ github.ref_name }}
+            ## Crate — ${{ github.ref_name }}
 
             **Debug APK** for Android. Install requires "Install from
             unknown sources" / "Install unknown apps" enabled for your

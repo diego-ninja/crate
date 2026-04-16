@@ -1,4 +1,4 @@
-package org.lespedants.crate.listen;
+package app.cratemusic.crate;
 
 import com.getcapacitor.BridgeActivity;
 
