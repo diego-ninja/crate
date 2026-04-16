@@ -91,8 +91,8 @@ declare module "@regosen/gapless-5" {
     onerror: ((trackPath: string, error?: Error | string) => void) | null;
     onfinishedtrack: ((trackPath: string) => void) | null;
     onfinishedall: (() => void) | null;
-    // Runtime passes ONLY the analyser node, not (path, analyser).
-    onswitchtowebaudio: ((analyser: AnalyserNode | null) => void) | null;
+    // Runtime (gapless5.js:309) passes (trackPath, analyser).
+    onswitchtowebaudio: ((trackPath: string, analyser: AnalyserNode | null) => void) | null;
   }
 
   export { Gapless5 };

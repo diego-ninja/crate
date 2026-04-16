@@ -166,8 +166,8 @@ export function initPlayer(callbacks: GaplessPlayerCallbacks = {}): Gapless5 {
     currentCallbacks.onDurationChange?.(durationMs);
   };
 
-  // Runtime passes ONLY the analyser (not path + analyser).
-  instance.onswitchtowebaudio = (analyser) => {
+  // Runtime (gapless5.js:309) calls this as (trackPath, analyser).
+  instance.onswitchtowebaudio = (_path, analyser) => {
     setAnalyser(analyser);
   };
 

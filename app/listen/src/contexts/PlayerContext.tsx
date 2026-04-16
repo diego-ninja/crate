@@ -708,8 +708,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
         syncSelectionFromEngine();
       },
-      onTrackFinished: () => {
-        const endedTrack = currentTrackRef.current;
+      onTrackFinished: (path) => {
+        // During a crossfade auto-advance, Gapless-5 fires onnext/onplay
+        // BEFORE onfinishedtrack, so currentTrackRef already points to the
+        // incoming track. Resolve the outgoing track by its URL instead.
+        // flushCurrentPlayEvent still operates on the tracker's sessionRef
+        // which is correct — React's syncSession effect hasn't rotated yet.
+        const endedTrack =
+          queueRef.current.find((t) => getStreamUrl(t) === path) ??
+          currentTrackRef.current;
         if (!endedTrack) return;
         flushCurrentPlayEvent("completed");
         postTrackHistory(endedTrack);
