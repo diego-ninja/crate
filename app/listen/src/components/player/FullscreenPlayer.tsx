@@ -16,7 +16,7 @@ import {
   User,
 } from "lucide-react";
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
-import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
+import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { useEscapeKey } from "@/hooks/use-escape-key";
 import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
@@ -108,8 +108,7 @@ function FullscreenQueueRow({
 }
 
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
-  const { currentTrack, queue, currentIndex, currentTime, duration, seek, jumpTo } = usePlayer();
-  const { audioElement } = usePlayerActions();
+  const { currentTrack, queue, currentIndex, currentTime, duration, seek, jumpTo, isPlaying, volume, analyserVersion } = usePlayer();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<FSTab>("player");
@@ -128,7 +127,13 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const coverRef = useRef<HTMLDivElement>(null);
   const fsRootRef = useRef<HTMLDivElement>(null);
-  const vizRef = useMusicVisualizer(canvasRef, audioElement, visible && activeTab === "player");
+  const playbackState = useMemo(() => ({ isPlaying, volume }), [isPlaying, volume]);
+  const vizRef = useMusicVisualizer(
+    canvasRef,
+    `${currentTrack?.id ?? "none"}:${analyserVersion}`,
+    visible && activeTab === "player",
+    playbackState,
+  );
   const vizCfg = useVisualizerConfig(vizRef, currentTrack, visible && activeTab === "player");
   const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 

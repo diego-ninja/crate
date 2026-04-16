@@ -6,42 +6,54 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
+
 import type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
 import {
-  getPredictableNextTrack,
-  getSharedAudio,
   getStoredQueue,
   getStoredRecentlyPlayed,
   getStoredVolume,
   getStreamUrl,
   getTrackCacheKey,
-  isContinuousAlbumTransition,
   MAX_RECENT,
-  NEXT_TRACK_PRELOAD_WINDOW_SECONDS,
-  PLAYER_AUDIO_KEY,
-  PLAYER_PRELOAD_AUDIO_KEY,
   saveQueue,
   saveRecentlyPlayed,
   STORAGE_KEY,
 } from "@/contexts/player-utils";
 import {
+  addTrack as gpAddTrack,
+  fadeInAndPlay as gpFadeInAndPlay,
+  fadeOutAndPause as gpFadeOutAndPause,
+  getCurrentTrackDuration as gpGetCurrentTrackDuration,
+  getPosition as gpGetPosition,
+  getTrackIndex as gpGetTrackIndex,
+  getTracks as gpGetTracks,
+  gotoTrack as gpGotoTrack,
   initPlayer as initGaplessPlayer,
+  insertTrack as gpInsertTrack,
   loadQueue as gpLoadQueue,
-  play as gpPlay,
-  pause as gpPause,
   next as gpNext,
+  pause as gpPause,
+  play as gpPlay,
   prev as gpPrev,
+  removeTrack as gpRemoveTrack,
   seekTo as gpSeekTo,
+  setLoop as gpSetLoop,
+  setShuffle as gpSetShuffle,
+  setSingleMode as gpSetSingleMode,
   setVolume as gpSetVolume,
   updateCrossfade as gpUpdateCrossfade,
+  type GaplessPlayerCallbacks,
 } from "@/lib/gapless-player";
 import { usePlayEventTracker } from "@/contexts/use-play-event-tracker";
 import { usePlaybackIntelligence } from "@/contexts/use-playback-intelligence";
 import { apiFetch } from "@/lib/api";
 import { usePlayerShortcuts } from "@/contexts/use-player-shortcuts";
 import { useMediaSession } from "@/contexts/use-media-session";
+import { isOnline as isRuntimeOnline } from "@/lib/capacitor";
 import {
   getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
@@ -49,6 +61,7 @@ import {
   getSmartPlaylistSuggestionsPreference,
   PLAYER_PLAYBACK_PREFS_EVENT,
 } from "@/lib/player-playback-prefs";
+
 export type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
 
 interface PlayerStateValue {
@@ -57,6 +70,7 @@ interface PlayerStateValue {
   isPlaying: boolean;
   isBuffering: boolean;
   volume: number;
+  analyserVersion: number;
 }
 
 interface PlayerActionsValue {
@@ -67,7 +81,6 @@ interface PlayerActionsValue {
   playSource: PlaySource | null;
   recentlyPlayed: Track[];
   currentTrack: Track | undefined;
-  audioElement: HTMLAudioElement | null;
   play: (track: Track, source?: PlaySource) => void;
   playAll: (tracks: Track[], startIndex?: number, source?: PlaySource) => void;
   pause: () => void;
@@ -91,6 +104,41 @@ type PlayerContextValue = PlayerStateValue & PlayerActionsValue;
 const PlayerStateContext = createContext<PlayerStateValue | null>(null);
 const PlayerActionsContext = createContext<PlayerActionsValue | null>(null);
 
+const SOFT_PAUSE_FADE_MS = 220;
+const STREAM_STALL_GRACE_MS = 2500;
+const RECOVERY_RETRY_MS = 3000;
+const STREAM_PROBE_TIMEOUT_MS = 4000;
+
+function clampIndex(index: number, length: number): number {
+  if (length <= 0) return 0;
+  return Math.max(0, Math.min(index, length - 1));
+}
+
+function resolveQueueFromUrls(urls: string[], sourceQueue: Track[]): Track[] {
+  if (!urls.length) return sourceQueue;
+
+  const buckets = new Map<string, Track[]>();
+  for (const track of sourceQueue) {
+    const url = getStreamUrl(track);
+    const bucket = buckets.get(url);
+    if (bucket) bucket.push(track);
+    else buckets.set(url, [track]);
+  }
+
+  const resolved: Track[] = [];
+  for (const url of urls) {
+    const bucket = buckets.get(url);
+    if (bucket?.length) {
+      resolved.push(bucket.shift()!);
+      continue;
+    }
+    const fallback = sourceQueue.find((track) => getStreamUrl(track) === url);
+    if (fallback) resolved.push(fallback);
+  }
+
+  return resolved.length > 0 ? resolved : sourceQueue;
+}
+
 export function usePlayerState(): PlayerStateValue {
   const ctx = useContext(PlayerStateContext);
   if (!ctx) throw new Error("usePlayerState must be used within PlayerProvider");
@@ -110,21 +158,18 @@ export function usePlayer(): PlayerContextValue {
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const preloadAudioRef = useRef<HTMLAudioElement | null>(null);
-  const preloadedTrackKeyRef = useRef<string | null>(null);
-  const preloadedTrackReadyRef = useRef(false);
   const stored = useRef(getStoredQueue());
-  const [queue, setQueue] = useState<Track[]>(stored.current.queue);
-  const [currentIndex, setCurrentIndex] = useState(stored.current.currentIndex);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [queue, setQueueState] = useState<Track[]>(stored.current.queue);
+  const [currentIndex, setCurrentIndexState] = useState(clampIndex(stored.current.currentIndex, stored.current.queue.length));
+  const [isPlaying, setIsPlayingState] = useState(false);
+  const [isBuffering, setIsBufferingState] = useState(false);
+  const [currentTime, setCurrentTimeState] = useState(0);
+  const [duration, setDurationState] = useState(0);
   const [volume, setVolumeState] = useState(getStoredVolume);
-  const [shuffle, setShuffle] = useState(false);
+  const [analyserVersion, setAnalyserVersion] = useState(0);
+  const [shuffle, setShuffleState] = useState(false);
   const [playSource, setPlaySource] = useState<PlaySource | null>(null);
-  const [repeat, setRepeat] = useState<RepeatMode>("off");
+  const [repeat, setRepeatState] = useState<RepeatMode>("off");
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>(getStoredRecentlyPlayed);
   const [crossfadeSeconds, setCrossfadeSeconds] = useState(getCrossfadeDurationPreference);
   const [infinitePlaybackEnabled, setInfinitePlaybackEnabled] = useState(getInfinitePlaybackPreference);
@@ -134,69 +179,84 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [smartPlaylistSuggestionsCadence, setSmartPlaylistSuggestionsCadence] = useState(
     getSmartPlaylistSuggestionsCadencePreference,
   );
-  const restoredRef = useRef(stored.current.queue.length > 0);
-  const shouldAutoplayRef = useRef(false);
-  const lastNonZeroVolumeRef = useRef(Math.max(getStoredVolume(), 0.5));
 
-  // Keep legacy audio element for components that read audioElement (visualizer etc)
-  if (!audioRef.current) {
-    audioRef.current = getSharedAudio(PLAYER_AUDIO_KEY);
-    audioRef.current.volume = getStoredVolume();
-  }
-  if (!preloadAudioRef.current) {
-    preloadAudioRef.current = getSharedAudio(PLAYER_PRELOAD_AUDIO_KEY);
-    preloadAudioRef.current.volume = getStoredVolume();
-    preloadAudioRef.current.preload = "auto";
-  }
-  const audio = audioRef.current;
-
-  // Initialize Gapless-5 player (once)
-  const gaplessInitRef = useRef(false);
-  if (!gaplessInitRef.current) {
-    gaplessInitRef.current = true;
-    initGaplessPlayer({
-      onTimeUpdate: (posMs) => {
-        const secs = posMs / 1000;
-        setCurrentTime(secs);
-      },
-      onPlay: () => {
-        setIsPlaying(true);
-        setIsBuffering(false);
-      },
-      onPause: () => {
-        setIsPlaying(false);
-        setIsBuffering(false);
-      },
-      onTrackFinished: () => {
-        // Will be overridden in the effect below with full logic
-      },
-      onAllFinished: () => {
-        setIsPlaying(false);
-        setIsBuffering(false);
-      },
-      onError: (_path, err) => {
-        console.error("[gapless] error:", err);
-        setIsBuffering(false);
-      },
-      onBuffering: () => {
-        setIsBuffering(true);
-      },
-    });
-    gpSetVolume(getStoredVolume());
-  }
   const currentTrack = queue[currentIndex];
+
   const queueRef = useRef(queue);
   const currentIndexRef = useRef(currentIndex);
   const currentTrackRef = useRef(currentTrack);
   const repeatRef = useRef(repeat);
   const shuffleRef = useRef(shuffle);
   const playSourceRef = useRef(playSource);
-  const crossfadeSecondsRef = useRef(crossfadeSeconds);
+  const isPlayingRef = useRef(isPlaying);
+  const currentTimeRef = useRef(currentTime);
+  const durationRef = useRef(duration);
+  const pendingRestoreTimeRef = useRef(stored.current.currentTime > 0 ? stored.current.currentTime : 0);
+  const resumeAfterReloadRef = useRef(stored.current.wasPlaying);
+  const restoreAutoplayAttemptedRef = useRef(false);
+  const restoreAutoplayTimerRef = useRef<number | null>(null);
+  const playerReadyRef = useRef(false);
+  const restoredEngineRef = useRef(false);
+  const shouldAutoplayRef = useRef(false);
+  const bufferingIntentRef = useRef(false);
+  const lastNonZeroVolumeRef = useRef(Math.max(getStoredVolume(), 0.5));
+  const activatedTrackKeyRef = useRef<string | null>(null);
+  const softInterruptionReasonRef = useRef<"offline" | "stream" | null>(null);
+  const shouldAutoResumeAfterInterruptionRef = useRef(false);
+  const stallTimerRef = useRef<number | null>(null);
+  const recoveryTimerRef = useRef<number | null>(null);
+  const recoveryProbeInFlightRef = useRef(false);
 
-  // Sync crossfade setting to Gapless-5
-  useEffect(() => {
-    gpUpdateCrossfade();
-  }, [crossfadeSeconds]);
+  const commitQueue = useCallback((nextQueue: Track[]) => {
+    queueRef.current = nextQueue;
+    setQueueState(nextQueue);
+  }, []);
+
+  const commitCurrentIndex = useCallback((nextIndex: number) => {
+    currentIndexRef.current = nextIndex;
+    currentTrackRef.current = queueRef.current[nextIndex];
+    setCurrentIndexState(nextIndex);
+  }, []);
+
+  const commitCurrentTime = useCallback((nextTime: number) => {
+    currentTimeRef.current = nextTime;
+    setCurrentTimeState(nextTime);
+  }, []);
+
+  const commitDuration = useCallback((nextDuration: number) => {
+    durationRef.current = nextDuration;
+    setDurationState(nextDuration);
+  }, []);
+
+  const commitIsPlaying = useCallback((nextIsPlaying: boolean) => {
+    isPlayingRef.current = nextIsPlaying;
+    setIsPlayingState(nextIsPlaying);
+  }, []);
+
+  const commitIsBuffering = useCallback((nextIsBuffering: boolean) => {
+    setIsBufferingState(nextIsBuffering);
+  }, []);
+
+  const clearStallTimer = useCallback(() => {
+    if (stallTimerRef.current != null) {
+      window.clearTimeout(stallTimerRef.current);
+      stallTimerRef.current = null;
+    }
+  }, []);
+
+  const clearRecoveryTimer = useCallback(() => {
+    if (recoveryTimerRef.current != null) {
+      window.clearTimeout(recoveryTimerRef.current);
+      recoveryTimerRef.current = null;
+    }
+  }, []);
+
+  const clearRestoreAutoplayTimer = useCallback(() => {
+    if (restoreAutoplayTimerRef.current != null) {
+      window.clearTimeout(restoreAutoplayTimerRef.current);
+      restoreAutoplayTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     queueRef.current = queue;
@@ -205,36 +265,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     repeatRef.current = repeat;
     shuffleRef.current = shuffle;
     playSourceRef.current = playSource;
-    crossfadeSecondsRef.current = crossfadeSeconds;
-  }, [crossfadeSeconds, currentIndex, currentTrack, playSource, queue, repeat, shuffle]);
+    isPlayingRef.current = isPlaying;
+    currentTimeRef.current = currentTime;
+    durationRef.current = duration;
+  }, [currentIndex, currentTime, currentTrack, duration, isPlaying, playSource, queue, repeat, shuffle]);
 
   useEffect(() => {
-    saveQueue(queue, currentIndex);
-  }, [queue, currentIndex]);
-
-  // Persist currentTime every 5s so reload can restore position
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const t = audioRef.current?.currentTime;
-      if (t != null && t > 0) saveQueue(queue, currentIndex, t);
-    }, 5000);
-    return () => window.clearInterval(id);
-  }, [queue, currentIndex]);
-
-  // Network restored → resume stalled playback
-  useEffect(() => {
-    const handler = () => {
-      import("@/lib/audio-engine").then(({ onNetworkRestored }) => {
-        onNetworkRestored(audio);
-      });
-    };
-    window.addEventListener("crate:network-restored", handler);
-    window.addEventListener("online", handler); // browser-native fallback
-    return () => {
-      window.removeEventListener("crate:network-restored", handler);
-      window.removeEventListener("online", handler);
-    };
-  }, [audio]);
+    saveQueue(queue, currentIndex, currentTime, isPlaying);
+  }, [queue, currentIndex, currentTime, isPlaying]);
 
   const addToRecentlyPlayed = useCallback((track: Track) => {
     setRecentlyPlayed((prev) => {
@@ -245,48 +283,289 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const clearPreloadedTrack = useCallback(() => {
-    const preloadAudio = preloadAudioRef.current;
-    if (!preloadAudio) return;
-
-    preloadAudio.pause();
-    if (preloadAudio.src) {
-      preloadAudio.removeAttribute("src");
-      preloadAudio.load();
+  const rememberActiveTrack = useCallback((track: Track | undefined) => {
+    if (!track) {
+      activatedTrackKeyRef.current = null;
+      return;
     }
-    preloadedTrackKeyRef.current = null;
-    preloadedTrackReadyRef.current = false;
-  }, []);
-
-  const preloadTrack = useCallback((track: Track) => {
-    const preloadAudio = preloadAudioRef.current;
-    if (!preloadAudio) return;
-
     const trackKey = getTrackCacheKey(track);
-    if (preloadedTrackKeyRef.current === trackKey) return;
+    if (activatedTrackKeyRef.current === trackKey) return;
+    activatedTrackKeyRef.current = trackKey;
+    addToRecentlyPlayed(track);
+  }, [addToRecentlyPlayed]);
 
-    preloadAudio.pause();
-    preloadAudio.src = getStreamUrl(track);
-    preloadAudio.preload = "auto";
-    preloadAudio.load();
-    preloadedTrackKeyRef.current = trackKey;
-    preloadedTrackReadyRef.current = false;
+  const getPlaybackSnapshot = useCallback(() => ({
+    currentTime: currentTimeRef.current,
+    duration: durationRef.current,
+  }), []);
+
+  const probeCurrentTrackAvailability = useCallback(async () => {
+    const track = currentTrackRef.current;
+    if (!track) return false;
+
+    const online = await isRuntimeOnline();
+    if (!online) return false;
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), STREAM_PROBE_TIMEOUT_MS);
+    try {
+      const response = await fetch(getStreamUrl(track), {
+        method: "GET",
+        headers: { Range: "bytes=0-0" },
+        credentials: "include",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      response.body?.cancel().catch(() => {});
+      return response.ok || response.status === 206;
+    } catch {
+      return false;
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }, []);
 
-  const consumePreloadedSource = useCallback((track: Track): string | null => {
-    const preloadAudio = preloadAudioRef.current;
-    const trackKey = getTrackCacheKey(track);
-    if (!preloadAudio) return null;
-    if (preloadedTrackKeyRef.current !== trackKey) return null;
-    if (!preloadedTrackReadyRef.current) return null;
-    return preloadAudio.currentSrc || preloadAudio.src || null;
-  }, []);
+  const maybeResumeAfterInterruptionRef = useRef<() => Promise<void>>(async () => {});
+
+  const scheduleRecoveryCheck = useCallback((delay = RECOVERY_RETRY_MS) => {
+    clearRecoveryTimer();
+    if (!shouldAutoResumeAfterInterruptionRef.current) return;
+    recoveryTimerRef.current = window.setTimeout(() => {
+      void maybeResumeAfterInterruptionRef.current();
+    }, delay);
+  }, [clearRecoveryTimer]);
 
   const {
     flushCurrentPlayEvent,
     markSeekPosition,
     recordProgress,
-  } = usePlayEventTracker(audio, currentTrack, playSource);
+  } = usePlayEventTracker(currentTrack, playSource, getPlaybackSnapshot);
+
+  const postTrackHistory = useCallback((track: Track) => {
+    apiFetch("/api/me/history", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        track_id: track.libraryTrackId ?? null,
+        track_storage_id: track.storageId ?? null,
+        track_path: track.path || track.id,
+        title: track.title,
+        artist: track.artist,
+        album: track.album || "",
+      }),
+    }).catch(() => {});
+  }, []);
+
+  const syncSelectionFromEngine = useCallback((sourceQueue?: Track[]) => {
+    const resolvedQueue = resolveQueueFromUrls(gpGetTracks(), sourceQueue ?? queueRef.current);
+    const resolvedIndex = clampIndex(gpGetTrackIndex(), resolvedQueue.length);
+    const resolvedTrack = resolvedQueue[resolvedIndex];
+    const resolvedDuration = Math.max(gpGetCurrentTrackDuration() / 1000, 0);
+
+    commitQueue(resolvedQueue);
+    commitCurrentIndex(resolvedIndex);
+    commitDuration(resolvedDuration);
+    rememberActiveTrack(resolvedTrack);
+
+    return {
+      resolvedQueue,
+      resolvedIndex,
+      resolvedTrack,
+    };
+  }, [commitCurrentIndex, commitDuration, commitQueue, rememberActiveTrack]);
+
+  const beginSoftInterruption = useCallback((reason: "offline" | "stream") => {
+    if (!currentTrackRef.current) return;
+    if (softInterruptionReasonRef.current) {
+      if (reason === "offline") {
+        softInterruptionReasonRef.current = reason;
+      }
+      scheduleRecoveryCheck(reason === "offline" ? 0 : RECOVERY_RETRY_MS);
+      return;
+    }
+
+    softInterruptionReasonRef.current = reason;
+    shouldAutoResumeAfterInterruptionRef.current = true;
+    recoveryProbeInFlightRef.current = false;
+    clearStallTimer();
+    clearRecoveryTimer();
+    bufferingIntentRef.current = false;
+    commitIsBuffering(true);
+
+    if (isPlayingRef.current) {
+      void gpFadeOutAndPause(SOFT_PAUSE_FADE_MS).catch(() => {});
+    } else {
+      gpPause();
+    }
+
+    scheduleRecoveryCheck(reason === "offline" ? 0 : RECOVERY_RETRY_MS);
+  }, [clearRecoveryTimer, clearStallTimer, commitIsBuffering, scheduleRecoveryCheck]);
+
+  const cancelSoftInterruption = useCallback(() => {
+    softInterruptionReasonRef.current = null;
+    shouldAutoResumeAfterInterruptionRef.current = false;
+    recoveryProbeInFlightRef.current = false;
+    clearStallTimer();
+    clearRecoveryTimer();
+  }, [clearRecoveryTimer, clearStallTimer]);
+
+  const scheduleStallProtection = useCallback(() => {
+    clearStallTimer();
+    if (bufferingIntentRef.current || !isPlayingRef.current || softInterruptionReasonRef.current) return;
+    stallTimerRef.current = window.setTimeout(() => {
+      if (bufferingIntentRef.current || !isPlayingRef.current || softInterruptionReasonRef.current) return;
+      void isRuntimeOnline().then((online) => {
+        beginSoftInterruption(online ? "stream" : "offline");
+      });
+    }, STREAM_STALL_GRACE_MS);
+  }, [beginSoftInterruption, clearStallTimer]);
+
+  maybeResumeAfterInterruptionRef.current = async () => {
+    if (!shouldAutoResumeAfterInterruptionRef.current) return;
+    if (!currentTrackRef.current || recoveryProbeInFlightRef.current) return;
+    recoveryProbeInFlightRef.current = true;
+    commitIsBuffering(true);
+    try {
+      const available = await probeCurrentTrackAvailability();
+      if (!available) {
+        scheduleRecoveryCheck();
+        return;
+      }
+      bufferingIntentRef.current = true;
+      await gpFadeInAndPlay(SOFT_PAUSE_FADE_MS);
+    } catch {
+      scheduleRecoveryCheck();
+    } finally {
+      recoveryProbeInFlightRef.current = false;
+    }
+  };
+
+  const syncEngineQueue = useCallback((
+    nextQueue: Track[],
+    requestedIndex: number,
+    options?: { autoplay?: boolean; positionMs?: number },
+  ) => {
+    const nextIndex = clampIndex(requestedIndex, nextQueue.length);
+    const autoplay = options?.autoplay ?? isPlayingRef.current;
+    const positionMs = options?.positionMs ?? 0;
+
+    if (nextQueue.length === 0) {
+      bufferingIntentRef.current = false;
+      gpPause();
+      gpLoadQueue([], 0);
+      commitQueue([]);
+      commitCurrentIndex(0);
+      commitCurrentTime(0);
+      commitDuration(0);
+      commitIsPlaying(false);
+      commitIsBuffering(false);
+      activatedTrackKeyRef.current = null;
+      return;
+    }
+
+    gpLoadQueue(nextQueue.map(getStreamUrl), nextIndex);
+    gpSetLoop(repeatRef.current === "all");
+    gpSetSingleMode(repeatRef.current === "one");
+    gpSetShuffle(shuffleRef.current);
+
+    const { resolvedQueue, resolvedIndex, resolvedTrack } = syncSelectionFromEngine(nextQueue);
+
+    if (positionMs > 0) {
+      gpSeekTo(positionMs);
+      const positionSeconds = positionMs / 1000;
+      commitCurrentTime(positionSeconds);
+      markSeekPosition(positionSeconds);
+    } else {
+      commitCurrentTime(0);
+    }
+
+    if (autoplay) {
+      bufferingIntentRef.current = true;
+      commitIsBuffering(true);
+      gpPlay();
+    } else {
+      bufferingIntentRef.current = false;
+      gpPause();
+      commitIsPlaying(false);
+      commitIsBuffering(false);
+    }
+
+    if (resolvedTrack) {
+      currentTrackRef.current = resolvedTrack;
+      currentIndexRef.current = resolvedIndex;
+      queueRef.current = resolvedQueue;
+    }
+  }, [
+    commitCurrentIndex,
+    commitCurrentTime,
+    commitDuration,
+    commitIsBuffering,
+    commitIsPlaying,
+    commitQueue,
+    markSeekPosition,
+    syncSelectionFromEngine,
+  ]);
+
+  const setQueueSynced = useCallback<Dispatch<SetStateAction<Track[]>>>((update) => {
+    const prevQueue = queueRef.current;
+    const nextQueue = typeof update === "function" ? update(prevQueue) : update;
+    const sameCurrentTrack =
+      prevQueue[currentIndexRef.current] &&
+      nextQueue[clampIndex(currentIndexRef.current, nextQueue.length)] &&
+      getTrackCacheKey(prevQueue[currentIndexRef.current]!) ===
+        getTrackCacheKey(nextQueue[clampIndex(currentIndexRef.current, nextQueue.length)]!);
+
+    syncEngineQueue(
+      nextQueue,
+      clampIndex(currentIndexRef.current, nextQueue.length),
+      {
+        autoplay: isPlayingRef.current,
+        positionMs: sameCurrentTrack ? gpGetPosition() : 0,
+      },
+    );
+  }, [syncEngineQueue]);
+
+  const setCurrentIndexSynced = useCallback<Dispatch<SetStateAction<number>>>((update) => {
+    const prevIndex = currentIndexRef.current;
+    const nextIndexRaw = typeof update === "function" ? update(prevIndex) : update;
+    const nextIndex = clampIndex(nextIndexRaw, queueRef.current.length);
+    const shouldPlay = shouldAutoplayRef.current || isPlayingRef.current;
+
+    if (queueRef.current.length === 0) return;
+    if (nextIndex === prevIndex && !shouldAutoplayRef.current) return;
+
+    gpGotoTrack(nextIndex, shouldPlay);
+    commitCurrentIndex(nextIndex);
+    commitCurrentTime(0);
+    commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
+    rememberActiveTrack(queueRef.current[nextIndex]);
+    commitIsBuffering(shouldPlay);
+    if (shouldPlay) {
+      commitIsPlaying(true);
+    }
+    shouldAutoplayRef.current = false;
+  }, [commitCurrentIndex, commitCurrentTime, commitDuration, commitIsBuffering, commitIsPlaying, rememberActiveTrack]);
+
+  const setCurrentTimeSynced = useCallback<Dispatch<SetStateAction<number>>>((update) => {
+    const nextTime = typeof update === "function" ? update(currentTimeRef.current) : update;
+    commitCurrentTime(nextTime);
+  }, [commitCurrentTime]);
+
+  const setDurationSynced = useCallback<Dispatch<SetStateAction<number>>>((update) => {
+    const nextDuration = typeof update === "function" ? update(durationRef.current) : update;
+    commitDuration(nextDuration);
+  }, [commitDuration]);
+
+  const setIsPlayingSynced = useCallback<Dispatch<SetStateAction<boolean>>>((update) => {
+    const nextValue = typeof update === "function" ? update(isPlayingRef.current) : update;
+    commitIsPlaying(nextValue);
+  }, [commitIsPlaying]);
+
+  const setIsBufferingSynced = useCallback<Dispatch<SetStateAction<boolean>>>((update) => {
+    const nextValue = typeof update === "function" ? update(isBuffering) : update;
+    commitIsBuffering(nextValue);
+  }, [commitIsBuffering, isBuffering]);
 
   const {
     continueInfinitePlayback,
@@ -302,115 +581,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     smartPlaylistSuggestionsCadence,
     recentlyPlayed,
     shouldAutoplayRef,
-    setQueue,
-    setCurrentIndex,
-    setCurrentTime,
-    setDuration,
-    setIsPlaying,
-    setIsBuffering,
+    setQueue: setQueueSynced,
+    setCurrentIndex: setCurrentIndexSynced,
+    setCurrentTime: setCurrentTimeSynced,
+    setDuration: setDurationSynced,
+    setIsPlaying: setIsPlayingSynced,
+    setIsBuffering: setIsBufferingSynced,
   });
-
-  useEffect(() => {
-    const track = currentTrack;
-    if (!track) return;
-    const preloadedSrc = consumePreloadedSource(track);
-    const streamUrl = preloadedSrc || getStreamUrl(track);
-
-    if (restoredRef.current) {
-      restoredRef.current = false;
-      audio.src = streamUrl;
-      const savedTime = stored.current.currentTime;
-      if (savedTime > 0) {
-        const onLoaded = () => {
-          audio.currentTime = savedTime;
-          setCurrentTime(savedTime);
-          audio.removeEventListener("loadedmetadata", onLoaded);
-        };
-        audio.addEventListener("loadedmetadata", onLoaded);
-      }
-      return;
-    }
-
-    if (shouldAutoplayRef.current) {
-      shouldAutoplayRef.current = false;
-      audio.src = streamUrl;
-      setCurrentTime(0);
-      setDuration(0);
-      setIsBuffering(false);
-      audio.play().catch((e) => console.warn("[player] autoplay failed:", e));
-      setIsPlaying(true);
-      addToRecentlyPlayed(track);
-      clearPreloadedTrack();
-    }
-  }, [addToRecentlyPlayed, audio, clearPreloadedTrack, consumePreloadedSource, currentTrack]);
-
-  useEffect(() => {
-    clearPreloadedTrack();
-  }, [clearPreloadedTrack, queue, repeat, shuffle]);
-
-  useEffect(() => {
-    const nextTrack = getPredictableNextTrack(queue, currentIndex, repeat, shuffle);
-    if (!nextTrack || !isPlaying) {
-      clearPreloadedTrack();
-      return;
-    }
-
-    const nextTrackKey = getTrackCacheKey(nextTrack);
-    const transitionWindowSeconds = Math.max(
-      NEXT_TRACK_PRELOAD_WINDOW_SECONDS,
-      crossfadeSeconds > 0 ? crossfadeSeconds + 3 : NEXT_TRACK_PRELOAD_WINDOW_SECONDS,
-    );
-    const maybePreloadNextTrack = () => {
-      const totalDuration =
-        Number.isFinite(audio.duration) && audio.duration > 0
-          ? audio.duration
-          : duration;
-
-      if (!totalDuration || !Number.isFinite(totalDuration)) return;
-
-      const remaining = totalDuration - audio.currentTime;
-      if (
-        remaining <= transitionWindowSeconds &&
-        preloadedTrackKeyRef.current !== nextTrackKey
-      ) {
-        preloadTrack(nextTrack);
-      }
-    };
-
-    maybePreloadNextTrack();
-    audio.addEventListener("timeupdate", maybePreloadNextTrack);
-    return () => {
-      audio.removeEventListener("timeupdate", maybePreloadNextTrack);
-    };
-  }, [audio, clearPreloadedTrack, crossfadeSeconds, currentIndex, duration, isPlaying, preloadTrack, queue, repeat, shuffle]);
-
-  useEffect(() => {
-    const preloadAudio = preloadAudioRef.current;
-    if (!preloadAudio) return;
-
-    const markReady = () => {
-      preloadedTrackReadyRef.current = true;
-    };
-    const markNotReady = () => {
-      preloadedTrackReadyRef.current = false;
-    };
-
-    preloadAudio.addEventListener("loadeddata", markReady);
-    preloadAudio.addEventListener("canplay", markReady);
-    preloadAudio.addEventListener("canplaythrough", markReady);
-    preloadAudio.addEventListener("loadstart", markNotReady);
-    preloadAudio.addEventListener("emptied", markNotReady);
-    preloadAudio.addEventListener("error", markNotReady);
-
-    return () => {
-      preloadAudio.removeEventListener("loadeddata", markReady);
-      preloadAudio.removeEventListener("canplay", markReady);
-      preloadAudio.removeEventListener("canplaythrough", markReady);
-      preloadAudio.removeEventListener("loadstart", markNotReady);
-      preloadAudio.removeEventListener("emptied", markNotReady);
-      preloadAudio.removeEventListener("error", markNotReady);
-    };
-  }, []);
 
   useEffect(() => {
     const onPrefsChanged = (event: Event) => {
@@ -448,250 +625,385 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  useEffect(() => {
-    return () => {
-      clearPreloadedTrack();
-    };
-  }, [audio, clearPreloadedTrack]);
-
-  useEffect(() => {
-    const onTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
-      recordProgress(audio.currentTime);
-    };
-    const onDurationChange = () => setDuration(audio.duration || 0);
-    const onEnded = () => {
-      import("@/lib/sleep-timer").then((m) => m.onTrackEnded());
-      const endedTrack = currentTrackRef.current;
-      if (endedTrack) {
-        flushCurrentPlayEvent("completed");
-
-        apiFetch("/api/me/history", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            track_id: endedTrack.libraryTrackId ?? null,
-            track_storage_id: endedTrack.storageId ?? null,
-            track_path: endedTrack.path || endedTrack.id,
-            title: endedTrack.title,
-            artist: endedTrack.artist,
-            album: endedTrack.album || "",
-          }),
-        }).catch(() => {});
-      }
-
-      const liveQueue = queueRef.current;
-      const liveCurrentIndex = currentIndexRef.current;
-      const liveRepeat = repeatRef.current;
-      const liveShuffle = shuffleRef.current;
-      const livePlaySource = playSourceRef.current;
-      const nextTrack = getPredictableNextTrack(liveQueue, liveCurrentIndex, liveRepeat, liveShuffle);
-      const continuousAlbum = isContinuousAlbumTransition(endedTrack, nextTrack, livePlaySource, liveShuffle);
-
-      if (liveRepeat === "one") {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
-        return;
-      }
-
-      shouldAutoplayRef.current = true;
-      if (crossfadeSecondsRef.current > 0 && nextTrack && !continuousAlbum) {
-        setIsBuffering(false);
-      }
-      if (liveShuffle) {
-        if (liveQueue.length > 1) {
-          let nextIdx: number;
-          do {
-            nextIdx = Math.floor(Math.random() * liveQueue.length);
-          } while (nextIdx === liveCurrentIndex && liveQueue.length > 1);
-          setCurrentIndex(nextIdx);
-        } else {
-          shouldAutoplayRef.current = false;
-          setIsPlaying(false);
+  const gaplessCallbacks = useMemo<GaplessPlayerCallbacks>(() => ({
+      onTimeUpdate: (positionMs, trackIndex) => {
+        const positionSeconds = positionMs / 1000;
+        clearStallTimer();
+        commitCurrentTime(positionSeconds);
+        recordProgress(positionSeconds);
+        if (trackIndex !== currentIndexRef.current && trackIndex >= 0) {
+          syncSelectionFromEngine();
         }
-        return;
-      }
-
-      if (liveCurrentIndex < liveQueue.length - 1) {
-        setCurrentIndex((i) => i + 1);
-      } else if (liveRepeat === "all") {
-        setCurrentIndex(0);
-      } else if (continueInfinitePlayback()) {
-        return;
-      } else {
-        shouldAutoplayRef.current = false;
-        setIsPlaying(false);
-        setIsBuffering(false);
-      }
-    };
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => {
-      setIsPlaying(false);
-      setIsBuffering(false);
-    };
-    const onLoadStart = () => setIsBuffering(true);
-    const onWaiting = () => setIsBuffering(true);
-    const onStalled = () => {
-      setIsBuffering(true);
-      // If buffered data is running low, start network resilience
-      import("@/lib/audio-engine").then(({ handleStreamStall }) => {
-        handleStreamStall(audio, {
-          onFadingOut: () => setIsBuffering(true),
-          onRetrying: (attempt) => console.debug("[player] retry attempt", attempt),
-          onRecovered: () => { setIsBuffering(false); setIsPlaying(true); },
-          onGaveUp: () => { setIsPlaying(false); setIsBuffering(false); },
+      },
+      onDurationChange: (durationMs) => {
+        commitDuration(Math.max(durationMs / 1000, 0));
+      },
+      onLoad: (_path, _fullyLoaded, durationMs) => {
+        const durationSeconds = Math.max(durationMs / 1000, 0);
+        if (durationSeconds > 0) {
+          commitDuration(durationSeconds);
+        }
+        if (pendingRestoreTimeRef.current > 0) {
+          gpSeekTo(pendingRestoreTimeRef.current * 1000);
+          commitCurrentTime(pendingRestoreTimeRef.current);
+          markSeekPosition(pendingRestoreTimeRef.current);
+          pendingRestoreTimeRef.current = 0;
+        }
+        if (!isPlayingRef.current) {
+          commitIsBuffering(false);
+        }
+        bufferingIntentRef.current = false;
+        clearStallTimer();
+        if (resumeAfterReloadRef.current && !restoreAutoplayAttemptedRef.current && queueRef.current.length > 0) {
+          restoreAutoplayAttemptedRef.current = true;
+          bufferingIntentRef.current = true;
+          commitIsBuffering(true);
+          void gpFadeInAndPlay(SOFT_PAUSE_FADE_MS).catch(() => {
+            gpPlay();
+          });
+          clearRestoreAutoplayTimer();
+          restoreAutoplayTimerRef.current = window.setTimeout(() => {
+            if (!isPlayingRef.current) {
+              resumeAfterReloadRef.current = false;
+              bufferingIntentRef.current = false;
+              commitIsBuffering(false);
+            }
+          }, 2500);
+        }
+      },
+      onPlayRequest: () => {
+        bufferingIntentRef.current = true;
+      },
+      onPlay: () => {
+        resumeAfterReloadRef.current = false;
+        clearRestoreAutoplayTimer();
+        cancelSoftInterruption();
+        commitIsPlaying(true);
+        commitIsBuffering(false);
+        bufferingIntentRef.current = false;
+        syncSelectionFromEngine();
+      },
+      onPause: () => {
+        if (bufferingIntentRef.current && isPlayingRef.current) {
+          commitIsBuffering(true);
+          return;
+        }
+        if (softInterruptionReasonRef.current) {
+          commitIsPlaying(false);
+          commitIsBuffering(true);
+          return;
+        }
+        clearStallTimer();
+        commitIsPlaying(false);
+        commitIsBuffering(false);
+        bufferingIntentRef.current = false;
+      },
+      onPrev: () => {
+        commitCurrentTime(0);
+        commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
+        syncSelectionFromEngine();
+      },
+      onNext: () => {
+        commitCurrentTime(0);
+        commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
+        syncSelectionFromEngine();
+      },
+      onTrackFinished: () => {
+        const endedTrack = currentTrackRef.current;
+        if (!endedTrack) return;
+        flushCurrentPlayEvent("completed");
+        postTrackHistory(endedTrack);
+      },
+      onAllFinished: () => {
+        resumeAfterReloadRef.current = false;
+        clearRestoreAutoplayTimer();
+        cancelSoftInterruption();
+        commitIsPlaying(false);
+        commitIsBuffering(false);
+        bufferingIntentRef.current = false;
+      },
+      onError: (_path, err) => {
+        console.error("[gapless] error:", err);
+        clearRestoreAutoplayTimer();
+        void isRuntimeOnline().then((online) => {
+          beginSoftInterruption(online ? "stream" : "offline");
         });
-      });
-    };
-    const onPlaying = () => {
-      setIsPlaying(true);
-      setIsBuffering(false);
-      // Cancel any active retry since we're playing again
-      import("@/lib/audio-engine").then(({ cancelRetry }) => cancelRetry(audio));
-    };
-    const onCanPlay = () => setIsBuffering(false);
-    const onSeeked = () => {
-      setIsBuffering(false);
-      markSeekPosition(audio.currentTime);
-    };
-    const onError = () => {
-      console.error("[player] audio error:", audio.error?.code, audio.error?.message);
-      // Try to recover via retry instead of giving up immediately
-      import("@/lib/audio-engine").then(({ handleStreamStall }) => {
-        handleStreamStall(audio, {
-          onFadingOut: () => setIsBuffering(true),
-          onRetrying: (attempt) => console.debug("[player] error retry attempt", attempt),
-          onRecovered: () => { setIsBuffering(false); setIsPlaying(true); },
-          onGaveUp: () => { setIsPlaying(false); setIsBuffering(false); },
-        });
-      });
-    };
-
-    audio.addEventListener("timeupdate", onTimeUpdate);
-    audio.addEventListener("durationchange", onDurationChange);
-    audio.addEventListener("ended", onEnded);
-    audio.addEventListener("play", onPlay);
-    audio.addEventListener("pause", onPause);
-    audio.addEventListener("loadstart", onLoadStart);
-    audio.addEventListener("waiting", onWaiting);
-    audio.addEventListener("stalled", onStalled);
-    audio.addEventListener("playing", onPlaying);
-    audio.addEventListener("canplay", onCanPlay);
-    audio.addEventListener("seeked", onSeeked);
-    audio.addEventListener("error", onError);
-
-    return () => {
-      audio.removeEventListener("timeupdate", onTimeUpdate);
-      audio.removeEventListener("durationchange", onDurationChange);
-      audio.removeEventListener("ended", onEnded);
-      audio.removeEventListener("play", onPlay);
-      audio.removeEventListener("pause", onPause);
-      audio.removeEventListener("loadstart", onLoadStart);
-      audio.removeEventListener("waiting", onWaiting);
-      audio.removeEventListener("stalled", onStalled);
-      audio.removeEventListener("playing", onPlaying);
-      audio.removeEventListener("canplay", onCanPlay);
-      audio.removeEventListener("seeked", onSeeked);
-      audio.removeEventListener("error", onError);
-    };
-  }, [
-    audio,
-    continueInfinitePlayback,
+      },
+      onBuffering: () => {
+        if (bufferingIntentRef.current || isPlayingRef.current) {
+          commitIsBuffering(true);
+        }
+        scheduleStallProtection();
+      },
+      onAnalyserReady: () => {
+        setAnalyserVersion((version) => version + 1);
+      },
+  }), [
+    commitCurrentTime,
+    commitDuration,
+    commitIsBuffering,
+    commitIsPlaying,
     flushCurrentPlayEvent,
     markSeekPosition,
+    postTrackHistory,
     recordProgress,
+    beginSoftInterruption,
+    cancelSoftInterruption,
+    clearRestoreAutoplayTimer,
+    clearStallTimer,
+    scheduleStallProtection,
+    syncSelectionFromEngine,
+  ]);
+
+  useEffect(() => {
+    initGaplessPlayer(gaplessCallbacks);
+  }, [gaplessCallbacks]);
+
+  useEffect(() => {
+    gpSetVolume(volume);
+  }, [volume]);
+
+  useEffect(() => {
+    gpUpdateCrossfade();
+  }, [crossfadeSeconds]);
+
+  useEffect(() => {
+    gpSetLoop(repeat === "all");
+    gpSetSingleMode(repeat === "one");
+  }, [repeat]);
+
+  useEffect(() => {
+    gpSetShuffle(shuffle);
+  }, [shuffle]);
+
+  useEffect(() => {
+    if (playerReadyRef.current) return;
+    playerReadyRef.current = true;
+
+    if (!stored.current.queue.length || restoredEngineRef.current) return;
+    restoredEngineRef.current = true;
+
+    const restoredQueue = stored.current.queue;
+    const restoredIndex = clampIndex(stored.current.currentIndex, restoredQueue.length);
+    gpLoadQueue(restoredQueue.map(getStreamUrl), restoredIndex);
+    gpSetLoop(repeatRef.current === "all");
+    gpSetSingleMode(repeatRef.current === "one");
+    gpSetShuffle(shuffleRef.current);
+    pendingRestoreTimeRef.current = stored.current.currentTime > 0 ? stored.current.currentTime : 0;
+
+    const { resolvedQueue, resolvedIndex, resolvedTrack } = syncSelectionFromEngine(restoredQueue);
+    commitQueue(resolvedQueue);
+    commitCurrentIndex(resolvedIndex);
+    if (resolvedTrack) {
+      currentTrackRef.current = resolvedTrack;
+    }
+  }, [commitCurrentIndex, commitQueue, syncSelectionFromEngine]);
+
+  useEffect(() => {
+    const handleOffline = () => {
+      if (!currentTrackRef.current) return;
+      if (isPlayingRef.current || isBuffering) {
+        beginSoftInterruption("offline");
+      }
+    };
+    const handleRestored = () => {
+      if (!shouldAutoResumeAfterInterruptionRef.current) return;
+      scheduleRecoveryCheck(0);
+    };
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleRestored);
+    window.addEventListener("crate:network-restored", handleRestored as EventListener);
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleRestored);
+      window.removeEventListener("crate:network-restored", handleRestored as EventListener);
+    };
+  }, [beginSoftInterruption, isBuffering, scheduleRecoveryCheck]);
+
+  useEffect(() => () => {
+    clearStallTimer();
+    clearRecoveryTimer();
+    clearRestoreAutoplayTimer();
+  }, [clearRecoveryTimer, clearRestoreAutoplayTimer, clearStallTimer]);
+
+  const startQueuePlayback = useCallback((tracks: Track[], startIndex: number, source?: PlaySource) => {
+    if (!tracks.length) return;
+    const normalizedIndex = clampIndex(startIndex, tracks.length);
+
+    cancelSoftInterruption();
+    pendingRestoreTimeRef.current = 0;
+    resumeAfterReloadRef.current = false;
+    restoreAutoplayAttemptedRef.current = false;
+    clearRestoreAutoplayTimer();
+    shouldAutoplayRef.current = false;
+    resetPlaybackIntelligence();
+    flushCurrentPlayEvent("interrupted");
+
+    commitQueue(tracks);
+    commitCurrentIndex(normalizedIndex);
+    commitCurrentTime(0);
+    commitDuration(0);
+    commitIsBuffering(true);
+    setPlaySource(source || (tracks.length > 1 ? { type: "queue", name: "Queue" } : { type: "track", name: tracks[normalizedIndex]!.title }));
+
+    gpLoadQueue(tracks.map(getStreamUrl), normalizedIndex);
+    gpSetLoop(repeatRef.current === "all");
+    gpSetSingleMode(repeatRef.current === "one");
+    gpSetShuffle(shuffleRef.current);
+
+    const { resolvedQueue, resolvedIndex, resolvedTrack } = syncSelectionFromEngine(tracks);
+    commitQueue(resolvedQueue);
+    commitCurrentIndex(resolvedIndex);
+    if (resolvedTrack) {
+      rememberActiveTrack(resolvedTrack);
+    }
+
+    bufferingIntentRef.current = true;
+    gpPlay();
+  }, [
+    cancelSoftInterruption,
+    clearRestoreAutoplayTimer,
+    commitCurrentIndex,
+    commitCurrentTime,
+    commitDuration,
+    commitIsBuffering,
+    commitQueue,
+    flushCurrentPlayEvent,
+    rememberActiveTrack,
+    resetPlaybackIntelligence,
+    syncSelectionFromEngine,
   ]);
 
   const play = useCallback((track: Track, source?: PlaySource) => {
-    restoredRef.current = false;
-    resetPlaybackIntelligence();
-    flushCurrentPlayEvent("interrupted");
-    clearPreloadedTrack();
-    setQueue([track]);
-    setCurrentIndex(0);
-    setCurrentTime(0);
-    setDuration(0);
-    setIsBuffering(true);
-    gpLoadQueue([getStreamUrl(track)], 0);
-    gpPlay();
-    setIsPlaying(true);
-    setPlaySource(source || { type: "track", name: track.title });
-    addToRecentlyPlayed(track);
-  }, [addToRecentlyPlayed, clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
+    startQueuePlayback([track], 0, source || { type: "track", name: track.title });
+  }, [startQueuePlayback]);
 
   const playAll = useCallback((tracks: Track[], startIndex = 0, source?: PlaySource) => {
-    if (tracks.length === 0) return;
-    const track = tracks[startIndex];
+    if (!tracks.length) return;
+    const track = tracks[clampIndex(startIndex, tracks.length)];
     if (!track) return;
-
-    restoredRef.current = false;
-    resetPlaybackIntelligence();
-    flushCurrentPlayEvent("interrupted");
-    clearPreloadedTrack();
-    setQueue(tracks);
-    setCurrentIndex(startIndex);
-    setCurrentTime(0);
-    setDuration(0);
-    setIsBuffering(true);
-    gpLoadQueue(tracks.map((t) => getStreamUrl(t)), startIndex);
-    gpPlay();
-    setIsPlaying(true);
-    setPlaySource(source || (tracks.length > 1 ? { type: "queue", name: "Queue" } : { type: "track", name: track.title }));
-    addToRecentlyPlayed(track);
-  }, [addToRecentlyPlayed, clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
+    startQueuePlayback(
+      tracks,
+      startIndex,
+      source || (tracks.length > 1 ? { type: "queue", name: "Queue" } : { type: "track", name: track.title }),
+    );
+  }, [startQueuePlayback]);
 
   const pause = useCallback(() => {
-    gpPause();
-  }, []);
+    cancelSoftInterruption();
+    bufferingIntentRef.current = false;
+    commitIsBuffering(false);
+    void gpFadeOutAndPause(SOFT_PAUSE_FADE_MS).catch(() => {
+      gpPause();
+    });
+  }, [cancelSoftInterruption, commitIsBuffering]);
 
   const resume = useCallback(() => {
-    setIsBuffering(true);
-    gpPlay();
-  }, []);
+    if (!queueRef.current.length) return;
+    cancelSoftInterruption();
+    bufferingIntentRef.current = true;
+    commitIsBuffering(true);
+    void gpFadeInAndPlay(SOFT_PAUSE_FADE_MS).catch(() => {
+      gpPlay();
+    });
+  }, [cancelSoftInterruption, commitIsBuffering]);
 
   const next = useCallback(() => {
-    flushCurrentPlayEvent("skipped");
-    gpNext();
-    // Sync React state — Gapless-5 advances internally
-    if (shuffle && queue.length > 1) {
-      let nextIdx: number;
-      do { nextIdx = Math.floor(Math.random() * queue.length); }
-      while (nextIdx === currentIndex);
-      setCurrentIndex(nextIdx);
-    } else if (currentIndex < queue.length - 1) {
-      setCurrentIndex((i) => i + 1);
-    } else if (repeat === "all") {
-      setCurrentIndex(0);
-    } else if (!continueInfinitePlayback()) {
-      setIsPlaying(false);
-      setIsBuffering(false);
-    }
-    setCurrentTime(0);
-    setDuration(0);
-  }, [continueInfinitePlayback, currentIndex, flushCurrentPlayEvent, queue.length, repeat, shuffle]);
+    if (!queueRef.current.length) return;
 
-  const prev = useCallback(() => {
-    if (currentTime > 3) {
-      gpSeekTo(0);
-      setCurrentTime(0);
+    const nextIndex = currentIndexRef.current + 1;
+    if (nextIndex < queueRef.current.length) {
+      flushCurrentPlayEvent("skipped");
+      // Sequential skip: use gpNext() to preserve crossfade.
+      gpNext();
+      commitCurrentIndex(nextIndex);
+      commitCurrentTime(0);
+      commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
+      rememberActiveTrack(queueRef.current[nextIndex]);
+      bufferingIntentRef.current = true;
+      commitIsBuffering(true);
       return;
     }
-    if (currentIndex > 0) {
+
+    if (repeatRef.current === "all" && queueRef.current.length > 0) {
       flushCurrentPlayEvent("skipped");
-      gpPrev();
-      setCurrentIndex((i) => i - 1);
-      setCurrentTime(0);
-      setDuration(0);
+      // Wrapping to index 0 is a jump, not a sequential skip — no crossfade.
+      gpGotoTrack(0, true);
+      commitCurrentIndex(0);
+      commitCurrentTime(0);
+      commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
+      rememberActiveTrack(queueRef.current[0]);
+      bufferingIntentRef.current = true;
+      commitIsBuffering(true);
+      return;
     }
-  }, [currentIndex, currentTime, flushCurrentPlayEvent]);
+
+    if (continueInfinitePlayback()) {
+      flushCurrentPlayEvent("skipped");
+    }
+  }, [
+    commitCurrentIndex,
+    commitCurrentTime,
+    commitDuration,
+    commitIsBuffering,
+    continueInfinitePlayback,
+    flushCurrentPlayEvent,
+    rememberActiveTrack,
+  ]);
+
+  const prev = useCallback(() => {
+    if (!queueRef.current.length) return;
+    if (currentTimeRef.current > 3) {
+      gpSeekTo(0);
+      commitCurrentTime(0);
+      markSeekPosition(0);
+      return;
+    }
+
+    if (currentIndexRef.current > 0) {
+      const prevIndex = currentIndexRef.current - 1;
+      flushCurrentPlayEvent("skipped");
+      // Sequential skip backward. Gapless-5 prev() doesn't crossfade.
+      gpPrev();
+      commitCurrentIndex(prevIndex);
+      commitCurrentTime(0);
+      commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
+      rememberActiveTrack(queueRef.current[prevIndex]);
+      bufferingIntentRef.current = true;
+      commitIsBuffering(true);
+      return;
+    }
+
+    if (repeatRef.current === "all" && queueRef.current.length > 0) {
+      const wrappedIndex = queueRef.current.length - 1;
+      flushCurrentPlayEvent("skipped");
+      gpGotoTrack(wrappedIndex, true);
+      commitCurrentIndex(wrappedIndex);
+      commitCurrentTime(0);
+      commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
+      rememberActiveTrack(queueRef.current[wrappedIndex]);
+      bufferingIntentRef.current = true;
+      commitIsBuffering(true);
+    }
+  }, [
+    commitCurrentIndex,
+    commitCurrentTime,
+    commitDuration,
+    commitIsBuffering,
+    flushCurrentPlayEvent,
+    markSeekPosition,
+    rememberActiveTrack,
+  ]);
 
   const seek = useCallback((time: number) => {
-    setIsBuffering(true);
+    const shouldResumeBufferingFlow = isPlayingRef.current;
+    bufferingIntentRef.current = shouldResumeBufferingFlow;
     gpSeekTo(time * 1000);
-    setCurrentTime(time);
+    commitCurrentTime(time);
+    commitIsBuffering(shouldResumeBufferingFlow);
     markSeekPosition(time);
-  }, [markSeekPosition]);
+  }, [commitCurrentTime, commitIsBuffering, markSeekPosition]);
 
   const setVolume = useCallback((vol: number) => {
     gpSetVolume(vol);
@@ -699,93 +1011,181 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (vol > 0) {
       lastNonZeroVolumeRef.current = vol;
     }
-    try { localStorage.setItem("listen-player-volume", String(vol)); } catch { /* ignore */ }
+    try {
+      localStorage.setItem("listen-player-volume", String(vol));
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const clearQueue = useCallback(() => {
+    cancelSoftInterruption();
+    pendingRestoreTimeRef.current = 0;
+    resumeAfterReloadRef.current = false;
+    restoreAutoplayAttemptedRef.current = false;
+    clearRestoreAutoplayTimer();
+    shouldAutoplayRef.current = false;
+    bufferingIntentRef.current = false;
     resetPlaybackIntelligence();
     flushCurrentPlayEvent("interrupted");
-    clearPreloadedTrack();
     gpPause();
     gpLoadQueue([], 0);
-    setQueue([]);
-    setCurrentIndex(0);
-    setCurrentTime(0);
-    setDuration(0);
-    setIsPlaying(false);
-    setIsBuffering(false);
-    try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
-  }, [clearPreloadedTrack, flushCurrentPlayEvent, resetPlaybackIntelligence]);
+    commitQueue([]);
+    commitCurrentIndex(0);
+    commitCurrentTime(0);
+    commitDuration(0);
+    commitIsPlaying(false);
+    commitIsBuffering(false);
+    setPlaySource(null);
+    activatedTrackKeyRef.current = null;
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, [
+    cancelSoftInterruption,
+    clearRestoreAutoplayTimer,
+    commitCurrentIndex,
+    commitCurrentTime,
+    commitDuration,
+    commitIsBuffering,
+    commitIsPlaying,
+    commitQueue,
+    flushCurrentPlayEvent,
+    resetPlaybackIntelligence,
+  ]);
 
   const toggleShuffle = useCallback(() => {
-    setShuffle((s) => !s);
-  }, []);
+    if (!queueRef.current.length) {
+      setShuffleState((value) => !value);
+      return;
+    }
+
+    const nextShuffle = !shuffleRef.current;
+    setShuffleState(nextShuffle);
+    gpSetShuffle(nextShuffle);
+    const { resolvedQueue, resolvedIndex } = syncSelectionFromEngine(queueRef.current);
+    commitQueue(resolvedQueue);
+    commitCurrentIndex(resolvedIndex);
+  }, [commitCurrentIndex, commitQueue, syncSelectionFromEngine]);
 
   const cycleRepeat = useCallback(() => {
-    setRepeat((r) => {
-      if (r === "off") return "all";
-      if (r === "all") return "one";
+    setRepeatState((prevMode) => {
+      if (prevMode === "off") return "all";
+      if (prevMode === "all") return "one";
       return "off";
     });
   }, []);
 
   const jumpTo = useCallback((index: number) => {
-    if (index >= 0 && index < queue.length) {
-      restoredRef.current = false;
-      flushCurrentPlayEvent("skipped");
-      import("@/lib/gapless-player").then(({ getPlayer }) => {
-        getPlayer()?.gotoTrack(index);
-      });
-      setCurrentIndex(index);
-      setCurrentTime(0);
-      setDuration(0);
-    }
-  }, [flushCurrentPlayEvent, queue.length]);
+    if (index < 0 || index >= queueRef.current.length) return;
+    pendingRestoreTimeRef.current = 0;
+    shouldAutoplayRef.current = false;
+    flushCurrentPlayEvent("skipped");
+    gpGotoTrack(index, true);
+    commitCurrentIndex(index);
+    commitCurrentTime(0);
+    commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
+    rememberActiveTrack(queueRef.current[index]);
+    bufferingIntentRef.current = true;
+    commitIsBuffering(true);
+    commitIsPlaying(true);
+  }, [
+    commitCurrentIndex,
+    commitCurrentTime,
+    commitDuration,
+    commitIsBuffering,
+    commitIsPlaying,
+    flushCurrentPlayEvent,
+    rememberActiveTrack,
+  ]);
 
   const playNext = useCallback((track: Track) => {
-    setQueue((prev) => {
-      const nextQueue = [...prev];
-      nextQueue.splice(currentIndex + 1, 0, track);
-      return nextQueue;
-    });
-  }, [currentIndex]);
+    // Insert at currentIndex + 1 without reloading the queue, so the
+    // currently playing track keeps playing uninterrupted.
+    const insertAt = currentIndexRef.current + 1;
+    const nextQueue = [...queueRef.current];
+    nextQueue.splice(insertAt, 0, track);
+
+    gpInsertTrack(insertAt, getStreamUrl(track));
+    commitQueue(nextQueue);
+  }, [commitQueue]);
 
   const addToQueue = useCallback((track: Track) => {
-    setQueue((prev) => [...prev, track]);
-  }, []);
+    // Append without reloading.
+    const nextQueue = [...queueRef.current, track];
+    gpAddTrack(getStreamUrl(track));
+    commitQueue(nextQueue);
+  }, [commitQueue]);
 
   const removeFromQueue = useCallback((index: number) => {
-    setQueue((prev) => {
-      if (index < 0 || index >= prev.length) return prev;
-      return prev.filter((_, i) => i !== index);
-    });
-    if (index < currentIndex) {
-      setCurrentIndex((i) => i - 1);
-    } else if (index === currentIndex && index >= queue.length - 1) {
-      setCurrentIndex((i) => Math.max(0, i - 1));
+    const prevQueue = queueRef.current;
+    if (index < 0 || index >= prevQueue.length) return;
+
+    const removingCurrent = index === currentIndexRef.current;
+    const nextQueue = prevQueue.filter((_, queueIndex) => queueIndex !== index);
+
+    if (removingCurrent) {
+      flushCurrentPlayEvent("skipped");
+      // Removing the currently playing track: recreate the engine queue,
+      // so playback advances to the next valid item.
+      const nextIndex = Math.min(currentIndexRef.current, nextQueue.length - 1);
+      syncEngineQueue(nextQueue, nextIndex, {
+        autoplay: isPlayingRef.current && nextQueue.length > 0,
+        positionMs: 0,
+      });
+      return;
     }
-  }, [currentIndex, queue.length]);
+
+    // Removing a non-current track: use incremental op, keep playback.
+    gpRemoveTrack(index);
+    const nextIndex =
+      index < currentIndexRef.current
+        ? currentIndexRef.current - 1
+        : currentIndexRef.current;
+    commitQueue(nextQueue);
+    if (nextIndex !== currentIndexRef.current) {
+      commitCurrentIndex(nextIndex);
+    }
+  }, [commitCurrentIndex, commitQueue, flushCurrentPlayEvent, syncEngineQueue]);
 
   const reorderQueue = useCallback((fromIndex: number, toIndex: number) => {
-    setQueue((prev) => {
-      if (fromIndex < 0 || fromIndex >= prev.length) return prev;
-      const newQueue = [...prev];
-      const moved = newQueue.splice(fromIndex, 1)[0]!;
-      newQueue.splice(toIndex, 0, moved);
-      return newQueue;
+    const prevQueue = queueRef.current;
+    if (
+      fromIndex < 0 ||
+      fromIndex >= prevQueue.length ||
+      toIndex < 0 ||
+      toIndex >= prevQueue.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+
+    const nextQueue = [...prevQueue];
+    const [moved] = nextQueue.splice(fromIndex, 1);
+    if (!moved) return;
+    nextQueue.splice(toIndex, 0, moved);
+
+    let nextIndex = currentIndexRef.current;
+    if (fromIndex === currentIndexRef.current) {
+      nextIndex = toIndex;
+    } else if (fromIndex < currentIndexRef.current && toIndex >= currentIndexRef.current) {
+      nextIndex = currentIndexRef.current - 1;
+    } else if (fromIndex > currentIndexRef.current && toIndex <= currentIndexRef.current) {
+      nextIndex = currentIndexRef.current + 1;
+    }
+
+    syncEngineQueue(nextQueue, nextIndex, {
+      autoplay: isPlayingRef.current,
+      positionMs: gpGetPosition(),
     });
-    setCurrentIndex((prev) => {
-      if (fromIndex === prev) return toIndex;
-      if (fromIndex < prev && toIndex >= prev) return prev - 1;
-      if (fromIndex > prev && toIndex <= prev) return prev + 1;
-      return prev;
-    });
-  }, []);
+  }, [syncEngineQueue]);
 
   usePlayerShortcuts({
     hasCurrentTrack: !!currentTrack,
     isPlaying,
-    audio, // legacy — shortcuts may read audio.currentTime
+    currentTime,
     duration,
     volume,
     lastNonZeroVolume: lastNonZeroVolumeRef.current,
@@ -800,8 +1200,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useMediaSession({ currentTrack, isPlaying, currentTime, duration, pause, resume, next, prev, seek });
 
   const stateValue = useMemo<PlayerStateValue>(
-    () => ({ currentTime, duration, isPlaying, isBuffering, volume }),
-    [currentTime, duration, isPlaying, isBuffering, volume],
+    () => ({ currentTime, duration, isPlaying, isBuffering, volume, analyserVersion }),
+    [analyserVersion, currentTime, duration, isPlaying, isBuffering, volume],
   );
 
   const actionsValue = useMemo<PlayerActionsValue>(
@@ -813,7 +1213,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       repeat,
       recentlyPlayed,
       currentTrack,
-      audioElement: audioRef.current,
       play,
       playAll,
       pause,
@@ -832,10 +1231,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       reorderQueue,
     }),
     [
-      queue, currentIndex, shuffle, repeat, playSource, recentlyPlayed, currentTrack,
-      play, playAll, pause, resume, next, prev, seek, setVolume,
-      clearQueue, toggleShuffle, cycleRepeat, jumpTo, playNext,
-      addToQueue, removeFromQueue, reorderQueue,
+      queue,
+      currentIndex,
+      shuffle,
+      playSource,
+      repeat,
+      recentlyPlayed,
+      currentTrack,
+      play,
+      playAll,
+      pause,
+      resume,
+      next,
+      prev,
+      seek,
+      setVolume,
+      clearQueue,
+      toggleShuffle,
+      cycleRepeat,
+      jumpTo,
+      playNext,
+      addToQueue,
+      removeFromQueue,
+      reorderQueue,
     ],
   );
 

@@ -159,19 +159,26 @@ export function useVisualizerConfig(
       const [c1, c2, c3] = colors.map((color) =>
         adjustPaletteColor(color, paletteBias.brightness, paletteBias.coolness, paletteBias.saturation, paletteBias.hueShift),
       ) as [PaletteTriplet, PaletteTriplet, PaletteTriplet];
-      if (vizRef.current) {
-        vizRef.current.color1 = c1;
-        vizRef.current.color2 = c2;
-        vizRef.current.color3 = c3;
-      }
+      return { c1, c2, c3 };
     };
 
     const scheduleColorApply = (colors: [PaletteTriplet, PaletteTriplet, PaletteTriplet]) => {
-      const apply = () => applyColors(colors);
+      const apply = (attempt = 0) => {
+        const mapped = applyColors(colors);
+        if (vizRef.current) {
+          vizRef.current.color1 = mapped.c1;
+          vizRef.current.color2 = mapped.c2;
+          vizRef.current.color3 = mapped.c3;
+          return;
+        }
+        if (attempt < 8) {
+          timers.push(window.setTimeout(() => apply(attempt + 1), 80));
+        }
+      };
       apply();
-      timers.push(window.setTimeout(apply, 120));
-      timers.push(window.setTimeout(apply, 420));
-      timers.push(window.setTimeout(apply, 900));
+      timers.push(window.setTimeout(() => apply(), 120));
+      timers.push(window.setTimeout(() => apply(), 420));
+      timers.push(window.setTimeout(() => apply(), 900));
     };
 
     if (!useAlbumPalette) {
@@ -197,7 +204,9 @@ export function useVisualizerConfig(
 
   // Apply config to visualizer
   useEffect(() => {
-    const apply = () => {
+    const timers: number[] = [];
+
+    const apply = (attempt = 0) => {
       if (vizRef.current) {
         vizRef.current.setMode("spheres");
         vizRef.current.separation = effectiveVizConfig.separation;
@@ -219,11 +228,15 @@ export function useVisualizerConfig(
         vizRef.current.lowBandWeight = trackAdaptiveViz ? trackVizProfile.motion.lowBandWeight : 1;
         vizRef.current.midBandWeight = trackAdaptiveViz ? trackVizProfile.motion.midBandWeight : 1;
         vizRef.current.highBandWeight = trackAdaptiveViz ? trackVizProfile.motion.highBandWeight : 1;
+        return;
+      }
+      if (attempt < 8) {
+        timers.push(window.setTimeout(() => apply(attempt + 1), 80));
       }
     };
     apply();
-    const timer = window.setTimeout(apply, 300);
-    return () => window.clearTimeout(timer);
+    timers.push(window.setTimeout(() => apply(), 300));
+    return () => { for (const t of timers) window.clearTimeout(t); };
   }, [currentTrack?.id, effectiveVizConfig, isOpen, trackAdaptiveViz, trackVizProfile, vizRef]);
 
   // Accent on track change

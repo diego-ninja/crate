@@ -25,9 +25,9 @@ function nowIso(): string {
 }
 
 export function usePlayEventTracker(
-  audio: HTMLAudioElement,
   currentTrack: Track | undefined,
   playSource: PlaySource | null,
+  getPlaybackSnapshot: () => { currentTime: number; duration: number },
 ) {
   const sessionRef = useRef<PlayEventSession | null>(null);
 
@@ -44,17 +44,19 @@ export function usePlayEventTracker(
       return;
     }
 
+    const snapshot = getPlaybackSnapshot();
     sessionRef.current = {
       trackKey,
       track,
       playSource: source,
       startedAt: nowIso(),
-      trackDurationSeconds: Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null,
-      lastKnownTime: audio.currentTime || 0,
+      trackDurationSeconds:
+        Number.isFinite(snapshot.duration) && snapshot.duration > 0 ? snapshot.duration : null,
+      lastKnownTime: snapshot.currentTime || 0,
       listenedSeconds: 0,
-      maxProgressSeconds: audio.currentTime || 0,
+      maxProgressSeconds: snapshot.currentTime || 0,
     };
-  }, [audio]);
+  }, [getPlaybackSnapshot]);
 
   const flushCurrentPlayEvent = useCallback((reason: FlushReason) => {
     const session = sessionRef.current;
@@ -110,8 +112,9 @@ export function usePlayEventTracker(
   const recordProgress = useCallback((nextTime: number) => {
     const session = sessionRef.current;
     if (!session) return;
-    if (session.trackDurationSeconds === null && Number.isFinite(audio.duration) && audio.duration > 0) {
-      session.trackDurationSeconds = audio.duration;
+    const snapshot = getPlaybackSnapshot();
+    if (session.trackDurationSeconds === null && Number.isFinite(snapshot.duration) && snapshot.duration > 0) {
+      session.trackDurationSeconds = snapshot.duration;
     }
 
     const delta = nextTime - session.lastKnownTime;
@@ -120,17 +123,18 @@ export function usePlayEventTracker(
     }
     session.lastKnownTime = nextTime;
     session.maxProgressSeconds = Math.max(session.maxProgressSeconds, nextTime);
-  }, [audio]);
+  }, [getPlaybackSnapshot]);
 
   const markSeekPosition = useCallback((nextTime: number) => {
     const session = sessionRef.current;
     if (!session) return;
-    if (session.trackDurationSeconds === null && Number.isFinite(audio.duration) && audio.duration > 0) {
-      session.trackDurationSeconds = audio.duration;
+    const snapshot = getPlaybackSnapshot();
+    if (session.trackDurationSeconds === null && Number.isFinite(snapshot.duration) && snapshot.duration > 0) {
+      session.trackDurationSeconds = snapshot.duration;
     }
     session.lastKnownTime = nextTime;
     session.maxProgressSeconds = Math.max(session.maxProgressSeconds, nextTime);
-  }, [audio]);
+  }, [getPlaybackSnapshot]);
 
   useEffect(() => {
     syncSession(currentTrack, playSource);

@@ -115,11 +115,17 @@ def _password_enabled() -> bool:
 
 def _provider_status(request: Request | None = None) -> dict[str, dict]:
     domain = os.environ.get("DOMAIN", "localhost")
-    # login_url must always point to the API host (admin.*) where OAuth
-    # callbacks are registered, not to the frontend origin (listen.*).
-    # The return_to parameter handles redirecting back to the calling frontend.
-    scheme = "http" if domain == "localhost" else "https"
-    base_origin = f"{scheme}://admin.{domain}" if domain != "localhost" else "http://localhost:5173"
+    if request is not None:
+        base_origin = str(request.base_url).rstrip("/")
+    else:
+        scheme = "http" if domain == "localhost" else "https"
+        host = os.environ.get("API_HOST")
+        if host:
+            base_origin = f"{scheme}://{host}"
+        elif domain == "localhost":
+            base_origin = "http://localhost:8585"
+        else:
+            base_origin = f"{scheme}://api.{domain}"
     return {
         "password": {
             "enabled": _password_enabled(),

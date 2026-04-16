@@ -31,16 +31,14 @@ function getStoredFsOpen(): boolean {
 }
 
 export function PlayerBar() {
-  const { currentTime, duration, isPlaying, isBuffering, volume } = usePlayer();
+  const { currentTime, duration, isPlaying, isBuffering, volume, analyserVersion } = usePlayer();
   const {
     currentTrack, shuffle, repeat, playSource, queue, currentIndex,
     pause, resume, next, prev, seek, setVolume,
-    toggleShuffle, cycleRepeat, audioElement,
+    toggleShuffle, cycleRepeat,
   } = usePlayerActions();
 
-  // Connect audio to Web Audio API — this creates the AudioContext + source node
-  // on first play, enabling the WebGL visualizer in ExtendedPlayer to work.
-  const { frequencies } = useAudioVisualizer(audioElement, isPlaying);
+  const { frequencies } = useAudioVisualizer(isPlaying, `${currentTrack?.id ?? "none"}:${analyserVersion}`);
 
   const isDesktop = useIsDesktop();
   const [extendedOpen, setExtendedOpen] = useState(false);

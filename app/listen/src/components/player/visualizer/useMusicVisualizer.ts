@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { MusicVisualizer } from './MusicVisualizer';
 import { createAnalyserNode } from '@/hooks/use-audio-visualizer';
+import { getAnalyserNode } from '@/lib/gapless-player';
 import type { VisualizerMode } from '@/lib/player-visualizer-prefs';
 
 function dbg(msg: string) {
@@ -10,25 +11,25 @@ function dbg(msg: string) {
 
 export function useMusicVisualizer(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
-  audioElement: HTMLAudioElement | null,
+  trackKey: string | undefined,
   active: boolean,
+  playbackState: { volume: number; isPlaying: boolean },
   mode: VisualizerMode = "spheres",
 ) {
   const vizRef = useRef<MusicVisualizer | null>(null);
+  const playbackStateRef = useRef(playbackState);
 
   useEffect(() => {
-    if (!active || !canvasRef.current || !audioElement) {
-      dbg(`off: active=${active} canvas=${!!canvasRef.current} audio=${!!audioElement}`);
+    playbackStateRef.current = playbackState;
+  }, [playbackState]);
+
+  useEffect(() => {
+    if (!active || !canvasRef.current) {
+      dbg(`off: active=${active} canvas=${!!canvasRef.current} analyser=${!!getAnalyserNode()}`);
       return;
     }
 
     const canvas = canvasRef.current;
-    if (vizRef.current) {
-      vizRef.current.stop();
-      vizRef.current = null;
-    }
-
-    // Retry until canvas has layout dimensions (display:none → visible transition)
     let cancelled = false;
     let attempts = 0;
 
@@ -45,16 +46,21 @@ export function useMusicVisualizer(
         return;
       }
 
-      // Get or create analyser node
-      const node = createAnalyserNode(audioElement, 2048);
+      const node = createAnalyserNode(2048);
       if (!node) {
         dbg(`attempt ${attempts}: no analyser, retrying`);
         if (attempts < 50) setTimeout(tryInit, 200);
         return;
       }
 
+      if (vizRef.current) {
+        vizRef.current.setAnalyser(node);
+        vizRef.current.setMode(mode);
+        dbg(`updated analyser ${w}x${h}`);
+        return;
+      }
+
       const forceResize = (viz: MusicVisualizer) => {
-        // Physically jiggle the canvas to force WebGL to recalculate
         const origW = canvas.style.width;
         canvas.style.width = (canvas.clientWidth - 1) + 'px';
         requestAnimationFrame(() => {
@@ -68,7 +74,7 @@ export function useMusicVisualizer(
       };
 
       try {
-        const viz = new MusicVisualizer(canvas, node, audioElement, mode);
+        const viz = new MusicVisualizer(canvas, node, () => playbackStateRef.current, mode);
         vizRef.current = viz;
         viz.start();
         setTimeout(() => forceResize(viz), 100);
@@ -84,11 +90,15 @@ export function useMusicVisualizer(
     return () => {
       cancelled = true;
       clearTimeout(id);
-      if (vizRef.current) {
-        vizRef.current.stop();
-      }
     };
-  }, [canvasRef, audioElement, active, mode]);
+  }, [canvasRef, active, mode, trackKey]);
+
+  useEffect(() => {
+    if (!active && vizRef.current) {
+      vizRef.current.stop();
+      vizRef.current = null;
+    }
+  }, [active]);
 
   return vizRef;
 }

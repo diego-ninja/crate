@@ -1,11 +1,9 @@
-import type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
+import type { Track } from "@/contexts/player-types";
+import type { PlaySource, RepeatMode } from "@/contexts/player-types";
 
 export const STORAGE_KEY = "listen-player-state";
 export const RECENTLY_PLAYED_KEY = "listen-recently-played";
 export const MAX_RECENT = 10;
-export const NEXT_TRACK_PRELOAD_WINDOW_SECONDS = 15;
-export const PLAYER_AUDIO_KEY = "__listenPlayerAudio";
-export const PLAYER_PRELOAD_AUDIO_KEY = "__listenPlayerPreloadAudio";
 
 export function getStoredVolume(): number {
   try {
@@ -17,24 +15,37 @@ export function getStoredVolume(): number {
   return 0.8;
 }
 
-export function getStoredQueue(): { queue: Track[]; currentIndex: number; currentTime: number } {
+export function getStoredQueue(): { queue: Track[]; currentIndex: number; currentTime: number; wasPlaying: boolean } {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed.queue) && parsed.queue.length > 0) {
-        return { queue: parsed.queue, currentIndex: parsed.currentIndex ?? 0, currentTime: parsed.currentTime ?? 0 };
+        return {
+          queue: parsed.queue,
+          currentIndex: parsed.currentIndex ?? 0,
+          currentTime: parsed.currentTime ?? 0,
+          wasPlaying: parsed.wasPlaying === true,
+        };
       }
     }
   } catch {
     /* ignore */
   }
-  return { queue: [], currentIndex: 0, currentTime: 0 };
+  return { queue: [], currentIndex: 0, currentTime: 0, wasPlaying: false };
 }
 
-export function saveQueue(queue: Track[], currentIndex: number, currentTime?: number) {
+export function saveQueue(queue: Track[], currentIndex: number, currentTime?: number, wasPlaying = false) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ queue, currentIndex, currentTime: currentTime ?? 0 }));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        queue,
+        currentIndex,
+        currentTime: currentTime ?? 0,
+        wasPlaying,
+      }),
+    );
   } catch {
     /* ignore */
   }
@@ -58,17 +69,6 @@ export function saveRecentlyPlayed(tracks: Track[]) {
   }
 }
 
-export function getSharedAudio(key: string): HTMLAudioElement {
-  const w = window as unknown as Record<string, HTMLAudioElement | undefined>;
-  if (!w[key]) {
-    const el = new Audio();
-    // Enable cross-origin playback for Capacitor (streams come from api.* domain)
-    el.crossOrigin = "anonymous";
-    w[key] = el;
-  }
-  return w[key]!;
-}
-
 export function getStreamUrl(track: Track): string {
   const base = _apiBase();
   const suffix = _tokenSuffix();
@@ -89,10 +89,9 @@ export function getStreamUrl(track: Track): string {
   return `${base}/api/tracks/${track.id}/stream${suffix}`;
 }
 
-/** Append ?token= for native apps where audio element can't send Bearer headers. */
+/** Append ?token= for auth. Gapless-5 creates its own Audio elements
+ *  that don't inherit browser cookies, so always include token. */
 function _tokenSuffix(): string {
-  const base = _apiBase();
-  if (!base) return ""; // web: cookies work, no token needed
   try {
     const token = localStorage.getItem("crate-auth-token");
     return token ? `?token=${encodeURIComponent(token)}` : "";

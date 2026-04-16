@@ -1,80 +1,31 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
-import { ensureGainNode, getSourceNode } from "@/lib/audio-engine";
+import { getAnalyserNode } from "@/lib/gapless-player";
 
-const FFT_SIZE = 128;
-const BAR_COUNT = FFT_SIZE / 2; // 64 bars
-
-const CTX_KEY = "__crateAudioCtx" as const;
-
-// Shared analyser nodes — survive hot reloads
-let analyser: AnalyserNode | null = null;
-let vizAnalyser: AnalyserNode | null = null;
-
-function getAudioCtx(): AudioContext | null {
-  return (window as unknown as Record<string, AudioContext>)[CTX_KEY] || null;
-}
+const BAR_COUNT = 64;
 
 /**
- * Connect the analyser to the audio graph managed by audio-engine.
- *
- * Graph: source → gainNode → destination  (audio-engine owns this)
- *                ↘ analyser               (we tap from source, read-only)
- *
- * The analyser taps the source directly (before gain) so it reads
- * the unattenuated signal even during fades.
+ * Reuse Gapless-5's analyser directly so the visualizer always taps the
+ * actual playback engine instead of an extra derived node.
  */
-function connectAudio(audio: HTMLAudioElement): AnalyserNode | null {
-  if (analyser) return analyser;
-
-  // Ensure audio-engine has set up the graph
-  ensureGainNode(audio);
-  const source = getSourceNode(audio);
-  const ctx = getAudioCtx();
-  if (!ctx || !source) return null;
-
+export function createAnalyserNode(fftSize = 2048): AnalyserNode | null {
+  const analyser = getAnalyserNode();
+  if (!analyser) return null;
   try {
-    analyser = ctx.createAnalyser();
-    analyser.fftSize = FFT_SIZE;
+    if (analyser.fftSize !== fftSize) {
+      analyser.fftSize = fftSize;
+    }
     analyser.smoothingTimeConstant = 0.8;
-    // Tap source directly — doesn't affect the gain→destination chain
-    source.connect(analyser);
     return analyser;
   } catch {
     return null;
   }
 }
 
-/**
- * Get or create a high-fftSize AnalyserNode for the WebGL visualizer.
- * Taps from the main analyser node.
- */
-export function createAnalyserNode(audio: HTMLAudioElement, fftSize = 2048): AnalyserNode | null {
-  const mainAnalyser = connectAudio(audio);
-  if (!mainAnalyser) return null;
-
-  const ctx = getAudioCtx();
-  if (!ctx) return null;
-
-  if (vizAnalyser) {
-    try { vizAnalyser.disconnect(); } catch { /* ignore */ }
-    vizAnalyser = null;
-  }
-
-  try {
-    vizAnalyser = ctx.createAnalyser();
-    vizAnalyser.fftSize = fftSize;
-    vizAnalyser.smoothingTimeConstant = 0.8;
-    mainAnalyser.connect(vizAnalyser);
-    return vizAnalyser;
-  } catch {
-    return null;
-  }
-}
-
 export function useAudioVisualizer(
-  audioElement: HTMLAudioElement | null,
   enabled: boolean,
+  trackKey?: string,
+  analyserNode?: AnalyserNode | null,
 ) {
   const [frequencies, setFrequencies] = useState<number[]>([]);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -114,12 +65,12 @@ export function useAudioVisualizer(
   }, []);
 
   useEffect(() => {
-    if (!enabled || !audioElement) {
+    if (!enabled) {
       setFrequencies([]);
       return;
     }
 
-    const node = connectAudio(audioElement);
+    const node = analyserNode || getAnalyserNode();
     if (!node) return;
 
     analyserRef.current = node;
@@ -130,7 +81,7 @@ export function useAudioVisualizer(
     return () => {
       cancelAnimationFrame(rafRef.current);
     };
-  }, [audioElement, enabled, tick]);
+  }, [analyserNode, enabled, tick, trackKey]);
 
   return { frequencies, waveform, barCount: BAR_COUNT };
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Settings } from "lucide-react";
 
 import { InfoTab } from "@/components/player/extended/InfoTab";
@@ -9,7 +9,7 @@ import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisua
 import { useVisualizerConfig } from "@/components/player/visualizer/useVisualizerConfig";
 import { VisualizerSettingsPanel } from "@/components/player/visualizer/VisualizerSettingsPanel";
 import { AppPopover } from "@/components/ui/AppPopover";
-import { usePlayerActions } from "@/contexts/PlayerContext";
+import { usePlayer } from "@/contexts/PlayerContext";
 import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { useEscapeKey } from "@/hooks/use-escape-key";
@@ -30,7 +30,7 @@ const TABS: { id: TabId; label: string }[] = [
 
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const isDesktop = useIsDesktop();
-  const { currentTrack, audioElement } = usePlayerActions();
+  const { currentTrack, isPlaying, volume, analyserVersion } = usePlayer();
   const [tab, setTab] = useState<TabId>("queue");
   const [showVizSettings, setShowVizSettings] = useState(false);
 
@@ -39,7 +39,13 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const vizSettingsRef = useRef<HTMLDivElement>(null);
   const vizSettingsButtonRef = useRef<HTMLButtonElement>(null);
-  const vizRef = useMusicVisualizer(canvasRef, audioElement, open && isDesktop);
+  const playbackState = useMemo(() => ({ isPlaying, volume }), [isPlaying, volume]);
+  const vizRef = useMusicVisualizer(
+    canvasRef,
+    `${currentTrack?.id ?? "none"}:${analyserVersion}`,
+    open && isDesktop,
+    playbackState,
+  );
   const vizCfg = useVisualizerConfig(vizRef, currentTrack, open && isDesktop);
   const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 

@@ -40,7 +40,7 @@ function lerp(a: number, b: number, t: number) {
 export class MusicVisualizer {
   private glCtx: WebGL2RenderingContext;
   private analyser: AnalyserNode;
-  private audioElement: HTMLAudioElement;
+  private getPlaybackState: () => { volume: number; isPlaying: boolean };
   private freqDomain: Uint8Array<ArrayBuffer>;
   private timeDomain: Uint8Array<ArrayBuffer>;
 
@@ -133,7 +133,7 @@ export class MusicVisualizer {
   constructor(
     canvas: HTMLCanvasElement,
     analyser: AnalyserNode,
-    audioElement: HTMLAudioElement,
+    getPlaybackState: () => { volume: number; isPlaying: boolean },
     _mode: VisualizerMode = "spheres",
   ) {
     const glCtx = canvas.getContext('webgl2', { alpha: true, antialias: false, preserveDrawingBuffer: false });
@@ -142,7 +142,7 @@ export class MusicVisualizer {
     this.canvas = canvas;
     this.glCtx = glCtx;
     this.analyser = analyser;
-    this.audioElement = audioElement;
+    this.getPlaybackState = getPlaybackState;
     this.mode = "spheres";
     this.freqDomain = new Uint8Array(analyser.frequencyBinCount);
     this.timeDomain = new Uint8Array(analyser.frequencyBinCount);
@@ -160,6 +160,12 @@ export class MusicVisualizer {
 
   setMode(mode: VisualizerMode) {
     this.mode = mode;
+  }
+
+  setAnalyser(analyser: AnalyserNode) {
+    this.analyser = analyser;
+    this.freqDomain = new Uint8Array(analyser.frequencyBinCount);
+    this.timeDomain = new Uint8Array(analyser.fftSize);
   }
 
   accentTrackChange(strength = 1) {
@@ -317,7 +323,8 @@ export class MusicVisualizer {
     // Volume compensation: attenuate at high volume, pass through at low.
     // Never amplify (cap at 1.0) so low volumes don't get noisy.
     // At vol=1.0 → 0.25x (attenuate). At vol=0.25 → 1.0x (pass). At vol=0.1 → 1.0x (pass).
-    const vol = Math.max(this.audioElement.volume, 0.01);
+    const playback = this.getPlaybackState();
+    const vol = Math.max(playback.volume, 0.01);
     const targetLevel = 0.25;
     const volCompensation = Math.min(targetLevel / vol, 1.0);
 
@@ -344,7 +351,7 @@ export class MusicVisualizer {
     rawHigh /= Math.max(1, bins - midEnd);
 
     const rawEnvelope = clamp(rawLow * 0.62 + rawMid * 0.25 + rawHigh * 0.13, 0, 1);
-    const playbackTarget = this.audioElement.paused || this.audioElement.ended ? 0 : 1;
+    const playbackTarget = playback.isPlaying ? 1 : 0;
     this.playbackLevel = lerp(
       this.playbackLevel,
       playbackTarget,

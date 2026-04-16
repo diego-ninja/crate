@@ -3,7 +3,7 @@ import { useEffect } from "react";
 interface UsePlayerShortcutsOptions {
   hasCurrentTrack: boolean;
   isPlaying: boolean;
-  audio: HTMLAudioElement;
+  currentTime: number;
   duration: number;
   volume: number;
   lastNonZeroVolume: number;
@@ -18,7 +18,7 @@ interface UsePlayerShortcutsOptions {
 export function usePlayerShortcuts({
   hasCurrentTrack,
   isPlaying,
-  audio,
+  currentTime,
   duration,
   volume,
   lastNonZeroVolume,
@@ -68,13 +68,13 @@ export function usePlayerShortcuts({
 
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        seek(Math.min(audio.duration || duration || 0, audio.currentTime + 10));
+        seek(Math.min(duration || 0, currentTime + 10));
         return;
       }
 
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        seek(Math.max(0, audio.currentTime - 10));
+        seek(Math.max(0, currentTime - 10));
         return;
       }
 
@@ -87,5 +87,5 @@ export function usePlayerShortcuts({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [audio, duration, hasCurrentTrack, isPlaying, lastNonZeroVolume, next, pause, prev, resume, seek, setVolume, volume]);
+  }, [currentTime, duration, hasCurrentTrack, isPlaying, lastNonZeroVolume, next, pause, prev, resume, seek, setVolume, volume]);
 }
