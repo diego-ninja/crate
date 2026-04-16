@@ -10,14 +10,14 @@ class TestComputeDirHash:
     """Test the Python fallback of _compute_dir_hash (no Rust CLI in test env)."""
 
     def _compute(self, directory: Path) -> str:
-        """Call _compute_dir_hash forcing Python fallback (no Rust CLI in test)."""
+        """Call compute_dir_hash forcing Python fallback (no Rust CLI in test)."""
         from unittest.mock import patch, MagicMock
         # Make crate_cli.is_available return False so Python fallback is used
         mock_cli = MagicMock()
         mock_cli.is_available.return_value = False
         with patch.dict("sys.modules", {"crate.crate_cli": mock_cli}):
-            from crate.worker import _compute_dir_hash
-            return _compute_dir_hash(directory)
+            from crate.content import compute_dir_hash
+            return compute_dir_hash(directory)
 
     def test_hash_deterministic(self):
         """Same files should produce the same hash across calls."""
@@ -98,70 +98,66 @@ class TestComputeDirHash:
 
 
 class TestShouldProcessArtist:
-    """Test the skip-if-unchanged logic in _should_process_artist.
+    """Test the skip-if-unchanged logic in should_process_artist.
 
-    _should_process_artist does `from crate.db import get_library_artist` inside the function,
+    should_process_artist does `from crate.db import get_library_artist` inside the function,
     so we patch `crate.db.get_library_artist` which is the re-export from crate.db.__init__.
     """
 
     def test_returns_true_when_no_previous_hash(self):
         """First time processing (no content_hash) should always proceed."""
         from unittest.mock import patch
-        from crate.worker import _should_process_artist
+        from crate.content import should_process_artist
 
         with tempfile.TemporaryDirectory() as lib:
             artist_dir = Path(lib) / "NewBand"
             artist_dir.mkdir()
             (artist_dir / "track.flac").write_bytes(b"\x00")
 
-            config = {"library_path": lib}
-
-            with patch("crate.db.get_library_artist", return_value={"folder_name": "NewBand", "content_hash": None}):
-                assert _should_process_artist("NewBand", config) is True
+            with patch("crate.db.get_library_artist", return_value={"folder_name": "NewBand", "content_hash": None}), \
+                 patch("crate.content.resolve_artist_dir", return_value=artist_dir):
+                assert should_process_artist("NewBand", library_path=lib) is True
 
     def test_returns_false_when_hash_matches(self):
         """If content hasn't changed, should return False."""
         from unittest.mock import patch, MagicMock
-        from crate.worker import _should_process_artist, _compute_dir_hash
+        from crate.content import should_process_artist, compute_dir_hash
 
         with tempfile.TemporaryDirectory() as lib:
             artist_dir = Path(lib) / "SameBand"
             artist_dir.mkdir()
             (artist_dir / "track.flac").write_bytes(b"\x00" * 100)
 
-            config = {"library_path": lib}
-
             # Pre-compute the hash using Python fallback
             mock_cli = MagicMock()
             mock_cli.is_available.return_value = False
             with patch.dict("sys.modules", {"crate.crate_cli": mock_cli}):
-                current_hash = _compute_dir_hash(artist_dir)
+                current_hash = compute_dir_hash(artist_dir)
 
-            with patch("crate.db.get_library_artist", return_value={"folder_name": "SameBand", "content_hash": current_hash}):
-                assert _should_process_artist("SameBand", config) is False
+            with patch("crate.db.get_library_artist", return_value={"folder_name": "SameBand", "content_hash": current_hash}), \
+                 patch("crate.content.resolve_artist_dir", return_value=artist_dir):
+                assert should_process_artist("SameBand", library_path=lib) is False
 
     def test_returns_true_when_hash_differs(self):
         """If content changed, should return True."""
         from unittest.mock import patch
-        from crate.worker import _should_process_artist
+        from crate.content import should_process_artist
 
         with tempfile.TemporaryDirectory() as lib:
             artist_dir = Path(lib) / "ChangedBand"
             artist_dir.mkdir()
             (artist_dir / "track.flac").write_bytes(b"\x00" * 100)
 
-            config = {"library_path": lib}
-
-            with patch("crate.db.get_library_artist", return_value={"folder_name": "ChangedBand", "content_hash": "stale_old_hash"}):
-                assert _should_process_artist("ChangedBand", config) is True
+            with patch("crate.db.get_library_artist", return_value={"folder_name": "ChangedBand", "content_hash": "stale_old_hash"}), \
+                 patch("crate.content.resolve_artist_dir", return_value=artist_dir):
+                assert should_process_artist("ChangedBand", library_path=lib) is True
 
     def test_returns_false_when_dir_missing(self):
         """If the artist directory doesn't exist, return False (nothing to process)."""
         from unittest.mock import patch
-        from crate.worker import _should_process_artist
+        from crate.content import should_process_artist
 
         with tempfile.TemporaryDirectory() as lib:
-            config = {"library_path": lib}
-
-            with patch("crate.db.get_library_artist", return_value={"folder_name": "GhostBand", "content_hash": "x"}):
-                assert _should_process_artist("GhostBand", config) is False
+            with patch("crate.db.get_library_artist", return_value={"folder_name": "GhostBand", "content_hash": "x"}), \
+                 patch("crate.content.resolve_artist_dir", return_value=None):
+                assert should_process_artist("GhostBand", library_path=lib) is False

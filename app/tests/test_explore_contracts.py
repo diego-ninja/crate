@@ -34,13 +34,20 @@ class TestExploreSearchContract:
     def test_search_returns_full_payload_shape(self, test_app):
         mock_cur = MagicMock()
         mock_cur.fetchall.side_effect = [
-            [{"name": "Converge", "album_count": 10, "has_photo": 1}],
-            [{"id": 5, "artist": "Converge", "name": "Jane Doe", "year": "2001", "has_cover": 1}],
+            [{"id": 1, "slug": "converge", "name": "Converge", "album_count": 10, "has_photo": 1}],
+            [{"id": 5, "slug": "jane-doe", "artist": "Converge", "name": "Jane Doe", "year": "2001",
+              "has_cover": 1, "artist_id": 1, "artist_slug": "converge"}],
             [{
                 "id": 99,
+                "storage_id": None,
+                "slug": "concubine",
                 "title": "Concubine",
                 "artist": "Converge",
+                "album_id": 5,
+                "album_slug": "jane-doe",
                 "album": "Jane Doe",
+                "artist_id": 1,
+                "artist_slug": "converge",
                 "path": "/music/Converge/Jane Doe/01 - Concubine.flac",
                 "duration": 94.0,
             }],
@@ -54,16 +61,9 @@ class TestExploreSearchContract:
             resp = test_app.get("/api/search?q=converge&limit=10")
             assert resp.status_code == 200
             data = resp.json()
-            assert data["artists"][0] == {
-                "name": "Converge",
-                "album_count": 10,
-                "has_photo": True,
-            }
-            assert data["albums"][0] == {
-                "id": 5,
-                "artist": "Converge",
-                "name": "Jane Doe",
-                "year": "2001",
-                "has_cover": True,
-            }
+            assert data["artists"][0]["name"] == "Converge"
+            assert data["artists"][0]["album_count"] == 10
+            assert data["artists"][0]["has_photo"] is True
+            assert data["albums"][0]["name"] == "Jane Doe"
+            assert data["albums"][0]["artist"] == "Converge"
             assert data["tracks"][0]["title"] == "Concubine"

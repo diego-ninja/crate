@@ -38,6 +38,12 @@ def _make_event(track, *, started_at, ended_at, played_seconds, duration=94.0,
 @pytest.fixture
 def stats_db(pg_db):
     """Set up library data for stats tests, clean up afterward."""
+    # Ensure test user exists (FK constraint on user_play_events)
+    with pg_db.get_db_ctx() as cur:
+        cur.execute(
+            "INSERT INTO users (id, email, password_hash, role, created_at) VALUES (%s, %s, %s, %s, NOW()) ON CONFLICT (id) DO NOTHING",
+            (TEST_USER_ID, "testuser@test.com", "nohash", "user"),
+        )
     pg_db.upsert_artist({"name": "Converge"})
     pg_db.upsert_artist({"name": "Botch"})
 
@@ -290,23 +296,28 @@ class TestTopTracksAndArtists:
 class TestWindowFiltering:
     def test_recent_window_excludes_old_events(self, stats_db):
         db, data = stats_db
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        old_dt = now - timedelta(days=60)
+        recent_dt = now - timedelta(hours=1)
 
         # Old event: 60 days ago
         db.record_play_event(
             TEST_USER_ID,
             **_make_event(data["hutton"],
-                          started_at="2026-02-01T10:00:00+00:00",
-                          ended_at="2026-02-01T10:05:12+00:00",
+                          started_at=old_dt.isoformat(),
+                          ended_at=(old_dt + timedelta(minutes=5, seconds=12)).isoformat(),
                           played_seconds=312.0,
                           was_completed=True,
                           album_id=data["album_botch"]),
         )
-        # Recent event: today-ish (within 7d of "now" at test time)
+        # Recent event: within 7d of now
         db.record_play_event(
             TEST_USER_ID,
             **_make_event(data["concubine"],
-                          started_at="2026-04-05T10:00:00+00:00",
-                          ended_at="2026-04-05T10:01:34+00:00",
+                          started_at=recent_dt.isoformat(),
+                          ended_at=(recent_dt + timedelta(minutes=1, seconds=34)).isoformat(),
                           played_seconds=94.0,
                           was_completed=True,
                           album_id=data["album_jd"]),
@@ -329,13 +340,18 @@ class TestWindowFiltering:
 
     def test_overview_window_30d(self, stats_db):
         db, data = stats_db
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        old_dt = now - timedelta(days=60)
+        recent_dt = now - timedelta(hours=1)
 
         # Old event outside 30d
         db.record_play_event(
             TEST_USER_ID,
             **_make_event(data["hutton"],
-                          started_at="2026-01-01T10:00:00+00:00",
-                          ended_at="2026-01-01T10:05:12+00:00",
+                          started_at=old_dt.isoformat(),
+                          ended_at=(old_dt + timedelta(minutes=5, seconds=12)).isoformat(),
                           played_seconds=312.0,
                           was_completed=True,
                           album_id=data["album_botch"]),
@@ -344,8 +360,8 @@ class TestWindowFiltering:
         db.record_play_event(
             TEST_USER_ID,
             **_make_event(data["concubine"],
-                          started_at="2026-04-05T10:00:00+00:00",
-                          ended_at="2026-04-05T10:01:34+00:00",
+                          started_at=recent_dt.isoformat(),
+                          ended_at=(recent_dt + timedelta(minutes=1, seconds=34)).isoformat(),
                           played_seconds=94.0,
                           was_completed=True,
                           album_id=data["album_jd"]),

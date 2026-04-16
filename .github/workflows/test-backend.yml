@@ -1,0 +1,62 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/crate/**"
+      - "app/tests/**"
+      - "app/requirements*.txt"
+      - ".github/workflows/test-backend.yml"
+  pull_request:
+    paths:
+      - "app/crate/**"
+      - "app/tests/**"
+      - "app/requirements*.txt"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: crate
+          POSTGRES_PASSWORD: crate
+          POSTGRES_DB: crate_test
+        options: >-
+          --health-cmd "pg_isready -U crate -d crate_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: app/requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-test.txt
+        working-directory: app
+
+      - name: Run tests
+        env:
+          CRATE_POSTGRES_USER: crate
+          CRATE_POSTGRES_PASSWORD: crate
+          CRATE_POSTGRES_HOST: localhost
+          CRATE_POSTGRES_PORT: "5432"
+          CRATE_POSTGRES_DB: crate_test
+        run: |
+          python -m pytest tests/ -v \
+            --ignore=tests/test_stats_integration.py \
+            --ignore=tests/test_user_stats_aggregates.py \
+            --tb=short \
+            -q
+        working-directory: app

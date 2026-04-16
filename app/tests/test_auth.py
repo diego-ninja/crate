@@ -148,16 +148,19 @@ class TestRegisterEndpoint:
         mock_cur = MagicMock()
         mock_cur.fetchone.return_value = {"cnt": 0}
         fake_user = {"id": 1, "email": "new@test.com", "name": "New", "avatar": None, "role": "user", "username": None}
+        fake_session = {"id": "sess123", "user_id": 1}
 
         with patch("crate.api.auth.get_db_ctx") as mock_ctx, \
+             patch("crate.api.auth.get_setting", return_value=None), \
              patch("crate.api.auth.get_user_by_email", return_value=None), \
              patch("crate.api.auth.hash_password", return_value="hashed"), \
              patch("crate.api.auth.create_user", return_value=fake_user), \
              patch("crate.api.auth.update_user_last_login"), \
+             patch("crate.api.auth.create_session", return_value=fake_session), \
              patch("crate.api.auth.create_jwt", return_value="jwt-token"):
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-            resp = test_app.post("/api/auth/register", json={"email": "new@test.com", "password": "secret"})
+            resp = test_app.post("/api/auth/register", json={"email": "new@test.com", "password": "secretpw1"})
             assert resp.status_code == 201
 
     def test_duplicate_email_returns_409(self, test_app):
@@ -166,10 +169,11 @@ class TestRegisterEndpoint:
         existing_user = {"id": 1, "email": "taken@test.com"}
 
         with patch("crate.api.auth.get_db_ctx") as mock_ctx, \
+             patch("crate.api.auth.get_setting", return_value=None), \
              patch("crate.api.auth.get_user_by_email", return_value=existing_user):
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-            resp = test_app.post("/api/auth/register", json={"email": "taken@test.com", "password": "pw"})
+            resp = test_app.post("/api/auth/register", json={"email": "taken@test.com", "password": "longpassword1"})
             assert resp.status_code == 409
 
 
