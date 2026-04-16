@@ -102,10 +102,14 @@ export interface EqChain {
   input: AudioNode;
   /** Last filter in the chain — connect this to your destination. */
   output: AudioNode;
-  /** Update the gain of a single band (0..EQ_BAND_COUNT-1). */
-  setGain: (bandIndex: number, dB: number) => void;
+  /**
+   * Update the gain of a single band. Pass `rampMs: 0` to snap
+   * immediately (rarely useful); otherwise the change ramps linearly
+   * over `rampMs` milliseconds to avoid clicks / zipper noise.
+   */
+  setGain: (bandIndex: number, dB: number, rampMs?: number) => void;
   /** Update all bands at once (array must have EQ_BAND_COUNT entries). */
-  setGains: (gains: EqGains) => void;
+  setGains: (gains: EqGains, rampMs?: number) => void;
   /**
    * Read the current gains in dB, freshly pulled from the filter nodes.
    * Useful for "save current state" flows.
@@ -118,6 +122,37 @@ export interface EqChain {
 function clampGain(dB: number): number {
   if (!Number.isFinite(dB)) return 0;
   return Math.max(EQ_GAIN_MIN, Math.min(EQ_GAIN_MAX, dB));
+}
+
+/**
+ * Default ramp window. 80 ms is long enough to kill click / zipper
+ * noise from gain jumps (particularly when Adaptive/Genre mode swaps
+ * the curve on track change) and short enough that dragging a slider
+ * still feels instant.
+ */
+const DEFAULT_RAMP_MS = 80;
+
+/**
+ * Smoothly drive an AudioParam toward `target`. We cancel any queued
+ * ramps first so rapid successive calls (e.g. slider drags) don't
+ * stack — and anchor the curve to the live value at `now` so the
+ * ramp starts from where we actually are.
+ */
+function rampParam(param: AudioParam, ctx: AudioContext, target: number, rampMs: number): void {
+  const now = typeof ctx.currentTime === "number" ? ctx.currentTime : 0;
+  try {
+    param.cancelScheduledValues(now);
+    param.setValueAtTime(param.value, now);
+    if (rampMs <= 0) {
+      param.setValueAtTime(target, now);
+    } else {
+      param.linearRampToValueAtTime(target, now + rampMs / 1000);
+    }
+  } catch {
+    // Some environments (older browsers / test mocks) may not
+    // implement the scheduling API. Fall back to a hard set.
+    param.value = target;
+  }
 }
 
 /**
@@ -146,14 +181,14 @@ export function createEqChain(ctx: AudioContext): EqChain {
   return {
     input: filters[0]!,
     output: filters[filters.length - 1]!,
-    setGain: (bandIndex, dB) => {
+    setGain: (bandIndex, dB, rampMs = DEFAULT_RAMP_MS) => {
       const filter = filters[bandIndex];
       if (!filter) return;
-      filter.gain.value = clampGain(dB);
+      rampParam(filter.gain, ctx, clampGain(dB), rampMs);
     },
-    setGains: (gains) => {
+    setGains: (gains, rampMs = DEFAULT_RAMP_MS) => {
       for (let i = 0; i < filters.length; i++) {
-        filters[i]!.gain.value = clampGain(gains[i] ?? 0);
+        rampParam(filters[i]!.gain, ctx, clampGain(gains[i] ?? 0), rampMs);
       }
     },
     readGains: () => filters.map((f) => f.gain.value),

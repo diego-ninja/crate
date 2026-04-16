@@ -31,6 +31,7 @@ import {
   gotoTrack as gpGotoTrack,
   initPlayer as initGaplessPlayer,
   insertTrack as gpInsertTrack,
+  isCurrentTrackFullyBuffered,
   loadQueue as gpLoadQueue,
   next as gpNext,
   pause as gpPause,
@@ -940,7 +941,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         commitIsBuffering(false);
         bufferingIntentRef.current = false;
       },
-      onError: (_path, err) => {
+      onError: (path, err) => {
+        // Gapless-5 pre-loads upcoming tracks (controlled by loadLimit).
+        // When the user loses connectivity, the XHR for the next track
+        // can fail while the current track is happily playing from its
+        // already-decoded WebAudio buffer in RAM. Escalating that
+        // failure as a soft interruption would stop the audio the user
+        // is actually listening to — so we filter errors by checking
+        // whether they're on the current track at all.
+        const currentTrack = currentTrackRef.current;
+        const currentPath = currentTrack ? getStreamUrl(currentTrack) : null;
+        if (currentPath && path && path !== currentPath) {
+          console.warn("[gapless] preload error ignored (non-current track):", path, err);
+          return;
+        }
+        // Also ignore when the current track is fully buffered in
+        // WebAudio: the audio comes from RAM and the error is from a
+        // dormant stream handle that we don't need any more.
+        if (isCurrentTrackFullyBuffered()) {
+          console.warn("[gapless] error ignored (current track fully buffered):", path, err);
+          return;
+        }
         console.error("[gapless] error:", err);
         cancelRestoreAutoplay();
         void isRuntimeOnline().then((online) => {

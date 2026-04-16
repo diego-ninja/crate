@@ -396,7 +396,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           (and its measured visualizer canvas) out of place on mobile. */}
       {showEqualizer && (
         <div className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up">
-          <EqualizerPanel variant="compact" onClose={() => setShowEqualizer(false)} />
+          <EqualizerPanel onClose={() => setShowEqualizer(false)} />
         </div>
       )}
 

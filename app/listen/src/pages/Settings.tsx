@@ -12,7 +12,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { Upload, BarChart3, Loader2, LogOut, Lock, MapPin, Moon, Navigation, Radio, Shield, Smartphone, Users } from "lucide-react";
 import { toast } from "sonner";
-import { EqualizerSection } from "@/components/settings/EqualizerSection";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
@@ -223,8 +222,6 @@ export function Settings() {
           }}
         />
       </Section>
-
-      <EqualizerSection />
 
       <ShowsLocationSection />
 

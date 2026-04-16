@@ -49,6 +49,11 @@ let currentAnalyser: AnalyserNode | null = null;
 let lastVolume = 1.0;
 let appliedVolume = 1.0;
 let fadeFrame: number | null = null;
+// True once the current track's audio is fully decoded into the
+// WebAudio buffer (RAM). In that state, network loss cannot stop
+// playback — the consumer (soft-interruption logic) can use this to
+// decide whether it's worth pausing on an offline event.
+let currentTrackFullyBuffered = false;
 // Holds the resolver of the currently-running fade so a new fade can
 // settle the previous promise cleanly (instead of leaking it forever).
 let fadeSettle: (() => void) | null = null;
@@ -69,6 +74,16 @@ export function getPlayer(): Gapless5 | null {
 
 export function getAnalyserNode(): AnalyserNode | null {
   return currentAnalyser;
+}
+
+/**
+ * True when the current track's audio has been fully decoded into the
+ * WebAudio buffer — i.e. the playback does not depend on the network
+ * any more. Useful for deciding whether an offline event should pause
+ * the player at all (if RAM has the whole thing, it shouldn't).
+ */
+export function isCurrentTrackFullyBuffered(): boolean {
+  return currentTrackFullyBuffered;
 }
 
 function setAnalyser(analyser: AnalyserNode | null) {
@@ -148,6 +163,11 @@ export function initPlayer(callbacks: GaplessPlayerCallbacks = {}): Gapless5 {
     crossfadeShape: GAPLESS_CROSSFADE_EQUAL_POWER,
     volume: lastVolume,
     logLevel: GAPLESS_LOG_LEVEL_WARNING,
+    // Only keep the current + next track loaded at once. Default is -1
+    // (no limit) which fires dozens of parallel XHR+HTML5 loads on
+    // large playlists, saturating the browser connection pool and
+    // causing noticeable latency before the current track starts.
+    loadLimit: 2,
   });
   appliedVolume = lastVolume;
 
@@ -160,6 +180,10 @@ export function initPlayer(callbacks: GaplessPlayerCallbacks = {}): Gapless5 {
   };
 
   instance.onplay = (path, analyser) => {
+    // analyser is only emitted when WebAudio is the live source.
+    // Presence here means the track's buffer is already decoded in RAM
+    // (the "switched" case where onplay replaces onswitchtowebaudio).
+    currentTrackFullyBuffered = analyser != null;
     setAnalyser(analyser);
     currentCallbacks.onPlay?.(path);
   };
@@ -200,6 +224,9 @@ export function initPlayer(callbacks: GaplessPlayerCallbacks = {}): Gapless5 {
 
   // Runtime (gapless5.js:309) calls this as (trackPath, analyser).
   instance.onswitchtowebaudio = (_path, analyser) => {
+    // HTML5 → WebAudio switch. From this moment the track plays from
+    // RAM; network failures are survivable.
+    currentTrackFullyBuffered = true;
     setAnalyser(analyser);
   };
 

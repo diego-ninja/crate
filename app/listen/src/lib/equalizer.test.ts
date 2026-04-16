@@ -11,12 +11,25 @@ import {
 
 // Minimal AudioContext mock — we only care that the chain wires up
 // BiquadFilters in series and exposes the correct gain manipulation.
+// The gain param simulates scheduling (setValueAtTime, linearRamp)
+// by eagerly updating .value, which is accurate enough for the
+// assertions we care about in these tests.
+function mkParam() {
+  const param = {
+    value: 0,
+    cancelScheduledValues: vi.fn(),
+    setValueAtTime: vi.fn((v: number) => { param.value = v; }),
+    linearRampToValueAtTime: vi.fn((v: number) => { param.value = v; }),
+  };
+  return param;
+}
+
 function mkFilter() {
   return {
     type: "",
     frequency: { value: 0 },
     Q: { value: 0 },
-    gain: { value: 0 },
+    gain: mkParam(),
     connect: vi.fn(),
     disconnect: vi.fn(),
   };
@@ -24,6 +37,7 @@ function mkFilter() {
 
 function mkContext() {
   return {
+    currentTime: 0,
     createBiquadFilter: vi.fn(() => mkFilter()),
   } as unknown as AudioContext;
 }
@@ -100,6 +114,39 @@ describe("createEqChain", () => {
     const chain = createEqChain(ctx);
     chain.setGains([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(chain.readGains()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  });
+
+  it("setGain schedules a linear ramp rather than hard-setting value", () => {
+    const ctx = mkContext();
+    const chain = createEqChain(ctx);
+    const filters = (ctx.createBiquadFilter as ReturnType<typeof vi.fn>).mock.results.map(
+      (r) => r.value as ReturnType<typeof mkFilter>,
+    );
+    chain.setGain(0, 3);
+    // Every gain mutation goes through the scheduler so the change
+    // ramps instead of clicking.
+    expect(filters[0]!.gain.cancelScheduledValues).toHaveBeenCalled();
+    expect(filters[0]!.gain.setValueAtTime).toHaveBeenCalled();
+    expect(filters[0]!.gain.linearRampToValueAtTime).toHaveBeenCalled();
+    const rampArgs = (filters[0]!.gain.linearRampToValueAtTime as ReturnType<typeof vi.fn>)
+      .mock.calls[0]!;
+    expect(rampArgs[0]).toBe(3); // target dB
+    // Default ramp window is 80 ms → 0.08 seconds from now (currentTime = 0).
+    expect(rampArgs[1]).toBeCloseTo(0.08, 5);
+  });
+
+  it("setGain with rampMs: 0 snaps immediately", () => {
+    const ctx = mkContext();
+    const chain = createEqChain(ctx);
+    const filters = (ctx.createBiquadFilter as ReturnType<typeof vi.fn>).mock.results.map(
+      (r) => r.value as ReturnType<typeof mkFilter>,
+    );
+    chain.setGain(0, 3, 0);
+    expect(filters[0]!.gain.linearRampToValueAtTime).not.toHaveBeenCalled();
+    // setValueAtTime is called twice: once to anchor from current
+    // value, once to snap to target.
+    expect(filters[0]!.gain.setValueAtTime).toHaveBeenCalledTimes(2);
+    expect(filters[0]!.gain.value).toBe(3);
   });
 
   it("dispose disconnects every filter", () => {

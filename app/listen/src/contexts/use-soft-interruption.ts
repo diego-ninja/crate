@@ -7,6 +7,7 @@ import { isOnline as isRuntimeOnline } from "@/lib/capacitor";
 import {
   fadeInAndPlay as gpFadeInAndPlay,
   fadeOutAndPause as gpFadeOutAndPause,
+  isCurrentTrackFullyBuffered,
   pause as gpPause,
   restoreVolume as gpRestoreVolume,
 } from "@/lib/gapless-player";
@@ -112,6 +113,10 @@ export function useSoftInterruption({
 
   const beginSoftInterruption = useCallback((reason: "offline" | "stream") => {
     if (!currentTrackRef.current) return;
+    // The audio is already in RAM — no network dependency. Interrupting
+    // would pause a perfectly-playing track. Defensive guard so every
+    // caller (offline event, error, stall timer) is consistent.
+    if (isCurrentTrackFullyBuffered()) return;
     if (softInterruptionReasonRef.current) {
       // Upgrade to "offline" if a stream interruption is later revealed
       // to be a network issue.
@@ -193,6 +198,12 @@ export function useSoftInterruption({
   useEffect(() => {
     const handleOffline = () => {
       if (!currentTrackRef.current) return;
+      // Playback does not depend on the network once the track is
+      // fully decoded into the WebAudio buffer (RAM). Interrupting
+      // here would be actively destructive — the user would hear
+      // silence for a track that would otherwise play to the end.
+      // Let it play; we'll re-check on actual stall events.
+      if (isCurrentTrackFullyBuffered()) return;
       if (isPlayingRef.current || isBufferingRef.current) {
         beginSoftInterruption("offline");
       }

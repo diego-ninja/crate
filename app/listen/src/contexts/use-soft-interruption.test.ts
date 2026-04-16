@@ -1,12 +1,16 @@
 import { renderHook, act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock gapless-player — the hook only needs these four fn exports.
+// Mock gapless-player — the hook only touches these exports.
 vi.mock("@/lib/gapless-player", () => ({
   fadeInAndPlay: vi.fn(() => Promise.resolve()),
   fadeOutAndPause: vi.fn(() => Promise.resolve()),
   pause: vi.fn(),
   restoreVolume: vi.fn(),
+  // Default: track is NOT fully buffered in RAM, so interruption paths
+  // proceed normally. Tests that want to exercise the "fully buffered"
+  // short-circuit override this per-case.
+  isCurrentTrackFullyBuffered: vi.fn(() => false),
 }));
 
 // Mock capacitor online check.
@@ -57,6 +61,10 @@ afterEach(() => {
   vi.clearAllTimers();
   vi.useRealTimers();
   global.fetch = globalFetch;
+  // Clear call histories first, then restore default behavior for
+  // stateful mocks so each test starts with a clean slate.
+  vi.clearAllMocks();
+  vi.mocked(gaplessPlayer.isCurrentTrackFullyBuffered).mockReturnValue(false);
 });
 
 describe("useSoftInterruption", () => {
@@ -190,6 +198,33 @@ describe("useSoftInterruption", () => {
       window.dispatchEvent(new Event("offline"));
     });
 
+    expect(refs.commitIsBuffering).not.toHaveBeenCalled();
+  });
+
+  it("does NOT pause on offline when the current track is fully buffered in RAM", () => {
+    vi.mocked(gaplessPlayer.isCurrentTrackFullyBuffered).mockReturnValue(true);
+    const refs = createRefs({ isPlaying: true });
+    renderHook(() => useSoftInterruption(refs));
+
+    act(() => {
+      window.dispatchEvent(new Event("offline"));
+    });
+
+    // No interruption triggered — audio keeps playing from RAM.
+    expect(refs.commitIsBuffering).not.toHaveBeenCalled();
+    expect(gaplessPlayer.fadeOutAndPause).not.toHaveBeenCalled();
+    expect(gaplessPlayer.pause).not.toHaveBeenCalled();
+  });
+
+  it("beginSoftInterruption short-circuits when fully buffered", () => {
+    vi.mocked(gaplessPlayer.isCurrentTrackFullyBuffered).mockReturnValue(true);
+    const refs = createRefs({ isPlaying: true });
+    const { result } = renderHook(() => useSoftInterruption(refs));
+
+    act(() => { result.current.beginSoftInterruption("stream"); });
+
+    expect(result.current.isSoftInterrupted()).toBe(false);
+    expect(gaplessPlayer.fadeOutAndPause).not.toHaveBeenCalled();
     expect(refs.commitIsBuffering).not.toHaveBeenCalled();
   });
 

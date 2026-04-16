@@ -169,21 +169,44 @@ def _get_genre_summary_by_slug(cur, slug: str) -> dict | None:
             tn.external_description_source,
             tn.musicbrainz_mbid,
             tn.wikidata_entity_id,
-            tn.wikidata_url
+            tn.wikidata_url,
+            tn.eq_gains AS canonical_eq_gains
         FROM genres g
         LEFT JOIN artist_genres ag ON g.id = ag.genre_id
         LEFT JOIN album_genres alg ON g.id = alg.genre_id
         LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
         LEFT JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
         WHERE g.slug = %s
-        GROUP BY g.id, g.name, g.slug, tn.slug, tn.name, tn.description, tn.external_description, tn.external_description_source, tn.musicbrainz_mbid, tn.wikidata_entity_id, tn.wikidata_url
+        GROUP BY g.id, g.name, g.slug, tn.slug, tn.name, tn.description, tn.external_description, tn.external_description_source, tn.musicbrainz_mbid, tn.wikidata_entity_id, tn.wikidata_url, tn.eq_gains
         """,
         (slug,),
     )
     row = cur.fetchone()
     if not row:
         return None
-    return _annotate_genre_mapping([dict(row)])[0]
+    annotated = _annotate_genre_mapping([dict(row)])[0]
+    _annotate_eq_preset(annotated)
+    return annotated
+
+
+def _annotate_eq_preset(item: dict) -> None:
+    """Attach eq_gains + resolved preset info so the admin UI can show
+    the current state of the genre (direct / inherited / none)."""
+    from crate.genre_taxonomy import resolve_genre_eq_preset
+
+    canonical_gains = item.pop("canonical_eq_gains", None)
+    canonical_slug = item.get("canonical_slug")
+
+    # Own gains on the taxonomy node. Null = "inherit from parent".
+    item["eq_gains"] = [float(v) for v in canonical_gains] if canonical_gains is not None else None
+
+    # Resolved preset (may inherit from an ancestor). None for non-canonical
+    # tags or orphan canonical nodes without any ancestor preset.
+    if canonical_slug:
+        resolved = resolve_genre_eq_preset(canonical_slug)
+        item["eq_preset_resolved"] = resolved
+    else:
+        item["eq_preset_resolved"] = None
 
 
 def get_genre_detail(slug: str) -> dict | None:

@@ -19,6 +19,13 @@
  *      processing chain between masterOut and destination. Passing null
  *      disconnects any current chain and restores direct output.
  *
+ *   3. XHR failures mid-load no longer kill playback when the HTML5
+ *      <audio> element is already playing. Losing the WebAudio XHR
+ *      just means we miss the "upgrade" to sample-perfect playback;
+ *      the user keeps hearing audio from the HTML5 streaming buffer.
+ *      If that buffer later runs out, the audio element's own 'error'
+ *      event still escalates. Fixes the offline-mid-track regression.
+ *
  * All upstream behaviour is preserved when setOutputChain isn't called.
  * --------------------------------------------------------------------
  */
@@ -511,14 +518,25 @@ function Gapless5Source(parentPlayer, parentLog, inAudioPath) {
             onLoadWebAudio(request.response);
           }
         };
-        request.onerror = () => {
-          if (request) {
-            onError('Failed to load audio track');
+        // [vendored patch] Losing the WebAudio XHR mid-load should NOT
+        // kill playback when the HTML5 <audio> element is already
+        // playing this track — we'd just miss the "upgrade" to
+        // sample-perfect WebAudio and stay on the streaming HTML5
+        // buffer. The user keeps hearing audio; if the HTML5 buffer
+        // later runs out, its own 'error' event will escalate then.
+        const xhrFailSafe = (reason) => {
+          if (!request) return;
+          if (audio !== null && state === Gapless5State.Play) {
+            log.warn(`WebAudio XHR ${reason} for ${audioPath}; staying on HTML5`);
+            request = null;
+            return;
           }
+          onError('Failed to load audio track');
         };
+        request.onerror = () => xhrFailSafe('failed');
         request.onloadend = () => {
           if (request && isErrorStatus(request.status)) {
-            onError('Failed to load audio track');
+            xhrFailSafe(`HTTP ${request.status}`);
           }
         };
         request.send();
@@ -534,7 +552,20 @@ function Gapless5Source(parentPlayer, parentLog, inAudioPath) {
         audioObj.webkitPreservesPitch = false;
         audioObj.addEventListener('loadedmetadata', onLoadedHTML5Metadata, false);
         audioObj.addEventListener('canplaythrough', onLoadedHTML5Audio, false);
-        audioObj.addEventListener('error', onError, false);
+        // [vendored patch] Once WebAudio has taken over (buffer !== null
+        // + state === Play), the HTML5 element is dormant: source of
+        // sound is the decoded RAM buffer, not the <audio> tag. A
+        // network error on the dormant element (e.g. wifi drops while
+        // the browser is still chewing on the stream) is irrelevant
+        // and must NOT kill playback. If WebAudio hasn't switched yet,
+        // the HTML5 element IS the source and we do want to escalate.
+        audioObj.addEventListener('error', (err) => {
+          if (buffer !== null && state === Gapless5State.Play) {
+            log.warn(`HTML5 audio error ignored (WebAudio is live): ${audioPath}`);
+            return;
+          }
+          onError(err);
+        }, false);
         // TODO: switch to audio.networkState, now that it's universally supported
         return audioObj;
       };

@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field
 
 from crate.api.auth import _require_auth, _require_admin
 from crate.db import create_task, get_all_genres, get_genre_detail, get_genre_graph, get_unmapped_genres, list_tasks
+from crate.db.core import get_db_ctx
+from crate.genre_taxonomy import invalidate_runtime_taxonomy_cache, resolve_genre_eq_preset
 
 router = APIRouter(prefix="/api/genres", tags=["genres"])
 
@@ -34,6 +36,18 @@ class MusicBrainzSyncBody(BaseModel):
     limit: int = Field(80, ge=1, le=300)
     focus_slug: str | None = None
     force: bool = False
+
+
+# 10-band EQ contract, matches the frontend EQ_BANDS + EQ_GAIN_MIN/MAX.
+_EQ_BAND_COUNT = 10
+_EQ_GAIN_MIN = -12.0
+_EQ_GAIN_MAX = 12.0
+
+
+class EqPresetBody(BaseModel):
+    # None = clear the preset (the node will inherit from its first
+    # ancestor that has one). Array must be exactly 10 floats.
+    gains: list[float] | None = Field(default=None)
 
 
 @router.get("")
@@ -105,3 +119,61 @@ def sync_musicbrainz_genre_graph(request: Request, body: MusicBrainzSyncBody = M
         "focus_slug": slug,
         "force": body.force,
     })
+
+
+@router.patch("/{slug}/eq-preset")
+def update_genre_eq_preset(request: Request, slug: str, body: EqPresetBody):
+    """Set or clear the EQ preset for a canonical genre.
+
+    Passing ``gains: null`` drops the row's eq_gains back to NULL, making
+    it inherit from its first ancestor that has a preset. Otherwise the
+    array must have exactly 10 floats; values are clamped to
+    [EQ_GAIN_MIN, EQ_GAIN_MAX].
+    """
+    _require_admin(request)
+
+    canonical_slug = (slug or "").strip().lower()
+    if not canonical_slug:
+        raise HTTPException(status_code=400, detail="Slug is required")
+
+    gains_param: list[float] | None = None
+    if body.gains is not None:
+        if len(body.gains) != _EQ_BAND_COUNT:
+            raise HTTPException(
+                status_code=400,
+                detail=f"gains must have exactly {_EQ_BAND_COUNT} entries",
+            )
+        clamped: list[float] = []
+        for value in body.gains:
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="gains must be numeric")
+            if numeric != numeric:  # NaN guard
+                raise HTTPException(status_code=400, detail="gains must be finite")
+            clamped.append(max(_EQ_GAIN_MIN, min(_EQ_GAIN_MAX, numeric)))
+        gains_param = clamped
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT id FROM genre_taxonomy_nodes WHERE slug = %s",
+            (canonical_slug,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Canonical genre not found")
+        cur.execute(
+            "UPDATE genre_taxonomy_nodes SET eq_gains = %s WHERE slug = %s",
+            (gains_param, canonical_slug),
+        )
+
+    # Drop the cached graph so the next resolver call picks up the new
+    # gains (or NULL → inheritance).
+    invalidate_runtime_taxonomy_cache()
+
+    resolved = resolve_genre_eq_preset(canonical_slug)
+    return {
+        "slug": canonical_slug,
+        "eq_gains": gains_param,
+        "eq_preset_resolved": resolved,
+    }

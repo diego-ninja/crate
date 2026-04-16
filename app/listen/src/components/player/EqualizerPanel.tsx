@@ -32,26 +32,6 @@ const PRESET_LABELS: Record<EqPresetName, string> = {
 };
 
 /**
- * Groups of presets shown as separate rows in the picker. Keeps the
- * underground stuff visually grouped so it's obvious what's tuned for
- * heavy genres vs general-purpose.
- */
-const PRESET_GROUPS: { title: string; names: EqPresetName[] }[] = [
-  {
-    title: "General",
-    names: ["flat", "rock", "pop", "jazz", "classical", "acoustic", "electronic", "hip_hop", "vocal", "bass_boost", "treble_boost"],
-  },
-  {
-    title: "Heavy",
-    names: ["thrash", "death_metal", "black_metal", "doom", "hardcore", "punk"],
-  },
-  {
-    title: "Alternative",
-    names: ["progressive", "post_rock", "shoegaze", "lo_fi"],
-  },
-];
-
-/**
  * Labeled chip showing a single adaptive feature with its value and a
  * terse semantic classifier (dark/neutral/bright, compressed/moderate/
  * dynamic, etc.). Renders a subtle cyan accent when the value lands in
@@ -251,16 +231,14 @@ function GenreResolutionChip({
 interface EqualizerPanelProps {
   /** Shown as a header action — optional, typically the close button. */
   onClose?: () => void;
-  /** Compact = single-column preset pills; full = preset groups visible. */
-  variant?: "compact" | "full";
 }
 
 /**
- * Reusable EQ panel. Works equally well inside a floating popover
- * (variant="compact") and inside the Settings page (variant="full").
- * State is owned by useEqualizer — this component is pure presentation.
+ * Reusable EQ panel rendered inside the PlayerBar popover and the
+ * FullscreenPlayer overlay. State is owned by useEqualizer — this
+ * component is pure presentation.
  */
-export function EqualizerPanel({ onClose, variant = "compact" }: EqualizerPanelProps) {
+export function EqualizerPanel({ onClose }: EqualizerPanelProps) {
   const {
     enabled,
     preset,
@@ -357,59 +335,27 @@ export function EqualizerPanel({ onClose, variant = "compact" }: EqualizerPanelP
         </div>
       </div>
 
-      {/* Preset picker */}
-      {variant === "full" ? (
-        <div className="flex flex-col gap-2">
-          {PRESET_GROUPS.map((group) => (
-            <div key={group.title} className="flex flex-col gap-1">
-              <div className="text-[10px] uppercase tracking-wider text-white/40">
-                {group.title}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {group.names.map((name) => {
-                  const isActive = preset === name && !adaptive && !genreAdaptive;
-                  return (
-                    <button
-                      key={name}
-                      type="button"
-                      disabled={!manualControlsEnabled}
-                      onClick={() => applyPreset(name)}
-                      className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
-                        isActive
-                          ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300"
-                          : "border-white/10 bg-white/[0.03] text-white/70 hover:border-white/20 hover:text-foreground"
-                      } ${!manualControlsEnabled ? "cursor-not-allowed opacity-40" : ""}`}
-                    >
-                      {PRESET_LABELS[name]}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-          {(Object.keys(PRESET_LABELS) as EqPresetName[]).map((name) => {
-            const isActive = preset === name && !adaptive && !genreAdaptive;
-            return (
-              <button
-                key={name}
-                type="button"
-                disabled={!manualControlsEnabled}
-                onClick={() => applyPreset(name)}
-                className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
-                  isActive
-                    ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300"
-                    : "border-white/10 bg-white/[0.03] text-white/70 hover:border-white/20 hover:text-foreground"
-                } ${!manualControlsEnabled ? "cursor-not-allowed opacity-40" : ""}`}
-              >
-                {PRESET_LABELS[name]}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* Preset picker — compact pill scroller */}
+      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+        {(Object.keys(PRESET_LABELS) as EqPresetName[]).map((name) => {
+          const isActive = preset === name && !adaptive && !genreAdaptive;
+          return (
+            <button
+              key={name}
+              type="button"
+              disabled={!manualControlsEnabled}
+              onClick={() => applyPreset(name)}
+              className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
+                isActive
+                  ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300"
+                  : "border-white/10 bg-white/[0.03] text-white/70 hover:border-white/20 hover:text-foreground"
+              } ${!manualControlsEnabled ? "cursor-not-allowed opacity-40" : ""}`}
+            >
+              {PRESET_LABELS[name]}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="flex items-center justify-between">
         {adaptive ? (

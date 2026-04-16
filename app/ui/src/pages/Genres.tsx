@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { GenreNetworkGraph } from "@/components/genres/GenreNetworkGraph";
+import { GenreEqEditor } from "@/components/genres/GenreEqEditor";
 import { useApi } from "@/hooks/use-api";
 import { useTaskPoll } from "@/hooks/use-task-poll";
 import { api } from "@/lib/api";
@@ -33,6 +34,13 @@ interface Genre {
   top_level_slug?: string | null;
   top_level_name?: string | null;
   top_level_description?: string | null;
+  eq_gains?: number[] | null;
+  eq_preset_resolved?: {
+    gains: number[];
+    source: "direct" | "inherited";
+    slug: string;
+    name: string;
+  } | null;
 }
 
 interface GenreDetail extends Genre {
@@ -532,6 +540,21 @@ function GenreView({ slug }: { slug: string }) {
       <div className="mb-8">
         <GenreNetworkGraph key={`${genre.slug}-${graphVersion}`} slug={genre.slug} />
       </div>
+
+      {/* Equalizer preset editor — only for canonical taxonomy nodes.
+          Raw library tags inherit via their canonical alias, so there's
+          nothing to edit directly on them. */}
+      {genre.mapped && genre.canonical_slug && (
+        <div className="mb-8">
+          <GenreEqEditor
+            canonicalSlug={genre.canonical_slug}
+            canonicalName={genre.canonical_name || genre.name}
+            initialGains={genre.eq_gains ?? null}
+            initialResolved={genre.eq_preset_resolved ?? null}
+            onSaved={refetch}
+          />
+        </div>
+      )}
 
       {/* Top Artists */}
       {genre.artists.length > 0 && (
