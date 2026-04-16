@@ -1,5 +1,7 @@
 # Secrets
 .env
+**/.tiddl/
+test-data/.tiddl/
 
 # Data directories
 data/
