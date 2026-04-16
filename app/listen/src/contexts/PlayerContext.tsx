@@ -258,17 +258,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // queue, currentIndex, currentTrack, currentTime, duration, isPlaying are
+  // kept in sync with their refs by their respective commit* helpers.
+  // Only repeat, shuffle and playSource use setState directly, so mirror
+  // them into refs here.
   useEffect(() => {
-    queueRef.current = queue;
-    currentIndexRef.current = currentIndex;
-    currentTrackRef.current = currentTrack;
     repeatRef.current = repeat;
     shuffleRef.current = shuffle;
     playSourceRef.current = playSource;
-    isPlayingRef.current = isPlaying;
-    currentTimeRef.current = currentTime;
-    durationRef.current = duration;
-  }, [currentIndex, currentTime, currentTrack, duration, isPlaying, playSource, queue, repeat, shuffle]);
+  }, [playSource, repeat, shuffle]);
 
   useEffect(() => {
     saveQueue(queue, currentIndex, currentTime, isPlaying);
@@ -469,7 +467,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     gpSetSingleMode(repeatRef.current === "one");
     gpSetShuffle(shuffleRef.current);
 
-    const { resolvedQueue, resolvedIndex, resolvedTrack } = syncSelectionFromEngine(nextQueue);
+    // Commits queue/index/duration internally.
+    syncSelectionFromEngine(nextQueue);
 
     if (positionMs > 0) {
       gpSeekTo(positionMs);
@@ -490,22 +489,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       commitIsPlaying(false);
       commitIsBuffering(false);
     }
-
-    if (resolvedTrack) {
-      currentTrackRef.current = resolvedTrack;
-      currentIndexRef.current = resolvedIndex;
-      queueRef.current = resolvedQueue;
-    }
   }, [
-    commitCurrentIndex,
     commitCurrentTime,
-    commitDuration,
     commitIsBuffering,
     commitIsPlaying,
     commitQueue,
+    commitCurrentIndex,
+    commitDuration,
     markSeekPosition,
     syncSelectionFromEngine,
   ]);
+
+  /**
+   * Advance the React cursor to a new index. Caller is responsible for
+   * moving the engine (gpNext/gpPrev/gpGotoTrack) BEFORE calling this so
+   * the duration read is from the new track.
+   */
+  const advanceCursorTo = useCallback((index: number) => {
+    commitCurrentIndex(index);
+    commitCurrentTime(0);
+    commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
+    rememberActiveTrack(queueRef.current[index]);
+    bufferingIntentRef.current = true;
+    commitIsBuffering(true);
+  }, [commitCurrentIndex, commitCurrentTime, commitDuration, commitIsBuffering, rememberActiveTrack]);
 
   const setQueueSynced = useCallback<Dispatch<SetStateAction<Track[]>>>((update) => {
     const prevQueue = queueRef.current;
@@ -536,16 +543,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (nextIndex === prevIndex && !shouldAutoplayRef.current) return;
 
     gpGotoTrack(nextIndex, shouldPlay);
-    commitCurrentIndex(nextIndex);
-    commitCurrentTime(0);
-    commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
-    rememberActiveTrack(queueRef.current[nextIndex]);
-    commitIsBuffering(shouldPlay);
+    advanceCursorTo(nextIndex);
+    if (!shouldPlay) {
+      commitIsBuffering(false);
+    }
     if (shouldPlay) {
       commitIsPlaying(true);
     }
     shouldAutoplayRef.current = false;
-  }, [commitCurrentIndex, commitCurrentTime, commitDuration, commitIsBuffering, commitIsPlaying, rememberActiveTrack]);
+  }, [advanceCursorTo, commitIsBuffering, commitIsPlaying]);
 
   const setCurrentTimeSynced = useCallback<Dispatch<SetStateAction<number>>>((update) => {
     const nextTime = typeof update === "function" ? update(currentTimeRef.current) : update;
@@ -625,12 +631,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const gaplessCallbacks = useMemo<GaplessPlayerCallbacks>(() => ({
+  // Mutable ref so the stable proxy registered with Gapless-5 always reads
+  // the freshest callback implementations without re-registering listeners.
+  const callbacksRef = useRef<GaplessPlayerCallbacks>({});
+
+  callbacksRef.current = {
       onTimeUpdate: (positionMs, trackIndex) => {
         const positionSeconds = positionMs / 1000;
         clearStallTimer();
         commitCurrentTime(positionSeconds);
         recordProgress(positionSeconds);
+        // Safety net: if the engine's trackIndex diverges from ours
+        // (shouldn't happen — onnext/onprev already sync it), realign.
         if (trackIndex !== currentIndexRef.current && trackIndex >= 0) {
           syncSelectionFromEngine();
         }
@@ -675,13 +687,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         bufferingIntentRef.current = true;
       },
       onPlay: () => {
+        // Note: onnext/onprev already sync the engine selection before
+        // onPlay fires, so no sync needed here — just flip UI state.
         resumeAfterReloadRef.current = false;
         clearRestoreAutoplayTimer();
         cancelSoftInterruption();
         commitIsPlaying(true);
         commitIsBuffering(false);
         bufferingIntentRef.current = false;
-        syncSelectionFromEngine();
       },
       onPause: () => {
         if (bufferingIntentRef.current && isPlayingRef.current) {
@@ -709,16 +722,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         syncSelectionFromEngine();
       },
       onTrackFinished: (path) => {
-        // During a crossfade auto-advance, Gapless-5 fires onnext/onplay
-        // BEFORE onfinishedtrack, so currentTrackRef already points to the
-        // incoming track. Resolve the outgoing track by its URL instead.
-        // flushCurrentPlayEvent still operates on the tracker's sessionRef
-        // which is correct — React's syncSession effect hasn't rotated yet.
-        const endedTrack =
-          queueRef.current.find((t) => getStreamUrl(t) === path) ??
-          currentTrackRef.current;
+        // During a crossfade auto-advance, Gapless-5 fires onnext BEFORE
+        // onfinishedtrack, so React state may already point to the incoming
+        // track. Resolve the outgoing track by URL; pass it explicitly to
+        // flushCurrentPlayEvent so the tracker drops the flush if sessionRef
+        // has already rotated (instead of attributing to the wrong song).
+        const endedTrack = queueRef.current.find((t) => getStreamUrl(t) === path);
         if (!endedTrack) return;
-        flushCurrentPlayEvent("completed");
+        flushCurrentPlayEvent("completed", endedTrack);
         postTrackHistory(endedTrack);
       },
       onAllFinished: () => {
@@ -745,26 +756,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       onAnalyserReady: () => {
         setAnalyserVersion((version) => version + 1);
       },
-  }), [
-    commitCurrentTime,
-    commitDuration,
-    commitIsBuffering,
-    commitIsPlaying,
-    flushCurrentPlayEvent,
-    markSeekPosition,
-    postTrackHistory,
-    recordProgress,
-    beginSoftInterruption,
-    cancelSoftInterruption,
-    clearRestoreAutoplayTimer,
-    clearStallTimer,
-    scheduleStallProtection,
-    syncSelectionFromEngine,
-  ]);
+  };
 
+  // Register once with a stable proxy that reads from callbacksRef.
   useEffect(() => {
-    initGaplessPlayer(gaplessCallbacks);
-  }, [gaplessCallbacks]);
+    const proxy: GaplessPlayerCallbacks = {
+      onTimeUpdate: (ms, idx) => callbacksRef.current.onTimeUpdate?.(ms, idx),
+      onDurationChange: (ms) => callbacksRef.current.onDurationChange?.(ms),
+      onLoad: (path, full, ms) => callbacksRef.current.onLoad?.(path, full, ms),
+      onPlayRequest: (path) => callbacksRef.current.onPlayRequest?.(path),
+      onPlay: (path) => callbacksRef.current.onPlay?.(path),
+      onPause: (path) => callbacksRef.current.onPause?.(path),
+      onPrev: (from, to) => callbacksRef.current.onPrev?.(from, to),
+      onNext: (from, to) => callbacksRef.current.onNext?.(from, to),
+      onTrackFinished: (path) => callbacksRef.current.onTrackFinished?.(path),
+      onAllFinished: () => callbacksRef.current.onAllFinished?.(),
+      onError: (path, err) => callbacksRef.current.onError?.(path, err),
+      onBuffering: (path) => callbacksRef.current.onBuffering?.(path),
+      onAnalyserReady: (analyser) => callbacksRef.current.onAnalyserReady?.(analyser),
+    };
+    initGaplessPlayer(proxy);
+  }, []);
 
   useEffect(() => {
     gpSetVolume(volume);
@@ -798,13 +810,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     gpSetShuffle(shuffleRef.current);
     pendingRestoreTimeRef.current = stored.current.currentTime > 0 ? stored.current.currentTime : 0;
 
-    const { resolvedQueue, resolvedIndex, resolvedTrack } = syncSelectionFromEngine(restoredQueue);
-    commitQueue(resolvedQueue);
-    commitCurrentIndex(resolvedIndex);
-    if (resolvedTrack) {
-      currentTrackRef.current = resolvedTrack;
-    }
-  }, [commitCurrentIndex, commitQueue, syncSelectionFromEngine]);
+    // syncSelectionFromEngine already commits queue/index/duration and
+    // updates currentTrackRef via commitCurrentIndex.
+    syncSelectionFromEngine(restoredQueue);
+  }, [syncSelectionFromEngine]);
 
   useEffect(() => {
     const handleOffline = () => {
@@ -847,35 +856,28 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     resetPlaybackIntelligence();
     flushCurrentPlayEvent("interrupted");
 
-    commitQueue(tracks);
-    commitCurrentIndex(normalizedIndex);
-    commitCurrentTime(0);
-    commitDuration(0);
-    commitIsBuffering(true);
-    setPlaySource(source || (tracks.length > 1 ? { type: "queue", name: "Queue" } : { type: "track", name: tracks[normalizedIndex]!.title }));
-
+    // Load engine first; syncSelectionFromEngine commits queue/index/duration.
     gpLoadQueue(tracks.map(getStreamUrl), normalizedIndex);
     gpSetLoop(repeatRef.current === "all");
     gpSetSingleMode(repeatRef.current === "one");
     gpSetShuffle(shuffleRef.current);
 
-    const { resolvedQueue, resolvedIndex, resolvedTrack } = syncSelectionFromEngine(tracks);
-    commitQueue(resolvedQueue);
-    commitCurrentIndex(resolvedIndex);
-    if (resolvedTrack) {
-      rememberActiveTrack(resolvedTrack);
-    }
+    commitCurrentTime(0);
+    commitIsBuffering(true);
+    setPlaySource(source || (tracks.length > 1
+      ? { type: "queue", name: "Queue" }
+      : { type: "track", name: tracks[normalizedIndex]!.title }));
+
+    const { resolvedTrack } = syncSelectionFromEngine(tracks);
+    if (resolvedTrack) rememberActiveTrack(resolvedTrack);
 
     bufferingIntentRef.current = true;
     gpPlay();
   }, [
     cancelSoftInterruption,
     clearRestoreAutoplayTimer,
-    commitCurrentIndex,
     commitCurrentTime,
-    commitDuration,
     commitIsBuffering,
-    commitQueue,
     flushCurrentPlayEvent,
     rememberActiveTrack,
     resetPlaybackIntelligence,
@@ -922,14 +924,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const nextIndex = currentIndexRef.current + 1;
     if (nextIndex < queueRef.current.length) {
       flushCurrentPlayEvent("skipped");
-      // Sequential skip: use gpNext() to preserve crossfade.
+      // Sequential skip: gpNext() preserves crossfade via Gapless-5's
+      // native next() path (crossfadeEnabled=true).
       gpNext();
-      commitCurrentIndex(nextIndex);
-      commitCurrentTime(0);
-      commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
-      rememberActiveTrack(queueRef.current[nextIndex]);
-      bufferingIntentRef.current = true;
-      commitIsBuffering(true);
+      advanceCursorTo(nextIndex);
       return;
     }
 
@@ -937,27 +935,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       flushCurrentPlayEvent("skipped");
       // Wrapping to index 0 is a jump, not a sequential skip — no crossfade.
       gpGotoTrack(0, true);
-      commitCurrentIndex(0);
-      commitCurrentTime(0);
-      commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
-      rememberActiveTrack(queueRef.current[0]);
-      bufferingIntentRef.current = true;
-      commitIsBuffering(true);
+      advanceCursorTo(0);
       return;
     }
 
     if (continueInfinitePlayback()) {
       flushCurrentPlayEvent("skipped");
     }
-  }, [
-    commitCurrentIndex,
-    commitCurrentTime,
-    commitDuration,
-    commitIsBuffering,
-    continueInfinitePlayback,
-    flushCurrentPlayEvent,
-    rememberActiveTrack,
-  ]);
+  }, [advanceCursorTo, continueInfinitePlayback, flushCurrentPlayEvent]);
 
   const prev = useCallback(() => {
     if (!queueRef.current.length) return;
@@ -969,16 +954,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
 
     if (currentIndexRef.current > 0) {
-      const prevIndex = currentIndexRef.current - 1;
       flushCurrentPlayEvent("skipped");
       // Sequential skip backward. Gapless-5 prev() doesn't crossfade.
       gpPrev();
-      commitCurrentIndex(prevIndex);
-      commitCurrentTime(0);
-      commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
-      rememberActiveTrack(queueRef.current[prevIndex]);
-      bufferingIntentRef.current = true;
-      commitIsBuffering(true);
+      advanceCursorTo(currentIndexRef.current - 1);
       return;
     }
 
@@ -986,22 +965,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       const wrappedIndex = queueRef.current.length - 1;
       flushCurrentPlayEvent("skipped");
       gpGotoTrack(wrappedIndex, true);
-      commitCurrentIndex(wrappedIndex);
-      commitCurrentTime(0);
-      commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
-      rememberActiveTrack(queueRef.current[wrappedIndex]);
-      bufferingIntentRef.current = true;
-      commitIsBuffering(true);
+      advanceCursorTo(wrappedIndex);
     }
-  }, [
-    commitCurrentIndex,
-    commitCurrentTime,
-    commitDuration,
-    commitIsBuffering,
-    flushCurrentPlayEvent,
-    markSeekPosition,
-    rememberActiveTrack,
-  ]);
+  }, [advanceCursorTo, commitCurrentTime, flushCurrentPlayEvent, markSeekPosition]);
 
   const seek = useCallback((time: number) => {
     const shouldResumeBufferingFlow = isPlayingRef.current;
@@ -1072,10 +1038,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const nextShuffle = !shuffleRef.current;
     setShuffleState(nextShuffle);
     gpSetShuffle(nextShuffle);
-    const { resolvedQueue, resolvedIndex } = syncSelectionFromEngine(queueRef.current);
-    commitQueue(resolvedQueue);
-    commitCurrentIndex(resolvedIndex);
-  }, [commitCurrentIndex, commitQueue, syncSelectionFromEngine]);
+    // syncSelectionFromEngine already commits queue and index internally.
+    syncSelectionFromEngine(queueRef.current);
+  }, [syncSelectionFromEngine]);
 
   const cycleRepeat = useCallback(() => {
     setRepeatState((prevMode) => {
@@ -1091,22 +1056,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     shouldAutoplayRef.current = false;
     flushCurrentPlayEvent("skipped");
     gpGotoTrack(index, true);
-    commitCurrentIndex(index);
-    commitCurrentTime(0);
-    commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
-    rememberActiveTrack(queueRef.current[index]);
-    bufferingIntentRef.current = true;
-    commitIsBuffering(true);
+    advanceCursorTo(index);
     commitIsPlaying(true);
-  }, [
-    commitCurrentIndex,
-    commitCurrentTime,
-    commitDuration,
-    commitIsBuffering,
-    commitIsPlaying,
-    flushCurrentPlayEvent,
-    rememberActiveTrack,
-  ]);
+  }, [advanceCursorTo, commitIsPlaying, flushCurrentPlayEvent]);
 
   const playNext = useCallback((track: Track) => {
     // Insert at currentIndex + 1 without reloading the queue, so the

@@ -10,8 +10,8 @@ import { getCrossfadeDurationPreference } from "./player-playback-prefs";
 
 // The package's TS declarations don't expose these enums as named imports,
 // but the runtime constants are stable in gapless5.js:
-// LogLevel.Info = 2, CrossfadeShape.EqualPower = 3.
-const GAPLESS_LOG_LEVEL_INFO = 2;
+// LogLevel.Warning = 3, CrossfadeShape.EqualPower = 3.
+const GAPLESS_LOG_LEVEL_WARNING = 3;
 const GAPLESS_CROSSFADE_EQUAL_POWER = 3;
 
 export interface GaplessPlayerCallbacks {
@@ -115,7 +115,7 @@ export function initPlayer(callbacks: GaplessPlayerCallbacks = {}): Gapless5 {
     crossfade: getCrossfadeMs(),
     crossfadeShape: GAPLESS_CROSSFADE_EQUAL_POWER,
     volume: lastVolume,
-    logLevel: GAPLESS_LOG_LEVEL_INFO,
+    logLevel: GAPLESS_LOG_LEVEL_WARNING,
   });
   appliedVolume = lastVolume;
 
@@ -190,6 +190,22 @@ export function destroyPlayer(): void {
 
 export function loadQueue(urls: string[], startIndex = 0): void {
   if (!instance) return;
+
+  // Idempotent: if the incoming URL list is identical to what the engine
+  // already has, don't rebuild the queue — just align the current track.
+  // Avoids interrupting playback on structurally identical resyncs
+  // (shuffle toggle, reorder-to-same, etc.).
+  const currentUrls = instance.getTracks();
+  const same =
+    urls.length === currentUrls.length &&
+    urls.every((url, i) => url === currentUrls[i]);
+  if (same) {
+    if (urls.length > 0 && instance.getIndex() !== startIndex) {
+      instance.gotoTrack(startIndex);
+    }
+    return;
+  }
+
   instance.removeAllTracks();
   for (const url of urls) {
     instance.addTrack(url);

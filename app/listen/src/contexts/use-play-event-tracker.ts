@@ -58,9 +58,17 @@ export function usePlayEventTracker(
     };
   }, [getPlaybackSnapshot]);
 
-  const flushCurrentPlayEvent = useCallback((reason: FlushReason) => {
+  const flushCurrentPlayEvent = useCallback((reason: FlushReason, expectedTrack?: Track) => {
     const session = sessionRef.current;
     if (!session) return;
+    if (expectedTrack) {
+      // Defensive: if the caller knows which track the flush is for
+      // (e.g. crossfade handoff where React state may have already
+      // advanced), drop the flush when sessionRef doesn't match instead
+      // of attributing the event to the wrong song.
+      const expectedKey = getTrackCacheKey(expectedTrack);
+      if (session.trackKey !== expectedKey) return;
+    }
     sessionRef.current = null;
 
     const trackDurationSeconds = session.trackDurationSeconds;
