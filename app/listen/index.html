@@ -4,18 +4,47 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0a0a0f">
+  <meta name="description" content="Crate Listen — the listening app for your self-hosted Crate music library.">
+
+  <!-- Standalone PWA on Android/modern browsers -->
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="Crate">
+
+  <!-- iOS: the two meta tags below are what make "Add to Home Screen"
+       launch the app in full-screen mode instead of opening Safari. The
+       status-bar-style controls the top bar behind the WebView; we use
+       black-translucent because the app paints its own dark surface all
+       the way to the top edge. -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Listen">
+
+  <!-- Stop iOS from auto-linking phone-number-shaped strings in tracks. -->
+  <meta name="format-detection" content="telephone=no, date=no, address=no, email=no, url=no">
+
   <link rel="manifest" href="/manifest.json">
+
+  <!-- Generic favicons -->
   <link rel="icon" type="image/svg+xml" href="/icons/logo.svg">
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+
+  <!-- Apple touch icons. iOS ignores the manifest for the home-screen
+       icon and only reads <link rel="apple-touch-icon">. We provide the
+       192 as a fallback; iOS will rasterise it to 180 as needed. -->
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="/icons/icon-512.png">
+
   <title>Crate Listen</title>
   <style>
     /* Prevent iOS auto-zoom on input focus — must be in HTML head, not CSS bundle */
     @supports (-webkit-touch-callout: none) {
       input, textarea, select { font-size: 16px !important; }
     }
+    /* Splash-screen colour while the bundle loads and before React
+       paints. Matches manifest background_color so there is no visible
+       transition into the app UI. */
+    html, body { background: #0a0a0f; }
   </style>
 </head>
 <body>

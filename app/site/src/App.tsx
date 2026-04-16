@@ -3,6 +3,7 @@ import { Hero } from "@/components/Hero";
 import { ValueProps } from "@/components/ValueProps";
 import { FeatureShowcase } from "@/components/FeatureShowcase";
 import { UnderTheHood } from "@/components/UnderTheHood";
+import { GetApp } from "@/components/GetApp";
 import { GetInvolved } from "@/components/GetInvolved";
 import { Footer } from "@/components/Footer";
 
@@ -21,6 +22,7 @@ export default function App() {
         <ValueProps />
         <FeatureShowcase />
         <UnderTheHood />
+        <GetApp />
         <GetInvolved />
       </main>
       <Footer />

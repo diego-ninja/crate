@@ -22,6 +22,12 @@ export function Nav() {
           Stack
         </a>
         <a
+          href="#install"
+          className="hidden rounded-full px-3 py-2 text-sm text-white/60 transition hover:bg-white/5 hover:text-white sm:block"
+        >
+          Install
+        </a>
+        <a
           href="https://docs.cratemusic.app"
           className="rounded-full px-3 py-2 text-sm text-white/60 transition hover:bg-white/5 hover:text-white"
         >

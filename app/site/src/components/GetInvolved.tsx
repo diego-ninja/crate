@@ -39,12 +39,12 @@ const PATHS: Path[] = [
   },
   {
     icon: MessageCircle,
-    kicker: "Beta testers",
-    title: "Grab the Android build.",
-    body: "Debug APK built on every release tag. Install it, point the app at your Crate server, sign in. iOS ships later — same codebase, same idea.",
+    kicker: "Community",
+    title: "Tell us what's missing.",
+    body: "Issues, feature requests, weird edge cases in your library. The best feedback comes from people running the code against real collections, not from abstract design reviews.",
     cta: {
-      label: "Download the APK",
-      href: "https://github.com/diego-ninja/crate/releases/latest/download/crate-listen.apk",
+      label: "Open an issue",
+      href: "https://github.com/diego-ninja/crate/issues/new",
     },
   },
 ];
