@@ -130,9 +130,8 @@ In production the docs site is packaged as its own container:
 - service: `crate-docs`
 - image: `ghcr.io/diego-ninja/crate-docs`
 - router host: hard-coded to `docs.cratemusic.app` (not `docs.${DOMAIN}` — the docs surface is a project resource, not a per-operator one)
-- compose profile: `docs` (opt-in, so other self-hosters don't start a container they don't need)
 
-The service definition lives in [`docker-compose.yaml`](https://github.com/diego-ninja/crate/blob/main/docker-compose.yaml). On the canonical project server, setting `COMPOSE_PROFILES=docs` in `.env` is enough to include the container in regular `docker compose up -d`.
+The service definition lives in the compose overlay [`docker-compose.project.yaml`](https://github.com/diego-ninja/crate/blob/main/docker-compose.project.yaml), separate from the main `docker-compose.yaml` that self-hosters use. The canonical project server activates the overlay by setting `COMPOSE_FILE=docker-compose.yaml:docker-compose.project.yaml` in its `.env`; everyone else never sees the service in their topology.
 
 Images are built and pushed to GHCR by the `build-docs` job in [build-images.yml](https://github.com/diego-ninja/crate/blob/main/.github/workflows/build-images.yml) whenever `app/docs/**` or `docs/**` change on `main`.
 

@@ -1,0 +1,60 @@
+# Compose overlay for the canonical cratemusic.app server.
+#
+# This file contains services that ONLY belong on the project's
+# official server — the marketing site at https://cratemusic.app and
+# the hosted docs at https://docs.cratemusic.app. They are not
+# per-instance resources and other self-hosters should never start them.
+#
+# Usage on the project server (add to .env so every docker compose
+# command inherits both files automatically):
+#
+#     COMPOSE_FILE=docker-compose.yaml:docker-compose.project.yaml
+#
+# or ad hoc:
+#
+#     docker compose -f docker-compose.yaml -f docker-compose.project.yaml up -d
+#
+# Everybody else just uses docker-compose.yaml and never sees these
+# services.
+
+services:
+  crate-site:
+    image: ghcr.io/diego-ninja/crate-site:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: app/site/Dockerfile
+    container_name: crate-site
+    restart: unless-stopped
+    networks:
+      - crate
+    labels:
+      traefik.enable: true
+      traefik.docker.network: crate
+      traefik.http.routers.site.rule: Host(`cratemusic.app`)
+      traefik.http.routers.site.entryPoints: websecure
+      traefik.http.services.site.loadbalancer.server.port: 80
+      traefik.http.routers.site.tls: true
+      traefik.http.routers.site.tls.certresolver: letsencrypt
+
+  crate-docs:
+    image: ghcr.io/diego-ninja/crate-docs:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: app/docs/Dockerfile
+    container_name: crate-docs
+    restart: unless-stopped
+    networks:
+      - crate
+    labels:
+      traefik.enable: true
+      traefik.docker.network: crate
+      traefik.http.routers.docs.rule: Host(`docs.cratemusic.app`)
+      traefik.http.routers.docs.entryPoints: websecure
+      traefik.http.services.docs.loadbalancer.server.port: 80
+      traefik.http.routers.docs.tls: true
+      traefik.http.routers.docs.tls.certresolver: letsencrypt
+
+networks:
+  crate:
+    external: true
+    name: crate

@@ -399,53 +399,6 @@ services:
       traefik.http.middlewares.crate-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
       # traefik.http.routers.admin.middlewares: authelia@docker  # Enable after creating users
 
-  # Public Crate project surfaces — the marketing site at cratemusic.app
-  # and the hosted docs at docs.cratemusic.app. Hostnames are hard-coded
-  # because these serve the project itself, not a per-instance resource
-  # (they are NOT tied to the operator's ${DOMAIN}). Both sit behind the
-  # "project" compose profile so self-hosters don't start containers they
-  # don't need. Enable on the canonical project server with:
-  #   COMPOSE_PROFILES=project  in .env
-  # or ad hoc:
-  #   docker compose --profile project up -d
-  crate-site:
-    image: ghcr.io/diego-ninja/crate-site:${CRATE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      dockerfile: app/site/Dockerfile
-    container_name: crate-site
-    restart: unless-stopped
-    profiles: ["project"]
-    networks:
-      - crate
-    labels:
-      traefik.enable: true
-      traefik.docker.network: crate
-      traefik.http.routers.site.rule: Host(`cratemusic.app`)
-      traefik.http.routers.site.entryPoints: websecure
-      traefik.http.services.site.loadbalancer.server.port: 80
-      traefik.http.routers.site.tls: true
-      traefik.http.routers.site.tls.certresolver: letsencrypt
-
-  crate-docs:
-    image: ghcr.io/diego-ninja/crate-docs:${CRATE_IMAGE_TAG:-latest}
-    build:
-      context: .
-      dockerfile: app/docs/Dockerfile
-    container_name: crate-docs
-    restart: unless-stopped
-    profiles: ["project"]
-    networks:
-      - crate
-    labels:
-      traefik.enable: true
-      traefik.docker.network: crate
-      traefik.http.routers.docs.rule: Host(`docs.cratemusic.app`)
-      traefik.http.routers.docs.entryPoints: websecure
-      traefik.http.services.docs.loadbalancer.server.port: 80
-      traefik.http.routers.docs.tls: true
-      traefik.http.routers.docs.tls.certresolver: letsencrypt
-
 volumes:
   crate_redis:
     driver: local

@@ -253,7 +253,11 @@ deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
 	@echo "$(YELLOW)Asegurando directorios...$(NC)"
 	@$(SSH) "mkdir -p $(SERVER_PATH)/media/downloads/soulseek/incomplete $(SERVER_PATH)/media/downloads/tidal/incomplete && chown -R $(shell grep PUID .env 2>/dev/null | cut -d= -f2 || echo 1000):$(shell grep PGID .env 2>/dev/null | cut -d= -f2 || echo 1000) $(SERVER_PATH)/media/downloads"
 	@echo "$(YELLOW)Sincronizando config...$(NC)"
-	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
+	@# docker-compose.project.yaml is the overlay that adds crate-site
+	@# and crate-docs (the official project surfaces). It only affects
+	@# the canonical cratemusic.app server; other self-hosters don't have
+	@# it listed in COMPOSE_FILE and therefore never start those services.
+	@scp docker-compose.yaml docker-compose.project.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az \
 		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
 		--exclude='.vite' --exclude='*.tsbuildinfo' \
@@ -266,15 +270,15 @@ deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
 	@# deploys.
 	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
 	@echo "$(YELLOW)Pulling imagenes (GHCR + externas)...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-pull-failures"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose pull --ignore-pull-failures"
 	@echo "$(YELLOW)Reiniciando servicios (sin build local)...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml up -d --no-build --remove-orphans"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose up -d --no-build --remove-orphans"
 	@echo "$(GREEN)Deploy completado$(NC)"
 
 .PHONY: deploy-build
 deploy-build: ## Deploy con build en servidor (sin GHCR, fallback)
 	@echo "$(YELLOW)Sincronizando ficheros...$(NC)"
-	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
+	@scp docker-compose.yaml docker-compose.project.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az --delete \
 		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
 		--exclude='.vite' --exclude='*.tsbuildinfo' \
@@ -285,11 +289,15 @@ deploy-build: ## Deploy con build en servidor (sin GHCR, fallback)
 	@# build time. Without this the build fails on COPY docs/ /docs/.
 	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
 	@echo "$(YELLOW)Building servicios en servidor...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build crate-api crate-worker crate-ui crate-listen crate-docs crate-site"
+	@# Build every buildable service. If the server has the project
+	@# overlay active (COMPOSE_FILE=docker-compose.yaml:docker-compose.project.yaml),
+	@# this also builds crate-site + crate-docs; otherwise just the four
+	@# per-instance services.
+	@$(SSH) "cd $(SERVER_PATH) && docker compose build"
 	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose pull --ignore-buildable"
 	@echo "$(YELLOW)Reiniciando servicios...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml up -d"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose up -d"
 	@echo "$(GREEN)Deploy completado$(NC)"
 
 .PHONY: deploy-sync
@@ -304,28 +312,28 @@ deploy-sync: ## Solo sincronizar ficheros al servidor (sin restart)
 
 .PHONY: deploy-restart
 deploy-restart: ## Reiniciar servicios en remoto (sin sync)
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml up -d"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose up -d"
 
 .PHONY: deploy-pull
 deploy-pull: ## Pull de imagenes en remoto
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-buildable"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose pull --ignore-buildable"
 
 .PHONY: deploy-logs
 deploy-logs: ## Ver logs en remoto (uso: make deploy-logs s=crate-api)
 	@if [ -n "$(s)" ]; then \
-		$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml logs -f --tail=100 $(s)"; \
+		$(SSH) "cd $(SERVER_PATH) && docker compose logs -f --tail=100 $(s)"; \
 	else \
-		$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml logs -f --tail=100"; \
+		$(SSH) "cd $(SERVER_PATH) && docker compose logs -f --tail=100"; \
 	fi
 
 .PHONY: deploy-ps
 deploy-ps: ## Estado de servicios en remoto
-	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml ps --format 'table {{.Name}}\t{{.Status}}'"
+	@$(SSH) "cd $(SERVER_PATH) && docker compose ps --format 'table {{.Name}}\t{{.Status}}'"
 
 .PHONY: deploy-shell
 deploy-shell: ## Shell remoto en un servicio (uso: make deploy-shell s=crate-api)
 	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make deploy-shell s=crate-api$(NC)"; exit 1; fi
-	@$(SSH) -t "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml exec $(s) sh"
+	@$(SSH) -t "cd $(SERVER_PATH) && docker compose exec $(s) sh"
 
 .PHONY: deploy-ssh
 deploy-ssh: ## SSH al servidor

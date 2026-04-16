@@ -38,7 +38,6 @@ Core Crate services:
 
 - `crate-api`, `crate-worker`
 - `crate-ui`, `crate-listen`
-- `crate-docs` (opt-in via the `docs` compose profile — see below)
 - `crate-postgres`, `crate-redis`
 - `slskd` for Soulseek
 
@@ -47,19 +46,30 @@ Infrastructure around it:
 - Traefik for reverse proxy + Let's Encrypt certificates
 - Authelia as a soft-auth middleware option
 
-Images for `crate-api`, `crate-ui`, `crate-listen`, and `crate-docs` are
-built and pushed to GHCR by
+Images for `crate-api`, `crate-ui`, `crate-listen`, `crate-docs`, and
+`crate-site` are built and pushed to GHCR by
 [.github/workflows/build-images.yml](https://github.com/diego-ninja/crate/blob/main/.github/workflows/build-images.yml)
 on every push to `main` that touches the relevant paths.
 
-### The docs profile
+### The project overlay
 
-`crate-docs` serves the project-level documentation at
-`docs.cratemusic.app`, not a per-instance URL. Other Crate operators
-don't need that container, so it's behind
-`profiles: ["docs"]`. On the canonical project server, adding
-`COMPOSE_PROFILES=docs` to `.env` makes `docker compose up -d` include
-it; elsewhere it stays dormant.
+The canonical `cratemusic.app` server also hosts two project-wide
+surfaces: the marketing site at `cratemusic.app` and the hosted docs
+at `docs.cratemusic.app`. These are **not** per-instance resources —
+every Crate operator would be running duplicate copies of the same
+static sites if they shipped in the main compose file.
+
+The pragmatic fix is a compose overlay,
+[docker-compose.project.yaml](https://github.com/diego-ninja/crate/blob/main/docker-compose.project.yaml),
+that defines `crate-site` and `crate-docs` with the domains hard-coded.
+Only the project server opts in, by setting this in its `.env`:
+
+```
+COMPOSE_FILE=docker-compose.yaml:docker-compose.project.yaml
+```
+
+Everywhere else, `docker-compose.yaml` is the only file `docker compose`
+sees, and the two services simply don't exist in the topology.
 
 ## Volumes and mounts
 
