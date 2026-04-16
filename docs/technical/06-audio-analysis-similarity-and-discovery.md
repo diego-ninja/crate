@@ -12,60 +12,75 @@ This layer powers:
 - quality and analysis views
 - mood/energy exploration
 
-## Audio analysis pipeline
+## Two parallel analysis tracks
 
-The main analysis entrypoint is [app/crate/audio_analysis.py](https://github.com/diego-ninja/crate/blob/main/app/crate/audio_analysis.py).
+Crate actually runs two independent analysis subsystems, each with its own
+pipeline, output, and consumer:
 
-Crate uses a layered strategy:
+1. **Per-track audio features** — BPM, key, loudness, dynamic range,
+   spectral complexity, energy, danceability, valence, acousticness,
+   instrumentalness, mood descriptors. Produced by
+   [app/crate/audio_analysis.py](https://github.com/diego-ninja/crate/blob/main/app/crate/audio_analysis.py).
+   Consumed by the UI analytics, radio curation, the adaptive equalizer,
+   and anywhere else that needs a single-track signature.
+2. **Bliss song-DNA vectors** — a 20-float vector per track used as the
+   backbone for nearest-neighbour similarity. Produced by the Rust CLI at
+   [tools/grooveyard-bliss](https://github.com/diego-ninja/crate/blob/main/tools/grooveyard-bliss),
+   integrated via
+   [app/crate/bliss.py](https://github.com/diego-ninja/crate/blob/main/app/crate/bliss.py).
+   Consumed by radio continuation, transition scoring, and smart playlists.
 
-1. signal analysis via Rust and/or Python backends
-2. PANNs classification for higher-level semantic attributes
-3. heuristics and normalization for missing or derived fields
+Both run from the worker's dedicated daemons so the main task queue never
+gets blocked on long DSP work.
 
-## Backend detection strategy
+## Feature analysis backends
 
-Crate prefers:
+`audio_analysis.py` selects a backend at import time:
 
-- Essentia when available
-- librosa as a fallback
+- **Essentia** when the native bindings are available (x86_64 production
+  containers). Uses C++ DSP for loudness (EBU R128), dynamic complexity,
+  spectral features, and the PANNs classifier for semantic labels.
+- **librosa** as a Python fallback for environments where Essentia cannot
+  load (ARM dev laptops). Slower, missing PANNs, but functionally complete
+  for the core metrics.
 
-This choice is made dynamically at runtime.
+The choice is transparent to callers; the output schema is the same.
 
-Implications:
+## PANNs integration
 
-- production can benefit from better native DSP throughput
-- development and ARM environments can still work with librosa
-- analysis code must be tolerant of partial capabilities
+Crate supports PANNs CNN14 for AudioSet-style label inference.
 
-## Rust-assisted analysis
+The code:
 
-The analysis entrypoints first try the Rust CLI through `crate-cli`.
+- lazily checks availability
+- rewires label metadata from local model assets
+- loads the model only when needed
+- uses grouped weighted label families to derive product-oriented traits
 
-Benefits:
+Crate does not expose raw AudioSet classes directly as the final product
+language. It translates them into more useful listening concepts
+(danceability, valence, acousticness, instrumentalness).
 
-- faster signal-level extraction
-- shared native implementation for some metrics
-- less Python overhead for common cases
+## Metric semantics worth knowing
 
-If Rust returns only partial metrics, Python supplements the missing advanced fields instead of recomputing everything unnecessarily.
+A few of the persisted columns have non-obvious meanings:
 
-## Metrics produced
+- `spectral_complexity` is normalised into `[0, 1]` and doubles as a
+  **brightness** indicator — the value the adaptive equalizer reads to
+  decide whether to tame or lift the upper shelf.
+- `loudness` is in LUFS (EBU R128 when Essentia is available), roughly
+  `-30..-6`. Streaming targets sit around `-14`; modern loud masters reach
+  `-8`.
+- `dynamic_range` is a crest-style measure in dB, computed as the ratio of
+  the 95th to the 10th percentile of frame-level RMS. Typical music sits
+  in `4..20 dB`. An earlier version used `max/min` and exploded to `100+`
+  on tracks with silent intros; the percentile version is robust.
+- `danceability`, `valence`, `acousticness`, `instrumentalness` live in
+  `[0, 1]` and follow the Spotify-style semantics.
 
-Typical analysis output includes:
-
-- BPM
-- key and scale
-- energy
-- loudness
-- dynamic range
-- spectral complexity
-- danceability
-- valence
-- acousticness
-- instrumentalness
-- mood descriptors
-
-These values are persisted on tracks and aggregated up into other surfaces.
+These are exposed to the Listen frontend through
+`/api/tracks/{id}/eq-features` so the adaptive equalizer can shape gains
+per track.
 
 ## PANNs integration
 

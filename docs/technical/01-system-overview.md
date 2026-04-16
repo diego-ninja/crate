@@ -4,8 +4,8 @@
 
 Crate is a self-hosted music platform built around one canonical library and two separate products on top of it:
 
-- `app/ui`: the admin application for curation, repair, ingestion, enrichment, analytics, and operations.
-- `app/listen`: the listener-facing application for playback, discovery, library browsing, social features, and mobile/PWA use.
+- `app/ui`: the admin application for curation, repair, ingestion, enrichment, analytics, and operations. Has a minimal preview player (plain `<audio>`) for sampling tracks while working.
+- `app/listen`: the listener-facing application for playback, discovery, library browsing, social features, and mobile/PWA use. Ships a full audio engine: Gapless-5, crossfade, equalizer, visualizer, media session integration.
 
 Both products sit on the same backend and database, but they are intentionally separate applications with different UX priorities and different internal architecture.
 
@@ -62,8 +62,8 @@ That means there is no single "main" flow anymore. Crate has multiple equally im
 
 ### Backend services
 
-- `crate-api`: FastAPI application serving REST, SSE, streaming endpoints, artwork, lyrics, auth, and Subsonic compatibility.
-- `crate-worker`: Python worker process hosting Dramatiq consumers plus a service loop for watcher, scheduler, cleanup, and background daemons.
+- `crate-api`: FastAPI application serving REST, SSE, streaming endpoints, artwork, lyrics, auth, and an Open Subsonic-compatible API for third-party clients.
+- `crate-worker`: Python worker process hosting Dramatiq consumers plus a service loop for the filesystem watcher, scheduler, cleanup routines, and the long-running audio analysis / Bliss daemons.
 - `crate-postgres`: PostgreSQL 15, the primary store.
 - `crate-redis`: Redis 7, used both as cache and as the Dramatiq broker.
 - `slskd`: Soulseek daemon with REST API.

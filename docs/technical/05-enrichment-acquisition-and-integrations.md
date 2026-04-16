@@ -21,12 +21,12 @@ For a given artist, `enrich_artist(...)` pulls from multiple providers and persi
 ### Sources consulted
 
 - Last.fm
-- Spotify
 - MusicBrainz
 - Setlist.fm
 - Fanart.tv
 - Discogs
 - Deezer and iTunes as image fallbacks in adjacent code paths
+- Spotify (popularity and followers only; requires a Premium-enabled app, otherwise the provider returns 403 and the pipeline skips it)
 
 ### Data persisted
 

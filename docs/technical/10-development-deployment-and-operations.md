@@ -34,22 +34,32 @@ This matters because Crate's auth, cookies, and multi-origin app topology are cl
 
 Production composition is defined in [docker-compose.yaml](https://github.com/diego-ninja/crate/blob/main/docker-compose.yaml).
 
-Important services include:
+Core Crate services:
 
-- Traefik
-- Authelia
-- PostgreSQL
-- Redis
-- `crate-api`
-- `crate-worker`
-- `crate-ui`
-- `crate-listen`
-- `crate-docs`
-- `slskd`
-- Lidarr and Tidarr-adjacent tools
-- nginx and other supporting services
+- `crate-api`, `crate-worker`
+- `crate-ui`, `crate-listen`
+- `crate-docs` (opt-in via the `docs` compose profile — see below)
+- `crate-postgres`, `crate-redis`
+- `slskd` for Soulseek
 
-Crate lives inside a broader self-hosted media environment rather than in total isolation.
+Infrastructure around it:
+
+- Traefik for reverse proxy + Let's Encrypt certificates
+- Authelia as a soft-auth middleware option
+
+Images for `crate-api`, `crate-ui`, `crate-listen`, and `crate-docs` are
+built and pushed to GHCR by
+[.github/workflows/build-images.yml](https://github.com/diego-ninja/crate/blob/main/.github/workflows/build-images.yml)
+on every push to `main` that touches the relevant paths.
+
+### The docs profile
+
+`crate-docs` serves the project-level documentation at
+`docs.cratemusic.app`, not a per-instance URL. Other Crate operators
+don't need that container, so it's behind
+`profiles: ["docs"]`. On the canonical project server, adding
+`COMPOSE_PROFILES=docs` to `.env` makes `docker compose up -d` include
+it; elsewhere it stays dormant.
 
 ## Volumes and mounts
 
@@ -194,7 +204,10 @@ This is one of the easiest architectural lines to accidentally blur when shippin
 
 ### Deploy sync is scoped
 
-The deploy flow intentionally syncs `app/` and key config files rather than blindly rsyncing the whole project root. That protects server-side state directories.
+The deploy flow intentionally syncs `app/`, top-level `docs/` (consumed
+by the `crate-docs` build context), and key config files rather than
+blindly rsyncing the whole project root. That protects server-side
+state directories like `media/` and `data/` that don't exist locally.
 
 ### Redis serves two jobs
 

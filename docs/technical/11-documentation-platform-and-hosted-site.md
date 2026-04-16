@@ -64,19 +64,24 @@ That choice matters because the public documentation surface should feel closer 
 
 ## Content model
 
-The hosted site currently exposes three content groups:
+The hosted site exposes two content groups:
 
-- `technical`
-- `reference`
-- `plans`
+- `technical` — long-lived architecture docs, numbered and meant to be read in order.
+- `reference` — shorter topical notes still useful as quick lookups.
 
 These correspond directly to the repo layout:
 
-- [`docs/technical/`](https://github.com/diego-ninja/crate/blob/main/docs/technical)
-- top-level files under [`docs/`](https://github.com/diego-ninja/crate/blob/main/docs)
-- [`docs/plans/`](https://github.com/diego-ninja/crate/blob/main/docs/plans)
+- [`docs/technical/`](https://github.com/diego-ninja/crate/blob/main/docs/technical) for the technical set.
+- top-level files under [`docs/`](https://github.com/diego-ninja/crate/blob/main/docs) (excluding the technical subfolder) for reference.
 
-The grouping is intentionally simple. It is not a CMS taxonomy; it is a navigation model over the existing repository structure.
+The grouping is intentionally simple — a navigation model over the
+repository structure, not a CMS taxonomy.
+
+Design notes and internal roadmaps live in a `docs/plans/` folder that
+is gitignored. They stay on the author's disk, never reach the public
+site, and never ship with the container. If a plan graduates to
+something that should be public, it gets rewritten into the technical
+or reference set.
 
 ## Source-of-truth stance
 
@@ -124,17 +129,14 @@ In production the docs site is packaged as its own container:
 
 - service: `crate-docs`
 - image: `ghcr.io/diego-ninja/crate-docs`
-- router host: `docs.${DOMAIN}`
+- router host: hard-coded to `docs.cratemusic.app` (not `docs.${DOMAIN}` — the docs surface is a project resource, not a per-operator one)
+- compose profile: `docs` (opt-in, so other self-hosters don't start a container they don't need)
 
-The service definition lives in [`docker-compose.yaml`](https://github.com/diego-ninja/crate/blob/main/docker-compose.yaml).
+The service definition lives in [`docker-compose.yaml`](https://github.com/diego-ninja/crate/blob/main/docker-compose.yaml). On the canonical project server, setting `COMPOSE_PROFILES=docs` in `.env` is enough to include the container in regular `docker compose up -d`.
 
-This makes the docs surface operationally independent from:
+Images are built and pushed to GHCR by the `build-docs` job in [build-images.yml](https://github.com/diego-ninja/crate/blob/main/.github/workflows/build-images.yml) whenever `app/docs/**` or `docs/**` change on `main`.
 
-- `crate-ui`
-- `crate-listen`
-- `crate-api`
-
-while still being deployed as part of the same stack.
+This makes the docs surface operationally independent from `crate-ui`, `crate-listen`, and `crate-api` while still being deployed as part of the same stack.
 
 ## Why a separate app
 
@@ -181,11 +183,15 @@ The site is static and should stay static. It should not require direct access t
 
 Good next steps for the platform include:
 
-- generating a lightweight docs manifest at build time to reduce client bundle size
-- adding richer deep-linking and anchor-copy UX
-- adding diagrams and architecture maps for the largest subsystems
-- optionally exposing last-updated metadata per document
-- optionally publishing a public changelog for major architectural changes
+- syntax highlighting for code blocks (Shiki or rehype-highlight)
+- copy-to-clipboard buttons on code blocks
+- active section tracking in the table of contents via `IntersectionObserver`
+- anchor-copy affordance on hover over headings
+- "Edit this page on GitHub" link per document, derived from `sourcePath`
+- mobile search affordance in the header (currently only available in the desktop sidebar)
+- footer with GitHub link and license
+- exposing `last-updated` metadata per document (e.g. from Git)
+- a lightweight docs manifest generated at build time to trim client bundle size
 
 ## Boundaries
 

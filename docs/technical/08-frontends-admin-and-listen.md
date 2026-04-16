@@ -140,12 +140,15 @@ The admin app emphasizes:
 
 - auth
 - notifications
-- player
-- tasks/events hooks
+- task/event hooks
 - command palette and keyboard utilities
 - search-driven workflows
+- a lightweight preview player
 
-The admin player is not the center of the app, but it is still integrated enough to support library browsing and preview.
+The admin player is intentionally minimal: a single `HTMLAudioElement`
+behind a `PlayerContext` that exposes play/pause/seek. It is enough to
+audition tracks while curating, not enough to replace Listen. No gapless,
+no crossfade, no equalizer — those live in Listen.
 
 ## Listen state domains
 

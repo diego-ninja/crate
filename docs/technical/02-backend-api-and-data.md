@@ -77,11 +77,10 @@ This is an idempotent in-app migration system rather than an external Alembic-st
 
 ### Library tables
 
-- `library_artists`
-- `library_albums`
-- `library_tracks`
-- genre link tables
-- similarity and discovery-related tables
+- `library_artists`, `library_albums`, `library_tracks` — the indexed library itself.
+- `genres`, `artist_genres`, `album_genres` — raw tag-derived genre graph keyed by slug.
+- `genre_taxonomy_nodes`, `genre_taxonomy_aliases`, `genre_taxonomy_edges` — the canonical taxonomy with parent/related relations and per-node metadata (descriptions, MusicBrainz/Wikidata references, EQ presets).
+- similarity and discovery-related tables populated from audio analysis and Bliss.
 
 These hold the indexed and enriched representation of the filesystem library.
 
@@ -236,6 +235,9 @@ Trade-off:
 
 - schema evolution and query composition need more discipline
 - there is less compile-time structure than a richer ORM layer would provide
+- some repetition creeps in across `app/crate/db/*.py` (connection pool usage, row-dict shaping, cache coordination) that an ORM would absorb
+
+An eventual move to SQLAlchemy 2.0 is on the table; the current patterns are deliberately boring so that migration would be a translation exercise, not an invention one.
 
 ### Why application-managed schema migrations
 

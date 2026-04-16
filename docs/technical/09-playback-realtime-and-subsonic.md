@@ -16,34 +16,62 @@ The player is built around these ideas:
 
 ## Audio engine
 
-The active engine wrapper is [app/listen/src/lib/gapless-player.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/lib/gapless-player.ts), which wraps `Gapless-5`.
+The active engine wrapper is [app/listen/src/lib/gapless-player.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/lib/gapless-player.ts), which wraps a **vendored fork** of Gapless-5 living at [app/listen/src/lib/gapless5/](https://github.com/diego-ninja/crate/blob/main/app/listen/src/lib/gapless5).
 
 Responsibilities of the wrapper:
 
 - initialize the engine once
-- configure crossfade
+- configure crossfade (equal-power curve, user-tunable duration)
 - expose queue-loading and track-mutation operations
 - expose track position and duration
-- expose the active `AnalyserNode`
+- expose the active `AnalyserNode` for the visualizer
+- expose the post-processing output chain for the equalizer
 - implement fade-in and fade-out helpers over volume changes
 - normalize playlist internals so React remains the source of truth for play order
+- expose `isCurrentTrackFullyBuffered()` for offline-resilient interruption handling
 
-## Why Gapless-5
+### Why Gapless-5, and why vendored
 
-Listen needs playback features that a raw `HTMLAudioElement` approach handles poorly:
+Listen needs playback features that a raw `HTMLAudioElement` approach
+handles poorly: true gapless transitions, equal-power crossfade, a stable
+analyser node, and sample-perfect handoff between adjacent tracks.
+Gapless-5 provides all of that.
 
-- gapless playback
-- equal-power crossfade
-- robust handoff between adjacent tracks
-- analyser access while keeping an engine abstraction
+Crate vendored the library rather than pulling it from npm because the
+integration needed a few patches the upstream does not ship, and the
+project prefers owning that surface over carrying them as monkey-patches:
 
-Gapless-5 provides the lower-level playback machinery, while Crate adds product logic above it.
+1. **`masterOut` gain node** — a single `GainNode` between every source
+   and the destination so post-processing (equalizer, future compressor)
+   can be inserted in one place.
+2. **`setOutputChain(input, output)`** — splice arbitrary processing
+   between `masterOut` and `destination`, with `null` restoring direct
+   output.
+3. **XHR fail-safe during HTML5 playback** — a failed WebAudio preload
+   no longer tears down the active track if the HTML5 element is
+   already playing. The user just misses the sample-perfect upgrade.
+4. **HTML5 error fail-safe under WebAudio** — once WebAudio has taken
+   over (RAM-resident buffer), errors on the now-dormant `<audio>`
+   element stop escalating; the track keeps playing from RAM.
+
+The header of [gapless5.js](https://github.com/diego-ninja/crate/blob/main/app/listen/src/lib/gapless5/gapless5.js) documents each patch with enough detail to reapply them against a
+future upstream version if we ever want to reconcile.
+
+### loadLimit
+
+`Gapless-5` is configured with `loadLimit: 2` (current + next). With the
+default (`-1`, unlimited) a 50-track playlist fires 100+ parallel HTTP
+requests — one XHR and one HTML5 `<audio>` per source — which saturates
+the browser connection pool and stretches first-track-to-audio latency
+past five seconds. Two is the sweet spot: gapless transitions still have
+the next track decoded by the time the current one ends, and the
+browser stays responsive.
 
 ## PlayerContext responsibilities
 
 The player context owns:
 
-- queue
+- queue (including an un-shuffled baseline so toggling shuffle is a round-trip)
 - current index
 - current track
 - repeat and shuffle state
@@ -51,18 +79,36 @@ The player context owns:
 - playback and buffering state
 - volume
 - recently played
-- crossfade transition metadata
-- playback source
+- crossfade transition metadata (outgoing + incoming tracks during the fade window)
+- playback source (album, playlist, radio, jam, …)
 
-It also coordinates several supporting hooks:
+The context is composed of focused hooks rather than one monolithic
+reducer. Each hook owns one concern and can be tested in isolation:
 
-- play-event tracker
-- playback intelligence
-- playback persistence
-- restore on mount
-- soft interruption
-- media session
-- keyboard shortcuts
+- [use-play-event-tracker.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/contexts/use-play-event-tracker.ts) — deduplicated play-event emission with explicit session lifecycle.
+- [use-playback-intelligence.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/contexts/use-playback-intelligence.ts) — radio refill, suggestion insertion, verb-oriented API.
+- [use-playback-persistence.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/contexts/use-playback-persistence.ts) — writes queue/index/time/shuffle to localStorage.
+- [use-restore-on-mount.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/contexts/use-restore-on-mount.ts) — rebuilds the previous session after reload.
+- [use-soft-interruption.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/contexts/use-soft-interruption.ts) — stall detection, probe-and-resume.
+- media session + keyboard shortcuts.
+
+### Visual crossfade
+
+During the real audio crossfade, PlayerContext exposes a
+`crossfadeTransition` object with the outgoing and incoming tracks plus
+a normalised progress value. The FullscreenPlayer, PlayerBar, and
+ExtendedPlayer use it to:
+
+- cross-fade album artwork between tracks (two stacked `<img>` with
+  inverse opacities)
+- cross-fade title and artist text
+- interpolate the visualizer palette between outgoing and incoming
+  track analyses
+- keep the progress bar anchored to the still-audible outgoing track
+  rather than jumping to the incoming one at fade start
+
+All of this rides on the same progress value that drives the audio
+fade, so what the user sees and what the user hears stay in lockstep.
 
 ## Playback persistence
 
@@ -84,13 +130,86 @@ Listen deliberately distinguishes:
 - explicit user pause
 - soft interruption due to buffering/network/server failure
 
-The recovery logic aims to:
+The recovery logic, in [use-soft-interruption.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/contexts/use-soft-interruption.ts), aims to:
 
-- fade down rather than hard-cut
-- probe for connectivity recovery
-- resume playback when appropriate
+- fade down rather than hard-cut on stall
+- probe for connectivity recovery (HEAD on the current stream URL with a 4 s deadline)
+- resume playback with a fade-in when the probe succeeds
+- react to browser `online`/`offline` events and the app-level `crate:network-restored` event
 
-This is one of the places where the player tries to feel like a premium consumer app rather than a raw browser audio demo.
+### Why offline does not always mean "pause"
+
+Once the current track's audio is fully decoded into the WebAudio buffer,
+the user is listening from RAM. The network is irrelevant for the rest of
+that track. All three error paths (browser offline event, XHR failure,
+HTML5 audio error, stall watchdog) consult `isCurrentTrackFullyBuffered()`
+before escalating, and short-circuit if the RAM buffer will carry the
+playback to the end. Only genuine stalls — current track not yet buffered
+and audio actually stopped advancing — trigger the pause-and-probe loop.
+
+This combination of vendored patches at the engine layer and guards at
+the React layer is what lets Listen survive mid-track wifi drops without
+stopping the music.
+
+## Equalizer
+
+Listen ships a 10-band graphic equalizer that runs as post-processing
+between Gapless-5's `masterOut` and the speakers. Implementation is split
+across three files:
+
+- [equalizer.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/lib/equalizer.ts) — `BiquadFilterNode` chain, presets, ramped gain changes.
+- [equalizer-prefs.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/lib/equalizer-prefs.ts) — localStorage persistence of enabled state, preset, custom gains, and adaptive flags.
+- [use-equalizer.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/hooks/use-equalizer.ts) — React hook that subscribes to prefs and keeps the engine chain in sync.
+
+### Bands
+
+32, 64, 125, 250, 500, 1K, 2K, 4K, 8K, 16K Hz — peaking filters with
+Q ≈ 1.41 (roughly one octave bandwidth per band). Gains clamp to
+±12 dB.
+
+### Ramping
+
+Gain changes don't snap; they ramp over 80 ms via `cancelScheduledValues`
++ `setValueAtTime` + `linearRampToValueAtTime`. Drag a slider, switch a
+preset, or jump tracks in adaptive mode — the biquads glide to the new
+curve without zipper or click artefacts. `cancelScheduledValues` on
+every call prevents queued ramps from stacking during a drag.
+
+### Presets
+
+~20 presets covering both general-purpose (rock, pop, jazz, classical,
+acoustic, electronic, hip-hop, bass boost, treble boost, vocal) and
+underground genres tuned specifically for each style's mixing
+conventions: black metal (tremolo picking presence, scooped mids),
+death metal (kick + guitar body, classic mid scoop), thrash (V-shape),
+doom (massive low end, dark top), hardcore, punk, shoegaze, post-rock,
+etc.
+
+### Adaptive mode
+
+Feature-adaptive EQ reads the per-track analysis payload from
+`/api/tracks/{id}/eq-features` and applies a "nudge, don't sculpt"
+heuristic ([adaptive-eq.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/lib/adaptive-eq.ts)):
+
+- bright tracks (spectral complexity high) get their 4–8K shelf tamed
+- dark tracks get a gentle air lift
+- hot masters (loudness > -10 LUFS) get a subtle 1–2K pullback
+- compressed tracks (dynamic range < 6 dB) get a mild V-shape
+- high-energy tracks reinforce sub/kick, low-energy warm the low mids
+- total adjustment clamps to ±4 dB per band
+- highly dynamic tracks (DR > 14) escape hatch to flat
+
+### Genre-adaptive mode
+
+The alternative mode picks a preset from the track's primary genre via
+the taxonomy graph. The backend resolves inheritance: a canonical slug
+with its own `eq_gains` returns directly; a slug with `NULL` walks up
+through parents BFS until it finds one. `/api/tracks/{id}/genre`
+returns the resolved gains along with `source: "direct" | "inherited"`
+and `inheritedFrom: { slug, name }` for UI transparency.
+
+Adaptive and Genre-adaptive are mutually exclusive; enabling one
+disables the other in both localStorage and runtime state.
 
 ## Infinite playback and intelligence
 
