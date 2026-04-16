@@ -665,8 +665,15 @@ def _create_schema(cur):
             musicbrainz_mbid TEXT,
             wikidata_entity_id TEXT,
             wikidata_url TEXT,
-            is_top_level BOOLEAN NOT NULL DEFAULT FALSE
+            is_top_level BOOLEAN NOT NULL DEFAULT FALSE,
+            eq_gains DOUBLE PRECISION[]
         )
+    """)
+    # Migration: ensure eq_gains exists on upgraded installs where the
+    # table was created before this column was introduced.
+    cur.execute("""
+        ALTER TABLE genre_taxonomy_nodes
+        ADD COLUMN IF NOT EXISTS eq_gains DOUBLE PRECISION[]
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS genre_taxonomy_aliases (

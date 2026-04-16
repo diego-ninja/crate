@@ -12,6 +12,11 @@ https://listen.dev.lespedants.org {
 	reverse_proxy host.docker.internal:5174
 }
 
+https://docs.dev.cratemusic.app {
+	tls internal
+	reverse_proxy host.docker.internal:5175
+}
+
 https://api.dev.lespedants.org {
 	tls internal
 	reverse_proxy api:8585

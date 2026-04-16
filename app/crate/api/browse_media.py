@@ -269,6 +269,204 @@ def api_track_info(request: Request, filepath: str):
     return _serialize_track_info_row(row)
 
 
+# ── EQ adaptive features ────────────────────────────────────────────
+#
+# Minimal subset of audio-analysis columns exposed for the client-side
+# adaptive equalizer heuristic. Keep this narrow: the front-end shouldn't
+# learn about every analysis column we persist, and this payload gets
+# requested on every track change when the user selects the "adaptive"
+# preset — a smaller JSON = fewer bytes on the wire and a clearer
+# contract.
+#
+# spectral_complexity already lives in [0, 1] (normalized centroid at
+# analysis time), so it doubles as a brightness indicator.
+
+_EQ_FEATURES_QUERY_COLS = (
+    "energy, loudness, dynamic_range, spectral_complexity, "
+    "danceability, valence, acousticness, instrumentalness"
+)
+
+
+def _serialize_eq_features(row) -> dict:
+    """Normalize nullable floats + expose canonical frontend keys."""
+    data = dict(row)
+    return {
+        "energy": data.get("energy"),
+        "loudness": data.get("loudness"),              # LUFS, roughly -30..-6
+        "dynamicRange": data.get("dynamic_range"),     # dB crest-like
+        "brightness": data.get("spectral_complexity"), # normalized centroid 0..1
+        "danceability": data.get("danceability"),
+        "valence": data.get("valence"),
+        "acousticness": data.get("acousticness"),
+        "instrumentalness": data.get("instrumentalness"),
+    }
+
+
+@router.get("/api/tracks/{track_id}/eq-features")
+def api_eq_features_by_id(request: Request, track_id: int):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute(
+            f"SELECT {_EQ_FEATURES_QUERY_COLS} FROM library_tracks WHERE id = %s",
+            (track_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _serialize_eq_features(row)
+
+
+@router.get("/api/tracks/by-storage/{storage_id}/eq-features")
+def api_eq_features_by_storage_id(request: Request, storage_id: str):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute(
+            f"SELECT {_EQ_FEATURES_QUERY_COLS} FROM library_tracks WHERE storage_id = %s",
+            (storage_id,),
+        )
+        row = cur.fetchone()
+    if not row:
+        return Response(status_code=404)
+    return _serialize_eq_features(row)
+
+
+# ── Track primary genre ─────────────────────────────────────────────
+#
+# Returns the dominant genre for a track, used by the "Genre Adaptive"
+# equalizer mode. We pick the highest-weight canonical genre from the
+# track's album; if no album genres exist (or none are canonical) we
+# fall back to the artist's genres. Non-canonical tags (raw Last.fm
+# noise like "blackened-post-sludge") are still returned if nothing
+# canonical is available, but `primary.canonical = false` tells the
+# client to skip preset lookup.
+
+def _pick_primary_genre(rows):
+    """Prefer the highest-weight canonical genre; fall back to the
+    highest-weight raw tag if none resolve cleanly. Canonical picks
+    also carry the resolved EQ preset (direct or inherited)."""
+    from crate.genre_taxonomy import (
+        get_genre_display_name,
+        get_top_level_slug,
+        is_canonical_genre_slug,
+        resolve_genre_eq_preset,
+        resolve_genre_slug,
+    )
+
+    canonical_pick = None
+    raw_pick = None
+
+    for row in rows:
+        raw_slug = (row.get("slug") or "").strip().lower()
+        raw_name = (row.get("name") or "").strip().lower()
+        resolved = resolve_genre_slug(raw_name or raw_slug)
+        if resolved and is_canonical_genre_slug(resolved):
+            if canonical_pick is None:
+                top_level_slug = get_top_level_slug(resolved) or resolved
+                preset_info = resolve_genre_eq_preset(resolved)
+                preset_payload = None
+                if preset_info is not None:
+                    preset_payload = {
+                        "gains": preset_info["gains"],
+                        "source": preset_info["source"],
+                        "inheritedFrom": (
+                            {"slug": preset_info["slug"], "name": preset_info["name"]}
+                            if preset_info["source"] == "inherited"
+                            else None
+                        ),
+                    }
+                canonical_pick = {
+                    "primary": {
+                        "slug": resolved,
+                        "name": get_genre_display_name(resolved),
+                        "canonical": True,
+                    },
+                    "topLevel": {
+                        "slug": top_level_slug,
+                        "name": get_genre_display_name(top_level_slug),
+                    },
+                    "preset": preset_payload,
+                }
+        elif raw_pick is None:
+            raw_pick = {
+                "primary": {
+                    "slug": raw_slug or resolved or "",
+                    "name": raw_name or (raw_slug.replace("-", " ") if raw_slug else ""),
+                    "canonical": False,
+                },
+                "topLevel": None,
+                "preset": None,
+            }
+
+    return canonical_pick or raw_pick
+
+
+def _resolve_track_genre(cur, track_id: int) -> dict | None:
+    cur.execute(
+        """
+        SELECT g.name, g.slug, ag.weight
+        FROM library_tracks t
+        JOIN album_genres ag ON ag.album_id = t.album_id
+        JOIN genres g ON g.id = ag.genre_id
+        WHERE t.id = %s
+        ORDER BY ag.weight DESC NULLS LAST, g.name ASC
+        LIMIT 10
+        """,
+        (track_id,),
+    )
+    album_rows = cur.fetchall()
+    picked = _pick_primary_genre(album_rows) if album_rows else None
+    if picked:
+        picked["source"] = "album"
+        return picked
+
+    cur.execute(
+        """
+        SELECT g.name, g.slug, arg.weight
+        FROM library_tracks t
+        JOIN artist_genres arg ON arg.artist_name = t.artist
+        JOIN genres g ON g.id = arg.genre_id
+        WHERE t.id = %s
+        ORDER BY arg.weight DESC NULLS LAST, g.name ASC
+        LIMIT 10
+        """,
+        (track_id,),
+    )
+    artist_rows = cur.fetchall()
+    picked = _pick_primary_genre(artist_rows) if artist_rows else None
+    if picked:
+        picked["source"] = "artist"
+        return picked
+
+    return None
+
+
+@router.get("/api/tracks/{track_id}/genre")
+def api_track_genre_by_id(request: Request, track_id: int):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT 1 FROM library_tracks WHERE id = %s", (track_id,))
+        if not cur.fetchone():
+            return Response(status_code=404)
+        result = _resolve_track_genre(cur, track_id)
+    if result is None:
+        return {"primary": None, "topLevel": None, "source": None, "preset": None}
+    return result
+
+
+@router.get("/api/tracks/by-storage/{storage_id}/genre")
+def api_track_genre_by_storage_id(request: Request, storage_id: str):
+    _require_auth(request)
+    with get_db_ctx() as cur:
+        cur.execute("SELECT id FROM library_tracks WHERE storage_id = %s", (storage_id,))
+        row = cur.fetchone()
+        if not row:
+            return Response(status_code=404)
+        result = _resolve_track_genre(cur, row["id"])
+    if result is None:
+        return {"primary": None, "topLevel": None, "source": None, "preset": None}
+    return result
+
+
 @router.get("/api/discover/completeness")
 def api_discover_completeness(request: Request):
     """Return cached completeness data. The heavy computation runs as a worker task."""

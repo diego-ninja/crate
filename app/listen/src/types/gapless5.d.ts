@@ -1,4 +1,4 @@
-declare module "@regosen/gapless-5" {
+declare module "@/lib/gapless5/gapless5" {
   interface Gapless5Options {
     tracks?: string | string[];
     loop?: boolean;
@@ -76,6 +76,15 @@ declare module "@regosen/gapless-5" {
     volume: number;
     crossfade: number;
     crossfadeShape: number;
+
+    // ── Vendored patch additions (see src/lib/vendor/gapless5.js) ──
+    /** Master gain node between every source and context.destination. */
+    masterOut?: GainNode;
+    /**
+     * Splice an effect chain between masterOut and destination. Pass
+     * (null, null) to remove the current chain and restore direct output.
+     */
+    setOutputChain: (inputNode: AudioNode | null, outputNode: AudioNode | null) => void;
 
     // Callbacks — signatures match gapless5.js runtime (NOT older TS hints)
     ontimeupdate: ((positionMs: number, trackIndex: number) => void) | null;

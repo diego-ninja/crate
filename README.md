@@ -179,7 +179,15 @@ This brings up the dev containers (Postgres + Redis + API + Worker + Caddy) and 
 
 - **Admin** — <http://localhost:5173>
 - **Listen** — <http://localhost:5174>
+- **Docs** — <http://localhost:5175>
 - **API** — <http://localhost:8585>
+
+When using the local dev domains through Caddy, the equivalent URLs are:
+
+- **Admin** — <https://admin.dev.lespedants.org>
+- **Listen** — <https://listen.dev.lespedants.org>
+- **Docs** — <https://docs.dev.cratemusic.app>
+- **API** — <https://api.dev.lespedants.org>
 
 ### 3. Log in
 

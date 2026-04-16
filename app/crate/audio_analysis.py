@@ -791,10 +791,19 @@ def _analyze_librosa(filepath: str) -> dict:
             result["loudness"] = round(float(20 * np.log10(mean_rms)), 3)
 
         try:
-            rms_nonzero = rms_frames[rms_frames > 0]
-            if len(rms_nonzero) > 1:
-                result["dynamic_range"] = round(
-                    float(20 * np.log10(np.max(rms_nonzero) / np.min(rms_nonzero))), 3)
+            # Use percentile-based crest (p95 / p10 ratio) — the
+            # "TT Dynamic Range Meter" technique. Max/min is extremely
+            # sensitive to silences at track boundaries (min_rms → 0
+            # makes the dB value explode to 100+), so percentiles give
+            # a stable value in the expected 4-20 dB range regardless
+            # of intro/outro gaps.
+            rms_nonzero = rms_frames[rms_frames > 1e-10]
+            if len(rms_nonzero) > 4:
+                rms_high = float(np.percentile(rms_nonzero, 95))
+                rms_low = float(np.percentile(rms_nonzero, 10))
+                if rms_low > 1e-10:
+                    result["dynamic_range"] = round(
+                        float(20 * np.log10(rms_high / rms_low)), 3)
         except Exception:
             pass
 

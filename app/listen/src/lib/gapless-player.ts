@@ -5,8 +5,21 @@
  * for the visualizer. Replaces the raw HTMLAudioElement approach.
  */
 
-import { Gapless5 } from "@regosen/gapless-5";
+import { Gapless5 } from "@/lib/gapless5/gapless5";
+import { createEqChain, isFlatGains, type EqChain, type EqGains } from "@/lib/equalizer";
 import { getCrossfadeDurationPreference } from "./player-playback-prefs";
+
+// Gapless-5 doesn't expose its playlist internals on the public type,
+// but we need a couple of fields to keep play order in sync. Centralized
+// here so the unsafe cast lives in one place.
+interface GaplessPlaylistInternal {
+  shuffledIndices: number[];
+  sources: unknown[];
+}
+type GaplessInternal = Gapless5 & { playlist?: GaplessPlaylistInternal };
+function getPlaylistInternal(): GaplessPlaylistInternal | null {
+  return (instance as GaplessInternal | null)?.playlist ?? null;
+}
 
 // The package's TS declarations don't expose these enums as named imports,
 // but the runtime constants are stable in gapless5.js:
@@ -36,6 +49,12 @@ let currentAnalyser: AnalyserNode | null = null;
 let lastVolume = 1.0;
 let appliedVolume = 1.0;
 let fadeFrame: number | null = null;
+// Holds the resolver of the currently-running fade so a new fade can
+// settle the previous promise cleanly (instead of leaking it forever).
+let fadeSettle: (() => void) | null = null;
+// Active equalizer chain (null = direct output, no processing).
+let eqChain: EqChain | null = null;
+let eqEnabled = false;
 
 const DEFAULT_FADE_MS = 220;
 
@@ -63,6 +82,13 @@ function stopFade() {
     cancelAnimationFrame(fadeFrame);
     fadeFrame = null;
   }
+  // Settle any pending fade promise from the previous animation so
+  // awaiters of fadeInAndPlay / fadeOutAndPause never hang.
+  if (fadeSettle) {
+    const settle = fadeSettle;
+    fadeSettle = null;
+    settle();
+  }
 }
 
 function applyVolume(vol: number) {
@@ -86,12 +112,18 @@ function animateVolume(
     return;
   }
 
+  // Register onDone as the fade settler. It will be called either on
+  // completion (progress >= 1) or on cancellation (stopFade).
+  fadeSettle = onDone ?? null;
+
   const tick = (now: number) => {
     const progress = Math.min(1, (now - start) / safeDuration);
     applyVolume(from + (to - from) * progress);
     if (progress >= 1) {
       fadeFrame = null;
-      onDone?.();
+      const settle = fadeSettle;
+      fadeSettle = null;
+      settle?.();
       return;
     }
     fadeFrame = requestAnimationFrame(tick);
@@ -176,6 +208,11 @@ export function initPlayer(callbacks: GaplessPlayerCallbacks = {}): Gapless5 {
 
 export function destroyPlayer(): void {
   stopFade();
+  if (eqChain) {
+    eqChain.dispose();
+    eqChain = null;
+  }
+  eqEnabled = false;
   if (instance) {
     try {
       instance.stop();
@@ -193,8 +230,7 @@ export function loadQueue(urls: string[], startIndex = 0): void {
 
   // Idempotent: if the incoming URL list is identical to what the engine
   // already has, don't rebuild the queue — just align the current track.
-  // Avoids interrupting playback on structurally identical resyncs
-  // (shuffle toggle, reorder-to-same, etc.).
+  // Avoids interrupting playback on structurally identical resyncs.
   const currentUrls = instance.getTracks();
   const same =
     urls.length === currentUrls.length &&
@@ -210,25 +246,56 @@ export function loadQueue(urls: string[], startIndex = 0): void {
   for (const url of urls) {
     instance.addTrack(url);
   }
+
+  // CRITICAL: Gapless-5's playlist.add() inserts into shuffledIndices at
+  // a random position on every call (gapless5.js:814). When shuffleMode
+  // is on, the queue ends up in random order instead of the order we
+  // passed in. Normalize shuffledIndices to identity so the engine's
+  // play order matches the caller's URL list exactly.
+  //
+  // This makes the React queue the single source of truth for play
+  // order. If the UI wants shuffle, it reorders the React queue itself
+  // and we feed the engine that same order.
+  const playlist = getPlaylistInternal();
+  if (playlist && urls.length > 0) {
+    playlist.shuffledIndices = urls.map((_, i) => i);
+  }
+
   if (urls.length > 0) {
     instance.gotoTrack(startIndex);
   }
 }
 
+/**
+ * Gapless-5's playlist.add() inserts into shuffledIndices at a random
+ * position. After any add/insert we rewrite shuffledIndices to identity
+ * so the engine's play order stays in sync with the caller's queue
+ * (which is already in the desired play order per loadQueue's contract).
+ */
+function normalizeShuffledIndices() {
+  const playlist = getPlaylistInternal();
+  if (!playlist) return;
+  playlist.shuffledIndices = playlist.sources.map((_, i) => i);
+}
+
 export function addTrack(url: string): void {
   instance?.addTrack(url);
+  normalizeShuffledIndices();
 }
 
 export function insertTrack(index: number, url: string): void {
   instance?.insertTrack(index, url);
+  normalizeShuffledIndices();
 }
 
 export function removeTrack(indexOrUrl: number | string): void {
   instance?.removeTrack(indexOrUrl);
+  normalizeShuffledIndices();
 }
 
 export function replaceTrack(index: number, url: string): void {
   instance?.replaceTrack(index, url);
+  // replaceTrack swaps in-place, no shuffledIndices change needed.
 }
 
 export function play(): void {
@@ -299,6 +366,12 @@ export function getTracks(): string[] {
   return instance?.getTracks() ?? [];
 }
 
+/**
+ * @deprecated Shuffle is owned by the React layer (PlayerContext reorders
+ * the queue and feeds the engine sequentially). Kept for API completeness;
+ * do not call — using Gapless-5's shuffle alongside a pre-shuffled queue
+ * causes a double-shuffle (see loadQueue for the details).
+ */
 export function setShuffle(enabled: boolean): void {
   if (!instance) return;
   if (enabled && !instance.isShuffled()) {
@@ -338,6 +411,14 @@ export function fadeInAndPlay(durationMs = DEFAULT_FADE_MS): Promise<void> {
   });
 }
 
+/**
+ * Restore applied volume to the last user-set value. Useful after a
+ * cancelled fade leaves the player muted.
+ */
+export function restoreVolume(): void {
+  applyVolume(lastVolume);
+}
+
 export function setLoop(enabled: boolean): void {
   if (!instance) return;
   instance.loop = enabled;
@@ -346,4 +427,51 @@ export function setLoop(enabled: boolean): void {
 export function setSingleMode(enabled: boolean): void {
   if (!instance) return;
   instance.singleMode = enabled;
+}
+
+// ── Equalizer ────────────────────────────────────────────────────
+
+/**
+ * Enable/disable the post-processing equalizer and/or update its gains.
+ * Safe to call at any time — no-op until the engine is initialised.
+ *
+ * When `enabled` is true and `gains` is non-flat, a BiquadFilter chain
+ * is spliced between masterOut and destination via our vendored patch.
+ * When disabled or flat, the chain is torn down so there is zero
+ * processing overhead.
+ */
+export function setEqualizer(enabled: boolean, gains: EqGains): void {
+  if (!instance) return;
+  const patched = instance as Gapless5 & {
+    setOutputChain: (i: AudioNode | null, o: AudioNode | null) => void;
+    context?: AudioContext;
+  };
+  if (typeof patched.setOutputChain !== "function" || !patched.context) return;
+
+  eqEnabled = enabled;
+
+  // If the user wants flat output, skip the chain entirely — biquads
+  // at 0 dB aren't quite a no-op (minor numerical error) and why pay
+  // for unused DSP.
+  const shouldProcess = enabled && !isFlatGains(gains);
+
+  if (!shouldProcess) {
+    if (eqChain) {
+      patched.setOutputChain(null, null);
+      eqChain.dispose();
+      eqChain = null;
+    }
+    return;
+  }
+
+  if (!eqChain) {
+    eqChain = createEqChain(patched.context);
+    patched.setOutputChain(eqChain.input, eqChain.output);
+  }
+  eqChain.setGains(gains);
+}
+
+/** True if the equalizer chain is currently spliced into the output. */
+export function isEqualizerActive(): boolean {
+  return eqEnabled && eqChain !== null;
 }

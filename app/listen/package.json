@@ -9,7 +9,9 @@
     "build:cap": "tsc -b && vite build --mode capacitor && npx cap sync",
     "cap:ios": "npx cap open ios",
     "cap:android": "npx cap open android",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",
@@ -26,7 +28,6 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@nivo/core": "^0.99.0",
     "@nivo/line": "^0.99.0",
-    "@regosen/gapless-5": "^1.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "gl-matrix": "^3.4.4",
@@ -43,13 +44,19 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/leaflet": "^1.9.21",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
+    "@vitest/ui": "^4.1.4",
+    "happy-dom": "^20.9.0",
+    "jsdom": "^29.0.2",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite": "^8.0.3"
+    "vite": "^8.0.3",
+    "vitest": "^4.1.4"
   }
 }

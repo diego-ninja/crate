@@ -399,6 +399,24 @@ services:
       traefik.http.middlewares.crate-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
       # traefik.http.routers.admin.middlewares: authelia@docker  # Enable after creating users
 
+  crate-docs:
+    image: ghcr.io/diego-ninja/crate-docs:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: app/docs/Dockerfile
+    container_name: crate-docs
+    restart: unless-stopped
+    networks:
+      - crate
+    labels:
+      traefik.enable: true
+      traefik.docker.network: crate
+      traefik.http.routers.docs.rule: Host(`docs.${DOMAIN}`)
+      traefik.http.routers.docs.entryPoints: websecure
+      traefik.http.services.docs.loadbalancer.server.port: 80
+      traefik.http.routers.docs.tls: true
+      traefik.http.routers.docs.tls.certresolver: letsencrypt
+
 volumes:
   crate_redis:
     driver: local

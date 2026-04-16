@@ -5,6 +5,7 @@ import { trackToMenuData } from "@/components/actions/shared";
 import { useTrackActionEntries } from "@/components/actions/track-actions";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { useVisualizerConfig } from "@/components/player/visualizer/useVisualizerConfig";
+import { EqualizerPanel } from "@/components/player/EqualizerPanel";
 import { VisualizerSettingsPanel } from "@/components/player/visualizer/VisualizerSettingsPanel";
 import { api } from "@/lib/api";
 import {
@@ -13,10 +14,12 @@ import {
   AlignLeft,
   Disc3,
   Settings,
+  SlidersHorizontal,
   User,
 } from "lucide-react";
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
+import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
 import { useEscapeKey } from "@/hooks/use-escape-key";
 import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
@@ -108,7 +111,15 @@ function FullscreenQueueRow({
 }
 
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
-  const { currentTrack, queue, currentIndex, currentTime, duration, seek, jumpTo, isPlaying, volume, analyserVersion } = usePlayer();
+  const { currentTrack, queue, currentIndex, currentTime, duration, seek, jumpTo, isPlaying, volume, analyserVersion, crossfadeTransition } = usePlayer();
+  const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
+  // Keep the seek bar on the still-audible outgoing track during a
+  // crossfade — see useCrossfadeAwareProgress for the rationale.
+  const { displayedTime, displayedDuration } = useCrossfadeAwareProgress(
+    crossfadeTransition,
+    currentTime,
+    duration,
+  );
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<FSTab>("player");
@@ -119,6 +130,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const [animating, setAnimating] = useState(false);
   const [swipeY, setSwipeY] = useState(0);
   const [showVizSettings, setShowVizSettings] = useState(false);
+  const [showEqualizer, setShowEqualizer] = useState(false);
 
   const swipeStartRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
@@ -134,7 +146,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     visible && activeTab === "player",
     playbackState,
   );
-  const vizCfg = useVisualizerConfig(vizRef, currentTrack, visible && activeTab === "player");
+  const vizCfg = useVisualizerConfig(vizRef, currentTrack, visible && activeTab === "player", crossfadeTransition);
   const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
   // Measure cover position relative to FS root, expand canvas 25%.
@@ -238,7 +250,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   }, [activeLyricIndex, activeTab]);
 
   // Reset tab when player closes
-  useEffect(() => { if (!visible) { setActiveTab("player"); setSwipeY(0); setShowVizSettings(false); } }, [visible]);
+  useEffect(() => { if (!visible) { setActiveTab("player"); setSwipeY(0); setShowVizSettings(false); setShowEqualizer(false); } }, [visible]);
 
   // Swipe-down to dismiss (only from top 150px)
   const onSwipeStart = useCallback((e: React.TouchEvent) => {
@@ -264,7 +276,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   if (!visible || !currentTrack) return null;
 
   const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 20);
-  const remainingTime = Math.max(0, duration - currentTime);
+  const remainingTime = Math.max(0, displayedDuration - displayedTime);
 
   const TAB_PILLS: { id: FSTab; icon: typeof Disc3; label: string }[] = [
     { id: "player", icon: Disc3, label: "Player" },
@@ -292,7 +304,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     >
       {/* WebGL canvas — positioned at root level, floats above cover */}
       <div
-        className={`pointer-events-none absolute ${showVizSettings ? "z-30" : "z-50"} ${
+        className={`pointer-events-none absolute ${showVizSettings || showEqualizer ? "z-30" : "z-50"} ${
           vizCfg.vizEnabled && activeTab === "player" && canvasRect ? "" : "hidden"
         }`}
         style={canvasRect ? { top: canvasRect.top, left: canvasRect.left, width: canvasRect.width, height: canvasRect.height } : undefined}
@@ -337,13 +349,22 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           </span>
         </button>
 
-        <button
-          onClick={() => setShowVizSettings(!showVizSettings)}
-          aria-label="Visualizer settings"
-          className={`w-11 h-11 flex items-center justify-center -mr-2 transition-colors ${showVizSettings ? "text-primary" : "text-white/40 active:text-white/60"}`}
-        >
-          <Settings size={18} />
-        </button>
+        <div className="flex items-center -mr-2">
+          <button
+            onClick={() => { setShowEqualizer((v) => !v); setShowVizSettings(false); }}
+            aria-label="Equalizer"
+            className={`w-11 h-11 flex items-center justify-center transition-colors ${showEqualizer ? "text-primary" : "text-white/40 active:text-white/60"}`}
+          >
+            <SlidersHorizontal size={18} />
+          </button>
+          <button
+            onClick={() => { setShowVizSettings(!showVizSettings); setShowEqualizer(false); }}
+            aria-label="Visualizer settings"
+            className={`w-11 h-11 flex items-center justify-center transition-colors ${showVizSettings ? "text-primary" : "text-white/40 active:text-white/60"}`}
+          >
+            <Settings size={18} />
+          </button>
+        </div>
       </div>
 
       {/* Header row 2: tab pills */}
@@ -371,13 +392,46 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
         </div>
       )}
 
+      {/* Equalizer panel — absolute overlay so it doesn't push the cover
+          (and its measured visualizer canvas) out of place on mobile. */}
+      {showEqualizer && (
+        <div className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up">
+          <EqualizerPanel variant="compact" onClose={() => setShowEqualizer(false)} />
+        </div>
+      )}
+
       {/* ── Player tab ── */}
       {activeTab === "player" && (
       <div className="relative flex-1 flex flex-col items-center justify-center overflow-hidden px-6 pb-40">
         <div className="mx-auto w-full max-w-[360px]">
-          {/* Album cover — large, centered */}
+          {/* Album cover — large, centered. Crossfades during audio crossfade. */}
           <div ref={coverRef} className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "1" }}>
-            {currentTrack.albumCover ? (
+            {crossfadeTransition ? (
+              <>
+                {crossfadeTransition.outgoing.albumCover ? (
+                  <img
+                    src={crossfadeTransition.outgoing.albumCover}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover shadow-2xl shadow-black/60"
+                    style={{
+                      filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none",
+                      opacity: 1 - crossfadeProgress,
+                    }}
+                  />
+                ) : null}
+                {crossfadeTransition.incoming.albumCover ? (
+                  <img
+                    src={crossfadeTransition.incoming.albumCover}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover shadow-2xl shadow-black/60"
+                    style={{
+                      filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none",
+                      opacity: crossfadeProgress,
+                    }}
+                  />
+                ) : null}
+              </>
+            ) : currentTrack.albumCover ? (
               <img
                 src={currentTrack.albumCover}
                 alt=""
@@ -395,12 +449,39 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
         {/* Track info */}
         <div className="w-full mt-5 text-center">
-          <h2 className="text-lg font-bold text-white truncate">
-            {currentTrack.title}
-          </h2>
-          {currentTrack.album && (
-            <p className="mt-1 text-xs text-white/30 truncate">{currentTrack.album}</p>
-          )}
+          {/* Title + album crossfade during audio crossfade; overlap via
+              absolute positioning of the outgoing copy. */}
+          <div className="relative">
+            {crossfadeTransition ? (
+              <>
+                <div className="absolute inset-0" style={{ opacity: 1 - crossfadeProgress }}>
+                  <h2 className="text-lg font-bold text-white truncate">
+                    {crossfadeTransition.outgoing.title}
+                  </h2>
+                  {crossfadeTransition.outgoing.album && (
+                    <p className="mt-1 text-xs text-white/30 truncate">{crossfadeTransition.outgoing.album}</p>
+                  )}
+                </div>
+                <div style={{ opacity: crossfadeProgress }}>
+                  <h2 className="text-lg font-bold text-white truncate">
+                    {crossfadeTransition.incoming.title}
+                  </h2>
+                  {crossfadeTransition.incoming.album && (
+                    <p className="mt-1 text-xs text-white/30 truncate">{crossfadeTransition.incoming.album}</p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-lg font-bold text-white truncate">
+                  {currentTrack.title}
+                </h2>
+                {currentTrack.album && (
+                  <p className="mt-1 text-xs text-white/30 truncate">{currentTrack.album}</p>
+                )}
+              </>
+            )}
+          </div>
           {vizCfg.vizEnabled && vizCfg.trackAdaptiveViz && vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
             <p className="mt-1 text-[9px] font-medium uppercase tracking-[0.18em] text-white/40">
               {vizCfg.trackVizProfile.summary}
@@ -409,12 +490,12 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
           <div className="mx-auto mt-4 w-full max-w-[360px]">
             <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium tabular-nums text-white/45">
-              <span>{formatPlayerTime(currentTime)}</span>
+              <span>{formatPlayerTime(displayedTime)}</span>
               <span>-{formatPlayerTime(remainingTime)}</span>
             </div>
             <PlayerSeekBar
-              currentTime={currentTime}
-              duration={duration}
+              currentTime={displayedTime}
+              duration={displayedDuration}
               onSeek={seek}
               thin
             />

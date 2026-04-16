@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 
 import type { PlaySource, Track } from "@/contexts/player-types";
 import { getTrackCacheKey } from "@/contexts/player-utils";
-import { apiFetch } from "@/lib/api";
+import { postWithRetry } from "@/lib/play-event-queue";
 
 interface PlayEventSession {
   trackKey: string;
@@ -24,48 +24,73 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/**
+ * Tracks listening time + attribution for the currently active track.
+ *
+ * ## Session lifecycle is EXPLICIT
+ *
+ * Earlier versions rotated the session implicitly via a useEffect on
+ * `currentTrack`. That was fragile: during a natural crossfade, Gapless
+ * fires onnext BEFORE onfinishedtrack, so the engine (and our React
+ * state) advances to the incoming track before the outgoing one has
+ * emitted its completion event. If React processed the useEffect
+ * between those two engine callbacks, the outgoing track's completion
+ * would either be mis-attributed to the incoming song, or dropped by
+ * the expectedTrack guard.
+ *
+ * Now the caller controls rotation explicitly:
+ *   - `startSession(track, source)` — begin a new session. If one was
+ *     already active for the same trackKey, updates its source only.
+ *   - `flushCurrentPlayEvent(reason, expectedTrack?)` — end the current
+ *     session and POST the event. expectedTrack stays as a defensive
+ *     guard against bugs in the caller's lifecycle.
+ *
+ * In practice the Context calls `flushCurrentPlayEvent("completed", old)`
+ * THEN `startSession(new)` in `onTrackFinished` — ordering guaranteed
+ * regardless of React's render timing.
+ */
 export function usePlayEventTracker(
-  currentTrack: Track | undefined,
-  playSource: PlaySource | null,
   getPlaybackSnapshot: () => { currentTime: number; duration: number },
 ) {
   const sessionRef = useRef<PlayEventSession | null>(null);
 
-  const syncSession = useCallback((track: Track | undefined, source: PlaySource | null) => {
-    if (!track) {
-      sessionRef.current = null;
-      return;
-    }
-
-    const trackKey = getTrackCacheKey(track);
-    const existing = sessionRef.current;
-    if (existing?.trackKey === trackKey) {
-      existing.playSource = source;
-      return;
-    }
-
-    const snapshot = getPlaybackSnapshot();
-    sessionRef.current = {
-      trackKey,
-      track,
-      playSource: source,
-      startedAt: nowIso(),
-      trackDurationSeconds:
-        Number.isFinite(snapshot.duration) && snapshot.duration > 0 ? snapshot.duration : null,
-      lastKnownTime: snapshot.currentTime || 0,
-      listenedSeconds: 0,
-      maxProgressSeconds: snapshot.currentTime || 0,
-    };
-  }, [getPlaybackSnapshot]);
+  const startSession = useCallback(
+    (track: Track | undefined, source: PlaySource | null) => {
+      if (!track) {
+        sessionRef.current = null;
+        return;
+      }
+      const trackKey = getTrackCacheKey(track);
+      const existing = sessionRef.current;
+      if (existing?.trackKey === trackKey) {
+        // Same track — just refresh the source context.
+        existing.playSource = source;
+        return;
+      }
+      const snapshot = getPlaybackSnapshot();
+      sessionRef.current = {
+        trackKey,
+        track,
+        playSource: source,
+        startedAt: nowIso(),
+        trackDurationSeconds:
+          Number.isFinite(snapshot.duration) && snapshot.duration > 0 ? snapshot.duration : null,
+        lastKnownTime: snapshot.currentTime || 0,
+        listenedSeconds: 0,
+        maxProgressSeconds: snapshot.currentTime || 0,
+      };
+    },
+    [getPlaybackSnapshot],
+  );
 
   const flushCurrentPlayEvent = useCallback((reason: FlushReason, expectedTrack?: Track) => {
     const session = sessionRef.current;
     if (!session) return;
     if (expectedTrack) {
-      // Defensive: if the caller knows which track the flush is for
-      // (e.g. crossfade handoff where React state may have already
-      // advanced), drop the flush when sessionRef doesn't match instead
-      // of attributing the event to the wrong song.
+      // Defensive: if the caller names the track it expects to flush
+      // and the active session is for a different track, drop the flush
+      // rather than credit the wrong song. A passing guard means our
+      // session rotation is correctly ordered.
       const expectedKey = getTrackCacheKey(expectedTrack);
       if (session.trackKey !== expectedKey) return;
     }
@@ -84,37 +109,32 @@ export function usePlayEventTracker(
     const wasCompleted = reason === "completed";
     const wasSkipped = reason === "skipped";
 
-    apiFetch("/api/me/play-events", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        track_id: session.track.libraryTrackId ?? null,
-        track_storage_id: session.track.storageId ?? null,
-        track_path: session.track.path || session.track.id,
-        title: session.track.title,
-        artist: session.track.artist,
-        album: session.track.album || "",
-        started_at: session.startedAt,
-        ended_at: nowIso(),
-        played_seconds: playedSeconds,
-        track_duration_seconds: trackDurationSeconds,
-        completion_ratio: completionRatio,
-        was_skipped: wasSkipped,
-        was_completed: wasCompleted,
-        play_source_type: session.playSource?.type ?? null,
-        play_source_id: session.playSource?.id != null ? String(session.playSource.id) : null,
-        play_source_name: session.playSource?.name ?? null,
-        context_artist: session.track.artist,
-        context_album: session.track.album || null,
-        context_playlist_id:
-          session.playSource?.type === "playlist" && typeof session.playSource.id === "number"
-            ? session.playSource.id
-            : null,
-        device_type: "web",
-        app_platform: "listen-web",
-      }),
-    }).catch(() => {});
+    void postWithRetry("/api/me/play-events", {
+      track_id: session.track.libraryTrackId ?? null,
+      track_storage_id: session.track.storageId ?? null,
+      track_path: session.track.path || session.track.id,
+      title: session.track.title,
+      artist: session.track.artist,
+      album: session.track.album || "",
+      started_at: session.startedAt,
+      ended_at: nowIso(),
+      played_seconds: playedSeconds,
+      track_duration_seconds: trackDurationSeconds,
+      completion_ratio: completionRatio,
+      was_skipped: wasSkipped,
+      was_completed: wasCompleted,
+      play_source_type: session.playSource?.type ?? null,
+      play_source_id: session.playSource?.id != null ? String(session.playSource.id) : null,
+      play_source_name: session.playSource?.name ?? null,
+      context_artist: session.track.artist,
+      context_album: session.track.album || null,
+      context_playlist_id:
+        session.playSource?.type === "playlist" && typeof session.playSource.id === "number"
+          ? session.playSource.id
+          : null,
+      device_type: "web",
+      app_platform: "listen-web",
+    });
   }, []);
 
   const recordProgress = useCallback((nextTime: number) => {
@@ -144,11 +164,23 @@ export function usePlayEventTracker(
     session.maxProgressSeconds = Math.max(session.maxProgressSeconds, nextTime);
   }, [getPlaybackSnapshot]);
 
-  useEffect(() => {
-    syncSession(currentTrack, playSource);
-  }, [currentTrack, playSource, syncSession]);
+  /**
+   * Start a session only if none is active. Safe to call from engine
+   * callbacks where the caller may or may not have already initialized
+   * a session (e.g. restore-on-mount autoplay, where onPlay fires but
+   * the Context didn't drive the transition).
+   */
+  const ensureSession = useCallback(
+    (track: Track | undefined, source: PlaySource | null) => {
+      if (sessionRef.current) return;
+      startSession(track, source);
+    },
+    [startSession],
+  );
 
   return {
+    startSession,
+    ensureSession,
     flushCurrentPlayEvent,
     markSeekPosition,
     recordProgress,

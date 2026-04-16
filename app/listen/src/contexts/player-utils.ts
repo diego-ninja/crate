@@ -15,7 +15,25 @@ export function getStoredVolume(): number {
   return 0.8;
 }
 
-export function getStoredQueue(): { queue: Track[]; currentIndex: number; currentTime: number; wasPlaying: boolean } {
+export interface StoredQueue {
+  queue: Track[];
+  currentIndex: number;
+  currentTime: number;
+  wasPlaying: boolean;
+  /**
+   * True if the persisted `queue` is in shuffled order. When true, the
+   * `unshuffledQueue` below holds the original sequential order for
+   * round-trip correctness (toggle shuffle off after reload restores it).
+   */
+  shuffle: boolean;
+  /**
+   * Original unshuffled order snapshot. Present only when shuffle was
+   * active at persistence time. `null` when shuffle was off.
+   */
+  unshuffledQueue: Track[] | null;
+}
+
+export function getStoredQueue(): StoredQueue {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -26,24 +44,39 @@ export function getStoredQueue(): { queue: Track[]; currentIndex: number; curren
           currentIndex: parsed.currentIndex ?? 0,
           currentTime: parsed.currentTime ?? 0,
           wasPlaying: parsed.wasPlaying === true,
+          shuffle: parsed.shuffle === true,
+          unshuffledQueue: Array.isArray(parsed.unshuffledQueue) ? parsed.unshuffledQueue : null,
         };
       }
     }
   } catch {
     /* ignore */
   }
-  return { queue: [], currentIndex: 0, currentTime: 0, wasPlaying: false };
+  return { queue: [], currentIndex: 0, currentTime: 0, wasPlaying: false, shuffle: false, unshuffledQueue: null };
 }
 
-export function saveQueue(queue: Track[], currentIndex: number, currentTime?: number, wasPlaying = false) {
+export interface SaveQueueOptions {
+  currentTime?: number;
+  wasPlaying?: boolean;
+  shuffle?: boolean;
+  unshuffledQueue?: Track[] | null;
+}
+
+export function saveQueue(
+  queue: Track[],
+  currentIndex: number,
+  options: SaveQueueOptions = {},
+) {
   try {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
         queue,
         currentIndex,
-        currentTime: currentTime ?? 0,
-        wasPlaying,
+        currentTime: options.currentTime ?? 0,
+        wasPlaying: options.wasPlaying ?? false,
+        shuffle: options.shuffle ?? false,
+        unshuffledQueue: options.unshuffledQueue ?? null,
       }),
     );
   } catch {

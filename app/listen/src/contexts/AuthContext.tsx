@@ -10,6 +10,7 @@ import {
 import { useNavigate } from "react-router";
 
 import { api, setAuthToken } from "@/lib/api";
+import { clearQueue as clearPlayEventQueue } from "@/lib/play-event-queue";
 
 export interface AuthUser {
   id: number;
@@ -60,6 +61,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.removeItem("listen-player-state");
             localStorage.removeItem("listen-recently-played");
           } catch { /* ignore */ }
+          // Drop queued play-events from the previous user so they don't
+          // flush under this session's auth (would pollute another
+          // user's stats and leak private listening history).
+          clearPlayEventQueue();
         }
         try { localStorage.setItem("listen-auth-user-id", String(data.id)); } catch { /* ignore */ }
       }
@@ -103,7 +108,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.removeItem("listen-player-state");
       localStorage.removeItem("listen-recently-played");
+      localStorage.removeItem("listen-auth-user-id");
     } catch { /* ignore */ }
+    // Drop pending telemetry — after logout we don't know whose auth
+    // would flush them next.
+    clearPlayEventQueue();
     setUser(null);
     navigate("/login");
   }, [navigate]);

@@ -6,6 +6,7 @@ from crate.genre_taxonomy import (
     get_genre_display_name,
     get_related_genre_terms,
     get_top_level_slug,
+    resolve_genre_eq_preset,
     summarize_taste_genres,
 )
 from crate.genre_taxonomy_inference import infer_canonical_genre
@@ -150,3 +151,55 @@ def test_infer_canonical_genre_falls_back_to_family_when_needed() -> None:
 
     assert proposal is not None
     assert proposal["canonical_slug"] in {"techno", "house", "electronic"}
+
+
+# ── resolve_genre_eq_preset ─────────────────────────────────────────
+
+
+def test_resolve_eq_preset_direct_hit() -> None:
+    preset = resolve_genre_eq_preset("black-metal")
+    assert preset is not None
+    assert preset["source"] == "direct"
+    assert preset["slug"] == "black-metal"
+    assert preset["gains"] == [-1.0, 3.0, 4.0, 1.0, -3.0, -2.0, 3.0, 6.0, 6.0, 4.0]
+
+
+def test_resolve_eq_preset_inherits_from_parent_when_null() -> None:
+    # crossover-thrash has no direct preset → parent is "metal" (_EQ_THRASH)
+    preset = resolve_genre_eq_preset("crossover-thrash")
+    assert preset is not None
+    assert preset["source"] == "inherited"
+    assert preset["slug"] == "metal"
+    assert preset["gains"] == [3.0, 5.0, 4.0, 0.0, -4.0, -3.0, 2.0, 5.0, 6.0, 5.0]
+
+
+def test_resolve_eq_preset_inherits_multi_level() -> None:
+    # beatdown-hardcore has no preset; parent hardcore-punk DOES have one.
+    preset = resolve_genre_eq_preset("beatdown-hardcore")
+    assert preset is not None
+    assert preset["source"] == "inherited"
+    assert preset["slug"] == "hardcore-punk"
+
+
+def test_resolve_eq_preset_inherits_through_alternative() -> None:
+    # gothic-rock → parent alternative (has _EQ_ROCK)
+    preset = resolve_genre_eq_preset("gothic-rock")
+    assert preset is not None
+    assert preset["source"] == "inherited"
+    assert preset["slug"] == "alternative"
+
+
+def test_resolve_eq_preset_accepts_raw_tag() -> None:
+    # Alias resolution should work through resolve_genre_slug.
+    preset = resolve_genre_eq_preset("Black Metal")
+    assert preset is not None
+    assert preset["slug"] == "black-metal"
+
+
+def test_resolve_eq_preset_returns_none_for_unknown_genre() -> None:
+    assert resolve_genre_eq_preset("experimental vaporbreakcore") is None
+
+
+def test_resolve_eq_preset_returns_none_for_empty_value() -> None:
+    assert resolve_genre_eq_preset("") is None
+    assert resolve_genre_eq_preset("   ") is None

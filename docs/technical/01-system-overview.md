@@ -1,0 +1,172 @@
+# System Overview
+
+## What Crate is
+
+Crate is a self-hosted music platform built around one canonical library and two separate products on top of it:
+
+- `app/ui`: the admin application for curation, repair, ingestion, enrichment, analytics, and operations.
+- `app/listen`: the listener-facing application for playback, discovery, library browsing, social features, and mobile/PWA use.
+
+Both products sit on the same backend and database, but they are intentionally separate applications with different UX priorities and different internal architecture.
+
+## Core architectural principles
+
+### 1. The API is read-only against the music library
+
+The API container mounts `/music` as read-only. This is a deliberate constraint, not an accident.
+
+- API code can browse files, stream audio, inspect images, and expose metadata.
+- Any operation that writes to the filesystem must go through a background task executed by the worker.
+- This keeps HTTP request handlers simple and reduces the risk of accidental writes from the public-facing process.
+
+### 2. Background work is first-class
+
+Crate does a lot of work that should not happen inline with a request:
+
+- library scans
+- metadata enrichment
+- audio analysis
+- similarity calculation
+- acquisition from Tidal and Soulseek
+- image processing
+- storage migration
+- cleanup and repair
+
+This work is represented as database-backed task rows, dispatched to Dramatiq workers, and surfaced live to the UI through task events and status endpoints.
+
+### 3. The database is the system of record
+
+Filesystem state matters, but most product features are DB-first:
+
+- artists, albums, tracks, playlists, and users are modeled in PostgreSQL
+- enrichment results are persisted into artist/album/track tables
+- tasks and task events are persisted in PostgreSQL
+- cache can spill to PostgreSQL as an L3 fallback
+- playback history, social graph, sessions, affinity, jam state, and system playlists all derive from DB state
+
+### 4. Crate is now a platform, not just a library browser
+
+The repo contains several architectural layers:
+
+- library management and repair
+- acquisition and post-processing
+- enrichment and analytics
+- streaming and playback
+- social graph and collaborative features
+- Open Subsonic compatibility
+- mobile-oriented listening UI
+
+That means there is no single "main" flow anymore. Crate has multiple equally important axes.
+
+## Runtime stack
+
+### Backend services
+
+- `crate-api`: FastAPI application serving REST, SSE, streaming endpoints, artwork, lyrics, auth, and Subsonic compatibility.
+- `crate-worker`: Python worker process hosting Dramatiq consumers plus a service loop for watcher, scheduler, cleanup, and background daemons.
+- `crate-postgres`: PostgreSQL 15, the primary store.
+- `crate-redis`: Redis 7, used both as cache and as the Dramatiq broker.
+- `slskd`: Soulseek daemon with REST API.
+
+### Frontend services
+
+- `crate-ui`: desktop-oriented admin SPA.
+- `crate-listen`: consumer-oriented listening app, designed for PWA and Capacitor packaging.
+
+### Supporting integrations
+
+- Traefik and Authelia in production.
+- Caddy in local dev.
+- Tidal acquisition through `tiddl`.
+- Last.fm, MusicBrainz, Fanart.tv, Ticketmaster, Discogs, Spotify, Setlist.fm, lrclib, and others.
+
+## High-level system graph
+
+```text
+                        Browser / PWA / Capacitor shell
+                                   |
+                     +-------------+-------------+
+                     |                           |
+                crate-ui                    crate-listen
+                     |                           |
+                     +-------------+-------------+
+                                   |
+                               crate-api
+                                   |
+       +---------------------------+----------------------------+
+       |                           |                            |
+   PostgreSQL                  Redis DB 0                   /music (ro)
+       |                           |
+       |                      Redis DB 1
+       |                      Dramatiq broker
+       |                           |
+       +---------------------------+
+                                   |
+                               crate-worker
+                                   |
+                +------------------+------------------+
+                |                  |                  |
+             /music (rw)       slskd API       external metadata APIs
+```
+
+## Main code areas
+
+### Backend
+
+- `/Users/diego/Code/Ninja/musicdock/app/crate/api`: FastAPI routers by domain.
+- `/Users/diego/Code/Ninja/musicdock/app/crate/db`: database access and schema helpers.
+- `/Users/diego/Code/Ninja/musicdock/app/crate/worker_handlers`: task implementations grouped by domain.
+- `/Users/diego/Code/Ninja/musicdock/app/crate/actors.py`: Dramatiq dispatch and execution wrappers.
+- `/Users/diego/Code/Ninja/musicdock/app/crate/library_sync.py`: filesystem to DB synchronization.
+- `/Users/diego/Code/Ninja/musicdock/app/crate/enrichment.py`: unified artist enrichment entrypoint.
+- `/Users/diego/Code/Ninja/musicdock/app/crate/audio_analysis.py`: audio feature extraction.
+- `/Users/diego/Code/Ninja/musicdock/app/crate/bliss.py`: similarity and transition logic.
+
+### Frontend
+
+- `/Users/diego/Code/Ninja/musicdock/app/ui/src`: admin app.
+- `/Users/diego/Code/Ninja/musicdock/app/listen/src`: listening app.
+- `/Users/diego/Code/Ninja/musicdock/app/shared/web`: small shared web helpers such as API and route utilities.
+
+## Cross-cutting architectural decisions
+
+### Separate frontends instead of one shared app
+
+Crate keeps `ui` and `listen` separate on purpose:
+
+- admin workflows are dense, operational, and desktop-centric
+- listen workflows are immersive, mobile-aware, and playback-centric
+- the products share API contracts and some utilities, but not a single UI shell
+
+### DB-backed tasks plus Dramatiq transport
+
+Crate intentionally uses both:
+
+- PostgreSQL rows for auditability, UI status, progress, and cancellation
+- Dramatiq + Redis for scalable asynchronous execution
+
+This hybrid gives better operator visibility than "messages only" systems.
+
+### Transitional storage model
+
+Crate is in the middle of a move from name-based library paths to storage-id-based layout:
+
+- legacy layout still exists and is supported
+- new storage-v2 layout uses UUID-backed `storage_id`
+- sync and acquisition are aware of both
+
+This has implications for sync, imports, storage migration, and playback identity.
+
+### Product logic lives in the backend, not the frontend
+
+The UI is relatively thin compared with the server:
+
+- discovery sections are assembled on the server
+- affinity is computed on the server
+- system playlists are generated on the server
+- task orchestration is server-owned
+- playback telemetry is emitted client-side but interpreted server-side
+
+## Reading order for the rest of the docs
+
+From here, the best next document is usually [Backend API and Data Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/02-backend-api-and-data.md), followed by [Worker, Tasks, and Background Services](/Users/diego/Code/Ninja/musicdock/docs/technical/03-worker-tasks-and-background-services.md).

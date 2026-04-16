@@ -10,6 +10,7 @@ import { useVisualizerConfig } from "@/components/player/visualizer/useVisualize
 import { VisualizerSettingsPanel } from "@/components/player/visualizer/VisualizerSettingsPanel";
 import { AppPopover } from "@/components/ui/AppPopover";
 import { usePlayer } from "@/contexts/PlayerContext";
+import { useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
 import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { useEscapeKey } from "@/hooks/use-escape-key";
@@ -30,7 +31,8 @@ const TABS: { id: TabId; label: string }[] = [
 
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const isDesktop = useIsDesktop();
-  const { currentTrack, isPlaying, volume, analyserVersion } = usePlayer();
+  const { currentTrack, isPlaying, volume, analyserVersion, crossfadeTransition } = usePlayer();
+  const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   const [tab, setTab] = useState<TabId>("queue");
   const [showVizSettings, setShowVizSettings] = useState(false);
 
@@ -46,7 +48,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
     open && isDesktop,
     playbackState,
   );
-  const vizCfg = useVisualizerConfig(vizRef, currentTrack, open && isDesktop);
+  const vizCfg = useVisualizerConfig(vizRef, currentTrack, open && isDesktop, crossfadeTransition);
   const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
 
   // Measure cover position relative to the left panel, expand 15%
@@ -141,11 +143,36 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
           </AppPopover>
         ) : null}
 
-        {/* Album cover */}
+        {/* Album cover — crossfades during audio crossfade */}
         <div ref={coverRef} className="relative z-0 aspect-square w-[70%] max-w-[480px] shrink-0">
           <div className="absolute inset-6 rounded-[28px] bg-primary/10 opacity-70 blur-3xl" />
           <div className="absolute inset-2 rounded-[26px] border border-white/10 bg-white/[0.02]" />
-          {currentTrack.albumCover ? (
+          {crossfadeTransition ? (
+            <>
+              {crossfadeTransition.outgoing.albumCover ? (
+                <img
+                  src={crossfadeTransition.outgoing.albumCover}
+                  alt=""
+                  className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-[0_28px_100px_rgba(0,0,0,0.75),0_10px_28px_rgba(0,0,0,0.45)]"
+                  style={{
+                    filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none",
+                    opacity: 1 - crossfadeProgress,
+                  }}
+                />
+              ) : null}
+              {crossfadeTransition.incoming.albumCover ? (
+                <img
+                  src={crossfadeTransition.incoming.albumCover}
+                  alt=""
+                  className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-[0_28px_100px_rgba(0,0,0,0.75),0_10px_28px_rgba(0,0,0,0.45)]"
+                  style={{
+                    filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none",
+                    opacity: crossfadeProgress,
+                  }}
+                />
+              ) : null}
+            </>
+          ) : currentTrack.albumCover ? (
             <img
               src={currentTrack.albumCover}
               alt=""
@@ -172,13 +199,41 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
         </div>
 
         <div className="relative z-20 mt-6 max-w-full px-8 text-center">
-          <h2 className="truncate text-xl font-bold leading-tight text-white">
-            {currentTrack.title}
-          </h2>
-          <p className="mt-1 truncate text-base text-white/50">{currentTrack.artist}</p>
-          {currentTrack.album ? (
-            <p className="mt-0.5 truncate text-sm text-white/25">{currentTrack.album}</p>
-          ) : null}
+          {/* Title / artist / album also crossfade during audio crossfade */}
+          <div className="relative">
+            {crossfadeTransition ? (
+              <>
+                <div className="absolute inset-0" style={{ opacity: 1 - crossfadeProgress }}>
+                  <h2 className="truncate text-xl font-bold leading-tight text-white">
+                    {crossfadeTransition.outgoing.title}
+                  </h2>
+                  <p className="mt-1 truncate text-base text-white/50">{crossfadeTransition.outgoing.artist}</p>
+                  {crossfadeTransition.outgoing.album ? (
+                    <p className="mt-0.5 truncate text-sm text-white/25">{crossfadeTransition.outgoing.album}</p>
+                  ) : null}
+                </div>
+                <div style={{ opacity: crossfadeProgress }}>
+                  <h2 className="truncate text-xl font-bold leading-tight text-white">
+                    {crossfadeTransition.incoming.title}
+                  </h2>
+                  <p className="mt-1 truncate text-base text-white/50">{crossfadeTransition.incoming.artist}</p>
+                  {crossfadeTransition.incoming.album ? (
+                    <p className="mt-0.5 truncate text-sm text-white/25">{crossfadeTransition.incoming.album}</p>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="truncate text-xl font-bold leading-tight text-white">
+                  {currentTrack.title}
+                </h2>
+                <p className="mt-1 truncate text-base text-white/50">{currentTrack.artist}</p>
+                {currentTrack.album ? (
+                  <p className="mt-0.5 truncate text-sm text-white/25">{currentTrack.album}</p>
+                ) : null}
+              </>
+            )}
+          </div>
           {vizCfg.trackAdaptiveViz && vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
             <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.22em] text-white/35">
               spheres · {vizCfg.trackVizProfile.summary}

@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
-  Heart, Airplay, ListMusic, Mic2, Maximize2, Loader2,
+  Heart, Airplay, ListMusic, Mic2, Maximize2, Loader2, SlidersHorizontal,
 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
+import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
 import { useIsDesktop } from "@/hooks/use-breakpoint";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { toast } from "sonner";
 import { QueuePanel } from "@/components/player/QueuePanel";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
+import { EqualizerPopover } from "@/components/player/EqualizerPopover";
 import { ExtendedPlayer } from "@/components/player/ExtendedPlayer";
 import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
 import { PlayerTrackMenu } from "@/components/player/bar/PlayerTrackMenu";
@@ -31,12 +33,38 @@ function getStoredFsOpen(): boolean {
 }
 
 export function PlayerBar() {
-  const { currentTime, duration, isPlaying, isBuffering, volume, analyserVersion } = usePlayer();
+  const { currentTime, duration, isPlaying, isBuffering, volume, analyserVersion, crossfadeTransition } = usePlayer();
   const {
     currentTrack, shuffle, repeat, playSource, queue, currentIndex,
     pause, resume, next, prev, seek, setVolume,
     toggleShuffle, cycleRepeat,
   } = usePlayerActions();
+
+  const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
+  // While crossfading, the progress bar tracks the OUTGOING track's
+  // remaining audio (the still-audible song) instead of jumping to 0:00
+  // of the incoming. Outside a crossfade these are the live values.
+  const { displayedTime, displayedDuration } = useCrossfadeAwareProgress(
+    crossfadeTransition,
+    currentTime,
+    duration,
+  );
+
+  // Smoothly fade the "Playing from: <source>" line when the source
+  // actually changes (album → playlist, etc.). Without this it would
+  // pop in/out on user-initiated source changes — a small but visible
+  // jitter at the edge of the player bar.
+  const [displayedSource, setDisplayedSource] = useState(playSource);
+  const [previousSource, setPreviousSource] = useState<typeof playSource>(null);
+  useEffect(() => {
+    const currentName = displayedSource?.name ?? null;
+    const nextName = playSource?.name ?? null;
+    if (currentName === nextName) return;
+    setPreviousSource(displayedSource);
+    setDisplayedSource(playSource);
+    const id = window.setTimeout(() => setPreviousSource(null), 320);
+    return () => window.clearTimeout(id);
+  }, [playSource, displayedSource]);
 
   const { frequencies } = useAudioVisualizer(isPlaying, `${currentTrack?.id ?? "none"}:${analyserVersion}`);
 
@@ -45,6 +73,7 @@ export function PlayerBar() {
   const [fsOpen, setFsOpenRaw] = useState(getStoredFsOpen);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
+  const [showEqualizer, setShowEqualizer] = useState(false);
   const [hasFloatingOverlayOpen, setHasFloatingOverlayOpen] = useState(false);
   const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
 
@@ -54,7 +83,7 @@ export function PlayerBar() {
   }, []);
 
   useDismissibleLayer({
-    active: hasFloatingOverlayOpen || showQueue || showLyrics,
+    active: hasFloatingOverlayOpen || showQueue || showLyrics || showEqualizer,
     refs: [],
     onDismiss: () => {
       setHasFloatingOverlayOpen(false);
@@ -88,7 +117,6 @@ export function PlayerBar() {
     }
   }
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
   const pseudoBars = useMemo(
     () => currentTrack ? generateWaveformBars(currentTrack.id, 80) : [],
     [currentTrack],
@@ -196,27 +224,96 @@ export function PlayerBar() {
               onClick={() => { if (!isDesktop) setFsOpen(true); }}
               onKeyDown={(e) => { if (!isDesktop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setFsOpen(true); } }}
             >
-            {/* Album art */}
+            {/* Album art — crossfades outgoing ↔ incoming during audio crossfade */}
               <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-white/5 md:h-12 md:w-12">
-              {currentTrack.albumCover ? (
-                <img src={currentTrack.albumCover} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-white/10" />
-              )}
+                {crossfadeTransition ? (
+                  <>
+                    {crossfadeTransition.outgoing.albumCover ? (
+                      <img
+                        src={crossfadeTransition.outgoing.albumCover}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                        style={{ opacity: 1 - crossfadeProgress }}
+                      />
+                    ) : null}
+                    {crossfadeTransition.incoming.albumCover ? (
+                      <img
+                        src={crossfadeTransition.incoming.albumCover}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                        style={{ opacity: crossfadeProgress }}
+                      />
+                    ) : null}
+                  </>
+                ) : currentTrack.albumCover ? (
+                  <img src={currentTrack.albumCover} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-white/10" />
+                )}
               </div>
 
-            {/* Text — animate on track change */}
-              <div key={currentTrack.id} className="min-w-0 flex-1 animate-track-in">
-              <p className="text-[13px] font-semibold text-white truncate leading-tight">
-                {currentTrack.title}
-              </p>
-              <p className="text-[11px] text-white/50 truncate leading-tight mt-0.5">
-                {currentTrack.artist}
-              </p>
-              {playSource && (
-                <p className="text-[10px] text-white/30 truncate leading-tight mt-0.5 hidden lg:block">
-                  Playing from: {playSource.name}
-                </p>
+            {/* Text — crossfades outgoing ↔ incoming. Stacks absolutely to allow
+                overlap without layout jump. */}
+              <div className="min-w-0 flex-1">
+              {/* Title + artist crossfade between outgoing and incoming.
+                  Wrapped in its own relative block so the absolute
+                  outgoing copy doesn't escape into the persistent rows
+                  below ("Playing from", "Buffering"). */}
+              <div className="relative">
+                {crossfadeTransition ? (
+                  <>
+                    <div className="absolute inset-0" style={{ opacity: 1 - crossfadeProgress }}>
+                      <p className="text-[13px] font-semibold text-white truncate leading-tight">
+                        {crossfadeTransition.outgoing.title}
+                      </p>
+                      <p className="text-[11px] text-white/50 truncate leading-tight mt-0.5">
+                        {crossfadeTransition.outgoing.artist}
+                      </p>
+                    </div>
+                    <div style={{ opacity: crossfadeProgress }}>
+                      <p className="text-[13px] font-semibold text-white truncate leading-tight">
+                        {crossfadeTransition.incoming.title}
+                      </p>
+                      <p className="text-[11px] text-white/50 truncate leading-tight mt-0.5">
+                        {crossfadeTransition.incoming.artist}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div key={currentTrack.id} className="animate-track-in">
+                    <p className="text-[13px] font-semibold text-white truncate leading-tight">
+                      {currentTrack.title}
+                    </p>
+                    <p className="text-[11px] text-white/50 truncate leading-tight mt-0.5">
+                      {currentTrack.artist}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {/* Persistent metadata that shouldn't blink during a
+                  track crossfade — kept outside the fading block.
+                  When the source itself changes (album → playlist) the
+                  outgoing line fades out while the incoming fades in. */}
+              {(displayedSource || previousSource) && (
+                <div className="relative mt-0.5 h-[14px] hidden lg:block">
+                  {previousSource && (
+                    <p
+                      key={`prev-${previousSource.name}`}
+                      className="absolute inset-0 text-[10px] text-white/30 truncate leading-tight"
+                      style={{ animation: "fadeOut 320ms ease-out forwards" }}
+                    >
+                      Playing from: {previousSource.name}
+                    </p>
+                  )}
+                  {displayedSource && (
+                    <p
+                      key={`cur-${displayedSource.name}`}
+                      className="text-[10px] text-white/30 truncate leading-tight animate-fade-in"
+                    >
+                      Playing from: {displayedSource.name}
+                    </p>
+                  )}
+                </div>
               )}
               {isBuffering && (
                 <p className="text-[10px] text-primary/80 truncate leading-tight mt-0.5">
@@ -279,23 +376,34 @@ export function PlayerBar() {
               </button>
             </div>
 
-            {/* Progress with waveform bars */}
+            {/* Progress with waveform bars. During a crossfade the
+                values come from useCrossfadeAwareProgress so the bar
+                stays on the still-audible outgoing track. */}
             <div className="flex items-center gap-2 w-full">
               <span className="text-[10px] text-white/40 w-9 text-right tabular-nums font-mono">
-                {formatPlayerTime(currentTime)}
+                {formatPlayerTime(displayedTime)}
               </span>
               <div
                 className="flex-1 h-5 relative cursor-pointer group flex items-end"
                 onClick={(e) => {
+                  // Seek operates on the LIVE track (the one the engine
+                  // is actually controlling), not the visually-displayed
+                  // outgoing — clicking during a crossfade should still
+                  // seek the incoming source.
                   const rect = e.currentTarget.getBoundingClientRect();
                   const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
                   seek(pct * duration);
                 }}
               >
-                <WaveformCanvas bars={pseudoBars} progress={progress} frequencies={frequencies} isPlaying={isPlaying} />
+                <WaveformCanvas
+                  bars={pseudoBars}
+                  progress={displayedDuration > 0 ? (displayedTime / displayedDuration) * 100 : 0}
+                  frequencies={frequencies}
+                  isPlaying={isPlaying}
+                />
               </div>
               <span className="text-[10px] text-white/40 w-9 tabular-nums font-mono">
-                {formatPlayerTime(duration)}
+                {formatPlayerTime(displayedDuration)}
               </span>
             </div>
           </div>
@@ -343,6 +451,21 @@ export function PlayerBar() {
             <button className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white/60 hidden xl:block" aria-label="Connect device">
               <Airplay size={16} />
             </button>
+
+            {/* Equalizer (hidden when extended player is open) */}
+            {!extendedOpen && (
+              <button
+                onClick={() => {
+                  setShowEqualizer((v) => !v);
+                  setShowQueue(false);
+                  setShowLyrics(false);
+                }}
+                aria-label="Equalizer"
+                className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${showEqualizer ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+              >
+                <SlidersHorizontal size={16} />
+              </button>
+            )}
 
             {/* Queue (hidden when extended player is open) */}
             {!extendedOpen && (
@@ -411,6 +534,7 @@ export function PlayerBar() {
       </div>
       <QueuePanel open={showQueue} onClose={() => setShowQueue(false)} />
       <LyricsPanel open={showLyrics} onClose={() => setShowLyrics(false)} />
+      <EqualizerPopover open={showEqualizer} onClose={() => setShowEqualizer(false)} />
       <ExtendedPlayer open={extendedOpen} onClose={() => setExtendedOpen(false)} />
       {!isDesktop && <FullscreenPlayer open={fsOpen} onClose={() => setFsOpen(false)} />}
     </>

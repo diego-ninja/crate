@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
 
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-
 import type { PlaySource, Track } from "@/contexts/player-types";
 import { areTracksFromSameAlbum, getTrackCacheKey } from "@/contexts/player-utils";
 import { fetchInfiniteContinuation, fetchRadioContinuation } from "@/lib/radio";
@@ -36,6 +34,28 @@ function collectUniqueTracks(candidates: Track[], queue: Track[], recent: Track[
   return uniqueTracks;
 }
 
+/**
+ * Actions the PlayerContext exposes to the intelligence hook. Verb-oriented
+ * so the hook doesn't need to know about React setters — the context owns
+ * state mutations and only exposes domain primitives.
+ */
+export interface PlaybackIntelligenceActions {
+  /** Append tracks to the end of the queue, de-duplicated against queue + recent. */
+  appendTracks: (tracks: Track[]) => void;
+  /**
+   * Insert a suggestion (marked isSuggested) right after the current index.
+   * No-op if the slot is already a suggestion or duplicate.
+   */
+  insertSuggestionAfterCurrent: (candidates: Track[]) => void;
+  /**
+   * Append tracks AND advance cursor to the first appended one (playback
+   * continues into newly fetched tracks). Used when the user hits next
+   * at the end of an infinite-playback album/playlist.
+   */
+  appendAndAdvance: (tracks: Track[]) => void;
+  /** Show the buffering spinner without committing a new track. */
+  setBuffering: (buffering: boolean) => void;
+}
 
 interface UsePlaybackIntelligenceOptions {
   queue: Track[];
@@ -47,13 +67,7 @@ interface UsePlaybackIntelligenceOptions {
   smartPlaylistSuggestionsEnabled: boolean;
   smartPlaylistSuggestionsCadence: number;
   recentlyPlayed: Track[];
-  shouldAutoplayRef: MutableRefObject<boolean>;
-  setQueue: Dispatch<SetStateAction<Track[]>>;
-  setCurrentIndex: Dispatch<SetStateAction<number>>;
-  setCurrentTime: Dispatch<SetStateAction<number>>;
-  setDuration: Dispatch<SetStateAction<number>>;
-  setIsPlaying: Dispatch<SetStateAction<boolean>>;
-  setIsBuffering: Dispatch<SetStateAction<boolean>>;
+  actions: PlaybackIntelligenceActions;
 }
 
 export function usePlaybackIntelligence({
@@ -66,13 +80,7 @@ export function usePlaybackIntelligence({
   smartPlaylistSuggestionsEnabled,
   smartPlaylistSuggestionsCadence,
   recentlyPlayed,
-  shouldAutoplayRef,
-  setQueue,
-  setCurrentIndex,
-  setCurrentTime,
-  setDuration,
-  setIsPlaying,
-  setIsBuffering,
+  actions,
 }: UsePlaybackIntelligenceOptions) {
   const radioRefillInFlightRef = useRef(false);
   const radioRefillSignatureRef = useRef<string | null>(null);
@@ -88,13 +96,17 @@ export function usePlaybackIntelligence({
   const playSourceRef = useRef(playSource);
   const queueRef = useRef(queue);
   const recentlyPlayedRef = useRef(recentlyPlayed);
+  // Keep a stable reference to actions so effects don't re-run when the
+  // context re-memoizes them. We only ever call via `.current`.
+  const actionsRef = useRef(actions);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
     playSourceRef.current = playSource;
     queueRef.current = queue;
     recentlyPlayedRef.current = recentlyPlayed;
-  }, [currentIndex, playSource, queue, recentlyPlayed]);
+    actionsRef.current = actions;
+  }, [actions, currentIndex, playSource, queue, recentlyPlayed]);
 
   const resetPlaybackIntelligence = useCallback(() => {
     radioRefillAbortRef.current?.abort();
@@ -111,9 +123,9 @@ export function usePlaybackIntelligence({
     radioRefillSignatureRef.current = null;
     continuationSignatureRef.current = null;
     playlistSuggestionSignatureRef.current = null;
-    shouldAutoplayRef.current = false;
   }, []);
 
+  // ── Radio refill: when a radio session has ≤3 tracks left, fetch more.
   useEffect(() => {
     const currentTrack = queue[currentIndex];
     if (!isPlaying || !currentTrack) return;
@@ -142,12 +154,7 @@ export function usePlaybackIntelligence({
         if (controller.signal.aborted) return;
         if (radioRefillSignatureRef.current !== signature) return;
         if (getPlaySourceSignature(playSourceRef.current) !== getPlaySourceSignature(playSource)) return;
-        setQueue((prev) => {
-          if (radioRefillSignatureRef.current !== signature) return prev;
-          if (getPlaySourceSignature(playSourceRef.current) !== getPlaySourceSignature(playSource)) return prev;
-          const uniqueTracks = collectUniqueTracks(tracks, prev, recentlyPlayedRef.current);
-          return uniqueTracks.length > 0 ? [...prev, ...uniqueTracks] : prev;
-        });
+        actionsRef.current.appendTracks(tracks);
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -169,8 +176,10 @@ export function usePlaybackIntelligence({
       }
       radioRefillInFlightRef.current = false;
     };
-  }, [currentIndex, isPlaying, playSource, queue.length, setQueue]);
+  }, [currentIndex, isPlaying, playSource, queue, queue.length]);
 
+  // ── Infinite playback prefetch: when an album/playlist is near its end
+  // and infinite mode is on, prefetch continuation tracks.
   useEffect(() => {
     const currentTrack = queue[currentIndex];
     const supportsContinuation =
@@ -203,12 +212,7 @@ export function usePlaybackIntelligence({
         if (!tracks.length) return;
         if (continuationSignatureRef.current !== signature) return;
         if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return;
-        setQueue((prev) => {
-          if (continuationSignatureRef.current !== signature) return prev;
-          if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return prev;
-          const uniqueTracks = collectUniqueTracks(tracks, prev, recentlyPlayedRef.current);
-          return uniqueTracks.length > 0 ? [...prev, ...uniqueTracks] : prev;
-        });
+        actionsRef.current.appendTracks(tracks);
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -230,8 +234,10 @@ export function usePlaybackIntelligence({
       }
       continuationInFlightRef.current = false;
     };
-  }, [currentIndex, infinitePlaybackEnabled, playSource, queue.length, setQueue, shuffle]);
+  }, [currentIndex, infinitePlaybackEnabled, playSource, queue, queue.length, shuffle]);
 
+  // ── Smart playlist suggestions: inject one tasteful recommendation
+  // every N original tracks played in a playlist session.
   useEffect(() => {
     const currentTrack = queue[currentIndex];
     const nextTrack = queue[currentIndex + 1];
@@ -289,45 +295,17 @@ export function usePlaybackIntelligence({
     playlistSuggestionInFlightRef.current = true;
     const controller = new AbortController();
     playlistSuggestionAbortRef.current = controller;
+    const expectedSeedId = playSource?.radio?.seedId ?? null;
 
     fetchInfiniteContinuation(playSource!, SMART_PLAYLIST_SUGGESTION_BATCH_SIZE, { signal: controller.signal })
       .then((tracks) => {
         if (controller.signal.aborted) return;
         if (!tracks.length) return;
         if (playlistSuggestionSignatureRef.current !== signature) return;
-        const expectedSeedId = playSource?.radio?.seedId ?? null;
-        setQueue((prev) => {
-          if (playlistSuggestionSignatureRef.current !== signature) return prev;
-          const latestSource = playSourceRef.current;
-          const insertionIndex = currentIndexRef.current + 1;
-          if (
-            latestSource?.type !== "playlist" ||
-            latestSource?.radio?.seedId !== expectedSeedId ||
-            insertionIndex <= 0 ||
-            insertionIndex > prev.length
-          ) {
-            return prev;
-          }
+        const latestSource = playSourceRef.current;
+        if (latestSource?.type !== "playlist" || latestSource?.radio?.seedId !== expectedSeedId) return;
 
-          const existingKeys = new Set(
-            [...prev, ...recentlyPlayedRef.current].map((track) => getTrackCacheKey(track)),
-          );
-          const suggestion = tracks.find((track) => {
-            const key = getTrackCacheKey(track);
-            if (!key || existingKeys.has(key)) return false;
-            return true;
-          });
-          if (!suggestion) return prev;
-          if (prev[insertionIndex]?.isSuggested) return prev;
-
-          const nextQueue = [...prev];
-          nextQueue.splice(insertionIndex, 0, {
-            ...suggestion,
-            isSuggested: true,
-            suggestionSource: "playlist",
-          });
-          return nextQueue;
-        });
+        actionsRef.current.insertSuggestionAfterCurrent(tracks);
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
@@ -353,12 +331,17 @@ export function usePlaybackIntelligence({
     currentIndex,
     playSource,
     queue,
-    setQueue,
     shuffle,
     smartPlaylistSuggestionsCadence,
     smartPlaylistSuggestionsEnabled,
   ]);
 
+  /**
+   * Called when the user hits next at the end of an infinite-playback
+   * album/playlist. Kicks off a continuation fetch and advances cursor
+   * once tracks are appended. Returns true if the request was dispatched,
+   * false if the current session doesn't support infinite continuation.
+   */
   const continueInfinitePlayback = useCallback(() => {
     if (
       !infinitePlaybackEnabled ||
@@ -375,9 +358,7 @@ export function usePlaybackIntelligence({
     const sessionSignature = getPlaySourceSignature(playSource);
     const requestSignature = [sessionSignature, currentIndexRef.current, queueRef.current.length, "manual"].join("::");
 
-    shouldAutoplayRef.current = false;
-    setIsPlaying(false);
-    setIsBuffering(true);
+    actionsRef.current.setBuffering(true);
     continuationSignatureRef.current = requestSignature;
     continuationInFlightRef.current = true;
     continuationManualAbortRef.current?.abort();
@@ -388,50 +369,31 @@ export function usePlaybackIntelligence({
       .then((tracks) => {
         if (controller.signal.aborted) return;
         if (continuationSignatureRef.current !== requestSignature) {
-          setIsBuffering(false);
-          shouldAutoplayRef.current = false;
+          actionsRef.current.setBuffering(false);
           return;
         }
         if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) {
-          setIsBuffering(false);
-          shouldAutoplayRef.current = false;
+          actionsRef.current.setBuffering(false);
           return;
         }
         if (!tracks.length) {
-          setIsBuffering(false);
-          shouldAutoplayRef.current = false;
+          actionsRef.current.setBuffering(false);
           return;
         }
 
         const uniqueTracks = collectUniqueTracks(tracks, queueRef.current, recentlyPlayedRef.current);
         if (uniqueTracks.length === 0) {
-          setIsBuffering(false);
-          shouldAutoplayRef.current = false;
+          actionsRef.current.setBuffering(false);
           return;
         }
 
-        setQueue((prev) => {
-          if (continuationSignatureRef.current !== requestSignature) return prev;
-          if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return prev;
-          const stillUnique = collectUniqueTracks(uniqueTracks, prev, recentlyPlayedRef.current);
-          return stillUnique.length > 0 ? [...prev, ...stillUnique] : prev;
-        });
-
-        shouldAutoplayRef.current = true;
-        setCurrentIndex((index) => {
-          if (continuationSignatureRef.current !== requestSignature) return index;
-          if (getPlaySourceSignature(playSourceRef.current) !== sessionSignature) return index;
-          return index + 1;
-        });
-        setCurrentTime(0);
-        setDuration(0);
+        actionsRef.current.appendAndAdvance(uniqueTracks);
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
         console.warn("[player] continuation after end failed:", error);
         if (continuationSignatureRef.current === requestSignature) {
-          setIsBuffering(false);
-          shouldAutoplayRef.current = false;
+          actionsRef.current.setBuffering(false);
         }
       })
       .finally(() => {
@@ -447,18 +409,7 @@ export function usePlaybackIntelligence({
       });
 
     return true;
-  }, [
-    infinitePlaybackEnabled,
-    playSource,
-    setCurrentIndex,
-    setCurrentTime,
-    setDuration,
-    setIsBuffering,
-    setIsPlaying,
-    setQueue,
-    shuffle,
-    shouldAutoplayRef,
-  ]);
+  }, [infinitePlaybackEnabled, playSource, shuffle]);
 
   return {
     continueInfinitePlayback,

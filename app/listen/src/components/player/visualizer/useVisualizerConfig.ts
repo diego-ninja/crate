@@ -1,5 +1,6 @@
 import { useEffect, useState, type MutableRefObject } from "react";
 
+import type { CrossfadeTransition } from "@/contexts/PlayerContext";
 import type { Track } from "@/contexts/player-types";
 import { extractPalette } from "@/lib/palette";
 import {
@@ -113,6 +114,7 @@ export function useVisualizerConfig(
   vizRef: MutableRefObject<MusicVisualizer | null>,
   currentTrack: Track | undefined,
   isOpen: boolean,
+  crossfadeTransition: CrossfadeTransition | null = null,
 ): VisualizerConfigState {
   const [vizEnabled, setVizEnabled] = useState(getVisualizerEnabledPreference);
   const [useAlbumPalette, setUseAlbumPalette] = useState(getUseAlbumPalettePreference);
@@ -148,6 +150,11 @@ export function useVisualizerConfig(
   // Apply colors to visualizer
   useEffect(() => {
     if (!isOpen || !vizEnabled) return;
+    // While a crossfade is interpolating colors below, this effect must
+    // not overwrite them — its scheduleColorApply timers (0/120/420/900ms)
+    // would race with the per-frame lerp and produce a brief color
+    // jitter just before the morph settles.
+    if (crossfadeTransition) return;
 
     const [defaultC1, defaultC2, defaultC3] = DEFAULT_VIZ_COLORS;
     const paletteBias = trackAdaptiveViz
@@ -200,7 +207,67 @@ export function useVisualizerConfig(
       cancelled = true;
       for (const t of timers) window.clearTimeout(t);
     };
-  }, [currentTrack?.albumCover, currentTrack?.id, isOpen, trackAdaptiveViz, trackVizProfile.paletteBias, useAlbumPalette, vizEnabled, vizRef]);
+  }, [crossfadeTransition, currentTrack?.albumCover, currentTrack?.id, isOpen, trackAdaptiveViz, trackVizProfile.paletteBias, useAlbumPalette, vizEnabled, vizRef]);
+
+  // Palette crossfade: during an audio crossfade transition, interpolate
+  // the visualizer colors between the outgoing and incoming album
+  // palettes in lockstep with the audio fade. Without this the viz
+  // palette would snap to the incoming track the moment onnext fires,
+  // creating a jarring color switch while the outgoing song still plays.
+  useEffect(() => {
+    if (!crossfadeTransition) return;
+    if (!isOpen || !vizEnabled || !useAlbumPalette) return;
+    if (!vizRef.current) return;
+
+    const paletteBias = trackAdaptiveViz
+      ? trackVizProfile.paletteBias
+      : { brightness: 0, coolness: 0, saturation: 0, hueShift: 0 };
+
+    let cancelled = false;
+    let raf = 0;
+
+    Promise.all([
+      crossfadeTransition.outgoing.albumCover
+        ? extractPalette(crossfadeTransition.outgoing.albumCover).catch(() => null)
+        : Promise.resolve(null),
+      crossfadeTransition.incoming.albumCover
+        ? extractPalette(crossfadeTransition.incoming.albumCover).catch(() => null)
+        : Promise.resolve(null),
+    ]).then(([fromPalette, toPalette]) => {
+      if (cancelled || !vizRef.current) return;
+      if (!fromPalette || !toPalette) return;
+
+      const [fromC1, fromC2, fromC3] = fromPalette.map((c) =>
+        adjustPaletteColor(c, paletteBias.brightness, paletteBias.coolness, paletteBias.saturation, paletteBias.hueShift),
+      ) as [PaletteTriplet, PaletteTriplet, PaletteTriplet];
+      const [toC1, toC2, toC3] = toPalette.map((c) =>
+        adjustPaletteColor(c, paletteBias.brightness, paletteBias.coolness, paletteBias.saturation, paletteBias.hueShift),
+      ) as [PaletteTriplet, PaletteTriplet, PaletteTriplet];
+
+      const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+      const lerpTriplet = (a: PaletteTriplet, b: PaletteTriplet, t: number): PaletteTriplet => [
+        lerp(a[0], b[0], t),
+        lerp(a[1], b[1], t),
+        lerp(a[2], b[2], t),
+      ];
+
+      const tick = () => {
+        if (cancelled || !vizRef.current) return;
+        const elapsed = performance.now() - crossfadeTransition.startedAt;
+        const p = Math.max(0, Math.min(1, elapsed / crossfadeTransition.durationMs));
+        vizRef.current.color1 = lerpTriplet(fromC1, toC1, p);
+        vizRef.current.color2 = lerpTriplet(fromC2, toC2, p);
+        vizRef.current.color3 = lerpTriplet(fromC3, toC3, p);
+        if (p < 1) raf = requestAnimationFrame(tick);
+      };
+      raf = requestAnimationFrame(tick);
+    });
+
+    return () => {
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [crossfadeTransition, isOpen, trackAdaptiveViz, trackVizProfile.paletteBias, useAlbumPalette, vizEnabled, vizRef]);
 
   // Apply config to visualizer
   useEffect(() => {
