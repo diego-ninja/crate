@@ -1,244 +1,350 @@
-# Crate
+<p align="center">
+  <img src="app/listen/public/icons/logo.svg" alt="Crate logo" width="140">
+</p>
 
-Self-hosted music library manager with enrichment, audio analysis, streaming, and acquisition from Tidal and Soulseek.
+<h1 align="center">Crate</h1>
 
-Crate indexes your music collection, enriches it with metadata from multiple sources, analyzes audio characteristics using ML models, and provides two separate frontend experiences on top of the same backend: an admin app for desktop-oriented library management and a consumer-facing Listen app for playback and discovery.
+<p align="center"><strong>Own your music.</strong></p>
+
+<p align="center">
+  A self-hosted music platform that indexes your library, enriches it with rich metadata, analyzes every track with ML models, and streams it to a dedicated listening app — so your collection stays yours.
+</p>
+
+---
+
+Crate is a full-stack, self-hosted music system. It watches your filesystem, pulls metadata from Last.fm / MusicBrainz / Fanart.tv / Setlist.fm / Spotify, analyzes audio with PANNs + Essentia + bliss-rs, and exposes two separate frontends on top of a single FastAPI backend: an **admin** web app for library management and a **Listen** app (PWA + iOS + Android via Capacitor) for playback and discovery.
 
 ## Features
 
-**Library Management**
-- Automatic filesystem scanning and indexing (watchdog)
-- Health check and repair pipeline (orphans, stale records, duplicates, naming)
+**Library management**
+- Automatic filesystem scanning and indexing (watchdog + periodic scans)
+- Health check and auto-repair pipeline (orphans, stale records, duplicates, naming)
 - ID3 tag editor (album-level and per-track) with genre badge picker
 - Folder organizer with pattern-based renaming
 - Duplicate detection and resolution
 - Album art manager (6 sources: Cover Art Archive, embedded, Deezer, iTunes, Last.fm, MusicBrainz)
 - Manual image upload with crop (cover art, artist photo, background)
 
-**Enrichment Pipeline**
-- Last.fm: bio, tags, similar artists, listeners, playcount
-- MusicBrainz: MBID, discography, country, members, formation dates, URLs
-- Fanart.tv: artist backgrounds and thumbnails
-- Setlist.fm: probable concert setlists
-- Spotify: popularity score
-- Deezer: artist photos (fallback)
+**Enrichment pipeline**
+- **Last.fm** — bio, tags, similar artists, listeners, playcount, upcoming shows (scraper)
+- **MusicBrainz** — MBID, discography, country, members, formation dates, URLs
+- **Fanart.tv** — artist backgrounds and thumbnails
+- **Setlist.fm** — probable concert setlists matched against library tracks
+- **Spotify** — popularity score
+- **Discogs** — catalog numbers, labels
+- **Deezer / iTunes** — artist photos (fallback)
 
-**Audio Analysis**
-- Hybrid PANNs CNN14 + Essentia analysis engine
+**Audio analysis**
+- Hybrid **PANNs CNN14 + Essentia** engine
 - PANNs (AudioSet 527 classes): genre-based mood classification (aggressive, dark, electronic, acoustic)
 - Essentia: BPM, key, loudness (EBU R128), dynamic range, danceability
-- Signal heuristics for tonal moods (happy, sad, valence from key/tempo)
-- Batch processing with 4-track PANNs inference (~4s/track)
-- Bliss-rs: 20-float song similarity vectors for radio mode and transition playlists
+- Signal heuristics for tonal moods (happy / sad / valence from key + tempo)
+- Batch PANNs inference (~4 tracks at a time)
+- `bliss-rs`: 20-float song similarity vectors powering radio mode and smooth transition playlists
+
+**Genre taxonomy**
+- 60+ curated genre graph with parent / related / influenced-by / fusion-of edges
+- Mix seeding from a single genre expands to musically adjacent genres via BFS traversal
+- Alias matching across library tags
 
 **Acquisition**
-- Tidal integration (search, download, HiRes/FLAC/Normal quality)
-- Soulseek integration via slskd (progressive search, quality filtering, alternate peer retry)
-- Unified acquisition page with download queue management
-- Automatic post-download pipeline: sync, enrich, analyze, covers
+- **Tidal** — search, download (HiRes / FLAC / AAC) via `tiddl`
+- **Soulseek** — progressive search with quality filtering and alternate peer retry via `slskd`
+- Unified acquisition UI with download queue, concurrency limits (2 slots) and history
+- Automatic post-download pipeline: sync → enrich → analyze → artwork
 
-**Player**
-- Web audio player with direct file streaming
-- 4 real-time visualizer modes (bars, wave, radial, glow) via Web Audio API
-- Queue management, shuffle, repeat, playback speed, sleep timer
-- Playlist export (.m3u), save to playlist, native play history
-- Synced lyrics from lrclib.net
+**Listening (Listen app)**
+- Gapless playback and equal-power crossfade powered by Gapless-5
+- Fade-in / fade-out on pause and resume
+- Network-aware soft interruption with probe-and-resume on reconnect
+- WebGL visualizer (spheres mode) with album-palette color extraction
+- Synced lyrics from `lrclib.net`
+- Queue, shuffle, repeat, smart suggestions, infinite playback
+- Upcoming shows near your location (Last.fm + Ticketmaster consolidated)
+- Jam sessions (shared playback invites)
+- Social layer: follow people, user connections, profile pages
+- Media session + lock-screen controls + keyboard shortcuts
+- PWA + native iOS / Android via Capacitor
+- Scrobbling to Last.fm and native play history
 
-**Smart Playlists**
+**Smart playlists**
 - Composable rules: genre, BPM, energy, danceability, valence, year, key, artist, format, popularity
-- Match all/any conditions
-- Native playlist generation and refresh
+- Match all / any conditions
+- Native generation + refresh
 
 **Discovery**
-- Discography completeness (local vs MusicBrainz)
+- Discography completeness (local vs. MusicBrainz)
 - Artist network graph (similar artists visualization)
 - Genre explorer with auto-generated playlists
-- Timeline view (albums by release year)
+- Timeline (albums by release year)
 - Probable concert setlist with library track matching
+- New releases monitor
 
 **Insights**
-- 15+ interactive charts (Nivo): format distribution, decades, genres, BPM, moods, loudness, energy vs danceability, key distribution, artist popularity, country distribution
+- Interactive charts (Nivo): format distribution, decades, genres, BPM, moods, loudness, energy × danceability, key distribution, artist popularity, country distribution
 - Quality report (corrupt files, low bitrate, mixed formats)
 
 **System**
 - Multi-user auth (JWT + Google OAuth)
-- Scheduled tasks with configurable intervals
-- Docker stack management from UI (containers, logs, restart)
+- Scheduled tasks (APScheduler) with configurable intervals
+- Docker stack management from the admin UI (containers, logs, restart)
 - Audit log for destructive operations
-- Redis cache (L1 in-memory, L2 Redis, L3 PostgreSQL)
+- Three-tier cache: L1 in-memory, L2 Redis, L3 PostgreSQL
+- Telegram bot for status, task control, and playback notifications
 
 ## Architecture
 
 ```
-                    Traefik (reverse proxy + TLS)
-                              |
-      +-----------------------+-----------------------+
-      |                       |                       |
-  crate-ui               crate-listen            crate-api
- (admin SPA)           (consumer PWA)           (FastAPI)
- desktop-oriented      React + Capacitor        /music:ro
- library management    target for app stores         |
-      |                       |                       |
-      +---------------+-------+-----------+-----------+
-                      |                   |
-                 crate-worker         PostgreSQL
-                   (Python)               |
-                  /music:rw            Redis
-                                       (cache)
+                     Traefik (reverse proxy + TLS)
+                                |
+       +------------------------+------------------------+
+       |                        |                        |
+   crate-ui               crate-listen               crate-api
+  (admin SPA)          (PWA + Capacitor apps)       (FastAPI)
+                                                     /music:ro
+       |                        |                        |
+       +---------------+--------+-----------+------------+
+                       |                    |
+                  crate-worker         PostgreSQL 15
+                    (Dramatiq)              |
+                    /music:rw            Redis 7
+                                        (cache / broker)
+                       |
+                 grooveyard-bliss
+                    (Rust CLI)
 ```
 
 | Service | Tech | Role |
 |---------|------|------|
 | **crate-api** | FastAPI + Uvicorn | REST API, audio streaming, SSE events |
-| **crate-worker** | Python ThreadPoolExecutor (5 slots) | Background tasks, filesystem writes, analysis |
-| **crate-ui** | React 19 + Vite + Tailwind 4 | Desktop-oriented admin SPA for library management |
-| **crate-listen** | React 19 + Vite + Tailwind 4 | Consumer-facing listening app, built as a PWA and intended to ship via Capacitor |
-| **PostgreSQL 15** | | Persistent storage |
-| **Redis 7** | | Multi-tier cache (256MB, allkeys-lru) |
-| **slskd** | | Soulseek client (REST API) |
+| **crate-worker** | Python + Dramatiq (Redis broker) | Background tasks, filesystem writes, analysis |
+| **crate-ui** | React 19 + Vite + Tailwind 4 | Admin SPA (desktop-oriented library management) |
+| **crate-listen** | React 19 + Vite + Tailwind 4 + Capacitor | Consumer listening app (PWA + iOS + Android) |
+| **crate-postgres** | PostgreSQL 15 | Persistent storage |
+| **crate-redis** | Redis 7 | Cache + Dramatiq broker (512 MB, `volatile-lru`) |
+| **slskd** | — | Soulseek client (REST API) |
+| **proton-vpn** | `genericmale/protonvpn` | HTTP proxy for scraping workloads (Last.fm events) |
+| **traefik** | — | Reverse proxy + automatic TLS (Let's Encrypt) |
 
-The API container mounts the music library as **read-only**. All filesystem modifications (tag writes, file moves, downloads) go through the worker via the task queue.
+The API container mounts the music library as **read-only**. All filesystem modifications (tag writes, file moves, downloads) go through the worker via Dramatiq actors.
 
 ## Tech Stack
 
-**Backend**: Python 3.13, FastAPI, psycopg2, mutagen, Essentia, PANNs (PyTorch), librosa, musicbrainzngs, tiddl, Pillow, Redis
+**Backend** — Python 3.13, FastAPI, Dramatiq, APScheduler, psycopg2, mutagen, Essentia, PANNs (PyTorch CPU), librosa, musicbrainzngs, tiddl, Pillow, Redis, BeautifulSoup.
 
-**Frontend**: React 19, TypeScript, Tailwind CSS 4, shadcn/ui, Nivo charts, react-easy-crop, cmdk, lucide-react, sonner
+**Frontend** — React 19, TypeScript, Tailwind CSS 4, shadcn/ui, Nivo charts, Gapless-5 (Listen), Capacitor (Listen), Leaflet (admin maps), lucide-react, sonner.
 
-**Frontend Apps**:
-- `app/ui` — admin web app, desktop-oriented, focused on management workflows
-- `app/listen` — user-facing listening app, kept separate from admin and intended for PWA + Capacitor packaging for app stores
+**Frontend apps**
+- `app/ui` — admin web app, desktop-oriented, management workflows.
+- `app/listen` — consumer listening app. PWA + iOS + Android via Capacitor.
 
-**Audio Analysis**: Essentia (signal processing), PANNs CNN14 (AudioSet classification), bliss-rs (Rust, song similarity vectors)
+**Audio analysis** — Essentia (signal processing), PANNs CNN14 (AudioSet classification), `bliss-rs` (Rust song similarity vectors).
 
-**Infrastructure**: Docker Compose, Traefik, slskd, Redis, PostgreSQL
+**Infrastructure** — Docker Compose, Traefik, slskd, Redis, PostgreSQL, ProtonVPN.
 
-## Quick Start
+## Quickstart
 
-### Development
+Minimum steps to get the full stack running locally from a fresh clone.
 
-```bash
-# Start backend services (PostgreSQL + Redis + API + Worker)
-make dev
+### Prerequisites
 
-# Start admin frontend dev server (separate terminal)
-cd app/ui && API_URL=http://localhost:8585 npm run dev
+- Docker + Docker Compose
+- Node.js 20+ and npm (for the Vite dev servers)
+- A music folder on disk (or use `test-music/` which ships with 3 artists for dev)
 
-# Start Listen frontend dev server (separate terminal)
-cd app/listen && API_URL=http://localhost:8585 npm run dev
-```
-
-Dev uses 3 test artists (Birds In Row, High Vis, Rival Schools) in `test-music/`.
-
-### Production
+### 1. Clone and configure
 
 ```bash
-# Configure
+git clone https://github.com/diego-ninja/crate.git
+cd crate
+
 cp .env.example .env
-# Edit .env with your API keys, passwords, and paths
-
-# Deploy
-make deploy
+# Open .env and fill in at least:
+#   MEDIA_DIR=./test-music           # or your library path
+#   DATA_DIR=./data
+#   JWT_SECRET=$(openssl rand -hex 32)
+#   LASTFM_APIKEY=<your key>         # https://www.last.fm/api/account/create
+#   DEFAULT_ADMIN_PASSWORD=admin
 ```
 
-### Environment Variables
+Everything else in `.env` is optional and can be filled in later from the admin Settings page.
+
+### 2. Start the stack
+
+```bash
+make dev
+```
+
+This brings up the dev containers (Postgres + Redis + API + Worker + Caddy) and spawns Vite dev servers for both frontends:
+
+- **Admin** — <http://localhost:5173>
+- **Listen** — <http://localhost:5174>
+- **API** — <http://localhost:8585>
+
+### 3. Log in
+
+Default dev credentials:
+
+```
+email:    yosoy@diego.ninja
+password: admin
+```
+
+Change them from **Settings → Users** after first login.
+
+### 4. Index your library
+
+The filesystem watcher picks up new files automatically. To force a full re-scan:
+
+1. Open the admin UI
+2. **Command Palette** (`⌘K` / `Ctrl+K`)
+3. Type *scan* → **Scan library**
+
+Enrichment (Last.fm / MusicBrainz / audio analysis) runs automatically after the scan.
+
+### 5. (Optional) Mobile apps
+
+```bash
+make cap-ios       # build + run Listen in iOS Simulator
+make cap-android   # build + run Listen in Android Emulator
+```
+
+Requires Xcode / Android Studio installed locally.
+
+### Stopping / resetting
+
+```bash
+make dev-down        # stop everything
+make dev-reset       # stop + wipe Postgres/Redis volumes
+make dev-rebuild     # rebuild images and restart
+```
+
+## Environment variables
+
+The `.env` file drives both dev and production. Required unless noted.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `MEDIA_DIR` | Yes | Path to your music library |
-| `DATA_DIR` | Yes | Path for persistent data |
-| `LASTFM_APIKEY` | Yes | Last.fm API key |
-| `FANART_API_KEY` | No | Fanart.tv API key |
-| `SETLISTFM_API_KEY` | No | Setlist.fm API key |
-| `SPOTIFY_ID` / `SPOTIFY_SECRET` | No | Spotify API credentials |
-| `SLSKD_API_KEY` | No | slskd API key (for Soulseek) |
+| `MEDIA_DIR` | Yes | Path to your music library (mounted into API read-only, worker read-write) |
+| `DATA_DIR` | Yes | Path for persistent state (DB volumes, cache, etc.) |
+| `DOMAIN` | Yes (prod) | Base domain used by Traefik (`admin.<DOMAIN>`, `listen.<DOMAIN>`, `api.<DOMAIN>`) |
 | `JWT_SECRET` | Yes | Secret for JWT tokens |
+| `DEFAULT_ADMIN_PASSWORD` | Yes | Initial password for the bootstrap admin user |
+| `LASTFM_APIKEY` | Yes | Last.fm API key — used for enrichment and upcoming shows |
+| `LASTFM_API_SECRET` | No | Required only for scrobbling |
+| `FANART_API_KEY` | No | Fanart.tv — artist backgrounds and thumbnails |
+| `SETLISTFM_API_KEY` | No | Setlist.fm — probable concert setlists |
+| `SPOTIFY_ID` / `SPOTIFY_SECRET` | No | Spotify — popularity score |
+| `DISCOGS_CONSUMER_KEY` / `DISCOGS_CONSUMER_SECRET` | No | Discogs — catalog numbers and labels |
+| `TICKETMASTER_API_KEY` | No | Ticketmaster — upcoming shows (primary source) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | No | Google OAuth login |
+| `SLSKD_API_KEY` | No | slskd API key (Soulseek integration) |
+| `SLSKD_SLSK_USERNAME` / `SLSKD_SLSK_PASSWORD` | No | Soulseek network credentials |
+| `PROTONVPN_USER` / `PROTONVPN_PASS` | No | Proton VPN credentials for the scraping proxy |
+| `CRATE_POSTGRES_USER` / `CRATE_POSTGRES_PASSWORD` / `CRATE_POSTGRES_DB` | Yes | App-level Postgres role |
+| `PUID` / `PGID` | Yes | Host UID/GID for file ownership |
+| `TZ` | Yes | Timezone (e.g. `Europe/Madrid`) |
 
-## Makefile Commands
+## Makefile commands
 
 ```bash
-make dev              # Start dev environment
-make dev-rebuild      # Rebuild and restart dev
-make dev-reset        # Reset dev (delete data)
-make dev-logs         # Follow dev logs
+# Dev
+make dev              # Full dev stack (backend + both frontends)
+make dev-back         # Backend only (no frontends)
+make dev-admin        # Just the admin Vite server on :5173
+make dev-listen       # Just the Listen Vite server on :5174
+make dev-down         # Stop everything
+make dev-reset        # Stop + wipe volumes
+make dev-rebuild      # Rebuild + restart
+make dev-logs [s=svc] # Follow dev logs (optionally filter by service)
+make dev-test         # Run pytest in the worker container
 
-make deploy           # Full deploy (sync + build + restart)
-make deploy-sync      # Sync files only
-make deploy-restart   # Restart services only
-make deploy-logs      # Follow production logs
-make deploy-ps        # Service status
-make deploy-shell s=X # Shell into service X
+# Deploy (production)
+make deploy           # Sync + pull GHCR images + restart
+make deploy-build     # Deploy with on-server build (fallback)
+make deploy-sync      # Sync files only (no restart)
+make deploy-restart   # Restart remote services
+make deploy-logs      # Follow remote logs
+make deploy-ps        # Remote service status
+make deploy-shell s=X # Shell into a remote service
+
+# Capacitor (mobile)
+make cap-build        # Build Listen for Capacitor
+make cap-ios          # Build + run on iOS Simulator
+make cap-android      # Build + run on Android Emulator
+make cap-ios-open     # Open iOS project in Xcode
+make cap-android-open # Open Android project in Android Studio
 ```
 
-## Project Structure
+## Project structure
 
 ```
 app/
-  musicdock/              Python backend
-    api/                  FastAPI routers (one per domain)
-    db/                   Database functions + schema
-    worker.py             42 task handlers + worker loop
-    enrichment.py         Unified enrichment pipeline
-    audio_analysis.py     PANNs + Essentia hybrid engine
-    bliss.py              Rust CLI integration
-    tidal.py              Tidal auth/search/download
-    soulseek.py           slskd REST API client
-    library_sync.py       Filesystem to DB sync
-    library_watcher.py    Watchdog filesystem watcher
-    scheduler.py          Periodic task scheduler
-    health_check.py       Library integrity checks
-    repair.py             Auto-repair pipeline
-  ui/
+  crate/                Python backend (API + Worker)
+    api/                FastAPI routers (auth, browse, playlists, shows, ...)
+    db/                 PostgreSQL schema + typed query modules
+    actors.py           Dramatiq actors (background tasks)
+    broker.py           Dramatiq + Redis broker setup
+    scheduler.py        APScheduler periodic tasks
+    enrichment.py       Last.fm / MusicBrainz / Fanart / Setlist pipeline
+    audio_analysis.py   PANNs + Essentia hybrid engine
+    bliss.py            grooveyard-bliss CLI integration
+    tidal.py            Tidal search + download (tiddl)
+    soulseek.py         slskd REST client
+    library_sync.py     Filesystem → DB sync
+    library_watcher.py  Watchdog filesystem watcher
+    health_check.py     Library integrity checks
+    repair.py           Auto-repair pipeline
+    genre_taxonomy.py   60+ genre graph + BFS expansion
+    lastfm_events.py    Last.fm events scraper (proxied via ProtonVPN)
+  ui/                   Admin SPA (React 19 + Vite)
     src/
-      pages/              20+ page components (lazy-loaded)
-      components/         Shared UI components
-      contexts/           React contexts (Player, Auth)
-      hooks/              Custom hooks (useApi, useFavorites, etc.)
-  listen/
+      pages/            25+ admin pages (Dashboard, Browse, Health, Shows, ...)
+      components/       Shared UI components
+  listen/               Listen app (React 19 + Vite + Capacitor)
     src/
-      pages/              Consumer-facing pages (Home, Explore, Library, Artist, Album)
-      components/         Mobile-first listening UI, player, queue, lyrics
-      contexts/           Listen player state
-  shared/
-    web/                  Shared frontend core used by ui and listen without merging the apps
+      pages/            Home, Library, Album, Artist, Playlist, Shows, Jam, ...
+      components/       Player, queue, lyrics, visualizer, show cards
+      contexts/         PlayerContext, auth, realtime
+      lib/              gapless-player, cache, api client
+    ios/                Capacitor iOS project
+    android/            Capacitor Android project
+  shared/               Frontend core shared between ui and listen
   scripts/
-    download_models.sh    Essentia + PANNs model downloader
-  Dockerfile
-  requirements.txt
+    download_models.sh  Essentia + PANNs model downloader
 
 tools/
-  grooveyard-bliss/       Rust CLI for audio similarity (bliss-rs)
+  grooveyard-bliss/     Rust CLI for audio similarity (bliss-rs)
 
 docs/
-  architecture.md         System architecture
-  audio-analysis.md       Audio analysis pipeline
-  enrichment.md           Enrichment sources and pipeline
-  api.md                  API reference
+  architecture.md       System architecture
+  audio-analysis.md     Audio analysis pipeline
+  enrichment.md         Enrichment sources and pipeline
+  api.md                API reference
+  plans/                Design documents (dated)
 
-docker-compose.yaml       Production stack (12 services)
+docker-compose.yaml       Production stack
 docker-compose.dev.yaml   Development stack
-Makefile                  Dev, deploy, utilities
+Makefile                  Dev, deploy, Capacitor, utilities
 ```
 
-## Audio Analysis Pipeline
+## Audio analysis pipeline
 
-Crate uses a three-tier hybrid approach for audio analysis:
+Crate uses a three-tier hybrid approach:
 
-1. **PANNs CNN14** (primary, production): Classifies audio into 527 AudioSet categories. Weighted label groups map to mood dimensions (aggressive, dark, happy, electronic, etc.). Batch inference processes 4 tracks simultaneously.
+1. **PANNs CNN14** (primary, x86_64): classifies audio into 527 AudioSet categories. Weighted label groups map to mood dimensions (aggressive, dark, happy, electronic, etc.). Batch inference processes ~4 tracks simultaneously.
+2. **Essentia** (signal processing): extracts BPM, musical key, loudness (EBU R128), dynamic range, spectral complexity. Runs on every track.
+3. **Heuristics** (fallback): when PANNs is unavailable (ARM / dev), derives mood from signal features (key major/minor for happy/sad, spectral centroid for aggressive, etc.).
 
-2. **Essentia** (signal processing): Extracts BPM, musical key, loudness (EBU R128), dynamic range, spectral complexity. Runs on all tracks regardless of PANNs availability.
+The hybrid split uses PANNs for genre-based moods (where it excels) and signal heuristics for tonal moods (where key detection is more reliable than AudioSet labels).
 
-3. **Heuristics** (fallback): When PANNs is not available (ARM/dev), derives mood from signal features (key major/minor for happy/sad, spectral centroid for aggressive, etc.).
-
-The hybrid approach uses PANNs for genre-based moods (where it excels) and signal heuristics for tonal moods (where key detection is more reliable than AudioSet labels).
-
-## Bliss Song Similarity
+## Bliss song similarity
 
 The `grooveyard-bliss` Rust CLI computes a 20-dimensional feature vector per track using [bliss-rs](https://github.com/Polochon-street/bliss-rs). These vectors encode tempo, timbre, loudness, chroma, and spectral characteristics into a compact representation that enables:
 
-- **Artist Radio**: Find the N most similar tracks to a seed track
-- **Transition playlists**: Order tracks by smooth transitions
-- **Similar track discovery**: Cross-artist similarity based on actual audio content
+- **Artist radio** — find the N most similar tracks to a seed
+- **Transition playlists** — order tracks by smooth transitions
+- **Cross-artist similarity discovery** — based on actual audio content, not tags
 
 ## License
 
