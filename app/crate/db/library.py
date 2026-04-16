@@ -375,6 +375,12 @@ def set_track_rating(track_id: int, rating: int) -> None:
         cur.execute("UPDATE library_tracks SET rating = %s WHERE id = %s", (max(0, min(5, rating)), track_id))
 
 
+def update_artist_has_photo(name: str):
+    """Set has_photo = 1 for an artist."""
+    with get_db_ctx() as cur:
+        cur.execute("UPDATE library_artists SET has_photo = 1 WHERE name = %s", (name,))
+
+
 def get_track_rating(track_id: int) -> int:
     with get_db_ctx() as cur:
         cur.execute("SELECT rating FROM library_tracks WHERE id = %s", (track_id,))
@@ -491,3 +497,44 @@ def find_user_playlist_by_name(user_id: int, playlist_name: str) -> dict | None:
             (user_id, playlist_name),
         )
         return cur.fetchone()
+
+
+def get_albums_missing_covers() -> list[dict]:
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT name, artist, year, musicbrainz_albumid, path "
+            "FROM library_albums WHERE has_cover = 0 OR has_cover IS NULL "
+            "ORDER BY artist, year"
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_release_by_id(release_id: int) -> dict | None:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT * FROM new_releases WHERE id = %s", (release_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def enrich_track_refs(track_ids: list[int]) -> dict[int, dict]:
+    if not track_ids:
+        return {}
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                t.id AS track_id,
+                t.storage_id::text AS track_storage_id,
+                t.slug AS track_slug,
+                a.id AS album_id,
+                a.slug AS album_slug,
+                ar.id AS artist_id,
+                ar.slug AS artist_slug
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            LEFT JOIN library_artists ar ON ar.name = a.artist
+            WHERE t.id = ANY(%s)
+            """,
+            (track_ids,),
+        )
+        return {row["track_id"]: dict(row) for row in cur.fetchall()}

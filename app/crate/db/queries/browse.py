@@ -77,3 +77,39 @@ def get_album_genres_list(album_id: int) -> list[str]:
             (album_id,),
         )
         return [row["name"] for row in cur.fetchall()]
+
+
+import re as _re
+
+_YEAR_PREFIX_RE = _re.compile(r"^\d{4}\s*[-–]\s*")
+
+
+def _display_name(folder_name: str) -> str:
+    return _YEAR_PREFIX_RE.sub("", folder_name)
+
+
+def find_album_row(artist: str, album: str) -> dict | None:
+    """Find album in DB, handling year-prefixed names, clean names, and case differences."""
+
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s) AND LOWER(name) = LOWER(%s) LIMIT 1",
+            (artist, album),
+        )
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+
+        cur.execute(
+            "SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s) AND name ILIKE %s LIMIT 1",
+            (artist, f"% - {album}"),
+        )
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+
+        cur.execute("SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s)", (artist,))
+        for row in cur.fetchall():
+            if _display_name(row["name"]) == album:
+                return dict(row)
+    return None

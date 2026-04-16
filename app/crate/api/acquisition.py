@@ -252,11 +252,8 @@ def api_new_releases(request: Request, status: str = "", upcoming: bool = False)
 def api_download_release(request: Request, release_id: int):
     """Download a detected new release via Tidal."""
     _require_admin(request)
-    from crate.db import mark_release_downloading, get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("SELECT * FROM new_releases WHERE id = %s", (release_id,))
-        row = cur.fetchone()
-    release = dict(row) if row else None
+    from crate.db import mark_release_downloading, get_release_by_id
+    release = get_release_by_id(release_id)
     if not release or not release.get("tidal_url"):
         return JSONResponse({"error": "Release not found or no Tidal URL"}, status_code=404)
     mark_release_downloading(release_id)

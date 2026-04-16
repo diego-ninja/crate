@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
-from crate.db import get_db_ctx, create_task
+from crate.db import count_users, create_task
 
 log = logging.getLogger(__name__)
 
@@ -15,9 +15,7 @@ router = APIRouter(prefix="/api/setup", tags=["setup"])
 def _is_setup_needed() -> bool:
     """Check if setup is needed (no users in DB)."""
     try:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT COUNT(*) AS cnt FROM users")
-            return cur.fetchone()["cnt"] == 0
+        return count_users() == 0
     except Exception:
         return True
 

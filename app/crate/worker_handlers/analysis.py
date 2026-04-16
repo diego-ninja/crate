@@ -4,7 +4,16 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from crate.db import create_task, emit_task_event, get_db_ctx, get_task, set_cache, update_task
+from crate.db import create_task, emit_task_event, get_task, set_cache, update_task
+from crate.db.jobs.analysis import (
+    get_albums_needing_popularity,
+    get_artists_needing_analysis,
+    get_artists_needing_bliss,
+    get_tracks_needing_popularity,
+    requeue_tracks,
+    update_album_popularity as _db_update_album_popularity,
+    update_track_popularity as _db_update_track_popularity,
+)
 from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
@@ -167,14 +176,7 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
                 )
     else:
         all_artists, _total = get_library_artists(per_page=10000)
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT al.artist FROM library_tracks t "
-                "JOIN library_albums al ON t.album_id = al.id "
-                "WHERE t.bpm IS NULL OR t.energy IS NULL "
-                "GROUP BY al.artist"
-            )
-            need_names = {row["artist"] for row in cur.fetchall()}
+        need_names = get_artists_needing_analysis()
         need_analysis = [artist_row for artist_row in all_artists if artist_row["name"] in need_names]
 
         if len(need_analysis) > CHUNK_SIZE:
@@ -350,14 +352,7 @@ def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
     if params.get("artists"):
         return _handle_bliss_chunk(task_id, params, config)
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT al.artist FROM library_tracks t "
-            "JOIN library_albums al ON t.album_id = al.id "
-            "WHERE t.bliss_vector IS NULL "
-            "GROUP BY al.artist"
-        )
-        need_bliss_names = {row["artist"] for row in cur.fetchall()}
+    need_bliss_names = get_artists_needing_bliss()
 
     return _chunk_coordinator(
         task_id,
@@ -419,13 +414,7 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
             break
         update_task(task_id, progress=json.dumps({"artist": artist_name, "done": index, "total": len(artists)}))
 
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT id, name, tag_album FROM library_albums "
-                "WHERE artist = %s AND lastfm_listeners IS NULL",
-                (artist_name,),
-            )
-            albums = [dict(row) for row in cur.fetchall()]
+        albums = get_albums_needing_popularity(artist_name)
 
         for album in albums:
             album_name = album.get("tag_album") or album["name"]
@@ -436,24 +425,11 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
                 listeners = _parse_int(info.get("listeners", 0))
                 playcount = _parse_int(info.get("playcount", 0))
                 if listeners > 0:
-                    with get_db_ctx() as cur:
-                        cur.execute(
-                            "UPDATE library_albums SET lastfm_listeners = %s, lastfm_playcount = %s "
-                            "WHERE id = %s",
-                            (listeners, playcount, album["id"]),
-                        )
+                    _db_update_album_popularity(album["id"], listeners, playcount)
                     albums_fetched += 1
             time.sleep(0.25)
 
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT t.id, t.title FROM library_tracks t "
-                "JOIN library_albums a ON t.album_id = a.id "
-                "WHERE a.artist = %s AND t.lastfm_listeners IS NULL "
-                "AND t.title IS NOT NULL AND t.title != '' LIMIT 50",
-                (artist_name,),
-            )
-            tracks = [dict(row) for row in cur.fetchall()]
+        tracks = get_tracks_needing_popularity(artist_name)
 
         def fetch_track_pop(track):
             data = _lastfm_get("track.getinfo", artist=artist_name, track=track["title"], autocorrect="1")
@@ -462,12 +438,7 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
                 listeners = _parse_int(info.get("listeners", 0))
                 playcount = _parse_int(info.get("playcount", 0))
                 if listeners > 0:
-                    with get_db_ctx() as cur:
-                        cur.execute(
-                            "UPDATE library_tracks SET lastfm_listeners = %s, lastfm_playcount = %s "
-                            "WHERE id = %s",
-                            (listeners, playcount, track["id"]),
-                        )
+                    _db_update_track_popularity(track["id"], listeners, playcount)
                     return True
             return False
 
@@ -610,8 +581,6 @@ def _handle_sync_musicbrainz_genre_graph(task_id: str, params: dict, config: dic
 def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
     """Reset analysis/bliss state to 'pending' so background daemons re-process tracks.
     Accepts: artist, album (name), album_id, track_id, or scope='all'."""
-    from crate.db import get_db_ctx
-
     scope = params.get("scope")
     artist = params.get("artist")
     album_name = params.get("album") or params.get("album_folder")
@@ -629,29 +598,17 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
 
     set_clause = ", ".join(cols)
 
-    with get_db_ctx() as cur:
-        if track_id:
-            cur.execute(f"UPDATE library_tracks SET {set_clause} WHERE id = %s", (track_id,))
-        elif album_id:
-            cur.execute(f"UPDATE library_tracks SET {set_clause} WHERE album_id = %s", (album_id,))
-        elif artist and album_name:
-            cur.execute(
-                f"UPDATE library_tracks SET {set_clause} WHERE album_id IN "
-                "(SELECT id FROM library_albums WHERE artist = %s AND name = %s)",
-                (artist, album_name),
-            )
-        elif artist:
-            cur.execute(
-                f"UPDATE library_tracks SET {set_clause} WHERE album_id IN "
-                "(SELECT id FROM library_albums WHERE artist = %s)",
-                (artist,),
-            )
-        elif scope == "all":
-            cur.execute(f"UPDATE library_tracks SET {set_clause}")
-        else:
-            return {"requeued": 0, "error": "No scope specified"}
+    count = requeue_tracks(
+        set_clause,
+        track_id=track_id,
+        album_id=album_id,
+        artist=artist,
+        album_name=album_name,
+        scope=scope,
+    )
 
-        count = cur.rowcount
+    if count == 0 and not track_id and not album_id and not artist and scope != "all":
+        return {"requeued": 0, "error": "No scope specified"}
 
     log.info("Requeued %d tracks for %s (scope: %s)", count, what,
              track_id or album_id or artist or scope)

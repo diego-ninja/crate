@@ -28,6 +28,12 @@ def suggest_username(email: str, preferred: str | None = None) -> str:
 
 # ── Users ─────────────────────────────────────────────────────────
 
+def count_users() -> int:
+    with get_db_ctx() as cur:
+        cur.execute("SELECT COUNT(*) AS cnt FROM users")
+        return cur.fetchone()["cnt"]
+
+
 def _seed_admin(cur):
     cur.execute("SELECT COUNT(*) AS cnt FROM users")
     if cur.fetchone()["cnt"] == 0:

@@ -14,7 +14,23 @@ from pathlib import Path
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 
-from crate.db import get_db_ctx, get_user_by_email
+from crate.db import get_user_by_email
+from crate.db.queries.subsonic import (
+    get_user_by_username,
+    get_all_artists_sorted,
+    get_artist_by_id,
+    get_albums_by_artist_name,
+    get_album_with_artist,
+    get_tracks_by_album_id,
+    get_track_full,
+    get_album_list,
+    search_artists,
+    search_albums,
+    search_tracks,
+    get_track_path_and_format,
+    get_track_basic,
+    get_random_tracks,
+)
 from crate.auth import verify_password
 from crate.api._deps import library_path
 
@@ -41,11 +57,7 @@ def _subsonic_auth(request: Request) -> dict | None:
     user = get_user_by_email(username)
     if not user:
         # Try username field too
-        with get_db_ctx() as cur:
-            cur.execute("SELECT * FROM users WHERE username = %s", (username,))
-            row = cur.fetchone()
-            if row:
-                user = dict(row)
+        user = get_user_by_username(username)
 
     if not user or not user.get("password_hash"):
         return None
@@ -177,13 +189,7 @@ def get_artists(request: Request):
     except SubsonicAuthError:
         return _subsonic_error(40, "Wrong username or password")
 
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT id, name, album_count, COALESCE(listeners, 0) as listeners
-            FROM library_artists
-            ORDER BY name
-        """)
-        rows = cur.fetchall()
+    rows = get_all_artists_sorted()
 
     # Group by first letter
     index_map: dict[str, list] = {}
@@ -214,20 +220,11 @@ def get_artist(request: Request, id: str = Query("")):
 
     artist_id = int(id.replace("ar-", "")) if id.startswith("ar-") else int(id)
 
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, name FROM library_artists WHERE id = %s", (artist_id,))
-        artist = cur.fetchone()
-        if not artist:
-            return _subsonic_error(70, "Artist not found")
+    artist = get_artist_by_id(artist_id)
+    if not artist:
+        return _subsonic_error(70, "Artist not found")
 
-        cur.execute("""
-            SELECT id, name, year, track_count, has_cover,
-                   COALESCE(total_duration, 0) as duration
-            FROM library_albums
-            WHERE artist = %s
-            ORDER BY year DESC NULLS LAST, name
-        """, (artist["name"],))
-        albums = cur.fetchall()
+    albums = get_albums_by_artist_name(artist["name"])
 
     return _subsonic_response({
         "artist": {
@@ -258,29 +255,11 @@ def get_album(request: Request, id: str = Query("")):
 
     album_id = int(id.replace("al-", "")) if id.startswith("al-") else int(id)
 
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT a.id, a.name, a.artist, a.year, a.track_count, a.has_cover,
-                   COALESCE(a.total_duration, 0) as duration,
-                   ar.id as artist_id
-            FROM library_albums a
-            LEFT JOIN library_artists ar ON ar.name = a.artist
-            WHERE a.id = %s
-        """, (album_id,))
-        album = cur.fetchone()
-        if not album:
-            return _subsonic_error(70, "Album not found")
+    album = get_album_with_artist(album_id)
+    if not album:
+        return _subsonic_error(70, "Album not found")
 
-        cur.execute("""
-            SELECT id, title, artist, album, path, duration,
-                   COALESCE(track_number, 0) as track,
-                   COALESCE(disc_number, 1) as disc,
-                   format, bitrate, sample_rate
-            FROM library_tracks
-            WHERE album_id = %s
-            ORDER BY disc_number, track_number
-        """, (album_id,))
-        tracks = cur.fetchall()
+    tracks = get_tracks_by_album_id(album_id)
 
     return _subsonic_response({
         "album": {
@@ -323,20 +302,9 @@ def get_song(request: Request, id: str = Query("")):
         return _subsonic_error(40, "Wrong username or password")
 
     track_id = int(id)
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.id, t.title, t.artist, t.album, t.path, t.duration,
-                   t.track_number, t.disc_number, t.format, t.bitrate,
-                   a.id as album_id, a.has_cover, a.year,
-                   ar.id as artist_id
-            FROM library_tracks t
-            LEFT JOIN library_albums a ON a.id = t.album_id
-            LEFT JOIN library_artists ar ON ar.name = t.artist
-            WHERE t.id = %s
-        """, (track_id,))
-        t = cur.fetchone()
-        if not t:
-            return _subsonic_error(70, "Song not found")
+    t = get_track_full(track_id)
+    if not t:
+        return _subsonic_error(70, "Song not found")
 
     return _subsonic_response({
         "song": {
@@ -385,17 +353,7 @@ def get_album_list2(
     }
     order = order_map.get(type, "a.name ASC")
 
-    with get_db_ctx() as cur:
-        cur.execute(f"""
-            SELECT a.id, a.name, a.artist, a.year, a.track_count, a.has_cover,
-                   COALESCE(a.total_duration, 0) as duration,
-                   ar.id as artist_id
-            FROM library_albums a
-            LEFT JOIN library_artists ar ON ar.name = a.artist
-            ORDER BY {order}
-            LIMIT %s OFFSET %s
-        """, (size, offset))
-        albums = cur.fetchall()
+    albums = get_album_list(order, size, offset)
 
     return _subsonic_response({
         "albumList2": {
@@ -432,43 +390,25 @@ def search3(
     q = f"%{query}%"
     result: dict = {"artist": [], "album": [], "song": []}
 
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, name FROM library_artists WHERE name ILIKE %s LIMIT %s", (q, artistCount))
-        result["artist"] = [{"id": f"ar-{r['id']}", "name": r["name"]} for r in cur.fetchall()]
+    result["artist"] = [{"id": f"ar-{r['id']}", "name": r["name"]} for r in search_artists(q, artistCount)]
 
-        cur.execute("""
-            SELECT a.id, a.name, a.artist, a.year, a.has_cover, ar.id as artist_id
-            FROM library_albums a
-            LEFT JOIN library_artists ar ON ar.name = a.artist
-            WHERE a.name ILIKE %s
-            LIMIT %s
-        """, (q, albumCount))
-        result["album"] = [{
-            "id": f"al-{r['id']}", "name": r["name"], "artist": r["artist"],
-            "artistId": f"ar-{r['artist_id']}" if r["artist_id"] else None,
-            "year": int(r["year"]) if r["year"] else None,
-            "coverArt": f"al-{r['id']}" if r["has_cover"] else None,
-        } for r in cur.fetchall()]
+    result["album"] = [{
+        "id": f"al-{r['id']}", "name": r["name"], "artist": r["artist"],
+        "artistId": f"ar-{r['artist_id']}" if r["artist_id"] else None,
+        "year": int(r["year"]) if r["year"] else None,
+        "coverArt": f"al-{r['id']}" if r["has_cover"] else None,
+    } for r in search_albums(q, albumCount)]
 
-        cur.execute("""
-            SELECT t.id, t.title, t.artist, t.album, t.duration, t.path,
-                   t.format, t.bitrate, a.id as album_id, a.has_cover, ar.id as artist_id
-            FROM library_tracks t
-            LEFT JOIN library_albums a ON a.id = t.album_id
-            LEFT JOIN library_artists ar ON ar.name = t.artist
-            WHERE t.title ILIKE %s OR t.artist ILIKE %s
-            LIMIT %s
-        """, (q, q, songCount))
-        result["song"] = [{
-            "id": str(r["id"]), "title": r["title"], "artist": r["artist"],
-            "album": r["album"], "duration": r["duration"] or 0,
-            "albumId": f"al-{r['album_id']}" if r["album_id"] else None,
-            "artistId": f"ar-{r['artist_id']}" if r["artist_id"] else None,
-            "coverArt": f"al-{r['album_id']}" if r["album_id"] and r["has_cover"] else None,
-            "suffix": (r["format"] or "mp3").lower(),
-            "contentType": _content_type(r["format"]),
-            "type": "music",
-        } for r in cur.fetchall()]
+    result["song"] = [{
+        "id": str(r["id"]), "title": r["title"], "artist": r["artist"],
+        "album": r["album"], "duration": r["duration"] or 0,
+        "albumId": f"al-{r['album_id']}" if r["album_id"] else None,
+        "artistId": f"ar-{r['artist_id']}" if r["artist_id"] else None,
+        "coverArt": f"al-{r['album_id']}" if r["album_id"] and r["has_cover"] else None,
+        "suffix": (r["format"] or "mp3").lower(),
+        "contentType": _content_type(r["format"]),
+        "type": "music",
+    } for r in search_tracks(q, songCount)]
 
     return _subsonic_response({"searchResult3": result})
 
@@ -484,11 +424,9 @@ def stream(request: Request, id: str = Query("")):
         return _subsonic_error(40, "Wrong username or password")
 
     track_id = int(id)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT path, format FROM library_tracks WHERE id = %s", (track_id,))
-        track = cur.fetchone()
-        if not track:
-            return Response(status_code=404)
+    track = get_track_path_and_format(track_id)
+    if not track:
+        return Response(status_code=404)
 
     from fastapi.responses import FileResponse
 
@@ -548,9 +486,7 @@ def scrobble(request: Request, id: str = Query(""), submission: str = Query("tru
         return _subsonic_response({})
 
     track_id = int(id)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT title, artist, album FROM library_tracks WHERE id = %s", (track_id,))
-        track = cur.fetchone()
+    track = get_track_basic(track_id)
 
     if track:
         from crate.db.user_library import record_play
@@ -589,18 +525,7 @@ def get_random_songs(request: Request, size: int = Query(10)):
     except SubsonicAuthError:
         return _subsonic_error(40, "Wrong username or password")
 
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.id, t.title, t.artist, t.album, t.duration, t.path,
-                   t.format, t.bitrate, t.track_number, t.disc_number,
-                   a.id as album_id, a.has_cover, a.year, ar.id as artist_id
-            FROM library_tracks t
-            LEFT JOIN library_albums a ON a.id = t.album_id
-            LEFT JOIN library_artists ar ON ar.name = t.artist
-            ORDER BY RANDOM()
-            LIMIT %s
-        """, (size,))
-        tracks = cur.fetchall()
+    tracks = get_random_tracks(size)
 
     return _subsonic_response({
         "randomSongs": {

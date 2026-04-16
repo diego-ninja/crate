@@ -19,8 +19,8 @@ from crate.auth import (
     hash_password, verify_password, create_jwt, verify_jwt, JWT_EXPIRY_HOURS,
 )
 from crate.db import (
-    create_user, get_user_by_email, get_user_by_id,
-    get_user_by_external_identity, update_user_last_login, update_user, list_users, delete_user, get_db_ctx,
+    count_users, create_user, get_user_by_email, get_user_by_id,
+    get_user_by_external_identity, update_user_last_login, update_user, list_users, delete_user,
     get_user_external_identity, upsert_user_external_identity, list_user_external_identities,
     unlink_user_external_identity, create_session, list_sessions, touch_session, revoke_session,
     revoke_other_sessions, get_session, get_setting, set_setting,
@@ -433,9 +433,7 @@ async def login(request: Request, body: LoginRequest):
 
 @router.post("/register")
 async def register(request: Request, body: RegisterRequest):
-    with get_db_ctx() as cur:
-        cur.execute("SELECT COUNT(*) AS cnt FROM users")
-        user_count = cur.fetchone()["cnt"]
+    user_count = count_users()
     # First user = no auth needed. After that: open registration or admin-only.
     if user_count > 0:
         open_registration = get_setting("open_registration") == "true"

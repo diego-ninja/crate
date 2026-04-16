@@ -13,7 +13,7 @@ class TestExploreFiltersContract:
             [{"format": "FLAC", "cnt": 12}],
         ]
 
-        with patch("crate.api.browse_artist.get_db_ctx") as mock_ctx:
+        with patch("crate.db.queries.browse_artist.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 
@@ -54,7 +54,7 @@ class TestExploreSearchContract:
         ]
 
         with patch("crate.api.browse_media.has_library_data", return_value=True), \
-             patch("crate.api.browse_media.get_db_ctx") as mock_ctx:
+             patch("crate.db.queries.browse_media.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 

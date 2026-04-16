@@ -4,7 +4,19 @@ import shutil
 import time
 from pathlib import Path
 
-from crate.db import delete_cache, emit_task_event, get_db_ctx, get_library_artist, get_setting, get_task, set_cache, update_task
+from crate.db import delete_cache, emit_task_event, get_library_artist, get_setting, get_task, set_cache, update_task
+from crate.db.jobs.enrichment import (
+    get_albums_without_mbid,
+    get_album_names_for_artist,
+    get_artists_with_mbid,
+    persist_album_release_mbids as _db_persist_album_release_mbids,
+    update_album_has_cover,
+    update_album_mbid_and_propagate,
+    update_album_path_after_reorganize,
+    update_album_popularity,
+    update_artist_content_hash,
+    update_track_popularity,
+)
 from crate.storage_layout import looks_like_storage_id, resolve_artist_dir
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
 
@@ -138,30 +150,7 @@ def _auto_apply_album_release(
 
 
 def _persist_album_release_mbids(album_id: int, tracks_db: list[dict], release: dict) -> None:
-    release_mbid = release["mbid"]
-    release_group_id = release.get("release_group_id", "")
-    mb_tracks = release.get("tracks", [])
-
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_albums SET musicbrainz_albumid = %s WHERE id = %s",
-            (release_mbid, album_id),
-        )
-        if release_group_id:
-            cur.execute(
-                "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE id = %s",
-                (release_group_id, album_id),
-            )
-        for index, db_track in enumerate(tracks_db):
-            if index >= len(mb_tracks):
-                break
-            track_mbid = mb_tracks[index].get("mbid", "")
-            if track_mbid:
-                cur.execute(
-                    "UPDATE library_tracks SET musicbrainz_albumid = %s, musicbrainz_trackid = %s "
-                    "WHERE id = %s",
-                    (release_mbid, track_mbid, db_track["id"]),
-                )
+    _db_persist_album_release_mbids(album_id, tracks_db, release)
 
 
 def _write_album_release_tags(tracks_db: list[dict], release: dict) -> None:
@@ -306,11 +295,7 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     if artist_filter:
         albums = get_library_albums(artist_filter)
     else:
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT * FROM library_albums WHERE musicbrainz_albumid IS NULL OR musicbrainz_albumid = ''"
-            )
-            albums = [dict(row) for row in cur.fetchall()]
+        albums = get_albums_without_mbid()
 
     total = len(albums)
     enriched = 0
@@ -470,15 +455,7 @@ def _reorganize_artist_folders(
             shutil.move(str(subdir), str(target))
             old_path = str(subdir)
             new_path = str(target)
-            with get_db_ctx() as cur:
-                cur.execute(
-                    "UPDATE library_albums SET name = %s, path = %s WHERE path = %s",
-                    (clean_name, new_path, old_path),
-                )
-                cur.execute(
-                    "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
-                    (old_path, new_path, old_path + "%"),
-                )
+            update_album_path_after_reorganize(old_path, new_path, clean_name)
             moved += 1
             log.info("Reorganized: %s -> %s", subdir.name, f"{year}/{clean_name}")
             emit_task_event(task_id, "info", {"message": f"Moved {subdir.name} -> {year}/{clean_name}"})
@@ -606,17 +583,7 @@ def _process_new_content_album_mbids(
 
             if best_release and best_score >= 70:
                 mbid = best_release["mbid"]
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE library_albums SET musicbrainz_albumid = %s WHERE id = %s",
-                        (mbid, album["id"]),
-                    )
-                    # Propagate to tracks that don't have it
-                    cur.execute(
-                        "UPDATE library_tracks SET musicbrainz_albumid = %s "
-                        "WHERE album_id = %s AND (musicbrainz_albumid IS NULL OR musicbrainz_albumid = '')",
-                        (mbid, album["id"]),
-                    )
+                update_album_mbid_and_propagate(album["id"], mbid)
                 mbid_count += 1
             time.sleep(1)
 
@@ -649,11 +616,7 @@ def _process_new_content_popularity(
                 listeners = _parse_int(info.get("listeners", 0))
                 playcount = _parse_int(info.get("playcount", 0))
                 if listeners > 0:
-                    with get_db_ctx() as cur:
-                        cur.execute(
-                            "UPDATE library_albums SET lastfm_listeners = %s, lastfm_playcount = %s WHERE id = %s",
-                            (listeners, playcount, album["id"]),
-                        )
+                    update_album_popularity(album["id"], listeners, playcount)
                     pop_count += 1
             time.sleep(0.25)
 
@@ -680,12 +643,7 @@ def _process_new_content_popularity(
                         listeners = _parse_int(info.get("listeners", 0))
                         playcount = _parse_int(info.get("playcount", 0))
                         if listeners > 0:
-                            with get_db_ctx() as cur:
-                                cur.execute(
-                                    "UPDATE library_tracks SET lastfm_listeners = %s, lastfm_playcount = %s "
-                                    "WHERE id = %s",
-                                    (listeners, playcount, track["id"]),
-                                )
+                            update_track_popularity(track["id"], listeners, playcount)
                             track_pop += 1
                 except Exception:
                     log.debug("Failed to fetch Last.fm popularity for track %s by %s", title, artist_name, exc_info=True)
@@ -746,8 +704,7 @@ def _process_new_content_missing_covers(
             if cover_data:
                 save_cover(album_dir, cover_data)
                 covers_fetched += 1
-                with get_db_ctx() as cur:
-                    cur.execute("UPDATE library_albums SET has_cover = 1 WHERE id = %s", (album["id"],))
+                update_album_has_cover(album["id"])
 
             time.sleep(0.3)
         result["steps"]["covers"] = covers_fetched
@@ -761,11 +718,7 @@ def _process_new_content_update_artist_hash(artist_dir: Path, artist_name: str) 
         return
 
     final_hash = _compute_dir_hash(artist_dir)
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_artists SET content_hash = %s WHERE name = %s",
-            (final_hash, artist_name),
-        )
+    update_artist_content_hash(artist_name, final_hash)
 
 
 def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dict:
@@ -848,16 +801,7 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
     musicbrainzngs.set_useragent("crate", "1.0", "https://github.com/crate")
     year_re = re.compile(r"^\d{4}\s*[-–]\s*")
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT id, slug, name, mbid, album_count, has_photo, listeners
-            FROM library_artists
-            WHERE mbid IS NOT NULL AND mbid != ''
-            ORDER BY name
-            """
-        )
-        artists = [dict(row) for row in cur.fetchall()]
+    artists = get_artists_with_mbid()
 
     total = len(artists)
     results = []
@@ -902,10 +846,8 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
             local_count = artist["album_count"] or 0
             pct = round(local_count / mb_count * 100) if mb_count > 0 else 100
 
-            with get_db_ctx() as cur:
-                cur.execute("SELECT name FROM library_albums WHERE artist = %s", (artist["name"],))
-                local_names = {row["name"].lower() for row in cur.fetchall()}
-                local_clean = {year_re.sub("", name).lower() for name in local_names}
+            local_names = get_album_names_for_artist(artist["name"])
+            local_clean = {year_re.sub("", name).lower() for name in local_names}
 
             missing = [
                 album for album in mb_data["albums"]

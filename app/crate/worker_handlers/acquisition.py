@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from crate.audio import get_audio_files, read_tags
-from crate.db import create_task, create_task_dedup, emit_task_event, get_db_ctx, get_setting, get_task, update_task
+from crate.db import create_task, create_task_dedup, emit_task_event, get_setting, get_task, update_task
+from crate.db.jobs.acquisition import update_artist_latest_release_date
 from crate.db.user_library import follow_artist, like_track, save_album
 from crate.storage_import import resolve_import_album_target
 from crate.storage_layout import resolve_artist_dir
@@ -582,11 +583,7 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
             today = time.strftime("%Y-%m-%d")
 
             if not known_date:
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE library_artists SET latest_release_date = %s WHERE name = %s",
-                        (latest_mb_date, name),
-                    )
+                update_artist_latest_release_date(name, latest_mb_date)
                 known_date = today
 
             has_new = False
@@ -606,11 +603,7 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
                     has_new = True
 
             if has_new or latest_mb_date > known_date:
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE library_artists SET latest_release_date = %s WHERE name = %s",
-                        (latest_mb_date, name),
-                    )
+                update_artist_latest_release_date(name, latest_mb_date)
 
             checked += 1
             time.sleep(1)

@@ -8,7 +8,6 @@ from crate.db import (
     add_playlist_tracks,
     create_playlist,
     delete_playlist,
-    get_db_ctx,
     get_playlist,
     get_playlist_followers_count,
     get_playlist_tracks,

@@ -20,7 +20,7 @@ class TestArtistsAPI:
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
-             patch("crate.api.browse_artist.get_db_ctx") as mock_ctx:
+             patch("crate.db.queries.browse_artist.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.get("/api/artists")
@@ -40,7 +40,7 @@ class TestArtistsAPI:
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
-             patch("crate.api.browse_artist.get_db_ctx") as mock_ctx:
+             patch("crate.db.queries.browse_artist.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.get("/api/artists?page=1&per_page=3")
@@ -56,7 +56,7 @@ class TestArtistsAPI:
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
-             patch("crate.api.browse_artist.get_db_ctx") as mock_ctx:
+             patch("crate.db.queries.browse_artist.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
             resp = test_app.get("/api/artists?q=radio&sort=name")
@@ -84,7 +84,7 @@ class TestArtistDetailAPI:
              patch("crate.api.browse_artist.get_library_artist", return_value=mock_artist), \
              patch("crate.api.browse_artist.get_library_albums", return_value=mock_albums), \
              patch("crate.api.browse_artist.get_artist_issue_count", return_value=0), \
-             patch("crate.api.browse_artist.get_db_ctx") as mock_ctx:
+             patch("crate.db.queries.browse_artist.get_db_ctx") as mock_ctx:
             mock_cur = MagicMock()
             mock_cur.fetchall.return_value = [{"name": "Progressive Metal"}]
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
@@ -134,7 +134,7 @@ class TestSearchAPI:
         ]
 
         with patch("crate.api.browse_media.has_library_data", return_value=True), \
-             patch("crate.api.browse_media.get_db_ctx") as mock_ctx:
+             patch("crate.db.queries.browse_media.get_db_ctx") as mock_ctx:
             mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
             mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
 

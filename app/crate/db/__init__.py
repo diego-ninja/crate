@@ -47,15 +47,18 @@ from crate.db.library import (
     upsert_artist, upsert_album, upsert_track,
     update_track_analysis, update_artist_enrichment,
     delete_artist, delete_album, delete_track,
-    set_track_rating, get_track_rating,
+    set_track_rating, get_track_rating, update_artist_has_photo,
     get_track_path_by_id, get_artist_analysis_tracks,
     get_artist_refs_by_names, get_artist_tracks_for_setlist,
     find_user_playlist_by_name,
+    get_albums_missing_covers,
+    get_release_by_id,
+    enrich_track_refs,
 )
 
 # Auth
 from crate.db.auth import (
-    create_user, get_user_by_email, get_user_by_google_id,
+    count_users, create_user, get_user_by_email, get_user_by_google_id,
     get_user_by_external_identity, get_user_by_id, update_user_last_login, update_user, list_users, delete_user,
     create_session, get_session, list_sessions, touch_session, revoke_session, revoke_other_sessions, delete_session,
     suggest_username, get_user_external_identity, upsert_user_external_identity,
@@ -74,6 +77,7 @@ from crate.db.playlists import (
     can_view_playlist, can_edit_playlist, is_playlist_owner,
     add_playlist_member, remove_playlist_member,
     create_playlist_invite, consume_playlist_invite,
+    execute_smart_rules,
 )
 
 # Tidal

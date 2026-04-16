@@ -588,51 +588,20 @@ def feed(request: Request, limit: int = 30):
     """Personalized feed: new releases from followed artists + new library additions + upcoming shows."""
     user = _require_auth(request)
     from crate.db.user_library import get_followed_artists
-    from crate.db.core import get_db_ctx
+    from crate.db.queries.user import get_feed_new_albums, get_feed_shows, get_feed_new_releases
 
     followed = get_followed_artists(user["id"])
     followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
 
-    items = []
+    items: list[dict] = []
     recent_day_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     today = datetime.now(timezone.utc).date()
-    with get_db_ctx() as cur:
-        if followed_names:
-            placeholders = ",".join(["%s"] * len(followed_names))
-            cur.execute(f"""
-                SELECT 'new_album' AS type, la.artist, la.name AS title, la.year, la.has_cover,
-                       la.updated_at AS date
-                FROM library_albums la
-                WHERE la.artist IN ({placeholders})
-                AND la.updated_at >= %s
-                ORDER BY la.updated_at DESC
-                LIMIT %s
-            """, list(followed_names) + [recent_day_cutoff, limit])
-            for r in cur.fetchall():
-                items.append(dict(r))
 
-            cur.execute(f"""
-                SELECT 'show' AS type, s.artist_name AS artist, s.venue AS title,
-                       s.city, s.country, s.date, s.url, s.image_url
-                FROM shows s
-                WHERE s.artist_name IN ({placeholders})
-                AND s.date >= %s
-                ORDER BY s.date
-                LIMIT %s
-            """, list(followed_names) + [today, limit])
-            for r in cur.fetchall():
-                items.append(dict(r))
+    if followed_names:
+        items.extend(get_feed_new_albums(followed_names, recent_day_cutoff, limit))
+        items.extend(get_feed_shows(followed_names, today, limit))
 
-        cur.execute("""
-            SELECT 'release' AS type, nr.artist_name AS artist, nr.album_title AS title,
-                   nr.cover_url, nr.year, nr.status, nr.detected_at AS date
-            FROM new_releases nr
-            WHERE nr.status != 'dismissed'
-            ORDER BY nr.detected_at DESC
-            LIMIT %s
-        """, (limit,))
-        for r in cur.fetchall():
-            items.append(dict(r))
+    items.extend(get_feed_new_releases(limit))
 
     def _feed_sort_key(item: dict):
         value = item.get("date")
@@ -649,8 +618,8 @@ def upcoming(request: Request, limit: int = 120):
     """Upcoming releases and shows for followed artists."""
     user = _require_auth(request)
     from crate.db.user_library import get_followed_artists
-    from crate.db.core import get_db_ctx
     from crate.db import get_attending_show_ids
+    from crate.db.queries.user import get_upcoming_releases, get_upcoming_shows, get_artist_genres_for_names
 
     followed = get_followed_artists(user["id"])
     followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
@@ -669,7 +638,6 @@ def upcoming(request: Request, limit: int = 120):
 
     today = datetime.now(timezone.utc).date()
     recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
-    placeholders = ",".join(["%s"] * len(followed_names))
 
     # Resolve user location for show filtering.
     # The middleware user dict only has JWT fields (id, email, role) — location
@@ -690,106 +658,35 @@ def upcoming(request: Request, limit: int = 120):
 
     items: list[dict] = []
     setlist_map: dict[str, list[dict]] = {}
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"""
-            SELECT
-                nr.id,
-                nr.artist_name,
-                la.id AS artist_id,
-                la.slug AS artist_slug,
-                nr.album_title,
-                nr.cover_url,
-                nr.status,
-                nr.tidal_url,
-                nr.release_type,
-                nr.release_date,
-                nr.detected_at
-            FROM new_releases nr
-            LEFT JOIN library_artists la ON la.name = nr.artist_name
-            WHERE nr.artist_name IN ({placeholders})
-              AND nr.status != 'dismissed'
-              AND (
-                (nr.release_date IS NOT NULL AND nr.release_date >= %s)
-                OR nr.detected_at >= %s
-              )
-            ORDER BY COALESCE(nr.release_date, (nr.detected_at AT TIME ZONE 'UTC')::date) ASC
-            LIMIT %s
-            """,
-            followed_names + [today, recent_cutoff, limit],
-        )
-        for release in cur.fetchall():
-            scheduled_date = _coerce_date(release.get("release_date"))
-            fallback_date = scheduled_date or _coerce_date(release.get("detected_at"))
-            items.append(
-                {
-                    "type": "release",
-                    "date": fallback_date.isoformat() if fallback_date else "",
-                    "artist": release.get("artist_name", ""),
-                    "artist_id": release.get("artist_id"),
-                    "artist_slug": release.get("artist_slug"),
-                    "title": release.get("album_title", ""),
-                    "subtitle": release.get("release_type") or "Album",
-                    "cover_url": release.get("cover_url"),
-                    "status": release.get("status", "detected"),
-                    "tidal_url": release.get("tidal_url"),
-                    "release_id": release.get("id"),
-                    "is_upcoming": bool(scheduled_date and scheduled_date >= today),
-                }
-            )
 
-        cur.execute(
-            f"""
-            SELECT
-                   s.id,
-                   s.artist_name,
-                   la.id AS artist_id,
-                   la.slug AS artist_slug,
-                   s.venue,
-                   s.address_line1,
-                   s.city,
-                   s.region,
-                   s.postal_code,
-                   s.country,
-                   s.country_code,
-                   s.date,
-                   s.local_time,
-                   s.url, s.image_url, s.lineup, s.latitude, s.longitude,
-                   s.source, s.lastfm_attendance, s.lastfm_url, s.tickets_url
-            FROM shows s
-            LEFT JOIN library_artists la ON la.name = s.artist_name
-            WHERE s.artist_name IN ({placeholders})
-              AND s.date >= %s
-              AND s.status != 'cancelled'
-              {"AND (s.latitude BETWEEN %s AND %s AND s.longitude BETWEEN %s AND %s OR s.latitude IS NULL)" if user_lat else ""}
-            ORDER BY s.date ASC
-            LIMIT %s
-            """,
-            followed_names + [today] + (
-                [user_lat - user_radius / 111.0, user_lat + user_radius / 111.0,
-                 user_lon - user_radius / 70.0, user_lon + user_radius / 70.0]
-                if user_lat else []
-            ) + [limit],
-        )
-        shows = cur.fetchall()
-        attending_show_ids = get_attending_show_ids(
-            user["id"],
-            [show["id"] for show in shows if show.get("id") is not None],
+    releases = get_upcoming_releases(followed_names, today, recent_cutoff, limit)
+    for release in releases:
+        scheduled_date = _coerce_date(release.get("release_date"))
+        fallback_date = scheduled_date or _coerce_date(release.get("detected_at"))
+        items.append(
+            {
+                "type": "release",
+                "date": fallback_date.isoformat() if fallback_date else "",
+                "artist": release.get("artist_name", ""),
+                "artist_id": release.get("artist_id"),
+                "artist_slug": release.get("artist_slug"),
+                "title": release.get("album_title", ""),
+                "subtitle": release.get("release_type") or "Album",
+                "cover_url": release.get("cover_url"),
+                "status": release.get("status", "detected"),
+                "tidal_url": release.get("tidal_url"),
+                "release_id": release.get("id"),
+                "is_upcoming": bool(scheduled_date and scheduled_date >= today),
+            }
         )
 
-        cur.execute(
-            f"""
-            SELECT ag.artist_name, g.name
-            FROM artist_genres ag
-            JOIN genres g ON g.id = ag.genre_id
-            WHERE ag.artist_name IN ({placeholders})
-            ORDER BY ag.weight DESC
-            """,
-            followed_names,
-        )
-        genre_map: dict[str, list[str]] = {}
-        for row in cur.fetchall():
-            genre_map.setdefault(row["artist_name"], []).append(row["name"])
+    shows = get_upcoming_shows(followed_names, today, user_lat, user_lon, user_radius, limit)
+    attending_show_ids = get_attending_show_ids(
+        user["id"],
+        [show["id"] for show in shows if show.get("id") is not None],
+    )
+
+    genre_map = get_artist_genres_for_names(followed_names)
 
     show_artists = sorted({show["artist_name"] for show in shows if show.get("artist_name")})
     if show_artists:
@@ -924,14 +821,8 @@ def change_password(request: Request, body: dict):
 def scrobble_status(request: Request):
     """Get current scrobble service connections."""
     user = _require_auth(request)
-    from crate.db import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT provider, status, metadata_json
-            FROM user_external_identities
-            WHERE user_id = %s AND provider IN ('lastfm', 'listenbrainz')
-        """, (user["id"],))
-        rows = cur.fetchall()
+    from crate.db.queries.user import get_scrobble_identities
+    rows = get_scrobble_identities(user["id"])
 
     result = {}
     for row in rows:
@@ -1087,7 +978,7 @@ def update_location(request: Request, body: UpdateLocationBody):
     If only city is provided, geocodes it to fill lat/lon/country.
     """
     user = _require_auth(request)
-    from crate.db.core import get_db_ctx
+    from crate.db.queries.user import update_user_location
 
     city = (body.city or "").strip() or None
     lat = body.latitude
@@ -1131,9 +1022,7 @@ def update_location(request: Request, body: UpdateLocationBody):
         fields.append("show_location_mode = %s"); values.append(mode)
 
     if fields:
-        values.append(user["id"])
-        with get_db_ctx() as cur:
-            cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", values)
+        update_user_location(user["id"], fields, values)
 
     return {"ok": True}
 

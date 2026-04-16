@@ -7,7 +7,7 @@ from pathlib import Path
 
 from crate.db import (
     get_cache, set_cache, delete_cache, get_library_artist,
-    update_artist_enrichment, get_db_ctx, get_setting,
+    update_artist_enrichment, get_setting, update_artist_has_photo,
 )
 
 log = logging.getLogger(__name__)
@@ -208,9 +208,7 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
             img = get_best_artist_image(name)
             if img:
                 (artist_dir / "artist.jpg").write_bytes(img)
-                # Update has_photo in DB
-                with get_db_ctx() as cur:
-                    cur.execute("UPDATE library_artists SET has_photo = 1 WHERE name = %s", (name,))
+                update_artist_has_photo(name)
         except OSError:
             pass
         time.sleep(0.3)

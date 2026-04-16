@@ -32,24 +32,19 @@ def api_artwork_missing(request: Request):
     """List albums missing cover art with details."""
     _require_auth(request)
     import re
-    from crate.db import get_db_ctx
+    from crate.db import get_albums_missing_covers
     year_re = re.compile(r"^\d{4}\s*[-–]\s*")
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT name, artist, year, musicbrainz_albumid, path "
-            "FROM library_albums WHERE has_cover = 0 OR has_cover IS NULL "
-            "ORDER BY artist, year"
-        )
-        albums = []
-        for r in cur.fetchall():
-            albums.append({
-                "name": r["name"],
-                "display_name": year_re.sub("", r["name"]),
-                "artist": r["artist"],
-                "year": r.get("year", ""),
-                "mbid": r.get("musicbrainz_albumid"),
-                "path": r.get("path", ""),
-            })
+    rows = get_albums_missing_covers()
+    albums = []
+    for r in rows:
+        albums.append({
+            "name": r["name"],
+            "display_name": year_re.sub("", r["name"]),
+            "artist": r["artist"],
+            "year": r.get("year", ""),
+            "mbid": r.get("musicbrainz_albumid"),
+            "path": r.get("path", ""),
+        })
     return {"missing_count": len(albums), "albums": albums}
 
 

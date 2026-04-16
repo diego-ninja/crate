@@ -67,33 +67,13 @@ def safe_path(base: Path, user_path: str) -> Path | None:
 
 
 def enrich_radio_tracks(tracks: list[dict]) -> list[dict]:
-    from crate.db import get_db_ctx
+    from crate.db import enrich_track_refs
 
     if not tracks:
         return []
 
     track_ids = [track.get("track_id") for track in tracks if track.get("track_id") is not None]
-    refs_by_track_id: dict[int, dict] = {}
-    if track_ids:
-        with get_db_ctx() as cur:
-            cur.execute(
-                """
-                SELECT
-                    t.id AS track_id,
-                    t.storage_id::text AS track_storage_id,
-                    t.slug AS track_slug,
-                    a.id AS album_id,
-                    a.slug AS album_slug,
-                    ar.id AS artist_id,
-                    ar.slug AS artist_slug
-                FROM library_tracks t
-                JOIN library_albums a ON t.album_id = a.id
-                LEFT JOIN library_artists ar ON ar.name = a.artist
-                WHERE t.id = ANY(%s)
-                """,
-                (track_ids,),
-            )
-            refs_by_track_id = {row["track_id"]: dict(row) for row in cur.fetchall()}
+    refs_by_track_id = enrich_track_refs(track_ids) if track_ids else {}
 
     enriched: list[dict] = []
     for track in tracks:
