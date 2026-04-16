@@ -1,8 +1,11 @@
-import React, { Suspense, useEffect } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 import { Loader2 } from "lucide-react";
 import { connectCacheEvents } from "@/lib/cache";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { isNative } from "@/lib/capacitor";
+import { getCurrentServer, SERVER_STORE_EVENT } from "@/lib/server-store";
+import { ServerSetup } from "@/pages/ServerSetup";
 import { ArtistFollowsProvider } from "@/contexts/ArtistFollowsContext";
 import { LikedTracksProvider } from "@/contexts/LikedTracksContext";
 import { PlayerProvider } from "@/contexts/PlayerContext";
@@ -121,11 +124,36 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Capacitor-only gate: if the user hasn't configured any Crate server
+ * yet, force them through /server-setup before anything else renders.
+ * Subscribes to store events so adding a server in ServerSetup flushes
+ * the redirect immediately.
+ */
+function ServerGate({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const [hasServer, setHasServer] = useState(() => !isNative || Boolean(getCurrentServer()));
+
+  useEffect(() => {
+    if (!isNative) return;
+    const sync = () => setHasServer(Boolean(getCurrentServer()));
+    window.addEventListener(SERVER_STORE_EVENT, sync);
+    return () => window.removeEventListener(SERVER_STORE_EVENT, sync);
+  }, []);
+
+  if (!isNative) return <>{children}</>;
+  if (hasServer) return <>{children}</>;
+  if (location.pathname === "/server-setup") return <>{children}</>;
+  return <Navigate to="/server-setup" replace />;
+}
+
 export function App() {
   return (
     <ErrorBoundary>
     <AuthProvider>
+      <ServerGate>
       <Routes>
+        <Route path="/server-setup" element={<ServerSetup />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route
@@ -290,6 +318,7 @@ export function App() {
                     />
                   </Route>
                 </Routes>
+      </ServerGate>
     </AuthProvider>
     </ErrorBoundary>
   );

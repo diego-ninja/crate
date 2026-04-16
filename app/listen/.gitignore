@@ -1,4 +1,26 @@
 .vite/
 tsconfig.tsbuildinfo
+
+# iOS project (Capacitor). Not tracked until we ship iOS; today it's only
+# local. Revisit this when the iOS build joins CI.
 ios/
-android/
+
+# Android project (Capacitor). We DO track the project shell — manifest,
+# gradle config, resources, icons — so CI can build a debug APK and the
+# project stays reproducible across contributors. We exclude build
+# artefacts and machine-local files below.
+android/.gradle/
+android/.idea/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/*.iml
+android/app/*.iml
+android/app/release/
+android/app/src/main/assets/public/
+# Capacitor regenerates these on `cap sync` from the web bundle — no
+# need to commit them (they're the compiled Listen dist copied into
+# the native project).
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json

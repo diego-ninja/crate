@@ -14,6 +14,7 @@ import { Upload, BarChart3, Loader2, LogOut, Lock, MapPin, Moon, Navigation, Rad
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePlayerActions } from "@/contexts/PlayerContext";
+import { ServersSection } from "@/components/settings/ServersSection";
 import { api } from "@/lib/api";
 import {
   subscribeSleepTimer,
@@ -222,6 +223,8 @@ export function Settings() {
           }}
         />
       </Section>
+
+      <ServersSection />
 
       <ShowsLocationSection />
 

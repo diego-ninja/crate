@@ -1,0 +1,108 @@
+name: Build Android APK
+
+# Triggers a debug APK build whenever we push a v*.*.* tag (the
+# canonical "there's a release" signal) or when manually dispatched.
+# We intentionally do NOT trigger on every push to main — it would
+# spam releases and take ~8 minutes per run.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      upload_to_release:
+        description: "Upload APK to the latest release"
+        default: "false"
+        type: choice
+        options: ["true", "false"]
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create/update releases
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/listen/package-lock.json
+
+      - name: Setup Java (required by Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: app/listen
+
+      - name: Build web bundle (capacitor mode)
+        run: npm run build:cap
+        working-directory: app/listen
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+        working-directory: app/listen/android
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon
+        working-directory: app/listen/android
+
+      - name: Locate APK
+        id: locate
+        run: |
+          APK_PATH=$(find app/listen/android/app/build/outputs/apk/debug -name '*.apk' | head -n1)
+          echo "apk_path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          ls -la "$APK_PATH"
+
+      - name: Rename APK
+        id: rename
+        run: |
+          TAG_NAME="${GITHUB_REF_NAME}"
+          if [[ "$TAG_NAME" == "" || "$TAG_NAME" == "main" ]]; then
+            TAG_NAME="dev"
+          fi
+          DEST="crate-listen-${TAG_NAME}.apk"
+          cp "${{ steps.locate.outputs.apk_path }}" "$DEST"
+          # Also publish under a stable filename so the site can hard-link
+          # to /releases/latest/download/crate-listen.apk without knowing
+          # the tag name.
+          cp "$DEST" "crate-listen.apk"
+          echo "dest=$DEST" >> "$GITHUB_OUTPUT"
+
+      - name: Upload as build artifact (always)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.rename.outputs.dest }}
+          path: ${{ steps.rename.outputs.dest }}
+          retention-days: 30
+
+      - name: Attach APK to GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.rename.outputs.dest }}
+            crate-listen.apk
+          body: |
+            ## Crate Listen — ${{ github.ref_name }}
+
+            **Debug APK** for Android. Install requires "Install from
+            unknown sources" / "Install unknown apps" enabled for your
+            browser or file manager.
+
+            On first launch the app will prompt for the URL of your
+            Crate server. Point it at your instance (e.g.
+            `https://api.your-host.com`), sign in, and you're in.
+
+            This is a **beta build**. Report issues at
+            https://github.com/diego-ninja/crate/issues.

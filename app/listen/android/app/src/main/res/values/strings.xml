@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Crate Listen</string>
+    <string name="title_activity_main">Crate Listen</string>
+    <string name="package_name">org.lespedants.crate.listen</string>
+    <string name="custom_url_scheme">org.lespedants.crate.listen</string>
+</resources>
