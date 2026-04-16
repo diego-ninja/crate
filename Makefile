@@ -59,7 +59,7 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@echo "  $(GREEN)Admin:$(NC)  https://admin.dev.lespedants.org"
 	@echo "  $(GREEN)Listen:$(NC) https://listen.dev.lespedants.org"
 	@echo "  $(GREEN)Docs:$(NC)   https://docs.dev.cratemusic.app"
-	@echo "  $(GREEN)Site:$(NC)   https://dev.cratemusic.app"
+	@echo "  $(GREEN)Site:$(NC)   https://www.dev.cratemusic.app"
 	@echo "  $(GREEN)API:$(NC)    https://api.dev.lespedants.org"
 	@echo "  Login:  admin@cratemusic.app / admin"
 	@echo ""

@@ -17,7 +17,7 @@ https://docs.dev.cratemusic.app {
 	reverse_proxy host.docker.internal:5175
 }
 
-https://dev.cratemusic.app {
+https://www.dev.cratemusic.app {
 	tls internal
 	reverse_proxy host.docker.internal:5176
 }
