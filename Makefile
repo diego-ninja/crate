@@ -248,6 +248,11 @@ deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
 		--exclude='bin/' --exclude='crate/' --exclude='ui/' --exclude='listen/' \
 		--exclude='requirements.txt' --exclude='Dockerfile' --exclude='tests/' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
+	@# docs/ is consumed by the crate-docs build via COPY docs/ /docs/,
+	@# so it must exist on the server whenever we might re-build (fallback
+	@# path). Synced here so the server stays consistent even on pull-only
+	@# deploys.
+	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
 	@echo "$(YELLOW)Pulling imagenes (GHCR + externas)...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml pull --ignore-pull-failures"
 	@echo "$(YELLOW)Reiniciando servicios (sin build local)...$(NC)"
@@ -263,6 +268,10 @@ deploy-build: ## Deploy con build en servidor (sin GHCR, fallback)
 		--exclude='.vite' --exclude='*.tsbuildinfo' \
 		--exclude='bin/' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
+	@# crate-docs Dockerfile uses the repo root as build context and needs
+	@# the top-level docs/ directory for the markdown files embedded at
+	@# build time. Without this the build fails on COPY docs/ /docs/.
+	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
 	@echo "$(YELLOW)Building servicios en servidor...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && docker compose -f docker-compose.yaml build crate-api crate-worker crate-ui crate-listen crate-docs"
 	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
@@ -279,6 +288,7 @@ deploy-sync: ## Solo sincronizar ficheros al servidor (sin restart)
 		--exclude='.vite' --exclude='*.tsbuildinfo' \
 		--exclude='bin/' \
 		app/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/app/
+	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
 
 .PHONY: deploy-restart
 deploy-restart: ## Reiniciar servicios en remoto (sin sync)

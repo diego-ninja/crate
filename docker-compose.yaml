@@ -399,6 +399,12 @@ services:
       traefik.http.middlewares.crate-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
       # traefik.http.routers.admin.middlewares: authelia@docker  # Enable after creating users
 
+  # Public Crate project docs site. The hostname is hard-coded to
+  # `docs.cratemusic.app` because this serves the project's official
+  # documentation, not a per-instance resource — it is NOT tied to the
+  # operator's ${DOMAIN}. Only enabled under the "docs" compose profile
+  # so other self-hosters of Crate don't start a container they don't
+  # need. Start with: docker compose --profile docs up -d
   crate-docs:
     image: ghcr.io/diego-ninja/crate-docs:${CRATE_IMAGE_TAG:-latest}
     build:
@@ -406,12 +412,13 @@ services:
       dockerfile: app/docs/Dockerfile
     container_name: crate-docs
     restart: unless-stopped
+    profiles: ["docs"]
     networks:
       - crate
     labels:
       traefik.enable: true
       traefik.docker.network: crate
-      traefik.http.routers.docs.rule: Host(`docs.${DOMAIN}`)
+      traefik.http.routers.docs.rule: Host(`docs.cratemusic.app`)
       traefik.http.routers.docs.entryPoints: websecure
       traefik.http.services.docs.loadbalancer.server.port: 80
       traefik.http.routers.docs.tls: true
