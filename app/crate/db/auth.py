@@ -40,11 +40,11 @@ def _seed_admin(cur):
             log.warning("No DEFAULT_ADMIN_PASSWORD set — generated: %s", password)
         cur.execute(
             "INSERT INTO users (email, username, name, password_hash, role, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-            ("yosoy@diego.ninja", "admin", "Diego", hash_password(password), "admin", now),
+            ("admin@cratemusic.app", "admin", "Admin", hash_password(password), "admin", now),
         )
     else:
         # Ensure admin has username set
-        cur.execute("UPDATE users SET username = 'admin' WHERE email = 'yosoy@diego.ninja' AND (username IS NULL OR username = '')")
+        cur.execute("UPDATE users SET username = 'admin' WHERE email = 'admin@cratemusic.app' AND (username IS NULL OR username = '')")
 
 
 def create_user(email: str, name: str | None = None, password_hash: str | None = None,

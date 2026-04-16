@@ -139,7 +139,7 @@ cd app/ui && API_URL=https://admin.lespedants.org npm run dev
 
 Test library: 3 artists (Birds In Row, High Vis, Rival Schools), 122 tracks in `test-music/`.
 
-Login: yosoy@diego.ninja / admin (dev), same email in production.
+Login: admin@cratemusic.app / admin (dev seed user, also used in production).
 
 ## Code Conventions
 

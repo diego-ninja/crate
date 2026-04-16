@@ -186,7 +186,7 @@ This brings up the dev containers (Postgres + Redis + API + Worker + Caddy) and 
 Default dev credentials:
 
 ```
-email:    yosoy@diego.ninja
+email:    admin@cratemusic.app
 password: admin
 ```
 

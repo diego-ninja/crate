@@ -53,7 +53,7 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@echo "  $(GREEN)Admin:$(NC)  https://admin.dev.lespedants.org"
 	@echo "  $(GREEN)Listen:$(NC) https://listen.dev.lespedants.org"
 	@echo "  $(GREEN)API:$(NC)    https://api.dev.lespedants.org"
-	@echo "  Login:  yosoy@diego.ninja / admin"
+	@echo "  Login:  admin@cratemusic.app / admin"
 	@echo ""
 	@echo "$(GREEN)Todo arrancado. make dev-down para parar.$(NC)"
 	@echo "$(YELLOW)Nota: ejecuta 'make dns-setup' si *.crate.local no resuelve$(NC)"

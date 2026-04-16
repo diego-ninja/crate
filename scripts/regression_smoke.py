@@ -18,7 +18,7 @@ from http.cookiejar import CookieJar
 
 
 BASE_URL = os.environ.get("CRATE_SMOKE_BASE_URL", "http://localhost:8585")
-EMAIL = os.environ.get("CRATE_SMOKE_EMAIL", "yosoy@diego.ninja")
+EMAIL = os.environ.get("CRATE_SMOKE_EMAIL", "admin@cratemusic.app")
 PASSWORD = os.environ.get("CRATE_SMOKE_PASSWORD", "admin")
 SEARCH_QUERY = os.environ.get("CRATE_SMOKE_SEARCH_QUERY", "Birds")
 
