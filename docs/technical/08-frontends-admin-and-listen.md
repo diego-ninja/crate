@@ -6,13 +6,13 @@ Crate has two frontend applications and they are intentionally not the same app 
 
 ### Admin
 
-- source: `/Users/diego/Code/Ninja/musicdock/app/ui/src`
+- source: `https://github.com/diego-ninja/crate/blob/main/app/ui/src`
 - purpose: library management, operations, repair, acquisition, analytics, settings
 - orientation: desktop-first
 
 ### Listen
 
-- source: `/Users/diego/Code/Ninja/musicdock/app/listen/src`
+- source: `https://github.com/diego-ninja/crate/blob/main/app/listen/src`
 - purpose: playback, browsing, discovery, social, mobile and PWA usage
 - orientation: consumer-first, mobile-aware, Capacitor-ready
 
@@ -20,7 +20,7 @@ This split is one of the most important product decisions in Crate.
 
 ## Shared frontend core
 
-Only a small set of utilities is shared through `/Users/diego/Code/Ninja/musicdock/app/shared/web`:
+Only a small set of utilities is shared through `https://github.com/diego-ninja/crate/blob/main/app/shared/web`:
 
 - API helper
 - route utilities
@@ -31,7 +31,7 @@ The shared layer is deliberately thin. Most UI and state logic remains product-s
 
 ## Admin app architecture
 
-The admin app boots from [app/ui/src/App.tsx](/Users/diego/Code/Ninja/musicdock/app/ui/src/App.tsx).
+The admin app boots from [app/ui/src/App.tsx](https://github.com/diego-ninja/crate/blob/main/app/ui/src/App.tsx).
 
 Core wrappers:
 
@@ -67,7 +67,7 @@ This is effectively an operator console for the whole platform.
 
 ### Admin shell
 
-The admin shell in [app/ui/src/components/layout/Shell.tsx](/Users/diego/Code/Ninja/musicdock/app/ui/src/components/layout/Shell.tsx) is optimized for:
+The admin shell in [app/ui/src/components/layout/Shell.tsx](https://github.com/diego-ninja/crate/blob/main/app/ui/src/components/layout/Shell.tsx) is optimized for:
 
 - desktop sidebar navigation
 - dense search and command palette workflows
@@ -79,7 +79,7 @@ It also includes mobile handling, but that is not the primary design target.
 
 ## Listen app architecture
 
-The Listen app boots from [app/listen/src/App.tsx](/Users/diego/Code/Ninja/musicdock/app/listen/src/App.tsx).
+The Listen app boots from [app/listen/src/App.tsx](https://github.com/diego-ninja/crate/blob/main/app/listen/src/App.tsx).
 
 Core wrappers:
 
@@ -113,7 +113,7 @@ This route tree is closer to Spotify/Tidal than to a file manager.
 
 ### Listen shell
 
-The Listen shell in [app/listen/src/components/layout/Shell.tsx](/Users/diego/Code/Ninja/musicdock/app/listen/src/components/layout/Shell.tsx) is adaptive:
+The Listen shell in [app/listen/src/components/layout/Shell.tsx](https://github.com/diego-ninja/crate/blob/main/app/listen/src/components/layout/Shell.tsx) is adaptive:
 
 - desktop sidebar layout
 - mobile bottom navigation
@@ -248,6 +248,6 @@ Crate's frontend state is domain-heavy but still fairly modular. Contexts and de
 
 ## Related documents
 
-- [Auth, Sessions, Users, and Social Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/07-auth-users-social-and-sessions.md)
-- [Playback, Realtime, Visualizer, and Subsonic](/Users/diego/Code/Ninja/musicdock/docs/technical/09-playback-realtime-and-subsonic.md)
-- [Development, Deployment, and Operations](/Users/diego/Code/Ninja/musicdock/docs/technical/10-development-deployment-and-operations.md)
+- [Auth, Sessions, Users, and Social Layer](/technical/auth-users-social-and-sessions)
+- [Playback, Realtime, Visualizer, and Subsonic](/technical/playback-realtime-and-subsonic)
+- [Development, Deployment, and Operations](/technical/development-deployment-and-operations)

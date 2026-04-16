@@ -17,7 +17,7 @@ This is much richer than a pure cookie login system.
 
 ## User records
 
-The core user model is managed from [app/crate/db/auth.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/auth.py).
+The core user model is managed from [app/crate/db/auth.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/auth.py).
 
 Relevant fields and concepts include:
 
@@ -36,7 +36,7 @@ The DB layer also owns username suggestion and bootstrap admin seeding.
 
 ## Bootstrap admin
 
-On an empty install, `_seed_admin()` in [app/crate/db/auth.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/auth.py):
+On an empty install, `_seed_admin()` in [app/crate/db/auth.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/auth.py):
 
 - creates `admin@cratemusic.app`
 - uses `DEFAULT_ADMIN_PASSWORD`
@@ -50,8 +50,8 @@ Crate now uses persisted sessions, not just stateless JWT.
 
 Session behavior is implemented across:
 
-- [app/crate/api/auth.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/auth.py)
-- [app/crate/db/auth.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/auth.py)
+- [app/crate/api/auth.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/auth.py)
+- [app/crate/db/auth.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/auth.py)
 
 Each session stores information such as:
 
@@ -126,7 +126,7 @@ This is part of the auth router, not a separate invitation subsystem.
 
 ## Frontend auth behavior
 
-Listen auth in [app/listen/src/contexts/AuthContext.tsx](/Users/diego/Code/Ninja/musicdock/app/listen/src/contexts/AuthContext.tsx):
+Listen auth in [app/listen/src/contexts/AuthContext.tsx](https://github.com/diego-ninja/crate/blob/main/app/listen/src/contexts/AuthContext.tsx):
 
 - fetches `/api/auth/me`
 - stores active user id in local storage
@@ -138,7 +138,7 @@ This is important because Listen is effectively a stateful client with local pla
 
 ## Public social layer
 
-The social API lives in [app/crate/api/social.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/social.py).
+The social API lives in [app/crate/api/social.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/social.py).
 
 Core capabilities:
 
@@ -244,6 +244,6 @@ This keeps Crate coherent as one platform.
 
 ## Related documents
 
-- [Backend API and Data Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/02-backend-api-and-data.md)
-- [Frontend Architecture: Admin and Listen](/Users/diego/Code/Ninja/musicdock/docs/technical/08-frontends-admin-and-listen.md)
-- [Playback, Realtime, Visualizer, and Subsonic](/Users/diego/Code/Ninja/musicdock/docs/technical/09-playback-realtime-and-subsonic.md)
+- [Backend API and Data Layer](/technical/backend-api-and-data)
+- [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen)
+- [Playback, Realtime, Visualizer, and Subsonic](/technical/playback-realtime-and-subsonic)

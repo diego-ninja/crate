@@ -2,7 +2,7 @@
 
 ## FastAPI application structure
 
-The application factory lives in [app/crate/api/__init__.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/__init__.py).
+The application factory lives in [app/crate/api/__init__.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/__init__.py).
 
 Important characteristics:
 
@@ -22,7 +22,7 @@ This means auth and invalidation are not just route-local concerns; they are par
 
 ## Router organization
 
-Routers are grouped by domain under `/Users/diego/Code/Ninja/musicdock/app/crate/api`.
+Routers are grouped by domain under `https://github.com/diego-ninja/crate/blob/main/app/crate/api`.
 
 Notable route groups:
 
@@ -38,17 +38,17 @@ Notable route groups:
 
 ### Registration order matters
 
-Router order is not arbitrary. In [app/crate/api/__init__.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/__init__.py), more specific routers are registered before browse routers that contain `{name:path}` style catch-alls.
+Router order is not arbitrary. In [app/crate/api/__init__.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/__init__.py), more specific routers are registered before browse routers that contain `{name:path}` style catch-alls.
 
 If that order is changed carelessly, apparently unrelated routes can become unreachable.
 
 ## Data access layer
 
-The DB layer is organized under `/Users/diego/Code/Ninja/musicdock/app/crate/db`.
+The DB layer is organized under `https://github.com/diego-ninja/crate/blob/main/app/crate/db`.
 
 ### Connection management
 
-[app/crate/db/core.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/core.py) provides:
+[app/crate/db/core.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/core.py) provides:
 
 - DSN construction from environment variables
 - optional app DB provisioning using superuser credentials
@@ -65,7 +65,7 @@ with get_db_ctx() as cur:
 
 ### Schema management
 
-Schema initialization is centralized in [app/crate/db/core.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/core.py):
+Schema initialization is centralized in [app/crate/db/core.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/core.py):
 
 - `init_db()` acquires a PostgreSQL advisory lock
 - `_create_schema()` defines the final desired shape of tables for new installs
@@ -109,7 +109,7 @@ These power the application as a multi-user platform.
 
 ## Cache architecture
 
-The cache implementation lives in [app/crate/db/cache.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/cache.py).
+The cache implementation lives in [app/crate/db/cache.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/cache.py).
 
 Crate uses a three-tier strategy:
 
@@ -139,7 +139,7 @@ This tiering means Crate can degrade gracefully if Redis is missing, while still
 Crate uses Redis for two different responsibilities:
 
 - DB 0: application cache and coordination keys
-- DB 1: Dramatiq broker, configured in [app/crate/broker.py](/Users/diego/Code/Ninja/musicdock/app/crate/broker.py)
+- DB 1: Dramatiq broker, configured in [app/crate/broker.py](https://github.com/diego-ninja/crate/blob/main/app/crate/broker.py)
 
 The broker setup is explicit:
 
@@ -192,7 +192,7 @@ One key operational decision is that Redis eviction policy must not evict broker
 
 ## Authentication on the backend
 
-The backend auth surface in [app/crate/api/auth.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/auth.py) combines:
+The backend auth surface in [app/crate/api/auth.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/auth.py) combines:
 
 - password login
 - Google OAuth
@@ -208,7 +208,7 @@ An important implementation detail is that JWT is not the whole auth story. Crat
 
 ## Subsonic compatibility
 
-[app/crate/api/subsonic.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/subsonic.py) exposes a parallel API surface under `/rest`.
+[app/crate/api/subsonic.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/subsonic.py) exposes a parallel API surface under `/rest`.
 
 This lets Crate act as a compatible source for:
 
@@ -252,6 +252,6 @@ Trade-off:
 
 ## Related documents
 
-- [Worker, Tasks, and Background Services](/Users/diego/Code/Ninja/musicdock/docs/technical/03-worker-tasks-and-background-services.md)
-- [Auth, Sessions, Users, and Social Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/07-auth-users-social-and-sessions.md)
-- [Playback, Realtime, Visualizer, and Subsonic](/Users/diego/Code/Ninja/musicdock/docs/technical/09-playback-realtime-and-subsonic.md)
+- [Worker, Tasks, and Background Services](/technical/worker-tasks-and-background-services)
+- [Auth, Sessions, Users, and Social Layer](/technical/auth-users-social-and-sessions)
+- [Playback, Realtime, Visualizer, and Subsonic](/technical/playback-realtime-and-subsonic)

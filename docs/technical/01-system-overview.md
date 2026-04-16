@@ -113,20 +113,20 @@ That means there is no single "main" flow anymore. Crate has multiple equally im
 
 ### Backend
 
-- `/Users/diego/Code/Ninja/musicdock/app/crate/api`: FastAPI routers by domain.
-- `/Users/diego/Code/Ninja/musicdock/app/crate/db`: database access and schema helpers.
-- `/Users/diego/Code/Ninja/musicdock/app/crate/worker_handlers`: task implementations grouped by domain.
-- `/Users/diego/Code/Ninja/musicdock/app/crate/actors.py`: Dramatiq dispatch and execution wrappers.
-- `/Users/diego/Code/Ninja/musicdock/app/crate/library_sync.py`: filesystem to DB synchronization.
-- `/Users/diego/Code/Ninja/musicdock/app/crate/enrichment.py`: unified artist enrichment entrypoint.
-- `/Users/diego/Code/Ninja/musicdock/app/crate/audio_analysis.py`: audio feature extraction.
-- `/Users/diego/Code/Ninja/musicdock/app/crate/bliss.py`: similarity and transition logic.
+- `https://github.com/diego-ninja/crate/blob/main/app/crate/api`: FastAPI routers by domain.
+- `https://github.com/diego-ninja/crate/blob/main/app/crate/db`: database access and schema helpers.
+- `https://github.com/diego-ninja/crate/blob/main/app/crate/worker_handlers`: task implementations grouped by domain.
+- `https://github.com/diego-ninja/crate/blob/main/app/crate/actors.py`: Dramatiq dispatch and execution wrappers.
+- `https://github.com/diego-ninja/crate/blob/main/app/crate/library_sync.py`: filesystem to DB synchronization.
+- `https://github.com/diego-ninja/crate/blob/main/app/crate/enrichment.py`: unified artist enrichment entrypoint.
+- `https://github.com/diego-ninja/crate/blob/main/app/crate/audio_analysis.py`: audio feature extraction.
+- `https://github.com/diego-ninja/crate/blob/main/app/crate/bliss.py`: similarity and transition logic.
 
 ### Frontend
 
-- `/Users/diego/Code/Ninja/musicdock/app/ui/src`: admin app.
-- `/Users/diego/Code/Ninja/musicdock/app/listen/src`: listening app.
-- `/Users/diego/Code/Ninja/musicdock/app/shared/web`: small shared web helpers such as API and route utilities.
+- `https://github.com/diego-ninja/crate/blob/main/app/ui/src`: admin app.
+- `https://github.com/diego-ninja/crate/blob/main/app/listen/src`: listening app.
+- `https://github.com/diego-ninja/crate/blob/main/app/shared/web`: small shared web helpers such as API and route utilities.
 
 ## Cross-cutting architectural decisions
 
@@ -169,4 +169,4 @@ The UI is relatively thin compared with the server:
 
 ## Reading order for the rest of the docs
 
-From here, the best next document is usually [Backend API and Data Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/02-backend-api-and-data.md), followed by [Worker, Tasks, and Background Services](/Users/diego/Code/Ninja/musicdock/docs/technical/03-worker-tasks-and-background-services.md).
+From here, the best next document is usually [Backend API and Data Layer](/technical/backend-api-and-data), followed by [Worker, Tasks, and Background Services](/technical/worker-tasks-and-background-services).

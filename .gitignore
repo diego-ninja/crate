@@ -31,3 +31,8 @@ worktrees/
 .vite/
 # Added by code-review-graph
 .code-review-graph/
+
+# Private docs material — plans are internal design notes, Obsidian
+# metadata is personal editor state. Kept on local disk, never in repo.
+docs/plans/
+docs/technical/.obsidian/

@@ -14,7 +14,7 @@ This layer powers:
 
 ## Audio analysis pipeline
 
-The main analysis entrypoint is [app/crate/audio_analysis.py](/Users/diego/Code/Ninja/musicdock/app/crate/audio_analysis.py).
+The main analysis entrypoint is [app/crate/audio_analysis.py](https://github.com/diego-ninja/crate/blob/main/app/crate/audio_analysis.py).
 
 Crate uses a layered strategy:
 
@@ -82,7 +82,7 @@ This is important because Crate does not expose raw AudioSet classes directly as
 
 ## Bliss and similarity
 
-Similarity logic lives in [app/crate/bliss.py](/Users/diego/Code/Ninja/musicdock/app/crate/bliss.py).
+Similarity logic lives in [app/crate/bliss.py](https://github.com/diego-ninja/crate/blob/main/app/crate/bliss.py).
 
 This subsystem combines:
 
@@ -185,6 +185,6 @@ That local-first posture is one of the project's core product ideas.
 
 ## Related documents
 
-- [Enrichment, Acquisition, and External Integrations](/Users/diego/Code/Ninja/musicdock/docs/technical/05-enrichment-acquisition-and-integrations.md)
-- [Frontend Architecture: Admin and Listen](/Users/diego/Code/Ninja/musicdock/docs/technical/08-frontends-admin-and-listen.md)
-- [Playback, Realtime, Visualizer, and Subsonic](/Users/diego/Code/Ninja/musicdock/docs/technical/09-playback-realtime-and-subsonic.md)
+- [Enrichment, Acquisition, and External Integrations](/technical/enrichment-acquisition-and-integrations)
+- [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen)
+- [Playback, Realtime, Visualizer, and Subsonic](/technical/playback-realtime-and-subsonic)

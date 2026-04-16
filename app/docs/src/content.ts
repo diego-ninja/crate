@@ -1,6 +1,6 @@
 import { slugify } from "@/lib/utils";
 
-export type DocSection = "technical" | "reference" | "plans";
+export type DocSection = "technical" | "reference";
 
 export interface DocHeading {
   level: number;
@@ -92,12 +92,6 @@ const referenceModules = import.meta.glob("../../../docs/*.md", {
   eager: true,
 }) as Record<string, string>;
 
-const planModules = import.meta.glob("../../../docs/plans/*.md", {
-  query: "?raw",
-  import: "default",
-  eager: true,
-}) as Record<string, string>;
-
 function technicalDocs(): DocEntry[] {
   return Object.entries(technicalModules)
     .map(([path, markdown]) => {
@@ -122,7 +116,7 @@ function technicalDocs(): DocEntry[] {
 
 function referenceDocs(): DocEntry[] {
   return Object.entries(referenceModules)
-    .filter(([path]) => !path.includes("/technical/") && !path.includes("/plans/"))
+    .filter(([path]) => !path.includes("/technical/"))
     .map(([path, markdown]) => {
       const file = path.split("/").pop() || "document";
       const slug = file.replace(/\.md$/, "").toLowerCase();
@@ -143,38 +137,14 @@ function referenceDocs(): DocEntry[] {
     .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
 }
 
-function planDocs(): DocEntry[] {
-  return Object.entries(planModules)
-    .map(([path, markdown]) => {
-      const file = path.split("/").pop() || "document";
-      const slug = file.replace(/\.md$/, "");
-      const title = extractTitle(markdown, slug);
-      return {
-        id: `plans:${slug}`,
-        section: "plans" as const,
-        title,
-        slug,
-        route: `/plans/${slug}`,
-        summary: extractSummary(markdown),
-        markdown,
-        headings: extractHeadings(markdown),
-        sourcePath: path.replace("../../../", ""),
-        order: 0,
-      };
-    })
-    .sort((a, b) => b.slug.localeCompare(a.slug));
-}
-
 export const docs: DocEntry[] = [
   ...technicalDocs(),
   ...referenceDocs(),
-  ...planDocs(),
 ];
 
 export const docsBySection: Record<DocSection, DocEntry[]> = {
   technical: docs.filter((doc) => doc.section === "technical"),
   reference: docs.filter((doc) => doc.section === "reference"),
-  plans: docs.filter((doc) => doc.section === "plans"),
 };
 
 export const sectionMeta: Record<DocSection, { label: string; description: string }> = {
@@ -185,10 +155,6 @@ export const sectionMeta: Record<DocSection, { label: string; description: strin
   reference: {
     label: "Reference",
     description: "Entry-point docs and focused references that still matter day to day.",
-  },
-  plans: {
-    label: "Plans",
-    description: "Historical and active design notes, roadmaps, and implementation plans.",
   },
 };
 

@@ -19,7 +19,7 @@ The worker process mounts `/music` read-write, unlike the API.
 
 ## Execution model
 
-The worker entrypoint is [app/crate/worker.py](/Users/diego/Code/Ninja/musicdock/app/crate/worker.py).
+The worker entrypoint is [app/crate/worker.py](https://github.com/diego-ninja/crate/blob/main/app/crate/worker.py).
 
 At startup it:
 
@@ -64,7 +64,7 @@ This is one of the most important architectural choices in the project.
 
 ### Creation
 
-`create_task()` in [app/crate/db/tasks.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/tasks.py):
+`create_task()` in [app/crate/db/tasks.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/tasks.py):
 
 - inserts a row into `tasks`
 - derives queue, priority, max duration, and retries from `TASK_POOL_CONFIG`
@@ -72,7 +72,7 @@ This is one of the most important architectural choices in the project.
 
 ### Execution
 
-The actor wrapper in [app/crate/actors.py](/Users/diego/Code/Ninja/musicdock/app/crate/actors.py):
+The actor wrapper in [app/crate/actors.py](https://github.com/diego-ninja/crate/blob/main/app/crate/actors.py):
 
 - fetches the PG task row
 - acquires DB-heavy or download locks if required
@@ -86,7 +86,7 @@ The actor wrapper in [app/crate/actors.py](/Users/diego/Code/Ninja/musicdock/app
 
 - task progress is persisted as JSON-ish text in `tasks.progress`
 - richer events are emitted into `task_events`
-- SSE endpoints in [app/crate/api/events.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/events.py) stream both global and per-task updates
+- SSE endpoints in [app/crate/api/events.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/events.py) stream both global and per-task updates
 
 ### Cancellation
 
@@ -100,7 +100,7 @@ This is safer for filesystem operations.
 
 ## Queue and priority strategy
 
-[app/crate/actors.py](/Users/diego/Code/Ninja/musicdock/app/crate/actors.py) defines `TASK_POOL_CONFIG`.
+[app/crate/actors.py](https://github.com/diego-ninja/crate/blob/main/app/crate/actors.py) defines `TASK_POOL_CONFIG`.
 
 Each task type gets:
 
@@ -164,7 +164,7 @@ This service loop is what makes the worker feel like a living background runtime
 
 ## Filesystem watcher
 
-[app/crate/library_watcher.py](/Users/diego/Code/Ninja/musicdock/app/crate/library_watcher.py) uses `watchdog` to:
+[app/crate/library_watcher.py](https://github.com/diego-ninja/crate/blob/main/app/crate/library_watcher.py) uses `watchdog` to:
 
 - react to created and moved audio files
 - debounce per album directory
@@ -175,7 +175,7 @@ Watcher writes do not directly do enrichment. They trigger sync and then queue h
 
 ## Scheduler
 
-[app/crate/scheduler.py](/Users/diego/Code/Ninja/musicdock/app/crate/scheduler.py) implements configurable recurring tasks backed by settings rather than static cron files.
+[app/crate/scheduler.py](https://github.com/diego-ninja/crate/blob/main/app/crate/scheduler.py) implements configurable recurring tasks backed by settings rather than static cron files.
 
 Default schedules cover:
 
@@ -204,7 +204,7 @@ These are conceptually different from request-triggered jobs. They let Crate abs
 
 ## Import queue
 
-The service loop periodically scans import sources declared in [app/config.yaml](/Users/diego/Code/Ninja/musicdock/app/config.yaml):
+The service loop periodically scans import sources declared in [app/config.yaml](https://github.com/diego-ninja/crate/blob/main/app/config.yaml):
 
 - Tidal
 - Soulseek
@@ -214,7 +214,7 @@ This supports workflows where external systems or download tools populate a stag
 
 ## Task handler organization
 
-Handlers are grouped by subsystem under `/Users/diego/Code/Ninja/musicdock/app/crate/worker_handlers`:
+Handlers are grouped by subsystem under `https://github.com/diego-ninja/crate/blob/main/app/crate/worker_handlers`:
 
 - `acquisition.py`
 - `analysis.py`
@@ -263,6 +263,6 @@ That request-to-task-to-event loop is the dominant operational pattern in Crate.
 
 ## Related documents
 
-- [Backend API and Data Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/02-backend-api-and-data.md)
-- [Library, Storage, Sync, and Imports](/Users/diego/Code/Ninja/musicdock/docs/technical/04-library-storage-sync-and-imports.md)
-- [Enrichment, Acquisition, and External Integrations](/Users/diego/Code/Ninja/musicdock/docs/technical/05-enrichment-acquisition-and-integrations.md)
+- [Backend API and Data Layer](/technical/backend-api-and-data)
+- [Library, Storage, Sync, and Imports](/technical/library-storage-sync-and-imports)
+- [Enrichment, Acquisition, and External Integrations](/technical/enrichment-acquisition-and-integrations)

@@ -2,7 +2,7 @@
 
 ## Development stack
 
-Local development is centered on [docker-compose.dev.yaml](/Users/diego/Code/Ninja/musicdock/docker-compose.dev.yaml) and the helper targets in [Makefile](/Users/diego/Code/Ninja/musicdock/Makefile).
+Local development is centered on [docker-compose.dev.yaml](https://github.com/diego-ninja/crate/blob/main/docker-compose.dev.yaml) and the helper targets in [Makefile](https://github.com/diego-ninja/crate/blob/main/Makefile).
 
 ### Core dev services
 
@@ -32,7 +32,7 @@ This matters because Crate's auth, cookies, and multi-origin app topology are cl
 
 ## Production stack
 
-Production composition is defined in [docker-compose.yaml](/Users/diego/Code/Ninja/musicdock/docker-compose.yaml).
+Production composition is defined in [docker-compose.yaml](https://github.com/diego-ninja/crate/blob/main/docker-compose.yaml).
 
 Important services include:
 
@@ -223,7 +223,7 @@ Most incidents will span more than one of these layers.
 
 ## Related documents
 
-- [System Overview](/Users/diego/Code/Ninja/musicdock/docs/technical/01-system-overview.md)
-- [Worker, Tasks, and Background Services](/Users/diego/Code/Ninja/musicdock/docs/technical/03-worker-tasks-and-background-services.md)
-- [Frontend Architecture: Admin and Listen](/Users/diego/Code/Ninja/musicdock/docs/technical/08-frontends-admin-and-listen.md)
-- [Documentation Platform and Hosted Site](/Users/diego/Code/Ninja/musicdock/docs/technical/11-documentation-platform-and-hosted-site.md)
+- [System Overview](/technical/system-overview)
+- [Worker, Tasks, and Background Services](/technical/worker-tasks-and-background-services)
+- [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen)
+- [Documentation Platform and Hosted Site](/technical/documentation-platform-and-hosted-site)

@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 import { MarkdownArticle } from "@/components/MarkdownArticle";
-import { docs, docsBySection, getAdjacentDocs, getDoc, sectionMeta, type DocEntry, type DocSection } from "@/content";
+import { docsBySection, getAdjacentDocs, getDoc, sectionMeta, type DocEntry, type DocSection } from "@/content";
 import { cn } from "@/lib/utils";
 
 function Header({ onMenu }: { onMenu: () => void }) {
@@ -22,7 +22,6 @@ function Header({ onMenu }: { onMenu: () => void }) {
     { label: "Overview", to: "/" },
     { label: "Technical", to: "/technical" },
     { label: "Reference", to: "/reference" },
-    { label: "Plans", to: "/plans" },
   ];
 
   return (
@@ -66,8 +65,7 @@ function Header({ onMenu }: { onMenu: () => void }) {
 
 function SectionIcon({ section }: { section: DocSection }) {
   if (section === "technical") return <Layers3 size={18} />;
-  if (section === "reference") return <BookOpen size={18} />;
-  return <Sparkles size={18} />;
+  return <BookOpen size={18} />;
 }
 
 function Sidebar({
@@ -89,7 +87,6 @@ function Sidebar({
     return {
       technical: docsBySection.technical.filter((doc) => `${doc.title} ${doc.summary}`.toLowerCase().includes(q)),
       reference: docsBySection.reference.filter((doc) => `${doc.title} ${doc.summary}`.toLowerCase().includes(q)),
-      plans: docsBySection.plans.filter((doc) => `${doc.title} ${doc.summary}`.toLowerCase().includes(q)),
     };
   }, [query]);
 
@@ -163,33 +160,48 @@ function Sidebar({
 }
 
 function HomePage() {
-  const technical = docsBySection.technical.slice(0, 5);
+  const technical = docsBySection.technical;
+  const firstTechnical = technical[0];
   return (
     <div className="space-y-10">
       <section className="overflow-hidden rounded-[28px] border border-cyan-400/15 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.18),transparent_35%),linear-gradient(180deg,rgba(15,23,42,0.7),rgba(10,10,15,0.92))] p-8 sm:p-10">
         <div className="max-w-3xl">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">
             <Sparkles size={14} />
-            Docs platform
+            Crate Documentation
           </div>
           <h1 className="text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Crate technical documentation, now as a real product surface.
+            A self-hosted music platform built for people who still care about their library.
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-white/70 sm:text-lg">
-            This site renders the source markdown from the repository and wraps it in the same visual language as Listen:
-            cyan accent, dark surfaces, strong navigation, and a structure that is easier to browse than raw files alone.
+            Crate manages, enriches, and streams your personal music collection. These docs
+            describe how every subsystem works — the ingestion pipeline, audio analysis,
+            playback engine, API surface, and the frontends that sit on top.
           </p>
-          <div className="mt-6 flex flex-wrap gap-3 text-sm text-white/55">
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{docs.length} documents indexed</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{docsBySection.technical.length} technical references</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{docsBySection.plans.length} plans</span>
-            <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1.5 text-cyan-200">docs.cratemusic.app</span>
-            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">docs.dev.cratemusic.app</span>
+          <div className="mt-6 flex flex-wrap gap-3">
+            {firstTechnical ? (
+              <Link
+                to={firstTechnical.route}
+                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/15 px-4 py-2 text-sm font-medium text-cyan-200 transition hover:bg-cyan-400/25"
+              >
+                Start with the system overview
+                <ArrowRight size={16} />
+              </Link>
+            ) : null}
+            <a
+              href="https://github.com/diego-ninja/crate"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white/75 transition hover:bg-white/10 hover:text-white"
+            >
+              Source on GitHub
+              <ArrowRight size={16} />
+            </a>
           </div>
         </div>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-3">
+      <section className="grid gap-5 lg:grid-cols-2">
         {(Object.keys(sectionMeta) as DocSection[]).map((section) => {
           const entry = docsBySection[section][0];
           return (

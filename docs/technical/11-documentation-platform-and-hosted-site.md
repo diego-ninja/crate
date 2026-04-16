@@ -4,7 +4,7 @@
 
 Crate now has two parallel documentation surfaces:
 
-- repository markdown under [`docs/`](/Users/diego/Code/Ninja/musicdock/docs)
+- repository markdown under [`docs/`](https://github.com/diego-ninja/crate/blob/main/docs)
 - a hosted static documentation site rendered from those markdown files
 
 The markdown in the repository remains the source of truth. The hosted site exists to make the same content easier to browse, search, and consume across environments.
@@ -37,7 +37,7 @@ This mirrors the same split used by other Crate surfaces:
 
 ## Stack
 
-The documentation site lives in [`app/docs`](/Users/diego/Code/Ninja/musicdock/app/docs).
+The documentation site lives in [`app/docs`](https://github.com/diego-ninja/crate/blob/main/app/docs).
 
 It is built with:
 
@@ -72,9 +72,9 @@ The hosted site currently exposes three content groups:
 
 These correspond directly to the repo layout:
 
-- [`docs/technical/`](/Users/diego/Code/Ninja/musicdock/docs/technical)
-- top-level files under [`docs/`](/Users/diego/Code/Ninja/musicdock/docs)
-- [`docs/plans/`](/Users/diego/Code/Ninja/musicdock/docs/plans)
+- [`docs/technical/`](https://github.com/diego-ninja/crate/blob/main/docs/technical)
+- top-level files under [`docs/`](https://github.com/diego-ninja/crate/blob/main/docs)
+- [`docs/plans/`](https://github.com/diego-ninja/crate/blob/main/docs/plans)
 
 The grouping is intentionally simple. It is not a CMS taxonomy; it is a navigation model over the existing repository structure.
 
@@ -113,8 +113,8 @@ In development:
 
 That wiring lives in:
 
-- [`Makefile`](/Users/diego/Code/Ninja/musicdock/Makefile)
-- [`data/caddy/Caddyfile.dev`](/Users/diego/Code/Ninja/musicdock/data/caddy/Caddyfile.dev)
+- [`Makefile`](https://github.com/diego-ninja/crate/blob/main/Makefile)
+- [`data/caddy/Caddyfile.dev`](https://github.com/diego-ninja/crate/blob/main/data/caddy/Caddyfile.dev)
 
 This is deliberately consistent with how admin and listen are developed locally.
 
@@ -126,7 +126,7 @@ In production the docs site is packaged as its own container:
 - image: `ghcr.io/diego-ninja/crate-docs`
 - router host: `docs.${DOMAIN}`
 
-The service definition lives in [`docker-compose.yaml`](/Users/diego/Code/Ninja/musicdock/docker-compose.yaml).
+The service definition lives in [`docker-compose.yaml`](https://github.com/diego-ninja/crate/blob/main/docker-compose.yaml).
 
 This makes the docs surface operationally independent from:
 
@@ -199,6 +199,6 @@ Its role is to present committed technical knowledge in a more usable form.
 
 ## Related documents
 
-- [System Overview](/Users/diego/Code/Ninja/musicdock/docs/technical/01-system-overview.md)
-- [Development, Deployment, and Operations](/Users/diego/Code/Ninja/musicdock/docs/technical/10-development-deployment-and-operations.md)
-- [Frontend Architecture: Admin and Listen](/Users/diego/Code/Ninja/musicdock/docs/technical/08-frontends-admin-and-listen.md)
+- [System Overview](/technical/system-overview)
+- [Development, Deployment, and Operations](/technical/development-deployment-and-operations)
+- [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen)

@@ -1,50 +1,41 @@
-# Crate Technical Documentation
+# Crate
 
-This directory now contains two kinds of documentation:
+Crate is a self-hosted music platform: it manages your library, enriches it with
+metadata, analyses the audio, streams it to any client that speaks Subsonic,
+and ships two first-party frontends on top — an admin UI for librarians and a
+listening app for daily use.
 
-- `plans/` for design notes, one-off roadmaps, and implementation plans.
-- `technical/` for long-lived architectural documentation about how Crate is built today.
+These docs describe how every subsystem actually works today. They're written
+against the current code, not an aspirational design.
 
-If you are orienting yourself in the codebase, read the documents in this order:
+## Start here
 
-1. [System Overview](/Users/diego/Code/Ninja/musicdock/docs/technical/01-system-overview.md)
-2. [Backend API and Data Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/02-backend-api-and-data.md)
-3. [Worker, Tasks, and Background Services](/Users/diego/Code/Ninja/musicdock/docs/technical/03-worker-tasks-and-background-services.md)
-4. [Library, Storage, Sync, and Imports](/Users/diego/Code/Ninja/musicdock/docs/technical/04-library-storage-sync-and-imports.md)
-5. [Enrichment, Acquisition, and External Integrations](/Users/diego/Code/Ninja/musicdock/docs/technical/05-enrichment-acquisition-and-integrations.md)
-6. [Audio Analysis, Similarity, and Discovery Intelligence](/Users/diego/Code/Ninja/musicdock/docs/technical/06-audio-analysis-similarity-and-discovery.md)
-7. [Auth, Sessions, Users, and Social Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/07-auth-users-social-and-sessions.md)
-8. [Frontend Architecture: Admin and Listen](/Users/diego/Code/Ninja/musicdock/docs/technical/08-frontends-admin-and-listen.md)
-9. [Playback, Realtime, Visualizer, and Subsonic](/Users/diego/Code/Ninja/musicdock/docs/technical/09-playback-realtime-and-subsonic.md)
-10. [Development, Deployment, and Operations](/Users/diego/Code/Ninja/musicdock/docs/technical/10-development-deployment-and-operations.md)
-11. [Documentation Platform and Hosted Site](/Users/diego/Code/Ninja/musicdock/docs/technical/11-documentation-platform-and-hosted-site.md)
+If you're orienting yourself in the codebase, read the technical set in order.
+Each document stands alone but they build on each other.
 
-## Hosted docs surface
+1. [System Overview](/technical/system-overview) — the big picture: services, data flow, boundaries.
+2. [Backend API and Data Layer](/technical/backend-api-and-data) — FastAPI surface and PostgreSQL schema.
+3. [Worker, Tasks, and Background Services](/technical/worker-tasks-and-background-services) — how heavy work runs.
+4. [Library, Storage, Sync, and Imports](/technical/library-storage-sync-and-imports) — filesystem ↔ DB.
+5. [Enrichment, Acquisition, and External Integrations](/technical/enrichment-acquisition-and-integrations) — MusicBrainz, Last.fm, Tidal, Soulseek.
+6. [Audio Analysis, Similarity, and Discovery Intelligence](/technical/audio-analysis-similarity-and-discovery) — Essentia, Bliss, recommendations.
+7. [Auth, Sessions, Users, and Social Layer](/technical/auth-users-social-and-sessions) — identity and the social graph.
+8. [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen) — React 19, state, routing.
+9. [Playback, Realtime, and Subsonic](/technical/playback-realtime-and-subsonic) — the audio engine and the streaming API.
+10. [Development, Deployment, and Operations](/technical/development-deployment-and-operations) — running it, shipping it.
+11. [Documentation Platform and Hosted Site](/technical/documentation-platform-and-hosted-site) — how this site itself is built.
 
-The repository markdown is now also rendered through the dedicated docs frontend in `app/docs`.
+## Focused references
 
-Target domains:
+Shorter topical notes that predate the full technical set but are still useful
+as quick lookups:
 
-- `https://docs.cratemusic.app`
-- `https://docs.dev.cratemusic.app`
+- [Architecture summary](/reference/architecture)
+- [API notes](/reference/api)
+- [Audio analysis details](/reference/audio-analysis)
+- [Enrichment details](/reference/enrichment)
 
-## Existing topical docs
+## Source code
 
-These older documents are still useful as focused references:
-
-- [Architecture summary](/Users/diego/Code/Ninja/musicdock/docs/architecture.md)
-- [API notes](/Users/diego/Code/Ninja/musicdock/docs/api.md)
-- [Audio analysis details](/Users/diego/Code/Ninja/musicdock/docs/audio-analysis.md)
-- [Enrichment details](/Users/diego/Code/Ninja/musicdock/docs/enrichment.md)
-
-## Source-of-truth stance
-
-The new `technical/` set was written against the code in:
-
-- `/Users/diego/Code/Ninja/musicdock/app/crate`
-- `/Users/diego/Code/Ninja/musicdock/app/ui/src`
-- `/Users/diego/Code/Ninja/musicdock/app/listen/src`
-- `/Users/diego/Code/Ninja/musicdock/docker-compose*.yaml`
-- `/Users/diego/Code/Ninja/musicdock/Makefile`
-
-It is intended to describe the current implementation rather than an aspirational future design.
+The repository lives at [github.com/diego-ninja/crate](https://github.com/diego-ninja/crate).
+Every code reference in these docs links directly to the file on `main`.

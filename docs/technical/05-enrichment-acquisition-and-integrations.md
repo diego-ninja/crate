@@ -14,7 +14,7 @@ This layer spans:
 
 ## Artist enrichment
 
-The main unified entrypoint is [app/crate/enrichment.py](/Users/diego/Code/Ninja/musicdock/app/crate/enrichment.py).
+The main unified entrypoint is [app/crate/enrichment.py](https://github.com/diego-ninja/crate/blob/main/app/crate/enrichment.py).
 
 For a given artist, `enrich_artist(...)` pulls from multiple providers and persists into DB.
 
@@ -79,9 +79,9 @@ Crate currently integrates strongly with two acquisition channels:
 
 Key pieces:
 
-- API surface in [app/crate/api/tidal.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/tidal.py)
-- transport and download logic in [app/crate/tidal.py](/Users/diego/Code/Ninja/musicdock/app/crate/tidal.py)
-- worker orchestration in [app/crate/worker_handlers/acquisition.py](/Users/diego/Code/Ninja/musicdock/app/crate/worker_handlers/acquisition.py)
+- API surface in [app/crate/api/tidal.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/tidal.py)
+- transport and download logic in [app/crate/tidal.py](https://github.com/diego-ninja/crate/blob/main/app/crate/tidal.py)
+- worker orchestration in [app/crate/worker_handlers/acquisition.py](https://github.com/diego-ninja/crate/blob/main/app/crate/worker_handlers/acquisition.py)
 
 Tidal downloads are mediated through `tiddl`, and Crate wraps the result with:
 
@@ -95,8 +95,8 @@ Tidal downloads are mediated through `tiddl`, and Crate wraps the result with:
 
 Key pieces:
 
-- API surface in [app/crate/api/acquisition.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/acquisition.py)
-- integration logic in [app/crate/soulseek.py](/Users/diego/Code/Ninja/musicdock/app/crate/soulseek.py)
+- API surface in [app/crate/api/acquisition.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/acquisition.py)
+- integration logic in [app/crate/soulseek.py](https://github.com/diego-ninja/crate/blob/main/app/crate/soulseek.py)
 - worker orchestration in acquisition handlers
 
 Crate uses `slskd` as the network client and adds:
@@ -203,6 +203,6 @@ It normalizes aggressively because the end goal is a clean canonical library, no
 
 ## Related documents
 
-- [Library, Storage, Sync, and Imports](/Users/diego/Code/Ninja/musicdock/docs/technical/04-library-storage-sync-and-imports.md)
-- [Audio Analysis, Similarity, and Discovery Intelligence](/Users/diego/Code/Ninja/musicdock/docs/technical/06-audio-analysis-similarity-and-discovery.md)
-- [Frontend Architecture: Admin and Listen](/Users/diego/Code/Ninja/musicdock/docs/technical/08-frontends-admin-and-listen.md)
+- [Library, Storage, Sync, and Imports](/technical/library-storage-sync-and-imports)
+- [Audio Analysis, Similarity, and Discovery Intelligence](/technical/audio-analysis-similarity-and-discovery)
+- [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen)

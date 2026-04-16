@@ -1,6 +1,7 @@
 # Architecture
 
-This file is now a short entry point. The full technical architecture has been expanded into the `technical/` set under [docs/README.md](/Users/diego/Code/Ninja/musicdock/docs/README.md).
+A one-page orientation. For the full architecture, read the [technical set](/)
+in order — it covers each subsystem in depth.
 
 ## Fast orientation
 
@@ -20,13 +21,13 @@ The most important architectural rule is still the same:
 
 ## Read these documents next
 
-1. [System Overview](/Users/diego/Code/Ninja/musicdock/docs/technical/01-system-overview.md)
-2. [Backend API and Data Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/02-backend-api-and-data.md)
-3. [Worker, Tasks, and Background Services](/Users/diego/Code/Ninja/musicdock/docs/technical/03-worker-tasks-and-background-services.md)
-4. [Library, Storage, Sync, and Imports](/Users/diego/Code/Ninja/musicdock/docs/technical/04-library-storage-sync-and-imports.md)
-5. [Enrichment, Acquisition, and External Integrations](/Users/diego/Code/Ninja/musicdock/docs/technical/05-enrichment-acquisition-and-integrations.md)
-6. [Audio Analysis, Similarity, and Discovery Intelligence](/Users/diego/Code/Ninja/musicdock/docs/technical/06-audio-analysis-similarity-and-discovery.md)
-7. [Auth, Sessions, Users, and Social Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/07-auth-users-social-and-sessions.md)
-8. [Frontend Architecture: Admin and Listen](/Users/diego/Code/Ninja/musicdock/docs/technical/08-frontends-admin-and-listen.md)
-9. [Playback, Realtime, Visualizer, and Subsonic](/Users/diego/Code/Ninja/musicdock/docs/technical/09-playback-realtime-and-subsonic.md)
-10. [Development, Deployment, and Operations](/Users/diego/Code/Ninja/musicdock/docs/technical/10-development-deployment-and-operations.md)
+1. [System Overview](/technical/system-overview)
+2. [Backend API and Data Layer](/technical/backend-api-and-data)
+3. [Worker, Tasks, and Background Services](/technical/worker-tasks-and-background-services)
+4. [Library, Storage, Sync, and Imports](/technical/library-storage-sync-and-imports)
+5. [Enrichment, Acquisition, and External Integrations](/technical/enrichment-acquisition-and-integrations)
+6. [Audio Analysis, Similarity, and Discovery Intelligence](/technical/audio-analysis-similarity-and-discovery)
+7. [Auth, Sessions, Users, and Social Layer](/technical/auth-users-social-and-sessions)
+8. [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen)
+9. [Playback, Realtime, Visualizer, and Subsonic](/technical/playback-realtime-and-subsonic)
+10. [Development, Deployment, and Operations](/technical/development-deployment-and-operations)

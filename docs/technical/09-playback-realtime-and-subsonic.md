@@ -4,7 +4,7 @@
 
 Playback is a defining subsystem of `app/listen`, not a peripheral utility.
 
-The central state coordinator is [app/listen/src/contexts/PlayerContext.tsx](/Users/diego/Code/Ninja/musicdock/app/listen/src/contexts/PlayerContext.tsx).
+The central state coordinator is [app/listen/src/contexts/PlayerContext.tsx](https://github.com/diego-ninja/crate/blob/main/app/listen/src/contexts/PlayerContext.tsx).
 
 The player is built around these ideas:
 
@@ -16,7 +16,7 @@ The player is built around these ideas:
 
 ## Audio engine
 
-The active engine wrapper is [app/listen/src/lib/gapless-player.ts](/Users/diego/Code/Ninja/musicdock/app/listen/src/lib/gapless-player.ts), which wraps `Gapless-5`.
+The active engine wrapper is [app/listen/src/lib/gapless-player.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/lib/gapless-player.ts), which wraps `Gapless-5`.
 
 Responsibilities of the wrapper:
 
@@ -108,8 +108,8 @@ Listen tracks play events and history, not just UI state.
 
 Pieces involved:
 
-- [app/listen/src/contexts/use-play-event-tracker.ts](/Users/diego/Code/Ninja/musicdock/app/listen/src/contexts/use-play-event-tracker.ts)
-- [app/listen/src/lib/play-event-queue.ts](/Users/diego/Code/Ninja/musicdock/app/listen/src/lib/play-event-queue.ts)
+- [app/listen/src/contexts/use-play-event-tracker.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/contexts/use-play-event-tracker.ts)
+- [app/listen/src/lib/play-event-queue.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/lib/play-event-queue.ts)
 
 Important behaviors:
 
@@ -123,9 +123,9 @@ The visualizer is a substantial subsystem, not a toy canvas.
 
 Relevant code:
 
-- [app/listen/src/hooks/use-audio-visualizer.ts](/Users/diego/Code/Ninja/musicdock/app/listen/src/hooks/use-audio-visualizer.ts)
-- [app/listen/src/components/player/visualizer/useMusicVisualizer.ts](/Users/diego/Code/Ninja/musicdock/app/listen/src/components/player/visualizer/useMusicVisualizer.ts)
-- [app/listen/src/components/player/visualizer/MusicVisualizer.ts](/Users/diego/Code/Ninja/musicdock/app/listen/src/components/player/visualizer/MusicVisualizer.ts)
+- [app/listen/src/hooks/use-audio-visualizer.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/hooks/use-audio-visualizer.ts)
+- [app/listen/src/components/player/visualizer/useMusicVisualizer.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/components/player/visualizer/useMusicVisualizer.ts)
+- [app/listen/src/components/player/visualizer/MusicVisualizer.ts](https://github.com/diego-ninja/crate/blob/main/app/listen/src/components/player/visualizer/MusicVisualizer.ts)
 - renderer and geometry modules under the same directory
 
 Key design decisions:
@@ -177,7 +177,7 @@ Why websocket:
 
 ## Jam rooms
 
-Jam sessions are implemented in [app/crate/api/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/jam.py).
+Jam sessions are implemented in [app/crate/api/jam.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/jam.py).
 
 The model includes:
 
@@ -199,7 +199,7 @@ The goal is coordinated playback control, not sample-perfect audio sync.
 
 ## Subsonic compatibility
 
-Crate also exposes a Subsonic/Open Subsonic compatible API in [app/crate/api/subsonic.py](/Users/diego/Code/Ninja/musicdock/app/crate/api/subsonic.py).
+Crate also exposes a Subsonic/Open Subsonic compatible API in [app/crate/api/subsonic.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/subsonic.py).
 
 This allows external players to:
 
@@ -235,6 +235,6 @@ This keeps the first version manageable:
 
 ## Related documents
 
-- [Auth, Sessions, Users, and Social Layer](/Users/diego/Code/Ninja/musicdock/docs/technical/07-auth-users-social-and-sessions.md)
-- [Frontend Architecture: Admin and Listen](/Users/diego/Code/Ninja/musicdock/docs/technical/08-frontends-admin-and-listen.md)
-- [Development, Deployment, and Operations](/Users/diego/Code/Ninja/musicdock/docs/technical/10-development-deployment-and-operations.md)
+- [Auth, Sessions, Users, and Social Layer](/technical/auth-users-social-and-sessions)
+- [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen)
+- [Development, Deployment, and Operations](/technical/development-deployment-and-operations)
