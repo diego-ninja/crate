@@ -464,9 +464,41 @@ def stats_replay(request: Request, window: str = Query("30d"), limit: int = Quer
 @router.get("/home/discovery")
 def home_discovery(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_discovery
+    import logging
 
-    return get_home_discovery(user["id"])
+    cache_key = f"home:discovery:{user['id']}"
+
+    # The discovery payload is the most expensive endpoint in the whole
+    # API (~10 heavy queries, JOINs across genres + similarities + follows).
+    # A 60 s cache prevents hammering the DB on quick navigations (open
+    # home → go to album → come back → home). Pull-to-refresh bypasses
+    # this via the `?fresh=1` param.
+    fresh = request.query_params.get("fresh") == "1"
+    if not fresh:
+        cached = get_cache(cache_key, max_age_seconds=60)
+        if cached is not None:
+            return cached
+
+    try:
+        result = get_home_discovery(user["id"])
+        set_cache(cache_key, result, ttl=60)
+        return result
+    except Exception as exc:
+        # If the heavy computation fails (timeout, data edge case, pool
+        # exhaustion), return the last successful payload rather than a
+        # blank 500 that hides the entire home. Stale-but-visible is
+        # strictly better than broken-and-empty.
+        logging.getLogger(__name__).warning(
+            "home/discovery failed for user %s, falling back to cache: %s",
+            user["id"],
+            exc,
+        )
+        stale = get_cache(cache_key, max_age_seconds=3600)
+        if stale is not None:
+            return stale
+        raise
 
 
 @router.get("/home/mixes/{mix_id}")

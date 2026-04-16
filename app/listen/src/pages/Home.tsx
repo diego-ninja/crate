@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -90,13 +90,17 @@ export function Home() {
   const { play, playAll } = usePlayerActions();
   const { isFollowing, toggleArtistFollow } = useArtistFollows();
 
+  const [discoveryFreshFlag, setDiscoveryFreshFlag] = useState<number>(0);
+  const discoveryUrl =
+    discoveryFreshFlag > 0
+      ? `/api/me/home/discovery?fresh=1&_=${discoveryFreshFlag}`
+      : "/api/me/home/discovery";
   const {
     data: discovery,
     loading: discoveryLoading,
     error: discoveryError,
     refetch: refetchDiscovery,
-  } =
-    useApi<HomeDiscoveryPayload>("/api/me/home/discovery");
+  } = useApi<HomeDiscoveryPayload>(discoveryUrl);
   const { data: recentGlobalArtists, loading: globalArtistsLoading, refetch: refetchArtists } =
     useApi<PaginatedArtistsResponse>("/api/artists?sort=recent&per_page=10");
   const { data: upcoming, refetch: refetchUpcoming } =
@@ -105,11 +109,13 @@ export function Home() {
     useApi<ReplayMix>("/api/me/stats/replay?window=30d&limit=18");
 
   const onRefresh = useCallback(async () => {
-    refetchDiscovery();
+    // Bump the fresh flag so the URL changes → useApi triggers a new
+    // fetch with ?fresh=1, bypassing the 60 s server-side cache.
+    setDiscoveryFreshFlag((n) => n + 1);
     refetchArtists();
     refetchUpcoming();
     refetchReplay();
-  }, [refetchArtists, refetchDiscovery, refetchReplay, refetchUpcoming]);
+  }, [refetchArtists, refetchReplay, refetchUpcoming]);
 
   const { handlers: pullHandlers, pullDistance, refreshing } = usePullToRefresh(onRefresh);
 
