@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 from crate.api.auth import _require_auth, _require_admin
 from crate.db import create_task, get_all_genres, get_genre_detail, get_genre_graph, get_unmapped_genres, list_tasks
-from crate.db.core import get_db_ctx
+from crate.db.genres import get_genre_taxonomy_node_id, set_genre_eq_gains
 from crate.genre_taxonomy import invalidate_runtime_taxonomy_cache, resolve_genre_eq_preset
 
 router = APIRouter(prefix="/api/genres", tags=["genres"])
@@ -154,18 +154,10 @@ def update_genre_eq_preset(request: Request, slug: str, body: EqPresetBody):
             clamped.append(max(_EQ_GAIN_MIN, min(_EQ_GAIN_MAX, numeric)))
         gains_param = clamped
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT id FROM genre_taxonomy_nodes WHERE slug = %s",
-            (canonical_slug,),
-        )
-        row = cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Canonical genre not found")
-        cur.execute(
-            "UPDATE genre_taxonomy_nodes SET eq_gains = %s WHERE slug = %s",
-            (gains_param, canonical_slug),
-        )
+    node_id = get_genre_taxonomy_node_id(canonical_slug)
+    if not node_id:
+        raise HTTPException(status_code=404, detail="Canonical genre not found")
+    set_genre_eq_gains(canonical_slug, gains_param)
 
     # Drop the cached graph so the next resolver call picks up the new
     # gains (or NULL → inheritance).

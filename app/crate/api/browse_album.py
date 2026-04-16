@@ -8,7 +8,8 @@ from crate.api._deps import COVER_NAMES, extensions, library_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import display_name, find_album_dir, find_album_row, fs_album_detail, has_library_data
 from crate.audio import get_audio_files
-from crate.db import get_db_ctx, get_library_album_by_id, get_library_artist, get_library_tracks
+from crate.db import get_library_album_by_id, get_library_artist, get_library_tracks
+from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list
 from crate.storage_layout import resolve_album_dir
 
 router = APIRouter()
@@ -33,76 +34,16 @@ def api_related_albums(request: Request, artist: str, album: str, limit: int = 1
         return []
 
     album_id = current["id"]
+    year = current["year"][:4] if current.get("year") and len(current.get("year", "")) >= 4 else None
+    seen.add(album_id)
 
-    with get_db_ctx() as cur:
-        year = current["year"][:4] if current.get("year") and len(current.get("year", "")) >= 4 else None
-        seen.add(album_id)
-
-        cur.execute("SELECT genre_id FROM album_genres WHERE album_id = %s", (album_id,))
-        genre_ids = [row["genre_id"] for row in cur.fetchall()]
-
-        cur.execute(
-            "SELECT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug, "
-            "a.year, a.track_count, a.has_cover "
-            "FROM library_albums a LEFT JOIN library_artists ar ON ar.name = a.artist "
-            "WHERE a.artist = %s AND a.id != %s ORDER BY a.year",
-            (artist, album_id),
-        )
-        for row in cur.fetchall():
+    genre_ids = get_album_genre_ids(album_id)
+    grouped = get_related_albums(album_id, artist, year, genre_ids)
+    for reason, rows in grouped.items():
+        for row in rows:
             if row["id"] not in seen:
                 seen.add(row["id"])
-                related.append({**dict(row), "reason": "same_artist"})
-
-        if genre_ids and year:
-            year_int = int(year)
-            placeholders = ",".join(["%s"] * len(genre_ids))
-            cur.execute(
-                f"""
-                SELECT DISTINCT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug,
-                    a.year, a.track_count, a.has_cover
-                FROM library_albums a
-                LEFT JOIN library_artists ar ON ar.name = a.artist
-                JOIN album_genres ag ON a.id = ag.album_id
-                WHERE ag.genre_id IN ({placeholders})
-                AND a.artist != %s
-                AND a.year IS NOT NULL AND length(a.year) >= 4
-                AND CAST(substring(a.year, 1, 4) AS INTEGER) BETWEEN %s AND %s
-                ORDER BY RANDOM() LIMIT 10
-                """,
-                (*genre_ids, artist, year_int - 5, year_int + 5),
-            )
-            for row in cur.fetchall():
-                if row["id"] not in seen:
-                    seen.add(row["id"])
-                    related.append({**dict(row), "reason": "genre_decade"})
-
-        cur.execute(
-            """
-            SELECT AVG(energy) AS e, AVG(danceability) AS d, AVG(valence) AS v
-            FROM library_tracks WHERE album_id = %s AND energy IS NOT NULL
-            """,
-            (album_id,),
-        )
-        audio = cur.fetchone()
-        if audio and audio["e"] is not None:
-            cur.execute(
-                """
-                SELECT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug,
-                    a.year, a.track_count, a.has_cover,
-                    ABS(AVG(t.energy) - %s) + ABS(AVG(t.danceability) - %s) + ABS(AVG(t.valence) - %s) AS dist
-                FROM library_albums a
-                LEFT JOIN library_artists ar ON ar.name = a.artist
-                JOIN library_tracks t ON t.album_id = a.id
-                WHERE t.energy IS NOT NULL AND a.id != %s AND a.artist != %s
-                GROUP BY a.id, a.slug, a.name, a.artist, ar.id, ar.slug, a.year, a.track_count, a.has_cover
-                ORDER BY dist ASC LIMIT 8
-                """,
-                (audio["e"], audio["d"], audio["v"], album_id, artist),
-            )
-            for row in cur.fetchall():
-                if row["id"] not in seen:
-                    seen.add(row["id"])
-                    related.append({**dict(row), "reason": "audio_similar"})
+                related.append({**row, "reason": reason})
 
     import re
 
@@ -181,13 +122,7 @@ def api_album(request: Request, artist: str, album: str):
     total_size = sum(track.get("size", 0) or 0 for track in tracks_data)
     total_length = sum(track["length_sec"] for track in track_list)
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT g.name FROM album_genres ag JOIN genres g ON ag.genre_id = g.id "
-            "WHERE ag.album_id = %s ORDER BY ag.weight DESC",
-            (album_data["id"],),
-        )
-        album_genres = [row["name"] for row in cur.fetchall()]
+    album_genres = get_album_genres_list(album_data["id"])
 
     if album_genres:
         album_tags["genre"] = ", ".join(album_genres)

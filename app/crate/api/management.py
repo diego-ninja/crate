@@ -246,36 +246,10 @@ def analysis_status(request: Request):
     """Return current background analysis progress for audio analysis and bliss daemons."""
     _require_admin(request)
     from crate.analysis_daemon import get_analysis_status
+    from crate.db.management import get_last_analyzed_track, get_last_bliss_track
     status = get_analysis_status()
 
-    # Last analyzed track (for live monitoring)
-    from crate.db import get_db_ctx
-    last = {}
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT title, artist, album, bpm, audio_key, energy, danceability,
-                   mood_json IS NOT NULL as has_mood, updated_at
-            FROM library_tracks
-            WHERE analysis_state = 'done' AND bpm IS NOT NULL
-            ORDER BY updated_at DESC LIMIT 1
-        """)
-        row = cur.fetchone()
-        if row:
-            last = dict(row)
-
-    last_bliss = {}
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT title, artist, album, updated_at
-            FROM library_tracks
-            WHERE bliss_state = 'done' AND bliss_vector IS NOT NULL
-            ORDER BY updated_at DESC LIMIT 1
-        """)
-        row = cur.fetchone()
-        if row:
-            last_bliss = dict(row)
-
-    return {**status, "last_analyzed": last, "last_bliss": last_bliss}
+    return {**status, "last_analyzed": get_last_analyzed_track(), "last_bliss": get_last_bliss_track()}
 
 
 @router.post("/analyze-all")
@@ -377,40 +351,5 @@ def verify_storage_v2(request: Request):
 def storage_v2_status(request: Request):
     """Get migration progress: how many artists/albums/tracks are on V2 layout."""
     _require_admin(request)
-    from crate.db import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT
-                COUNT(*) AS total_artists,
-                COUNT(*) FILTER (WHERE storage_id IS NOT NULL AND folder_name = storage_id::text) AS migrated_artists
-            FROM library_artists
-        """)
-        artist_stats = dict(cur.fetchone())
-
-        cur.execute("""
-            SELECT
-                COUNT(*) AS total_albums,
-                COUNT(*) FILTER (
-                    WHERE storage_id IS NOT NULL
-                    AND path LIKE '%%/' || storage_id::text
-                ) AS migrated_albums
-            FROM library_albums
-        """)
-        album_stats = dict(cur.fetchone())
-
-        cur.execute("""
-            SELECT
-                COUNT(*) AS total_tracks,
-                COUNT(*) FILTER (
-                    WHERE storage_id IS NOT NULL
-                    AND filename = storage_id::text || SUBSTRING(filename FROM '\\.[^.]+$')
-                ) AS migrated_tracks
-            FROM library_tracks
-        """)
-        track_stats = dict(cur.fetchone())
-
-    return {
-        **artist_stats,
-        **album_stats,
-        **track_stats,
-    }
+    from crate.db.management import get_storage_v2_status
+    return get_storage_v2_status()

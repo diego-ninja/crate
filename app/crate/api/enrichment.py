@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from crate.api.auth import _require_admin, _require_auth
 from crate.api._deps import artist_name_from_id
 from crate import spotify, setlistfm, musicbrainz_ext
-from crate.db import get_db_ctx
+from crate.db import get_artist_refs_by_names, get_artist_analysis_tracks, get_artist_tracks_for_setlist, find_user_playlist_by_name
 from crate.lastfm import get_artist_info, get_fanart_all_images
 
 log = logging.getLogger(__name__)
@@ -19,19 +19,7 @@ def _enrich_artist_refs(items: list[dict]) -> list[dict]:
     if not names:
         return items
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT id, slug, name
-            FROM library_artists
-            WHERE LOWER(name) = ANY(%s)
-            """,
-            ([name.lower() for name in names],),
-        )
-        refs = {
-            row["name"].lower(): {"id": row.get("id"), "slug": row.get("slug")}
-            for row in cur.fetchall()
-        }
+    refs = get_artist_refs_by_names(names)
 
     enriched: list[dict] = []
     for item in items:
@@ -100,17 +88,7 @@ def get_artist_analysis_data(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         return JSONResponse({"error": "Not found"}, status_code=404)
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.title, t.bpm AS tempo, t.audio_key AS key, t.audio_scale AS scale,
-                   t.energy, t.danceability, t.valence, t.acousticness,
-                   t.instrumentalness, t.loudness, t.dynamic_range,
-                   t.spectral_complexity, t.mood_json
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            WHERE a.artist = %s AND t.bpm IS NOT NULL
-        """, (artist_name,))
-        rows = cur.fetchall()
+    rows = get_artist_analysis_tracks(artist_name)
     result = {}
     for row in rows:
         title = (row.get("title") or "").lower()
@@ -280,23 +258,7 @@ def create_setlist_playlist(request: Request, name: str):
     unmatched: list[str] = []
     used_ids: set[int] = set()
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT
-                t.id,
-                t.title,
-                t.path,
-                t.duration,
-                a.name AS album
-            FROM library_tracks t
-            JOIN library_albums a ON a.id = t.album_id
-            WHERE a.artist = %s
-            ORDER BY a.year NULLS LAST, a.name, t.disc_number NULLS LAST, t.track_number NULLS LAST, t.title
-            """,
-            (name,),
-        )
-        library_tracks = [dict(row) for row in cur.fetchall()]
+    library_tracks = get_artist_tracks_for_setlist(name)
 
     for song in setlist:
         title = song.get("title", "")
@@ -320,20 +282,7 @@ def create_setlist_playlist(request: Request, name: str):
 
     playlist_name = f"{name} - Probable Setlist"
     playlist_description = f"Probable setlist generated from Setlist.fm for {name}"
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT id
-            FROM playlists
-            WHERE user_id = %s
-              AND scope = 'user'
-              AND name = %s
-            ORDER BY updated_at DESC NULLS LAST, id DESC
-            LIMIT 1
-            """,
-            (user["id"], playlist_name),
-        )
-        existing = cur.fetchone()
+    existing = find_user_playlist_by_name(user["id"], playlist_name)
 
     created = existing is None
     if existing:

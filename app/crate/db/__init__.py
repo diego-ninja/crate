@@ -25,6 +25,7 @@ from crate.db.tasks import (
     create_task, create_task_dedup, update_task, get_task, list_tasks, claim_next_task,
     list_child_tasks, heartbeat_task, cleanup_zombie_tasks, cleanup_orphaned_tasks,
     save_scan_result, get_latest_scan,
+    delete_tasks_by_status, delete_old_finished_tasks,
 )
 
 # Cache & Settings
@@ -33,6 +34,7 @@ from crate.db.cache import (
     get_mb_cache, set_mb_cache,
     get_cache, set_cache, delete_cache, delete_cache_prefix, get_cache_stats,
     get_dir_mtime, set_dir_mtime, get_all_dir_mtimes, delete_dir_mtime,
+    clear_all_cache_tables,
 )
 
 # Library
@@ -46,6 +48,9 @@ from crate.db.library import (
     update_track_analysis, update_artist_enrichment,
     delete_artist, delete_album, delete_track,
     set_track_rating, get_track_rating,
+    get_track_path_by_id, get_artist_analysis_tracks,
+    get_artist_refs_by_names, get_artist_tracks_for_setlist,
+    find_user_playlist_by_name,
 )
 
 # Auth
@@ -87,6 +92,7 @@ from crate.db.genres import (
     upsert_genre_taxonomy_edge,
     upsert_genre_taxonomy_node,
     update_genre_external_metadata,
+    get_genre_taxonomy_node_id, set_genre_eq_gains,
 )
 
 # Audit & Management
@@ -121,6 +127,7 @@ from crate.db.shows import (
     get_show_cities, get_show_countries, delete_past_shows,
     attend_show, unattend_show, get_attending_show_ids,
     get_show_reminders, create_show_reminder,
+    get_upcoming_show_counts,
 )
 
 # Task Events (SSE)

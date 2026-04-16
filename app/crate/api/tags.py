@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
 from crate.api._deps import album_names_from_id, library_path, safe_path
-from crate.db import create_task, get_db_ctx, get_library_album_by_id
+from crate.db import create_task, get_library_album_by_id, get_track_path_by_id
 
 router = APIRouter()
 
@@ -69,12 +69,9 @@ def _update_track_tags(request: Request, filepath: str, data: TrackTagsUpdate):
 @router.put("/api/tracks/{track_id}/tags")
 def api_update_track_tags_by_id(request: Request, track_id: int, data: TrackTagsUpdate):
     _require_admin(request)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
-        row = cur.fetchone()
-    if not row:
+    filepath = get_track_path_by_id(track_id)
+    if not filepath:
         return JSONResponse({"error": "Not found"}, status_code=404)
-    filepath = row["path"]
     lib = library_path()
     lib_str = str(lib)
     if filepath.startswith(lib_str):

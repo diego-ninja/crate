@@ -410,3 +410,84 @@ def _row_to_lib_track(row: dict | None) -> dict | None:
     if mood is not None and isinstance(mood, str):
         d["mood_json"] = json.loads(mood)
     return d
+
+
+def get_track_path_by_id(track_id: int) -> str | None:
+    """Return the path of a track by its ID, or None if not found."""
+    with get_db_ctx() as cur:
+        cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
+        row = cur.fetchone()
+    return row["path"] if row else None
+
+
+def get_artist_analysis_tracks(artist_name: str) -> list[dict]:
+    """Return audio analysis data for all analyzed tracks of an artist."""
+    with get_db_ctx() as cur:
+        cur.execute("""
+            SELECT t.title, t.bpm AS tempo, t.audio_key AS key, t.audio_scale AS scale,
+                   t.energy, t.danceability, t.valence, t.acousticness,
+                   t.instrumentalness, t.loudness, t.dynamic_range,
+                   t.spectral_complexity, t.mood_json
+            FROM library_tracks t
+            JOIN library_albums a ON t.album_id = a.id
+            WHERE a.artist = %s AND t.bpm IS NOT NULL
+        """, (artist_name,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def get_artist_refs_by_names(names: list[str]) -> dict[str, dict]:
+    """Look up artist id/slug by lowercase name. Returns {lowercase_name: {id, slug}}."""
+    if not names:
+        return {}
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT id, slug, name
+            FROM library_artists
+            WHERE LOWER(name) = ANY(%s)
+            """,
+            ([name.lower() for name in names],),
+        )
+        return {
+            row["name"].lower(): {"id": row.get("id"), "slug": row.get("slug")}
+            for row in cur.fetchall()
+        }
+
+
+def get_artist_tracks_for_setlist(artist_name: str) -> list[dict]:
+    """Return tracks for an artist ordered for setlist matching."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT
+                t.id,
+                t.title,
+                t.path,
+                t.duration,
+                a.name AS album
+            FROM library_tracks t
+            JOIN library_albums a ON a.id = t.album_id
+            WHERE a.artist = %s
+            ORDER BY a.year NULLS LAST, a.name, t.disc_number NULLS LAST, t.track_number NULLS LAST, t.title
+            """,
+            (artist_name,),
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def find_user_playlist_by_name(user_id: int, playlist_name: str) -> dict | None:
+    """Find a user's playlist by exact name, most recently updated."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            """
+            SELECT id
+            FROM playlists
+            WHERE user_id = %s
+              AND scope = 'user'
+              AND name = %s
+            ORDER BY updated_at DESC NULLS LAST, id DESC
+            LIMIT 1
+            """,
+            (user_id, playlist_name),
+        )
+        return cur.fetchone()

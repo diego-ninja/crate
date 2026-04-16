@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
-from crate.db import get_setting, set_setting, get_db_table_stats, get_db_ctx, get_cache_stats, delete_cache_prefix
+from crate.db import get_setting, set_setting, get_db_table_stats, get_cache_stats, delete_cache_prefix, clear_all_cache_tables
 from crate.scheduler import get_schedules, set_schedules
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -66,28 +66,22 @@ def _mask_token(token: str) -> str:
 
 
 def _get_shows_settings() -> dict:
-    from crate.db.shows import get_unique_user_cities
-    from crate.db.core import get_db_ctx
+    from crate.db.shows import get_unique_user_cities, get_upcoming_show_counts
     cities = []
     try:
         cities = get_unique_user_cities()
     except Exception:
         pass
-    show_count = 0
-    lastfm_count = 0
+    counts = {"show_count": 0, "lastfm_count": 0}
     try:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT COUNT(*)::INTEGER AS c FROM shows WHERE date >= CURRENT_DATE")
-            show_count = cur.fetchone()["c"]
-            cur.execute("SELECT COUNT(*)::INTEGER AS c FROM shows WHERE date >= CURRENT_DATE AND (source = 'lastfm' OR source = 'both')")
-            lastfm_count = cur.fetchone()["c"]
+        counts = get_upcoming_show_counts()
     except Exception:
         pass
     return {
         "lastfm_scraping_enabled": get_setting("lastfm_scraping_enabled", "true") == "true",
         "active_cities": [{"city": c["city"], "country": c.get("country", "")} for c in cities],
-        "upcoming_shows": show_count,
-        "lastfm_shows": lastfm_count,
+        "upcoming_shows": counts["show_count"],
+        "lastfm_shows": counts["lastfm_count"],
     }
 
 
@@ -166,10 +160,7 @@ def clear_cache(request: Request, body: CacheClearRequest):
     # Clear Redis + PostgreSQL
     if cache_type == "all":
         delete_cache_prefix("")  # all cache keys
-        # Also clear mb_cache in PostgreSQL
-        with get_db_ctx() as cur:
-            cur.execute("DELETE FROM cache")
-            cur.execute("DELETE FROM mb_cache")
+        clear_all_cache_tables()
         # Clear all Redis mb: keys
         from crate.db.cache import _get_redis
         r = _get_redis()

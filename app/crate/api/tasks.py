@@ -221,22 +221,11 @@ def api_clean_tasks_by_status(request: Request, status: str):
     """Delete all tasks with the given status. Allowed: completed, cancelled, failed."""
     _require_admin(request)
     from fastapi import HTTPException
-    from crate.db import get_db_ctx
+    from crate.db import delete_tasks_by_status
     allowed = {"completed", "cancelled", "failed"}
     if status not in allowed:
         raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(allowed)}")
-    with get_db_ctx() as cur:
-        # Delete dependent rows first (FK constraints)
-        cur.execute(
-            "DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE status = %s)",
-            (status,),
-        )
-        cur.execute(
-            "DELETE FROM scan_results WHERE task_id IN (SELECT id FROM tasks WHERE status = %s)",
-            (status,),
-        )
-        cur.execute("DELETE FROM tasks WHERE status = %s", (status,))
-        deleted = cur.rowcount
+    deleted = delete_tasks_by_status(status)
     return {"deleted": deleted, "status": status}
 
 
@@ -244,17 +233,11 @@ def api_clean_tasks_by_status(request: Request, status: str):
 def api_cleanup_tasks(request: Request, body: dict | None = None):
     """Delete completed/failed/cancelled tasks older than N days."""
     _require_admin(request)
-    from crate.db import get_db_ctx
-    days = (body or {}).get("older_than_days", 7)
+    from crate.db import delete_old_finished_tasks
     from datetime import datetime, timezone, timedelta
+    days = (body or {}).get("older_than_days", 7)
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            "DELETE FROM tasks WHERE status IN ('completed', 'failed', 'cancelled') "
-            "AND created_at < %s",
-            (cutoff,),
-        )
-        deleted = cur.rowcount
+    deleted = delete_old_finished_tasks(cutoff)
     return {"deleted": deleted}
 
 

@@ -8,7 +8,7 @@ from crate.playlist_covers import delete_playlist_cover, playlist_cover_abspath
 from crate.db import (
     create_playlist, get_playlists, get_playlist, update_playlist,
     delete_playlist, get_playlist_tracks, add_playlist_tracks,
-    remove_playlist_track, reorder_playlist, get_db_ctx,
+    remove_playlist_track, reorder_playlist,
     can_view_playlist, can_edit_playlist, is_playlist_owner,
     get_playlist_members, add_playlist_member, remove_playlist_member,
     create_playlist_invite, consume_playlist_invite,
@@ -60,36 +60,10 @@ class PlaylistInviteRequest(BaseModel):
 def filter_options():
     """Return available values for smart playlist filters."""
     from crate.db import get_all_genres
+    from crate.db.playlists import get_playlist_filter_options
     genres = [g["name"] for g in get_all_genres()]
-
-    with get_db_ctx() as cur:
-        cur.execute("SELECT DISTINCT format FROM library_tracks WHERE format IS NOT NULL AND format != '' ORDER BY format")
-        formats = [r["format"] for r in cur.fetchall()]
-
-        cur.execute("SELECT DISTINCT audio_key FROM library_tracks WHERE audio_key IS NOT NULL AND audio_key != '' ORDER BY audio_key")
-        keys = [r["audio_key"] for r in cur.fetchall()]
-
-        cur.execute("SELECT DISTINCT audio_scale FROM library_tracks WHERE audio_scale IS NOT NULL AND audio_scale != '' ORDER BY audio_scale")
-        scales = [r["audio_scale"] for r in cur.fetchall()]
-
-        cur.execute("SELECT name FROM library_artists ORDER BY name")
-        artists = [r["name"] for r in cur.fetchall()]
-
-        cur.execute("SELECT MIN(year) AS min_y, MAX(year) AS max_y FROM library_tracks WHERE year IS NOT NULL AND year != ''")
-        yr = cur.fetchone()
-
-        cur.execute("SELECT MIN(bpm) AS min_b, MAX(bpm) AS max_b FROM library_tracks WHERE bpm IS NOT NULL")
-        bpm = cur.fetchone()
-
-    return {
-        "genres": genres,
-        "formats": formats,
-        "keys": keys,
-        "scales": scales,
-        "artists": artists,
-        "year_range": [yr["min_y"] or "1960", yr["max_y"] or "2026"],
-        "bpm_range": [int(bpm["min_b"] or 60), int(bpm["max_b"] or 200)],
-    }
+    opts = get_playlist_filter_options()
+    return {"genres": genres, **opts}
 
 
 # ── CRUD ─────────────────────────────────────────────────────────

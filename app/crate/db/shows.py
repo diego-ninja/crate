@@ -479,3 +479,13 @@ def create_show_reminder(user_id: int, show_id: int, reminder_type: str) -> bool
             (user_id, show_id, reminder_type, now, None),
         )
         return cur.rowcount > 0
+
+
+def get_upcoming_show_counts() -> dict:
+    """Return counts of upcoming shows total and from lastfm source."""
+    with get_db_ctx() as cur:
+        cur.execute("SELECT COUNT(*)::INTEGER AS c FROM shows WHERE date >= CURRENT_DATE")
+        show_count = cur.fetchone()["c"]
+        cur.execute("SELECT COUNT(*)::INTEGER AS c FROM shows WHERE date >= CURRENT_DATE AND (source = 'lastfm' OR source = 'both')")
+        lastfm_count = cur.fetchone()["c"]
+    return {"show_count": show_count, "lastfm_count": lastfm_count}

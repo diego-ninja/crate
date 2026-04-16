@@ -340,3 +340,11 @@ def get_cache_stats() -> dict:
     else:
         stats["redis_connected"] = False
     return stats
+
+
+def clear_all_cache_tables():
+    """Delete all rows from cache and mb_cache tables."""
+    from crate.db.core import get_db_ctx
+    with get_db_ctx() as cur:
+        cur.execute("DELETE FROM cache")
+        cur.execute("DELETE FROM mb_cache")

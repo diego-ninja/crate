@@ -844,6 +844,26 @@ def upsert_genre_taxonomy_edge(
     return True
 
 
+def get_genre_taxonomy_node_id(slug: str) -> int | None:
+    """Return the id of a genre_taxonomy_nodes row by slug, or None."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            "SELECT id FROM genre_taxonomy_nodes WHERE slug = %s",
+            (slug,),
+        )
+        row = cur.fetchone()
+    return row["id"] if row else None
+
+
+def set_genre_eq_gains(slug: str, gains: list[float] | None) -> None:
+    """Set eq_gains for a genre taxonomy node by slug."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            "UPDATE genre_taxonomy_nodes SET eq_gains = %s WHERE slug = %s",
+            (gains, slug),
+        )
+
+
 def update_genre_external_metadata(
     slug: str,
     *,

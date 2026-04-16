@@ -206,6 +206,32 @@ def cleanup_zombie_tasks(heartbeat_timeout_min: int = 5, no_heartbeat_timeout_mi
     return count
 
 
+def delete_tasks_by_status(status: str) -> int:
+    """Delete all tasks (and dependent rows) with the given status."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            "DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE status = %s)",
+            (status,),
+        )
+        cur.execute(
+            "DELETE FROM scan_results WHERE task_id IN (SELECT id FROM tasks WHERE status = %s)",
+            (status,),
+        )
+        cur.execute("DELETE FROM tasks WHERE status = %s", (status,))
+        return cur.rowcount
+
+
+def delete_old_finished_tasks(cutoff_iso: str) -> int:
+    """Delete completed/failed/cancelled tasks older than the given ISO cutoff."""
+    with get_db_ctx() as cur:
+        cur.execute(
+            "DELETE FROM tasks WHERE status IN ('completed', 'failed', 'cancelled') "
+            "AND created_at < %s",
+            (cutoff_iso,),
+        )
+        return cur.rowcount
+
+
 def cleanup_orphaned_tasks() -> int:
     """Mark all running tasks as failed (called on startup)."""
     with get_db_ctx() as cur:
