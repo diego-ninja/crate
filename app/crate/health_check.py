@@ -16,6 +16,7 @@ from crate.db.queries.health import (
     get_artists_with_folder,
     get_artists_with_photo,
     get_duplicate_albums,
+    get_duplicate_tracks,
     get_orphan_albums,
     get_orphan_tracks,
     get_tracks_sample,
@@ -50,6 +51,7 @@ class LibraryHealthCheck:
             ("zombie_artists", self._check_zombie_artists),
             ("has_photo_desync", self._check_has_photo_desync),
             ("duplicate_albums", self._check_duplicate_albums),
+            ("duplicate_tracks", self._check_duplicate_tracks),
             ("unindexed_files", self._check_unindexed_files),
             ("tag_mismatch", self._check_tag_mismatch),
             ("folder_naming", self._check_folder_naming),
@@ -273,6 +275,26 @@ class LibraryHealthCheck:
                     "artist": r["artist"],
                     "album": r["album_name"],
                     "count": r["cnt"],
+                },
+            }
+            for r in rows
+        ]
+
+    def _check_duplicate_tracks(self) -> list[dict]:
+        """Detect tracks that appear multiple times in the same album
+        (same artist + title, different file paths)."""
+        rows = get_duplicate_tracks()
+        return [
+            {
+                "check": "duplicate_tracks",
+                "severity": "medium",
+                "auto_fixable": True,
+                "details": {
+                    "artist": r["artist"],
+                    "album": r["album"],
+                    "title": r["title"],
+                    "count": r["cnt"],
+                    "paths": r.get("paths", []),
                 },
             }
             for r in rows

@@ -1,15 +1,22 @@
 """SSE endpoint for client-side cache invalidation.
 
-Backend broadcasts invalidation scopes after mutations.
-Connected clients receive events and drop cached data for that scope.
+Backend broadcasts invalidation scopes after mutations. Connected
+clients receive events and drop cached data for the affected scope.
 
-Invalidation also fires automatically via middleware for known mutation routes.
+Architecture:
+  - Event bus lives in Redis (shared across all Uvicorn workers)
+  - Events carry sequential IDs so reconnecting clients can replay
+    anything they missed (via the standard Last-Event-ID SSE header)
+  - Backend L1/L2/L3 cache is ALSO cleared on broadcast, preventing
+    stale responses when clients refetch after invalidation
+  - A 30 s heartbeat keeps proxies from dropping idle connections
 """
 
 import asyncio
+import json
 import logging
+import os
 import re
-from collections import deque
 from time import time
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -32,7 +39,7 @@ _CACHE_EVENT_RESPONSES = merge_responses(
                 "text/event-stream": {
                     "schema": {
                         "type": "string",
-                        "example": "data: home\n\ndata: playlist:42\n\n",
+                        "example": "id: 42\ndata: home\n\nid: 43\ndata: playlist:42\n\n",
                     }
                 }
             },
@@ -45,32 +52,139 @@ _CACHE_INVALIDATION_RESPONSES = {
     422: error_response("The request payload failed validation."),
 }
 
-# In-memory event bus — lightweight, no Redis needed.
-_events: deque[tuple[float, str]] = deque(maxlen=200)
-_event_id = 0
+# ── Redis-backed event bus ──────────────────────────────────────────
+#
+# Every event is a JSON blob stored in a Redis list (newest first).
+# The list is capped at 500 entries. Each event carries a monotonic
+# integer ID so SSE clients can resume from their last-seen position.
+
+_EVENTS_KEY = "cache:invalidation:events"
+_EVENT_ID_KEY = "cache:invalidation:next_id"
+_MAX_EVENTS = 500
+
+_redis = None
+
+
+def _get_redis():
+    global _redis
+    if _redis is None:
+        import redis as _redis_lib
+        url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+        _redis = _redis_lib.from_url(url, decode_responses=True)
+    return _redis
 
 
 def broadcast_invalidation(*scopes: str):
-    """Broadcast one or more cache invalidation scopes."""
-    global _event_id
+    """Broadcast one or more cache invalidation scopes.
+
+    Writes to Redis (shared across workers) and also clears the
+    backend's own cache for the affected scopes so that refetch
+    requests don't receive stale data.
+    """
+    r = _get_redis()
     for scope in scopes:
-        _event_id += 1
-        _events.append((time(), scope))
-        log.debug("cache invalidation: %s (event %d)", scope, _event_id)
+        event_id = r.incr(_EVENT_ID_KEY)
+        event = json.dumps({"id": event_id, "scope": scope, "ts": time()})
+        r.lpush(_EVENTS_KEY, event)
+        r.ltrim(_EVENTS_KEY, 0, _MAX_EVENTS - 1)
+        log.debug("cache invalidation: %s (event %d)", scope, event_id)
+
+    # Clear backend cache for the affected scopes so refetch gets
+    # fresh data, not stale L1/L2/L3 responses.
+    _clear_backend_cache_for_scopes(scopes)
 
 
-async def _invalidation_stream(last_seen: float):
-    """Yield SSE events for cache invalidation."""
-    for ts, scope in _events:
-        if ts > last_seen:
-            yield f"data: {scope}\n\n"
+def _clear_backend_cache_for_scopes(scopes: tuple[str, ...] | list[str]):
+    """Clear backend cache entries that correspond to the invalidated scopes."""
+    from crate.db.cache import delete_cache_prefix
 
+    # Mapping from scope → backend cache key prefixes to clear.
+    # Not every scope has a backend cache (many are frontend-only).
+    _SCOPE_CACHE_PREFIXES = {
+        "home": ["home:", "home_playlist:", "home_section:"],
+        "follows": [],
+        "likes": [],
+        "saved_albums": [],
+        "history": ["stats:"],
+        "library": ["discover:"],
+        "shows": ["shows:"],
+        "upcoming": ["upcoming:"],
+        "playlists": ["playlist:"],
+        "curation": ["curation:"],
+    }
+
+    prefixes_to_clear = set()
+    for scope in scopes:
+        # Direct scope match
+        if scope in _SCOPE_CACHE_PREFIXES:
+            prefixes_to_clear.update(_SCOPE_CACHE_PREFIXES[scope])
+        # Parameterised scopes like "playlist:42" → clear "playlist:42"
+        if ":" in scope:
+            prefixes_to_clear.add(scope)
+
+    for prefix in prefixes_to_clear:
+        try:
+            delete_cache_prefix(prefix)
+        except Exception:
+            log.debug("Failed to clear backend cache prefix: %s", prefix, exc_info=True)
+
+
+def _get_events_since(last_id: int) -> list[dict]:
+    """Fetch all events with id > last_id from Redis (oldest first)."""
+    r = _get_redis()
+    raw_events = r.lrange(_EVENTS_KEY, 0, -1)  # newest first
+    events = []
+    for raw in reversed(raw_events):  # oldest first
+        try:
+            event = json.loads(raw)
+            if event.get("id", 0) > last_id:
+                events.append(event)
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return events
+
+
+def _get_latest_event_id() -> int:
+    """Get the current highest event ID (for new connections)."""
+    r = _get_redis()
+    val = r.get(_EVENT_ID_KEY)
+    return int(val) if val else 0
+
+
+# ── SSE stream ──────────────────────────────────────────────────────
+
+_HEARTBEAT_INTERVAL = 30  # seconds
+
+
+async def _invalidation_stream(last_event_id: int):
+    """Yield SSE events for cache invalidation.
+
+    Replays any events missed since ``last_event_id`` (from the
+    ``Last-Event-ID`` header on reconnect), then polls Redis for
+    new events every second. Sends a keep-alive comment every 30 s
+    to prevent proxy timeouts.
+    """
+    # Replay missed events
+    missed = _get_events_since(last_event_id)
+    for event in missed:
+        last_event_id = event["id"]
+        yield f"id: {event['id']}\ndata: {event['scope']}\n\n"
+
+    heartbeat_counter = 0
     while True:
         await asyncio.sleep(1)
-        for ts, scope in _events:
-            if ts > last_seen:
-                yield f"data: {scope}\n\n"
-                last_seen = ts
+        heartbeat_counter += 1
+
+        # Check for new events
+        new_events = _get_events_since(last_event_id)
+        for event in new_events:
+            last_event_id = event["id"]
+            yield f"id: {event['id']}\ndata: {event['scope']}\n\n"
+
+        # Heartbeat to keep connection alive across proxies
+        if heartbeat_counter >= _HEARTBEAT_INTERVAL:
+            heartbeat_counter = 0
+            yield ": heartbeat\n\n"
 
 
 @router.get(
@@ -79,10 +193,22 @@ async def _invalidation_stream(last_seen: float):
     summary="Stream cache invalidation events",
 )
 async def cache_events(request: Request):
-    """SSE stream of cache invalidation events."""
+    """SSE stream of cache invalidation events.
+
+    On reconnect, the browser sends ``Last-Event-ID`` automatically.
+    The server replays any events the client missed during downtime.
+    """
     _require_auth(request)
+
+    # Last-Event-ID is sent by the browser on SSE reconnect
+    last_event_id_str = request.headers.get("Last-Event-ID", "0")
+    try:
+        last_event_id = int(last_event_id_str)
+    except (ValueError, TypeError):
+        last_event_id = _get_latest_event_id()
+
     return StreamingResponse(
-        _invalidation_stream(time()),
+        _invalidation_stream(last_event_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -112,42 +238,28 @@ async def cache_invalidate_endpoint(request: Request, body: CacheInvalidationReq
 # ── Auto-invalidation middleware ────────────────────────────────
 
 # Map mutation routes to cache scopes they invalidate.
-# Pattern → scopes (may include {id} placeholder replaced from URL).
 _INVALIDATION_RULES: list[tuple[re.Pattern[str], list[str]]] = [
-    # Likes — any sub-path (POST /api/me/likes, DELETE /api/me/likes/{id})
     (re.compile(r"^/api/me/likes"), ["likes"]),
-    # Follows — follow/unfollow invalidates follows + home + upcoming
     (re.compile(r"^/api/me/follows"), ["follows", "home", "upcoming"]),
-    # Saved albums — also affects home recommendations
     (re.compile(r"^/api/me/albums"), ["saved_albums", "home"]),
-    # Play history — affects home (continue listening, recently played)
     (re.compile(r"^/api/me/history$"), ["history", "home"]),
     (re.compile(r"^/api/me/play-events$"), ["history", "home"]),
-    # Show attendance
     (re.compile(r"^/api/me/shows"), ["shows", "upcoming"]),
-    # Location changes affect show filtering
     (re.compile(r"^/api/me/location$"), ["shows", "upcoming"]),
-    # Playlists
     (re.compile(r"^/api/playlists$"), ["playlists"]),
     (re.compile(r"^/api/playlists/(\d+)"), ["playlists", "playlist:{1}"]),
-    # Curation
     (re.compile(r"^/api/curation"), ["curation"]),
-    # Artist mutations
     (re.compile(r"^/api/artists/(\d+)/enrich"), ["library", "artist:{1}"]),
     (re.compile(r"^/api/manage/artists/(\d+)/delete"), ["library", "artist:{1}", "home"]),
     (re.compile(r"^/api/manage/artists/(\d+)/repair"), ["library", "artist:{1}"]),
     (re.compile(r"^/api/manage/artists/(\d+)"), ["library", "artist:{1}"]),
-    # Album mutations
     (re.compile(r"^/api/albums/(\d+)/cover"), ["library", "album:{1}"]),
     (re.compile(r"^/api/albums/(\d+)/tags"), ["library", "album:{1}"]),
     (re.compile(r"^/api/albums/(\d+)"), ["library", "album:{1}"]),
-    # Track mutations
     (re.compile(r"^/api/tracks/(\d+)/tags"), ["library"]),
-    # Library-wide mutations
     (re.compile(r"^/api/tags"), ["library"]),
     (re.compile(r"^/api/scan"), ["library", "home"]),
     (re.compile(r"^/api/import"), ["library", "home"]),
-    # Internal: worker cache invalidation
     (re.compile(r"^/api/cache/invalidate$"), []),
 ]
 
@@ -169,7 +281,6 @@ class CacheInvalidationMiddleware(BaseHTTPMiddleware):
                         for i, group in enumerate(m.groups(), 1):
                             if group:
                                 scope = scope.replace(f"{{{i}}}", group)
-                        # Only emit if all placeholders resolved
                         if "{" not in scope:
                             scopes.append(scope)
                     if scopes:

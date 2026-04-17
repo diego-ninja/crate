@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { api } from "@/lib/api";
+import { onCacheInvalidation } from "@/lib/cache";
 
 interface FollowedArtist {
   artist_name: string;
@@ -65,6 +66,13 @@ export function ArtistFollowsProvider({ children }: { children: ReactNode }) {
       requestRef.current?.abort();
       requestRef.current = null;
     };
+  }, [refetch]);
+
+  // Sync with backend when SSE invalidation fires for "follows"
+  useEffect(() => {
+    return onCacheInvalidation((scope: string) => {
+      if (scope === "follows") void refetch();
+    });
   }, [refetch]);
 
   const followedIds = useMemo(

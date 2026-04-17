@@ -134,3 +134,19 @@ def get_all_albums_for_covers() -> list[dict]:
             text("SELECT artist, name, path FROM library_albums")
         ).mappings().all()
     return [dict(r) for r in rows]
+
+
+def get_duplicate_tracks() -> list[dict]:
+    """Find tracks that appear multiple times in the same album
+    (same artist + album + title, different paths)."""
+    with transaction_scope() as session:
+        rows = session.execute(text("""
+            SELECT album_id, artist, title, album, COUNT(*) AS cnt,
+                   array_agg(path ORDER BY path) AS paths
+            FROM library_tracks
+            WHERE album_id IS NOT NULL
+            GROUP BY album_id, artist, title, album
+            HAVING COUNT(*) > 1
+            ORDER BY artist, album, title
+        """)).mappings().all()
+    return [dict(r) for r in rows]

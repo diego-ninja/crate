@@ -906,7 +906,7 @@ def _get_home_context(
     followed_names_lower = [(row.get("artist_name") or "").lower() for row in followed if row.get("artist_name")]
     top_artist_names_lower = [(row.get("artist_name") or "").lower() for row in top_artists if row.get("artist_name")]
     interest_artists_lower = list(dict.fromkeys(top_artist_names_lower + followed_names_lower))
-    saved_album_ids = {row["id"] for row in saved_albums if row.get("id") is not None}
+    saved_album_ids = list({row["id"] for row in saved_albums if row.get("id") is not None})
     fallback_genre_names: list[str] = []
     if followed_names_lower:
         with transaction_scope() as session:
@@ -1187,8 +1187,118 @@ def get_home_playlist(user_id: int, playlist_id: str, limit: int = 40) -> dict |
     }
 
 
+def _get_cached_home_context(
+    user_id: int,
+    *,
+    top_artist_limit: int = 28,
+    top_album_limit: int = 12,
+    top_genre_limit: int = 8,
+) -> dict:
+    cache_key = f"home:context:{user_id}"
+    from crate.db.cache import get_cache, set_cache
+    cached = get_cache(cache_key, max_age_seconds=120)
+    if cached:
+        return cached
+    ctx = _get_home_context(
+        user_id,
+        top_artist_limit=top_artist_limit,
+        top_album_limit=top_album_limit,
+        top_genre_limit=top_genre_limit,
+    )
+    set_cache(cache_key, ctx, ttl=120)
+    return ctx
+
+
+def _merged_artists_from_context(context: dict) -> list[dict]:
+    top_artists = context["top_artists"]
+    followed = context["followed"]
+    seen_artist_ids = {row.get("artist_id") for row in top_artists if row.get("artist_id") is not None}
+    merged = list(top_artists)
+    for row in followed:
+        aid = row.get("artist_id")
+        if aid is not None and aid not in seen_artist_ids:
+            merged.append({
+                "artist_id": aid,
+                "artist_slug": row.get("artist_slug"),
+                "artist_name": row.get("artist_name") or "",
+                "play_count": 0,
+                "minutes_listened": 0,
+            })
+            seen_artist_ids.add(aid)
+    return merged
+
+
+def _recent_releases_from_context(context: dict) -> list[dict]:
+    return _filter_interesting_releases(
+        get_new_releases(limit=250),
+        interest_artists_lower=set(context["interest_artists_lower"]),
+        saved_album_ids=set(context["saved_album_ids"]),
+        days=240,
+    )
+
+
+def get_home_hero(user_id: int) -> dict | None:
+    ctx = _get_cached_home_context(user_id)
+    return _get_home_hero(
+        user_id,
+        ctx["followed_names_lower"],
+        ctx["top_artist_names_lower"][:8],
+        ctx["top_genres_lower"][:4],
+    )
+
+
+def get_home_recently_played(user_id: int) -> list[dict]:
+    return _build_recently_played(user_id, limit=18)
+
+
+def get_home_mixes(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    return _build_custom_mix_summaries(
+        user_id,
+        mix_seed_genres=ctx["mix_seed_genres"],
+        mix_count=8,
+        track_limit=36,
+    )
+
+
+def get_home_suggested_albums(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    recent_releases = _recent_releases_from_context(ctx)
+    return _build_suggested_albums(recent_releases, 14)
+
+
+def get_home_recommended_tracks(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    recent_releases = _recent_releases_from_context(ctx)
+    rows = _build_recommended_tracks(
+        user_id,
+        recent_releases=recent_releases,
+        interest_artists_lower=ctx["interest_artists_lower"],
+        limit=18,
+    )
+    return [_track_payload(row) for row in rows]
+
+
+def get_home_radio_stations(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    merged = _merged_artists_from_context(ctx)
+    return _build_radio_stations(merged, ctx["top_albums"], 14)
+
+
+def get_home_favorite_artists(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    merged = _merged_artists_from_context(ctx)
+    return _build_favorite_artists(merged, 14)
+
+
+def get_home_essentials(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    merged = _merged_artists_from_context(ctx)
+    return _build_core_playlists(user_id, merged, 14, track_limit=18)
+
+
 def get_home_discovery(user_id: int) -> dict:
-    context = _get_home_context(user_id, top_artist_limit=28, top_album_limit=12, top_genre_limit=8)
+    context = _get_cached_home_context(user_id, top_artist_limit=28, top_album_limit=12, top_genre_limit=8)
     top_artists = context["top_artists"]
     top_albums = context["top_albums"]
     followed_names_lower = context["followed_names_lower"]
@@ -1202,7 +1312,7 @@ def get_home_discovery(user_id: int) -> dict:
     recent_releases = _filter_interesting_releases(
         get_new_releases(limit=250),
         interest_artists_lower=set(interest_artists_lower),
-        saved_album_ids=context["saved_album_ids"],
+        saved_album_ids=set(context["saved_album_ids"]),
         days=240,
     )
 
@@ -1219,20 +1329,7 @@ def get_home_discovery(user_id: int) -> dict:
         mix_count=8,
         track_limit=36,
     )
-    followed = context["followed"]
-    seen_artist_ids = {row.get("artist_id") for row in top_artists if row.get("artist_id") is not None}
-    merged_artists = list(top_artists)
-    for row in followed:
-        aid = row.get("artist_id")
-        if aid is not None and aid not in seen_artist_ids:
-            merged_artists.append({
-                "artist_id": aid,
-                "artist_slug": row.get("artist_slug"),
-                "artist_name": row.get("artist_name") or "",
-                "play_count": 0,
-                "minutes_listened": 0,
-            })
-            seen_artist_ids.add(aid)
+    merged_artists = _merged_artists_from_context(context)
 
     radio_stations = _build_radio_stations(merged_artists, top_albums, 14)
     favorite_artists = _build_favorite_artists(merged_artists, 14)
@@ -1265,7 +1362,7 @@ def get_home_section(user_id: int, section_id: str, limit: int = 42) -> dict | N
     recent_releases = _filter_interesting_releases(
         get_new_releases(limit=max(limit * 8, 250)),
         interest_artists_lower=set(interest_artists_lower),
-        saved_album_ids=context["saved_album_ids"],
+        saved_album_ids=set(context["saved_album_ids"]),
         days=240,
     )
 

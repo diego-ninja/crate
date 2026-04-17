@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { api } from "@/lib/api";
+import { onCacheInvalidation } from "@/lib/cache";
 
 export interface SavedAlbum {
   saved_at: string;
@@ -68,6 +69,13 @@ export function SavedAlbumsProvider({ children }: { children: ReactNode }) {
       savedAlbumsRequestRef.current?.abort();
       savedAlbumsRequestRef.current = null;
     };
+  }, [refetch]);
+
+  // Sync with backend when SSE invalidation fires for "saved_albums"
+  useEffect(() => {
+    return onCacheInvalidation((scope: string) => {
+      if (scope === "saved_albums") void refetch();
+    });
   }, [refetch]);
 
   const savedIds = useMemo(() => new Set(savedAlbums.map((album) => album.id)), [savedAlbums]);

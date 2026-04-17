@@ -568,10 +568,98 @@ def stats_replay(request: Request, window: str = Query("30d"), limit: int = Quer
 
 
 @router.get(
+    "/home/hero",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the home hero artist card",
+)
+def home_hero(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_hero
+    return get_home_hero(user["id"])
+
+
+@router.get(
+    "/home/recently-played",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get recently played items for home",
+)
+def home_recently_played(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_recently_played
+    return {"items": get_home_recently_played(user["id"])}
+
+
+@router.get(
+    "/home/mixes",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get personalized mixes for home",
+)
+def home_mixes(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_mixes
+    return {"items": get_home_mixes(user["id"])}
+
+
+@router.get(
+    "/home/suggested-albums",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get suggested albums for home",
+)
+def home_suggested_albums(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_suggested_albums
+    return {"items": get_home_suggested_albums(user["id"])}
+
+
+@router.get(
+    "/home/recommended-tracks",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get recommended tracks for home",
+)
+def home_recommended_tracks(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_recommended_tracks
+    return {"items": get_home_recommended_tracks(user["id"])}
+
+
+@router.get(
+    "/home/radio-stations",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get radio stations for home",
+)
+def home_radio_stations(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_radio_stations
+    return {"items": get_home_radio_stations(user["id"])}
+
+
+@router.get(
+    "/home/favorite-artists",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get favorite artists for home",
+)
+def home_favorite_artists(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_favorite_artists
+    return {"items": get_home_favorite_artists(user["id"])}
+
+
+@router.get(
+    "/home/essentials",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get essentials playlists for home",
+)
+def home_essentials(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_essentials
+    return {"items": get_home_essentials(user["id"])}
+
+
+@router.get(
     "/home/discovery",
     response_model=HomeDiscoveryResponse,
     responses=AUTH_ERROR_RESPONSES,
-    summary="Build the personalized home discovery payload",
+    summary="Build the personalized home discovery payload (compat)",
 )
 def home_discovery(request: Request):
     user = _require_auth(request)
