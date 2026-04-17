@@ -34,6 +34,8 @@ def api_client(pg_db):
 
     import tempfile, os
     test_lib = tempfile.mkdtemp(prefix="crate_test_lib_")
+    # Expose lib path so tests can build matching filesystem paths
+    os.environ["CRATE_TEST_LIB"] = test_lib
 
     mock_config = {
         "library_path": test_lib,
@@ -204,6 +206,8 @@ class TestUserEndpoints:
         assert album_items[0]["album_id"] == album_id
 
     def test_album_detail_serializes_track_storage_ids_as_strings(self, api_client, pg_db):
+        import os
+        test_lib = os.environ["CRATE_TEST_LIB"]
         artist_name = "Quicksand"
         album_name = "Distant Populations"
 
@@ -223,7 +227,7 @@ class TestUserEndpoints:
             {
                 "artist": artist_name,
                 "name": album_name,
-                "path": f"/tmp/crate_test_lib/{artist_name}/{album_name}",
+                "path": f"{test_lib}/{artist_name}/{album_name}",
                 "track_count": 1,
                 "total_size": 1234,
                 "total_duration": 240,
@@ -249,7 +253,7 @@ class TestUserEndpoints:
                 "year": 2021,
                 "genre": "Post-Hardcore",
                 "albumartist": artist_name,
-                "path": f"/tmp/crate_test_lib/{artist_name}/{album_name}/01 - Inversion.flac",
+                "path": f"{test_lib}/{artist_name}/{album_name}/01 - Inversion.flac",
             }
         )
 

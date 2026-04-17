@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone, timedelta
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from tests.conftest import PG_AVAILABLE
@@ -287,7 +287,7 @@ class TestAuthIntegration:
         app.add_middleware(AuthMiddleware)
 
         @app.get("/admin-check")
-        def admin_check(request):
+        def admin_check(request: Request):
             from crate.api.auth import _require_admin
             user = _require_admin(request)
             return {"role": user["role"]}

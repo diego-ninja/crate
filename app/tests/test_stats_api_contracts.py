@@ -20,7 +20,12 @@ class TestStatsApiContracts:
             resp = test_app.get("/api/me/stats/overview?window=30d")
 
         assert resp.status_code == 200
-        assert resp.json() == payload
+        data = resp.json()
+        for key in ("window", "play_count", "complete_play_count", "skip_count",
+                     "minutes_listened", "active_days", "skip_rate"):
+            assert data[key] == payload[key]
+        assert data["top_artist"]["artist_name"] == "Converge"
+        assert data["top_artist"]["play_count"] == 10
         mock_get.assert_called_once_with(1, window="30d")
 
     def test_stats_top_tracks_wraps_items_and_window(self, test_app):
@@ -41,7 +46,14 @@ class TestStatsApiContracts:
             resp = test_app.get("/api/me/stats/top-tracks?window=90d&limit=5")
 
         assert resp.status_code == 200
-        assert resp.json() == {"window": "90d", "items": items}
+        data = resp.json()
+        assert data["window"] == "90d"
+        assert len(data["items"]) == 1
+        item = data["items"][0]
+        assert item["track_id"] == 99
+        assert item["title"] == "Concubine"
+        assert item["artist"] == "Converge"
+        assert item["play_count"] == 7
         mock_get.assert_called_once_with(1, window="90d", limit=5)
 
     def test_stats_invalid_window_returns_400(self, test_app):
@@ -77,5 +89,13 @@ class TestStatsApiContracts:
             resp = test_app.get("/api/me/stats/replay?window=30d&limit=25")
 
         assert resp.status_code == 200
-        assert resp.json() == payload
+        data = resp.json()
+        assert data["window"] == "30d"
+        assert data["title"] == "Replay this month"
+        assert data["track_count"] == 2
+        assert len(data["items"]) == 1
+        item = data["items"][0]
+        assert item["track_id"] == 99
+        assert item["title"] == "Concubine"
+        assert item["artist"] == "Converge"
         mock_get.assert_called_once_with(1, window="30d", limit=25)

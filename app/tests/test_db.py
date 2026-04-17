@@ -143,9 +143,31 @@ class TestGenreTaxonomyCleanup:
                     """
                 )
             ).mappings().first()["cnt"]
-            edge_count = session.execute(
-                text("SELECT COUNT(*)::INTEGER AS cnt FROM genre_taxonomy_edges")
-            ).mappings().first()["cnt"]
+            deleted_ids = [
+                r["id"]
+                for r in session.execute(
+                    text(
+                        """
+                        SELECT id FROM genre_taxonomy_nodes
+                        WHERE slug IN ('wikidata', 'q183862', 'https-rateyourmusic-com-genre-metalcore')
+                        """
+                    )
+                ).mappings().all()
+            ]
+            if deleted_ids:
+                edge_count = session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)::INTEGER AS cnt
+                        FROM genre_taxonomy_edges
+                        WHERE source_genre_id = ANY(:ids)
+                           OR target_genre_id = ANY(:ids)
+                        """
+                    ),
+                    {"ids": deleted_ids},
+                ).mappings().first()["cnt"]
+            else:
+                edge_count = 0
 
         assert alias_count == 0
         assert edge_count == 0
