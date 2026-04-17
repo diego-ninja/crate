@@ -59,7 +59,13 @@ _tc_container = None  # Testcontainers instance, kept alive for session
 
 
 def _try_env_pg() -> bool:
-    """Try connecting to a PG specified by env vars (e.g. the dev stack)."""
+    """Try connecting to a PG instance for testing.
+
+    CRITICAL: always uses ``crate_test`` as database name, never the
+    main application database. The pg_db fixture does
+    ``DROP SCHEMA public CASCADE`` on every test — running that against
+    the real database would wipe all user data.
+    """
     global PG_AVAILABLE, _test_dsn
     if not _HAS_PSYCOPG2:
         return False
@@ -68,7 +74,24 @@ def _try_env_pg() -> bool:
         password = os.environ.get("CRATE_POSTGRES_PASSWORD", "crate")
         host = os.environ.get("CRATE_POSTGRES_HOST", "localhost")
         port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
-        db = os.environ.get("CRATE_POSTGRES_DB", "crate_test")
+
+        # ALWAYS use crate_test — NEVER read CRATE_POSTGRES_DB here.
+        # The test fixture drops the entire public schema on every test.
+        db = "crate_test"
+
+        # Try to create the test database if it doesn't exist yet.
+        try:
+            admin_dsn = f"postgresql://{user}:{password}@{host}:{port}/{user}"
+            admin_conn = psycopg2.connect(admin_dsn)
+            admin_conn.autocommit = True
+            with admin_conn.cursor() as c:
+                c.execute("SELECT 1 FROM pg_database WHERE datname = 'crate_test'")
+                if not c.fetchone():
+                    c.execute("CREATE DATABASE crate_test OWNER %s", (user,))
+            admin_conn.close()
+        except Exception:
+            pass
+
         dsn = f"postgresql://{user}:{password}@{host}:{port}/{db}"
         conn = psycopg2.connect(dsn)
         conn.close()
@@ -151,6 +174,11 @@ def pg_db():
     if not PG_AVAILABLE or not _test_dsn:
         pytest.skip("PostgreSQL not available")
 
+    # FORCE all DB access to use crate_test for the duration of this
+    # fixture. Without this, init_db() and db functions would use the
+    # env var CRATE_POSTGRES_DB which may point at the real database.
+    os.environ["CRATE_POSTGRES_DB"] = "crate_test"
+
     conn = psycopg2.connect(_test_dsn)
     conn.autocommit = True
     cur = conn.cursor()
@@ -164,7 +192,7 @@ def pg_db():
     import crate.db.core as db_core
 
     # Reset the connection pool so init_db() creates a fresh one
-    # pointing at the test database.
+    # pointing at the test database (crate_test, forced above).
     if db_core._pool is not None:
         with suppress(Exception):
             db_core._pool.closeall()
