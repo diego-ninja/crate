@@ -230,6 +230,8 @@ def init_db():
 
 def _init_db_inner():
     with get_db_ctx() as cur:
+        # Legacy migration tracker — kept for backward compat so
+        # existing installs don't lose their migration history.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS schema_versions (
                 version INTEGER PRIMARY KEY,
@@ -237,12 +239,68 @@ def _init_db_inner():
                 applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
         """)
+
+        # Idempotent schema creation — defines the FINAL shape of all
+        # tables. Safe to run on every boot; new installs get everything,
+        # existing installs get missing columns via IF NOT EXISTS.
         _create_schema(cur)
+
+        # Legacy in-app migrations. Frozen at version 29. New schema
+        # changes go through Alembic (see below). This call is kept so
+        # installs upgrading from pre-Alembic versions still apply the
+        # 29 legacy migrations before Alembic takes over.
         _run_migrations(cur)
+
+    # ── Alembic: apply any pending Alembic-managed migrations ──
+    #
+    # This replaces the old pattern of growing _MIGRATIONS. New schema
+    # changes are Alembic revision files in crate/db/migrations/versions/.
+    #
+    # On first run against a pre-Alembic DB, `upgrade head` creates the
+    # alembic_version table and stamps the baseline (001). Subsequent
+    # boots only run migrations newer than the stamped head.
+    _run_alembic_upgrade()
+
+    # Seeds run last — they depend on the schema being fully up to date.
+    with get_db_ctx() as cur:
         from crate.genre_taxonomy import seed_genre_taxonomy
         from crate.db.auth import _seed_admin
         seed_genre_taxonomy(cur)
         _seed_admin(cur)
+
+
+def _run_alembic_upgrade():
+    """Run ``alembic upgrade head`` programmatically.
+
+    Uses the same DSN env vars as the rest of the app. The advisory
+    lock in ``init_db()`` ensures only one process runs this at a time.
+    """
+    import os
+    from alembic.config import Config
+    from alembic import command
+
+    # Locate alembic.ini relative to the app directory (one level up
+    # from crate/db/core.py → app/).
+    app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ini_path = os.path.join(app_dir, "alembic.ini")
+
+    if not os.path.exists(ini_path):
+        log.warning("alembic.ini not found at %s — skipping Alembic migrations", ini_path)
+        return
+
+    alembic_cfg = Config(ini_path)
+    # Override script_location to be absolute so it works regardless of cwd
+    alembic_cfg.set_main_option(
+        "script_location",
+        os.path.join(app_dir, "crate", "db", "migrations"),
+    )
+
+    try:
+        command.upgrade(alembic_cfg, "head")
+        log.info("Alembic migrations applied successfully (head)")
+    except Exception as exc:
+        log.error("Alembic migration failed: %s", exc)
+        raise
 
 
 def _create_schema(cur):
