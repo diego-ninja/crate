@@ -1,24 +1,46 @@
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from crate.api.auth import _require_auth
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.social import (
+    SocialFollowResponse,
+    SocialMeResponse,
+    SocialProfileDetailResponse,
+    SocialSearchResultResponse,
+    SocialUnfollowResponse,
+    SocialUserRelationResponse,
+)
 from crate.db import (
     follow_user,
-    unfollow_user,
-    get_relationship_state,
+    get_affinity,
     get_followers,
     get_following,
-    search_users,
-    get_public_user_profile_by_username,
-    get_public_user_profile,
-    get_public_playlists_for_user,
     get_me_social,
-    get_affinity,
+    get_public_playlists_for_user,
+    get_public_user_profile,
+    get_public_user_profile_by_username,
+    get_relationship_state,
+    search_users,
+    unfollow_user,
 )
 
 router = APIRouter(tags=["social"])
 
+_SOCIAL_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        404: error_response("The requested user could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
-@router.get("/api/me/social")
+
+@router.get(
+    "/api/me/social",
+    response_model=SocialMeResponse,
+    responses=_SOCIAL_RESPONSES,
+    summary="Get the current user's social profile summary",
+)
 def my_social(request: Request):
     user = _require_auth(request)
     profile = get_public_user_profile(user["id"])
@@ -30,13 +52,23 @@ def my_social(request: Request):
     }
 
 
-@router.get("/api/users/search")
+@router.get(
+    "/api/users/search",
+    response_model=list[SocialSearchResultResponse],
+    responses=_SOCIAL_RESPONSES,
+    summary="Search users by username or display name",
+)
 def social_search(request: Request, q: str = Query("", min_length=1), limit: int = Query(20, ge=1, le=50)):
     _require_auth(request)
     return search_users(q, limit=limit)
 
 
-@router.get("/api/users/{username}")
+@router.get(
+    "/api/users/{username}",
+    response_model=SocialProfileDetailResponse,
+    responses=_SOCIAL_RESPONSES,
+    summary="Get a public user profile with relationship context",
+)
 def social_profile(request: Request, username: str):
     viewer = _require_auth(request)
     profile = get_public_user_profile_by_username(username)
@@ -49,7 +81,12 @@ def social_profile(request: Request, username: str):
     return profile
 
 
-@router.get("/api/users/{username}/followers")
+@router.get(
+    "/api/users/{username}/followers",
+    response_model=list[SocialUserRelationResponse],
+    responses=_SOCIAL_RESPONSES,
+    summary="List a user's followers",
+)
 def social_followers(request: Request, username: str, limit: int = Query(100, ge=1, le=250)):
     _require_auth(request)
     profile = get_public_user_profile_by_username(username)
@@ -58,7 +95,12 @@ def social_followers(request: Request, username: str, limit: int = Query(100, ge
     return get_followers(profile["id"], limit=limit)
 
 
-@router.get("/api/users/{username}/following")
+@router.get(
+    "/api/users/{username}/following",
+    response_model=list[SocialUserRelationResponse],
+    responses=_SOCIAL_RESPONSES,
+    summary="List who a user follows",
+)
 def social_following(request: Request, username: str, limit: int = Query(100, ge=1, le=250)):
     _require_auth(request)
     profile = get_public_user_profile_by_username(username)
@@ -67,7 +109,12 @@ def social_following(request: Request, username: str, limit: int = Query(100, ge
     return get_following(profile["id"], limit=limit)
 
 
-@router.post("/api/users/{user_id}/follow")
+@router.post(
+    "/api/users/{user_id}/follow",
+    response_model=SocialFollowResponse,
+    responses=_SOCIAL_RESPONSES,
+    summary="Follow a user",
+)
 def social_follow(request: Request, user_id: int):
     viewer = _require_auth(request)
     target = get_public_user_profile(user_id)
@@ -81,7 +128,12 @@ def social_follow(request: Request, user_id: int):
     }
 
 
-@router.delete("/api/users/{user_id}/follow")
+@router.delete(
+    "/api/users/{user_id}/follow",
+    response_model=SocialUnfollowResponse,
+    responses=_SOCIAL_RESPONSES,
+    summary="Unfollow a user",
+)
 def social_unfollow(request: Request, user_id: int):
     viewer = _require_auth(request)
     target = get_public_user_profile(user_id)

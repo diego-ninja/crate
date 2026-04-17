@@ -19,8 +19,8 @@ Configuration reads the same ``CRATE_POSTGRES_*`` env vars as
 import os
 import logging
 
-from sqlalchemy import create_engine, event
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 log = logging.getLogger(__name__)
 
@@ -44,15 +44,22 @@ def get_engine():
     """Return the shared SQLAlchemy engine (created on first call)."""
     global _engine
     if _engine is None:
+        pool_size = _get_pool_setting("CRATE_SQLALCHEMY_POOL_SIZE", 10)
+        max_overflow = _get_pool_setting("CRATE_SQLALCHEMY_MAX_OVERFLOW", 5)
         _engine = create_engine(
             _build_dsn(),
-            pool_size=10,
-            max_overflow=5,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
             pool_pre_ping=True,
             pool_recycle=3600,
             echo=False,
         )
-        log.info("SQLAlchemy engine created: %s", _engine.url.render_as_string(hide_password=True))
+        log.info(
+            "SQLAlchemy engine created: %s (pool_size=%s, max_overflow=%s)",
+            _engine.url.render_as_string(hide_password=True),
+            pool_size,
+            max_overflow,
+        )
     return _engine
 
 
@@ -75,6 +82,18 @@ class Base(DeclarativeBase):
     engine avoids circular imports.
     """
     pass
+
+
+def _get_pool_setting(env_var: str, default: int) -> int:
+    raw = os.environ.get(env_var)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        log.warning("Invalid %s=%r; falling back to %d", env_var, raw, default)
+        return default
+    return max(0, value)
 
 
 def reset_engine():

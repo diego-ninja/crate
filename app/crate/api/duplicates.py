@@ -1,22 +1,35 @@
 import mutagen
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.common import TaskEnqueueResponse
+from crate.api.schemas.operations import (
+    DuplicateAlbumCompareResponse,
+    ResolveRequest,
+)
 from crate.audio import read_tags, get_audio_files
 from crate.db import create_task
 from crate.api._deps import library_path, extensions, safe_path, COVER_NAMES
 
-router = APIRouter()
+router = APIRouter(tags=["duplicates"])
+
+_DUPLICATES_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
-class ResolveRequest(BaseModel):
-    keep: str
-    remove: list[str]
-
-
-@router.get("/api/duplicates/compare")
+@router.get(
+    "/api/duplicates/compare",
+    response_model=list[DuplicateAlbumCompareResponse],
+    responses=_DUPLICATES_RESPONSES,
+    summary="Compare duplicate album directories",
+)
 def api_duplicates_compare(request: Request, path: list[str] = Query()):
     _require_admin(request)
     if len(path) < 2:
@@ -66,7 +79,12 @@ def api_duplicates_compare(request: Request, path: list[str] = Query()):
     return albums
 
 
-@router.post("/api/duplicates/resolve")
+@router.post(
+    "/api/duplicates/resolve",
+    response_model=TaskEnqueueResponse,
+    responses=_DUPLICATES_RESPONSES,
+    summary="Queue duplicate resolution",
+)
 def api_duplicates_resolve(request: Request, data: ResolveRequest):
     _require_admin(request)
     if not data.keep or not data.remove:

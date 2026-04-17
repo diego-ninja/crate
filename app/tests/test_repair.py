@@ -111,12 +111,8 @@ class TestFolderNamingRepair:
                 },
             }
 
-            with patch("crate.repair.get_db_ctx") as mock_ctx, \
+            with patch("crate.repair.update_album_path_and_name"), \
                  patch("crate.repair.log_audit"):
-                mock_cur = MagicMock()
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
                 result = repair._fix_folder_naming(issue, dry_run=False)
 
             assert result is not None
@@ -163,12 +159,8 @@ class TestFolderNamingRepair:
                 },
             }
 
-            with patch("crate.repair.get_db_ctx") as mock_ctx, \
+            with patch("crate.repair.merge_album_folder"), \
                  patch("crate.repair.log_audit"):
-                mock_cur = MagicMock()
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
                 result = repair._fix_folder_naming(issue, dry_run=False)
 
             assert result is not None
@@ -305,15 +297,11 @@ class TestUnindexedFilesRepair:
             }
 
             mock_syncer_instance = MagicMock()
-            with patch("crate.repair.get_db_ctx") as mock_ctx, \
+            with patch("crate.repair.find_canonical_artist_by_folder", return_value=None), \
                  patch("crate.repair.log_audit"), \
                  patch("crate.config.load_config", return_value=config), \
                  patch("crate.library_sync.LibrarySync", return_value=mock_syncer_instance), \
                  patch.object(repair, "_count_artist_tracks", side_effect=[0, 1]):
-                mock_cur = MagicMock()
-                mock_cur.fetchone.return_value = None  # canonical artist lookup
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
                 result = repair._fix_unindexed_files(issue, dry_run=False)
 
             assert result is not None

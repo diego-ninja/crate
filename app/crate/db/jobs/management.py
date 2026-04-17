@@ -1,74 +1,83 @@
 """DB functions for management worker handlers."""
 
-from crate.db.core import get_db_ctx
+from crate.db.tx import transaction_scope
+from sqlalchemy import text
 
 
 def find_album_path(artist_name: str, album_name: str, escape_like_fn) -> str | None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT path FROM library_albums WHERE artist = %s AND name = %s LIMIT 1",
-            (artist_name, album_name),
-        )
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT path FROM library_albums WHERE artist = :artist AND name = :name LIMIT 1"),
+            {"artist": artist_name, "name": album_name},
+        ).mappings().first()
         if not row:
-            cur.execute(
-                "SELECT path FROM library_albums WHERE artist = %s AND name LIKE %s ESCAPE '\\' LIMIT 1",
-                (artist_name, escape_like_fn(album_name)),
-            )
-            row = cur.fetchone()
+            row = session.execute(
+                text("SELECT path FROM library_albums WHERE artist = :artist AND name LIKE :pattern ESCAPE '\\' LIMIT 1"),
+                {"artist": artist_name, "pattern": escape_like_fn(album_name)},
+            ).mappings().first()
         return row["path"] if row else None
 
 
 def rename_artist_in_db(old_name: str, new_name: str, old_folder: str) -> None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_artists SET name = %s, folder_name = %s WHERE name = %s",
-            (new_name, new_name, old_name),
+    with transaction_scope() as session:
+        session.execute(
+            text("UPDATE library_artists SET name = :new_name, folder_name = :new_name WHERE name = :old_name"),
+            {"new_name": new_name, "old_name": old_name},
         )
-        cur.execute("UPDATE library_albums SET artist = %s WHERE artist = %s", (new_name, old_name))
-        cur.execute("UPDATE library_tracks SET artist = %s WHERE artist = %s", (new_name, old_name))
-        cur.execute("SELECT id, path FROM library_albums WHERE artist = %s", (new_name,))
-        for row in cur.fetchall():
+        session.execute(text("UPDATE library_albums SET artist = :new WHERE artist = :old"),
+                        {"new": new_name, "old": old_name})
+        session.execute(text("UPDATE library_tracks SET artist = :new WHERE artist = :old"),
+                        {"new": new_name, "old": old_name})
+        albums = session.execute(
+            text("SELECT id, path FROM library_albums WHERE artist = :artist"),
+            {"artist": new_name},
+        ).mappings().all()
+        for row in albums:
             old_path = row["path"]
             new_path = old_path.replace(f"/{old_folder}/", f"/{new_name}/", 1)
-            cur.execute("UPDATE library_albums SET path = %s WHERE id = %s", (new_path, row["id"]))
-        cur.execute("SELECT id, path FROM library_tracks WHERE artist = %s", (new_name,))
-        for row in cur.fetchall():
+            session.execute(text("UPDATE library_albums SET path = :path WHERE id = :id"),
+                            {"path": new_path, "id": row["id"]})
+        tracks = session.execute(
+            text("SELECT id, path FROM library_tracks WHERE artist = :artist"),
+            {"artist": new_name},
+        ).mappings().all()
+        for row in tracks:
             old_path = row["path"]
             new_path = old_path.replace(f"/{old_folder}/", f"/{new_name}/", 1)
-            cur.execute("UPDATE library_tracks SET path = %s WHERE id = %s", (new_path, row["id"]))
+            session.execute(text("UPDATE library_tracks SET path = :path WHERE id = :id"),
+                            {"path": new_path, "id": row["id"]})
 
 
 def find_album_path_for_match(artist_name: str, album_name: str, album_db_path: str, escape_like_fn) -> str:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT path FROM library_albums WHERE path = %s", (album_db_path,))
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT path FROM library_albums WHERE path = :path"),
+            {"path": album_db_path},
+        ).mappings().first()
         if not row:
-            cur.execute(
-                "SELECT path FROM library_albums WHERE artist = %s AND (name = %s OR name LIKE %s ESCAPE '\\') LIMIT 1",
-                (artist_name, album_name, escape_like_fn(album_name)),
-            )
-            row = cur.fetchone()
+            row = session.execute(
+                text("SELECT path FROM library_albums WHERE artist = :artist AND (name = :name OR name LIKE :pattern ESCAPE '\\') LIMIT 1"),
+                {"artist": artist_name, "name": album_name, "pattern": escape_like_fn(album_name)},
+            ).mappings().first()
         return row["path"] if row else album_db_path
 
 
 def apply_mbid_to_album(mbid: str, album_db_path: str, release_group_id: str | None) -> int | None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_albums SET musicbrainz_albumid = %s WHERE path = %s RETURNING id",
-            (mbid, album_db_path),
-        )
-        album_row = cur.fetchone()
+    with transaction_scope() as session:
+        album_row = session.execute(
+            text("UPDATE library_albums SET musicbrainz_albumid = :mbid WHERE path = :path RETURNING id"),
+            {"mbid": mbid, "path": album_db_path},
+        ).mappings().first()
         if release_group_id:
-            cur.execute(
-                "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE path = %s",
-                (release_group_id, album_db_path),
+            session.execute(
+                text("UPDATE library_albums SET musicbrainz_releasegroupid = :rgid WHERE path = :path"),
+                {"rgid": release_group_id, "path": album_db_path},
             )
         if album_row:
-            cur.execute(
-                "UPDATE library_tracks SET musicbrainz_albumid = %s "
-                "WHERE album_id = %s AND (musicbrainz_albumid IS NULL OR musicbrainz_albumid = '')",
-                (mbid, album_row["id"]),
+            session.execute(
+                text("UPDATE library_tracks SET musicbrainz_albumid = :mbid "
+                     "WHERE album_id = :album_id AND (musicbrainz_albumid IS NULL OR musicbrainz_albumid = '')"),
+                {"mbid": mbid, "album_id": album_row["id"]},
             )
             return album_row["id"]
         return None

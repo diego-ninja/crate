@@ -145,9 +145,27 @@ This matters operationally because documentation changes can now be deployed and
 
 ## Important operational behaviors
 
-### Startup schema migration
+### Startup schema bootstrap and migration
 
-API and worker both call DB initialization, but PostgreSQL advisory locking ensures schema work is not applied concurrently.
+API and worker both call `init_db()`, but PostgreSQL advisory locking ensures schema work is not applied concurrently.
+
+The startup sequence is layered on purpose:
+
+- `_create_schema()` creates the full current schema for fresh installs
+- frozen legacy `_run_migrations()` handles upgrades from pre-Alembic installs
+- `alembic upgrade head` applies the inspectable migration history
+- bootstrap seeds such as the genre taxonomy and admin user run last in a shared transaction
+
+This keeps self-hosting ergonomics for brand-new installs while moving ongoing schema evolution into Alembic.
+
+### Database connection paths
+
+During the refactor period, Crate has two DB access paths:
+
+- the legacy psycopg2 `ThreadedConnectionPool` in `app/crate/db/core.py`
+- the SQLAlchemy engine/session runtime in `app/crate/db/engine.py`
+
+Both read the same `CRATE_POSTGRES_*` env vars. The SQLAlchemy engine intentionally defaults to a small pool (`CRATE_SQLALCHEMY_POOL_SIZE=2`, `CRATE_SQLALCHEMY_MAX_OVERFLOW=0`) so the hybrid period does not silently explode the connection budget. Alembic uses the same host/user/db defaults as the runtime path.
 
 ### Worker self-healing
 
@@ -200,9 +218,10 @@ Many operational routes are admin-only.
 
 The project currently leans on:
 
-- targeted backend regression tests
+- a backend pytest suite that runs against real PostgreSQL in the dev/test container
+- targeted backend regression and contract tests for critical flows such as auth, tasks, radio, repair, and DB boundaries
 - focused frontend tests in Listen for playback-related helpers
-- smoke testing against the dev environment
+- intentionally lean smoke checks against the dev environment for wiring-level confidence
 
 This is pragmatic rather than exhaustive, and worth knowing when planning large refactors.
 

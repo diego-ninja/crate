@@ -7,15 +7,60 @@ from fastapi.responses import JSONResponse, Response
 from crate.api._deps import COVER_NAMES, extensions, library_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import display_name, find_album_dir, find_album_row, fs_album_detail, has_library_data
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.browse import AlbumDetailResponse, RelatedAlbumResponse
+from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
 from crate.db import get_library_album_by_id, get_library_artist, get_library_tracks
 from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list
 from crate.storage_layout import resolve_album_dir
 
-router = APIRouter()
+router = APIRouter(tags=["browse"])
+
+_BROWSE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested browse resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
+
+_IMAGE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Binary image response.",
+            "content": {
+                "image/jpeg": {},
+                "image/png": {},
+                "image/svg+xml": {},
+            },
+        },
+        404: error_response("The requested image was not found."),
+    },
+)
+
+_ZIP_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Zip archive download.",
+            "content": {
+                "application/zip": {},
+            },
+        },
+        404: error_response("The requested album archive was not found."),
+    },
+)
 
 
-@router.get("/api/albums/{album_id}/related")
+@router.get(
+    "/api/albums/{album_id}/related",
+    response_model=list[RelatedAlbumResponse],
+    responses=_BROWSE_RESPONSES,
+    summary="List albums related to a given album",
+)
 def api_related_albums_by_id(request: Request, album_id: int, limit: int = 15):
     album = get_library_album_by_id(album_id)
     if not album:
@@ -153,7 +198,12 @@ def api_album(request: Request, artist: str, album: str):
     }
 
 
-@router.get("/api/albums/{album_id}")
+@router.get(
+    "/api/albums/{album_id}",
+    response_model=AlbumDetailResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get detailed album information",
+)
 def api_album_by_id(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
@@ -255,7 +305,12 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None):
     return _placeholder_cover(album or artist)
 
 
-@router.post("/api/albums/{album_id}/enrich")
+@router.post(
+    "/api/albums/{album_id}/enrich",
+    response_model=TaskEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue album enrichment",
+)
 def api_enrich_album(request: Request, album_id: int):
     """Enrich an album: MBID lookup, cover fetch, audio analysis, bliss."""
     _require_auth(request)
@@ -271,7 +326,12 @@ def api_enrich_album(request: Request, album_id: int):
     return {"task_id": task_id}
 
 
-@router.post("/api/albums/{album_id}/fetch-cover")
+@router.post(
+    "/api/albums/{album_id}/fetch-cover",
+    response_model=TaskEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue artwork fetching for an album",
+)
 def api_fetch_cover(request: Request, album_id: int):
     """Search and download a cover for an album from all available sources."""
     _require_auth(request)
@@ -289,7 +349,11 @@ def api_fetch_cover(request: Request, album_id: int):
     return {"task_id": task_id}
 
 
-@router.get("/api/albums/{album_id}/cover")
+@router.get(
+    "/api/albums/{album_id}/cover",
+    responses=_IMAGE_RESPONSES,
+    summary="Get album artwork",
+)
 def api_cover_by_id(album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
@@ -328,7 +392,11 @@ def api_download_album(request: Request, artist: str, album: str):
     return FileResponse(path=tmp.name, filename=safe_name, media_type="application/zip", background=None)
 
 
-@router.get("/api/albums/{album_id}/download")
+@router.get(
+    "/api/albums/{album_id}/download",
+    responses=_ZIP_RESPONSES,
+    summary="Download an album as a zip archive",
+)
 def api_download_album_by_id(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:

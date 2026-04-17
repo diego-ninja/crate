@@ -325,11 +325,17 @@ export function Album() {
           variant="destructive"
           onConfirm={async () => {
             try {
-              await api(`/api/manage/albums/${data.id}/delete`, "POST", { mode: "full" });
-              toast.success("Album deleted");
+              await api<{ task_id: string }>(`/api/manage/albums/${data.id}/delete`, "POST", { mode: "full" });
+              toast.success("Album deletion queued", {
+                description: "The worker will delete the album in the background.",
+              });
               navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug, artistName: data.artist }));
-            } catch {
-              toast.error("Failed to delete album");
+            } catch (error) {
+              const message =
+                error instanceof Error && error.message
+                  ? error.message
+                  : "Failed to queue album deletion";
+              toast.error(message);
             }
           }}
         />

@@ -1,9 +1,32 @@
 from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel
 from urllib.parse import urlparse
 
 from crate.api.auth import _require_auth, _require_admin
 from crate.api._deps import artist_name_from_id
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.common import OkResponse
+from crate.api.schemas.tidal import (
+    BatchDownloadRequest,
+    BatchDownloadResponse,
+    CheckMonitoredResponse,
+    DownloadRequest,
+    MatchMissingResponse,
+    MonitorRequest,
+    MonitorToggleResponse,
+    MonitoredArtistResponse,
+    QueueUpdateRequest,
+    TidalAuthMutationResponse,
+    TidalDiscographyResponse,
+    TidalDownloadMissingRequest,
+    TidalDownloadMissingResponse,
+    TidalDownloadResponse,
+    TidalMissingResponse,
+    TidalQueueItemResponse,
+    TidalSearchResponse,
+    TidalStatusResponse,
+    WishlistRequest,
+    WishlistResponse,
+)
 from crate.db import (
     create_task, add_tidal_download, get_tidal_downloads,
     update_tidal_download, delete_tidal_download,
@@ -12,6 +35,29 @@ from crate.db import (
 from crate import tidal
 
 router = APIRouter(prefix="/api/tidal", tags=["tidal"])
+
+_TIDAL_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        401: error_response("Tidal authentication is required."),
+        404: error_response("The requested Tidal resource could not be found."),
+        422: error_response("The request payload failed validation."),
+        502: error_response("The upstream Tidal API request failed."),
+    },
+)
+
+_TIDAL_SSE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Server-sent events stream for the Tidal device login flow.",
+            "content": {
+                "text/event-stream": {},
+            },
+        },
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
 def _infer_tidal_content_type(url: str) -> str:
@@ -24,32 +70,24 @@ def _infer_tidal_content_type(url: str) -> str:
         return "playlist"
     return "album"
 
-
-class DownloadRequest(BaseModel):
-    url: str
-    quality: str = "max"
-    source: str = "search"
-    title: str = ""
-
-
-class BatchDownloadRequest(BaseModel):
-    items: list[dict]  # [{url, tidal_id, content_type, title, artist, cover_url, quality, source}]
-
-
-class QueueUpdateRequest(BaseModel):
-    status: str | None = None
-    priority: int | None = None
-
-
 # ── Auth ─────────────────────────────────────────────────────────
 
-@router.get("/status")
+@router.get(
+    "/status",
+    response_model=TidalStatusResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get Tidal authentication status",
+)
 def tidal_status(request: Request):
     _require_auth(request)
     return {"authenticated": tidal.is_authenticated()}
 
 
-@router.post("/auth/login")
+@router.post(
+    "/auth/login",
+    responses=_TIDAL_SSE_RESPONSES,
+    summary="Start the Tidal device login flow",
+)
 async def tidal_login(request: Request):
     """Start Tidal device auth flow. Returns SSE stream with device code + result."""
     _require_admin(request)
@@ -68,14 +106,24 @@ async def tidal_login(request: Request):
     )
 
 
-@router.post("/auth/refresh")
+@router.post(
+    "/auth/refresh",
+    response_model=TidalAuthMutationResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Refresh the Tidal auth token",
+)
 def tidal_refresh(request: Request):
     _require_admin(request)
     success = tidal.refresh_token()
     return {"success": success}
 
 
-@router.post("/auth/logout")
+@router.post(
+    "/auth/logout",
+    response_model=TidalAuthMutationResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Log out from Tidal",
+)
 def tidal_logout(request: Request):
     _require_admin(request)
     success = tidal.logout()
@@ -121,7 +169,12 @@ def tidal_missing(request: Request, artist: str):
     return {"albums": missing, "authenticated": True}
 
 
-@router.get("/missing/artists/{artist_id}")
+@router.get(
+    "/missing/artists/{artist_id}",
+    response_model=TidalMissingResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="List Tidal albums missing from the local library",
+)
 def tidal_missing_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -129,26 +182,25 @@ def tidal_missing_by_id(request: Request, artist_id: int):
     return tidal_missing(request, artist_name)
 
 
-def tidal_download_missing(request: Request, artist: str, body: dict):
+def tidal_download_missing(request: Request, artist: str, body: TidalDownloadMissingRequest):
     """Download multiple missing albums from Tidal."""
     _require_auth(request)
-    album_urls = body.get("albums", [])  # [{url, title}]
-    if not album_urls:
+    if not body.albums:
         return {"queued": 0}
 
     from crate.db import create_task_dedup
     queued = 0
-    for a in album_urls:
-        url = a.get("url", "")
-        title = a.get("title", "")
+    for album in body.albums:
+        url = album.url
+        title = album.title
         if not url:
             continue
         task_id = create_task_dedup("tidal_download", {
             "url": url,
             "artist": artist,
             "album": title,
-            "quality": body.get("quality", "max"),
-            "cover_url": a.get("cover_url", ""),
+            "quality": body.quality,
+            "cover_url": album.cover_url,
         })
         if task_id:
             queued += 1
@@ -156,8 +208,13 @@ def tidal_download_missing(request: Request, artist: str, body: dict):
     return {"queued": queued}
 
 
-@router.post("/download-missing/artists/{artist_id}")
-def tidal_download_missing_by_id(request: Request, artist_id: int, body: dict):
+@router.post(
+    "/download-missing/artists/{artist_id}",
+    response_model=TidalDownloadMissingResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Queue downloads for multiple missing Tidal albums",
+)
+def tidal_download_missing_by_id(request: Request, artist_id: int, body: TidalDownloadMissingRequest):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         raise HTTPException(status_code=404, detail="Artist not found")
@@ -166,7 +223,12 @@ def tidal_download_missing_by_id(request: Request, artist_id: int, body: dict):
 
 # ── Search ───────────────────────────────────────────────────────
 
-@router.get("/search")
+@router.get(
+    "/search",
+    response_model=TidalSearchResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Search the Tidal catalog",
+)
 def tidal_search(request: Request, q: str = "", type: str = "all", limit: int = 20, offset: int = 0):
     _require_auth(request)
     if len(q.strip()) < 2:
@@ -179,7 +241,12 @@ def tidal_search(request: Request, q: str = "", type: str = "all", limit: int = 
 
 # ── Download ─────────────────────────────────────────────────────
 
-@router.post("/download")
+@router.post(
+    "/download",
+    response_model=TidalDownloadResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Queue a Tidal download",
+)
 def tidal_download(request: Request, body: DownloadRequest):
     _require_auth(request)
     if not tidal.is_authenticated():
@@ -225,7 +292,12 @@ def tidal_download(request: Request, body: DownloadRequest):
     return {"task_id": task_id, "download_id": dl_id}
 
 
-@router.post("/download-batch")
+@router.post(
+    "/download-batch",
+    response_model=BatchDownloadResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Queue multiple Tidal downloads",
+)
 def tidal_download_batch(request: Request, body: BatchDownloadRequest):
     _require_auth(request)
     if not tidal.is_authenticated():
@@ -233,65 +305,84 @@ def tidal_download_batch(request: Request, body: BatchDownloadRequest):
 
     queued = []
     for item in body.items:
-        url = item.get("url", "")
+        url = item.url
         if not url:
             continue
-        tidal_id = item.get("tidal_id", url.rstrip("/").split("/")[-1])
+        tidal_id = item.tidal_id or url.rstrip("/").split("/")[-1]
+        content_type = item.content_type or "album"
+        title = item.title or url
+        quality = item.quality or "max"
+        source = item.source or "batch"
         dl_id = add_tidal_download(
             tidal_url=url,
             tidal_id=tidal_id,
-            content_type=item.get("content_type", "album"),
-            title=item.get("title", url),
-            artist=item.get("artist"),
-            cover_url=item.get("cover_url"),
-            quality=item.get("quality", "max"),
+            content_type=content_type,
+            title=title,
+            artist=item.artist,
+            cover_url=item.cover_url,
+            quality=quality,
             status="queued",
-            source=item.get("source", "batch"),
-            metadata=item.get("metadata"),
+            source=source,
+            metadata=item.metadata,
         )
         task_id = create_task("tidal_download", {
             "url": url,
-            "quality": item.get("quality", "max"),
+            "quality": quality,
             "download_id": dl_id,
-            "content_type": item.get("content_type", _infer_tidal_content_type(url)),
-            "artist": item.get("artist", ""),
-            "album": item.get("title", url),
+            "content_type": item.content_type or _infer_tidal_content_type(url),
+            "artist": item.artist or "",
+            "album": title,
         })
         update_tidal_download(dl_id, task_id=task_id)
-        queued.append({"download_id": dl_id, "task_id": task_id, "title": item.get("title", "")})
+        queued.append({"download_id": dl_id, "task_id": task_id, "title": item.title})
 
     return {"queued": len(queued), "items": queued}
 
 
 # ── Queue / Wishlist ─────────────────────────────────────────────
 
-@router.get("/queue")
+@router.get(
+    "/queue",
+    response_model=list[TidalQueueItemResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List the Tidal download queue",
+)
 def get_queue(request: Request, status: str | None = None):
     _require_auth(request)
     return get_tidal_downloads(status=status)
 
 
-@router.post("/wishlist")
-def add_to_wishlist(request: Request, body: dict):
+@router.post(
+    "/wishlist",
+    response_model=WishlistResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Add an item to the Tidal wishlist",
+)
+def add_to_wishlist(request: Request, body: WishlistRequest):
     _require_auth(request)
-    url = body.get("url", "")
-    tidal_id = body.get("tidal_id", url.rstrip("/").split("/")[-1])
+    url = body.url
+    tidal_id = body.tidal_id or url.rstrip("/").split("/")[-1]
     dl_id = add_tidal_download(
         tidal_url=url,
         tidal_id=tidal_id,
-        content_type=body.get("content_type", "album"),
-        title=body.get("title", ""),
-        artist=body.get("artist"),
-        cover_url=body.get("cover_url"),
-        quality=body.get("quality", "max"),
+        content_type=body.content_type,
+        title=body.title,
+        artist=body.artist,
+        cover_url=body.cover_url,
+        quality=body.quality,
         status="wishlist",
         source="wishlist",
-        metadata=body.get("metadata"),
+        metadata=body.metadata,
     )
     return {"id": dl_id}
 
 
-@router.put("/queue/{dl_id}")
+@router.put(
+    "/queue/{dl_id}",
+    response_model=OkResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Update a Tidal queue item",
+)
 def update_queue_item(request: Request, dl_id: int, body: QueueUpdateRequest):
     _require_auth(request)
     kwargs = {}
@@ -314,7 +405,12 @@ def update_queue_item(request: Request, dl_id: int, body: QueueUpdateRequest):
     return {"ok": True}
 
 
-@router.delete("/queue/{dl_id}")
+@router.delete(
+    "/queue/{dl_id}",
+    response_model=OkResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Remove a Tidal queue item",
+)
 def remove_queue_item(request: Request, dl_id: int):
     _require_auth(request)
     delete_tidal_download(dl_id)
@@ -374,7 +470,12 @@ def artist_discography(request: Request, name: str):
     }
 
 
-@router.get("/artists/{artist_id}/discography")
+@router.get(
+    "/artists/{artist_id}/discography",
+    response_model=TidalDiscographyResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Cross-reference Tidal discography with the local library",
+)
 def artist_discography_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -435,7 +536,12 @@ def match_missing(request: Request, name: str):
     }
 
 
-@router.get("/artists/{artist_id}/match-missing")
+@router.get(
+    "/artists/{artist_id}/match-missing",
+    response_model=MatchMissingResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Match missing albums with Tidal availability",
+)
 def match_missing_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -445,22 +551,32 @@ def match_missing_by_id(request: Request, artist_id: int):
 
 # ── Monitor ──────────────────────────────────────────────────────
 
-def toggle_monitor(request: Request, name: str, body: dict | None = None):
+def toggle_monitor(request: Request, name: str, body: MonitorRequest | None = None):
     _require_auth(request)
-    enabled = body.get("enabled", True) if body else True
+    enabled = body.enabled if body else True
     set_monitored_artist(name, enabled=enabled)
     return {"artist": name, "monitored": enabled}
 
 
-@router.post("/artists/{artist_id}/monitor")
-def toggle_monitor_by_id(request: Request, artist_id: int, body: dict | None = None):
+@router.post(
+    "/artists/{artist_id}/monitor",
+    response_model=MonitorToggleResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Enable or disable Tidal monitoring for an artist",
+)
+def toggle_monitor_by_id(request: Request, artist_id: int, body: MonitorRequest | None = None):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         raise HTTPException(status_code=404, detail="Artist not found")
     return toggle_monitor(request, artist_name, body)
 
 
-@router.get("/monitored")
+@router.get(
+    "/monitored",
+    response_model=list[MonitoredArtistResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List monitored Tidal artists",
+)
 def list_monitored(request: Request):
     _require_auth(request)
     return get_monitored_artists()
@@ -471,7 +587,12 @@ def check_monitored(request: Request, name: str):
     return {"artist": name, "monitored": is_artist_monitored(name)}
 
 
-@router.get("/artists/{artist_id}/monitored")
+@router.get(
+    "/artists/{artist_id}/monitored",
+    response_model=CheckMonitoredResponse,
+    responses=_TIDAL_RESPONSES,
+    summary="Check whether an artist is monitored on Tidal",
+)
 def check_monitored_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:

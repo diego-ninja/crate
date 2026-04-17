@@ -106,6 +106,7 @@ const TYPE_LABELS: Record<string, string> = {
   analyze_all: "Analyze All Audio",
   compute_popularity: "Compute Popularity",
   index_genres: "Index Genres",
+  cleanup_invalid_genre_taxonomy: "Clean Invalid Genre Taxonomy Nodes",
   process_new_content: "Process New Content",
   compute_bliss: "Compute Bliss Vectors",
   tidal_download: "Tidal Download",
@@ -191,6 +192,15 @@ function describeResult(task: Task): string {
     if (r.albums) parts.push(`${r.albums} albums`);
     if (r.tracks) parts.push(`${r.tracks} tracks`);
     return parts.join(", ") || "Done";
+  }
+  if (type === "cleanup_invalid_genre_taxonomy") {
+    const deleted = Number(r.deleted_count ?? 0);
+    const edges = Number(r.edge_count ?? 0);
+    const aliases = Number(r.alias_count ?? 0);
+    const parts: string[] = [`${deleted} invalid nodes removed`];
+    if (aliases) parts.push(`${aliases} aliases deleted`);
+    if (edges) parts.push(`${edges} edges deleted`);
+    return parts.join(", ");
   }
 
   // Analytics
@@ -819,4 +829,3 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
     </Card>
   );
 }
-

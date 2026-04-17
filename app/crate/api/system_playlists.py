@@ -1,11 +1,18 @@
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.playlist_utils import apply_playlist_cover_payload, execute_smart_rules
+from crate.api.schemas.common import OkResponse
+from crate.api.schemas.curation import (
+    CreateSystemPlaylistRequest,
+    SystemPlaylistDetailResponse,
+    SystemPlaylistGenerateResponse,
+    SystemPlaylistSummaryResponse,
+    UpdateSystemPlaylistRequest,
+)
 from crate.playlist_covers import delete_playlist_cover
 from crate.db import (
-    add_playlist_tracks,
     create_playlist,
     delete_playlist,
     get_playlist,
@@ -17,31 +24,14 @@ from crate.db import (
 
 router = APIRouter(prefix="/api/admin/system-playlists", tags=["admin"])
 
-
-class CreateSystemPlaylistRequest(BaseModel):
-    name: str
-    description: str = ""
-    cover_data_url: str | None = None
-    generation_mode: str = "static"
-    smart_rules: dict | None = None
-    is_curated: bool = True
-    is_active: bool = True
-    curation_key: str | None = None
-    featured_rank: int | None = None
-    category: str | None = None
-
-
-class UpdateSystemPlaylistRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    cover_data_url: str | None = None
-    generation_mode: str | None = None
-    smart_rules: dict | None = None
-    is_curated: bool | None = None
-    is_active: bool | None = None
-    curation_key: str | None = None
-    featured_rank: int | None = None
-    category: str | None = None
+_SYSTEM_PLAYLIST_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested system playlist could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
 def _serialize_admin_playlist(playlist: dict, *, include_tracks: bool = False) -> dict:
@@ -70,7 +60,12 @@ def _validate_generation_mode(generation_mode: str, smart_rules: dict | None = N
     return mode
 
 
-@router.get("")
+@router.get(
+    "",
+    response_model=list[SystemPlaylistSummaryResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List admin system playlists",
+)
 def admin_list_system_playlists(request: Request, curated_only: bool = False, include_inactive: bool = True):
     _require_admin(request)
     playlists = list_system_playlists(
@@ -80,7 +75,12 @@ def admin_list_system_playlists(request: Request, curated_only: bool = False, in
     return [_serialize_admin_playlist(playlist) for playlist in playlists]
 
 
-@router.post("")
+@router.post(
+    "",
+    response_model=SystemPlaylistSummaryResponse,
+    responses=_SYSTEM_PLAYLIST_RESPONSES,
+    summary="Create a system playlist",
+)
 def admin_create_system_playlist(request: Request, body: CreateSystemPlaylistRequest):
     admin = _require_admin(request)
     if not body.name.strip():
@@ -108,14 +108,24 @@ def admin_create_system_playlist(request: Request, body: CreateSystemPlaylistReq
     return _serialize_admin_playlist(playlist)
 
 
-@router.get("/{playlist_id}")
+@router.get(
+    "/{playlist_id}",
+    response_model=SystemPlaylistDetailResponse,
+    responses=_SYSTEM_PLAYLIST_RESPONSES,
+    summary="Get a system playlist with tracks",
+)
 def admin_get_system_playlist(request: Request, playlist_id: int):
     _require_admin(request)
     playlist = _require_system_playlist(playlist_id)
     return _serialize_admin_playlist(playlist, include_tracks=True)
 
 
-@router.put("/{playlist_id}")
+@router.put(
+    "/{playlist_id}",
+    response_model=SystemPlaylistSummaryResponse,
+    responses=_SYSTEM_PLAYLIST_RESPONSES,
+    summary="Update a system playlist",
+)
 def admin_update_system_playlist(request: Request, playlist_id: int, body: UpdateSystemPlaylistRequest):
     _require_admin(request)
     playlist = _require_system_playlist(playlist_id)
@@ -154,7 +164,12 @@ def admin_update_system_playlist(request: Request, playlist_id: int, body: Updat
     return _serialize_admin_playlist(playlist)
 
 
-@router.delete("/{playlist_id}")
+@router.delete(
+    "/{playlist_id}",
+    response_model=OkResponse,
+    responses=_SYSTEM_PLAYLIST_RESPONSES,
+    summary="Delete a system playlist",
+)
 def admin_delete_system_playlist(request: Request, playlist_id: int):
     _require_admin(request)
     playlist = _require_system_playlist(playlist_id)
@@ -163,7 +178,12 @@ def admin_delete_system_playlist(request: Request, playlist_id: int):
     return {"ok": True}
 
 
-@router.post("/{playlist_id}/activate")
+@router.post(
+    "/{playlist_id}/activate",
+    response_model=SystemPlaylistSummaryResponse,
+    responses=_SYSTEM_PLAYLIST_RESPONSES,
+    summary="Activate a system playlist",
+)
 def admin_activate_system_playlist(request: Request, playlist_id: int):
     _require_admin(request)
     _require_system_playlist(playlist_id)
@@ -172,7 +192,12 @@ def admin_activate_system_playlist(request: Request, playlist_id: int):
     return _serialize_admin_playlist(playlist)
 
 
-@router.post("/{playlist_id}/deactivate")
+@router.post(
+    "/{playlist_id}/deactivate",
+    response_model=SystemPlaylistSummaryResponse,
+    responses=_SYSTEM_PLAYLIST_RESPONSES,
+    summary="Deactivate a system playlist",
+)
 def admin_deactivate_system_playlist(request: Request, playlist_id: int):
     _require_admin(request)
     _require_system_playlist(playlist_id)
@@ -181,7 +206,12 @@ def admin_deactivate_system_playlist(request: Request, playlist_id: int):
     return _serialize_admin_playlist(playlist)
 
 
-@router.post("/{playlist_id}/generate")
+@router.post(
+    "/{playlist_id}/generate",
+    response_model=SystemPlaylistGenerateResponse,
+    responses=_SYSTEM_PLAYLIST_RESPONSES,
+    summary="Regenerate a smart system playlist",
+)
 def admin_generate_system_playlist(request: Request, playlist_id: int):
     _require_admin(request)
     playlist = _require_system_playlist(playlist_id)

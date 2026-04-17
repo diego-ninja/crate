@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import re
 import unicodedata
 
@@ -242,6 +243,9 @@ _GENRE_DEFINITIONS: tuple[GenreDefinition, ...] = tuple(
 )
 
 _RUNTIME_GRAPH_CACHE: dict | None = None
+_RUNTIME_GRAPH_CACHE_REVISION: str | None = None
+_RUNTIME_GRAPH_INVALIDATION_SESSION_KEY = "_genre_taxonomy_invalidation_registered"
+_RUNTIME_GRAPH_REVISION_KEY = "genre_taxonomy:revision"
 
 
 def _empty_runtime_graph() -> dict:
@@ -332,52 +336,89 @@ def _clone_runtime_graph(base: dict) -> dict:
 _STATIC_RUNTIME_GRAPH = _build_static_runtime_graph()
 
 
-def invalidate_runtime_taxonomy_cache() -> None:
-    global _RUNTIME_GRAPH_CACHE
+def _load_shared_taxonomy_revision() -> str | None:
+    try:
+        from crate.db.cache import _get_redis
+
+        redis_client = _get_redis()
+        if redis_client:
+            value = redis_client.get(_RUNTIME_GRAPH_REVISION_KEY)
+            if value:
+                return str(value)
+    except Exception:
+        pass
+
+    try:
+        from crate.db.cache import get_setting
+
+        value = get_setting(_RUNTIME_GRAPH_REVISION_KEY)
+        if value:
+            return str(value)
+    except Exception:
+        pass
+
+    return None
+
+
+def _publish_shared_taxonomy_revision(revision: str | None = None) -> str:
+    revision_value = revision or datetime.now(timezone.utc).isoformat()
+
+    try:
+        from crate.db.cache import _get_redis
+
+        redis_client = _get_redis()
+        if redis_client:
+            redis_client.set(_RUNTIME_GRAPH_REVISION_KEY, revision_value)
+    except Exception:
+        pass
+
+    try:
+        from crate.db.cache import set_setting
+
+        set_setting(_RUNTIME_GRAPH_REVISION_KEY, revision_value)
+    except Exception:
+        pass
+
+    return revision_value
+
+
+def invalidate_runtime_taxonomy_cache(*, broadcast: bool = False) -> None:
+    global _RUNTIME_GRAPH_CACHE, _RUNTIME_GRAPH_CACHE_REVISION
     _RUNTIME_GRAPH_CACHE = None
+    _RUNTIME_GRAPH_CACHE_REVISION = None
     _DEPTH_CACHE.clear()
+    if broadcast:
+        _publish_shared_taxonomy_revision()
+
+
+def invalidate_runtime_taxonomy_cache_after_commit(session) -> None:
+    invalidate_runtime_taxonomy_cache()
+
+    if session.info.get(_RUNTIME_GRAPH_INVALIDATION_SESSION_KEY):
+        return
+
+    from crate.db.tx import register_after_commit
+
+    register_after_commit(session, lambda: invalidate_runtime_taxonomy_cache(broadcast=True))
+    session.info[_RUNTIME_GRAPH_INVALIDATION_SESSION_KEY] = True
 
 
 def _get_runtime_taxonomy_graph() -> dict:
-    global _RUNTIME_GRAPH_CACHE
+    global _RUNTIME_GRAPH_CACHE, _RUNTIME_GRAPH_CACHE_REVISION
 
-    if _RUNTIME_GRAPH_CACHE is not None:
+    shared_revision = _load_shared_taxonomy_revision()
+
+    if _RUNTIME_GRAPH_CACHE is not None and _RUNTIME_GRAPH_CACHE_REVISION == shared_revision:
         return _RUNTIME_GRAPH_CACHE
 
     graph = _clone_runtime_graph(_STATIC_RUNTIME_GRAPH)
     try:
-        from crate.db.core import get_db_ctx
+        from crate.db.queries.genre_taxonomy import get_runtime_taxonomy_rows
 
-        with get_db_ctx() as cur:
-            cur.execute(
-                """
-                SELECT slug, name, description, is_top_level, eq_gains
-                FROM genre_taxonomy_nodes
-                """
-            )
-            node_rows = cur.fetchall()
-            cur.execute(
-                """
-                SELECT gta.alias_slug, gta.alias_name, tn.slug AS canonical_slug
-                FROM genre_taxonomy_aliases gta
-                JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
-                """
-            )
-            alias_rows = cur.fetchall()
-            cur.execute(
-                """
-                SELECT
-                    source.slug AS source_slug,
-                    target.slug AS target_slug,
-                    edge.relation_type
-                FROM genre_taxonomy_edges edge
-                JOIN genre_taxonomy_nodes source ON source.id = edge.source_genre_id
-                JOIN genre_taxonomy_nodes target ON target.id = edge.target_genre_id
-                """
-            )
-            edge_rows = cur.fetchall()
+        node_rows, alias_rows, edge_rows = get_runtime_taxonomy_rows()
     except Exception:
         _RUNTIME_GRAPH_CACHE = graph
+        _RUNTIME_GRAPH_CACHE_REVISION = shared_revision
         return graph
 
     for row in node_rows:
@@ -417,6 +458,7 @@ def _get_runtime_taxonomy_graph() -> dict:
         _add_runtime_edge(graph, source_slug, target_slug, relation_type)
 
     _RUNTIME_GRAPH_CACHE = graph
+    _RUNTIME_GRAPH_CACHE_REVISION = shared_revision
     return graph
 
 
@@ -459,34 +501,13 @@ def get_genre_alias_terms(slug: str) -> list[str]:
     return terms
 
 
-def assign_genre_alias(cur, alias_value: str, canonical_slug: str) -> bool:
-    alias_name = (alias_value or "").strip().lower()
-    alias_slug = slugify_genre(alias_name)
-    canonical_slug = (canonical_slug or "").strip().lower()
-    if not alias_name or not alias_slug or not canonical_slug:
-        return False
+def assign_genre_alias(session, alias_value: str, canonical_slug: str) -> bool:
+    from crate.db.jobs.genre_taxonomy import assign_genre_alias_in_session
 
-    cur.execute("SELECT id, name FROM genre_taxonomy_nodes WHERE slug = %s", (canonical_slug,))
-    node_row = cur.fetchone()
-    if not node_row:
-        return False
-
-    cur.execute(
-        "DELETE FROM genre_taxonomy_aliases WHERE alias_name = %s AND alias_slug != %s",
-        (alias_name, alias_slug),
-    )
-    cur.execute(
-        """
-        INSERT INTO genre_taxonomy_aliases (alias_slug, alias_name, genre_id)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (alias_slug) DO UPDATE
-        SET alias_name = EXCLUDED.alias_name,
-            genre_id = EXCLUDED.genre_id
-        """,
-        (alias_slug, alias_name, node_row["id"]),
-    )
-    invalidate_runtime_taxonomy_cache()
-    return True
+    applied = assign_genre_alias_in_session(session, alias_value, canonical_slug)
+    if applied:
+        invalidate_runtime_taxonomy_cache_after_commit(session)
+    return applied
 
 
 def split_genre_names(value: str) -> list[str]:
@@ -888,7 +909,7 @@ def choose_mix_seed_genres(rows: list[dict], limit: int = 8) -> list[dict]:
     return selected
 
 
-def seed_genre_taxonomy(cur) -> None:
+def seed_genre_taxonomy(session) -> None:
     """Upsert the static genre definitions into the taxonomy tables.
 
     Tables must already exist (created by _create_schema / migrations).
@@ -896,106 +917,7 @@ def seed_genre_taxonomy(cur) -> None:
     that diverge from the Python definitions and never touches
     user-created or externally-enriched data.
     """
-    # Fast path: skip re-seeding if the node count matches AND the
-    # eq_gains column is populated for every definition that owns one.
-    # We need the second check because the column was added after the
-    # first seeds shipped; older installs would otherwise never
-    # back-fill it.
-    slugs_with_gains = [d.slug for d in _GENRE_DEFINITIONS if d.eq_gains is not None]
-    cur.execute(
-        "SELECT COUNT(*)::INTEGER AS cnt FROM genre_taxonomy_nodes WHERE slug = ANY(%s)",
-        ([d.slug for d in _GENRE_DEFINITIONS],),
-    )
-    existing_count = cur.fetchone()["cnt"]
-    cur.execute(
-        "SELECT COUNT(*)::INTEGER AS cnt FROM genre_taxonomy_nodes "
-        "WHERE slug = ANY(%s) AND eq_gains IS NOT NULL",
-        (slugs_with_gains,),
-    )
-    existing_gains_count = cur.fetchone()["cnt"]
-    if existing_count == len(_GENRE_DEFINITIONS) and existing_gains_count == len(slugs_with_gains):
-        return
+    from crate.db.jobs.genre_taxonomy import seed_genre_taxonomy_definitions
 
-    for definition in _GENRE_DEFINITIONS:
-        cur.execute(
-            """
-            INSERT INTO genre_taxonomy_nodes (slug, name, description, is_top_level, eq_gains)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (slug) DO UPDATE
-            SET name = EXCLUDED.name,
-                description = EXCLUDED.description,
-                is_top_level = EXCLUDED.is_top_level,
-                eq_gains = EXCLUDED.eq_gains
-            """,
-            (
-                definition.slug,
-                definition.name,
-                definition.description,
-                definition.top_level,
-                list(definition.eq_gains) if definition.eq_gains is not None else None,
-            ),
-        )
-
-    cur.execute("SELECT id, slug FROM genre_taxonomy_nodes")
-    node_ids = {row["slug"]: row["id"] for row in cur.fetchall()}
-
-    for definition in _GENRE_DEFINITIONS:
-        genre_id = node_ids.get(definition.slug)
-        if genre_id is None:
-            continue
-        alias_entries: list[tuple[str, str]] = []
-        seen_alias_slugs: set[str] = set()
-        for candidate_name in (definition.slug.replace("-", " "), definition.name, *definition.aliases):
-            normalized_alias = (candidate_name or "").strip().lower()
-            alias_slug = slugify_genre(normalized_alias)
-            if not normalized_alias or not alias_slug or alias_slug in seen_alias_slugs:
-                continue
-            seen_alias_slugs.add(alias_slug)
-            alias_entries.append((alias_slug, normalized_alias))
-
-        for alias_slug, alias_name in alias_entries:
-            cur.execute(
-                "DELETE FROM genre_taxonomy_aliases WHERE alias_name = %s AND alias_slug != %s",
-                (alias_name, alias_slug),
-            )
-            cur.execute(
-                """
-                INSERT INTO genre_taxonomy_aliases (alias_slug, alias_name, genre_id)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (alias_slug) DO UPDATE
-                SET alias_name = EXCLUDED.alias_name,
-                    genre_id = EXCLUDED.genre_id
-                """,
-                (alias_slug, alias_name, genre_id),
-            )
-
-    for definition in _GENRE_DEFINITIONS:
-        source_id = node_ids.get(definition.slug)
-        if source_id is None:
-            continue
-        for parent_slug in definition.parents:
-            target_id = node_ids.get(parent_slug)
-            if target_id is None:
-                continue
-            cur.execute(
-                """
-                INSERT INTO genre_taxonomy_edges (source_genre_id, target_genre_id, relation_type, weight)
-                VALUES (%s, %s, 'parent', 1.0)
-                ON CONFLICT (source_genre_id, target_genre_id, relation_type) DO UPDATE
-                SET weight = EXCLUDED.weight
-                """,
-                (source_id, target_id),
-            )
-        for related_slug in definition.related:
-            target_id = node_ids.get(related_slug)
-            if target_id is None:
-                continue
-            cur.execute(
-                """
-                INSERT INTO genre_taxonomy_edges (source_genre_id, target_genre_id, relation_type, weight)
-                VALUES (%s, %s, 'related', 0.7)
-                ON CONFLICT (source_genre_id, target_genre_id, relation_type) DO UPDATE
-                SET weight = EXCLUDED.weight
-                """,
-                (source_id, target_id),
-            )
+    seed_genre_taxonomy_definitions(session, _GENRE_DEFINITIONS)
+    invalidate_runtime_taxonomy_cache_after_commit(session)

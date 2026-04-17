@@ -1,13 +1,14 @@
 """DB functions for artwork worker handlers."""
 
-from crate.db.core import get_db_ctx
+from crate.db.tx import transaction_scope
+from sqlalchemy import text
 
 
 def set_artist_has_photo(artist_name: str) -> None:
-    with get_db_ctx() as cur:
-        cur.execute("UPDATE library_artists SET has_photo = 1 WHERE name = %s", (artist_name,))
+    with transaction_scope() as session:
+        session.execute(text("UPDATE library_artists SET has_photo = 1 WHERE name = :name"), {"name": artist_name})
 
 
 def set_album_has_cover(album_id: int) -> None:
-    with get_db_ctx() as cur:
-        cur.execute("UPDATE library_albums SET has_cover = 1 WHERE id = %s", (album_id,))
+    with transaction_scope() as session:
+        session.execute(text("UPDATE library_albums SET has_cover = 1 WHERE id = :id"), {"id": album_id})

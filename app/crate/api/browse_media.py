@@ -2,12 +2,28 @@ import logging
 import math
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
 
 from crate.api._deps import enrich_radio_tracks as _enrich_radio_tracks, library_path, safe_path
 from crate.api.auth import _require_auth
-from crate.api.browse_shared import _YEAR_PREFIX_RE, fs_search, has_library_data
-from crate.db import get_cache, set_cache
+from crate.api.browse_shared import fs_search, has_library_data
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.common import OkResponse
+from crate.api.schemas.media import (
+    DiscoverCompletenessRefreshResponse,
+    DiscoverCompletenessResponse,
+    EqFeaturesResponse,
+    FavoriteMutationRequest,
+    FavoritesResponse,
+    MoodPresetsResponse,
+    MoodTracksResponse,
+    SearchResponse,
+    SimilarTracksResponse,
+    TrackGenreResponse,
+    TrackInfoResponse,
+    TrackRatingRequest,
+    TrackRatingResponse,
+)
+from crate.db import get_cache
 from crate.db.queries.browse_media import (
     add_favorite,
     count_mood_tracks,
@@ -31,10 +47,55 @@ from crate.db.queries.browse_media import (
 
 log = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["browse"])
+
+_BROWSE_MEDIA_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested media resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
+
+_STREAM_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Binary audio stream response.",
+            "content": {
+                "audio/flac": {"schema": {"type": "string", "format": "binary"}},
+                "audio/mpeg": {"schema": {"type": "string", "format": "binary"}},
+                "audio/mp4": {"schema": {"type": "string", "format": "binary"}},
+                "audio/ogg": {"schema": {"type": "string", "format": "binary"}},
+                "audio/opus": {"schema": {"type": "string", "format": "binary"}},
+                "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        404: error_response("The requested track stream could not be found."),
+    },
+)
+
+_DOWNLOAD_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Binary file download response.",
+            "content": {
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        404: error_response("The requested download could not be found."),
+    },
+)
 
 
-@router.get("/api/search")
+@router.get(
+    "/api/search",
+    response_model=SearchResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Search artists, albums, and tracks",
+)
 def api_search(request: Request, q: str = "", limit: int = 20):
     _require_auth(request)
     q_stripped = q.strip()
@@ -95,23 +156,33 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     return {"artists": artists, "albums": albums, "tracks": tracks}
 
 
-@router.get("/api/favorites")
+@router.get(
+    "/api/favorites",
+    response_model=FavoritesResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List favorite artists, albums, and tracks",
+)
 def api_favorites_list(request: Request):
     _require_auth(request)
     return {"items": list_favorites()}
 
 
-@router.post("/api/favorites/add")
-def api_favorites_add(request: Request, body: dict):
+@router.post(
+    "/api/favorites/add",
+    response_model=OkResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Add an item to favorites",
+)
+def api_favorites_add(request: Request, body: FavoriteMutationRequest):
     _require_auth(request)
     from datetime import datetime, timezone
 
-    item_id = body.get("item_id", "")
-    item_type = body.get("type", "song")
+    item_id = body.item_id
+    item_type = body.type
     if not item_id:
-        return Response(status_code=400)
+        raise HTTPException(status_code=400, detail="item_id is required")
     if item_type not in ("song", "album", "artist"):
-        return JSONResponse({"error": "type must be song, album, or artist"}, status_code=400)
+        raise HTTPException(status_code=400, detail="type must be song, album, or artist")
 
     now = datetime.now(timezone.utc).isoformat()
     add_favorite(item_type, item_id, now)
@@ -119,38 +190,48 @@ def api_favorites_add(request: Request, body: dict):
     return {"ok": True}
 
 
-@router.post("/api/favorites/remove")
-def api_favorites_remove(request: Request, body: dict):
+@router.post(
+    "/api/favorites/remove",
+    response_model=OkResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Remove an item from favorites",
+)
+def api_favorites_remove(request: Request, body: FavoriteMutationRequest):
     _require_auth(request)
-    item_id = body.get("item_id", "")
-    item_type = body.get("type", "song")
+    item_id = body.item_id
+    item_type = body.type
     if not item_id:
-        return Response(status_code=400)
+        raise HTTPException(status_code=400, detail="item_id is required")
     if item_type not in ("song", "album", "artist"):
-        return JSONResponse({"error": "type must be song, album, or artist"}, status_code=400)
+        raise HTTPException(status_code=400, detail="type must be song, album, or artist")
 
     remove_favorite(item_type, item_id)
 
     return {"ok": True}
 
 
-@router.post("/api/track/rate")
-def api_rate_track(request: Request, body: dict):
+@router.post(
+    "/api/track/rate",
+    response_model=TrackRatingResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Set a rating for a track",
+)
+def api_rate_track(request: Request, body: TrackRatingRequest):
     _require_auth(request)
     from crate.db import set_track_rating
 
-    rating = body.get("rating", 0)
-    track_id = body.get("track_id")
-    track_path = body.get("path")
+    rating = body.rating
+    track_id = body.track_id
+    track_path = body.path
 
     if not isinstance(rating, int) or not 0 <= rating <= 5:
-        return JSONResponse({"error": "Rating must be 0-5"}, status_code=400)
+        raise HTTPException(status_code=400, detail="Rating must be 0-5")
 
     if not track_id and track_path:
         track_id = find_track_id_by_path(track_path)
 
     if not track_id:
-        return JSONResponse({"error": "Track not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
 
     set_track_rating(track_id, rating)
     return {"ok": True, "rating": rating}
@@ -201,25 +282,40 @@ def _serialize_track_info_row(row) -> dict:
     return payload
 
 
-@router.get("/api/tracks/{track_id}/info")
+@router.get(
+    "/api/tracks/{track_id}/info",
+    response_model=TrackInfoResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get detailed track metadata by track ID",
+)
 def api_track_info_by_id(request: Request, track_id: int):
     _require_auth(request)
     row = get_track_info_cols(track_id, _TRACK_INFO_QUERY_COLS)
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_track_info_row(row)
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/info")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/info",
+    response_model=TrackInfoResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get detailed track metadata by storage ID",
+)
 def api_track_info_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
     row = get_track_info_cols_by_storage_id(storage_id, _TRACK_INFO_QUERY_COLS)
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_track_info_row(row)
 
 
-@router.get("/api/track-info/{filepath:path}")
+@router.get(
+    "/api/track-info/{filepath:path}",
+    response_model=TrackInfoResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get detailed track metadata by file path",
+)
 def api_track_info(request: Request, filepath: str):
     _require_auth(request)
     if filepath.startswith("/music/"):
@@ -228,7 +324,7 @@ def api_track_info(request: Request, filepath: str):
     row = get_track_info_cols_by_path(filepath, _TRACK_INFO_QUERY_COLS)
 
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_track_info_row(row)
 
 
@@ -255,21 +351,31 @@ def _serialize_eq_features(row) -> dict:
     }
 
 
-@router.get("/api/tracks/{track_id}/eq-features")
+@router.get(
+    "/api/tracks/{track_id}/eq-features",
+    response_model=EqFeaturesResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get adaptive EQ features for a track by ID",
+)
 def api_eq_features_by_id(request: Request, track_id: int):
     _require_auth(request)
     row = get_track_info_cols(track_id, _EQ_FEATURES_QUERY_COLS)
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_eq_features(row)
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/eq-features")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/eq-features",
+    response_model=EqFeaturesResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get adaptive EQ features for a track by storage ID",
+)
 def api_eq_features_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
     row = get_track_info_cols_by_storage_id(storage_id, _EQ_FEATURES_QUERY_COLS)
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_eq_features(row)
 
 
@@ -351,30 +457,45 @@ def _resolve_track_genre(track_id: int) -> dict | None:
     return None
 
 
-@router.get("/api/tracks/{track_id}/genre")
+@router.get(
+    "/api/tracks/{track_id}/genre",
+    response_model=TrackGenreResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get the primary genre for a track by ID",
+)
 def api_track_genre_by_id(request: Request, track_id: int):
     _require_auth(request)
     if not get_track_exists(track_id):
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     result = _resolve_track_genre(track_id)
     if result is None:
         return {"primary": None, "topLevel": None, "source": None, "preset": None}
     return result
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/genre")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/genre",
+    response_model=TrackGenreResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get the primary genre for a track by storage ID",
+)
 def api_track_genre_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
     tid = get_track_id_by_storage_id(storage_id)
     if tid is None:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     result = _resolve_track_genre(tid)
     if result is None:
         return {"primary": None, "topLevel": None, "source": None, "preset": None}
     return result
 
 
-@router.get("/api/discover/completeness")
+@router.get(
+    "/api/discover/completeness",
+    response_model=DiscoverCompletenessResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List cached library completeness results",
+)
 def api_discover_completeness(request: Request):
     """Return cached completeness data. The heavy computation runs as a worker task."""
     _require_auth(request)
@@ -386,7 +507,12 @@ def api_discover_completeness(request: Request):
     return []
 
 
-@router.post("/api/discover/completeness/refresh")
+@router.post(
+    "/api/discover/completeness/refresh",
+    response_model=DiscoverCompletenessRefreshResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue a completeness refresh",
+)
 def api_discover_completeness_refresh(request: Request):
     """Force recompute of completeness data."""
     _require_auth(request)
@@ -417,7 +543,7 @@ def _stream_file(request: Request, filepath: str):
         filepath = filepath[len("/music/"):].lstrip("/")
     file_path = safe_path(lib, filepath)
     if not file_path or not file_path.is_file():
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
 
     ext = file_path.suffix.lower()
     return FileResponse(
@@ -427,30 +553,47 @@ def _stream_file(request: Request, filepath: str):
     )
 
 
-@router.get("/api/tracks/{track_id}/stream")
+@router.get(
+    "/api/tracks/{track_id}/stream",
+    responses=_STREAM_RESPONSES,
+    summary="Stream a track by track ID",
+)
 def api_stream_by_id(request: Request, track_id: int):
     _require_auth(request)
     path = get_track_path(track_id)
     if not path:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _stream_file(request, path)
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/stream")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/stream",
+    responses=_STREAM_RESPONSES,
+    summary="Stream a track by storage ID",
+)
 def api_stream_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
     path = get_track_path_by_storage_id(storage_id)
     if not path:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _stream_file(request, path)
 
 
-@router.get("/api/stream/{filepath:path}")
+@router.get(
+    "/api/stream/{filepath:path}",
+    responses=_STREAM_RESPONSES,
+    summary="Stream a track by file path",
+)
 def api_stream_file(request: Request, filepath: str):
     return _stream_file(request, filepath)
 
 
-@router.get("/api/similar-tracks")
+@router.get(
+    "/api/similar-tracks",
+    response_model=SimilarTracksResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Find tracks similar to a seed track",
+)
 def api_similar_tracks_query(request: Request, path: str = "", track_id: int = 0, limit: int = 20):
     _require_auth(request)
     from crate.bliss import get_similar_from_db
@@ -467,7 +610,12 @@ def api_similar_tracks_query(request: Request, path: str = "", track_id: int = 0
     return {"tracks": _enrich_radio_tracks(results)}
 
 
-@router.get("/api/similar-tracks/{filepath:path}")
+@router.get(
+    "/api/similar-tracks/{filepath:path}",
+    response_model=SimilarTracksResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Find tracks similar to a seed file path",
+)
 def api_similar_tracks(request: Request, filepath: str, limit: int = 20):
     _require_auth(request)
     from crate.bliss import get_similar_from_db
@@ -475,7 +623,7 @@ def api_similar_tracks(request: Request, filepath: str, limit: int = 20):
     lib = library_path()
     full_path = safe_path(lib, filepath)
     if not full_path or not full_path.is_file():
-        return JSONResponse({"error": "Track not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     similar = get_similar_from_db(str(full_path), limit=limit)
     return {"tracks": _enrich_radio_tracks(similar)}
 
@@ -492,30 +640,42 @@ def _download_track(request: Request, filepath: str):
         filepath = filepath[len("/music/"):].lstrip("/")
     file_path = safe_path(lib, filepath)
     if not file_path or not file_path.is_file():
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
 
     return FileResponse(path=str(file_path), filename=file_path.name, media_type="application/octet-stream")
 
 
-@router.get("/api/tracks/{track_id}/download")
+@router.get(
+    "/api/tracks/{track_id}/download",
+    responses=_DOWNLOAD_RESPONSES,
+    summary="Download a track by track ID",
+)
 def api_download_track_by_id(request: Request, track_id: int):
     _require_auth(request)
     path = get_track_path(track_id)
     if not path:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _download_track(request, path)
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/download")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/download",
+    responses=_DOWNLOAD_RESPONSES,
+    summary="Download a track by storage ID",
+)
 def api_download_track_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
     path = get_track_path_by_storage_id(storage_id)
     if not path:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _download_track(request, path)
 
 
-@router.get("/api/download/track/{filepath:path}")
+@router.get(
+    "/api/download/track/{filepath:path}",
+    responses=_DOWNLOAD_RESPONSES,
+    summary="Download a track by file path",
+)
 def api_download_track(request: Request, filepath: str):
     return _download_track(request, filepath)
 
@@ -545,7 +705,12 @@ def _mood_conditions(filters: dict) -> tuple[list[str], list]:
     return conditions, params
 
 
-@router.get("/api/browse/moods")
+@router.get(
+    "/api/browse/moods",
+    response_model=MoodPresetsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List mood presets with available track counts",
+)
 def api_browse_moods(request: Request):
     """Return available mood presets with track counts."""
     _require_auth(request)
@@ -557,7 +722,12 @@ def api_browse_moods(request: Request):
     return results
 
 
-@router.get("/api/browse/mood/{mood}")
+@router.get(
+    "/api/browse/mood/{mood}",
+    response_model=MoodTracksResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="List tracks matching a mood preset",
+)
 def api_browse_mood_tracks(request: Request, mood: str, limit: int = Query(50, ge=1, le=200)):
     """Return tracks matching a mood preset."""
     _require_auth(request)

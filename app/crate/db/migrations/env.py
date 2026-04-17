@@ -20,7 +20,7 @@ log = logging.getLogger("alembic.env")
 def _build_dsn() -> str:
     user = os.environ.get("CRATE_POSTGRES_USER", "crate")
     password = os.environ.get("CRATE_POSTGRES_PASSWORD", "crate")
-    host = os.environ.get("CRATE_POSTGRES_HOST", "postgres")
+    host = os.environ.get("CRATE_POSTGRES_HOST", "crate-postgres")
     port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
     db = os.environ.get("CRATE_POSTGRES_DB", "crate")
     return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"

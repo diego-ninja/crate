@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from crate.api._deps import json_dumps
-from crate.api.openapi import custom_openapi
+from crate.api.openapi import custom_openapi, variant_openapi
 from crate.db import init_db
 
 
@@ -34,20 +34,104 @@ def create_app() -> FastAPI:
     )
     app.openapi = lambda: custom_openapi(app)
 
+    @app.get("/openapi-crate.json", include_in_schema=False)
+    async def openapi_crate_json():
+        return variant_openapi(
+            app,
+            "crate-rest",
+            exclude_tags={"subsonic"},
+            title="MusicDock API",
+            summary="OpenAPI contract for Crate's primary HTTP API.",
+            description=(
+                "Crate is a self-hosted music platform for library management, enrichment, "
+                "analysis, playback, and discovery."
+            ),
+        )
+
+    @app.get("/openapi-app.json", include_in_schema=False)
+    async def openapi_app_json():
+        return variant_openapi(
+            app,
+            "app-api",
+            include_tags={"auth", "me", "social", "jam", "browse", "playlists", "radio", "genres", "curation", "analytics", "lyrics"},
+            title="Crate App & Listening API",
+            summary="Authentication, personal library, browsing, playlists, radio, and listening surfaces.",
+            description=(
+                "This surface covers the day-to-day Crate application experience: signing in, "
+                "browsing the library, building playlists, radio, and user-facing discovery."
+            ),
+        )
+
+    @app.get("/openapi-collection-ops.json", include_in_schema=False)
+    async def openapi_collection_ops_json():
+        return variant_openapi(
+            app,
+            "collection-ops",
+            include_tags={"enrichment", "artwork", "metadata", "imports", "scanner", "organizer", "matcher", "duplicates", "batch", "acquisition", "tidal"},
+            title="Crate Collection Operations API",
+            summary="Artwork, metadata, import, acquisition, and maintenance workflows for the library.",
+            description=(
+                "This surface focuses on collection maintenance and ingest workflows: enrichment, "
+                "artwork, metadata editing, imports, acquisition, and bulk maintenance."
+            ),
+        )
+
+    @app.get("/openapi-admin-system.json", include_in_schema=False)
+    async def openapi_admin_system_json():
+        return variant_openapi(
+            app,
+            "admin-system",
+            include_tags={"management", "settings", "tasks", "events", "stack", "setup", "admin", "admin-auth"},
+            title="Crate Admin & System API",
+            summary="Setup, administration, health, task orchestration, and system control.",
+            description=(
+                "This surface gathers administrative and operational endpoints: setup, invite "
+                "management, health and repair flows, task orchestration, event streams, and stack control."
+            ),
+        )
+
+    @app.get("/openapi-subsonic.json", include_in_schema=False)
+    async def openapi_subsonic_json():
+        return variant_openapi(
+            app,
+            "subsonic-compatibility",
+            include_tags={"subsonic"},
+            title="Crate Subsonic Compatibility API",
+            summary="OpenAPI contract for the Open Subsonic-compatible surface exposed by Crate.",
+            description=(
+                "Crate exposes a Subsonic-compatible API under /rest so third-party players can "
+                "browse, search, and stream from the library."
+            ),
+        )
+
     domain = os.environ.get("DOMAIN", "localhost")
+    is_dev = domain in ("localhost", "127.0.0.1")
     allowed_origins = [
         f"https://admin.{domain}",
         f"https://listen.{domain}",
         f"https://api.{domain}",
         f"https://{domain}",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:8585",
         # Capacitor native shells
         "capacitor://localhost",
         "https://localhost",
     ]
+    # Project surfaces (docs, reference) — always allowed because they
+    # live on a fixed domain regardless of the operator's DOMAIN.
+    allowed_origins += [
+        "https://docs.cratemusic.app",
+        "https://reference.cratemusic.app",
+    ]
+    if is_dev:
+        # Dev-only origins — Vite dev servers + dev subdomains
+        allowed_origins += [
+            f"https://docs.{domain}", f"https://reference.{domain}",
+            "https://docs.dev.cratemusic.app",
+            "https://reference.dev.cratemusic.app",
+            "http://localhost:3000", "http://localhost:5173",
+            "http://localhost:5174", "http://localhost:4173",
+            "http://localhost:5177", "http://127.0.0.1:4173",
+            "http://127.0.0.1:5177", "http://localhost:8585",
+        ]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,

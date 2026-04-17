@@ -1,74 +1,77 @@
 """DB functions for storage V2 migration worker handlers."""
 
-from crate.db.core import get_db_ctx
+from crate.db.tx import transaction_scope
+from sqlalchemy import text
 
 
 def get_artist_album_paths(artist_name: str, limit: int = 5) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT path FROM library_albums WHERE artist = %s LIMIT %s",
-            (artist_name, limit),
-        )
-        return cur.fetchall()
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("SELECT path FROM library_albums WHERE artist = :artist LIMIT :lim"),
+            {"artist": artist_name, "lim": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def get_album_tracks(album_id: int) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT id, storage_id, path, filename FROM library_tracks WHERE album_id = %s",
-            (album_id,),
-        )
-        return cur.fetchall()
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("SELECT id, storage_id, path, filename FROM library_tracks WHERE album_id = :album_id"),
+            {"album_id": album_id},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def update_track_path(track_id: int, new_path: str, new_filename: str) -> None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_tracks SET path = %s, filename = %s WHERE id = %s",
-            (new_path, new_filename, track_id),
+    with transaction_scope() as session:
+        session.execute(
+            text("UPDATE library_tracks SET path = :path, filename = :filename WHERE id = :id"),
+            {"path": new_path, "filename": new_filename, "id": track_id},
         )
 
 
 def update_album_path(album_id: int, new_path: str) -> None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_albums SET path = %s WHERE id = %s",
-            (new_path, album_id),
+    with transaction_scope() as session:
+        session.execute(
+            text("UPDATE library_albums SET path = :path WHERE id = :id"),
+            {"path": new_path, "id": album_id},
         )
 
 
 def get_artist_albums_ordered(artist_name: str) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT id, storage_id, path, name FROM library_albums WHERE artist = %s ORDER BY name",
-            (artist_name,),
-        )
-        return cur.fetchall()
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("SELECT id, storage_id, path, name FROM library_albums WHERE artist = :artist ORDER BY name"),
+            {"artist": artist_name},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def update_artist_folder_name(artist_name: str, folder_name: str) -> None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_artists SET folder_name = %s WHERE name = %s",
-            (folder_name, artist_name),
+    with transaction_scope() as session:
+        session.execute(
+            text("UPDATE library_artists SET folder_name = :folder WHERE name = :name"),
+            {"folder": folder_name, "name": artist_name},
         )
 
 
 def get_all_artists_for_migration(single_artist: str | None = None) -> list[dict]:
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         if single_artist:
-            cur.execute(
-                "SELECT id, name, storage_id, folder_name FROM library_artists WHERE name = %s",
-                (single_artist,),
-            )
+            rows = session.execute(
+                text("SELECT id, name, storage_id, folder_name FROM library_artists WHERE name = :name"),
+                {"name": single_artist},
+            ).mappings().all()
         else:
-            cur.execute(
-                "SELECT id, name, storage_id, folder_name FROM library_artists ORDER BY name"
-            )
-        return cur.fetchall()
+            rows = session.execute(
+                text("SELECT id, name, storage_id, folder_name FROM library_artists ORDER BY name")
+            ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def get_all_tracks_for_verification() -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, path, storage_id, artist, title FROM library_tracks")
-        return cur.fetchall()
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("SELECT id, path, storage_id, artist, title FROM library_tracks")
+        ).mappings().all()
+        return [dict(row) for row in rows]

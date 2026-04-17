@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable
 
 from crate.db import create_task, emit_task_event, get_task, set_cache, update_task
+from crate.db.genres import cleanup_invalid_genre_taxonomy_nodes
 from crate.db.jobs.analysis import (
     get_albums_needing_popularity,
     get_artists_needing_analysis,
@@ -578,6 +579,34 @@ def _handle_sync_musicbrainz_genre_graph(task_id: str, params: dict, config: dic
     return result
 
 
+def _handle_cleanup_invalid_genre_taxonomy(task_id: str, params: dict, config: dict) -> dict:
+    emit_task_event(task_id, "info", {"message": "Removing invalid MusicBrainz taxonomy nodes..."})
+    result = cleanup_invalid_genre_taxonomy_nodes(dry_run=False)
+    update_task(
+        task_id,
+        progress=json.dumps(
+            {
+                "phase": "cleanup",
+                "deleted_count": result.get("deleted_count", 0),
+                "invalid_count": result.get("invalid_count", 0),
+                "alias_count": result.get("alias_count", 0),
+                "edge_count": result.get("edge_count", 0),
+            }
+        ),
+    )
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": (
+                f"Genre taxonomy cleanup complete: {result.get('deleted_count', 0)} invalid nodes removed, "
+                f"{result.get('edge_count', 0)} dangling edges cleared"
+            )
+        },
+    )
+    return result
+
+
 def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
     """Reset analysis/bliss state to 'pending' so background daemons re-process tracks.
     Accepts: artist, album (name), album_id, track_id, or scope='all'."""
@@ -622,6 +651,7 @@ ANALYSIS_TASK_HANDLERS: dict[str, TaskHandler] = {
     "infer_genre_taxonomy": _handle_infer_genre_taxonomy,
     "enrich_genre_descriptions": _handle_enrich_genre_descriptions,
     "sync_musicbrainz_genre_graph": _handle_sync_musicbrainz_genre_graph,
+    "cleanup_invalid_genre_taxonomy": _handle_cleanup_invalid_genre_taxonomy,
     "compute_popularity": _handle_compute_popularity,
     # Re-analysis: just resets state, background daemons pick up the work
     "analyze_tracks": _handle_requeue_analysis,

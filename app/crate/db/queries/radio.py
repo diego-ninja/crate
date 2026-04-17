@@ -1,38 +1,35 @@
-from crate.db.core import get_db_ctx
+from crate.db.tx import transaction_scope
+from sqlalchemy import text
 
 
 def get_track_path_by_id(track_id: int) -> str | None:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(text("SELECT path FROM library_tracks WHERE id = :track_id"), {"track_id": track_id}).mappings().first()
     return row["path"] if row else None
 
 
 def get_track_path_by_pattern(path: str, escaped_path: str) -> str | None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        row = session.execute(
+            text("""
             SELECT path
             FROM library_tracks
-            WHERE path = %s OR path LIKE %s ESCAPE '\\'
-            ORDER BY CASE WHEN path = %s THEN 0 ELSE 1 END, path ASC
+            WHERE path = :path OR path LIKE :path_like ESCAPE '\\'
+            ORDER BY CASE WHEN path = :path THEN 0 ELSE 1 END, path ASC
             LIMIT 1
-            """,
-            (path, f"%{escaped_path}", path),
-        )
-        row = cur.fetchone()
+            """),
+            {"path": path, "path_like": f"%{escaped_path}"},
+        ).mappings().first()
     return row["path"] if row else None
 
 
 def get_album_for_radio(album_id: int) -> dict | None:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT artist, name FROM library_albums WHERE id = %s", (album_id,))
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(text("SELECT artist, name FROM library_albums WHERE id = :album_id"), {"album_id": album_id}).mappings().first()
     return dict(row) if row else None
 
 
 def get_playlist_for_radio(playlist_id: int) -> dict | None:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, name, scope, user_id, is_active FROM playlists WHERE id = %s", (playlist_id,))
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(text("SELECT id, name, scope, user_id, is_active FROM playlists WHERE id = :playlist_id"), {"playlist_id": playlist_id}).mappings().first()
     return dict(row) if row else None

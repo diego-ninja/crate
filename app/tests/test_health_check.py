@@ -6,7 +6,6 @@ import tempfile
 
 import pytest
 
-
 class TestDuplicateFolders:
     def test_detects_case_duplicates(self):
         """'Shame' and 'shame' should be detected as duplicates."""
@@ -78,12 +77,7 @@ class TestStaleArtists:
             # Only create one folder
             (Path(lib) / "Existing Band").mkdir()
 
-            with patch("crate.health_check.get_db_ctx") as mock_ctx:
-                mock_cur = MagicMock()
-                mock_cur.fetchall.return_value = mock_rows
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+            with patch("crate.health_check.get_all_artists", return_value=mock_rows):
                 issues = hc._check_stale_artists()
 
         assert len(issues) == 1
@@ -105,12 +99,7 @@ class TestStaleArtists:
                 {"name": "Pretty Name", "folder_name": "The_Actual_Folder"},
             ]
 
-            with patch("crate.health_check.get_db_ctx") as mock_ctx:
-                mock_cur = MagicMock()
-                mock_cur.fetchall.return_value = mock_rows
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+            with patch("crate.health_check.get_all_artists", return_value=mock_rows):
                 issues = hc._check_stale_artists()
 
         assert len(issues) == 0  # Folder exists, no issue
@@ -128,19 +117,12 @@ class TestStaleTracks:
             existing_file.write_bytes(b"\x00")
             missing_path = str(Path(lib) / "gone.flac")
 
-            mock_rows = [
+            mock_tracks = [
                 {"path": str(existing_file), "artist": "A"},
                 {"path": missing_path, "artist": "B"},
             ]
 
-            with patch("crate.health_check.get_db_ctx") as mock_ctx:
-                mock_cur = MagicMock()
-                # First call: COUNT(*), second: SELECT paths
-                mock_cur.fetchone.return_value = {"cnt": 2}
-                mock_cur.fetchall.return_value = mock_rows
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+            with patch("crate.health_check.get_tracks_sample", return_value=mock_tracks):
                 issues = hc._check_stale_tracks()
 
         assert len(issues) == 1
@@ -169,12 +151,7 @@ class TestFolderNaming:
                 },
             ]
 
-            with patch("crate.health_check.get_db_ctx") as mock_ctx:
-                mock_cur = MagicMock()
-                mock_cur.fetchall.return_value = mock_rows
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+            with patch("crate.health_check.get_albums_with_year", return_value=mock_rows):
                 issues = hc._check_folder_naming()
 
         assert len(issues) == 1
@@ -203,12 +180,7 @@ class TestFolderNaming:
                 },
             ]
 
-            with patch("crate.health_check.get_db_ctx") as mock_ctx:
-                mock_cur = MagicMock()
-                mock_cur.fetchall.return_value = mock_rows
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+            with patch("crate.health_check.get_albums_with_year", return_value=mock_rows):
                 issues = hc._check_folder_naming()
 
         assert len(issues) == 0
@@ -233,12 +205,7 @@ class TestFolderNaming:
                 },
             ]
 
-            with patch("crate.health_check.get_db_ctx") as mock_ctx:
-                mock_cur = MagicMock()
-                mock_cur.fetchall.return_value = mock_rows
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+            with patch("crate.health_check.get_albums_with_year", return_value=mock_rows):
                 issues = hc._check_folder_naming()
 
         assert len(issues) == 1
@@ -257,12 +224,7 @@ class TestZombieArtists:
             {"name": "Another Zombie"},
         ]
 
-        with patch("crate.health_check.get_db_ctx") as mock_ctx:
-            mock_cur = MagicMock()
-            mock_cur.fetchall.return_value = mock_rows
-            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+        with patch("crate.health_check.get_zombie_artists", return_value=mock_rows):
             issues = hc._check_zombie_artists()
 
         assert len(issues) == 2
@@ -287,12 +249,7 @@ class TestHasPhotoDesync:
                 {"name": "Band", "folder_name": "Band", "has_photo": True},
             ]
 
-            with patch("crate.health_check.get_db_ctx") as mock_ctx:
-                mock_cur = MagicMock()
-                mock_cur.fetchall.return_value = mock_rows
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+            with patch("crate.health_check.get_artists_with_photo", return_value=mock_rows):
                 issues = hc._check_has_photo_desync()
 
         assert len(issues) == 1
@@ -314,12 +271,7 @@ class TestHasPhotoDesync:
                 {"name": "Band", "folder_name": "Band", "has_photo": True},
             ]
 
-            with patch("crate.health_check.get_db_ctx") as mock_ctx:
-                mock_cur = MagicMock()
-                mock_cur.fetchall.return_value = mock_rows
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+            with patch("crate.health_check.get_artists_with_photo", return_value=mock_rows):
                 issues = hc._check_has_photo_desync()
 
         assert len(issues) == 0

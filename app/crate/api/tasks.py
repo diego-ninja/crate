@@ -4,17 +4,60 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from crate.api.auth import _require_auth, _require_admin
-from crate.db import list_tasks, get_task, update_task, create_task, get_setting, set_setting
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.common import TaskEnqueueResponse
+from crate.api.schemas.tasks import (
+    CancelAllTasksResponse,
+    TaskCancelResponse,
+    TaskCleanupRequest,
+    TaskCleanupResponse,
+    TaskCleanByStatusResponse,
+    TaskResponse,
+    TaskRetryRequest,
+    TaskRetryResponse,
+    WorkerRestartResponse,
+    WorkerSchedulesResponse,
+    WorkerSchedulesUpdateRequest,
+    WorkerSchedulesUpdateResponse,
+    WorkerSlotsRequest,
+    WorkerSlotsResponse,
+    WorkerStatusResponse,
+)
+from crate.db.cache import get_cache, get_setting, set_setting
+from crate.db.tasks import (
+    create_task,
+    delete_old_finished_tasks,
+    delete_tasks_by_status,
+    get_task,
+    list_tasks,
+    update_task,
+)
 from crate.docker_ctl import restart_container
 from crate.scheduler import get_schedules, set_schedules
 
-router = APIRouter()
+router = APIRouter(tags=["tasks"])
 
 DEFAULT_MAX_WORKERS = 5
 DEFAULT_MIN_WORKERS = 2
 
+_TASK_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested task resource could not be found."),
+        409: error_response("A conflicting task is already running."),
+        422: error_response("The request payload failed validation."),
+        500: error_response("The worker action failed."),
+    },
+)
 
-@router.get("/api/tasks")
+
+@router.get(
+    "/api/tasks",
+    response_model=list[TaskResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List background tasks",
+)
 def api_tasks(request: Request, status: str | None = None, limit: int = 50):
     _require_auth(request)
     tasks = list_tasks(status=status, limit=limit)
@@ -49,7 +92,12 @@ def api_tasks(request: Request, status: str | None = None, limit: int = 50):
     return result
 
 
-@router.post("/api/tasks/backfill-similarities")
+@router.post(
+    "/api/tasks/backfill-similarities",
+    response_model=TaskEnqueueResponse,
+    responses=_TASK_RESPONSES,
+    summary="Queue artist similarity backfill",
+)
 def api_backfill_similarities(request: Request):
     """Populate artist_similarities table from existing similar_json data."""
     _require_admin(request)
@@ -61,7 +109,12 @@ def api_backfill_similarities(request: Request):
     return {"task_id": task_id}
 
 
-@router.post("/api/tasks/sync-shows")
+@router.post(
+    "/api/tasks/sync-shows",
+    response_model=TaskEnqueueResponse,
+    responses=_TASK_RESPONSES,
+    summary="Queue a live-shows sync",
+)
 def api_sync_shows(request: Request):
     """Trigger a sync_shows task to fetch shows from Ticketmaster into DB."""
     _require_admin(request)
@@ -73,7 +126,12 @@ def api_sync_shows(request: Request):
     return {"task_id": task_id}
 
 
-@router.post("/api/tasks/sync-library")
+@router.post(
+    "/api/tasks/sync-library",
+    response_model=TaskEnqueueResponse,
+    responses=_TASK_RESPONSES,
+    summary="Queue a library filesystem sync",
+)
 def api_sync_library(request: Request):
     """Create a library_sync task to re-sync the filesystem to DB."""
     _require_admin(request)
@@ -85,7 +143,12 @@ def api_sync_library(request: Request):
     return {"task_id": task_id, "status": "started"}
 
 
-@router.get("/api/tasks/{task_id}")
+@router.get(
+    "/api/tasks/{task_id}",
+    response_model=TaskResponse,
+    responses=_TASK_RESPONSES,
+    summary="Get a single background task",
+)
 def api_task_detail(request: Request, task_id: str):
     _require_auth(request)
     task = get_task(task_id)
@@ -110,11 +173,15 @@ def api_task_detail(request: Request, task_id: str):
     }
 
 
-@router.get("/api/worker/status")
+@router.get(
+    "/api/worker/status",
+    response_model=WorkerStatusResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get worker status and queue counts",
+)
 def api_worker_status(request: Request):
     """Get worker status: running/pending tasks, engine info."""
     _require_auth(request)
-    from crate.db import get_cache
     running = list_tasks(status="running")
     pending = list_tasks(status="pending")
 
@@ -130,12 +197,17 @@ def api_worker_status(request: Request):
     }
 
 
-@router.post("/api/worker/slots")
-def api_set_worker_slots(request: Request, body: dict):
+@router.post(
+    "/api/worker/slots",
+    response_model=WorkerSlotsResponse,
+    responses=_TASK_RESPONSES,
+    summary="Update worker slot limits",
+)
+def api_set_worker_slots(request: Request, body: WorkerSlotsRequest):
     """Set max/min worker slots. Workers read this on next poll."""
     _require_admin(request)
-    slots = body.get("slots")
-    min_slots = body.get("min_slots")
+    slots = body.slots
+    min_slots = body.min_slots
     if slots is not None:
         if not isinstance(slots, int) or slots < 1 or slots > 10:
             return JSONResponse({"error": "Slots must be 1-10"}, status_code=400)
@@ -150,7 +222,12 @@ def api_set_worker_slots(request: Request, body: dict):
     }
 
 
-@router.post("/api/worker/restart")
+@router.post(
+    "/api/worker/restart",
+    response_model=WorkerRestartResponse,
+    responses=_TASK_RESPONSES,
+    summary="Restart the worker container",
+)
 def api_restart_worker(request: Request):
     """Restart the worker container."""
     _require_admin(request)
@@ -160,7 +237,12 @@ def api_restart_worker(request: Request):
     return JSONResponse({"error": "Restart failed"}, status_code=500)
 
 
-@router.post("/api/worker/cancel-all")
+@router.post(
+    "/api/worker/cancel-all",
+    response_model=CancelAllTasksResponse,
+    responses=_TASK_RESPONSES,
+    summary="Cancel all pending and running tasks",
+)
 def api_cancel_all_tasks(request: Request):
     """Cancel all running and pending tasks."""
     _require_admin(request)
@@ -173,7 +255,12 @@ def api_cancel_all_tasks(request: Request):
     return {"cancelled": cancelled}
 
 
-@router.get("/api/worker/schedules")
+@router.get(
+    "/api/worker/schedules",
+    response_model=WorkerSchedulesResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get configured worker schedules",
+)
 def api_get_schedules(request: Request):
     """Get configured task schedules."""
     _require_auth(request)
@@ -192,12 +279,17 @@ def api_get_schedules(request: Request):
     return result
 
 
-@router.post("/api/worker/schedules")
-def api_set_schedules(request: Request, body: dict):
+@router.post(
+    "/api/worker/schedules",
+    response_model=WorkerSchedulesUpdateResponse,
+    responses=_TASK_RESPONSES,
+    summary="Update worker schedules",
+)
+def api_set_schedules(request: Request, body: WorkerSchedulesUpdateRequest):
     """Update task schedules. Body: {task_type: interval_seconds, ...}. Set to 0 to disable."""
     _require_admin(request)
     current = get_schedules()
-    for k, v in body.items():
+    for k, v in body.root.items():
         if isinstance(v, (int, float)) and v >= 0:
             current[k] = int(v)
     set_schedules(current)
@@ -216,12 +308,16 @@ def _format_interval(seconds: int) -> str:
     return f"{seconds // 86400}d"
 
 
-@router.post("/api/tasks/clean/{status}")
+@router.post(
+    "/api/tasks/clean/{status}",
+    response_model=TaskCleanByStatusResponse,
+    responses=_TASK_RESPONSES,
+    summary="Delete tasks by status",
+)
 def api_clean_tasks_by_status(request: Request, status: str):
     """Delete all tasks with the given status. Allowed: completed, cancelled, failed."""
     _require_admin(request)
     from fastapi import HTTPException
-    from crate.db import delete_tasks_by_status
     allowed = {"completed", "cancelled", "failed"}
     if status not in allowed:
         raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(allowed)}")
@@ -229,23 +325,32 @@ def api_clean_tasks_by_status(request: Request, status: str):
     return {"deleted": deleted, "status": status}
 
 
-@router.post("/api/tasks/cleanup")
-def api_cleanup_tasks(request: Request, body: dict | None = None):
+@router.post(
+    "/api/tasks/cleanup",
+    response_model=TaskCleanupResponse,
+    responses=_TASK_RESPONSES,
+    summary="Delete old finished tasks",
+)
+def api_cleanup_tasks(request: Request, body: TaskCleanupRequest | None = None):
     """Delete completed/failed/cancelled tasks older than N days."""
     _require_admin(request)
-    from crate.db import delete_old_finished_tasks
     from datetime import datetime, timezone, timedelta
-    days = (body or {}).get("older_than_days", 7)
+    days = body.older_than_days if body else 7
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     deleted = delete_old_finished_tasks(cutoff)
     return {"deleted": deleted}
 
 
-@router.post("/api/tasks/retry")
-def api_retry_task(request: Request, body: dict):
+@router.post(
+    "/api/tasks/retry",
+    response_model=TaskRetryResponse,
+    responses=_TASK_RESPONSES,
+    summary="Retry a task by cloning its params",
+)
+def api_retry_task(request: Request, body: TaskRetryRequest):
     """Retry a failed task by creating a new one with the same type and params (dispatches to Dramatiq)."""
     _require_admin(request)
-    task_id = body.get("task_id")
+    task_id = body.task_id
     if not task_id:
         return JSONResponse({"error": "task_id required"}, status_code=400)
     task = get_task(task_id)
@@ -263,7 +368,12 @@ def api_retry_task(request: Request, body: dict):
     return {"task_id": new_id, "original_id": task_id}
 
 
-@router.post("/api/tasks/{task_id}/cancel")
+@router.post(
+    "/api/tasks/{task_id}/cancel",
+    response_model=TaskCancelResponse,
+    responses=_TASK_RESPONSES,
+    summary="Cancel a pending or running task",
+)
 def api_cancel_task(request: Request, task_id: str):
     _require_admin(request)
     task = get_task(task_id)

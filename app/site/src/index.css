@@ -1,3 +1,4 @@
+@import "../../shared/fonts/poppins.css";
 @import "tailwindcss";
 
 @theme inline {
@@ -26,7 +27,7 @@ body {
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   color: #f1f5f9;
   /* Subtle cyan halo across the top — grounds the dark surface without
      feeling like a tech-startup gradient. */

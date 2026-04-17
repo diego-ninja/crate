@@ -56,6 +56,7 @@ for mod_name in (
 PG_AVAILABLE = False
 _test_dsn = None   # type: str | None
 _tc_container = None  # Testcontainers instance, kept alive for session
+TEST_DB_NAME = "crate_test"
 
 
 def _try_env_pg() -> bool:
@@ -77,7 +78,7 @@ def _try_env_pg() -> bool:
 
         # ALWAYS use crate_test — NEVER read CRATE_POSTGRES_DB here.
         # The test fixture drops the entire public schema on every test.
-        db = "crate_test"
+        db = TEST_DB_NAME
 
         # Try to create the test database if it doesn't exist yet.
         try:
@@ -85,9 +86,14 @@ def _try_env_pg() -> bool:
             admin_conn = psycopg2.connect(admin_dsn)
             admin_conn.autocommit = True
             with admin_conn.cursor() as c:
-                c.execute("SELECT 1 FROM pg_database WHERE datname = 'crate_test'")
+                c.execute("SELECT 1 FROM pg_database WHERE datname = %s", (TEST_DB_NAME,))
                 if not c.fetchone():
-                    c.execute("CREATE DATABASE crate_test OWNER %s", (user,))
+                    # TEST_DB_NAME is a constant ("crate_test") — safe to
+                    # interpolate as an identifier. DDL params can't use %s.
+                    from psycopg2 import sql as _sql
+                    c.execute(_sql.SQL("CREATE DATABASE {} OWNER {}").format(
+                        _sql.Identifier(TEST_DB_NAME), _sql.Identifier(user),
+                    ))
             admin_conn.close()
         except Exception:
             pass
@@ -95,6 +101,9 @@ def _try_env_pg() -> bool:
         dsn = f"postgresql://{user}:{password}@{host}:{port}/{db}"
         conn = psycopg2.connect(dsn)
         conn.close()
+        # Pin the pytest process to the test DB early so any accidental
+        # import-time DB access cannot hit the local dev database.
+        os.environ["CRATE_POSTGRES_DB"] = TEST_DB_NAME
         _test_dsn = dsn
         PG_AVAILABLE = True
         return True
@@ -116,7 +125,7 @@ def _try_testcontainers() -> bool:
             image="postgres:15-alpine",
             username="crate",
             password="crate",
-            dbname="crate_test",
+            dbname=TEST_DB_NAME,
         )
         container.start()
 
@@ -128,9 +137,9 @@ def _try_testcontainers() -> bool:
         os.environ["CRATE_POSTGRES_PASSWORD"] = "crate"
         os.environ["CRATE_POSTGRES_HOST"] = host
         os.environ["CRATE_POSTGRES_PORT"] = str(port)
-        os.environ["CRATE_POSTGRES_DB"] = "crate_test"
+        os.environ["CRATE_POSTGRES_DB"] = TEST_DB_NAME
 
-        dsn = f"postgresql://crate:crate@{host}:{port}/crate_test"
+        dsn = f"postgresql://crate:crate@{host}:{port}/{TEST_DB_NAME}"
 
         # Verify connectivity
         conn = psycopg2.connect(dsn)
@@ -177,12 +186,17 @@ def pg_db():
     # FORCE all DB access to use crate_test for the duration of this
     # fixture. Without this, init_db() and db functions would use the
     # env var CRATE_POSTGRES_DB which may point at the real database.
-    os.environ["CRATE_POSTGRES_DB"] = "crate_test"
+    os.environ["CRATE_POSTGRES_DB"] = TEST_DB_NAME
+    if not _test_dsn.endswith(f"/{TEST_DB_NAME}"):
+        raise RuntimeError(f"Refusing to run pg_db against non-test DSN: {_test_dsn!r}")
+    original_admin_password = os.environ.get("DEFAULT_ADMIN_PASSWORD")
+    if not original_admin_password:
+        os.environ["DEFAULT_ADMIN_PASSWORD"] = "admin"
 
     conn = psycopg2.connect(_test_dsn)
     conn.autocommit = True
     cur = conn.cursor()
-    cur.execute("DROP SCHEMA public CASCADE")
+    cur.execute("DROP SCHEMA IF EXISTS public CASCADE")
     cur.execute("CREATE SCHEMA public")
     cur.execute("GRANT ALL ON SCHEMA public TO PUBLIC")
     cur.close()
@@ -191,20 +205,32 @@ def pg_db():
     import crate.db as db_mod
     import crate.db.core as db_core
 
-    # Reset the connection pool so init_db() creates a fresh one
-    # pointing at the test database (crate_test, forced above).
+    # Reset BOTH connection pools so init_db() and transaction_scope()
+    # create fresh ones pointing at the test database (crate_test).
     if db_core._pool is not None:
         with suppress(Exception):
             db_core._pool.closeall()
         db_core._pool = None
+
+    # Also reset the SQLAlchemy engine — it caches the DSN from first
+    # creation. Without this, transaction_scope() would still talk to
+    # the main database even though env says crate_test.
+    from crate.db.engine import reset_engine
+    reset_engine()
 
     db_mod.init_db()
-    yield db_mod
-
-    if db_core._pool is not None:
-        with suppress(Exception):
-            db_core._pool.closeall()
-        db_core._pool = None
+    try:
+        yield db_mod
+    finally:
+        if db_core._pool is not None:
+            with suppress(Exception):
+                db_core._pool.closeall()
+            db_core._pool = None
+        reset_engine()
+        if original_admin_password is None:
+            os.environ.pop("DEFAULT_ADMIN_PASSWORD", None)
+        else:
+            os.environ["DEFAULT_ADMIN_PASSWORD"] = original_admin_password
 
 
 @pytest.fixture

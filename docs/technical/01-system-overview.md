@@ -32,7 +32,7 @@ Crate does a lot of work that should not happen inline with a request:
 - storage migration
 - cleanup and repair
 
-This work is represented as database-backed task rows, dispatched to Dramatiq workers, and surfaced live to the UI through task events and status endpoints.
+This work is represented as database-backed task rows, dispatched to Dramatiq workers only after the creating transaction commits, and surfaced live to the UI through task events and status endpoints.
 
 ### 3. The database is the system of record
 
@@ -145,7 +145,7 @@ Crate intentionally uses both:
 - PostgreSQL rows for auditability, UI status, progress, and cancellation
 - Dramatiq + Redis for scalable asynchronous execution
 
-This hybrid gives better operator visibility than "messages only" systems.
+Task rows are written first and the broker send is an after-commit side effect. That hybrid gives better operator visibility than "messages only" systems and avoids workers racing uncommitted task state.
 
 ### Transitional storage model
 

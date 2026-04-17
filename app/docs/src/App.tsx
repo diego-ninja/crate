@@ -17,11 +17,80 @@ import { MarkdownArticle } from "@/components/MarkdownArticle";
 import { docsBySection, getAdjacentDocs, getDoc, sectionMeta, type DocEntry, type DocSection } from "@/content";
 import { cn } from "@/lib/utils";
 
+function getReferenceBaseUrl(): string {
+  if (typeof window === "undefined") return "https://reference.cratemusic.app";
+
+  const host = window.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") return "http://localhost:5177";
+  if (host === "docs.dev.cratemusic.app" || host === "docs.dev.lespedants.org" || host.includes(".dev.")) {
+    return "https://reference.dev.cratemusic.app";
+  }
+  return "https://reference.cratemusic.app";
+}
+
+function ApiEntryCards({ compact = false }: { compact?: boolean }) {
+  const referenceBaseUrl = getReferenceBaseUrl();
+  const apiEntryCards = [
+    {
+      badge: "App",
+      title: "App & Listening API",
+      description:
+        "Authentication, personal library, browse, playlists, radio, recommendations, and the user-facing listening surfaces.",
+      href: `${referenceBaseUrl}/app-and-listening`,
+    },
+    {
+      badge: "Library Ops",
+      title: "Collection Operations API",
+      description:
+        "Enrichment, artwork, metadata editing, imports, scanner flows, acquisition, and bulk maintenance endpoints.",
+      href: `${referenceBaseUrl}/collection-operations`,
+    },
+    {
+      badge: "Admin",
+      title: "Admin & System API",
+      description:
+        "Setup, invite management, health and repair, tasks, stack control, and event streams for operating Crate.",
+      href: `${referenceBaseUrl}/admin-and-system`,
+    },
+    {
+      badge: "Compatibility",
+      title: "Subsonic Compatibility",
+      description:
+        "Open the compatibility surface used by external Subsonic/Open Subsonic players and clients.",
+      href: `${referenceBaseUrl}/subsonic-compatibility`,
+    },
+  ];
+
+  return (
+    <div className={cn("grid gap-4", compact ? "lg:grid-cols-2" : "xl:grid-cols-2")}>
+      {apiEntryCards.map((entry) => (
+        <a
+          key={entry.title}
+          href={entry.href}
+          className="group rounded-[24px] border border-cyan-400/18 bg-[linear-gradient(180deg,rgba(6,182,212,0.1),rgba(6,182,212,0.04))] p-6 transition hover:border-cyan-400/35 hover:bg-[linear-gradient(180deg,rgba(6,182,212,0.16),rgba(6,182,212,0.06))]"
+        >
+          <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">
+            {entry.badge}
+          </div>
+          <div className="text-xl font-semibold text-white">{entry.title}</div>
+          <p className="mt-2 text-sm leading-6 text-white/58">{entry.description}</p>
+          <div className="mt-4 inline-flex items-center gap-2 text-sm text-cyan-200">
+            Open reference
+            <ArrowRight size={16} className="transition group-hover:translate-x-1" />
+          </div>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function Header({ onMenu }: { onMenu: () => void }) {
-  const navItems: Array<{ label: string; to: string }> = [
+  const referenceBaseUrl = getReferenceBaseUrl();
+  const navItems: Array<{ label: string; to?: string; href?: string }> = [
     { label: "Overview", to: "/" },
     { label: "Technical", to: "/technical" },
     { label: "Reference", to: "/reference" },
+    { label: "API", href: `${referenceBaseUrl}/app-and-listening` },
   ];
 
   return (
@@ -42,21 +111,31 @@ function Header({ onMenu }: { onMenu: () => void }) {
           </div>
         </Link>
         <nav className="ml-auto hidden items-center gap-1 lg:flex">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                cn(
-                  "rounded-full px-3 py-2 text-sm transition",
-                  isActive ? "bg-cyan-400/12 text-cyan-200" : "text-white/55 hover:bg-white/6 hover:text-white",
-                )
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+          {navItems.map((item) =>
+            item.href ? (
+              <a
+                key={item.label}
+                href={item.href}
+                className="rounded-full px-3 py-2 text-sm text-white/55 transition hover:bg-white/6 hover:text-white"
+              >
+                {item.label}
+              </a>
+            ) : (
+              <NavLink
+                key={item.to}
+                to={item.to!}
+                end={item.to === "/"}
+                className={({ isActive }) =>
+                  cn(
+                    "rounded-full px-3 py-2 text-sm transition",
+                    isActive ? "bg-cyan-400/12 text-cyan-200" : "text-white/55 hover:bg-white/6 hover:text-white",
+                  )
+                }
+              >
+                {item.label}
+              </NavLink>
+            ),
+          )}
         </nav>
       </div>
     </header>
@@ -231,6 +310,7 @@ function HomePage() {
           Reading path
         </div>
         <div className="grid gap-4 xl:grid-cols-2">
+          <ApiEntryCards />
           {technical.map((doc, index) => (
             <Link
               key={doc.id}
@@ -272,6 +352,16 @@ function SectionPage() {
         <p className="mt-3 max-w-3xl text-sm leading-7 text-white/62 sm:text-base">{meta.description}</p>
         <div className="mt-4 text-xs uppercase tracking-[0.16em] text-white/35">{entries.length} documents in this section</div>
       </section>
+
+      {typedSection === "reference" ? (
+        <section className="space-y-4">
+          <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-white/45">
+            <Sparkles size={16} />
+            API Surfaces
+          </div>
+          <ApiEntryCards compact />
+        </section>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
         {entries.map((doc) => (
@@ -386,6 +476,24 @@ function NotFoundPage() {
   );
 }
 
+function ApiRedirectPage() {
+  useEffect(() => {
+    window.location.replace(`${getReferenceBaseUrl()}/app-and-listening`);
+  }, []);
+
+  return (
+    <div className="rounded-[28px] border border-white/8 bg-white/[0.03] p-10 text-center">
+      <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">
+        <Layers3 size={14} />
+        Opening API Reference
+      </div>
+      <p className="mt-4 text-sm leading-7 text-white/58">
+        Redirecting to the standalone Scalar reference.
+      </p>
+    </div>
+  );
+}
+
 function Breadcrumbs() {
   const location = useLocation();
   const parts = location.pathname.split("/").filter(Boolean);
@@ -400,6 +508,9 @@ function Breadcrumbs() {
   }
 
   const labels = parts.map((part, index) => {
+    if (index === 0 && part === "api") {
+      return "API";
+    }
     if (index === 0 && part in sectionMeta) {
       return sectionMeta[part as DocSection].label;
     }
@@ -454,6 +565,7 @@ function AppShell() {
           <Breadcrumbs />
           <Routes>
             <Route index element={<HomePage />} />
+            <Route path="api" element={<ApiRedirectPage />} />
             <Route path=":section" element={<SectionPage />} />
             <Route path=":section/:slug" element={<DocPage />} />
             <Route path="*" element={<NotFoundPage />} />

@@ -1,4 +1,4 @@
-"""Database package — re-exports all functions for backward compatibility.
+"""Database package — frozen compatibility facade.
 
 The monolithic db.py has been split into modules:
   core.py     — connection pool, get_db_ctx, init_db
@@ -11,8 +11,11 @@ The monolithic db.py has been split into modules:
   genres.py   — genres, artist_genres, album_genres
   audit.py    — audit_log, wipe, table stats
 
-All functions are re-exported here so existing imports like
-`from crate.db import get_db_ctx, create_task` continue to work.
+This module is kept stable so existing imports and external scripts do
+not break, but new code should prefer direct imports from concrete
+modules such as ``crate.db.tasks`` or ``crate.db.queries.health``.
+
+In other words: this facade is compat, not the preferred growth path.
 """
 
 # Core (pool, context, schema)
@@ -64,12 +67,14 @@ from crate.db.auth import (
     suggest_username, get_user_external_identity, upsert_user_external_identity,
     list_user_external_identities, unlink_user_external_identity,
     create_auth_invite, get_auth_invite, list_auth_invites, consume_auth_invite,
+    cleanup_expired_sessions, cleanup_ended_jam_rooms,
 )
 
 # Playlists
 from crate.db.playlists import (
     create_playlist, get_playlists, get_playlist, update_playlist,
     delete_playlist, get_playlist_tracks, add_playlist_tracks,
+    replace_playlist_tracks,
     remove_playlist_track, reorder_playlist,
     list_system_playlists, is_playlist_followed, follow_playlist,
     unfollow_playlist, get_playlist_followers_count, get_followed_system_playlists,
@@ -77,12 +82,15 @@ from crate.db.playlists import (
     can_view_playlist, can_edit_playlist, is_playlist_owner,
     add_playlist_member, remove_playlist_member,
     create_playlist_invite, consume_playlist_invite,
+    get_playlist_filter_options,
     execute_smart_rules,
+    generate_by_genre, generate_by_decade, generate_by_artist,
+    generate_similar_artists, generate_random,
 )
 
 # Tidal
 from crate.db.tidal import (
-    add_tidal_download, get_tidal_downloads, update_tidal_download,
+    add_tidal_download, get_tidal_downloads, get_tidal_download, update_tidal_download,
     delete_tidal_download, get_next_queued_download,
     set_monitored_artist, get_monitored_artists, is_artist_monitored,
 )
@@ -91,6 +99,13 @@ from crate.db.tidal import (
 from crate.db.genres import (
     get_or_create_genre, set_artist_genres, set_album_genres,
     get_all_genres, get_genre_detail, get_genre_graph, get_unmapped_genres,
+    get_artists_with_tags, get_albums_with_genres,
+    get_artists_missing_genre_mapping, get_artist_album_genres,
+    get_total_genre_count, list_unmapped_genres_for_inference,
+    get_unmapped_genre_count, get_remaining_without_external_description,
+    get_genre_seed_artists, get_genre_cooccurring_artist_slugs,
+    get_genre_cooccurring_album_slugs,
+    list_invalid_genre_taxonomy_nodes, cleanup_invalid_genre_taxonomy_nodes,
     list_genre_taxonomy_nodes_for_external_enrichment,
     list_genre_taxonomy_nodes_for_musicbrainz_sync,
     upsert_genre_taxonomy_edge,
@@ -112,6 +127,11 @@ from crate.db.health import (
     get_artist_issues, get_artist_issue_count, get_all_artist_issue_counts,
 )
 
+# Home
+from crate.db.home import (
+    get_home_mix, get_home_playlist, get_home_discovery, get_home_section,
+)
+
 from crate.db.jam import (
     create_jam_room, get_jam_room, get_jam_room_members, get_jam_room_member,
     is_jam_room_member, upsert_jam_room_member, touch_jam_room_member,
@@ -119,15 +139,22 @@ from crate.db.jam import (
     create_jam_room_invite, consume_jam_room_invite,
 )
 
+# Management
+from crate.db.management import (
+    get_last_analyzed_track, get_last_bliss_track, get_storage_v2_status,
+)
+
 # New Releases
 from crate.db.releases import (
     upsert_new_release, get_new_releases, mark_release_downloading,
     mark_release_downloaded, mark_release_dismissed, is_album_in_library,
+    cleanup_old_releases,
 )
 
 # Shows
 from crate.db.shows import (
-    upsert_show, get_upcoming_shows, get_all_shows,
+    upsert_show, consolidate_show, get_unique_user_cities,
+    get_upcoming_shows, get_upcoming_shows_near, get_all_shows,
     get_show_cities, get_show_countries, delete_past_shows,
     attend_show, unattend_show, get_attending_show_ids,
     get_show_reminders, create_show_reminder,
@@ -137,6 +164,7 @@ from crate.db.shows import (
 # Task Events (SSE)
 from crate.db.events import (
     emit_task_event, get_task_events, cleanup_task_events, cleanup_old_events,
+    cleanup_orphan_events, cleanup_old_tasks,
 )
 
 # Similarities
@@ -151,6 +179,9 @@ from crate.db.user_library import (
     save_album, unsave_album, get_saved_albums, is_album_saved,
     like_track, unlike_track, get_liked_tracks, is_track_liked,
     record_play, record_play_event, recompute_user_listening_aggregates, get_play_history, get_play_stats,
+    get_stats_overview, get_stats_trends,
+    get_top_tracks, get_top_artists, get_top_albums, get_top_genres,
+    get_replay_mix,
     get_user_library_counts,
 )
 

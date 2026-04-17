@@ -5,10 +5,18 @@ import json
 from collections import defaultdict
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from crate.api.auth import _require_auth
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.jam import (
+    JamInviteCreateRequest,
+    JamInviteJoinRequest,
+    JamInviteResponse,
+    JamJoinResponse,
+    JamRoomCreateRequest,
+    JamRoomResponse,
+)
 from crate.auth import verify_jwt
 from crate.db import (
     create_jam_room,
@@ -28,18 +36,15 @@ from crate.db import (
 
 router = APIRouter(prefix="/api/jam", tags=["jam"])
 
-
-class CreateJamRoomRequest(BaseModel):
-    name: str
-
-
-class CreateJamInviteRequest(BaseModel):
-    expires_in_hours: int = 24
-    max_uses: int | None = 20
-
-
-class JoinJamInviteRequest(BaseModel):
-    role: str = "collab"
+_JAM_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        403: error_response("The current user cannot access or mutate this jam room."),
+        404: error_response("The requested jam room or invite could not be found."),
+        409: error_response("The jam room is no longer active."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
 class _JamHub:
@@ -112,8 +117,13 @@ def _auth_ws(websocket: WebSocket) -> dict:
     return payload
 
 
-@router.post("/rooms")
-def create_room(request: Request, body: CreateJamRoomRequest):
+@router.post(
+    "/rooms",
+    response_model=JamRoomResponse,
+    responses=_JAM_RESPONSES,
+    summary="Create a jam room",
+)
+def create_room(request: Request, body: JamRoomCreateRequest):
     user = _require_auth(request)
     if not body.name.strip():
         raise HTTPException(status_code=422, detail="Room name is required")
@@ -122,7 +132,12 @@ def create_room(request: Request, body: CreateJamRoomRequest):
     return _serialize_room(room)
 
 
-@router.get("/rooms/{room_id}")
+@router.get(
+    "/rooms/{room_id}",
+    response_model=JamRoomResponse,
+    responses=_JAM_RESPONSES,
+    summary="Get jam room state",
+)
 def get_room(request: Request, room_id: str):
     user = _require_auth(request)
     room = get_jam_room(room_id)
@@ -134,8 +149,13 @@ def get_room(request: Request, room_id: str):
     return _serialize_room(room)
 
 
-@router.post("/rooms/{room_id}/invites")
-def create_room_invite(request: Request, room_id: str, body: CreateJamInviteRequest):
+@router.post(
+    "/rooms/{room_id}/invites",
+    response_model=JamInviteResponse,
+    responses=_JAM_RESPONSES,
+    summary="Create a jam room invite",
+)
+def create_room_invite(request: Request, room_id: str, body: JamInviteCreateRequest):
     user = _require_auth(request)
     room = get_jam_room(room_id)
     if not room:
@@ -157,8 +177,13 @@ def create_room_invite(request: Request, room_id: str, body: CreateJamInviteRequ
     }
 
 
-@router.post("/rooms/invites/{token}/join")
-def join_room_by_invite(request: Request, token: str, body: JoinJamInviteRequest):
+@router.post(
+    "/rooms/invites/{token}/join",
+    response_model=JamJoinResponse,
+    responses=_JAM_RESPONSES,
+    summary="Join a jam room from an invite",
+)
+def join_room_by_invite(request: Request, token: str, body: JamInviteJoinRequest):
     user = _require_auth(request)
     invite = consume_jam_room_invite(token)
     if not invite:
@@ -179,7 +204,12 @@ def join_room_by_invite(request: Request, token: str, body: JoinJamInviteRequest
     }
 
 
-@router.post("/rooms/{room_id}/end")
+@router.post(
+    "/rooms/{room_id}/end",
+    response_model=JamRoomResponse,
+    responses=_JAM_RESPONSES,
+    summary="End a jam room",
+)
 async def end_room(request: Request, room_id: str):
     user = _require_auth(request)
     room = get_jam_room(room_id)

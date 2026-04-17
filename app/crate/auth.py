@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 import jwt
 import bcrypt as _bcrypt
 
-from crate.db import get_setting, set_setting
+from crate.db.cache import get_setting, set_setting
 
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 24

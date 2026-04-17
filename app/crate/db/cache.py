@@ -80,11 +80,11 @@ def get_cache(key: str, max_age_seconds: int | None = None) -> Any | None:
 
     # L3: PostgreSQL fallback (for migration period)
     try:
-        from crate.db.core import get_db_ctx
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text
         from datetime import datetime, timezone
-        with get_db_ctx() as cur:
-            cur.execute("SELECT value_json, updated_at FROM cache WHERE key = %s", (key,))
-            row = cur.fetchone()
+        with transaction_scope() as session:
+            row = session.execute(text("SELECT value_json, updated_at FROM cache WHERE key = :key"), {"key": key}).mappings().first()
             if not row:
                 return None
             if max_age_seconds is not None:
@@ -128,14 +128,15 @@ def set_cache(key: str, value: Any, ttl: int | None = None):
 
     # Fallback: PostgreSQL
     try:
-        from crate.db.core import get_db_ctx
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()
-        with get_db_ctx() as cur:
-            cur.execute(
-                "INSERT INTO cache (key, value_json, updated_at) VALUES (%s, %s, %s) "
-                "ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = EXCLUDED.updated_at",
-                (key, json.dumps(value, default=str), now),
+        with transaction_scope() as session:
+            session.execute(
+                text("INSERT INTO cache (key, value_json, updated_at) VALUES (:key, :value_json, :updated_at) "
+                     "ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json, updated_at = EXCLUDED.updated_at"),
+                {"key": key, "value_json": json.dumps(value, default=str), "updated_at": now},
             )
     except Exception:
         log.debug("Cache set failed for %s", key)
@@ -153,9 +154,10 @@ def delete_cache(key: str):
             pass
 
     try:
-        from crate.db.core import get_db_ctx
-        with get_db_ctx() as cur:
-            cur.execute("DELETE FROM cache WHERE key = %s", (key,))
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text
+        with transaction_scope() as session:
+            session.execute(text("DELETE FROM cache WHERE key = :key"), {"key": key})
     except Exception:
         pass
 
@@ -183,9 +185,10 @@ def delete_cache_prefix(prefix: str):
 
     # PostgreSQL fallback
     try:
-        from crate.db.core import get_db_ctx
-        with get_db_ctx() as cur:
-            cur.execute("DELETE FROM cache WHERE key LIKE %s", (prefix + "%",))
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text
+        with transaction_scope() as session:
+            session.execute(text("DELETE FROM cache WHERE key LIKE :prefix"), {"prefix": prefix + "%"})
     except Exception:
         pass
 
@@ -193,19 +196,20 @@ def delete_cache_prefix(prefix: str):
 # ── Settings ──────────────────────────────────────────────────────
 
 def get_setting(key: str, default: str | None = None) -> str | None:
-    from crate.db.core import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
-        row = cur.fetchone()
+    from crate.db.tx import transaction_scope
+    from sqlalchemy import text
+    with transaction_scope() as session:
+        row = session.execute(text("SELECT value FROM settings WHERE key = :key"), {"key": key}).mappings().first()
     return row["value"] if row else default
 
 
 def set_setting(key: str, value: str):
-    from crate.db.core import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute(
-            "INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
-            (key, value),
+    from crate.db.tx import transaction_scope
+    from sqlalchemy import text
+    with transaction_scope() as session:
+        session.execute(
+            text("INSERT INTO settings (key, value) VALUES (:key, :value) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"),
+            {"key": key, "value": value},
         )
 
 
@@ -230,10 +234,10 @@ def get_mb_cache(key: str) -> Any | None:
 
     # PostgreSQL fallback
     try:
-        from crate.db.core import get_db_ctx
-        with get_db_ctx() as cur:
-            cur.execute("SELECT value_json FROM mb_cache WHERE key = %s", (key,))
-            row = cur.fetchone()
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text
+        with transaction_scope() as session:
+            row = session.execute(text("SELECT value_json FROM mb_cache WHERE key = :key"), {"key": key}).mappings().first()
             if row:
                 val = row["value_json"]
                 if isinstance(val, str):
@@ -261,14 +265,15 @@ def set_mb_cache(key: str, value: Any):
             pass
 
     try:
-        from crate.db.core import get_db_ctx
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).isoformat()
-        with get_db_ctx() as cur:
-            cur.execute(
-                "INSERT INTO mb_cache (key, value_json, created_at) VALUES (%s, %s, %s) "
-                "ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json",
-                (key, json.dumps(value, default=str), now),
+        with transaction_scope() as session:
+            session.execute(
+                text("INSERT INTO mb_cache (key, value_json, created_at) VALUES (:key, :value_json, :created_at) "
+                     "ON CONFLICT (key) DO UPDATE SET value_json = EXCLUDED.value_json"),
+                {"key": key, "value_json": json.dumps(value, default=str), "created_at": now},
             )
     except Exception:
         pass
@@ -277,10 +282,10 @@ def set_mb_cache(key: str, value: Any):
 # ── Directory mtime tracking ────────────────────────────────────
 
 def get_dir_mtime(path: str) -> tuple[float, dict | None] | None:
-    from crate.db.core import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("SELECT mtime, data_json FROM dir_mtimes WHERE path = %s", (path,))
-        row = cur.fetchone()
+    from crate.db.tx import transaction_scope
+    from sqlalchemy import text
+    with transaction_scope() as session:
+        row = session.execute(text("SELECT mtime, data_json FROM dir_mtimes WHERE path = :path"), {"path": path}).mappings().first()
     if not row:
         return None
     data = row["data_json"]
@@ -290,24 +295,28 @@ def get_dir_mtime(path: str) -> tuple[float, dict | None] | None:
 
 
 def set_dir_mtime(path: str, mtime: float, data: dict | None = None):
-    from crate.db.core import get_db_ctx
-    with get_db_ctx() as cur:
+    from crate.db.tx import transaction_scope
+    from sqlalchemy import text
+    with transaction_scope() as session:
         data_json = json.dumps(data) if data is not None else None
-        cur.execute(
-            "INSERT INTO dir_mtimes (path, mtime, data_json) VALUES (%s, %s, %s) "
-            "ON CONFLICT(path) DO UPDATE SET mtime = EXCLUDED.mtime, data_json = EXCLUDED.data_json",
-            (path, mtime, data_json),
+        session.execute(
+            text("INSERT INTO dir_mtimes (path, mtime, data_json) VALUES (:path, :mtime, :data_json) "
+                 "ON CONFLICT(path) DO UPDATE SET mtime = EXCLUDED.mtime, data_json = EXCLUDED.data_json"),
+            {"path": path, "mtime": mtime, "data_json": data_json},
         )
 
 
 def get_all_dir_mtimes(prefix: str = "") -> dict[str, tuple[float, dict | None]]:
-    from crate.db.core import get_db_ctx
-    with get_db_ctx() as cur:
+    from crate.db.tx import transaction_scope
+    from sqlalchemy import text
+    with transaction_scope() as session:
         if prefix:
-            cur.execute("SELECT path, mtime, data_json FROM dir_mtimes WHERE path LIKE %s", (prefix + "%",))
+            rows = session.execute(
+                text("SELECT path, mtime, data_json FROM dir_mtimes WHERE path LIKE :prefix"),
+                {"prefix": prefix + "%"},
+            ).mappings().all()
         else:
-            cur.execute("SELECT path, mtime, data_json FROM dir_mtimes")
-        rows = cur.fetchall()
+            rows = session.execute(text("SELECT path, mtime, data_json FROM dir_mtimes")).mappings().all()
     result = {}
     for row in rows:
         data = row["data_json"]
@@ -318,9 +327,10 @@ def get_all_dir_mtimes(prefix: str = "") -> dict[str, tuple[float, dict | None]]
 
 
 def delete_dir_mtime(path: str):
-    from crate.db.core import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM dir_mtimes WHERE path = %s", (path,))
+    from crate.db.tx import transaction_scope
+    from sqlalchemy import text
+    with transaction_scope() as session:
+        session.execute(text("DELETE FROM dir_mtimes WHERE path = :path"), {"path": path})
 
 
 # ── Cache stats ───────────────────────────────────────────────────
@@ -344,7 +354,8 @@ def get_cache_stats() -> dict:
 
 def clear_all_cache_tables():
     """Delete all rows from cache and mb_cache tables."""
-    from crate.db.core import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM cache")
-        cur.execute("DELETE FROM mb_cache")
+    from crate.db.tx import transaction_scope
+    from sqlalchemy import text
+    with transaction_scope() as session:
+        session.execute(text("DELETE FROM cache"))
+        session.execute(text("DELETE FROM mb_cache"))

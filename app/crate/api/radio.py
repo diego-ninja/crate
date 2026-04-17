@@ -5,7 +5,6 @@ from crate.api.auth import _require_auth
 from crate.api._deps import enrich_radio_tracks as _enrich_radio_tracks
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.radio import RadioResponse
-from crate.db import get_cache, set_cache
 from crate.bliss import (
     generate_album_radio,
     generate_artist_radio,
@@ -13,11 +12,9 @@ from crate.bliss import (
     generate_track_radio,
     generate_virtual_playlist_radio,
 )
-from crate.db import (
-    get_library_artist_by_id,
-    get_library_track_by_storage_id,
-    get_user_by_email,
-)
+from crate.db.auth import get_user_by_email
+from crate.db.cache import get_cache, set_cache
+from crate.db.library import get_library_artist_by_id, get_library_track_by_storage_id
 from crate.db.queries.radio import (
     get_track_path_by_id,
     get_track_path_by_pattern,

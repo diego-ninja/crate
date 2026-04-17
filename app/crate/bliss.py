@@ -5,7 +5,6 @@ import logging
 import random
 import re
 from crate.crate_cli import find_binary, is_available, run_bliss
-from crate.db.core import get_db_ctx
 from crate.db.queries.bliss import (
     build_user_radio_profile,
     get_album_tracks_for_radio,
@@ -229,22 +228,20 @@ def _score_candidate(candidate: dict, seeds: list[dict],
 
 
 def _get_similar_artist_rows(
-    cur,
     *,
     artist_id: int | None = None,
     artist_name: str | None = None,
 ) -> list[dict]:
-    return _db_get_similar_artist_rows(cur, artist_id=artist_id, artist_name=artist_name)
+    return _db_get_similar_artist_rows(artist_id=artist_id, artist_name=artist_name)
 
 
 def _get_similar_artist_names(
-    cur,
     artist_name: str | None = None,
     *,
     artist_id: int | None = None,
     in_library_only: bool = False,
 ) -> set[str]:
-    rows = _get_similar_artist_rows(cur, artist_id=artist_id, artist_name=artist_name)
+    rows = _get_similar_artist_rows(artist_id=artist_id, artist_name=artist_name)
     if in_library_only:
         rows = [row for row in rows if row.get("in_library")]
     return {row["similar_name"] for row in rows if row.get("similar_name")}
@@ -258,12 +255,12 @@ def _get_similar_artist_score_map(rows: list[dict]) -> dict[str, float]:
     }
 
 
-def _get_artist_genre_ids(cur, artist_name: str) -> set[str]:
-    return _db_get_artist_genre_ids(cur, artist_name)
+def _get_artist_genre_ids(artist_name: str) -> set[str]:
+    return _db_get_artist_genre_ids(artist_name=artist_name)
 
 
-def _get_artist_genre_map(cur, artist_names: set[str]) -> dict[str, set[str]]:
-    return _db_get_artist_genre_map(cur, artist_names)
+def _get_artist_genre_map(artist_names: set[str]) -> dict[str, set[str]]:
+    return _db_get_artist_genre_map(artist_names=artist_names)
 
 
 def _select_seed_tracks(tracks: list[dict], *, max_count: int, require_bliss: bool = True) -> list[dict]:
@@ -611,43 +608,40 @@ def _recommend_without_bliss(
     if not seed_artists:
         return []
 
-    with get_db_ctx() as cur:
-        seed_genre_map = _get_artist_genre_map(cur, seed_artists)
-        similar_artist_map: dict[str, set[str]] = {}
-        combined_score_map: dict[str, float] = {}
-        for seed in seeds:
-            seed_artist = _candidate_artist_name(seed)
-            if not seed_artist:
-                continue
-            rows = _get_similar_artist_rows(
-                cur,
-                artist_id=seed.get("artist_id"),
-                artist_name=seed_artist,
-            )
-            in_library_rows = [row for row in rows if row.get("in_library")]
-            similar_artist_map[seed_artist] = {
-                row["similar_name"] for row in in_library_rows if row.get("similar_name")
-            }
-            for key, score in _get_similar_artist_score_map(in_library_rows).items():
-                if score > combined_score_map.get(key, 0.0):
-                    combined_score_map[key] = score
-
-        similar_artist_names = sorted({
-            name.lower()
-            for names in similar_artist_map.values()
-            for name in names
-            if isinstance(name, str) and name
-        })
-
-        candidates = get_recommend_without_bliss_candidates(
-            cur,
-            seed_paths,
-            similar_artist_names,
-            10 if similar_artist_names else 5,
-            max(limit * 8, 240),
+    seed_genre_map = _get_artist_genre_map(seed_artists)
+    similar_artist_map: dict[str, set[str]] = {}
+    combined_score_map: dict[str, float] = {}
+    for seed in seeds:
+        seed_artist = _candidate_artist_name(seed)
+        if not seed_artist:
+            continue
+        rows = _get_similar_artist_rows(
+            artist_id=seed.get("artist_id"),
+            artist_name=seed_artist,
         )
-        candidate_artists = {_candidate_artist_name(row) for row in candidates if _candidate_artist_name(row)}
-        candidate_genre_map = _get_artist_genre_map(cur, candidate_artists)
+        in_library_rows = [row for row in rows if row.get("in_library")]
+        similar_artist_map[seed_artist] = {
+            row["similar_name"] for row in in_library_rows if row.get("similar_name")
+        }
+        for key, score in _get_similar_artist_score_map(in_library_rows).items():
+            if score > combined_score_map.get(key, 0.0):
+                combined_score_map[key] = score
+
+    similar_artist_names = sorted({
+        name.lower()
+        for names in similar_artist_map.values()
+        for name in names
+        if isinstance(name, str) and name
+    })
+
+    candidates = get_recommend_without_bliss_candidates(
+        seed_paths=seed_paths,
+        similar_artist_names=similar_artist_names,
+        artist_pick_limit=10 if similar_artist_names else 5,
+        row_limit=max(limit * 8, 240),
+    )
+    candidate_artists = {_candidate_artist_name(row) for row in candidates if _candidate_artist_name(row)}
+    candidate_genre_map = _get_artist_genre_map(candidate_artists)
 
     if not candidates:
         return []
@@ -733,11 +727,12 @@ def _get_artist_radio_recommendations(
     similar_score_map = _get_similar_artist_score_map(in_library_similar)
     similar_artist_keys = [row["similar_name"].lower() for row in in_library_similar if row.get("similar_name")]
 
-    with get_db_ctx() as cur:
-        candidate_rows = get_similar_artist_tracks_for_radio(cur, similar_artist_keys, max(limit * 3, 60))
-
-        candidate_artists = {_candidate_artist_name(row) for row in candidate_rows if _candidate_artist_name(row)}
-        artist_genre_map = _get_artist_genre_map(cur, candidate_artists)
+    candidate_rows = get_similar_artist_tracks_for_radio(
+        similar_artist_keys=similar_artist_keys,
+        limit=max(limit * 3, 60),
+    )
+    candidate_artists = {_candidate_artist_name(row) for row in candidate_rows if _candidate_artist_name(row)}
+    artist_genre_map = _get_artist_genre_map(candidate_artists)
 
     if not candidate_rows:
         return _diversify_tracks(bliss_recommendations)[:limit]
@@ -780,19 +775,17 @@ def generate_artist_radio(
     user_id: int | None = None,
 ) -> list[dict]:
     """Generate an Artist Radio playlist using stable artist IDs and multi-seed scoring."""
-    with get_db_ctx() as cur:
-        artist_row = get_artist_by_id(cur, artist_id)
-        if not artist_row:
-            return []
-        artist_name = artist_row["name"]
+    artist_row = get_artist_by_id(artist_id=artist_id)
+    if not artist_row:
+        return []
+    artist_name = artist_row["name"]
 
-        all_artist_tracks = get_artist_tracks(cur, artist_id)
+    all_artist_tracks = get_artist_tracks(artist_id=artist_id)
+    if not all_artist_tracks:
+        return []
 
-        if not all_artist_tracks:
-            return []
-
-        artist_genres = _get_artist_genre_ids(cur, artist_name)
-        similar_rows = _get_similar_artist_rows(cur, artist_id=artist_id, artist_name=artist_name)
+    artist_genres = _get_artist_genre_ids(artist_name)
+    similar_rows = _get_similar_artist_rows(artist_id=artist_id, artist_name=artist_name)
 
     seed_count = min(6, max(3, limit // 10 or 1))
     seeds = _select_seed_tracks(all_artist_tracks, max_count=seed_count, require_bliss=True)
@@ -833,42 +826,42 @@ def generate_artist_radio(
 
 def get_similar_from_db(track_path: str, limit: int = 20, *, user_id: int | None = None) -> list[dict]:
     """Find similar tracks using pre-computed vectors stored in DB (multi-signal scoring)."""
-    with get_db_ctx() as cur:
-        source = get_track_with_artist(cur, track_path)
-        if not source:
-            return []
+    source = get_track_with_artist(track_path=track_path)
+    if not source:
+        return []
 
-        # Get source artist genres
-        source_artist_name = _candidate_artist_name(source)
-        source_genres = _get_artist_genre_ids(cur, source_artist_name)
-        source["_genres"] = list(source_genres)
+    # Get source artist genres
+    source_artist_name = _candidate_artist_name(source)
+    source_genres = _get_artist_genre_ids(source_artist_name)
+    source["_genres"] = list(source_genres)
 
-        if not source.get("bliss_vector"):
-            return _recommend_without_bliss(
-                [source],
-                exclude_paths=[track_path],
-                limit=limit,
-                user_id=user_id,
-                allow_seed_artists=False,
-            )
-
-        # Get candidates via broad bliss distance (top 200), then re-rank in Python
-        candidates = get_bliss_candidates(cur, source["bliss_vector"], track_path)
-
-        if not candidates:
-            return []
-
-        # Fetch genres for unique candidate artists
-        candidate_artists = {_candidate_artist_name(c) for c in candidates if _candidate_artist_name(c)}
-        artist_genre_map = _get_artist_genre_map(cur, candidate_artists)
-
-        # Get similar artist names for source artist
-        similar_artist_names = _get_similar_artist_names(
-            cur,
-            source_artist_name,
-            artist_id=source.get("artist_id"),
-            in_library_only=True,
+    if not source.get("bliss_vector"):
+        return _recommend_without_bliss(
+            [source],
+            exclude_paths=[track_path],
+            limit=limit,
+            user_id=user_id,
+            allow_seed_artists=False,
         )
+
+    # Get candidates via broad bliss distance (top 200), then re-rank in Python
+    candidates = get_bliss_candidates(
+        bliss_vector=source["bliss_vector"],
+        exclude_path=track_path,
+    )
+    if not candidates:
+        return []
+
+    # Fetch genres for unique candidate artists
+    candidate_artists = {_candidate_artist_name(c) for c in candidates if _candidate_artist_name(c)}
+    artist_genre_map = _get_artist_genre_map(candidate_artists)
+
+    # Get similar artist names for source artist
+    similar_artist_names = _get_similar_artist_names(
+        source_artist_name,
+        artist_id=source.get("artist_id"),
+        in_library_only=True,
+    )
 
     # Attach genres and score
     for c in candidates:
@@ -907,18 +900,16 @@ def generate_track_radio(
     user_id: int | None = None,
 ) -> list[dict]:
     """Generate a Track Radio queue based on a source track."""
-    with get_db_ctx() as cur:
-        seed = get_track_with_artist(cur, track_path)
-        if not seed:
-            return []
+    seed = get_track_with_artist(track_path=track_path)
+    if not seed:
+        return []
 
-        same_artist_tracks = get_same_artist_tracks(
-            cur,
-            artist_id=seed.get("artist_id"),
-            artist_name=_candidate_artist_name(seed),
-            exclude_path=track_path,
-            limit=max(limit, 24),
-        )
+    same_artist_tracks = get_same_artist_tracks(
+        artist_id=seed.get("artist_id"),
+        artist_name=_candidate_artist_name(seed),
+        exclude_path=track_path,
+        limit=max(limit, 24),
+    )
 
     seed_payload = _radio_track_payload(seed)
     similar_tracks = get_similar_from_db(track_path, limit=max(limit * 3, 60), user_id=user_id)
@@ -977,37 +968,34 @@ def _aggregate_similar_candidates(
     if not seed_paths:
         return []
 
-    with get_db_ctx() as cur:
-        seeds = get_seed_tracks_by_paths(cur, seed_paths)
+    seeds = get_seed_tracks_by_paths(seed_paths=seed_paths)
+    if not seeds:
+        return []
 
-        if not seeds:
-            return []
-
-        bliss_seeds = [seed for seed in seeds if seed.get("bliss_vector")]
-        if not bliss_seeds:
-            return _recommend_without_bliss(
-                seeds,
-                exclude_paths=seed_paths,
-                limit=max(per_seed_limit * 2, 80),
-                user_id=user_id,
-                allow_seed_artists=True,
-            )
-
-        candidate_rows = get_multi_seed_bliss_candidates(
-            cur,
-            [seed["path"] for seed in bliss_seeds],
-            seed_paths,
-            per_seed_limit,
+    bliss_seeds = [seed for seed in seeds if seed.get("bliss_vector")]
+    if not bliss_seeds:
+        return _recommend_without_bliss(
+            seeds,
+            exclude_paths=seed_paths,
+            limit=max(per_seed_limit * 2, 80),
+            user_id=user_id,
+            allow_seed_artists=True,
         )
 
-        seed_artists = {_candidate_artist_name(seed) for seed in seeds if _candidate_artist_name(seed)}
-        candidate_artists = {_candidate_artist_name(row) for row in candidate_rows if _candidate_artist_name(row)}
-        seed_genre_map = _get_artist_genre_map(cur, seed_artists)
-        candidate_genre_map = _get_artist_genre_map(cur, candidate_artists)
-        similar_artist_map = {
-            artist_name: _get_similar_artist_names(cur, artist_name, in_library_only=True)
-            for artist_name in seed_artists
-        }
+    candidate_rows = get_multi_seed_bliss_candidates(
+        bliss_seed_paths=[seed["path"] for seed in bliss_seeds],
+        all_seed_paths=seed_paths,
+        per_seed_limit=per_seed_limit,
+    )
+
+    seed_artists = {_candidate_artist_name(seed) for seed in seeds if _candidate_artist_name(seed)}
+    candidate_artists = {_candidate_artist_name(row) for row in candidate_rows if _candidate_artist_name(row)}
+    seed_genre_map = _get_artist_genre_map(seed_artists)
+    candidate_genre_map = _get_artist_genre_map(candidate_artists)
+    similar_artist_map = {
+        artist_name: _get_similar_artist_names(artist_name, in_library_only=True)
+        for artist_name in seed_artists
+    }
 
     if not candidate_rows:
         return []
@@ -1112,8 +1100,7 @@ def generate_album_radio(
     *,
     user_id: int | None = None,
 ) -> list[dict]:
-    with get_db_ctx() as cur:
-        album_tracks = get_album_tracks_for_radio(cur, album_id)
+    album_tracks = get_album_tracks_for_radio(album_id=album_id)
 
     if not album_tracks:
         return []
@@ -1147,8 +1134,7 @@ def generate_playlist_radio(
     *,
     user_id: int | None = None,
 ) -> list[dict]:
-    with get_db_ctx() as cur:
-        playlist_tracks = get_playlist_tracks_for_radio(cur, playlist_id)
+    playlist_tracks = get_playlist_tracks_for_radio(playlist_id=playlist_id)
 
     source_tracks = [_radio_track_payload(track) for track in playlist_tracks if track.get("path")]
     if not source_tracks:

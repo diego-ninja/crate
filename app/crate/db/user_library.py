@@ -4,7 +4,8 @@ from functools import lru_cache
 from pathlib import Path
 
 from crate.config import load_config
-from crate.db.core import get_db_ctx
+from crate.db.tx import transaction_scope
+from sqlalchemy import text
 
 log = logging.getLogger(__name__)
 
@@ -49,34 +50,32 @@ def _relative_track_path(track_path: str) -> str:
 
 @lru_cache(maxsize=1)
 def _has_legacy_stream_id_column() -> bool:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        row = session.execute(
+            text("""
             SELECT 1
             FROM information_schema.columns
             WHERE table_name = 'library_tracks'
               AND column_name = 'navidrome_id'
             LIMIT 1
-            """
-        )
-        return cur.fetchone() is not None
+            """)
+        ).mappings().first()
+        return row is not None
 
 
 def _resolve_track_id(
-    cur,
+    session,
     track_id: int | None = None,
     track_path: str | None = None,
     track_storage_id: str | None = None,
 ) -> int | None:
     if track_id is not None:
-        cur.execute("SELECT id FROM library_tracks WHERE id = %s", (track_id,))
-        row = cur.fetchone()
+        row = session.execute(text("SELECT id FROM library_tracks WHERE id = :track_id"), {"track_id": track_id}).mappings().first()
         if row:
             return row["id"]
 
     if track_storage_id:
-        cur.execute("SELECT id FROM library_tracks WHERE storage_id = %s", (track_storage_id,))
-        row = cur.fetchone()
+        row = session.execute(text("SELECT id FROM library_tracks WHERE storage_id = :storage_id"), {"storage_id": track_storage_id}).mappings().first()
         if row:
             return row["id"]
 
@@ -90,58 +89,57 @@ def _resolve_track_id(
 
     should_match_external_id = "/" not in track_path and "\\" not in track_path
     if should_match_external_id and _has_legacy_stream_id_column():
-        cur.execute(
-            """
+        row = session.execute(
+            text("""
             SELECT id
             FROM library_tracks
-            WHERE path = %s
-               OR path = %s
-               OR path = %s
-               OR navidrome_id = %s
+            WHERE path = :track_path
+               OR path = :absolute_candidate
+               OR path = :music_candidate
+               OR navidrome_id = :navidrome_id
             ORDER BY CASE
-                WHEN path = %s THEN 0
-                WHEN path = %s THEN 1
-                WHEN path = %s THEN 2
+                WHEN path = :track_path2 THEN 0
+                WHEN path = :absolute_candidate2 THEN 1
+                WHEN path = :music_candidate2 THEN 2
                 ELSE 3
             END
             LIMIT 1
-            """,
-            (
-                track_path,
-                absolute_candidate,
-                music_candidate,
-                track_path,
-                track_path,
-                absolute_candidate,
-                music_candidate,
-            ),
-        )
+            """),
+            {
+                "track_path": track_path,
+                "absolute_candidate": absolute_candidate,
+                "music_candidate": music_candidate,
+                "navidrome_id": track_path,
+                "track_path2": track_path,
+                "absolute_candidate2": absolute_candidate,
+                "music_candidate2": music_candidate,
+            },
+        ).mappings().first()
     else:
-        cur.execute(
-            """
+        row = session.execute(
+            text("""
             SELECT id
             FROM library_tracks
-            WHERE path = %s
-               OR path = %s
-               OR path = %s
+            WHERE path = :track_path
+               OR path = :absolute_candidate
+               OR path = :music_candidate
             ORDER BY CASE
-                WHEN path = %s THEN 0
-                WHEN path = %s THEN 1
-                WHEN path = %s THEN 2
+                WHEN path = :track_path2 THEN 0
+                WHEN path = :absolute_candidate2 THEN 1
+                WHEN path = :music_candidate2 THEN 2
                 ELSE 3
             END
             LIMIT 1
-            """,
-            (
-                track_path,
-                absolute_candidate,
-                music_candidate,
-                track_path,
-                absolute_candidate,
-                music_candidate,
-            ),
-        )
-    row = cur.fetchone()
+            """),
+            {
+                "track_path": track_path,
+                "absolute_candidate": absolute_candidate,
+                "music_candidate": music_candidate,
+                "track_path2": track_path,
+                "absolute_candidate2": absolute_candidate,
+                "music_candidate2": music_candidate,
+            },
+        ).mappings().first()
     return row["id"] if row else None
 
 
@@ -150,22 +148,24 @@ def _resolve_track_id(
 def follow_artist(user_id: int, artist_name: str) -> bool:
     """Follow an artist. Returns True if newly followed."""
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            "INSERT INTO user_follows (user_id, artist_name, created_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (user_id, artist_name, now))
-        return cur.rowcount > 0
+    with transaction_scope() as session:
+        result = session.execute(
+            text("INSERT INTO user_follows (user_id, artist_name, created_at) VALUES (:user_id, :artist_name, :created_at) ON CONFLICT DO NOTHING"),
+            {"user_id": user_id, "artist_name": artist_name, "created_at": now})
+        return result.rowcount > 0
 
 
 def unfollow_artist(user_id: int, artist_name: str) -> bool:
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM user_follows WHERE user_id = %s AND artist_name = %s", (user_id, artist_name))
-        return cur.rowcount > 0
+    with transaction_scope() as session:
+        result = session.execute(
+            text("DELETE FROM user_follows WHERE user_id = :user_id AND artist_name = :artist_name"),
+            {"user_id": user_id, "artist_name": artist_name})
+        return result.rowcount > 0
 
 
 def get_followed_artists(user_id: int) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute("""
+    with transaction_scope() as session:
+        rows = session.execute(text("""
             SELECT
                 uf.artist_name,
                 uf.created_at,
@@ -176,38 +176,42 @@ def get_followed_artists(user_id: int) -> list[dict]:
                 la.has_photo
             FROM user_follows uf
             LEFT JOIN library_artists la ON la.name = uf.artist_name
-            WHERE uf.user_id = %s
+            WHERE uf.user_id = :user_id
             ORDER BY uf.created_at DESC
-        """, (user_id,))
-        return [dict(r) for r in cur.fetchall()]
+        """), {"user_id": user_id}).mappings().all()
+        return [dict(r) for r in rows]
 
 
 def is_following(user_id: int, artist_name: str) -> bool:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT 1 FROM user_follows WHERE user_id = %s AND artist_name = %s", (user_id, artist_name))
-        return cur.fetchone() is not None
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT 1 FROM user_follows WHERE user_id = :user_id AND artist_name = :artist_name"),
+            {"user_id": user_id, "artist_name": artist_name}).mappings().first()
+        return row is not None
 
 
 # ── Saved Albums ─────────────────────────────────────────────
 
 def save_album(user_id: int, album_id: int) -> bool:
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            "INSERT INTO user_saved_albums (user_id, album_id, created_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (user_id, album_id, now))
-        return cur.rowcount > 0
+    with transaction_scope() as session:
+        result = session.execute(
+            text("INSERT INTO user_saved_albums (user_id, album_id, created_at) VALUES (:user_id, :album_id, :created_at) ON CONFLICT DO NOTHING"),
+            {"user_id": user_id, "album_id": album_id, "created_at": now})
+        return result.rowcount > 0
 
 
 def unsave_album(user_id: int, album_id: int) -> bool:
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM user_saved_albums WHERE user_id = %s AND album_id = %s", (user_id, album_id))
-        return cur.rowcount > 0
+    with transaction_scope() as session:
+        result = session.execute(
+            text("DELETE FROM user_saved_albums WHERE user_id = :user_id AND album_id = :album_id"),
+            {"user_id": user_id, "album_id": album_id})
+        return result.rowcount > 0
 
 
 def get_saved_albums(user_id: int) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute("""
+    with transaction_scope() as session:
+        rows = session.execute(text("""
             SELECT
                 usa.created_at AS saved_at,
                 la.id,
@@ -223,16 +227,18 @@ def get_saved_albums(user_id: int) -> list[dict]:
             FROM user_saved_albums usa
             JOIN library_albums la ON la.id = usa.album_id
             LEFT JOIN library_artists art ON art.name = la.artist
-            WHERE usa.user_id = %s
+            WHERE usa.user_id = :user_id
             ORDER BY usa.created_at DESC
-        """, (user_id,))
-        return [dict(r) for r in cur.fetchall()]
+        """), {"user_id": user_id}).mappings().all()
+        return [dict(r) for r in rows]
 
 
 def is_album_saved(user_id: int, album_id: int) -> bool:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT 1 FROM user_saved_albums WHERE user_id = %s AND album_id = %s", (user_id, album_id))
-        return cur.fetchone() is not None
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT 1 FROM user_saved_albums WHERE user_id = :user_id AND album_id = :album_id"),
+            {"user_id": user_id, "album_id": album_id}).mappings().first()
+        return row is not None
 
 
 # ── Liked Tracks ─────────────────────────────────────────────
@@ -244,19 +250,19 @@ def like_track(
     track_storage_id: str | None = None,
 ) -> bool | None:
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         resolved_track_id = _resolve_track_id(
-            cur,
+            session,
             track_id=track_id,
             track_path=track_path,
             track_storage_id=track_storage_id,
         )
         if not resolved_track_id:
             return None
-        cur.execute(
-            "INSERT INTO user_liked_tracks (user_id, track_id, created_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (user_id, resolved_track_id, now))
-        return cur.rowcount > 0
+        result = session.execute(
+            text("INSERT INTO user_liked_tracks (user_id, track_id, created_at) VALUES (:user_id, :track_id, :created_at) ON CONFLICT DO NOTHING"),
+            {"user_id": user_id, "track_id": resolved_track_id, "created_at": now})
+        return result.rowcount > 0
 
 
 def unlike_track(
@@ -265,25 +271,25 @@ def unlike_track(
     track_path: str | None = None,
     track_storage_id: str | None = None,
 ) -> bool:
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         resolved_track_id = _resolve_track_id(
-            cur,
+            session,
             track_id=track_id,
             track_path=track_path,
             track_storage_id=track_storage_id,
         )
         if not resolved_track_id:
             return False
-        cur.execute(
-            "DELETE FROM user_liked_tracks WHERE user_id = %s AND track_id = %s",
-            (user_id, resolved_track_id),
+        result = session.execute(
+            text("DELETE FROM user_liked_tracks WHERE user_id = :user_id AND track_id = :track_id"),
+            {"user_id": user_id, "track_id": resolved_track_id},
         )
-        return cur.rowcount > 0
+        return result.rowcount > 0
 
 
 def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute("""
+    with transaction_scope() as session:
+        rows = session.execute(text("""
             SELECT
                 ult.track_id,
                 lt.storage_id AS track_storage_id,
@@ -301,16 +307,16 @@ def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
             JOIN library_tracks lt ON lt.id = ult.track_id
             LEFT JOIN library_albums alb ON alb.id = lt.album_id
             LEFT JOIN library_artists ar ON ar.name = lt.artist
-            WHERE ult.user_id = %s
+            WHERE ult.user_id = :user_id
             ORDER BY ult.created_at DESC
-            LIMIT %s
-        """, (user_id, limit))
-        rows = []
-        for row in cur.fetchall():
+            LIMIT :lim
+        """), {"user_id": user_id, "lim": limit}).mappings().all()
+        result_rows = []
+        for row in rows:
             item = dict(row)
             item["relative_path"] = _relative_track_path(item.get("path") or "")
-            rows.append(item)
-        return rows
+            result_rows.append(item)
+        return result_rows
 
 
 def is_track_liked(
@@ -319,17 +325,19 @@ def is_track_liked(
     track_path: str | None = None,
     track_storage_id: str | None = None,
 ) -> bool:
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         resolved_track_id = _resolve_track_id(
-            cur,
+            session,
             track_id=track_id,
             track_path=track_path,
             track_storage_id=track_storage_id,
         )
         if not resolved_track_id:
             return False
-        cur.execute("SELECT 1 FROM user_liked_tracks WHERE user_id = %s AND track_id = %s", (user_id, resolved_track_id))
-        return cur.fetchone() is not None
+        row = session.execute(
+            text("SELECT 1 FROM user_liked_tracks WHERE user_id = :user_id AND track_id = :track_id"),
+            {"user_id": user_id, "track_id": resolved_track_id}).mappings().first()
+        return row is not None
 
 
 # ── Play History ─────────────────────────────────────────────
@@ -344,19 +352,20 @@ def record_play(
     track_storage_id: str | None = None,
 ):
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         resolved_track_id = _resolve_track_id(
-            cur,
+            session,
             track_id=track_id,
             track_path=track_path,
             track_storage_id=track_storage_id,
         )
-        cur.execute(
-            """
+        session.execute(
+            text("""
             INSERT INTO play_history (user_id, track_id, track_path, title, artist, album, played_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """,
-            (user_id, resolved_track_id, track_path, title, artist, album, now),
+            VALUES (:user_id, :track_id, :track_path, :title, :artist, :album, :played_at)
+            """),
+            {"user_id": user_id, "track_id": resolved_track_id, "track_path": track_path,
+             "title": title, "artist": artist, "album": album, "played_at": now},
         )
 
 
@@ -386,15 +395,15 @@ def record_play_event(
     app_platform: str | None = None,
 ) -> int:
     created_at = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         resolved_track_id = _resolve_track_id(
-            cur,
+            session,
             track_id=track_id,
             track_path=track_path,
             track_storage_id=track_storage_id,
         )
-        cur.execute(
-            """
+        row = session.execute(
+            text("""
             INSERT INTO user_play_events (
                 user_id,
                 track_id,
@@ -420,38 +429,42 @@ def record_play_event(
                 created_at
             )
             VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                :user_id, :track_id, :track_path, :title, :artist, :album,
+                :started_at, :ended_at, :played_seconds, :track_duration_seconds,
+                :completion_ratio, :was_skipped, :was_completed,
+                :play_source_type, :play_source_id, :play_source_name,
+                :context_artist, :context_album, :context_playlist_id,
+                :device_type, :app_platform, :created_at
             )
             RETURNING id
-            """,
-            (
-                user_id,
-                resolved_track_id,
-                track_path,
-                title,
-                artist,
-                album,
-                started_at,
-                ended_at,
-                played_seconds,
-                track_duration_seconds,
-                completion_ratio,
-                was_skipped,
-                was_completed,
-                play_source_type,
-                play_source_id,
-                play_source_name,
-                context_artist,
-                context_album,
-                context_playlist_id,
-                device_type,
-                app_platform,
-                created_at,
-            ),
-        )
-        event_id = cur.fetchone()["id"]
+            """),
+            {
+                "user_id": user_id,
+                "track_id": resolved_track_id,
+                "track_path": track_path,
+                "title": title,
+                "artist": artist,
+                "album": album,
+                "started_at": started_at,
+                "ended_at": ended_at,
+                "played_seconds": played_seconds,
+                "track_duration_seconds": track_duration_seconds,
+                "completion_ratio": completion_ratio,
+                "was_skipped": was_skipped,
+                "was_completed": was_completed,
+                "play_source_type": play_source_type,
+                "play_source_id": play_source_id,
+                "play_source_name": play_source_name,
+                "context_artist": context_artist,
+                "context_album": context_album,
+                "context_playlist_id": context_playlist_id,
+                "device_type": device_type,
+                "app_platform": app_platform,
+                "created_at": created_at,
+            },
+        ).mappings().first()
+        event_id = row["id"]
 
-        # Scrobble to external services (best-effort, async-ish)
         if was_completed and title and artist:
             try:
                 from crate.scrobble import scrobble_play_event
@@ -463,7 +476,7 @@ def record_play_event(
                     timestamp=int(datetime.fromisoformat(started_at).timestamp()) if started_at else None,
                 )
             except Exception:
-                pass  # Never block play event recording for scrobble failures
+                pass
 
         return event_id
 
@@ -482,27 +495,25 @@ def _window_day_cutoff(window: str) -> str | None:
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
 
-def _recompute_user_listening_aggregates(cur, user_id: int):
-    # Full-window recompute is intentionally centralized here so the worker can own the
-    # expensive path. The API request only writes the raw play event and enqueues this work.
-    _recompute_user_daily_listening(cur, user_id)
+def _recompute_user_listening_aggregates(session, user_id: int):
+    _recompute_user_daily_listening(session, user_id)
     for window, days in _STATS_WINDOWS.items():
         cutoff = _window_cutoff(days)
-        _recompute_user_track_stats(cur, user_id, window, cutoff)
-        _recompute_user_artist_stats(cur, user_id, window, cutoff)
-        _recompute_user_album_stats(cur, user_id, window, cutoff)
-        _recompute_user_genre_stats(cur, user_id, window, cutoff)
+        _recompute_user_track_stats(session, user_id, window, cutoff)
+        _recompute_user_artist_stats(session, user_id, window, cutoff)
+        _recompute_user_album_stats(session, user_id, window, cutoff)
+        _recompute_user_genre_stats(session, user_id, window, cutoff)
 
 
 def recompute_user_listening_aggregates(user_id: int) -> None:
-    with get_db_ctx() as cur:
-        _recompute_user_listening_aggregates(cur, user_id)
+    with transaction_scope() as session:
+        _recompute_user_listening_aggregates(session, user_id)
 
 
-def _recompute_user_daily_listening(cur, user_id: int):
-    cur.execute("DELETE FROM user_daily_listening WHERE user_id = %s", (user_id,))
-    cur.execute(
-        """
+def _recompute_user_daily_listening(session, user_id: int):
+    session.execute(text("DELETE FROM user_daily_listening WHERE user_id = :user_id"), {"user_id": user_id})
+    session.execute(
+        text("""
         INSERT INTO user_daily_listening (
             user_id,
             day,
@@ -525,24 +536,25 @@ def _recompute_user_daily_listening(cur, user_id: int):
             COUNT(DISTINCT NULLIF(artist, ''))::INTEGER AS unique_artists,
             COUNT(DISTINCT NULLIF(CONCAT(COALESCE(artist, ''), '||', COALESCE(album, '')), '||'))::INTEGER AS unique_albums
         FROM user_play_events
-        WHERE user_id = %s
+        WHERE user_id = :user_id
         GROUP BY user_id, (ended_at AT TIME ZONE 'UTC')::date
-        """,
-        (user_id,),
+        """),
+        {"user_id": user_id},
     )
 
 
-def _window_filter_sql(cutoff: str | None) -> tuple[str, tuple]:
+def _window_filter_sql(cutoff: str | None) -> tuple[str, dict]:
     if cutoff is None:
-        return "upe.user_id = %s", ()
-    return "upe.user_id = %s AND upe.ended_at >= %s", (cutoff,)
+        return "upe.user_id = :filter_user_id", {}
+    return "upe.user_id = :filter_user_id AND upe.ended_at >= :cutoff", {"cutoff": cutoff}
 
 
-def _recompute_user_track_stats(cur, user_id: int, window: str, cutoff: str | None):
-    cur.execute("DELETE FROM user_track_stats WHERE user_id = %s AND stat_window = %s", (user_id, window))
+def _recompute_user_track_stats(session, user_id: int, window: str, cutoff: str | None):
+    session.execute(text("DELETE FROM user_track_stats WHERE user_id = :user_id AND stat_window = :window"), {"user_id": user_id, "window": window})
     where_sql, extra_params = _window_filter_sql(cutoff)
-    cur.execute(
-        f"""
+    params = {"user_id": user_id, "window": window, "filter_user_id": user_id, **extra_params}
+    session.execute(
+        text(f"""
         INSERT INTO user_track_stats (
             user_id,
             stat_window,
@@ -559,8 +571,8 @@ def _recompute_user_track_stats(cur, user_id: int, window: str, cutoff: str | No
             last_played_at
         )
         SELECT
-            %s,
-            %s,
+            :user_id,
+            :window,
             COALESCE(upe.track_id::text, NULLIF(upe.track_path, ''), 'unknown-track') AS entity_key,
             MAX(upe.track_id) AS track_id,
             MAX(upe.track_path) AS track_path,
@@ -576,16 +588,17 @@ def _recompute_user_track_stats(cur, user_id: int, window: str, cutoff: str | No
         WHERE {where_sql}
           AND (upe.track_id IS NOT NULL OR COALESCE(upe.track_path, '') != '')
         GROUP BY COALESCE(upe.track_id::text, NULLIF(upe.track_path, ''), 'unknown-track')
-        """,
-        (user_id, window, user_id, *extra_params),
+        """),
+        params,
     )
 
 
-def _recompute_user_artist_stats(cur, user_id: int, window: str, cutoff: str | None):
-    cur.execute("DELETE FROM user_artist_stats WHERE user_id = %s AND stat_window = %s", (user_id, window))
+def _recompute_user_artist_stats(session, user_id: int, window: str, cutoff: str | None):
+    session.execute(text("DELETE FROM user_artist_stats WHERE user_id = :user_id AND stat_window = :window"), {"user_id": user_id, "window": window})
     where_sql, extra_params = _window_filter_sql(cutoff)
-    cur.execute(
-        f"""
+    params = {"user_id": user_id, "window": window, "filter_user_id": user_id, **extra_params}
+    session.execute(
+        text(f"""
         INSERT INTO user_artist_stats (
             user_id,
             stat_window,
@@ -597,8 +610,8 @@ def _recompute_user_artist_stats(cur, user_id: int, window: str, cutoff: str | N
             last_played_at
         )
         SELECT
-            %s,
-            %s,
+            :user_id,
+            :window,
             upe.artist AS artist_name,
             COUNT(*)::INTEGER AS play_count,
             SUM(CASE WHEN upe.was_completed THEN 1 ELSE 0 END)::INTEGER AS complete_play_count,
@@ -609,16 +622,17 @@ def _recompute_user_artist_stats(cur, user_id: int, window: str, cutoff: str | N
         WHERE {where_sql}
           AND COALESCE(upe.artist, '') != ''
         GROUP BY upe.artist
-        """,
-        (user_id, window, user_id, *extra_params),
+        """),
+        params,
     )
 
 
-def _recompute_user_album_stats(cur, user_id: int, window: str, cutoff: str | None):
-    cur.execute("DELETE FROM user_album_stats WHERE user_id = %s AND stat_window = %s", (user_id, window))
+def _recompute_user_album_stats(session, user_id: int, window: str, cutoff: str | None):
+    session.execute(text("DELETE FROM user_album_stats WHERE user_id = :user_id AND stat_window = :window"), {"user_id": user_id, "window": window})
     where_sql, extra_params = _window_filter_sql(cutoff)
-    cur.execute(
-        f"""
+    params = {"user_id": user_id, "window": window, "filter_user_id": user_id, **extra_params}
+    session.execute(
+        text(f"""
         INSERT INTO user_album_stats (
             user_id,
             stat_window,
@@ -632,8 +646,8 @@ def _recompute_user_album_stats(cur, user_id: int, window: str, cutoff: str | No
             last_played_at
         )
         SELECT
-            %s,
-            %s,
+            :user_id,
+            :window,
             CONCAT(COALESCE(upe.artist, ''), '||', COALESCE(upe.album, '')) AS entity_key,
             MAX(upe.artist) AS artist,
             MAX(upe.album) AS album,
@@ -646,16 +660,17 @@ def _recompute_user_album_stats(cur, user_id: int, window: str, cutoff: str | No
         WHERE {where_sql}
           AND COALESCE(upe.album, '') != ''
         GROUP BY CONCAT(COALESCE(upe.artist, ''), '||', COALESCE(upe.album, ''))
-        """,
-        (user_id, window, user_id, *extra_params),
+        """),
+        params,
     )
 
 
-def _recompute_user_genre_stats(cur, user_id: int, window: str, cutoff: str | None):
-    cur.execute("DELETE FROM user_genre_stats WHERE user_id = %s AND stat_window = %s", (user_id, window))
+def _recompute_user_genre_stats(session, user_id: int, window: str, cutoff: str | None):
+    session.execute(text("DELETE FROM user_genre_stats WHERE user_id = :user_id AND stat_window = :window"), {"user_id": user_id, "window": window})
     where_sql, extra_params = _window_filter_sql(cutoff)
-    cur.execute(
-        f"""
+    params = {"user_id": user_id, "window": window, "filter_user_id": user_id, **extra_params}
+    session.execute(
+        text(f"""
         INSERT INTO user_genre_stats (
             user_id,
             stat_window,
@@ -667,8 +682,8 @@ def _recompute_user_genre_stats(cur, user_id: int, window: str, cutoff: str | No
             last_played_at
         )
         SELECT
-            %s,
-            %s,
+            :user_id,
+            :window,
             lt.genre AS genre_name,
             COUNT(*)::INTEGER AS play_count,
             SUM(CASE WHEN upe.was_completed THEN 1 ELSE 0 END)::INTEGER AS complete_play_count,
@@ -682,24 +697,16 @@ def _recompute_user_genre_stats(cur, user_id: int, window: str, cutoff: str | No
         WHERE {where_sql}
           AND COALESCE(lt.genre, '') != ''
         GROUP BY lt.genre
-        """,
-        (user_id, window, user_id, *extra_params),
+        """),
+        params,
     )
 
 
 def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
-    # Resolving library_tracks from play_history is best-effort: old rows
-    # may have NULL track_id if the client recorded a streamed play before
-    # our DB had linked the historical external track id. We do two
-    # passes:
-    #   1) SQL join on exact keys (id, path, legacy external id) — cheap.
-    #   2) In-Python fallback on (artist, title) for any row still missing
-    #      an album_id. This is limited to the history page size so it's
-    #      fine even with 48k tracks in the library.
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         if _has_legacy_stream_id_column():
-            cur.execute(
-                """
+            rows_raw = session.execute(
+                text("""
                 SELECT
                     COALESCE(lt.id, ph.track_id) AS track_id,
                     lt.storage_id AS track_storage_id,
@@ -719,15 +726,15 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
                   OR (ph.track_id IS NULL AND lt.path = ph.track_path)
                 LEFT JOIN library_albums alb ON alb.id = lt.album_id
                 LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, ph.artist)
-                WHERE ph.user_id = %s
+                WHERE ph.user_id = :user_id
                 ORDER BY ph.played_at DESC
-                LIMIT %s
-                """,
-                (user_id, limit),
-            )
+                LIMIT :lim
+                """),
+                {"user_id": user_id, "lim": limit},
+            ).mappings().all()
         else:
-            cur.execute(
-                """
+            rows_raw = session.execute(
+                text("""
                 SELECT
                     COALESCE(lt.id, ph.track_id) AS track_id,
                     lt.storage_id AS track_storage_id,
@@ -746,15 +753,15 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
                   OR (ph.track_id IS NULL AND lt.path = ph.track_path)
                 LEFT JOIN library_albums alb ON alb.id = lt.album_id
                 LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, ph.artist)
-                WHERE ph.user_id = %s
+                WHERE ph.user_id = :user_id
                 ORDER BY ph.played_at DESC
-                LIMIT %s
-                """,
-                (user_id, limit),
-            )
+                LIMIT :lim
+                """),
+                {"user_id": user_id, "lim": limit},
+            ).mappings().all()
         rows: list[dict] = []
         needs_title_fallback: list[tuple[int, str, str]] = []
-        for idx, row in enumerate(cur.fetchall()):
+        for idx, row in enumerate(rows_raw):
             item = dict(row)
             item["relative_path"] = _relative_track_path(item.get("track_path") or "")
             rows.append(item)
@@ -762,42 +769,66 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
                 needs_title_fallback.append((idx, item["artist"], item["title"]))
 
         if needs_title_fallback:
-            # Batch-lookup by (LOWER(artist), LOWER(title)). We only touch
-            # rows the first pass couldn't resolve, so the input set is tiny.
-            artists = [a for _, a, _ in needs_title_fallback]
-            titles = [t for _, _, t in needs_title_fallback]
-            cur.execute(
-                """
-                SELECT DISTINCT ON (LOWER(lt.artist), LOWER(lt.title))
-                    lt.id AS track_id,
-                    lt.storage_id AS track_storage_id,
-                    lt.path,
-                    lt.title,
-                    lt.artist,
-                    alb.id AS album_id,
-                    alb.slug AS album_slug,
-                    alb.name AS album,
-                    ar.id AS artist_id,
-                    ar.slug AS artist_slug
-                FROM library_tracks lt
-                LEFT JOIN library_albums alb ON alb.id = lt.album_id
-                LEFT JOIN library_artists ar ON ar.name = lt.artist
-                WHERE (LOWER(lt.artist), LOWER(lt.title)) IN (
-                    SELECT LOWER(UNNEST(%s::text[])), LOWER(UNNEST(%s::text[]))
+            normalized_pairs = list(
+                dict.fromkeys(
+                    (
+                        (artist or "").strip().lower(),
+                        (title or "").strip().lower(),
+                    )
+                    for _, artist, title in needs_title_fallback
+                    if (artist or "").strip() and (title or "").strip()
                 )
-                """,
-                (artists, titles),
             )
+            fallback_rows: list[dict] = []
+            if normalized_pairs:
+                params: dict[str, object] = {}
+                values_sql: list[str] = []
+                for pair_idx, (artist_name, title_name) in enumerate(normalized_pairs):
+                    artist_key = f"artist_{pair_idx}"
+                    title_key = f"title_{pair_idx}"
+                    params[artist_key] = artist_name
+                    params[title_key] = title_name
+                    values_sql.append(f"(:{artist_key}, :{title_key})")
+
+                fallback_rows = session.execute(
+                    text(f"""
+                    WITH input_pairs(artist, title) AS (
+                        VALUES {", ".join(values_sql)}
+                    )
+                    SELECT DISTINCT ON (LOWER(lt.artist), LOWER(lt.title))
+                        lt.id AS track_id,
+                        lt.storage_id AS track_storage_id,
+                        lt.path,
+                        lt.title,
+                        lt.artist,
+                        alb.id AS album_id,
+                        alb.slug AS album_slug,
+                        alb.name AS album,
+                        ar.id AS artist_id,
+                        ar.slug AS artist_slug
+                    FROM library_tracks lt
+                    LEFT JOIN library_albums alb ON alb.id = lt.album_id
+                    LEFT JOIN library_artists ar ON ar.name = lt.artist
+                    JOIN input_pairs ip
+                      ON LOWER(lt.artist) = ip.artist
+                     AND LOWER(lt.title) = ip.title
+                    ORDER BY
+                        LOWER(lt.artist),
+                        LOWER(lt.title),
+                        CASE WHEN alb.id IS NULL THEN 1 ELSE 0 END,
+                        lt.id DESC
+                    """),
+                    params,
+                ).mappings().all()
             resolved = {
                 ((r["artist"] or "").lower(), (r["title"] or "").lower()): dict(r)
-                for r in cur.fetchall()
+                for r in fallback_rows
             }
             for idx, artist, title in needs_title_fallback:
                 hit = resolved.get((artist.lower(), title.lower()))
                 if not hit:
                     continue
                 item = rows[idx]
-                # Backfill everything the first pass left empty.
                 item["track_id"] = hit["track_id"]
                 item["track_storage_id"] = hit.get("track_storage_id")
                 item["track_path"] = item.get("track_path") or hit.get("path")
@@ -812,33 +843,36 @@ def get_play_history(user_id: int, limit: int = 50) -> list[dict]:
 
 def get_play_stats(user_id: int) -> dict:
     """Get listening stats for a user."""
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT COALESCE(SUM(play_count), 0) AS total_plays FROM user_daily_listening WHERE user_id = %s",
-            (user_id,),
-        )
-        total = cur.fetchone()["total_plays"]
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT COALESCE(SUM(play_count), 0) AS total_plays FROM user_daily_listening WHERE user_id = :user_id"),
+            {"user_id": user_id},
+        ).mappings().first()
+        total = row["total_plays"]
+        top_artists_rows = session.execute(
+            text("""
             SELECT artist_name AS artist, play_count AS plays
             FROM user_artist_stats
-            WHERE user_id = %s AND stat_window = 'all_time'
+            WHERE user_id = :user_id AND stat_window = 'all_time'
             ORDER BY play_count DESC, minutes_listened DESC, artist_name ASC
             LIMIT 10
-            """,
-            (user_id,),
-        )
-        top_artists = [dict(r) for r in cur.fetchall()]
+            """),
+            {"user_id": user_id},
+        ).mappings().all()
+        top_artists = [dict(r) for r in top_artists_rows]
 
         if not total and not top_artists:
             log.info("Falling back to legacy play_history for user %s stats", user_id)
-            cur.execute("SELECT COUNT(*) AS total_plays FROM play_history WHERE user_id = %s", (user_id,))
-            total = cur.fetchone()["total_plays"]
-            cur.execute("""
+            row = session.execute(
+                text("SELECT COUNT(*) AS total_plays FROM play_history WHERE user_id = :user_id"),
+                {"user_id": user_id},
+            ).mappings().first()
+            total = row["total_plays"]
+            top_artists_rows = session.execute(text("""
                 SELECT artist, COUNT(*) AS plays FROM play_history ph
-                WHERE user_id = %s GROUP BY artist ORDER BY plays DESC LIMIT 10
-            """, (user_id,))
-            top_artists = [dict(r) for r in cur.fetchall()]
+                WHERE user_id = :user_id GROUP BY artist ORDER BY plays DESC LIMIT 10
+            """), {"user_id": user_id}).mappings().all()
+            top_artists = [dict(r) for r in top_artists_rows]
 
     return {"total_plays": total, "top_artists": top_artists}
 
@@ -846,10 +880,10 @@ def get_play_stats(user_id: int) -> dict:
 def get_stats_overview(user_id: int, window: str = "30d") -> dict:
     normalized = _normalize_stats_window(window)
     day_cutoff = _window_day_cutoff(normalized)
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         if day_cutoff is None:
-            cur.execute(
-                """
+            overview_row = session.execute(
+                text("""
                 SELECT
                     COALESCE(SUM(play_count), 0) AS play_count,
                     COALESCE(SUM(complete_play_count), 0) AS complete_play_count,
@@ -857,13 +891,13 @@ def get_stats_overview(user_id: int, window: str = "30d") -> dict:
                     COALESCE(SUM(minutes_listened), 0) AS minutes_listened,
                     COUNT(*)::INTEGER AS active_days
                 FROM user_daily_listening
-                WHERE user_id = %s
-                """,
-                (user_id,),
-            )
+                WHERE user_id = :user_id
+                """),
+                {"user_id": user_id},
+            ).mappings().first()
         else:
-            cur.execute(
-                """
+            overview_row = session.execute(
+                text("""
                 SELECT
                     COALESCE(SUM(play_count), 0) AS play_count,
                     COALESCE(SUM(complete_play_count), 0) AS complete_play_count,
@@ -871,31 +905,29 @@ def get_stats_overview(user_id: int, window: str = "30d") -> dict:
                     COALESCE(SUM(minutes_listened), 0) AS minutes_listened,
                     COUNT(*)::INTEGER AS active_days
                 FROM user_daily_listening
-                WHERE user_id = %s AND day >= %s
-                """,
-                (user_id, day_cutoff),
-            )
-        overview = dict(cur.fetchone() or {})
+                WHERE user_id = :user_id AND day >= :day_cutoff
+                """),
+                {"user_id": user_id, "day_cutoff": day_cutoff},
+            ).mappings().first()
+        overview = dict(overview_row or {})
 
-        cur.execute(
-            """
+        top_artist_row = session.execute(
+            text("""
             SELECT artist_name, play_count, minutes_listened
             FROM user_artist_stats
-            WHERE user_id = %s AND stat_window = %s
+            WHERE user_id = :user_id AND stat_window = :window
             ORDER BY play_count DESC, minutes_listened DESC, artist_name ASC
             LIMIT 1
-            """,
-            (user_id, normalized),
-        )
-        top_artist_row = cur.fetchone()
+            """),
+            {"user_id": user_id, "window": normalized},
+        ).mappings().first()
         top_artist = None
         if top_artist_row:
             top_artist = dict(top_artist_row)
-            cur.execute(
-                "SELECT id, slug FROM library_artists WHERE name = %s",
-                (top_artist["artist_name"],),
-            )
-            artist_ref = cur.fetchone()
+            artist_ref = session.execute(
+                text("SELECT id, slug FROM library_artists WHERE name = :name"),
+                {"name": top_artist["artist_name"]},
+            ).mappings().first()
             if artist_ref:
                 top_artist["artist_id"] = artist_ref["id"]
                 top_artist["artist_slug"] = artist_ref["slug"]
@@ -917,36 +949,36 @@ def get_stats_overview(user_id: int, window: str = "30d") -> dict:
 def get_stats_trends(user_id: int, window: str = "30d") -> dict:
     normalized = _normalize_stats_window(window)
     day_cutoff = _window_day_cutoff(normalized)
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         if day_cutoff is None:
-            cur.execute(
-                """
+            rows = session.execute(
+                text("""
                 SELECT day, play_count, complete_play_count, skip_count, minutes_listened
                 FROM user_daily_listening
-                WHERE user_id = %s
+                WHERE user_id = :user_id
                 ORDER BY day ASC
-                """,
-                (user_id,),
-            )
+                """),
+                {"user_id": user_id},
+            ).mappings().all()
         else:
-            cur.execute(
-                """
+            rows = session.execute(
+                text("""
                 SELECT day, play_count, complete_play_count, skip_count, minutes_listened
                 FROM user_daily_listening
-                WHERE user_id = %s AND day >= %s
+                WHERE user_id = :user_id AND day >= :day_cutoff
                 ORDER BY day ASC
-                """,
-                (user_id, day_cutoff),
-            )
-        rows = [dict(row) for row in cur.fetchall()]
+                """),
+                {"user_id": user_id, "day_cutoff": day_cutoff},
+            ).mappings().all()
+        rows = [dict(row) for row in rows]
     return {"window": normalized, "points": rows}
 
 
 def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[dict]:
     normalized = _normalize_stats_window(window)
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 uts.track_id,
                 lt.storage_id::text AS track_storage_id,
@@ -971,20 +1003,20 @@ def get_top_tracks(user_id: int, window: str = "30d", limit: int = 20) -> list[d
              AND alb_by_name.artist = COALESCE(lt.artist, uts.artist)
              AND alb_by_name.name = COALESCE(lt.album, uts.album)
             LEFT JOIN library_artists art ON art.name = COALESCE(lt.artist, uts.artist)
-            WHERE uts.user_id = %s AND uts.stat_window = %s
+            WHERE uts.user_id = :user_id AND uts.stat_window = :window
             ORDER BY uts.play_count DESC, uts.minutes_listened DESC, uts.last_played_at DESC
-            LIMIT %s
-            """,
-            (user_id, normalized, limit),
-        )
-        return [dict(row) for row in cur.fetchall()]
+            LIMIT :lim
+            """),
+            {"user_id": user_id, "window": normalized, "lim": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def get_top_artists(user_id: int, window: str = "30d", limit: int = 20) -> list[dict]:
     normalized = _normalize_stats_window(window)
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 uas.artist_name,
                 la.id AS artist_id,
@@ -996,20 +1028,20 @@ def get_top_artists(user_id: int, window: str = "30d", limit: int = 20) -> list[
                 last_played_at
             FROM user_artist_stats uas
             LEFT JOIN library_artists la ON la.name = uas.artist_name
-            WHERE uas.user_id = %s AND uas.stat_window = %s
+            WHERE uas.user_id = :user_id AND uas.stat_window = :window
             ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
-            LIMIT %s
-            """,
-            (user_id, normalized, limit),
-        )
-        return [dict(row) for row in cur.fetchall()]
+            LIMIT :lim
+            """),
+            {"user_id": user_id, "window": normalized, "lim": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def get_top_albums(user_id: int, window: str = "30d", limit: int = 20) -> list[dict]:
     normalized = _normalize_stats_window(window)
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 uas.artist,
                 art.id AS artist_id,
@@ -1025,20 +1057,20 @@ def get_top_albums(user_id: int, window: str = "30d", limit: int = 20) -> list[d
             FROM user_album_stats uas
             LEFT JOIN library_albums alb ON alb.artist = uas.artist AND alb.name = uas.album
             LEFT JOIN library_artists art ON art.name = uas.artist
-            WHERE uas.user_id = %s AND uas.stat_window = %s
+            WHERE uas.user_id = :user_id AND uas.stat_window = :window
             ORDER BY uas.play_count DESC, uas.minutes_listened DESC, uas.last_played_at DESC
-            LIMIT %s
-            """,
-            (user_id, normalized, limit),
-        )
-        return [dict(row) for row in cur.fetchall()]
+            LIMIT :lim
+            """),
+            {"user_id": user_id, "window": normalized, "lim": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def get_top_genres(user_id: int, window: str = "30d", limit: int = 20) -> list[dict]:
     normalized = _normalize_stats_window(window)
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 genre_name,
                 play_count,
@@ -1047,13 +1079,13 @@ def get_top_genres(user_id: int, window: str = "30d", limit: int = 20) -> list[d
                 first_played_at,
                 last_played_at
             FROM user_genre_stats
-            WHERE user_id = %s AND stat_window = %s
+            WHERE user_id = :user_id AND stat_window = :window
             ORDER BY play_count DESC, minutes_listened DESC, last_played_at DESC
-            LIMIT %s
-            """,
-            (user_id, normalized, limit),
-        )
-        return [dict(row) for row in cur.fetchall()]
+            LIMIT :lim
+            """),
+            {"user_id": user_id, "window": normalized, "lim": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def get_replay_mix(user_id: int, window: str = "30d", limit: int = 30) -> dict:
@@ -1104,15 +1136,15 @@ def get_replay_mix(user_id: int, window: str = "30d", limit: int = 30) -> dict:
 # ── User Library Summary ─────────────────────────────────────
 
 def get_user_library_counts(user_id: int) -> dict:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        row = session.execute(
+            text("""
             SELECT
-                (SELECT COUNT(*) FROM user_follows WHERE user_id = %s) AS followed_artists,
-                (SELECT COUNT(*) FROM user_saved_albums WHERE user_id = %s) AS saved_albums,
-                (SELECT COUNT(*) FROM user_liked_tracks WHERE user_id = %s) AS liked_tracks,
-                (SELECT COUNT(*) FROM playlists WHERE user_id = %s) AS playlists
-            """,
-            (user_id, user_id, user_id, user_id),
-        )
-        return dict(cur.fetchone())
+                (SELECT COUNT(*) FROM user_follows WHERE user_id = :uid1) AS followed_artists,
+                (SELECT COUNT(*) FROM user_saved_albums WHERE user_id = :uid2) AS saved_albums,
+                (SELECT COUNT(*) FROM user_liked_tracks WHERE user_id = :uid3) AS liked_tracks,
+                (SELECT COUNT(*) FROM playlists WHERE user_id = :uid4) AS playlists
+            """),
+            {"uid1": user_id, "uid2": user_id, "uid3": user_id, "uid4": user_id},
+        ).mappings().first()
+        return dict(row)

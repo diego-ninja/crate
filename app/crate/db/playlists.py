@@ -2,7 +2,8 @@ import json
 import secrets
 from datetime import datetime, timezone
 
-from crate.db.core import get_db_ctx
+from crate.db.tx import transaction_scope
+from sqlalchemy import text
 
 # ── Playlists ────────────────────────────────────────────────────
 
@@ -22,9 +23,9 @@ def _normalize_playlist_row(row: dict) -> dict:
     return d
 
 
-def _fetch_artwork_tracks(cur, playlist_id: int) -> list[dict]:
-    cur.execute(
-        """
+def _fetch_artwork_tracks(session, playlist_id: int) -> list[dict]:
+    rows = session.execute(
+        text("""
         SELECT
             COALESCE(lt.artist, pt.artist) AS artist,
             ar.id AS artist_id,
@@ -38,7 +39,7 @@ def _fetch_artwork_tracks(cur, playlist_id: int) -> list[dict]:
             FROM library_tracks lt
             WHERE lt.id = pt.track_id
                OR lt.path = pt.track_path
-               OR lt.path LIKE ('%%/' || pt.track_path)
+               OR lt.path LIKE ('%/' || pt.track_path)
             ORDER BY CASE WHEN lt.id = pt.track_id THEN 0 WHEN lt.path = pt.track_path THEN 1 ELSE 2 END
             LIMIT 1
         ) lt ON TRUE
@@ -46,16 +47,16 @@ def _fetch_artwork_tracks(cur, playlist_id: int) -> list[dict]:
           ON alb.id = lt.album_id
           OR (lt.album_id IS NULL AND alb.artist = COALESCE(lt.artist, pt.artist) AND alb.name = COALESCE(lt.album, pt.album))
         LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, pt.artist)
-        WHERE pt.playlist_id = %s
+        WHERE pt.playlist_id = :playlist_id
           AND COALESCE(lt.artist, pt.artist, '') != ''
           AND COALESCE(lt.album, pt.album, '') != ''
         GROUP BY COALESCE(lt.artist, pt.artist), ar.id, ar.slug, COALESCE(lt.album, pt.album), alb.id, alb.slug
         ORDER BY COALESCE(lt.album, pt.album)
         LIMIT 4
-        """,
-        (playlist_id,),
-    )
-    return [dict(row) for row in cur.fetchall()]
+        """),
+        {"playlist_id": playlist_id},
+    ).mappings().all()
+    return [dict(row) for row in rows]
 
 
 def create_playlist(name: str, description: str = "", user_id: int | None = None,
@@ -71,133 +72,143 @@ def create_playlist(name: str, description: str = "", user_id: int | None = None
                     managed_by_user_id: int | None = None,
                     curation_key: str | None = None,
                     featured_rank: int | None = None,
-                    category: str | None = None) -> int:
+                    category: str | None = None,
+                    *, session=None) -> int:
+    if session is None:
+        with transaction_scope() as s:
+            return create_playlist(
+                name, description, user_id, is_smart, smart_rules,
+                cover_data_url, cover_path, scope, visibility, is_collaborative,
+                generation_mode, is_curated, is_active, managed_by_user_id,
+                curation_key, featured_rank, category, session=s,
+            )
     now = datetime.now(timezone.utc).isoformat()
     final_scope = scope or ("system" if user_id is None else "user")
     final_visibility = visibility or ("public" if final_scope == "system" else "private")
     final_generation_mode = generation_mode or ("smart" if is_smart else "static")
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            INSERT INTO playlists (
-                name, description, cover_data_url, user_id, is_smart, smart_rules_json,
-                cover_path, scope, visibility, is_collaborative, generation_mode, is_curated, is_active, managed_by_user_id,
-                curation_key, featured_rank, category, created_at, updated_at
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-            """,
-            (
-                name,
-                description,
-                cover_data_url,
-                user_id,
-                is_smart,
-                json.dumps(smart_rules) if smart_rules else None,
-                cover_path,
-                final_scope,
-                final_visibility,
-                is_collaborative,
-                final_generation_mode,
-                is_curated,
-                is_active,
-                managed_by_user_id,
-                curation_key,
-                featured_rank,
-                category,
-                now,
-                now,
-            ),
+    row = session.execute(
+        text("""
+        INSERT INTO playlists (
+            name, description, cover_data_url, user_id, is_smart, smart_rules_json,
+            cover_path, scope, visibility, is_collaborative, generation_mode, is_curated, is_active, managed_by_user_id,
+            curation_key, featured_rank, category, created_at, updated_at
         )
-        playlist_id = cur.fetchone()["id"]
-        if user_id is not None:
-            cur.execute(
-                """
-                INSERT INTO playlist_members (playlist_id, user_id, role, invited_by, created_at)
-                VALUES (%s, %s, 'owner', %s, %s)
-                ON CONFLICT (playlist_id, user_id) DO NOTHING
-                """,
-                (playlist_id, user_id, user_id, now),
-            )
-        return playlist_id
+        VALUES (:name, :description, :cover_data_url, :user_id, :is_smart, :smart_rules_json,
+                :cover_path, :scope, :visibility, :is_collaborative, :generation_mode, :is_curated, :is_active, :managed_by_user_id,
+                :curation_key, :featured_rank, :category, :created_at, :updated_at)
+        RETURNING id
+        """),
+        {
+            "name": name,
+            "description": description,
+            "cover_data_url": cover_data_url,
+            "user_id": user_id,
+            "is_smart": is_smart,
+            "smart_rules_json": json.dumps(smart_rules) if smart_rules else None,
+            "cover_path": cover_path,
+            "scope": final_scope,
+            "visibility": final_visibility,
+            "is_collaborative": is_collaborative,
+            "generation_mode": final_generation_mode,
+            "is_curated": is_curated,
+            "is_active": is_active,
+            "managed_by_user_id": managed_by_user_id,
+            "curation_key": curation_key,
+            "featured_rank": featured_rank,
+            "category": category,
+            "created_at": now,
+            "updated_at": now,
+        },
+    ).mappings().first()
+    playlist_id = row["id"]
+    if user_id is not None:
+        session.execute(
+            text("""
+            INSERT INTO playlist_members (playlist_id, user_id, role, invited_by, created_at)
+            VALUES (:playlist_id, :user_id, 'owner', :invited_by, :created_at)
+            ON CONFLICT (playlist_id, user_id) DO NOTHING
+            """),
+            {"playlist_id": playlist_id, "user_id": user_id, "invited_by": user_id, "created_at": now},
+        )
+    return playlist_id
 
 
 def get_playlists(user_id: int | None = None) -> list[dict]:
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         if user_id:
-            cur.execute(
-                """
+            rows = session.execute(
+                text("""
                 SELECT DISTINCT p.*
                 FROM playlists p
                 LEFT JOIN playlist_members pm ON pm.playlist_id = p.id
-                WHERE p.user_id = %s OR pm.user_id = %s
+                WHERE p.user_id = :user_id OR pm.user_id = :user_id2
                 ORDER BY p.updated_at DESC
-                """,
-                (user_id, user_id),
-            )
+                """),
+                {"user_id": user_id, "user_id2": user_id},
+            ).mappings().all()
         else:
-            cur.execute("SELECT * FROM playlists ORDER BY updated_at DESC")
-        rows = cur.fetchall()
+            rows = session.execute(text("SELECT * FROM playlists ORDER BY updated_at DESC")).mappings().all()
         results = []
         for r in rows:
             d = _normalize_playlist_row(r)
-            d["artwork_tracks"] = _fetch_artwork_tracks(cur, d["id"])
+            d["artwork_tracks"] = _fetch_artwork_tracks(session, d["id"])
             results.append(d)
     return results
 
 
 def get_playlist(playlist_id: int) -> dict | None:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT * FROM playlists WHERE id = %s", (playlist_id,))
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(text("SELECT * FROM playlists WHERE id = :playlist_id"), {"playlist_id": playlist_id}).mappings().first()
         if not row:
             return None
         d = _normalize_playlist_row(row)
-        d["artwork_tracks"] = _fetch_artwork_tracks(cur, d["id"])
+        d["artwork_tracks"] = _fetch_artwork_tracks(session, d["id"])
         return d
 
 
 def list_system_playlists(*, only_curated: bool = False, only_active: bool = True,
                           category: str | None = None, user_id: int | None = None) -> list[dict]:
-    query = [
+    query_parts = [
         "SELECT p.*"
     ]
-    params: list = []
+    params: dict = {}
     if user_id is not None:
-        query.append(
+        query_parts.append(
             """,
             EXISTS (
                 SELECT 1
                 FROM user_followed_playlists ufp
-                WHERE ufp.playlist_id = p.id AND ufp.user_id = %s
+                WHERE ufp.playlist_id = p.id AND ufp.user_id = :follow_user_id
             ) AS is_followed
             """
         )
-        params.append(user_id)
-    query.append("FROM playlists p WHERE p.scope = 'system'")
+        params["follow_user_id"] = user_id
+    query_parts.append("FROM playlists p WHERE p.scope = 'system'")
     if only_curated:
-        query.append("AND p.is_curated = TRUE")
+        query_parts.append("AND p.is_curated = TRUE")
     if only_active:
-        query.append("AND p.is_active = TRUE")
+        query_parts.append("AND p.is_active = TRUE")
     if category:
-        query.append("AND p.category = %s")
-        params.append(category)
-    query.append("ORDER BY p.featured_rank NULLS LAST, p.updated_at DESC")
-    with get_db_ctx() as cur:
-        cur.execute("\n".join(query), params)
-        rows = cur.fetchall()
+        query_parts.append("AND p.category = :category")
+        params["category"] = category
+    query_parts.append("ORDER BY p.featured_rank NULLS LAST, p.updated_at DESC")
+    with transaction_scope() as session:
+        rows = session.execute(text("\n".join(query_parts)), params).mappings().all()
         results = []
         for row in rows:
             item = _normalize_playlist_row(row)
-            item["artwork_tracks"] = _fetch_artwork_tracks(cur, item["id"])
+            item["artwork_tracks"] = _fetch_artwork_tracks(session, item["id"])
             results.append(item)
     return results
 
 
-def update_playlist(playlist_id: int, **kwargs):
+def update_playlist(playlist_id: int, *, session=None, **kwargs):
+    if session is None:
+        with transaction_scope() as s:
+            return update_playlist(playlist_id, session=s, **kwargs)
     now = datetime.now(timezone.utc).isoformat()
-    fields = ["updated_at = %s"]
-    values: list = [now]
+    fields = ["updated_at = :p_updated_at"]
+    params: dict = {"p_updated_at": now}
     for key in (
         "name", "description", "cover_data_url", "cover_path", "scope", "visibility",
         "is_collaborative", "generation_mode",
@@ -205,28 +216,30 @@ def update_playlist(playlist_id: int, **kwargs):
         "featured_rank", "category",
     ):
         if key in kwargs:
-            fields.append(f"{key} = %s")
-            values.append(kwargs[key])
+            param_name = f"p_{key}"
+            fields.append(f"{key} = :{param_name}")
+            params[param_name] = kwargs[key]
     if "is_smart" in kwargs:
-        fields.append("is_smart = %s")
-        values.append(kwargs["is_smart"])
+        fields.append("is_smart = :p_is_smart")
+        params["p_is_smart"] = kwargs["is_smart"]
     if "smart_rules" in kwargs:
-        fields.append("smart_rules_json = %s")
-        values.append(json.dumps(kwargs["smart_rules"]))
-    values.append(playlist_id)
-    with get_db_ctx() as cur:
-        cur.execute(f"UPDATE playlists SET {', '.join(fields)} WHERE id = %s", values)
+        fields.append("smart_rules_json = :p_smart_rules_json")
+        params["p_smart_rules_json"] = json.dumps(kwargs["smart_rules"])
+    params["playlist_id"] = playlist_id
+    session.execute(text(f"UPDATE playlists SET {', '.join(fields)} WHERE id = :playlist_id"), params)
 
 
-def delete_playlist(playlist_id: int):
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM playlists WHERE id = %s", (playlist_id,))
+def delete_playlist(playlist_id: int, *, session=None):
+    if session is None:
+        with transaction_scope() as s:
+            return delete_playlist(playlist_id, session=s)
+    session.execute(text("DELETE FROM playlists WHERE id = :playlist_id"), {"playlist_id": playlist_id})
 
 
 def get_playlist_tracks(playlist_id: int) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 pt.*,
                 lt.id AS track_id,
@@ -241,7 +254,7 @@ def get_playlist_tracks(playlist_id: int) -> list[dict]:
                 FROM library_tracks lt
                 WHERE lt.id = pt.track_id
                    OR lt.path = pt.track_path
-                   OR lt.path LIKE ('%%/' || pt.track_path)
+                   OR lt.path LIKE ('%/' || pt.track_path)
                 ORDER BY CASE WHEN lt.id = pt.track_id THEN 0 WHEN lt.path = pt.track_path THEN 1 ELSE 2 END
                 LIMIT 1
             ) lt ON TRUE
@@ -249,187 +262,202 @@ def get_playlist_tracks(playlist_id: int) -> list[dict]:
               ON alb.id = lt.album_id
               OR (lt.album_id IS NULL AND alb.artist = COALESCE(lt.artist, pt.artist) AND alb.name = COALESCE(lt.album, pt.album))
             LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, pt.artist)
-            WHERE pt.playlist_id = %s
+            WHERE pt.playlist_id = :playlist_id
             ORDER BY pt.position
-            """,
-            (playlist_id,),
-        )
-        return [dict(r) for r in cur.fetchall()]
+            """),
+            {"playlist_id": playlist_id},
+        ).mappings().all()
+        return [dict(r) for r in rows]
 
 
-def add_playlist_tracks(playlist_id: int, tracks: list[dict]):
+def add_playlist_tracks(playlist_id: int, tracks: list[dict], *, session=None):
+    if session is None:
+        with transaction_scope() as s:
+            return add_playlist_tracks(playlist_id, tracks, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        # Get current max position
-        cur.execute("SELECT COALESCE(MAX(position), 0) AS maxp FROM playlist_tracks WHERE playlist_id = %s", (playlist_id,))
-        pos = cur.fetchone()["maxp"]
-        for t in tracks:
-            pos += 1
-            cur.execute(
-                "INSERT INTO playlist_tracks (playlist_id, track_id, track_path, title, artist, album, duration, position, added_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (
-                    playlist_id,
-                    t.get("track_id") or t.get("libraryTrackId"),
-                    t.get("path") or "",
-                    t.get("title", ""),
-                    t.get("artist", ""),
-                    t.get("album", ""),
-                    t.get("duration", 0),
-                    pos,
-                    now,
-                ),
-            )
-        # Update counts
-        cur.execute(
-            "UPDATE playlists SET track_count = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = %s), "
-            "total_duration = (SELECT COALESCE(SUM(duration), 0) FROM playlist_tracks WHERE playlist_id = %s), "
-            "updated_at = %s WHERE id = %s",
-            (playlist_id, playlist_id, now, playlist_id),
+    row = session.execute(
+        text("SELECT COALESCE(MAX(position), 0) AS maxp FROM playlist_tracks WHERE playlist_id = :playlist_id"),
+        {"playlist_id": playlist_id},
+    ).mappings().first()
+    pos = row["maxp"]
+    for t in tracks:
+        pos += 1
+        session.execute(
+            text("INSERT INTO playlist_tracks (playlist_id, track_id, track_path, title, artist, album, duration, position, added_at) "
+                 "VALUES (:playlist_id, :track_id, :track_path, :title, :artist, :album, :duration, :position, :added_at)"),
+            {
+                "playlist_id": playlist_id,
+                "track_id": t.get("track_id") or t.get("libraryTrackId"),
+                "track_path": t.get("path") or "",
+                "title": t.get("title", ""),
+                "artist": t.get("artist", ""),
+                "album": t.get("album", ""),
+                "duration": t.get("duration", 0),
+                "position": pos,
+                "added_at": now,
+            },
         )
+    session.execute(
+        text("UPDATE playlists SET track_count = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = :pid1), "
+             "total_duration = (SELECT COALESCE(SUM(duration), 0) FROM playlist_tracks WHERE playlist_id = :pid2), "
+             "updated_at = :now WHERE id = :pid3"),
+        {"pid1": playlist_id, "pid2": playlist_id, "now": now, "pid3": playlist_id},
+    )
 
 
-def replace_playlist_tracks(playlist_id: int, tracks: list[dict]):
+def replace_playlist_tracks(playlist_id: int, tracks: list[dict], *, session=None):
     """Atomically replace all tracks in a playlist (DELETE + INSERT in one transaction)."""
+    if session is None:
+        with transaction_scope() as s:
+            return replace_playlist_tracks(playlist_id, tracks, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM playlist_tracks WHERE playlist_id = %s", (playlist_id,))
-        pos = 0
-        for t in tracks:
-            pos += 1
-            cur.execute(
-                "INSERT INTO playlist_tracks (playlist_id, track_id, track_path, title, artist, album, duration, position, added_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (
-                    playlist_id,
-                    t.get("track_id") or t.get("libraryTrackId"),
-                    t.get("path") or "",
-                    t.get("title", ""),
-                    t.get("artist", ""),
-                    t.get("album", ""),
-                    t.get("duration", 0),
-                    pos,
-                    now,
-                ),
-            )
-        cur.execute(
-            "UPDATE playlists SET track_count = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = %s), "
-            "total_duration = (SELECT COALESCE(SUM(duration), 0) FROM playlist_tracks WHERE playlist_id = %s), "
-            "updated_at = %s WHERE id = %s",
-            (playlist_id, playlist_id, now, playlist_id),
+    session.execute(text("DELETE FROM playlist_tracks WHERE playlist_id = :playlist_id"), {"playlist_id": playlist_id})
+    pos = 0
+    for t in tracks:
+        pos += 1
+        session.execute(
+            text("INSERT INTO playlist_tracks (playlist_id, track_id, track_path, title, artist, album, duration, position, added_at) "
+                 "VALUES (:playlist_id, :track_id, :track_path, :title, :artist, :album, :duration, :position, :added_at)"),
+            {
+                "playlist_id": playlist_id,
+                "track_id": t.get("track_id") or t.get("libraryTrackId"),
+                "track_path": t.get("path") or "",
+                "title": t.get("title", ""),
+                "artist": t.get("artist", ""),
+                "album": t.get("album", ""),
+                "duration": t.get("duration", 0),
+                "position": pos,
+                "added_at": now,
+            },
         )
+    session.execute(
+        text("UPDATE playlists SET track_count = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = :pid1), "
+             "total_duration = (SELECT COALESCE(SUM(duration), 0) FROM playlist_tracks WHERE playlist_id = :pid2), "
+             "updated_at = :now WHERE id = :pid3"),
+        {"pid1": playlist_id, "pid2": playlist_id, "now": now, "pid3": playlist_id},
+    )
 
 
-def remove_playlist_track(playlist_id: int, position: int):
+def remove_playlist_track(playlist_id: int, position: int, *, session=None):
+    if session is None:
+        with transaction_scope() as s:
+            return remove_playlist_track(playlist_id, position, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM playlist_tracks WHERE playlist_id = %s AND position = %s", (playlist_id, position))
-        # Reorder remaining
-        cur.execute(
-            "WITH ordered AS (SELECT id, ROW_NUMBER() OVER (ORDER BY position) AS new_pos "
-            "FROM playlist_tracks WHERE playlist_id = %s) "
-            "UPDATE playlist_tracks SET position = ordered.new_pos "
-            "FROM ordered WHERE playlist_tracks.id = ordered.id",
-            (playlist_id,),
-        )
-        cur.execute(
-            "UPDATE playlists SET track_count = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = %s), "
-            "total_duration = (SELECT COALESCE(SUM(duration), 0) FROM playlist_tracks WHERE playlist_id = %s), "
-            "updated_at = %s WHERE id = %s",
-            (playlist_id, playlist_id, now, playlist_id),
-        )
+    session.execute(
+        text("DELETE FROM playlist_tracks WHERE playlist_id = :playlist_id AND position = :position"),
+        {"playlist_id": playlist_id, "position": position},
+    )
+    session.execute(
+        text("WITH ordered AS (SELECT id, ROW_NUMBER() OVER (ORDER BY position) AS new_pos "
+             "FROM playlist_tracks WHERE playlist_id = :playlist_id) "
+             "UPDATE playlist_tracks SET position = ordered.new_pos "
+             "FROM ordered WHERE playlist_tracks.id = ordered.id"),
+        {"playlist_id": playlist_id},
+    )
+    session.execute(
+        text("UPDATE playlists SET track_count = (SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = :pid1), "
+             "total_duration = (SELECT COALESCE(SUM(duration), 0) FROM playlist_tracks WHERE playlist_id = :pid2), "
+             "updated_at = :now WHERE id = :pid3"),
+        {"pid1": playlist_id, "pid2": playlist_id, "now": now, "pid3": playlist_id},
+    )
 
 
-def reorder_playlist(playlist_id: int, track_ids: list[int]):
+def reorder_playlist(playlist_id: int, track_ids: list[int], *, session=None):
+    if session is None:
+        with transaction_scope() as s:
+            return reorder_playlist(playlist_id, track_ids, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        for pos, tid in enumerate(track_ids, 1):
-            cur.execute("UPDATE playlist_tracks SET position = %s WHERE id = %s AND playlist_id = %s",
-                        (pos, tid, playlist_id))
-        cur.execute("UPDATE playlists SET updated_at = %s WHERE id = %s", (now, playlist_id))
+    for pos, tid in enumerate(track_ids, 1):
+        session.execute(
+            text("UPDATE playlist_tracks SET position = :pos WHERE id = :tid AND playlist_id = :playlist_id"),
+            {"pos": pos, "tid": tid, "playlist_id": playlist_id},
+        )
+    session.execute(text("UPDATE playlists SET updated_at = :now WHERE id = :playlist_id"), {"now": now, "playlist_id": playlist_id})
 
 
 def is_playlist_followed(user_id: int, playlist_id: int) -> bool:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT 1 FROM user_followed_playlists WHERE user_id = %s AND playlist_id = %s",
-            (user_id, playlist_id),
-        )
-        return cur.fetchone() is not None
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT 1 FROM user_followed_playlists WHERE user_id = :user_id AND playlist_id = :playlist_id"),
+            {"user_id": user_id, "playlist_id": playlist_id},
+        ).mappings().first()
+        return row is not None
 
 
-def follow_playlist(user_id: int, playlist_id: int) -> bool:
+def follow_playlist(user_id: int, playlist_id: int, *, session=None) -> bool:
+    if session is None:
+        with transaction_scope() as s:
+            return follow_playlist(user_id, playlist_id, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT 1
-            FROM playlists
-            WHERE id = %s
-              AND scope = 'system'
-              AND is_active = TRUE
-            """,
-            (playlist_id,),
-        )
-        if not cur.fetchone():
-            return False
-        cur.execute(
-            """
-            INSERT INTO user_followed_playlists (user_id, playlist_id, followed_at)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (user_id, playlist_id) DO NOTHING
-            """,
-            (user_id, playlist_id, now),
-        )
-        return cur.rowcount > 0
+    row = session.execute(
+        text("""
+        SELECT 1
+        FROM playlists
+        WHERE id = :playlist_id
+          AND scope = 'system'
+          AND is_active = TRUE
+        """),
+        {"playlist_id": playlist_id},
+    ).mappings().first()
+    if not row:
+        return False
+    result = session.execute(
+        text("""
+        INSERT INTO user_followed_playlists (user_id, playlist_id, followed_at)
+        VALUES (:user_id, :playlist_id, :followed_at)
+        ON CONFLICT (user_id, playlist_id) DO NOTHING
+        """),
+        {"user_id": user_id, "playlist_id": playlist_id, "followed_at": now},
+    )
+    return result.rowcount > 0
 
 
-def unfollow_playlist(user_id: int, playlist_id: int) -> bool:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "DELETE FROM user_followed_playlists WHERE user_id = %s AND playlist_id = %s",
-            (user_id, playlist_id),
-        )
-        return cur.rowcount > 0
+def unfollow_playlist(user_id: int, playlist_id: int, *, session=None) -> bool:
+    if session is None:
+        with transaction_scope() as s:
+            return unfollow_playlist(user_id, playlist_id, session=s)
+    result = session.execute(
+        text("DELETE FROM user_followed_playlists WHERE user_id = :user_id AND playlist_id = :playlist_id"),
+        {"user_id": user_id, "playlist_id": playlist_id},
+    )
+    return result.rowcount > 0
 
 
 def get_playlist_followers_count(playlist_id: int) -> int:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT COUNT(*) AS cnt FROM user_followed_playlists WHERE playlist_id = %s",
-            (playlist_id,),
-        )
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT COUNT(*) AS cnt FROM user_followed_playlists WHERE playlist_id = :playlist_id"),
+            {"playlist_id": playlist_id},
+        ).mappings().first()
     return int(row["cnt"]) if row else 0
 
 
 def get_followed_system_playlists(user_id: int) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT p.*, TRUE AS is_followed, ufp.followed_at
             FROM user_followed_playlists ufp
             JOIN playlists p ON p.id = ufp.playlist_id
-            WHERE ufp.user_id = %s
+            WHERE ufp.user_id = :user_id
               AND p.scope = 'system'
               AND p.is_active = TRUE
             ORDER BY ufp.followed_at DESC
-            """,
-            (user_id,),
-        )
-        rows = cur.fetchall()
+            """),
+            {"user_id": user_id},
+        ).mappings().all()
         results = []
         for row in rows:
             item = _normalize_playlist_row(row)
-            item["artwork_tracks"] = _fetch_artwork_tracks(cur, item["id"])
+            item["artwork_tracks"] = _fetch_artwork_tracks(session, item["id"])
             results.append(item)
     return results
 
 
 def get_playlist_members(playlist_id: int) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 pm.playlist_id,
                 pm.user_id,
@@ -441,21 +469,20 @@ def get_playlist_members(playlist_id: int) -> list[dict]:
                 u.avatar
             FROM playlist_members pm
             JOIN users u ON u.id = pm.user_id
-            WHERE pm.playlist_id = %s
+            WHERE pm.playlist_id = :playlist_id
             ORDER BY CASE pm.role WHEN 'owner' THEN 0 ELSE 1 END, pm.created_at ASC
-            """,
-            (playlist_id,),
-        )
-        return [dict(row) for row in cur.fetchall()]
+            """),
+            {"playlist_id": playlist_id},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def get_playlist_member(playlist_id: int, user_id: int) -> dict | None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT * FROM playlist_members WHERE playlist_id = %s AND user_id = %s",
-            (playlist_id, user_id),
-        )
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT * FROM playlist_members WHERE playlist_id = :playlist_id AND user_id = :user_id"),
+            {"playlist_id": playlist_id, "user_id": user_id},
+        ).mappings().first()
     return dict(row) if row else None
 
 
@@ -493,29 +520,33 @@ def is_playlist_owner(playlist: dict | None, user_id: int | None) -> bool:
     return bool(member and member.get("role") == "owner")
 
 
-def add_playlist_member(playlist_id: int, user_id: int, role: str = "collab", invited_by: int | None = None) -> bool:
+def add_playlist_member(playlist_id: int, user_id: int, role: str = "collab", invited_by: int | None = None, *, session=None) -> bool:
+    if session is None:
+        with transaction_scope() as s:
+            return add_playlist_member(playlist_id, user_id, role, invited_by, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            INSERT INTO playlist_members (playlist_id, user_id, role, invited_by, created_at)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (playlist_id, user_id) DO UPDATE SET
-                role = EXCLUDED.role,
-                invited_by = COALESCE(EXCLUDED.invited_by, playlist_members.invited_by)
-            """,
-            (playlist_id, user_id, role, invited_by, now),
-        )
-        return True
+    session.execute(
+        text("""
+        INSERT INTO playlist_members (playlist_id, user_id, role, invited_by, created_at)
+        VALUES (:playlist_id, :user_id, :role, :invited_by, :created_at)
+        ON CONFLICT (playlist_id, user_id) DO UPDATE SET
+            role = EXCLUDED.role,
+            invited_by = COALESCE(EXCLUDED.invited_by, playlist_members.invited_by)
+        """),
+        {"playlist_id": playlist_id, "user_id": user_id, "role": role, "invited_by": invited_by, "created_at": now},
+    )
+    return True
 
 
-def remove_playlist_member(playlist_id: int, user_id: int) -> bool:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "DELETE FROM playlist_members WHERE playlist_id = %s AND user_id = %s",
-            (playlist_id, user_id),
-        )
-        return cur.rowcount > 0
+def remove_playlist_member(playlist_id: int, user_id: int, *, session=None) -> bool:
+    if session is None:
+        with transaction_scope() as s:
+            return remove_playlist_member(playlist_id, user_id, session=s)
+    result = session.execute(
+        text("DELETE FROM playlist_members WHERE playlist_id = :playlist_id AND user_id = :user_id"),
+        {"playlist_id": playlist_id, "user_id": user_id},
+    )
+    return result.rowcount > 0
 
 
 def create_playlist_invite(
@@ -524,60 +555,73 @@ def create_playlist_invite(
     *,
     expires_in_hours: int = 168,
     max_uses: int | None = 20,
+    session=None,
 ) -> dict:
+    if session is None:
+        with transaction_scope() as s:
+            return create_playlist_invite(playlist_id, created_by,
+                                          expires_in_hours=expires_in_hours,
+                                          max_uses=max_uses, session=s)
     now = datetime.now(timezone.utc)
     token = secrets.token_urlsafe(24)
     expires_at = (now.timestamp() + expires_in_hours * 3600) if expires_in_hours > 0 else None
     expires_at_iso = datetime.fromtimestamp(expires_at, timezone.utc).isoformat() if expires_at else None
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            INSERT INTO playlist_invites (token, playlist_id, created_by, expires_at, max_uses, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING *
-            """,
-            (token, playlist_id, created_by, expires_at_iso, max_uses, now.isoformat()),
-        )
-        return dict(cur.fetchone())
+    row = session.execute(
+        text("""
+        INSERT INTO playlist_invites (token, playlist_id, created_by, expires_at, max_uses, created_at)
+        VALUES (:token, :playlist_id, :created_by, :expires_at, :max_uses, :created_at)
+        RETURNING *
+        """),
+        {"token": token, "playlist_id": playlist_id, "created_by": created_by,
+         "expires_at": expires_at_iso, "max_uses": max_uses, "created_at": now.isoformat()},
+    ).mappings().first()
+    return dict(row)
 
 
-def consume_playlist_invite(token: str) -> dict | None:
+def consume_playlist_invite(token: str, *, session=None) -> dict | None:
+    if session is None:
+        with transaction_scope() as s:
+            return consume_playlist_invite(token, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            UPDATE playlist_invites
-            SET use_count = use_count + 1
-            WHERE token = %s
-              AND (expires_at IS NULL OR expires_at > %s)
-              AND (max_uses IS NULL OR use_count < max_uses)
-            RETURNING *
-            """,
-            (token, now),
-        )
-        row = cur.fetchone()
+    row = session.execute(
+        text("""
+        UPDATE playlist_invites
+        SET use_count = use_count + 1
+        WHERE token = :token
+          AND (expires_at IS NULL OR expires_at > :now)
+          AND (max_uses IS NULL OR use_count < max_uses)
+        RETURNING *
+        """),
+        {"token": token, "now": now},
+    ).mappings().first()
     return dict(row) if row else None
 
 
 def get_playlist_filter_options() -> dict:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT DISTINCT format FROM library_tracks WHERE format IS NOT NULL AND format != '' ORDER BY format")
-        formats = [r["format"] for r in cur.fetchall()]
+    with transaction_scope() as session:
+        formats = [r["format"] for r in session.execute(
+            text("SELECT DISTINCT format FROM library_tracks WHERE format IS NOT NULL AND format != '' ORDER BY format")
+        ).mappings().all()]
 
-        cur.execute("SELECT DISTINCT audio_key FROM library_tracks WHERE audio_key IS NOT NULL AND audio_key != '' ORDER BY audio_key")
-        keys = [r["audio_key"] for r in cur.fetchall()]
+        keys = [r["audio_key"] for r in session.execute(
+            text("SELECT DISTINCT audio_key FROM library_tracks WHERE audio_key IS NOT NULL AND audio_key != '' ORDER BY audio_key")
+        ).mappings().all()]
 
-        cur.execute("SELECT DISTINCT audio_scale FROM library_tracks WHERE audio_scale IS NOT NULL AND audio_scale != '' ORDER BY audio_scale")
-        scales = [r["audio_scale"] for r in cur.fetchall()]
+        scales = [r["audio_scale"] for r in session.execute(
+            text("SELECT DISTINCT audio_scale FROM library_tracks WHERE audio_scale IS NOT NULL AND audio_scale != '' ORDER BY audio_scale")
+        ).mappings().all()]
 
-        cur.execute("SELECT name FROM library_artists ORDER BY name")
-        artists = [r["name"] for r in cur.fetchall()]
+        artists = [r["name"] for r in session.execute(
+            text("SELECT name FROM library_artists ORDER BY name")
+        ).mappings().all()]
 
-        cur.execute("SELECT MIN(year) AS min_y, MAX(year) AS max_y FROM library_tracks WHERE year IS NOT NULL AND year != ''")
-        yr = cur.fetchone()
+        yr = session.execute(
+            text("SELECT MIN(year) AS min_y, MAX(year) AS max_y FROM library_tracks WHERE year IS NOT NULL AND year != ''")
+        ).mappings().first()
 
-        cur.execute("SELECT MIN(bpm) AS min_b, MAX(bpm) AS max_b FROM library_tracks WHERE bpm IS NOT NULL")
-        bpm = cur.fetchone()
+        bpm = session.execute(
+            text("SELECT MIN(bpm) AS min_b, MAX(bpm) AS max_b FROM library_tracks WHERE bpm IS NOT NULL")
+        ).mappings().first()
 
     return {
         "formats": formats,
@@ -597,7 +641,13 @@ def execute_smart_rules(rules: dict) -> list[dict]:
     sort = rules.get("sort", "random")
 
     conditions = []
-    params: list = []
+    params: dict = {}
+    param_idx = 0
+
+    def _next_param(prefix: str = "p") -> str:
+        nonlocal param_idx
+        param_idx += 1
+        return f"{prefix}_{param_idx}"
 
     for rule in rule_list:
         field = rule.get("field", "")
@@ -609,58 +659,90 @@ def execute_smart_rules(rules: dict) -> list[dict]:
                 genre_vals = [v.strip() for v in value.split("|") if v.strip()]
                 or_parts = []
                 for gv in genre_vals:
-                    or_parts.append("(t.genre ILIKE %s OR a_artist.tags_json::text ILIKE %s)")
-                    params.extend([f"%{gv}%", f"%{gv}%"])
+                    p1 = _next_param("genre")
+                    p2 = _next_param("genre")
+                    or_parts.append(f"(t.genre ILIKE :{p1} OR a_artist.tags_json::text ILIKE :{p2})")
+                    params[p1] = f"%{gv}%"
+                    params[p2] = f"%{gv}%"
                 conditions.append(f"({' OR '.join(or_parts)})")
             else:
-                conditions.append("(t.genre ILIKE %s OR a_artist.tags_json::text ILIKE %s)")
-                params.extend([f"%{value}%", f"%{value}%"])
+                p1 = _next_param("genre")
+                p2 = _next_param("genre")
+                conditions.append(f"(t.genre ILIKE :{p1} OR a_artist.tags_json::text ILIKE :{p2})")
+                params[p1] = f"%{value}%"
+                params[p2] = f"%{value}%"
         elif field == "bpm" and op == "between" and isinstance(value, list):
-            conditions.append("t.bpm BETWEEN %s AND %s")
-            params.extend(value[:2])
+            p1 = _next_param("bpm")
+            p2 = _next_param("bpm")
+            conditions.append(f"t.bpm BETWEEN :{p1} AND :{p2}")
+            params[p1] = value[0]
+            params[p2] = value[1]
         elif field == "energy" and op == "gte":
-            conditions.append("t.energy >= %s")
-            params.append(value)
+            p = _next_param("energy")
+            conditions.append(f"t.energy >= :{p}")
+            params[p] = value
         elif field == "energy" and op == "lte":
-            conditions.append("t.energy <= %s")
-            params.append(value)
+            p = _next_param("energy")
+            conditions.append(f"t.energy <= :{p}")
+            params[p] = value
         elif field == "year" and op == "between" and isinstance(value, list):
-            conditions.append("t.year BETWEEN %s AND %s")
-            params.extend([str(v) for v in value[:2]])
+            p1 = _next_param("year")
+            p2 = _next_param("year")
+            conditions.append(f"t.year BETWEEN :{p1} AND :{p2}")
+            params[p1] = str(value[0])
+            params[p2] = str(value[1])
         elif field == "audio_key" and op == "eq":
-            conditions.append("t.audio_key = %s")
-            params.append(value)
+            p = _next_param("key")
+            conditions.append(f"t.audio_key = :{p}")
+            params[p] = value
         elif field == "danceability" and op == "gte":
-            conditions.append("t.danceability >= %s")
-            params.append(value)
+            p = _next_param("dance")
+            conditions.append(f"t.danceability >= :{p}")
+            params[p] = value
         elif field == "valence" and op == "gte":
-            conditions.append("t.valence >= %s")
-            params.append(value)
+            p = _next_param("valence")
+            conditions.append(f"t.valence >= :{p}")
+            params[p] = value
         elif field == "artist" and op == "eq":
             if isinstance(value, str) and "|" in value:
                 vals = [v.strip() for v in value.split("|") if v.strip()]
-                conditions.append(f"t.artist IN ({','.join(['%s']*len(vals))})")
-                params.extend(vals)
+                pnames = []
+                for v in vals:
+                    p = _next_param("artist")
+                    params[p] = v
+                    pnames.append(f":{p}")
+                conditions.append(f"t.artist IN ({','.join(pnames)})")
             else:
-                conditions.append("t.artist = %s")
-                params.append(value)
+                p = _next_param("artist")
+                conditions.append(f"t.artist = :{p}")
+                params[p] = value
         elif field == "popularity" and op == "gte":
-            conditions.append("t.popularity >= %s")
-            params.append(int(value))
+            p = _next_param("pop")
+            conditions.append(f"t.popularity >= :{p}")
+            params[p] = int(value)
         elif field == "popularity" and op == "lte":
-            conditions.append("t.popularity <= %s")
-            params.append(int(value))
+            p = _next_param("pop")
+            conditions.append(f"t.popularity <= :{p}")
+            params[p] = int(value)
         elif field == "popularity" and op == "between" and isinstance(value, list):
-            conditions.append("t.popularity BETWEEN %s AND %s")
-            params.extend([int(v) for v in value[:2]])
+            p1 = _next_param("pop")
+            p2 = _next_param("pop")
+            conditions.append(f"t.popularity BETWEEN :{p1} AND :{p2}")
+            params[p1] = int(value[0])
+            params[p2] = int(value[1])
         elif field == "format" and op == "eq":
             if isinstance(value, str) and "|" in value:
                 vals = [v.strip() for v in value.split("|") if v.strip()]
-                conditions.append(f"t.format IN ({','.join(['%s']*len(vals))})")
-                params.extend(vals)
+                pnames = []
+                for v in vals:
+                    p = _next_param("fmt")
+                    params[p] = v
+                    pnames.append(f":{p}")
+                conditions.append(f"t.format IN ({','.join(pnames)})")
             else:
-                conditions.append("t.format = %s")
-                params.append(value)
+                p = _next_param("fmt")
+                conditions.append(f"t.format = :{p}")
+                params[p] = value
 
     joiner = " AND " if match_mode == "all" else " OR "
     where = joiner.join(conditions) if conditions else "1=1"
@@ -674,18 +756,81 @@ def execute_smart_rules(rules: dict) -> list[dict]:
     }
     sort_clause = sort_map.get(sort, "RANDOM()")
 
+    params["lim"] = limit
+
     query = f"""
         SELECT t.path, t.title, t.artist, t.album, t.duration
         FROM library_tracks t
         LEFT JOIN library_artists a_artist ON t.artist = a_artist.name
         WHERE {where}
         ORDER BY {sort_clause}
-        LIMIT %s
+        LIMIT :lim
     """
-    params.append(limit)
 
-    with get_db_ctx() as cur:
-        cur.execute(query, params)
-        rows = cur.fetchall()
+    with transaction_scope() as session:
+        rows = session.execute(text(query), params).mappings().all()
 
     return [dict(r) for r in rows]
+
+
+# ── Smart playlist generators ─────────────────────────────────────
+
+def generate_by_genre(genre: str, limit: int = 50) -> list[int]:
+    with transaction_scope() as session:
+        rows = session.execute(text("""
+            SELECT t.id FROM library_tracks t
+            JOIN library_albums a ON a.id = t.album_id
+            JOIN album_genres ag ON ag.album_id = a.id
+            JOIN genres g ON g.id = ag.genre_id
+            WHERE g.name ILIKE :genre
+            ORDER BY RANDOM()
+            LIMIT :lim
+        """), {"genre": genre, "lim": limit}).mappings().all()
+        return [r["id"] for r in rows]
+
+
+def generate_by_decade(decade: int, limit: int = 50) -> list[int]:
+    year_start = str(decade)
+    year_end = str(decade + 9)
+    with transaction_scope() as session:
+        rows = session.execute(text("""
+            SELECT t.id FROM library_tracks t
+            JOIN library_albums a ON a.id = t.album_id
+            WHERE a.year >= :year_start AND a.year <= :year_end
+            ORDER BY RANDOM()
+            LIMIT :lim
+        """), {"year_start": year_start, "year_end": year_end, "lim": limit}).mappings().all()
+        return [r["id"] for r in rows]
+
+
+def generate_by_artist(artist_name: str, limit: int = 50) -> list[int]:
+    with transaction_scope() as session:
+        rows = session.execute(text("""
+            SELECT t.id FROM library_tracks t
+            WHERE t.artist = :artist
+            ORDER BY t.album_id, t.track_number
+            LIMIT :lim
+        """), {"artist": artist_name, "lim": limit}).mappings().all()
+        return [r["id"] for r in rows]
+
+
+def generate_similar_artists(similar_names: list[str], limit: int = 50) -> list[int]:
+    if not similar_names:
+        return []
+    with transaction_scope() as session:
+        rows = session.execute(text("""
+            SELECT t.id FROM library_tracks t
+            WHERE t.artist = ANY(:names)
+            ORDER BY RANDOM()
+            LIMIT :lim
+        """), {"names": similar_names, "lim": limit}).mappings().all()
+        return [r["id"] for r in rows]
+
+
+def generate_random(limit: int = 50) -> list[int]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("SELECT id FROM library_tracks ORDER BY RANDOM() LIMIT :lim"),
+            {"lim": limit},
+        ).mappings().all()
+        return [r["id"] for r in rows]

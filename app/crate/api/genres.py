@@ -8,10 +8,19 @@ from crate.api.schemas.genres import (
     GenreDetailResponse,
     GenreGraphResponse,
     GenreSummaryResponse,
+    GenreTaxonomyInvalidStatusResponse,
 )
 from crate.api.schemas.common import TaskEnqueueResponse
-from crate.db import create_task, get_all_genres, get_genre_detail, get_genre_graph, get_unmapped_genres, list_tasks
-from crate.db.genres import get_genre_taxonomy_node_id, set_genre_eq_gains
+from crate.db.genres import (
+    get_all_genres,
+    get_genre_detail,
+    get_genre_graph,
+    get_genre_taxonomy_node_id,
+    get_unmapped_genres,
+    list_invalid_genre_taxonomy_nodes,
+    set_genre_eq_gains,
+)
+from crate.db.tasks import create_task, list_tasks
 from crate.genre_taxonomy import invalidate_runtime_taxonomy_cache, resolve_genre_eq_preset
 
 router = APIRouter(prefix="/api/genres", tags=["genres"])
@@ -94,6 +103,23 @@ def list_genres(request: Request):
 def list_unmapped_genres(request: Request, limit: int = Query(24, ge=1, le=200)):
     _require_auth(request)
     return get_unmapped_genres(limit=limit)
+
+
+@router.get(
+    "/taxonomy/invalid",
+    response_model=GenreTaxonomyInvalidStatusResponse,
+    responses=_GENRE_ADMIN_RESPONSES,
+    summary="Inspect invalid genre taxonomy nodes",
+)
+def get_invalid_taxonomy_nodes(request: Request, limit: int = Query(8, ge=1, le=50)):
+    _require_admin(request)
+    items = list_invalid_genre_taxonomy_nodes()
+    return {
+        "invalid_count": len(items),
+        "alias_count": sum(int(item.get("alias_count") or 0) for item in items),
+        "edge_count": sum(int(item.get("edge_count") or 0) for item in items),
+        "items": items[:limit],
+    }
 
 
 @router.get(
@@ -185,6 +211,17 @@ def sync_musicbrainz_genre_graph(request: Request, body: MusicBrainzSyncBody = M
     })
 
 
+@router.post(
+    "/taxonomy/cleanup-invalid",
+    response_model=TaskEnqueueResponse,
+    responses=_GENRE_ADMIN_RESPONSES,
+    summary="Queue cleanup of invalid genre taxonomy nodes",
+)
+def cleanup_invalid_taxonomy_nodes(request: Request):
+    _require_admin(request)
+    return _get_or_create_task("cleanup_invalid_genre_taxonomy", {})
+
+
 @router.patch(
     "/{slug}/eq-preset",
     response_model=EqPresetUpdateResponse,
@@ -230,7 +267,7 @@ def update_genre_eq_preset(request: Request, slug: str, body: EqPresetBody):
 
     # Drop the cached graph so the next resolver call picks up the new
     # gains (or NULL → inheritance).
-    invalidate_runtime_taxonomy_cache()
+    invalidate_runtime_taxonomy_cache(broadcast=True)
 
     resolved = resolve_genre_eq_preset(canonical_slug)
     return {

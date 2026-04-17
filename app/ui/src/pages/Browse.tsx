@@ -125,18 +125,34 @@ export function Browse() {
   }
 
   async function batchDelete() {
+    let queued = 0;
+    let failed = 0;
+
     for (const artistId of selected) {
       try {
-        await api(`/api/manage/artists/${artistId}/delete`, "POST", { mode: "full" });
-      } catch { /* continue */ }
+        await api<{ task_id: string }>(`/api/manage/artists/${artistId}/delete`, "POST", { mode: "full" });
+        queued += 1;
+      } catch {
+        failed += 1;
+      }
     }
-    toast.success(`Deleted ${selected.size} artists`);
+
+    if (queued > 0) {
+      toast.success(
+        `Queued deletion for ${queued} artist${queued === 1 ? "" : "s"}`,
+        {
+          description:
+            failed > 0
+              ? `${failed} request${failed === 1 ? "" : "s"} failed. Check Tasks for progress.`
+              : "The worker will delete them in the background. Check Tasks for progress.",
+        },
+      );
+    } else {
+      toast.error("Failed to queue artist deletion");
+    }
+
     clearSelection();
     setShowBatchDelete(false);
-    // refetch from page 1
-    pageRef.current = 1;
-    hasMoreRef.current = true;
-    fetchPage(1, true);
   }
 
   const setParam = useCallback(

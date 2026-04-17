@@ -12,6 +12,9 @@ export default defineConfig({
   },
   server: {
     allowedHosts: [".crate.local", ".dev.lespedants.org"],
+    fs: {
+      allow: [path.resolve(__dirname, "../..")],
+    },
     proxy: {
       "/api": {
         target: process.env.API_URL || "http://localhost:8585",

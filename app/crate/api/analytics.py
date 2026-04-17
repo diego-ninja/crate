@@ -1,9 +1,20 @@
 import re as _re
 
-from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from crate.api.auth import _require_auth
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.analytics import (
+    ActivityLiveResponse,
+    ActivityRecentResponse,
+    AnalyticsOverviewResponse,
+    ArtistStatsResponse,
+    InsightsResponse,
+    MissingAlbumsResponse,
+    QualityReportResponse,
+    StatsResponse,
+    TimelineResponse,
+)
 from crate.missing import find_missing_albums
 from crate.quality import quality_report
 from crate.audio import read_tags, get_audio_files
@@ -52,7 +63,15 @@ from crate.db.queries.analytics import (
 )
 from crate.importer import ImportQueue
 
-router = APIRouter()
+router = APIRouter(tags=["analytics"])
+
+_ANALYTICS_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        404: error_response("The requested analytics resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 _year_re = _re.compile(r"^\d{4}\s*[-–]\s*")
 
@@ -61,7 +80,12 @@ def _has_library_data() -> bool:
     return get_library_track_count() > 0
 
 
-@router.get("/api/analytics")
+@router.get(
+    "/api/analytics",
+    response_model=AnalyticsOverviewResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the analytics overview for the library",
+)
 def api_analytics(request: Request):
     _require_auth(request)
     if not _has_library_data():
@@ -89,7 +113,12 @@ def api_analytics(request: Request):
     }
 
 
-@router.get("/api/activity/recent")
+@router.get(
+    "/api/activity/recent",
+    response_model=ActivityRecentResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List recent background activity",
+)
 def api_activity_recent(request: Request):
     _require_auth(request)
     tasks = list_tasks(limit=10)
@@ -118,7 +147,12 @@ def api_activity_recent(request: Request):
     }
 
 
-@router.get("/api/stats")
+@router.get(
+    "/api/stats",
+    response_model=StatsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get library statistics for dashboards",
+)
 def api_stats(request: Request):
     _require_auth(request)
     if _has_library_data():
@@ -200,7 +234,12 @@ def api_stats(request: Request):
 DEFAULT_MAX_WORKERS = 3
 
 
-@router.get("/api/activity/live")
+@router.get(
+    "/api/activity/live",
+    response_model=ActivityLiveResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get live worker and task activity",
+)
 def api_activity_live(request: Request):
     _require_auth(request)
     running = list_tasks(status="running")
@@ -233,7 +272,12 @@ def api_activity_live(request: Request):
     }
 
 
-@router.get("/api/timeline")
+@router.get(
+    "/api/timeline",
+    response_model=TimelineResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the album release timeline",
+)
 def api_timeline(request: Request):
     _require_auth(request)
     if _has_library_data():
@@ -279,7 +323,12 @@ def api_timeline(request: Request):
     return {y: albums for y, albums in sorted(years.items())}
 
 
-@router.get("/api/quality")
+@router.get(
+    "/api/quality",
+    response_model=QualityReportResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the library quality report",
+)
 def api_quality(request: Request):
     _require_auth(request)
     lib = library_path()
@@ -293,27 +342,37 @@ def api_missing_albums(request: Request, artist: str):
     lib = library_path()
     artist_dir = safe_path(lib, artist)
     if not artist_dir or not artist_dir.is_dir():
-        return JSONResponse({"error": "Artist not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Artist not found")
 
     exts = extensions()
     result = find_missing_albums(artist_dir, exts)
     return result
 
 
-@router.get("/api/artists/{artist_id}/missing")
+@router.get(
+    "/api/artists/{artist_id}/missing",
+    response_model=MissingAlbumsResponse,
+    responses=_ANALYTICS_RESPONSES,
+    summary="Get missing-album analysis for an artist",
+)
 def api_missing_albums_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
-        return JSONResponse({"error": "Artist not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Artist not found")
     return api_missing_albums(request, artist_name)
 
 
-@router.get("/api/missing-search")
+@router.get(
+    "/api/missing-search",
+    response_model=MissingAlbumsResponse,
+    responses=_ANALYTICS_RESPONSES,
+    summary="Search missing albums by artist name",
+)
 def api_missing_albums_search(request: Request, q: str = Query("")):
     _require_auth(request)
     query = q.strip()
     if not query:
-        return JSONResponse({"error": "Artist not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Artist not found")
     return api_missing_albums(request, query)
 
 
@@ -334,15 +393,25 @@ def api_artist_stats(request: Request, name: str):
     }
 
 
-@router.get("/api/artists/{artist_id}/stats")
+@router.get(
+    "/api/artists/{artist_id}/stats",
+    response_model=ArtistStatsResponse,
+    responses=_ANALYTICS_RESPONSES,
+    summary="Get analytics for a single artist",
+)
 def api_artist_stats_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
-        return JSONResponse({"error": "Artist not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Artist not found")
     return api_artist_stats(request, artist_name)
 
 
-@router.get("/api/insights")
+@router.get(
+    "/api/insights",
+    response_model=InsightsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get advanced insights for charts and dashboards",
+)
 def api_insights(request: Request):
     """Advanced analytics for the Insights page — all data for Nivo charts."""
     _require_auth(request)

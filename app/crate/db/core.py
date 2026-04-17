@@ -262,11 +262,12 @@ def _init_db_inner():
     _run_alembic_upgrade()
 
     # Seeds run last — they depend on the schema being fully up to date.
-    with get_db_ctx() as cur:
+    from crate.db.tx import transaction_scope
+    with transaction_scope() as session:
         from crate.genre_taxonomy import seed_genre_taxonomy
         from crate.db.auth import _seed_admin
-        seed_genre_taxonomy(cur)
-        _seed_admin(cur)
+        seed_genre_taxonomy(session)
+        _seed_admin(session)
 
 
 def _run_alembic_upgrade():

@@ -1,19 +1,24 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.common import TaskEnqueueResponse
+from crate.api.schemas.operations import MatchApplyRequest, MatchCandidateResponse
 from crate.matcher import match_album
 from crate.db import create_task, get_library_album_by_id
 from crate.api._deps import library_path, extensions
 from crate.api.browse_shared import find_album_dir
 
-router = APIRouter()
+router = APIRouter(tags=["matcher"])
 
-
-class MatchApplyRequest(BaseModel):
-    album_id: int
-    release: dict
+_MATCHER_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        404: error_response("The requested album could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
 def api_match_album(request: Request, artist: str, album: str):
@@ -28,7 +33,12 @@ def api_match_album(request: Request, artist: str, album: str):
     return candidates
 
 
-@router.get("/api/match/albums/{album_id}")
+@router.get(
+    "/api/match/albums/{album_id}",
+    response_model=list[MatchCandidateResponse],
+    responses=_MATCHER_RESPONSES,
+    summary="List MusicBrainz match candidates for an album",
+)
 def api_match_album_by_id(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
@@ -36,7 +46,12 @@ def api_match_album_by_id(request: Request, album_id: int):
     return api_match_album(request, album["artist"], album["name"])
 
 
-@router.post("/api/match/apply")
+@router.post(
+    "/api/match/apply",
+    response_model=TaskEnqueueResponse,
+    responses=_MATCHER_RESPONSES,
+    summary="Queue tag application from a chosen match",
+)
 def api_match_apply(request: Request, data: MatchApplyRequest):
     _require_admin(request)
     album = get_library_album_by_id(data.album_id)

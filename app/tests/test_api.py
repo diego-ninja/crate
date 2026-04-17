@@ -1,6 +1,44 @@
 """Tests for the FastAPI API endpoints with mocked DB layer."""
 
 from unittest.mock import patch, MagicMock
+from contextlib import contextmanager
+
+
+def _make_mock_session(fetchone_returns=None, fetchall_returns=None, fetchall_side_effects=None):
+    """Create a mock transaction_scope that simulates session.execute().mappings().first()/.all()."""
+    fetchone_queue = list(fetchone_returns or [])
+    fetchall_queue = list(fetchall_side_effects or fetchall_returns or [])
+    call_index = [0]
+
+    class MockMappings:
+        def __init__(self, rows):
+            self._rows = rows
+
+        def all(self):
+            return self._rows
+
+        def first(self):
+            return self._rows[0] if self._rows else None
+
+    class MockSession:
+        def execute(self, *args, **kwargs):
+            idx = call_index[0]
+            call_index[0] += 1
+            if fetchall_side_effects:
+                rows = fetchall_side_effects[idx] if idx < len(fetchall_side_effects) else []
+            elif fetchone_returns and idx < len(fetchone_returns):
+                rows = [fetchone_returns[idx]] if fetchone_returns[idx] is not None else []
+            elif fetchall_returns:
+                rows = fetchall_returns[idx] if idx < len(fetchall_returns) else []
+            else:
+                rows = []
+            return MagicMock(mappings=lambda: MockMappings(rows))
+
+    @contextmanager
+    def mock_scope():
+        yield MockSession()
+
+    return mock_scope
 
 
 class TestArtistsAPI:
@@ -14,15 +52,16 @@ class TestArtistsAPI:
             "primary_format": "flac",
             "has_photo": 1,
         }
-        mock_cur = MagicMock()
-        mock_cur.fetchone.return_value = {"cnt": 1}
-        mock_cur.fetchall.return_value = [mock_row]
+        # get_artists_count calls session.execute().mappings().first() -> {"cnt": 1}
+        # get_artists_page calls session.execute().mappings().all() -> [mock_row]
+        mock_scope = _make_mock_session(fetchall_side_effects=[
+            [{"cnt": 1}],   # first() returns first element
+            [mock_row],      # all() returns list
+        ])
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
-             patch("crate.db.queries.browse_artist.get_db_ctx") as mock_ctx:
-            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
+             patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
             resp = test_app.get("/api/artists")
             assert resp.status_code == 200
             data = resp.json()
@@ -34,15 +73,14 @@ class TestArtistsAPI:
         rows = [{"name": f"Artist {i}", "album_count": 1, "track_count": 10,
                  "total_size": 1000, "formats_json": [], "primary_format": None, "has_photo": 0}
                 for i in range(3)]
-        mock_cur = MagicMock()
-        mock_cur.fetchone.return_value = {"cnt": 5}
-        mock_cur.fetchall.return_value = rows
+        mock_scope = _make_mock_session(fetchall_side_effects=[
+            [{"cnt": 5}],
+            rows,
+        ])
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
-             patch("crate.db.queries.browse_artist.get_db_ctx") as mock_ctx:
-            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
+             patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
             resp = test_app.get("/api/artists?page=1&per_page=3")
             assert resp.status_code == 200
             data = resp.json()
@@ -50,15 +88,14 @@ class TestArtistsAPI:
             assert data["total"] == 5
 
     def test_get_artists_with_query(self, test_app):
-        mock_cur = MagicMock()
-        mock_cur.fetchone.return_value = {"cnt": 0}
-        mock_cur.fetchall.return_value = []
+        mock_scope = _make_mock_session(fetchall_side_effects=[
+            [{"cnt": 0}],
+            [],
+        ])
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
-             patch("crate.db.queries.browse_artist.get_db_ctx") as mock_ctx:
-            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
+             patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
             resp = test_app.get("/api/artists?q=radio&sort=name")
             assert resp.status_code == 200
             data = resp.json()
@@ -78,17 +115,16 @@ class TestArtistDetailAPI:
             {"id": 1, "slug": "lateralus", "name": "Lateralus", "track_count": 13, "total_size": 500000000,
              "formats": ["flac"], "year": "2001", "has_cover": 1},
         ]
+        mock_scope = _make_mock_session(fetchall_side_effects=[
+            [{"name": "Progressive Metal"}],
+        ])
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.db.get_library_artist_by_id", return_value={"id": 7, "name": "Tool", "slug": "tool"}), \
              patch("crate.api.browse_artist.get_library_artist", return_value=mock_artist), \
              patch("crate.api.browse_artist.get_library_albums", return_value=mock_albums), \
              patch("crate.api.browse_artist.get_artist_issue_count", return_value=0), \
-             patch("crate.db.queries.browse_artist.get_db_ctx") as mock_ctx:
-            mock_cur = MagicMock()
-            mock_cur.fetchall.return_value = [{"name": "Progressive Metal"}]
-            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
+             patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
 
             resp = test_app.get("/api/artists/7")
             assert resp.status_code == 200
@@ -125,19 +161,15 @@ class TestSearchAPI:
         assert data["albums"] == []
 
     def test_search_from_db(self, test_app):
-        mock_cur = MagicMock()
-        mock_cur.fetchall.side_effect = [
+        mock_scope = _make_mock_session(fetchall_side_effects=[
             [{"id": 1, "slug": "radiohead", "name": "Radiohead", "album_count": 9, "has_photo": 1}],
             [{"id": 5, "slug": "ok-computer", "artist": "Radiohead", "name": "OK Computer",
               "year": "1997", "has_cover": 1, "artist_id": 1, "artist_slug": "radiohead"}],
             [],  # track results
-        ]
+        ])
 
         with patch("crate.api.browse_media.has_library_data", return_value=True), \
-             patch("crate.db.queries.browse_media.get_db_ctx") as mock_ctx:
-            mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-            mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
+             patch("crate.db.queries.browse_media.transaction_scope", mock_scope):
             resp = test_app.get("/api/search?q=radio")
             assert resp.status_code == 200
             data = resp.json()
@@ -166,6 +198,45 @@ class TestScanAPI:
             resp = test_app.post("/api/scan", json={"only": "naming"})
             assert resp.status_code == 200
             mock_create.assert_called_once_with("scan", {"only": "naming"})
+
+
+class TestGenresAPI:
+    def test_get_invalid_taxonomy_nodes_summary(self, test_app):
+        rows = [
+            {"id": 1, "slug": "wikidata", "name": "wikidata", "alias_count": 2, "edge_count": 3, "reason": "external-section-marker"},
+            {"id": 2, "slug": "q123", "name": "Q123", "alias_count": 0, "edge_count": 1, "reason": "wikidata-entity-id"},
+        ]
+        with patch("crate.api.genres.list_invalid_genre_taxonomy_nodes", return_value=rows):
+            resp = test_app.get("/api/genres/taxonomy/invalid?limit=1")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["invalid_count"] == 2
+            assert data["alias_count"] == 2
+            assert data["edge_count"] == 4
+            assert len(data["items"]) == 1
+            assert data["items"][0]["slug"] == "wikidata"
+
+    def test_cleanup_invalid_taxonomy_nodes_starts_task(self, test_app):
+        with patch("crate.api.genres.list_tasks", side_effect=[[], []]), \
+             patch("crate.api.genres.create_task", return_value="cleanup123") as mock_create:
+            resp = test_app.post("/api/genres/taxonomy/cleanup-invalid")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["task_id"] == "cleanup123"
+            assert data["status"] == "queued"
+            assert data["deduplicated"] is False
+            mock_create.assert_called_once_with("cleanup_invalid_genre_taxonomy", {})
+
+    def test_cleanup_invalid_taxonomy_nodes_deduplicates_running_task(self, test_app):
+        with patch("crate.api.genres.list_tasks", side_effect=[[{"id": "running123", "status": "running"}]]), \
+             patch("crate.api.genres.create_task") as mock_create:
+            resp = test_app.post("/api/genres/taxonomy/cleanup-invalid")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["task_id"] == "running123"
+            assert data["status"] == "running"
+            assert data["deduplicated"] is True
+            mock_create.assert_not_called()
 
 
 class TestSyncLibraryAPI:

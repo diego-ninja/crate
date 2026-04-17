@@ -11,8 +11,8 @@ import hmac
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 
 from crate.db import get_user_by_email
 from crate.db.queries.subsonic import (
@@ -33,12 +33,49 @@ from crate.db.queries.subsonic import (
 )
 from crate.auth import verify_password
 from crate.api._deps import library_path
+from crate.api.schemas.subsonic import (
+    SubsonicAlbumList2Response,
+    SubsonicAlbumResponse,
+    SubsonicArtistResponse,
+    SubsonicArtistsResponse,
+    SubsonicLicenseResponse,
+    SubsonicMusicFoldersResponse,
+    SubsonicOkResponse,
+    SubsonicPlaylistsResponse,
+    SubsonicRandomSongsResponse,
+    SubsonicSearchResult3Response,
+    SubsonicSongResponse,
+    SubsonicStarred2Response,
+    SubsonicUserResponse,
+)
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/rest", tags=["subsonic"])
 
 SUBSONIC_API_VERSION = "1.16.1"
 SERVER_NAME = "Crate"
+
+
+def _subsonic_docs_params(
+    username: str = Query("", alias="u", description="Subsonic username or email."),
+    password: str = Query(
+        "",
+        alias="p",
+        description="Plain password, or `enc:` plus a UTF-8 hex payload. Use either `p` or `t` + `s`.",
+    ),
+    token: str = Query("", alias="t", description="MD5 token used for Subsonic token authentication."),
+    salt: str = Query("", alias="s", description="Random salt paired with `t`."),
+    version: str = Query(SUBSONIC_API_VERSION, alias="v", description="Requested Subsonic API version."),
+    client: str = Query("crate-docs", alias="c", description="Client identifier."),
+    response_format: str = Query(
+        "json",
+        alias="f",
+        description="Requested response format. Crate currently responds with JSON.",
+    ),
+) -> None:
+    del username, password, token, salt, version, client, response_format
+
+
+router = APIRouter(prefix="/rest", tags=["subsonic"], dependencies=[Depends(_subsonic_docs_params)])
 
 
 # ── Auth ────────────────────────────────────────────────────────
@@ -118,8 +155,8 @@ class SubsonicAuthError(Exception):
 
 # ── System ──────────────────────────────────────────────────────
 
-@router.get("/ping")
-@router.get("/ping.view")
+@router.get("/ping", response_model=SubsonicOkResponse, summary="Ping the Subsonic API")
+@router.get("/ping.view", include_in_schema=False)
 def ping(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -128,8 +165,8 @@ def ping(request: Request):
     return _subsonic_response({})
 
 
-@router.get("/getLicense")
-@router.get("/getLicense.view")
+@router.get("/getLicense", response_model=SubsonicLicenseResponse, summary="Get the Subsonic license status")
+@router.get("/getLicense.view", include_in_schema=False)
 def get_license(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -140,8 +177,12 @@ def get_license(request: Request):
     })
 
 
-@router.get("/getMusicFolders")
-@router.get("/getMusicFolders.view")
+@router.get(
+    "/getMusicFolders",
+    response_model=SubsonicMusicFoldersResponse,
+    summary="List available Subsonic music folders",
+)
+@router.get("/getMusicFolders.view", include_in_schema=False)
 def get_music_folders(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -152,8 +193,8 @@ def get_music_folders(request: Request):
     })
 
 
-@router.get("/getUser")
-@router.get("/getUser.view")
+@router.get("/getUser", response_model=SubsonicUserResponse, summary="Fetch a Subsonic user profile")
+@router.get("/getUser.view", include_in_schema=False)
 def get_user(request: Request, username: str = Query("")):
     try:
         user = _require_subsonic_auth(request)
@@ -181,8 +222,8 @@ def get_user(request: Request, username: str = Query("")):
 
 # ── Browse ──────────────────────────────────────────────────────
 
-@router.get("/getArtists")
-@router.get("/getArtists.view")
+@router.get("/getArtists", response_model=SubsonicArtistsResponse, summary="Browse artists grouped by index letter")
+@router.get("/getArtists.view", include_in_schema=False)
 def get_artists(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -210,8 +251,8 @@ def get_artists(request: Request):
     })
 
 
-@router.get("/getArtist")
-@router.get("/getArtist.view")
+@router.get("/getArtist", response_model=SubsonicArtistResponse, summary="Fetch a Subsonic artist with albums")
+@router.get("/getArtist.view", include_in_schema=False)
 def get_artist(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -245,8 +286,8 @@ def get_artist(request: Request, id: str = Query("")):
     })
 
 
-@router.get("/getAlbum")
-@router.get("/getAlbum.view")
+@router.get("/getAlbum", response_model=SubsonicAlbumResponse, summary="Fetch a Subsonic album with songs")
+@router.get("/getAlbum.view", include_in_schema=False)
 def get_album(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -293,8 +334,8 @@ def get_album(request: Request, id: str = Query("")):
     })
 
 
-@router.get("/getSong")
-@router.get("/getSong.view")
+@router.get("/getSong", response_model=SubsonicSongResponse, summary="Fetch a single Subsonic song")
+@router.get("/getSong.view", include_in_schema=False)
 def get_song(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -330,8 +371,12 @@ def get_song(request: Request, id: str = Query("")):
 
 # ── Album Lists ─────────────────────────────────────────────────
 
-@router.get("/getAlbumList2")
-@router.get("/getAlbumList2.view")
+@router.get(
+    "/getAlbumList2",
+    response_model=SubsonicAlbumList2Response,
+    summary="List albums using a Subsonic album-list strategy",
+)
+@router.get("/getAlbumList2.view", include_in_schema=False)
 def get_album_list2(
     request: Request,
     type: str = Query("alphabeticalByName"),
@@ -373,8 +418,8 @@ def get_album_list2(
 
 # ── Search ──────────────────────────────────────────────────────
 
-@router.get("/search3")
-@router.get("/search3.view")
+@router.get("/search3", response_model=SubsonicSearchResult3Response, summary="Search artists, albums, and songs")
+@router.get("/search3.view", include_in_schema=False)
 def search3(
     request: Request,
     query: str = Query("", alias="query"),
@@ -415,8 +460,28 @@ def search3(
 
 # ── Stream & Cover Art ──────────────────────────────────────────
 
-@router.get("/stream")
-@router.get("/stream.view")
+@router.get(
+    "/stream",
+    summary="Stream a track through the Subsonic API",
+    responses={
+        200: {
+            "description": "Audio stream for the requested track, or a Subsonic error envelope.",
+            "content": {
+                "application/json": {"schema": {"$ref": "#/components/schemas/SubsonicOkResponse"}},
+                "audio/mpeg": {"schema": {"type": "string", "format": "binary"}},
+                "audio/flac": {"schema": {"type": "string", "format": "binary"}},
+                "audio/ogg": {"schema": {"type": "string", "format": "binary"}},
+                "audio/mp4": {"schema": {"type": "string", "format": "binary"}},
+                "audio/aac": {"schema": {"type": "string", "format": "binary"}},
+                "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+                "audio/opus": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        403: {"description": "Forbidden path outside the library root."},
+        404: {"description": "Track file not found."},
+    },
+)
+@router.get("/stream.view", include_in_schema=False)
 def stream(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -427,8 +492,6 @@ def stream(request: Request, id: str = Query("")):
     track = get_track_path_and_format(track_id)
     if not track:
         return Response(status_code=404)
-
-    from fastapi.responses import FileResponse
 
     lib = library_path()
     filepath = Path(track["path"])
@@ -450,8 +513,23 @@ def stream(request: Request, id: str = Query("")):
     )
 
 
-@router.get("/getCoverArt")
-@router.get("/getCoverArt.view")
+@router.get(
+    "/getCoverArt",
+    summary="Fetch album or artist artwork via the Subsonic API",
+    responses={
+        200: {
+            "description": "Artwork image, or a Subsonic error envelope.",
+            "content": {
+                "application/json": {"schema": {"$ref": "#/components/schemas/SubsonicOkResponse"}},
+                "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                "image/png": {"schema": {"type": "string", "format": "binary"}},
+                "image/webp": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        404: {"description": "Artwork not found."},
+    },
+)
+@router.get("/getCoverArt.view", include_in_schema=False)
 def get_cover_art(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -472,10 +550,10 @@ def get_cover_art(request: Request, id: str = Query("")):
 
 # ── Scrobble ────────────────────────────────────────────────────
 
-@router.get("/scrobble")
-@router.get("/scrobble.view")
-@router.post("/scrobble")
-@router.post("/scrobble.view")
+@router.get("/scrobble", response_model=SubsonicOkResponse, summary="Record a completed Subsonic scrobble")
+@router.get("/scrobble.view", include_in_schema=False)
+@router.post("/scrobble", response_model=SubsonicOkResponse, summary="Record a completed Subsonic scrobble")
+@router.post("/scrobble.view", include_in_schema=False)
 def scrobble(request: Request, id: str = Query(""), submission: str = Query("true")):
     try:
         user = _require_subsonic_auth(request)
@@ -497,8 +575,8 @@ def scrobble(request: Request, id: str = Query(""), submission: str = Query("tru
 
 # ── Stubs (required by clients but not critical) ────────────────
 
-@router.get("/getPlaylists")
-@router.get("/getPlaylists.view")
+@router.get("/getPlaylists", response_model=SubsonicPlaylistsResponse, summary="List playlists for Subsonic clients")
+@router.get("/getPlaylists.view", include_in_schema=False)
 def get_playlists(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -507,8 +585,8 @@ def get_playlists(request: Request):
     return _subsonic_response({"playlists": {"playlist": []}})
 
 
-@router.get("/getStarred2")
-@router.get("/getStarred2.view")
+@router.get("/getStarred2", response_model=SubsonicStarred2Response, summary="List starred artists, albums, and songs")
+@router.get("/getStarred2.view", include_in_schema=False)
 def get_starred2(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -517,8 +595,8 @@ def get_starred2(request: Request):
     return _subsonic_response({"starred2": {"artist": [], "album": [], "song": []}})
 
 
-@router.get("/getRandomSongs")
-@router.get("/getRandomSongs.view")
+@router.get("/getRandomSongs", response_model=SubsonicRandomSongsResponse, summary="Fetch random songs for Subsonic clients")
+@router.get("/getRandomSongs.view", include_in_schema=False)
 def get_random_songs(request: Request, size: int = Query(10)):
     try:
         _require_subsonic_auth(request)

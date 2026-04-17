@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import mutagen
 from fastapi import APIRouter, Query, Request
@@ -7,6 +8,25 @@ from fastapi.responses import JSONResponse, Response
 from crate.api._deps import COVER_NAMES, artist_name_from_id, coerce_date, extensions, library_path, safe_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import ARTIST_PHOTO_NAMES, display_name, fs_artist_detail, fs_build_artists_list, has_library_data
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.browse import (
+    ArtistsWithShowsResponse,
+    ArtistBrowseListResponse,
+    ArtistCheckLibraryRequest,
+    ArtistCheckLibraryResponse,
+    ArtistDetailResponse,
+    ArtistEnqueueResponse,
+    ArtistInfoResponse,
+    ArtistNetworkResponse,
+    ArtistSetlistPlayableResponse,
+    CachedShowsResponse,
+    ShowsListResponse,
+    UpcomingResponse,
+    ArtistShowsResponse,
+    ArtistTopTrackResponse,
+    ArtistTrackTitleResponse,
+    BrowseFiltersResponse,
+)
 from crate.audio import get_audio_files
 from crate.db import (
     get_all_artist_issue_counts,
@@ -37,7 +57,31 @@ from crate.storage_layout import resolve_artist_dir
 
 log = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["browse"])
+
+_BROWSE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested browse resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
+
+_IMAGE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Binary image response.",
+            "content": {
+                "image/jpeg": {},
+                "image/png": {},
+                "image/svg+xml": {},
+            },
+        },
+        404: error_response("The requested image was not found."),
+    },
+)
 
 
 def _library_artist_ref(name: str) -> dict | None:
@@ -155,7 +199,12 @@ def _match_setlist_track(
     return contains
 
 
-@router.get("/api/browse/filters")
+@router.get(
+    "/api/browse/filters",
+    response_model=BrowseFiltersResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List available browse filters",
+)
 def api_browse_filters(request: Request):
     """Available filter options for the browse page."""
     _require_auth(request)
@@ -166,7 +215,12 @@ def api_browse_filters(request: Request):
     return {"genres": genres, "countries": countries, "decades": decades, "formats": formats}
 
 
-@router.get("/api/artists")
+@router.get(
+    "/api/artists",
+    response_model=ArtistBrowseListResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List artists in the library",
+)
 def api_artists(
     request: Request,
     q: str = "",
@@ -198,33 +252,34 @@ def api_artists(
     select_cols = "la.*, COALESCE(la.dir_mtime, EXTRACT(EPOCH FROM la.updated_at)::bigint) AS recent_sort"
     joins = ""
     where_clauses = ["1=1"]
-    params: list = []
+    params: dict = {}
 
     if genre:
         joins += " JOIN artist_genres ag ON la.name = ag.artist_name JOIN genres g ON ag.genre_id = g.id"
-        where_clauses.append("g.name = %s")
-        params.append(genre)
+        where_clauses.append("g.name = :genre")
+        params["genre"] = genre
 
     if country:
-        where_clauses.append("la.country = %s")
-        params.append(country)
+        where_clauses.append("la.country = :country")
+        params["country"] = country
 
     if decade:
         try:
             decade_start = int(decade.rstrip("s"))
             where_clauses.append("la.formed IS NOT NULL AND length(la.formed) >= 4")
-            where_clauses.append("CAST(substring(la.formed, 1, 4) AS INTEGER) BETWEEN %s AND %s")
-            params.extend([decade_start, decade_start + 9])
+            where_clauses.append("CAST(substring(la.formed, 1, 4) AS INTEGER) BETWEEN :decade_start AND :decade_end")
+            params["decade_start"] = decade_start
+            params["decade_end"] = decade_start + 9
         except (ValueError, TypeError):
             pass
 
     if format:
-        where_clauses.append("la.primary_format = %s")
-        params.append(format)
+        where_clauses.append("la.primary_format = :format")
+        params["format"] = format
 
     if q:
-        where_clauses.append("la.name ILIKE %s")
-        params.append(f"%{q}%")
+        where_clauses.append("la.name ILIKE :q")
+        params["q"] = f"%{q}%"
 
     where_sql = " AND ".join(where_clauses)
     sort_map = {
@@ -265,18 +320,28 @@ def api_artists(
     return {"items": items, "total": total, "page": page, "per_page": per_page}
 
 
-@router.post("/api/artists/check-library")
-def api_check_artists_in_library(request: Request, body: dict):
+@router.post(
+    "/api/artists/check-library",
+    response_model=ArtistCheckLibraryResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Check which artists already exist in the local library",
+)
+def api_check_artists_in_library(request: Request, body: ArtistCheckLibraryRequest):
     """Check which artists from a list exist in the local library. Returns a dict of name -> boolean."""
     _require_auth(request)
-    names = body.get("names", [])
-    if not names or not isinstance(names, list):
+    names = body.names
+    if not names:
         return {}
     found = check_artists_in_library(names)
     return {name: name.lower() in found for name in names}
 
 
-@router.get("/api/artists/{artist_id}")
+@router.get(
+    "/api/artists/{artist_id}",
+    response_model=ArtistDetailResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get detailed artist information",
+)
 def api_artist_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -284,7 +349,11 @@ def api_artist_by_id(request: Request, artist_id: int):
     return api_artist(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/background")
+@router.get(
+    "/api/artists/{artist_id}/background",
+    responses=_IMAGE_RESPONSES,
+    summary="Get an artist background image",
+)
 def api_artist_background_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -292,7 +361,12 @@ def api_artist_background_by_id(request: Request, artist_id: int, random_pick: b
     return api_artist_background(request, artist_name, random_pick)
 
 
-@router.get("/api/artists/{artist_id}/top-tracks")
+@router.get(
+    "/api/artists/{artist_id}/top-tracks",
+    response_model=list[ArtistTopTrackResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get top tracks for an artist",
+)
 def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(20, ge=1, le=50)):
     """Top tracks for an artist. Uses Last.fm global popularity to rank,
     matched against tracks in the local library. Falls back to local play
@@ -341,7 +415,11 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
     return [_fmt(r) for r in ranked]
 
 
-@router.get("/api/artists/{artist_id}/photo")
+@router.get(
+    "/api/artists/{artist_id}/photo",
+    responses=_IMAGE_RESPONSES,
+    summary="Get an artist photo",
+)
 def api_artist_photo_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -349,7 +427,12 @@ def api_artist_photo_by_id(request: Request, artist_id: int, random_pick: bool =
     return api_artist_photo(request, artist_name, random_pick)
 
 
-@router.get("/api/artists/{artist_id}/info")
+@router.get(
+    "/api/artists/{artist_id}/info",
+    response_model=ArtistInfoResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get external metadata for an artist",
+)
 def api_artist_info_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -357,7 +440,12 @@ def api_artist_info_by_id(request: Request, artist_id: int):
     return api_artist_info(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/shows")
+@router.get(
+    "/api/artists/{artist_id}/shows",
+    response_model=ArtistShowsResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get upcoming shows for an artist",
+)
 def api_artist_shows_by_id(request: Request, artist_id: int, limit: int = Query(10), country: str = Query("")):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -365,7 +453,12 @@ def api_artist_shows_by_id(request: Request, artist_id: int, limit: int = Query(
     return api_artist_shows(request, artist_name, limit, country)
 
 
-@router.post("/api/artists/{artist_id}/enrich")
+@router.post(
+    "/api/artists/{artist_id}/enrich",
+    response_model=ArtistEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue artist enrichment",
+)
 def api_artist_enrich_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -373,7 +466,12 @@ def api_artist_enrich_by_id(request: Request, artist_id: int):
     return api_artist_enrich(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/track-titles")
+@router.get(
+    "/api/artists/{artist_id}/track-titles",
+    response_model=list[ArtistTrackTitleResponse],
+    responses=_BROWSE_RESPONSES,
+    summary="List track titles for an artist with album references",
+)
 def api_artist_track_titles_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -381,7 +479,12 @@ def api_artist_track_titles_by_id(request: Request, artist_id: int):
     return api_artist_track_titles(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/setlist-playable")
+@router.get(
+    "/api/artists/{artist_id}/setlist-playable",
+    response_model=ArtistSetlistPlayableResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Match a probable setlist against playable local tracks",
+)
 def api_artist_setlist_playable_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -389,7 +492,12 @@ def api_artist_setlist_playable_by_id(request: Request, artist_id: int):
     return api_artist_setlist_playable(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/network")
+@router.get(
+    "/api/artists/{artist_id}/network",
+    response_model=ArtistNetworkResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get the related-artist network for an artist",
+)
 def api_artist_network_by_id(request: Request, artist_id: int, depth: int = 2):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -628,7 +736,12 @@ def api_artist_shows(request: Request, name: str, limit: int = Query(10), countr
     return {"events": normalized, "configured": True, "source": "live"}
 
 
-@router.get("/api/shows/artists-with-shows")
+@router.get(
+    "/api/shows/artists-with-shows",
+    response_model=ArtistsWithShowsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List artists that currently have cached shows",
+)
 def api_artists_with_shows(request: Request):
     _require_auth(request)
     from crate.db import get_upcoming_shows as db_get_shows
@@ -638,7 +751,12 @@ def api_artists_with_shows(request: Request):
     return {"artists": artist_names}
 
 
-@router.get("/api/shows/cached")
+@router.get(
+    "/api/shows/cached",
+    response_model=CachedShowsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List cached upcoming shows",
+)
 def api_cached_shows(request: Request, limit: int = Query(50)):
     _require_auth(request)
     from crate.db import get_upcoming_shows as db_get_shows
@@ -670,7 +788,12 @@ def api_cached_shows(request: Request, limit: int = Query(50)):
     return {"events": events}
 
 
-@router.get("/api/shows")
+@router.get(
+    "/api/shows",
+    response_model=ShowsListResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List upcoming shows with available filters",
+)
 def api_shows_list(request: Request, city: str = "", country: str = ""):
     _require_auth(request)
     from crate.db import get_show_cities, get_show_countries, get_upcoming_shows as db_get_shows
@@ -763,7 +886,12 @@ def api_artist_setlist_playable(request: Request, name: str):
     return {"tracks": matched_tracks}
 
 
-@router.get("/api/upcoming")
+@router.get(
+    "/api/upcoming",
+    response_model=UpcomingResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List upcoming releases and shows",
+)
 def api_upcoming(request: Request):
     from datetime import datetime, timezone
 
@@ -855,7 +983,12 @@ def api_artist_network(request: Request, name: str, depth: int = 2):
     return get_artist_network(name, depth=min(depth, 3), limit_per_level=15)
 
 
-@router.get("/api/network/external-artist")
+@router.get(
+    "/api/network/external-artist",
+    response_model=ArtistNetworkResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get the related-artist network for a free-form artist name",
+)
 def api_artist_network_by_name(request: Request, name: str = Query(""), depth: int = 2):
     if not name.strip():
         return JSONResponse({"error": "name required"}, status_code=400)

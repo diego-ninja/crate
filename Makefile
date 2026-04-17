@@ -36,11 +36,12 @@ DEV_CONTAINERS := crate-dev-api crate-dev-worker crate-dev-postgres crate-dev-re
 .PHONY: dev
 dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend dev servers
 	@# Kill any leftover Vite processes from previous runs (by port AND pattern)
-	@-lsof -ti :5173,:5174,:5175,:5176 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@-lsof -ti :5173,:5174,:5175,:5176,:5177 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
+	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build
@@ -51,15 +52,18 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@cd app/listen && npm install --silent 2>/dev/null; cd ../..
 	@cd app/docs && npm install --silent 2>/dev/null; cd ../..
 	@cd app/site && npm install --silent 2>/dev/null; cd ../..
+	@cd app/reference && npm install --silent 2>/dev/null; cd ../..
 	@(cd app/ui && npx vite --port 5173 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/docs && npx vite --port 5175 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/site && npx vite --port 5176 --strictPort --host > /dev/null 2>&1 &)
+	@(cd app/reference && npx vite --port 5177 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo ""
 	@echo "  $(GREEN)Admin:$(NC)  https://admin.dev.lespedants.org"
 	@echo "  $(GREEN)Listen:$(NC) https://listen.dev.lespedants.org"
 	@echo "  $(GREEN)Docs:$(NC)   https://docs.dev.cratemusic.app"
+	@echo "  $(GREEN)API Ref:$(NC) https://reference.dev.cratemusic.app"
 	@echo "  $(GREEN)Site:$(NC)   https://www.dev.cratemusic.app"
 	@echo "  $(GREEN)API:$(NC)    https://api.dev.lespedants.org"
 	@echo "  Login:  admin@cratemusic.app / admin"
@@ -89,15 +93,20 @@ dev-docs: ## Arrancar solo Docs dev server (:5175)
 dev-site: ## Arrancar solo Site dev server (:5176)
 	@cd app/site && npx vite --port 5176 --host
 
+.PHONY: dev-reference
+dev-reference: ## Arrancar solo Scalar reference dev server (:5177)
+	@cd app/reference && npx vite --port 5177 --host
+
 .PHONY: dev-down
 dev-down: ## Parar todo (backend + frontends)
 	@$(DC_DEV) down
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
-	@-lsof -ti :5173,:5174,:5175,:5176 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@-lsof -ti :5173,:5174,:5175,:5176,:5177 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
+	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@echo "$(GREEN)Todo parado$(NC)"
 
 .PHONY: dev-logs
@@ -114,6 +123,7 @@ dev-rebuild: ## Rebuild y restart todo
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
+	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build --force-recreate
@@ -121,6 +131,7 @@ dev-rebuild: ## Rebuild y restart todo
 	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/docs && npx vite --port 5175 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/site && npx vite --port 5176 --strictPort --host > /dev/null 2>&1 &)
+	@(cd app/reference && npx vite --port 5177 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo "$(GREEN)Todo rebuildeado$(NC)"
 
@@ -185,6 +196,7 @@ ps: ## Estado de los servicios (dev)
 	@-pgrep -af "vite.*5174" > /dev/null 2>&1 && echo "  Listen: http://localhost:5174 (running)" || echo "  Listen: not running"
 	@-pgrep -af "vite.*5175" > /dev/null 2>&1 && echo "  Docs:   http://localhost:5175 (running)" || echo "  Docs:   not running"
 	@-pgrep -af "vite.*5176" > /dev/null 2>&1 && echo "  Site:   http://localhost:5176 (running)" || echo "  Site:   not running"
+	@-pgrep -af "vite.*5177" > /dev/null 2>&1 && echo "  APIRef: http://localhost:5177 (running)" || echo "  APIRef: not running"
 
 .PHONY: pull
 pull: ## Pull de imagenes en local

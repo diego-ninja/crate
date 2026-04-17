@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class GenreArtistRef(BaseModel):
@@ -61,8 +61,8 @@ class GenreSummaryResponse(BaseModel):
 
 
 class GenreDetailResponse(GenreSummaryResponse):
-    artists: list[GenreArtistRef] = []
-    albums: list[GenreAlbumRef] = []
+    artists: list[GenreArtistRef] = Field(default_factory=list)
+    albums: list[GenreAlbumRef] = Field(default_factory=list)
 
 
 class GenreGraphNode(BaseModel):
@@ -103,3 +103,21 @@ class EqPresetUpdateResponse(BaseModel):
     slug: str
     eq_gains: list[float] | None = None
     eq_preset_resolved: dict[str, Any] | None = None
+
+
+class InvalidGenreTaxonomyNodeResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: int | None = None
+    slug: str
+    name: str | None = None
+    alias_count: int = 0
+    edge_count: int = 0
+    reason: str | None = None
+
+
+class GenreTaxonomyInvalidStatusResponse(BaseModel):
+    invalid_count: int = 0
+    alias_count: int = 0
+    edge_count: int = 0
+    items: list[InvalidGenreTaxonomyNodeResponse] = Field(default_factory=list)

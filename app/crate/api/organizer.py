@@ -1,21 +1,34 @@
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Request
 
 from crate.api.auth import _require_admin
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.utility import (
+    OrganizeApplyRequest,
+    OrganizeApplyResponse,
+    OrganizePresetsResponse,
+    OrganizePreviewResponse,
+)
 from crate.organizer import preview_organize, organize_album, suggest_folder_name, PRESETS
 from crate.api._deps import library_path, extensions, safe_path
 from crate.db import get_library_album_by_id
 
-router = APIRouter()
+router = APIRouter(tags=["organizer"])
+
+_ORGANIZER_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        404: error_response("The requested album could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
-class OrganizeApplyRequest(BaseModel):
-    pattern: str | None = None
-    rename_folder: str | None = None
-
-
-@router.get("/api/organize/presets")
+@router.get(
+    "/api/organize/presets",
+    response_model=OrganizePresetsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List file-organization presets",
+)
 def api_organize_presets(request: Request):
     _require_admin(request)
     return PRESETS
@@ -26,7 +39,7 @@ def api_organize_preview(request: Request, artist: str, album: str, pattern: str
     lib = library_path()
     album_dir = safe_path(lib, f"{artist}/{album}")
     if not album_dir or not album_dir.is_dir():
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Not found")
 
     exts = extensions()
     preview = preview_organize(album_dir, exts, pattern)
@@ -45,7 +58,7 @@ def api_organize_apply(request: Request, artist: str, album: str, data: Organize
     lib = library_path()
     album_dir = safe_path(lib, f"{artist}/{album}")
     if not album_dir or not album_dir.is_dir():
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Not found")
 
     exts = extensions()
     pattern = data.pattern if data else None
@@ -55,17 +68,27 @@ def api_organize_apply(request: Request, artist: str, album: str, data: Organize
     return result
 
 
-@router.get("/api/organize/albums/{album_id}/preview")
+@router.get(
+    "/api/organize/albums/{album_id}/preview",
+    response_model=OrganizePreviewResponse,
+    responses=_ORGANIZER_RESPONSES,
+    summary="Preview file-organization changes for an album",
+)
 def api_organize_preview_by_id(request: Request, album_id: int, pattern: str | None = None):
     album = get_library_album_by_id(album_id)
     if not album:
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Not found")
     return api_organize_preview(request, album["artist"], album["name"], pattern)
 
 
-@router.post("/api/organize/albums/{album_id}/apply")
+@router.post(
+    "/api/organize/albums/{album_id}/apply",
+    response_model=OrganizeApplyResponse,
+    responses=_ORGANIZER_RESPONSES,
+    summary="Apply file-organization changes to an album",
+)
 def api_organize_apply_by_id(request: Request, album_id: int, data: OrganizeApplyRequest | None = None):
     album = get_library_album_by_id(album_id)
     if not album:
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Not found")
     return api_organize_apply(request, album["artist"], album["name"], data)

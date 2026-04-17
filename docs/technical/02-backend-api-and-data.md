@@ -53,25 +53,56 @@ The DB layer is organized under `https://github.com/diego-ninja/crate/blob/main/
 - DSN construction from environment variables
 - optional app DB provisioning using superuser credentials
 - a shared `ThreadedConnectionPool`
-- `get_db_ctx()` as the standard transactional cursor context manager
+- `get_db_ctx()` for legacy cursor-based helpers and bootstrap paths that still use psycopg2 directly
 
-The preferred pattern across the codebase is:
+[app/crate/db/engine.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/engine.py) provides the newer SQLAlchemy runtime:
+
+- a lazy SQLAlchemy 2.x engine and `Session` factory
+- the same `CRATE_POSTGRES_*` env var contract as `core.py`
+- conservative default pooling (`pool_size=2`, `max_overflow=0`) with env overrides for operators
+
+[app/crate/db/tx.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/tx.py) defines the explicit transaction boundary used by new code:
+
+- `transaction_scope()` yields a SQLAlchemy `Session`
+- `register_after_commit()` lets callers delay side effects until commit
+
+The preferred pattern for new code is:
 
 ```python
-with get_db_ctx() as cur:
-    cur.execute(...)
-    row = cur.fetchone()
+from sqlalchemy import text
+
+from crate.db.tx import transaction_scope
+
+with transaction_scope() as session:
+    row = session.execute(
+        text("SELECT * FROM users WHERE email = :email"),
+        {"email": email},
+    ).mappings().first()
 ```
+
+Legacy psycopg2 access still exists in `core.py` for bootstrap and frozen compatibility paths, but the runtime direction is now explicitly session-based.
+
+### Module boundaries
+
+The data layer is now intentionally split by responsibility:
+
+- `db/*.py` remains the long-lived compatibility layer and home of older domain helpers
+- `db/queries/*` holds read-heavy or SQL-visible query helpers
+- `db/jobs/*` holds task, daemon, repair, and batch-oriented DB logic
+- `db/orm/*` and `db/models/*` support targeted ORM-backed CRUD domains
+- `crate.db` is now best thought of as a frozen compatibility facade: existing imports keep working, but new code should import concrete modules directly and should not keep widening the facade
 
 ### Schema management
 
 Schema initialization is centralized in [app/crate/db/core.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/core.py):
 
 - `init_db()` acquires a PostgreSQL advisory lock
-- `_create_schema()` defines the final desired shape of tables for new installs
-- `_run_migrations()` backfills missing columns and structure for existing installs
+- `_create_schema()` defines the final desired shape of tables for fresh installs
+- `_run_migrations()` is frozen and only backfills legacy pre-Alembic installs
+- `_run_alembic_upgrade()` applies `alembic upgrade head`
+- bootstrap seeds such as the genre taxonomy and admin user run last inside one shared `transaction_scope()`
 
-This is an idempotent in-app migration system rather than an external Alembic-style migration workflow.
+This is now a hybrid bootstrap + Alembic model: fresh self-hosted installs still come up without a separate manual step, while ongoing schema history lives in Alembic revisions under `app/crate/db/migrations`.
 
 ## Major table families
 
@@ -220,37 +251,41 @@ This is additive to Crate's native API, not a replacement for it.
 
 ## Design decisions in the backend layer
 
-### Why DB helpers instead of an ORM
+### Why hybrid SQLAlchemy plus explicit SQL
 
-Crate uses explicit SQL and helper modules rather than SQLAlchemy models.
+Crate no longer fits the old "helpers only, no ORM" description. The runtime is intentionally hybrid:
+
+- SQLAlchemy `Session` and selected ORM-backed helpers for CRUD-oriented domains such as auth, sessions, settings, health, and other transactional workflows
+- SQLAlchemy Core / `text()` for queues, daemons, browse/search, analytics, bulk updates, and other places where visible SQL is the better abstraction
 
 Benefits for this codebase:
 
-- simple runtime footprint
-- predictable SQL
-- easier ad hoc migration logic
-- fewer hidden behaviors around joins and lazy loading
+- explicit transaction boundaries via `transaction_scope()`
+- visible SQL where performance and locking behavior matter
+- standard engine/session/migration integration
+- room for typed CRUD models without forcing every domain into ORM semantics
 
-Trade-off:
+Trade-offs:
 
-- schema evolution and query composition need more discipline
-- there is less compile-time structure than a richer ORM layer would provide
-- some repetition creeps in across `app/crate/db/*.py` (connection pool usage, row-dict shaping, cache coordination) that an ORM would absorb
+- the hybrid model needs discipline about where code belongs
+- `crate.db` still carries a large compatibility surface during the transition
+- some older helpers still return dict-shaped data until they are migrated or typed more strictly
 
-An eventual move to SQLAlchemy 2.0 is on the table; the current patterns are deliberately boring so that migration would be a translation exercise, not an invention one.
+The goal is not "ORM everywhere". It is "use ORM where it improves CRUD semantics, and keep explicit SQL where it expresses the system better".
 
-### Why application-managed schema migrations
+### Why startup bootstrap and Alembic coexist
 
-The current model is optimized for self-hosting simplicity:
+The current model is optimized for self-hosting simplicity without giving up inspectable migration history:
 
 - the API and worker can bring up a fresh database by themselves
-- operators do not need a separate migration command
-- startup ordering between API and worker is handled by advisory lock
+- operators do not need a separate bootstrap command for a brand-new install
+- ongoing schema changes are visible as Alembic revisions
+- startup ordering between API and worker is still handled by advisory lock
 
 Trade-off:
 
-- migration history is less formal than a dedicated migration toolchain
-- large or risky schema transitions need extra care inside application code
+- the bootstrap path is more layered than a pure "run Alembic and nothing else" setup
+- docs and code need to stay clear about which changes belong in frozen legacy bootstrap versus Alembic history
 
 ## Related documents
 

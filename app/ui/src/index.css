@@ -1,3 +1,4 @@
+@import "../../shared/fonts/poppins.css";
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
@@ -44,7 +45,7 @@
 
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
 
 * {

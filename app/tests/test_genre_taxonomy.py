@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from crate.genre_taxonomy import (
     _are_genres_distant,
     choose_mix_seed_genres,
@@ -203,3 +205,41 @@ def test_resolve_eq_preset_returns_none_for_unknown_genre() -> None:
 def test_resolve_eq_preset_returns_none_for_empty_value() -> None:
     assert resolve_genre_eq_preset("") is None
     assert resolve_genre_eq_preset("   ") is None
+
+
+def test_runtime_taxonomy_overlay_uses_db_query_helper() -> None:
+    import crate.genre_taxonomy as genre_taxonomy
+
+    genre_taxonomy.invalidate_runtime_taxonomy_cache()
+    with patch(
+        "crate.db.queries.genre_taxonomy.get_runtime_taxonomy_rows",
+        return_value=(
+            [
+                {
+                    "slug": "warehouse-techno",
+                    "name": "warehouse techno",
+                    "description": "raw warehouse variant",
+                    "is_top_level": False,
+                    "eq_gains": None,
+                }
+            ],
+            [
+                {
+                    "alias_slug": "warehouse-tech",
+                    "alias_name": "warehouse tech",
+                    "canonical_slug": "warehouse-techno",
+                }
+            ],
+            [
+                {
+                    "source_slug": "warehouse-techno",
+                    "target_slug": "techno",
+                    "relation_type": "parent",
+                }
+            ],
+        ),
+    ):
+        assert genre_taxonomy.resolve_genre_slug("warehouse tech") == "warehouse-techno"
+        assert genre_taxonomy.get_top_level_slug("warehouse tech") == "electronic"
+
+    genre_taxonomy.invalidate_runtime_taxonomy_cache()

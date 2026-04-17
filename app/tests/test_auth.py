@@ -4,6 +4,10 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone, timedelta
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from tests.conftest import PG_AVAILABLE
 
 
 # ── Unit tests for crate.auth (no DB needed) ──────────────────────
@@ -60,8 +64,9 @@ class TestJWT:
     def test_tampered_token_returns_none(self, _mock_secret):
         from crate.auth import create_jwt, verify_jwt
         token = create_jwt(1, "a@b.com", "user")
-        # Flip a character in the signature
-        tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+        header, payload, signature = token.split(".")
+        tampered_signature = ("A" if signature[0] != "A" else "B") + signature[1:]
+        tampered = ".".join([header, payload, tampered_signature])
         assert verify_jwt(tampered) is None
 
     @patch("crate.auth._get_jwt_secret", return_value="key-A")
@@ -113,14 +118,19 @@ class TestLoginEndpoint:
             "avatar": None, "role": "admin", "username": "admin",
             "password_hash": "$2b$12$realhashdoesntmatterhere",
         }
+        fake_session = {
+            "id": "sess-123",
+            "expires_at": datetime.now(timezone.utc).isoformat(),
+        }
         with patch("crate.api.auth.get_user_by_email", return_value=fake_user), \
              patch("crate.api.auth.verify_password", return_value=True), \
              patch("crate.api.auth.update_user_last_login"), \
-             patch("crate.api.auth.create_jwt", return_value="fake-jwt"):
+             patch("crate.api.auth._create_login_session", return_value=("fake-jwt", fake_session)):
             resp = test_app.post("/api/auth/login", json={"email": "test@test.com", "password": "pass"})
             assert resp.status_code == 200
             data = resp.json()
             assert data["email"] == "test@test.com"
+            assert data["session"]["id"] == "sess-123"
             # Cookie is set with secure=True so TestClient (HTTP) may not expose it in resp.cookies;
             # check the Set-Cookie header directly
             set_cookie = resp.headers.get("set-cookie", "")
@@ -196,6 +206,98 @@ class TestAuthMiddleware:
         mock_request.state.user = {"id": 1, "email": "a@b.com", "role": "admin"}
         user = _require_admin(mock_request)
         assert user["role"] == "admin"
+
+
+@pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
+class TestAuthIntegration:
+    @pytest.fixture
+    def real_auth_client(self, pg_db, tmp_path):
+        from fastapi.testclient import TestClient
+
+        mock_config = {
+            "library_path": str(tmp_path),
+            "audio_extensions": [".flac", ".mp3", ".m4a"],
+            "exclude_dirs": [],
+        }
+
+        with patch("crate.api._deps.load_config", return_value=mock_config):
+            from crate.api import create_app
+
+            app = create_app()
+            with TestClient(app) as client:
+                yield client
+
+    def test_pg_db_seeds_default_admin(self, pg_db):
+        admin = pg_db.get_user_by_email("admin@cratemusic.app")
+
+        assert admin is not None
+        assert admin["username"] == "admin"
+        assert admin["role"] == "admin"
+        assert admin["password_hash"]
+
+    def test_login_seeded_admin_creates_session(self, real_auth_client, pg_db):
+        admin = pg_db.get_user_by_email("admin@cratemusic.app")
+
+        resp = real_auth_client.post(
+            "/api/auth/login",
+            json={"email": "admin@cratemusic.app", "password": "admin"},
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["email"] == "admin@cratemusic.app"
+        assert data["session"]["id"]
+
+        sessions = pg_db.list_sessions(admin["id"])
+        assert any(session["id"] == data["session"]["id"] for session in sessions)
+
+    def test_create_user_reuses_shared_session_for_username_lookup(self, pg_db):
+        from crate.db.auth import create_user, get_user_by_id
+        from crate.db.tx import transaction_scope
+
+        with transaction_scope() as session:
+            with patch("crate.db.auth.transaction_scope", side_effect=AssertionError("nested scope")):
+                user = create_user("composed-user@test.com", session=session)
+                loaded = get_user_by_id(user["id"], session=session)
+
+        assert loaded is not None
+        assert loaded["email"] == "composed-user@test.com"
+
+    def test_update_user_without_fields_reuses_shared_session(self, pg_db):
+        from crate.db.auth import create_user, update_user
+        from crate.db.tx import transaction_scope
+
+        with transaction_scope() as session:
+            user = create_user("update-user@test.com", session=session)
+            with patch("crate.db.auth.transaction_scope", side_effect=AssertionError("nested scope")):
+                same_user = update_user(user["id"], session=session)
+
+        assert same_user is not None
+        assert same_user["id"] == user["id"]
+
+    def test_auth_middleware_uses_current_role_from_db(self, pg_db):
+        from crate.api.auth import AuthMiddleware
+        from crate.auth import create_jwt
+
+        user = pg_db.create_user("stale-role@test.com", role="user")
+        token = create_jwt(user["id"], user["email"], "user", username=user["username"], name=user["name"])
+        pg_db.update_user(user["id"], role="admin")
+
+        app = FastAPI()
+        app.add_middleware(AuthMiddleware)
+
+        @app.get("/admin-check")
+        def admin_check(request):
+            from crate.api.auth import _require_admin
+            user = _require_admin(request)
+            return {"role": user["role"]}
+
+        with TestClient(app) as client:
+            client.cookies.set("crate_session", token)
+            resp = client.get("/admin-check")
+
+        assert resp.status_code == 200
+        assert resp.json()["role"] == "admin"
 
 
 class TestLogout:

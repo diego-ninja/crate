@@ -12,14 +12,38 @@ import re
 from collections import deque
 from time import time
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import StreamingResponse
 
 from crate.api.auth import _require_auth
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.utility import CacheInvalidationRequest, CacheInvalidationResponse
 
 log = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(tags=["events"])
+
+_CACHE_EVENT_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Server-sent events stream of cache invalidations.",
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "type": "string",
+                        "example": "data: home\n\ndata: playlist:42\n\n",
+                    }
+                }
+            },
+        },
+    },
+)
+
+_CACHE_INVALIDATION_RESPONSES = {
+    403: error_response("Only trusted internal peers may broadcast cache invalidations."),
+    422: error_response("The request payload failed validation."),
+}
 
 # In-memory event bus — lightweight, no Redis needed.
 _events: deque[tuple[float, str]] = deque(maxlen=200)
@@ -49,7 +73,11 @@ async def _invalidation_stream(last_seen: float):
                 last_seen = ts
 
 
-@router.get("/api/cache/events")
+@router.get(
+    "/api/cache/events",
+    responses=_CACHE_EVENT_RESPONSES,
+    summary="Stream cache invalidation events",
+)
 async def cache_events(request: Request):
     """SSE stream of cache invalidation events."""
     _require_auth(request)
@@ -63,15 +91,19 @@ async def cache_events(request: Request):
     )
 
 
-@router.post("/api/cache/invalidate")
-async def cache_invalidate_endpoint(request: Request):
+@router.post(
+    "/api/cache/invalidate",
+    response_model=CacheInvalidationResponse,
+    responses=_CACHE_INVALIDATION_RESPONSES,
+    summary="Broadcast cache invalidation scopes from a trusted worker",
+)
+async def cache_invalidate_endpoint(request: Request, body: CacheInvalidationRequest):
     """Internal endpoint for worker processes to broadcast invalidation.
     Only accepts requests from Docker network peers (trusted proxy check)."""
     client_ip = request.client.host if request.client else ""
     if not (client_ip.startswith("172.") or client_ip.startswith("10.") or client_ip == "127.0.0.1"):
-        return Response(status_code=403)
-    body = await request.json()
-    scopes = body.get("scopes", [])
+        raise HTTPException(status_code=403, detail="Forbidden")
+    scopes = body.scopes
     if scopes:
         broadcast_invalidation(*scopes)
     return {"ok": True, "scopes": scopes}

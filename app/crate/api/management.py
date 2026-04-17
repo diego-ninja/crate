@@ -1,43 +1,63 @@
 from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
 from crate.api._deps import artist_name_from_id, album_names_from_id
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
+from crate.api.schemas.management import (
+    AnalysisStatusResponse,
+    ArtistHealthIssuesResponse,
+    ArtistRepairResponse,
+    AuditLogResponse,
+    CheckTypeMutationResponse,
+    DeleteRequest,
+    EnrichMbidsRequest,
+    HealthFixTypeResponse,
+    HealthIssuesResponse,
+    HealthReportResponse,
+    MoveRequest,
+    RepairIssuesRequest,
+    RepairRequest,
+    StorageMigrationRequest,
+    StorageV2StatusResponse,
+    WipeRequest,
+)
 from crate.db import (
-    create_task, get_cache, get_audit_log,
+    create_task, get_audit_log,
     get_open_issues, get_issue_counts, resolve_issue, dismiss_issue,
 )
 
 router = APIRouter(prefix="/api/manage", tags=["management"])
 
-
-class DeleteRequest(BaseModel):
-    mode: str = "db_only"  # "db_only" | "full"
-
-
-class RepairRequest(BaseModel):
-    dry_run: bool = True
-    auto_only: bool = True
-
-
-class MoveRequest(BaseModel):
-    new_name: str
-
-
-class WipeRequest(BaseModel):
-    rebuild: bool = False
+_MANAGEMENT_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        404: error_response("The requested management resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
 # ── Health Check & Repair ────────────────────────────────────────
 
-@router.post("/health-check")
+@router.post(
+    "/health-check",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue a library health check",
+)
 def run_health_check(request: Request):
     _require_admin(request)
     task_id = create_task("health_check")
     return {"task_id": task_id}
 
 
-@router.get("/health-report")
+@router.get(
+    "/health-report",
+    response_model=HealthReportResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the persisted health report",
+)
 def get_health_report(request: Request):
     """Get persisted health issues from DB (survives restarts)."""
     _require_admin(request)
@@ -46,7 +66,12 @@ def get_health_report(request: Request):
     return {"issues": issues, "summary": counts, "total": len(issues)}
 
 
-@router.get("/health-issues")
+@router.get(
+    "/health-issues",
+    response_model=HealthIssuesResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List open health issues",
+)
 def list_health_issues(request: Request, check_type: str = ""):
     """Get open health issues, optionally filtered by type."""
     _require_admin(request)
@@ -55,33 +80,47 @@ def list_health_issues(request: Request, check_type: str = ""):
     return {"issues": issues, "counts": counts, "total": len(issues)}
 
 
-@router.post("/health-issues/{issue_id}/resolve")
+@router.post(
+    "/health-issues/{issue_id}/resolve",
+    response_model=OkResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Resolve a single health issue",
+)
 def api_resolve_issue(request: Request, issue_id: int):
     _require_admin(request)
     resolve_issue(issue_id)
     return {"ok": True}
 
 
-@router.post("/health-issues/{issue_id}/dismiss")
+@router.post(
+    "/health-issues/{issue_id}/dismiss",
+    response_model=OkResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Dismiss a single health issue",
+)
 def api_dismiss_issue(request: Request, issue_id: int):
     _require_admin(request)
     dismiss_issue(issue_id)
     return {"ok": True}
 
 
-@router.post("/repair")
+@router.post(
+    "/repair",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue a repair run",
+)
 def run_repair(request: Request, body: RepairRequest):
     _require_admin(request)
     task_id = create_task("repair", {"dry_run": body.dry_run, "auto_only": body.auto_only})
     return {"task_id": task_id}
 
-
-class RepairIssuesRequest(BaseModel):
-    issues: list[dict]
-    dry_run: bool = False
-
-
-@router.post("/repair-issues")
+@router.post(
+    "/repair-issues",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue a repair run for specific issues",
+)
 def repair_specific_issues(request: Request, body: RepairIssuesRequest):
     """Repair specific issues (individual or batch)."""
     _require_admin(request)
@@ -93,7 +132,12 @@ def repair_specific_issues(request: Request, body: RepairIssuesRequest):
     return {"task_id": task_id}
 
 
-@router.post("/health-issues/resolve-type/{check_type}")
+@router.post(
+    "/health-issues/resolve-type/{check_type}",
+    response_model=CheckTypeMutationResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Resolve all health issues of a given type",
+)
 def api_resolve_type(request: Request, check_type: str):
     """Resolve all open issues of a given check type."""
     _require_admin(request)
@@ -102,7 +146,12 @@ def api_resolve_type(request: Request, check_type: str):
     return {"ok": True, "check_type": check_type}
 
 
-@router.post("/health-issues/fix-type/{check_type}")
+@router.post(
+    "/health-issues/fix-type/{check_type}",
+    response_model=HealthFixTypeResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue fixes for all auto-fixable issues of a type",
+)
 def api_fix_type(request: Request, check_type: str):
     """Auto-fix all fixable issues of a given check type via repair task."""
     _require_admin(request)
@@ -140,7 +189,12 @@ def repair_artist(request: Request, name: str):
     return {"task_id": task_id, "count": len(fixable)}
 
 
-@router.get("/artists/{artist_id}/health-issues")
+@router.get(
+    "/artists/{artist_id}/health-issues",
+    response_model=ArtistHealthIssuesResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="List health issues for an artist",
+)
 def get_artist_health_issues_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -148,7 +202,12 @@ def get_artist_health_issues_by_id(request: Request, artist_id: int):
     return get_artist_health_issues(request, artist_name)
 
 
-@router.post("/artists/{artist_id}/repair")
+@router.post(
+    "/artists/{artist_id}/repair",
+    response_model=ArtistRepairResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue repairs for a specific artist",
+)
 def repair_artist_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -166,7 +225,12 @@ def delete_artist(request: Request, name: str, body: DeleteRequest):
     return {"task_id": task_id}
 
 
-@router.post("/artists/{artist_id}/delete")
+@router.post(
+    "/artists/{artist_id}/delete",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue deletion of an artist",
+)
 def delete_artist_by_id(request: Request, artist_id: int, body: DeleteRequest):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -180,7 +244,12 @@ def reset_enrichment(request: Request, name: str):
     return {"task_id": task_id}
 
 
-@router.post("/artists/{artist_id}/reset")
+@router.post(
+    "/artists/{artist_id}/reset",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue enrichment reset for an artist",
+)
 def reset_enrichment_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -196,7 +265,12 @@ def move_artist(request: Request, name: str, body: MoveRequest):
     return {"task_id": task_id}
 
 
-@router.post("/artists/{artist_id}/move")
+@router.post(
+    "/artists/{artist_id}/move",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue a move/rename for an artist",
+)
 def move_artist_by_id(request: Request, artist_id: int, body: MoveRequest):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -214,7 +288,12 @@ def delete_album(request: Request, artist: str, album: str, body: DeleteRequest)
     return {"task_id": task_id}
 
 
-@router.post("/albums/{album_id}/delete")
+@router.post(
+    "/albums/{album_id}/delete",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue deletion of an album",
+)
 def delete_album_by_id(request: Request, album_id: int, body: DeleteRequest):
     album_names = album_names_from_id(album_id)
     if not album_names:
@@ -225,14 +304,24 @@ def delete_album_by_id(request: Request, album_id: int, body: DeleteRequest):
 
 # ── Library Management ───────────────────────────────────────────
 
-@router.post("/wipe")
+@router.post(
+    "/wipe",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue a full library wipe",
+)
 def wipe_library(request: Request, body: WipeRequest):
     _require_admin(request)
     task_id = create_task("wipe_library", {"rebuild": body.rebuild})
     return {"task_id": task_id}
 
 
-@router.post("/rebuild")
+@router.post(
+    "/rebuild",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue a full library rebuild",
+)
 def rebuild_library(request: Request):
     _require_admin(request)
     task_id = create_task("rebuild_library")
@@ -241,7 +330,12 @@ def rebuild_library(request: Request):
 
 # ── Audio Analysis (background daemons) ─────────────────────────
 
-@router.get("/analysis-status")
+@router.get(
+    "/analysis-status",
+    response_model=AnalysisStatusResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get audio analysis and bliss daemon status",
+)
 def analysis_status(request: Request):
     """Return current background analysis progress for audio analysis and bliss daemons."""
     _require_admin(request)
@@ -252,7 +346,12 @@ def analysis_status(request: Request):
     return {**status, "last_analyzed": get_last_analyzed_track(), "last_bliss": get_last_bliss_track()}
 
 
-@router.post("/analyze-all")
+@router.post(
+    "/analyze-all",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue re-analysis for all tracks",
+)
 def analyze_all_tracks(request: Request):
     """Reset all tracks to pending so background daemons re-analyze them."""
     _require_admin(request)
@@ -267,7 +366,12 @@ def reanalyze_artist(request: Request, name: str):
     return {"task_id": task_id}
 
 
-@router.post("/artists/{artist_id}/reanalyze")
+@router.post(
+    "/artists/{artist_id}/reanalyze",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue re-analysis for an artist",
+)
 def reanalyze_artist_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -275,7 +379,12 @@ def reanalyze_artist_by_id(request: Request, artist_id: int):
     return reanalyze_artist(request, artist_name)
 
 
-@router.post("/reanalyze-album/{album_id}")
+@router.post(
+    "/reanalyze-album/{album_id}",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue re-analysis for an album",
+)
 def reanalyze_album(request: Request, album_id: int):
     """Reset analysis state for all tracks of an album."""
     _require_admin(request)
@@ -285,7 +394,12 @@ def reanalyze_album(request: Request, album_id: int):
 
 # ── Bliss (song similarity) ──────────────────────────────────────
 
-@router.post("/compute-bliss")
+@router.post(
+    "/compute-bliss",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue bliss recomputation for all tracks",
+)
 def compute_bliss(request: Request):
     """Reset bliss state for all tracks so background daemon recomputes vectors."""
     _require_admin(request)
@@ -295,7 +409,12 @@ def compute_bliss(request: Request):
 
 # ── Popularity ───────────────────────────────────────────────────
 
-@router.post("/compute-popularity")
+@router.post(
+    "/compute-popularity",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue popularity recomputation",
+)
 def compute_popularity(request: Request):
     _require_admin(request)
     task_id = create_task("compute_popularity")
@@ -304,22 +423,32 @@ def compute_popularity(request: Request):
 
 # ── MBID Enrichment ──────────────────────────────────────────────
 
-@router.post("/enrich-mbids")
-def enrich_mbids(request: Request, body: dict | None = None):
+@router.post(
+    "/enrich-mbids",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue MusicBrainz ID enrichment",
+)
+def enrich_mbids(request: Request, body: EnrichMbidsRequest | None = None):
     _require_admin(request)
     params = {}
     if body:
-        if body.get("artist"):
-            params["artist"] = body["artist"]
-        if body.get("min_score"):
-            params["min_score"] = body["min_score"]
+        if body.artist:
+            params["artist"] = body.artist
+        if body.min_score is not None:
+            params["min_score"] = body.min_score
     task_id = create_task("enrich_mbids", params)
     return {"task_id": task_id}
 
 
 # ── Audit Log ────────────────────────────────────────────────────
 
-@router.get("/audit-log")
+@router.get(
+    "/audit-log",
+    response_model=AuditLogResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Read the audit log",
+)
 def read_audit_log(request: Request, limit: int = 100, offset: int = 0, action: str | None = None):
     _require_admin(request)
     entries, total = get_audit_log(limit=limit, offset=offset, action=action)
@@ -328,18 +457,28 @@ def read_audit_log(request: Request, limit: int = 100, offset: int = 0, action: 
 
 # ── Storage Migration ───────────────────────────────────────────
 
-@router.post("/migrate-storage-v2")
-def migrate_storage_v2(request: Request, body: dict | None = None):
+@router.post(
+    "/migrate-storage-v2",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue storage layout migration to V2",
+)
+def migrate_storage_v2(request: Request, body: StorageMigrationRequest | None = None):
     """Start V2 storage migration. Optionally pass {"artist": "Name"} for single artist."""
     _require_admin(request)
     params = {}
-    if body and body.get("artist"):
-        params["artist"] = body["artist"]
+    if body and body.artist:
+        params["artist"] = body.artist
     task_id = create_task("migrate_storage_v2", params)
     return {"task_id": task_id}
 
 
-@router.post("/verify-storage-v2")
+@router.post(
+    "/verify-storage-v2",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue storage layout verification",
+)
 def verify_storage_v2(request: Request):
     """Verify storage integrity after V2 migration."""
     _require_admin(request)
@@ -347,7 +486,12 @@ def verify_storage_v2(request: Request):
     return {"task_id": task_id}
 
 
-@router.get("/storage-v2-status")
+@router.get(
+    "/storage-v2-status",
+    response_model=StorageV2StatusResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get storage V2 migration progress",
+)
 def storage_v2_status(request: Request):
     """Get migration progress: how many artists/albums/tracks are on V2 layout."""
     _require_admin(request)
