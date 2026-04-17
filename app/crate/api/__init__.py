@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from crate.api._deps import json_dumps
+from crate.api.openapi import custom_openapi
 from crate.db import init_db
 
 
@@ -25,7 +26,13 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="MusicDock", lifespan=lifespan, default_response_class=DateAwareJSONResponse)
+    app = FastAPI(
+        title="MusicDock",
+        version="0.1.0",
+        lifespan=lifespan,
+        default_response_class=DateAwareJSONResponse,
+    )
+    app.openapi = lambda: custom_openapi(app)
 
     domain = os.environ.get("DOMAIN", "localhost")
     allowed_origins = [

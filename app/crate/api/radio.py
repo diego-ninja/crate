@@ -3,6 +3,8 @@ from fastapi.responses import JSONResponse
 
 from crate.api.auth import _require_auth
 from crate.api._deps import enrich_radio_tracks as _enrich_radio_tracks
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.radio import RadioResponse
 from crate.db import get_cache, set_cache
 from crate.bliss import (
     generate_album_radio,
@@ -23,7 +25,15 @@ from crate.db.queries.radio import (
     get_playlist_for_radio,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["radio"])
+
+_RADIO_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        404: error_response("The seed resource was not found or no radio data is available yet."),
+        422: error_response("The route parameters failed validation."),
+    },
+)
 
 
 def _escape_like(value: str) -> str:
@@ -86,12 +96,22 @@ def api_artist_radio(request: Request, artist_id: int, limit: int = Query(50, ge
     return result
 
 
-@router.get("/api/artists/{artist_id}/radio")
+@router.get(
+    "/api/artists/{artist_id}/radio",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build artist radio",
+)
 def api_artist_radio_by_id(request: Request, artist_id: int, limit: int = Query(50, ge=1, le=100)):
     return api_artist_radio(request, artist_id, limit)
 
 
-@router.get("/api/radio/track")
+@router.get(
+    "/api/radio/track",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build track radio",
+)
 def api_track_radio(
     request: Request,
     track_id: int = 0,
@@ -134,7 +154,12 @@ def api_track_radio(
     return result
 
 
-@router.get("/api/radio/album/{album_id}")
+@router.get(
+    "/api/radio/album/{album_id}",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build album radio",
+)
 def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1, le=100)):
     user = _require_auth(request)
     effective_user_id = _effective_user_id(user)
@@ -168,7 +193,12 @@ def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1
     return result
 
 
-@router.get("/api/radio/playlist/{playlist_id}")
+@router.get(
+    "/api/radio/playlist/{playlist_id}",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build playlist radio",
+)
 def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50, ge=1, le=100)):
     user = _require_auth(request)
     effective_user_id = _effective_user_id(user)
@@ -209,7 +239,12 @@ def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50
     return result
 
 
-@router.get("/api/radio/home-playlist/{playlist_id}")
+@router.get(
+    "/api/radio/home-playlist/{playlist_id}",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build radio from a home playlist",
+)
 def api_home_playlist_radio(request: Request, playlist_id: str, limit: int = Query(50, ge=1, le=100)):
     user = _require_auth(request)
     effective_user_id = _effective_user_id(user)

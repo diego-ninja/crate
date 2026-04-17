@@ -2,11 +2,35 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from crate.api.auth import _require_auth, _require_admin
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.genres import (
+    EqPresetUpdateResponse,
+    GenreDetailResponse,
+    GenreGraphResponse,
+    GenreSummaryResponse,
+)
+from crate.api.schemas.common import TaskEnqueueResponse
 from crate.db import create_task, get_all_genres, get_genre_detail, get_genre_graph, get_unmapped_genres, list_tasks
 from crate.db.genres import get_genre_taxonomy_node_id, set_genre_eq_gains
 from crate.genre_taxonomy import invalidate_runtime_taxonomy_cache, resolve_genre_eq_preset
 
 router = APIRouter(prefix="/api/genres", tags=["genres"])
+
+_GENRE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        404: error_response("The requested genre could not be found."),
+    },
+)
+
+_GENRE_ADMIN_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request payload could not be processed."),
+        404: error_response("The requested genre could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
 def _get_or_create_task(task_type: str, params: dict, max_limit: int = 500) -> dict:
@@ -50,19 +74,34 @@ class EqPresetBody(BaseModel):
     gains: list[float] | None = Field(default=None)
 
 
-@router.get("")
+@router.get(
+    "",
+    response_model=list[GenreSummaryResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List genres in the library",
+)
 def list_genres(request: Request):
     _require_auth(request)
     return get_all_genres()
 
 
-@router.get("/unmapped")
+@router.get(
+    "/unmapped",
+    response_model=list[GenreSummaryResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List unmapped raw library genres",
+)
 def list_unmapped_genres(request: Request, limit: int = Query(24, ge=1, le=200)):
     _require_auth(request)
     return get_unmapped_genres(limit=limit)
 
 
-@router.get("/{slug}/graph")
+@router.get(
+    "/{slug}/graph",
+    response_model=GenreGraphResponse,
+    responses=_GENRE_RESPONSES,
+    summary="Get the genre taxonomy graph for a genre",
+)
 def genre_graph(request: Request, slug: str):
     _require_auth(request)
     graph = get_genre_graph(slug)
@@ -71,7 +110,12 @@ def genre_graph(request: Request, slug: str):
     return graph
 
 
-@router.get("/{slug}")
+@router.get(
+    "/{slug}",
+    response_model=GenreDetailResponse,
+    responses=_GENRE_RESPONSES,
+    summary="Get detailed genre information",
+)
 def genre_detail(request: Request, slug: str):
     _require_auth(request)
     genre = get_genre_detail(slug)
@@ -80,14 +124,24 @@ def genre_detail(request: Request, slug: str):
     return genre
 
 
-@router.post("/index")
+@router.post(
+    "/index",
+    response_model=TaskEnqueueResponse,
+    responses=_GENRE_ADMIN_RESPONSES,
+    summary="Queue a full genre index rebuild",
+)
 def reindex_genres(request: Request):
     _require_admin(request)
     task_id = create_task("index_genres")
     return {"task_id": task_id}
 
 
-@router.post("/infer")
+@router.post(
+    "/infer",
+    response_model=TaskEnqueueResponse,
+    responses=_GENRE_ADMIN_RESPONSES,
+    summary="Queue genre taxonomy inference",
+)
 def infer_genre_taxonomy(request: Request, body: InferTaxonomyBody = InferTaxonomyBody()):
     _require_admin(request)
     slug = (body.focus_slug or "").strip().lower() or None
@@ -99,7 +153,12 @@ def infer_genre_taxonomy(request: Request, body: InferTaxonomyBody = InferTaxono
     })
 
 
-@router.post("/descriptions/enrich")
+@router.post(
+    "/descriptions/enrich",
+    response_model=TaskEnqueueResponse,
+    responses=_GENRE_ADMIN_RESPONSES,
+    summary="Queue genre description enrichment",
+)
 def enrich_genre_descriptions(request: Request, body: EnrichDescriptionsBody = EnrichDescriptionsBody()):
     _require_admin(request)
     slug = (body.focus_slug or "").strip().lower() or None
@@ -110,7 +169,12 @@ def enrich_genre_descriptions(request: Request, body: EnrichDescriptionsBody = E
     })
 
 
-@router.post("/musicbrainz/sync")
+@router.post(
+    "/musicbrainz/sync",
+    response_model=TaskEnqueueResponse,
+    responses=_GENRE_ADMIN_RESPONSES,
+    summary="Queue MusicBrainz genre graph sync",
+)
 def sync_musicbrainz_genre_graph(request: Request, body: MusicBrainzSyncBody = MusicBrainzSyncBody()):
     _require_admin(request)
     slug = (body.focus_slug or "").strip().lower() or None
@@ -121,7 +185,12 @@ def sync_musicbrainz_genre_graph(request: Request, body: MusicBrainzSyncBody = M
     })
 
 
-@router.patch("/{slug}/eq-preset")
+@router.patch(
+    "/{slug}/eq-preset",
+    response_model=EqPresetUpdateResponse,
+    responses=_GENRE_ADMIN_RESPONSES,
+    summary="Update the EQ preset for a canonical genre",
+)
 def update_genre_eq_preset(request: Request, slug: str, body: EqPresetBody):
     """Set or clear the EQ preset for a canonical genre.
 

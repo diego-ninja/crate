@@ -1,59 +1,64 @@
 """Explicit transaction boundaries for the Crate data layer.
 
-Today every helper in ``db/*.py`` opens its own ``get_db_ctx()`` context,
-which means each function is its own transaction. That works when
-operations are independent, but breaks down the moment you need two
-writes to either both commit or both roll back (e.g. "create user then
-create session").
+``transaction_scope()`` is the canonical way to get a database
+connection for new code. It yields a SQLAlchemy ``Session`` with
+automatic commit/rollback semantics:
 
-``transaction_scope()`` is the entry point for new code that wants an
-explicit transaction. Right now it delegates to ``get_db_ctx()`` (which
-already provides commit-on-exit / rollback-on-exception). The value of
-going through ``transaction_scope()`` rather than ``get_db_ctx()``
-directly is:
+    with transaction_scope() as session:
+        session.execute(text("INSERT INTO ..."), {...})
+        # auto-committed here
 
-  1. **Signal of intent** — callers document "this is a transaction
-     boundary" rather than "I need a cursor".
-  2. **Single refactor target** — when SQLAlchemy replaces the pool,
-     only this function changes. Call sites stay the same.
-  3. **Composability prep** — helpers that accept ``cur`` as a
-     parameter can be called inside one ``transaction_scope()`` block
-     for a single commit.
+For code that still needs a raw psycopg2 cursor (legacy functions in
+``db/*.py`` that haven't been migrated yet), ``legacy_cursor_scope()``
+wraps ``get_db_ctx()`` with the same interface contract.
 
-For migration convenience, helpers that today call ``get_db_ctx()``
-internally can be given an optional ``cur`` parameter::
-
-    def create_user(email, password, *, cur=None):
-        if cur is None:
-            with transaction_scope() as cur:
-                return _create_user_impl(cur, email, password)
-        return _create_user_impl(cur, email, password)
-
-This lets callers compose without breaking existing call sites.
+Both are context managers that commit on clean exit and roll back on
+exception. The caller never calls ``commit()`` or ``rollback()``
+directly.
 """
 
-from __future__ import annotations
-
+import logging
 from contextlib import contextmanager
-from typing import Generator
 
+from crate.db.engine import get_session_factory
 from crate.db.core import get_db_ctx
+
+log = logging.getLogger(__name__)
 
 
 @contextmanager
-def transaction_scope() -> Generator:
-    """Open a single DB transaction.
+def transaction_scope():
+    """Open a SQLAlchemy Session with automatic commit/rollback.
 
-    Yields a ``psycopg2.extras.RealDictCursor``. Commits on clean exit,
-    rolls back on exception. Identical to ``get_db_ctx()`` today but
-    with stronger semantic guarantees going forward.
+    Yields a ``sqlalchemy.orm.Session``. Commits on clean exit, rolls
+    back on exception. The session is closed after the block regardless.
 
     Usage::
 
-        with transaction_scope() as cur:
-            cur.execute("INSERT INTO ...", (...,))
-            cur.execute("UPDATE ...", (...,))
+        with transaction_scope() as session:
+            session.execute(text("UPDATE users SET name = :n WHERE id = :id"), {"n": "X", "id": 1})
             # auto-committed here
+    """
+    factory = get_session_factory()
+    session = factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+@contextmanager
+def legacy_cursor_scope():
+    """Compat wrapper around ``get_db_ctx()`` for legacy code.
+
+    Yields a raw psycopg2 ``RealDictCursor``. Same commit/rollback
+    contract as ``transaction_scope()`` but using the legacy pool.
+
+    Prefer ``transaction_scope()`` for all new code.
     """
     with get_db_ctx() as cur:
         yield cur
