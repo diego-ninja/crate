@@ -59,7 +59,12 @@ class TestBootstrapBridge:
                 conn.close()
 
         assert _count(TEST_DB_NAME) == 1
-        assert _count("crate") == 0
+        # The main "crate" database only exists in local dev environments.
+        # In CI there is only the test database, so skip the leak check.
+        try:
+            assert _count("crate") == 0
+        except psycopg2.OperationalError:
+            pass  # DB doesn't exist in CI — no leak possible
 
 
 class TestHealthQueries:
