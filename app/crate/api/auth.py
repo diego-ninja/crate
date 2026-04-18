@@ -4,23 +4,49 @@ import hashlib
 import base64
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional
-from urllib.parse import urlencode
+from urllib.parse import urlparse, urlencode
 
 import jwt
-import psycopg2
 import requests
+from sqlalchemy.exc import IntegrityError as SAIntegrityError
 from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response, RedirectResponse, JSONResponse
 
 from crate.auth import (
     hash_password, verify_password, create_jwt, verify_jwt, JWT_EXPIRY_HOURS,
 )
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.auth import (
+    AdminAuthConfigResponse,
+    AdminUserDetailResponse,
+    AdminUserSummaryResponse,
+    AuthConfigResponse,
+    AuthConfigUpdateRequest,
+    AuthInviteRequest,
+    AuthInviteResponse,
+    AuthLoginResponse,
+    AuthMeResponse,
+    AuthProviderResponse,
+    AuthProvidersResponse,
+    AuthSessionResponse,
+    AuthUserPublicResponse,
+    ChangePasswordRequest,
+    CreateUserRequest,
+    HeartbeatRequest,
+    LoginRequest,
+    OAuthStartRequest,
+    OAuthStartResponse,
+    ProviderToggleRequest,
+    RegisterRequest,
+    RevokeSessionsResponse,
+    SubsonicTokenResponse,
+    UpdateProfileRequest,
+)
+from crate.api.schemas.common import OkResponse
 from crate.db import (
-    create_user, get_user_by_email, get_user_by_id,
-    get_user_by_external_identity, update_user_last_login, update_user, list_users, delete_user, get_db_ctx,
+    count_users, create_user, get_user_by_email, get_user_by_id,
+    get_user_by_external_identity, update_user_last_login, update_user, list_users, delete_user,
     get_user_external_identity, upsert_user_external_identity, list_user_external_identities,
     unlink_user_external_identity, create_session, list_sessions, touch_session, revoke_session,
     revoke_other_sessions, get_session, get_setting, set_setting,
@@ -172,7 +198,11 @@ def _allowed_redirect_origins() -> set[str]:
 
 def _callback_origin(return_to: str | None = None) -> str:
     allowed = _allowed_redirect_origins()
-    if return_to and return_to.startswith(("http://", "https://")):
+    if return_to and return_to.startswith("cratemusic://"):
+        # Native OAuth — callback still goes through our web server.
+        # Fall through to default origin.
+        pass
+    elif return_to and return_to.startswith(("http://", "https://")):
         parts = return_to.split("/", 3)
         origin = "/".join(parts[:3])
         if origin in allowed:
@@ -187,6 +217,8 @@ def _validate_return_to(return_to: str | None) -> str:
     """Validate return_to against allowed origins. Returns safe URL or fallback."""
     if not return_to:
         return "/"
+    if return_to.startswith("cratemusic://"):
+        return return_to
     if return_to.startswith("/") and not return_to.startswith("//"):
         return return_to
     if return_to.startswith(("http://", "https://")):
@@ -201,7 +233,7 @@ def _oauth_callback_url(provider: str, return_to: str | None = None) -> str:
     return f"{_callback_origin(return_to)}/api/auth/oauth/{provider}/callback"
 
 
-def _build_oauth_state(*, provider: str, return_to: str | None, mode: str, user_id: int | None, invite_token: str | None) -> str:
+def _build_oauth_state(*, provider: str, return_to: str | None, mode: str, user_id: int | None, invite_token: str | None, app_id: str | None = None) -> str:
     verifier = secrets.token_urlsafe(48)
     payload = {
         "provider": provider,
@@ -209,6 +241,7 @@ def _build_oauth_state(*, provider: str, return_to: str | None, mode: str, user_
         "mode": mode,
         "user_id": user_id,
         "invite_token": invite_token,
+        "app_id": app_id,
         "verifier": verifier,
         "iat": datetime.now(timezone.utc),
         "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
@@ -285,69 +318,60 @@ def _iso_datetime(value):
     return value.isoformat() if hasattr(value, "isoformat") else value
 
 
-# ── Models ───────────────────────────────────────────────────────
+_AUTH_PUBLIC_RESPONSES = merge_responses(
+    {
+        400: error_response("The request could not be processed."),
+        401: error_response("Authentication failed or the credentials were invalid."),
+        403: error_response("This authentication flow is disabled or requires additional access."),
+        404: error_response("The requested auth resource could not be found."),
+        409: error_response("The request conflicts with the current authentication state."),
+        422: error_response("The request payload failed validation."),
+    }
+)
 
-class LoginRequest(BaseModel):
-    email: str
-    password: str
+_AUTH_PRIVATE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested auth resource could not be found."),
+        409: error_response("The request conflicts with the current authentication state."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
-
-class RegisterRequest(BaseModel):
-    email: str
-    password: str
-    name: Optional[str] = None
-    invite_token: str | None = None
-
-
-class CreateUserRequest(BaseModel):
-    email: str
-    password: str
-    name: Optional[str] = None
-    role: str = "user"
-
-
-class OAuthStartRequest(BaseModel):
-    return_to: str | None = None
-    invite_token: str | None = None
-
-
-class ProviderToggleRequest(BaseModel):
-    enabled: bool
-
-
-class AuthConfigUpdateRequest(BaseModel):
-    invite_only: bool
-
-
-class HeartbeatRequest(BaseModel):
-    app_id: str | None = None
-    device_label: str | None = None
-
-
-class AuthInviteRequest(BaseModel):
-    email: str | None = None
-    expires_in_hours: int = 168
-    max_uses: int | None = 1
+_AUTH_ADMIN_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested auth resource could not be found."),
+        409: error_response("The request conflicts with the current authentication state."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
 # ── Middleware ───────────────────────────────────────────────────
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Check JWT cookie first, then fall back to Remote-User headers."""
+    """Resolve auth via Bearer header, query param, or cookie (in that order).
+
+    Falls back to Remote-User headers from trusted reverse proxy.
+    """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         user = None
 
-        # 1. Cookie auth (web browsers)
-        token = request.cookies.get(COOKIE_NAME)
-        # 2. Bearer token auth (Capacitor native app)
-        if not token:
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header[7:]
-        # 3. Query param token (audio/image streams where headers can't be set)
+        # 1. Bearer token auth (primary for all clients)
+        token = None
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        # 2. Query param token (audio/image streams where headers can't be set)
         if not token:
             token = request.query_params.get("token")
+        # 3. Cookie auth (legacy fallback)
+        if not token:
+            token = request.cookies.get(COOKIE_NAME)
 
         if token:
             payload = verify_jwt(token)
@@ -369,14 +393,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         device_label=request.headers.get("x-device-label"),
                     )
             if payload:
-                user = {
-                    "id": payload["user_id"],
-                    "email": payload["email"],
-                    "role": payload.get("role", "user"),
-                    "username": payload.get("username"),
-                    "name": payload.get("name"),
-                    "session_id": payload.get("sid"),
-                }
+                current_user = get_user_by_id(payload["user_id"])
+                if current_user:
+                    user = {
+                        "id": current_user["id"],
+                        "email": current_user["email"],
+                        "role": current_user.get("role", "user"),
+                        "username": current_user.get("username"),
+                        "name": current_user.get("name"),
+                        "session_id": payload.get("sid"),
+                    }
+                else:
+                    user = None
 
         if not user:
             # Only trust Remote-User from reverse proxy (Traefik).
@@ -413,7 +441,12 @@ def _require_admin(request: Request) -> dict:
 
 # ── Routes ───────────────────────────────────────────────────────
 
-@router.post("/login")
+@router.post(
+    "/login",
+    response_model=AuthLoginResponse,
+    responses=_AUTH_PUBLIC_RESPONSES,
+    summary="Log in with email and password",
+)
 async def login(request: Request, body: LoginRequest):
     if not _password_enabled():
         raise HTTPException(status_code=403, detail="Password login is disabled")
@@ -431,11 +464,15 @@ async def login(request: Request, body: LoginRequest):
     return response
 
 
-@router.post("/register")
+@router.post(
+    "/register",
+    response_model=AuthLoginResponse,
+    responses=_AUTH_PUBLIC_RESPONSES,
+    status_code=201,
+    summary="Register a new user account",
+)
 async def register(request: Request, body: RegisterRequest):
-    with get_db_ctx() as cur:
-        cur.execute("SELECT COUNT(*) AS cnt FROM users")
-        user_count = cur.fetchone()["cnt"]
+    user_count = count_users()
     # First user = no auth needed. After that: open registration or admin-only.
     if user_count > 0:
         open_registration = get_setting("open_registration") == "true"
@@ -465,7 +502,12 @@ async def register(request: Request, body: RegisterRequest):
     return response
 
 
-@router.post("/logout")
+@router.post(
+    "/logout",
+    response_model=OkResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Log out the current session",
+)
 async def logout(request: Request):
     user = getattr(request.state, "user", None)
     if user and user.get("session_id"):
@@ -475,7 +517,12 @@ async def logout(request: Request):
     return response
 
 
-@router.get("/me")
+@router.get(
+    "/me",
+    response_model=AuthMeResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the authenticated user profile",
+)
 async def auth_me(request: Request):
     user = getattr(request.state, "user", None)
     if not user:
@@ -529,7 +576,11 @@ async def auth_verify_soft(request: Request):
 
 # ── Auth config (public) ───────────────────────────────────────
 
-@router.get("/config")
+@router.get(
+    "/config",
+    response_model=AuthConfigResponse,
+    summary="Get public authentication configuration",
+)
 async def auth_config(request: Request):
     """Return available auth methods (no secrets exposed)."""
     providers = _provider_status(request)
@@ -542,18 +593,32 @@ async def auth_config(request: Request):
     }
 
 
-@router.get("/providers")
+@router.get(
+    "/providers",
+    response_model=AuthProvidersResponse,
+    summary="List configured authentication providers",
+)
 async def auth_providers(request: Request):
     return _provider_status(request)
 
 
-@router.get("/sessions")
+@router.get(
+    "/sessions",
+    response_model=list[AuthSessionResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List active sessions for the current user",
+)
 async def auth_sessions(request: Request):
     user = _require_auth(request)
     return list_sessions(user["id"], include_revoked=False)
 
 
-@router.post("/heartbeat")
+@router.post(
+    "/heartbeat",
+    response_model=OkResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Refresh the current session heartbeat",
+)
 async def auth_heartbeat(request: Request, body: HeartbeatRequest):
     user = _require_auth(request)
     if user.get("session_id"):
@@ -567,7 +632,12 @@ async def auth_heartbeat(request: Request, body: HeartbeatRequest):
     return {"ok": True}
 
 
-@router.delete("/sessions/{session_id}")
+@router.delete(
+    "/sessions/{session_id}",
+    response_model=OkResponse,
+    responses=_AUTH_PRIVATE_RESPONSES,
+    summary="Revoke one of the current user's sessions",
+)
 async def auth_revoke_session(request: Request, session_id: str):
     user = _require_auth(request)
     sessions = {session["id"] for session in list_sessions(user["id"], include_revoked=True)}
@@ -580,7 +650,12 @@ async def auth_revoke_session(request: Request, session_id: str):
     return response
 
 
-@router.post("/sessions/revoke-all")
+@router.post(
+    "/sessions/revoke-all",
+    response_model=RevokeSessionsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Revoke all other sessions for the current user",
+)
 async def auth_revoke_all_sessions(request: Request):
     user = _require_auth(request)
     revoked = revoke_other_sessions(user["id"], user.get("session_id"))
@@ -589,18 +664,13 @@ async def auth_revoke_all_sessions(request: Request):
 
 # ── Profile ────────────────────────────────────────────────────
 
-class UpdateProfileRequest(BaseModel):
-    name: Optional[str] = None
-    username: Optional[str] = None
-    bio: Optional[str] = None
 
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
-
-
-@router.put("/profile")
+@router.put(
+    "/profile",
+    response_model=AuthUserPublicResponse,
+    responses=_AUTH_PRIVATE_RESPONSES,
+    summary="Update the authenticated user's profile",
+)
 async def update_profile(request: Request, body: UpdateProfileRequest):
     user = _require_auth(request)
     fields = {}
@@ -614,7 +684,7 @@ async def update_profile(request: Request, body: UpdateProfileRequest):
         raise HTTPException(status_code=400, detail="No fields to update")
     try:
         updated = update_user(user["id"], **fields)
-    except psycopg2.IntegrityError as exc:
+    except SAIntegrityError as exc:
         if "users_username_key" in str(exc):
             raise HTTPException(status_code=409, detail="Username is already taken") from exc
         raise
@@ -628,7 +698,12 @@ async def update_profile(request: Request, body: UpdateProfileRequest):
     return response
 
 
-@router.post("/change-password")
+@router.post(
+    "/change-password",
+    response_model=OkResponse,
+    responses=_AUTH_PRIVATE_RESPONSES,
+    summary="Change the authenticated user's password",
+)
 async def change_password(request: Request, body: ChangePasswordRequest):
     user = _require_auth(request)
     db_user = get_user_by_id(user["id"])
@@ -644,7 +719,12 @@ async def change_password(request: Request, body: ChangePasswordRequest):
     return {"ok": True}
 
 
-@router.post("/subsonic-token")
+@router.post(
+    "/subsonic-token",
+    response_model=SubsonicTokenResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Generate or rotate the Subsonic token",
+)
 async def generate_subsonic_token(request: Request):
     """Generate or regenerate a Subsonic API token for the current user."""
     user = _require_auth(request)
@@ -653,7 +733,12 @@ async def generate_subsonic_token(request: Request):
     return {"subsonic_token": token}
 
 
-@router.delete("/subsonic-token")
+@router.delete(
+    "/subsonic-token",
+    response_model=OkResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Delete the Subsonic token",
+)
 async def delete_subsonic_token(request: Request):
     """Remove the Subsonic API token for the current user."""
     user = _require_auth(request)
@@ -661,7 +746,12 @@ async def delete_subsonic_token(request: Request):
     return {"ok": True}
 
 
-@router.get("/subsonic-token")
+@router.get(
+    "/subsonic-token",
+    response_model=SubsonicTokenResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the current Subsonic token",
+)
 async def get_subsonic_token(request: Request):
     """Get the current Subsonic API token (if set)."""
     user = _require_auth(request)
@@ -669,7 +759,12 @@ async def get_subsonic_token(request: Request):
     return {"subsonic_token": db_user.get("subsonic_token") if db_user else None}
 
 
-@router.post("/oauth/{provider}/start")
+@router.post(
+    "/oauth/{provider}/start",
+    response_model=OAuthStartResponse,
+    responses=_AUTH_PUBLIC_RESPONSES,
+    summary="Start an OAuth login or link flow",
+)
 async def oauth_start(request: Request, provider: str, body: OAuthStartRequest):
     provider = provider.lower()
     if provider not in {"google", "apple"}:
@@ -679,12 +774,14 @@ async def oauth_start(request: Request, provider: str, body: OAuthStartRequest):
 
     user = getattr(request.state, "user", None)
     mode = "link" if user else "login"
+    app_id = request.headers.get("x-crate-app") or request.query_params.get("app_id")
     state = _build_oauth_state(
         provider=provider,
         return_to=body.return_to,
         mode=mode,
         user_id=user["id"] if user and mode == "link" else None,
         invite_token=body.invite_token,
+        app_id=app_id,
     )
     parsed_state = _parse_oauth_state(state)
     verifier = parsed_state["verifier"]
@@ -850,13 +947,35 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
             )
 
     update_user_last_login(user["id"])
-    token, _ = _create_login_session(user, request)
-    response = RedirectResponse(url=_validate_return_to(parsed_state.get("return_to")))
+    app_id = parsed_state.get("app_id")
+    token, _ = _create_login_session(user, request, app_id=app_id)
+
+    return_to = parsed_state.get("return_to") or "/"
+    safe_return = _validate_return_to(return_to)
+
+    if safe_return.startswith("cratemusic://"):
+        separator = "&" if "?" in safe_return else "?"
+        redirect_url = f"{safe_return}{separator}token={token}"
+        return RedirectResponse(url=redirect_url)
+
+    if safe_return.startswith("http"):
+        parsed = urlparse(safe_return)
+        callback_url = f"{parsed.scheme}://{parsed.netloc}/auth/callback?token={token}"
+        response = RedirectResponse(url=callback_url)
+        _set_auth_cookie(response, token)
+        return response
+
+    response = RedirectResponse(url=f"/auth/callback?token={token}")
     _set_auth_cookie(response, token)
     return response
 
 
-@router.post("/oauth/{provider}/unlink")
+@router.post(
+    "/oauth/{provider}/unlink",
+    response_model=OkResponse,
+    responses=_AUTH_PRIVATE_RESPONSES,
+    summary="Unlink an OAuth provider from the current account",
+)
 async def oauth_unlink(request: Request, provider: str):
     user = _require_auth(request)
     db_user = get_user_by_id(user["id"])
@@ -873,7 +992,12 @@ async def oauth_unlink(request: Request, provider: str):
     return {"ok": True}
 
 
-@router.post("/oauth/{provider}/link")
+@router.post(
+    "/oauth/{provider}/link",
+    response_model=OAuthStartResponse,
+    responses=_AUTH_PRIVATE_RESPONSES,
+    summary="Start linking an OAuth provider to the current account",
+)
 async def oauth_link(request: Request, provider: str, body: OAuthStartRequest):
     _require_auth(request)
     return await oauth_start(request, provider, body)
@@ -908,19 +1032,34 @@ async def apple_callback(request: Request, code: str = "", state: str = ""):
 
 # ── Admin: user management ──────────────────────────────────────
 
-@router.get("/users")
+@router.get(
+    "/users",
+    response_model=list[AdminUserSummaryResponse],
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="List users for administration",
+)
 async def admin_list_users(request: Request):
     _require_admin(request)
     return list_users()
 
 
-@admin_router.get("/providers")
+@admin_router.get(
+    "/providers",
+    response_model=AuthProvidersResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="List provider configuration for administrators",
+)
 async def admin_get_auth_providers(request: Request):
     _require_admin(request)
     return _provider_status(request)
 
 
-@admin_router.get("/config")
+@admin_router.get(
+    "/config",
+    response_model=AdminAuthConfigResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Get admin-only authentication settings",
+)
 async def admin_get_auth_config(request: Request):
     _require_admin(request)
     return {
@@ -928,7 +1067,12 @@ async def admin_get_auth_config(request: Request):
     }
 
 
-@admin_router.put("/config")
+@admin_router.put(
+    "/config",
+    response_model=AdminAuthConfigResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Update admin-only authentication settings",
+)
 async def admin_update_auth_config(request: Request, body: AuthConfigUpdateRequest):
     _require_admin(request)
     set_setting("auth_invite_only", "true" if body.invite_only else "false")
@@ -937,7 +1081,12 @@ async def admin_update_auth_config(request: Request, body: AuthConfigUpdateReque
     }
 
 
-@admin_router.put("/providers/{provider}")
+@admin_router.put(
+    "/providers/{provider}",
+    response_model=AuthProviderResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Enable or disable an authentication provider",
+)
 async def admin_toggle_auth_provider(request: Request, provider: str, body: ProviderToggleRequest):
     _require_admin(request)
     if provider not in {"password", "google", "apple"}:
@@ -946,7 +1095,12 @@ async def admin_toggle_auth_provider(request: Request, provider: str, body: Prov
     return _provider_status(request)[provider]
 
 
-@admin_router.post("/invites")
+@admin_router.post(
+    "/invites",
+    response_model=AuthInviteResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Create an authentication invite",
+)
 async def admin_create_auth_invite(request: Request, body: AuthInviteRequest):
     user = _require_admin(request)
     invite = create_auth_invite(
@@ -958,13 +1112,23 @@ async def admin_create_auth_invite(request: Request, body: AuthInviteRequest):
     return invite
 
 
-@admin_router.get("/invites")
+@admin_router.get(
+    "/invites",
+    response_model=list[AuthInviteResponse],
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="List authentication invites",
+)
 async def admin_list_auth_invites(request: Request):
     _require_admin(request)
     return list_auth_invites()
 
 
-@router.post("/users")
+@router.post(
+    "/users",
+    response_model=AuthUserPublicResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Create a user as an administrator",
+)
 async def admin_create_user(request: Request, body: CreateUserRequest):
     _require_admin(request)
     existing = get_user_by_email(body.email)
@@ -975,7 +1139,12 @@ async def admin_create_user(request: Request, body: CreateUserRequest):
     return _user_public(user)
 
 
-@router.get("/users/{user_id}")
+@router.get(
+    "/users/{user_id}",
+    response_model=AdminUserDetailResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Get a user with sessions and linked accounts",
+)
 async def admin_get_user_detail(request: Request, user_id: int):
     _require_admin(request)
     user = get_user_by_id(user_id)
@@ -984,14 +1153,19 @@ async def admin_get_user_detail(request: Request, user_id: int):
     payload = _user_public(user)
     payload["username"] = user.get("username")
     payload["bio"] = user.get("bio")
-    payload["created_at"] = user.get("created_at")
-    payload["last_login"] = user.get("last_login")
+    payload["created_at"] = _iso_datetime(user.get("created_at"))
+    payload["last_login"] = _iso_datetime(user.get("last_login"))
     payload["connected_accounts"] = list_user_external_identities(user_id)
     payload["sessions"] = list_sessions(user_id, include_revoked=True)
     return payload
 
 
-@router.get("/users/{user_id}/sessions")
+@router.get(
+    "/users/{user_id}/sessions",
+    response_model=list[AuthSessionResponse],
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="List sessions for a user",
+)
 async def admin_get_user_sessions(request: Request, user_id: int):
     _require_admin(request)
     user = get_user_by_id(user_id)
@@ -1000,7 +1174,12 @@ async def admin_get_user_sessions(request: Request, user_id: int):
     return list_sessions(user_id, include_revoked=True)
 
 
-@router.delete("/users/{user_id}/sessions/{session_id}")
+@router.delete(
+    "/users/{user_id}/sessions/{session_id}",
+    response_model=OkResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Revoke a specific user session",
+)
 async def admin_revoke_user_session(request: Request, user_id: int, session_id: str):
     _require_admin(request)
     user = get_user_by_id(user_id)
@@ -1013,7 +1192,12 @@ async def admin_revoke_user_session(request: Request, user_id: int, session_id: 
     return {"ok": True}
 
 
-@router.post("/users/{user_id}/sessions/revoke-all")
+@router.post(
+    "/users/{user_id}/sessions/revoke-all",
+    response_model=RevokeSessionsResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Revoke all sessions for a user",
+)
 async def admin_revoke_all_user_sessions(request: Request, user_id: int):
     _require_admin(request)
     user = get_user_by_id(user_id)
@@ -1023,7 +1207,12 @@ async def admin_revoke_all_user_sessions(request: Request, user_id: int):
     return {"ok": True, "revoked": revoked}
 
 
-@router.delete("/users/{user_id}")
+@router.delete(
+    "/users/{user_id}",
+    response_model=OkResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Delete a user",
+)
 async def admin_delete_user(request: Request, user_id: int):
     _require_admin(request)
     user = get_user_by_id(user_id)

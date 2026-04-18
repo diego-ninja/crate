@@ -99,7 +99,7 @@ export function UpcomingShowCollapsedView({
           )}
         </div>
         {support.length > 0 && (
-          <div className="mt-0.5 truncate text-[10px] text-white/25">
+          <div className="mt-0.5 truncate text-[10px] text-white/40">
             w/ {support.slice(0, 3).join(", ")}
             {support.length > 3 && ` +${support.length - 3}`}
           </div>
@@ -110,7 +110,7 @@ export function UpcomingShowCollapsedView({
       <div className="flex flex-shrink-0 flex-col items-center justify-center px-2">
         <span className="text-[8px] font-bold leading-none tracking-[0.12em] text-primary/55">{monthStr}</span>
         <span className="text-[20px] font-black leading-tight text-primary">{dayStr}</span>
-        <span className="text-[8px] font-medium leading-none text-white/25">{dowStr}</span>
+        <span className="text-[8px] font-medium leading-none text-white/40">{dowStr}</span>
       </div>
 
       {/* Quick attendance + menu */}
@@ -233,12 +233,12 @@ export function UpcomingShowExpandedView({
 
       {/* Venue info — over the background */}
       <div className="relative flex-1 px-3 pt-2.5 pb-3">
-        <div className="flex items-start gap-2 text-[11px] text-white/45">
+        <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
           <MapPin size={11} className="mt-0.5 flex-shrink-0 text-primary/60" />
           <div className="min-w-0">
             <span className="font-medium text-white/70">{item.venue}</span>
-            {addressLabel && <span className="text-white/30"> · {addressLabel}</span>}
-            {locationLabel && <div className="text-white/30">{locationLabel}</div>}
+            {addressLabel && <span className="text-white/40"> · {addressLabel}</span>}
+            {locationLabel && <div className="text-white/40">{locationLabel}</div>}
           </div>
         </div>
 
@@ -248,7 +248,7 @@ export function UpcomingShowExpandedView({
             {item.genres.slice(0, 3).map((genre) => (
               <span
                 key={genre}
-                className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] text-white/35"
+                className="rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] text-white/40"
               >
                 {genre}
               </span>
@@ -264,7 +264,7 @@ export function UpcomingShowExpandedView({
             className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-2.5 text-[11px] font-semibold transition-colors ${
               attending
                 ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-white/10 text-white/50 hover:border-primary/20 hover:text-primary"
+                : "border-white/10 text-muted-foreground hover:border-primary/20 hover:text-primary"
             }`}
           >
             {savingAttendance ? (

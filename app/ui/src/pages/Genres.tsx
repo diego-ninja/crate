@@ -70,6 +70,21 @@ interface GenreDetail extends Genre {
   }[];
 }
 
+interface InvalidTaxonomyNode {
+  slug: string;
+  name?: string | null;
+  alias_count?: number;
+  edge_count?: number;
+  reason?: string | null;
+}
+
+interface InvalidTaxonomyStatus {
+  invalid_count: number;
+  alias_count: number;
+  edge_count: number;
+  items: InvalidTaxonomyNode[];
+}
+
 const GENRE_COLORS = [
   "from-primary/30 to-primary/10",
   "from-blue-600/30 to-blue-900/10",
@@ -178,12 +193,13 @@ export function Genres() {
 function GenreList() {
   const { data: genres, loading, error, refetch } = useApi<Genre[]>("/api/genres");
   const { data: unmappedGenres, refetch: refetchUnmapped } = useApi<Genre[]>("/api/genres/unmapped?limit=100");
+  const { data: invalidTaxonomy, refetch: refetchInvalidTaxonomy } = useApi<InvalidTaxonomyStatus>("/api/genres/taxonomy/invalid?limit=8");
   const { pollTask } = useTaskPoll();
   const [filter, setFilter] = useState("");
   const [indexing, setIndexing] = useState(false);
   const navigate = useNavigate();
 
-  const afterSuccess = useCallback(() => { refetch(); refetchUnmapped(); }, [refetch, refetchUnmapped]);
+  const afterSuccess = useCallback(() => { refetch(); refetchUnmapped(); refetchInvalidTaxonomy(); }, [refetch, refetchUnmapped, refetchInvalidTaxonomy]);
   const { run, isBusy } = useGenreTask(pollTask, afterSuccess);
 
   const filtered = useMemo(() => {
@@ -232,6 +248,18 @@ function GenreList() {
           <Tag size={24} className="text-primary" />
           <h1 className="text-2xl font-bold">Genres</h1>
           {genres && <span className="text-sm text-muted-foreground">({genres.length})</span>}
+          {invalidTaxonomy && (
+            <Badge
+              variant="outline"
+              className={
+                invalidTaxonomy.invalid_count > 0
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                  : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+              }
+            >
+              {invalidTaxonomy.invalid_count > 0 ? `${invalidTaxonomy.invalid_count} invalid nodes` : "taxonomy clean"}
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <TaskButton
@@ -260,9 +288,52 @@ function GenreList() {
               errorMessage: "Taxonomy inference failed",
             })}
           />
+          <TaskButton
+            label="Clean invalid nodes"
+            busy={isBusy("cleanup-invalid")}
+            onClick={() => run("cleanup-invalid", "/api/genres/taxonomy/cleanup-invalid", {}, {
+              successMessage: (r) => `Cleanup: ${r.deleted_count ?? 0} invalid nodes removed`,
+              errorMessage: "Genre taxonomy cleanup failed",
+            })}
+            icon={AlertTriangle}
+          />
           <TaskButton label="Re-index" busy={indexing} onClick={reindex} icon={Tag} />
         </div>
       </div>
+
+      {!!invalidTaxonomy?.invalid_count && (
+        <div className="mb-6 rounded-2xl border border-amber-500/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.16),rgba(120,53,15,0.08))] p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <AlertTriangle size={16} className="text-amber-300" />
+            <div className="font-semibold text-foreground">Taxonomy cleanup recommended</div>
+            <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-100">
+              {invalidTaxonomy.invalid_count} invalid nodes
+            </Badge>
+            <Badge variant="outline" className="border-amber-500/30 bg-black/10 text-amber-50">
+              {invalidTaxonomy.alias_count} aliases
+            </Badge>
+            <Badge variant="outline" className="border-amber-500/30 bg-black/10 text-amber-50">
+              {invalidTaxonomy.edge_count} edges
+            </Badge>
+          </div>
+          <p className="mb-3 text-sm text-muted-foreground">
+            MusicBrainz syncs previously stored malformed taxonomy nodes. You can remove them safely with the cleanup task.
+          </p>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {invalidTaxonomy.items.map((item) => (
+              <div
+                key={`invalid-taxonomy-${item.slug}`}
+                className="rounded-xl border border-amber-500/20 bg-black/10 px-3 py-2"
+              >
+                <div className="truncate text-sm font-medium text-foreground">{item.name || item.slug}</div>
+                <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {item.reason?.replace(/-/g, " ") || "invalid node"}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="relative mb-6 max-w-sm">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -487,6 +558,15 @@ function GenreView({ slug }: { slug: string }) {
                 successMessage: (r) => `Inference: ${r.mapped ?? 0} mapped, ${r.remaining_unmapped ?? 0} unmapped`,
                 errorMessage: "Taxonomy inference failed",
               })}
+            />
+            <TaskButton
+              label="Clean Invalid Nodes"
+              busy={isBusy("cleanup-invalid")}
+              onClick={() => run("cleanup-invalid", "/api/genres/taxonomy/cleanup-invalid", {}, {
+                successMessage: (r) => `Cleanup: ${r.deleted_count ?? 0} invalid nodes removed`,
+                errorMessage: "Genre taxonomy cleanup failed",
+              })}
+              icon={AlertTriangle}
             />
             <TaskButton
               label="Generate Playlist"

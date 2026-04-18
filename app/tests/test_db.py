@@ -1,14 +1,181 @@
 """Tests for crate.db — CRUD operations on PostgreSQL."""
 
 import json
+import os
 import time
 from datetime import datetime, timezone
+from unittest.mock import patch
 
+import psycopg2
 import pytest
+from sqlalchemy import text
 
-from tests.conftest import PG_AVAILABLE
+from tests.conftest import PG_AVAILABLE, TEST_DB_NAME
 
 pytestmark = pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
+
+
+class TestBootstrapBridge:
+    def test_init_db_stamps_alembic_baseline(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        with transaction_scope() as session:
+            row = session.execute(text("SELECT version_num FROM alembic_version")).mappings().first()
+
+        assert row is not None
+        assert row["version_num"] == "001"
+
+    def test_init_db_marks_legacy_bridge_versions_applied(self, pg_db):
+        import crate.db.core as db_core
+        from crate.db.tx import transaction_scope
+
+        with transaction_scope() as session:
+            row = session.execute(text("SELECT COUNT(*) AS cnt FROM schema_versions")).mappings().first()
+
+        assert row is not None
+        assert row["cnt"] == len(db_core._MIGRATIONS)
+
+    def test_pg_db_writes_stay_in_test_database(self, pg_db):
+        marker = "LEAK_GUARD_ARTIST_20260417"
+        pg_db.upsert_artist({"name": marker})
+
+        user = os.environ.get("CRATE_POSTGRES_USER", "crate")
+        password = os.environ.get("CRATE_POSTGRES_PASSWORD", "crate")
+        host = os.environ.get("CRATE_POSTGRES_HOST", "localhost")
+        port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
+
+        def _count(dbname: str) -> int:
+            conn = psycopg2.connect(
+                f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+            )
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT COUNT(*) FROM library_artists WHERE name = %s",
+                        (marker,),
+                    )
+                    return cur.fetchone()[0]
+            finally:
+                conn.close()
+
+        assert _count(TEST_DB_NAME) == 1
+        # The main "crate" database only exists in local dev environments.
+        # In CI there is only the test database, so skip the leak check.
+        try:
+            assert _count("crate") == 0
+        except psycopg2.OperationalError:
+            pass  # DB doesn't exist in CI — no leak possible
+
+
+class TestHealthQueries:
+    def test_get_zombie_artists_ignores_artists_with_real_content(self, pg_db):
+        from crate.db.queries.health import get_zombie_artists
+
+        alive = "Zombie Guard Alive"
+        zombie = "Zombie Guard Dead"
+
+        pg_db.upsert_artist({"name": alive, "album_count": 0, "track_count": 0, "total_size": 0, "formats": []})
+        pg_db.upsert_album(
+            {
+                "artist": alive,
+                "name": "Still Here",
+                "path": "/music/zombie-guard-alive/still-here",
+                "track_count": 3,
+                "total_size": 1234,
+                "formats": ["flac"],
+                "year": "2024",
+            }
+        )
+        pg_db.upsert_artist({"name": zombie, "album_count": 0, "track_count": 0, "total_size": 0, "formats": []})
+
+        names = {row["name"] for row in get_zombie_artists()}
+
+        assert alive not in names
+        assert zombie in names
+
+
+class TestGenreTaxonomyCleanup:
+    def test_cleanup_invalid_genre_taxonomy_nodes_dry_run_and_delete(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_genre_taxonomy_node("metalcore", name="metalcore")
+        pg_db.upsert_genre_taxonomy_node("wikidata", name="wikidata:")
+        pg_db.upsert_genre_taxonomy_node("q183862", name="q183862")
+        pg_db.upsert_genre_taxonomy_node(
+            "https://rateyourmusic.com/genre/metalcore/",
+            name="https://rateyourmusic.com/genre/metalcore/",
+        )
+        pg_db.upsert_genre_taxonomy_edge("metalcore", "wikidata", relation_type="related")
+
+        preview = pg_db.cleanup_invalid_genre_taxonomy_nodes(dry_run=True)
+
+        assert preview["dry_run"] is True
+        assert preview["invalid_count"] == 3
+        assert preview["deleted_count"] == 0
+        assert {item["reason"] for item in preview["items"]} == {
+            "external-section-marker",
+            "external-url",
+            "wikidata-entity-id",
+        }
+
+        deleted = pg_db.cleanup_invalid_genre_taxonomy_nodes(dry_run=False)
+
+        assert deleted["dry_run"] is False
+        assert deleted["deleted_count"] == 3
+
+        with transaction_scope() as session:
+            slugs = {
+                row["slug"]
+                for row in session.execute(
+                    text("SELECT slug FROM genre_taxonomy_nodes")
+                ).mappings().all()
+            }
+            assert "metalcore" in slugs
+            assert "wikidata" not in slugs
+            assert "q183862" not in slugs
+            assert "https-rateyourmusic-com-genre-metalcore" not in slugs
+
+            alias_count = session.execute(
+                text(
+                    """
+                    SELECT COUNT(*)::INTEGER AS cnt
+                    FROM genre_taxonomy_aliases
+                    WHERE alias_slug IN (
+                        'wikidata',
+                        'q183862',
+                        'https-rateyourmusic-com-genre-metalcore'
+                    )
+                    """
+                )
+            ).mappings().first()["cnt"]
+            deleted_ids = [
+                r["id"]
+                for r in session.execute(
+                    text(
+                        """
+                        SELECT id FROM genre_taxonomy_nodes
+                        WHERE slug IN ('wikidata', 'q183862', 'https-rateyourmusic-com-genre-metalcore')
+                        """
+                    )
+                ).mappings().all()
+            ]
+            if deleted_ids:
+                edge_count = session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*)::INTEGER AS cnt
+                        FROM genre_taxonomy_edges
+                        WHERE source_genre_id = ANY(:ids)
+                           OR target_genre_id = ANY(:ids)
+                        """
+                    ),
+                    {"ids": deleted_ids},
+                ).mappings().first()["cnt"]
+            else:
+                edge_count = 0
+
+        assert alias_count == 0
+        assert edge_count == 0
 
 
 class TestTaskCRUD:
@@ -16,6 +183,32 @@ class TestTaskCRUD:
         task_id = pg_db.create_task("scan", {"only": "naming"})
         assert task_id is not None
         assert len(task_id) == 12
+
+    def test_create_task_with_shared_session_dispatches_after_commit(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        with patch("crate.db.tasks._dispatch_task") as mock_dispatch:
+            with transaction_scope() as session:
+                task_id = pg_db.create_task("scan", session=session)
+                assert mock_dispatch.call_count == 0
+                assert pg_db.get_task(task_id) is None
+
+            mock_dispatch.assert_called_once_with("scan", task_id)
+            assert pg_db.get_task(task_id) is not None
+
+    def test_create_task_with_shared_session_does_not_dispatch_on_rollback(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        task_id = None
+        with patch("crate.db.tasks._dispatch_task") as mock_dispatch:
+            with pytest.raises(RuntimeError, match="boom"):
+                with transaction_scope() as session:
+                    task_id = pg_db.create_task("scan", session=session)
+                    raise RuntimeError("boom")
+
+        assert task_id is not None
+        assert mock_dispatch.call_count == 0
+        assert pg_db.get_task(task_id) is None
 
     def test_get_task(self, pg_db):
         task_id = pg_db.create_task("scan")

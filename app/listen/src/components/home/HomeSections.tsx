@@ -180,7 +180,7 @@ export function UpcomingPreviewRow({
       className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-3 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/5"
     >
       <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl border border-white/10 bg-white/[0.03]">
-        <span className="text-[10px] uppercase tracking-wide text-white/35">{dateLabel.split(" ")[0]}</span>
+        <span className="text-[10px] uppercase tracking-wide text-white/40">{dateLabel.split(" ")[0]}</span>
         <span className="text-sm font-semibold text-foreground">{dateLabel.split(" ")[1] || ""}</span>
       </div>
       <div className="min-w-0 flex-1">
@@ -208,6 +208,7 @@ export function UpcomingPreviewRow({
 export function FeaturedPlaylistCard({
   playlistId,
   name,
+  isSmart = false,
   description,
   tracks,
   coverDataUrl,
@@ -221,6 +222,7 @@ export function FeaturedPlaylistCard({
 }: {
   playlistId?: number;
   name: string;
+  isSmart?: boolean;
   description?: string;
   tracks?: PlaylistArtworkTrack[];
   coverDataUrl?: string | null;
@@ -235,6 +237,7 @@ export function FeaturedPlaylistCard({
   const actions = usePlaylistActionEntries({
     playlistId,
     name,
+    isSmart,
     href,
     canFollow: Boolean(onToggleFollow),
     isFollowed,
@@ -277,7 +280,7 @@ export function FeaturedPlaylistCard({
         <div className="mt-1 line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-muted-foreground">
           {description || meta}
         </div>
-        <div className="mt-2 text-[11px] uppercase tracking-wider text-white/35">{meta}</div>
+        <div className="mt-2 text-[11px] uppercase tracking-wider text-white/40">{meta}</div>
       </div>
       <ItemActionMenu
         actions={actions}
@@ -307,13 +310,13 @@ export function ContinueListeningCard({
           className="h-20 w-20 shrink-0 rounded-2xl"
         />
         <div className="min-w-0 flex-1">
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-wider text-white/45">
+          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground">
             <Clock3 size={11} />
             Continue listening
           </div>
           <h2 className="truncate text-xl font-bold text-foreground">{track.title}</h2>
           <p className="mt-1 truncate text-sm text-muted-foreground">{track.artist}</p>
-          {track.album ? <p className="mt-1 truncate text-xs text-white/35">{track.album}</p> : null}
+          {track.album ? <p className="mt-1 truncate text-xs text-white/40">{track.album}</p> : null}
         </div>
         <button
           onClick={onPlay}

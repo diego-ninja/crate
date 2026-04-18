@@ -1,17 +1,29 @@
 import logging
 
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Request
 
 from crate.api.auth import _require_admin, _require_auth
 from crate.api._deps import artist_name_from_id
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.utility import (
+    ArtistAnalysisDataResponse,
+    ArtistEnrichmentResponse,
+    SetlistPlaylistResponse,
+)
 from crate import spotify, setlistfm, musicbrainz_ext
-from crate.db import get_db_ctx
+from crate.db import get_artist_refs_by_names, get_artist_analysis_tracks, get_artist_tracks_for_setlist, find_user_playlist_by_name
 from crate.lastfm import get_artist_info, get_fanart_all_images
 
 log = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["enrichment"])
+
+_ENRICHMENT_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        404: error_response("The requested artist could not be found."),
+    },
+)
 
 
 def _enrich_artist_refs(items: list[dict]) -> list[dict]:
@@ -19,19 +31,7 @@ def _enrich_artist_refs(items: list[dict]) -> list[dict]:
     if not names:
         return items
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT id, slug, name
-            FROM library_artists
-            WHERE LOWER(name) = ANY(%s)
-            """,
-            ([name.lower() for name in names],),
-        )
-        refs = {
-            row["name"].lower(): {"id": row.get("id"), "slug": row.get("slug")}
-            for row in cur.fetchall()
-        }
+    refs = get_artist_refs_by_names(names)
 
     enriched: list[dict] = []
     for item in items:
@@ -93,24 +93,19 @@ def get_artist_enrichment(request: Request, name: str):
     return result or {}
 
 
-@router.get("/api/artists/{artist_id}/analysis-data")
+@router.get(
+    "/api/artists/{artist_id}/analysis-data",
+    response_model=ArtistAnalysisDataResponse,
+    responses=_ENRICHMENT_RESPONSES,
+    summary="Get per-track analysis data for an artist",
+)
 def get_artist_analysis_data(request: Request, artist_id: int):
     """Return audio analysis data (BPM, key, energy, mood, etc.) for all tracks of an artist."""
     _require_auth(request)
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
-        return JSONResponse({"error": "Not found"}, status_code=404)
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.title, t.bpm AS tempo, t.audio_key AS key, t.audio_scale AS scale,
-                   t.energy, t.danceability, t.valence, t.acousticness,
-                   t.instrumentalness, t.loudness, t.dynamic_range,
-                   t.spectral_complexity, t.mood_json
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            WHERE a.artist = %s AND t.bpm IS NOT NULL
-        """, (artist_name,))
-        rows = cur.fetchall()
+        raise HTTPException(status_code=404, detail="Not found")
+    rows = get_artist_analysis_tracks(artist_name)
     result = {}
     for row in rows:
         title = (row.get("title") or "").lower()
@@ -129,11 +124,16 @@ def get_artist_analysis_data(request: Request, artist_id: int):
     return result
 
 
-@router.get("/api/artists/{artist_id}/enrichment")
+@router.get(
+    "/api/artists/{artist_id}/enrichment",
+    response_model=ArtistEnrichmentResponse,
+    responses=_ENRICHMENT_RESPONSES,
+    summary="Get consolidated enrichment data for an artist",
+)
 def get_artist_enrichment_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Not found")
     return get_artist_enrichment(request, artist_name)
 
 
@@ -266,11 +266,11 @@ def _fetch_enrichment(name: str) -> dict:
 def create_setlist_playlist(request: Request, name: str):
     user = _require_auth(request)
     if user.get("id") is None:
-        return JSONResponse({"error": "User account required"}, status_code=403)
+        raise HTTPException(status_code=403, detail="User account required")
 
     setlist = setlistfm.get_probable_setlist(name)
     if not setlist:
-        return JSONResponse({"error": "No setlist data found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="No setlist data found")
 
     from crate.api.browse_artist import _match_setlist_track
     from crate.db import create_playlist, update_playlist
@@ -280,23 +280,7 @@ def create_setlist_playlist(request: Request, name: str):
     unmatched: list[str] = []
     used_ids: set[int] = set()
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT
-                t.id,
-                t.title,
-                t.path,
-                t.duration,
-                a.name AS album
-            FROM library_tracks t
-            JOIN library_albums a ON a.id = t.album_id
-            WHERE a.artist = %s
-            ORDER BY a.year NULLS LAST, a.name, t.disc_number NULLS LAST, t.track_number NULLS LAST, t.title
-            """,
-            (name,),
-        )
-        library_tracks = [dict(row) for row in cur.fetchall()]
+    library_tracks = get_artist_tracks_for_setlist(name)
 
     for song in setlist:
         title = song.get("title", "")
@@ -316,24 +300,11 @@ def create_setlist_playlist(request: Request, name: str):
         )
 
     if not matched_tracks:
-        return JSONResponse({"error": "No songs matched in library"}, status_code=404)
+        raise HTTPException(status_code=404, detail="No songs matched in library")
 
     playlist_name = f"{name} - Probable Setlist"
     playlist_description = f"Probable setlist generated from Setlist.fm for {name}"
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT id
-            FROM playlists
-            WHERE user_id = %s
-              AND scope = 'user'
-              AND name = %s
-            ORDER BY updated_at DESC NULLS LAST, id DESC
-            LIMIT 1
-            """,
-            (user["id"], playlist_name),
-        )
-        existing = cur.fetchone()
+    existing = find_user_playlist_by_name(user["id"], playlist_name)
 
     created = existing is None
     if existing:
@@ -365,9 +336,14 @@ def create_setlist_playlist(request: Request, name: str):
     }
 
 
-@router.post("/api/artists/{artist_id}/setlist-playlist")
+@router.post(
+    "/api/artists/{artist_id}/setlist-playlist",
+    response_model=SetlistPlaylistResponse,
+    responses=_ENRICHMENT_RESPONSES,
+    summary="Create or refresh a probable setlist playlist",
+)
 def create_setlist_playlist_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
-        return JSONResponse({"error": "Not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Not found")
     return create_setlist_playlist(request, artist_name)

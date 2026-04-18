@@ -72,14 +72,14 @@ function AdaptiveFeatureChips({
 }) {
   if (status === "loading") {
     return (
-      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-white/50">
+      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-muted-foreground">
         Loading analysis…
       </div>
     );
   }
   if (status === "unavailable" || !features) {
     return (
-      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-white/50">
+      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-muted-foreground">
         No analysis for this track — adaptive is holding flat.
       </div>
     );
@@ -148,7 +148,7 @@ function AdaptiveFeatureChips({
 
   if (chips.length === 0) {
     return (
-      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-white/50">
+      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-muted-foreground">
         No analysis data for this track.
       </div>
     );
@@ -156,7 +156,7 @@ function AdaptiveFeatureChips({
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[9px] uppercase tracking-wider text-white/35">Track</span>
+      <span className="text-[9px] uppercase tracking-wider text-white/40">Track</span>
       {chips}
     </div>
   );
@@ -178,14 +178,14 @@ function GenreResolutionChip({
 }) {
   if (status === "loading") {
     return (
-      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-white/50">
+      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-muted-foreground">
         Loading genre…
       </div>
     );
   }
   if (status === "unavailable" || !genre?.primary) {
     return (
-      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-white/50">
+      <div className="rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[10px] text-muted-foreground">
         No genre data for this track — holding flat.
       </div>
     );
@@ -415,7 +415,7 @@ export function EqualizerPanel({ onClose }: EqualizerPanelProps) {
           const pct = ((gainDb - EQ_GAIN_MIN) / range) * 100;
           return (
             <div key={band.freq} className="flex flex-col items-center gap-1">
-              <span className="font-mono text-[9px] tabular-nums text-white/50">
+              <span className="font-mono text-[9px] tabular-nums text-muted-foreground">
                 {gainDb > 0 ? `+${gainDb.toFixed(0)}` : gainDb.toFixed(0)}
               </span>
               <div className="relative h-24 w-full">
@@ -434,7 +434,7 @@ export function EqualizerPanel({ onClose }: EqualizerPanelProps) {
                   }}
                 />
               </div>
-              <span className="font-mono text-[9px] text-white/50">{band.label}</span>
+              <span className="font-mono text-[9px] text-muted-foreground">{band.label}</span>
             </div>
           );
         })}

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router";
 import { ArrowLeft, Loader2, Play, Radio, Share2, Shuffle, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
-import { TrackRow } from "@/components/cards/TrackRow";
+import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { CoreTracksArtwork } from "@/components/home/CoreTracksArtwork";
 import { MixArtwork } from "@/components/home/MixArtwork";
 import type { HomeGeneratedPlaylistDetail } from "@/components/home/home-model";
@@ -60,6 +60,24 @@ export function HomePlaylist() {
   const filteredTracks = useMemo(
     () => filterPlaylistTracks(data?.tracks || [], deferredFilterQuery),
     [data?.tracks, deferredFilterQuery],
+  );
+
+  const trackRows = useMemo<TrackRowData[]>(() =>
+    filteredTracks.map((track) => ({
+      id: track.track_storage_id ?? track.track_id ?? track.track_path ?? track.title,
+      storage_id: track.track_storage_id ?? undefined,
+      title: track.title,
+      artist: track.artist,
+      artist_id: track.artist_id ?? undefined,
+      artist_slug: track.artist_slug ?? undefined,
+      album: track.album ?? undefined,
+      album_id: track.album_id ?? undefined,
+      album_slug: track.album_slug ?? undefined,
+      duration: track.duration ?? undefined,
+      path: track.track_path ?? undefined,
+      library_track_id: track.track_id ?? undefined,
+    })),
+    [filteredTracks],
   );
 
   function handlePlay() {
@@ -271,29 +289,17 @@ export function HomePlaylist() {
         </div>
       ) : (
         <div className="space-y-1">
-          {filteredTracks.map((track, index) => (
+          {trackRows.map((row, index) => (
             <TrackRow
-              key={track.track_id ?? track.track_storage_id ?? `${track.track_path}-${index}`}
-              track={{
-                id: track.track_storage_id ?? track.track_id ?? track.track_path ?? track.title,
-                storage_id: track.track_storage_id ?? undefined,
-                title: track.title,
-                artist: track.artist,
-                artist_id: track.artist_id ?? undefined,
-                artist_slug: track.artist_slug ?? undefined,
-                album: track.album ?? undefined,
-                album_id: track.album_id ?? undefined,
-                album_slug: track.album_slug ?? undefined,
-                duration: track.duration ?? undefined,
-                path: track.track_path ?? undefined,
-                library_track_id: track.track_id ?? undefined,
-              }}
+              key={row.storage_id ?? row.id ?? `${row.path}-${index}`}
+              track={row}
               index={index + 1}
               showArtist
               showAlbum
               playlistOptions={(playlistOptions || []).map((playlist) => ({ id: playlist.id, name: playlist.name }))}
               onAddToPlaylist={handleAddTrackToPlaylist}
               onCreatePlaylist={handleCreatePlaylistFromTrack}
+              queueTracks={trackRows}
             />
           ))}
         </div>

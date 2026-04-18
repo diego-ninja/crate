@@ -1,11 +1,11 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, ArrowRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
-import { TrackRow } from "@/components/cards/TrackRow";
+import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { PlaylistCard } from "@/components/playlists/PlaylistCard";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
@@ -34,7 +34,7 @@ export function ExplorePill({
       className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 transition-colors hover:border-primary/40 hover:bg-primary/5"
     >
       <span className="text-sm font-medium text-primary">{label}</span>
-      {count != null && count > 0 ? <span className="text-xs text-white/50">{count}</span> : null}
+      {count != null && count > 0 ? <span className="text-xs text-muted-foreground">{count}</span> : null}
     </button>
   );
 }
@@ -89,6 +89,15 @@ export function SearchResultsView({ results }: { results: SearchResults }) {
   const hasArtists = results.artists.length > 0;
   const hasAlbums = results.albums.length > 0;
   const hasTracks = results.tracks.length > 0;
+  const trackRows = useMemo<TrackRowData[]>(() =>
+    results.tracks.slice(0, 10).map((track) => ({
+      ...track,
+      path: track.path || "",
+      duration: track.duration || 0,
+      library_track_id: track.id,
+    })),
+    [results.tracks],
+  );
 
   if (!hasArtists && !hasAlbums && !hasTracks) {
     return <p className="mt-8 text-sm text-muted-foreground">No results found.</p>;
@@ -135,18 +144,14 @@ export function SearchResultsView({ results }: { results: SearchResults }) {
         <div className="space-y-3">
           <h2 className="px-1 text-lg font-bold">Tracks</h2>
           <div className="rounded-xl border border-white/5 bg-white/[0.02]">
-            {results.tracks.slice(0, 10).map((track, index) => (
+            {trackRows.map((row, index) => (
               <TrackRow
-                key={`${track.artist}-${track.title}-${index}`}
-                track={{
-                  ...track,
-                  path: track.path || "",
-                  duration: track.duration || 0,
-                  library_track_id: track.id,
-                }}
+                key={`${row.artist}-${row.title}-${index}`}
+                track={row}
                 index={index + 1}
                 showArtist
                 showAlbum
+                queueTracks={trackRows}
               />
             ))}
           </div>
@@ -317,6 +322,7 @@ export function PlaylistCategoryView({
               key={playlist.id}
               playlistId={playlist.id}
               name={playlist.name}
+              isSmart={playlist.is_smart}
               description={playlist.description}
               tracks={playlist.artwork_tracks}
               coverDataUrl={playlist.cover_data_url}

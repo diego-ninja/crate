@@ -11,11 +11,18 @@ State is tracked per-track via `analysis_state` and `bliss_state` columns
 in `library_tracks` with atomic claim queries (FOR UPDATE SKIP LOCKED).
 """
 
-import json
 import logging
 import time
 
-from crate.db import get_db_ctx
+from crate.db.jobs.analysis import (
+    claim_track as _db_claim_track,
+    get_analysis_status as _db_get_analysis_status,
+    get_pending_count as _db_get_pending_count,
+    mark_done as _db_mark_done,
+    mark_failed as _db_mark_failed,
+    reset_stale_claims as _db_reset_stale_claims,
+    store_bliss_vector as _db_store_bliss_vector,
+)
 
 log = logging.getLogger(__name__)
 
@@ -29,60 +36,25 @@ FAILURE_BACKOFF = 60
 
 
 def _claim_track(state_column: str):
-    """Atomically claim the next pending track for processing.
-    Uses FOR UPDATE SKIP LOCKED to avoid race conditions."""
-    with get_db_ctx() as cur:
-        cur.execute(f"""
-            UPDATE library_tracks
-            SET {state_column} = 'analyzing'
-            WHERE id = (
-                SELECT id FROM library_tracks
-                WHERE {state_column} = 'pending' AND path IS NOT NULL
-                ORDER BY updated_at DESC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED
-            )
-            RETURNING id, path, title, artist, album
-        """)
-        row = cur.fetchone()
-        return dict(row) if row else None
+    return _db_claim_track(state_column)
 
 
 def _mark_done(track_id: int, state_column: str):
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"UPDATE library_tracks SET {state_column} = 'done', updated_at = %s WHERE id = %s",
-            (now, track_id),
-        )
+    _db_mark_done(track_id, state_column)
 
 
 def _mark_failed(track_id: int, state_column: str):
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"UPDATE library_tracks SET {state_column} = 'failed' WHERE id = %s",
-            (track_id,),
-        )
+    _db_mark_failed(track_id, state_column)
 
 
 def _reset_stale_claims(state_column: str):
-    """On startup, reset any tracks stuck in 'analyzing' state from a previous crash."""
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"UPDATE library_tracks SET {state_column} = 'pending' WHERE {state_column} = 'analyzing'"
-        )
-        count = cur.rowcount
-        if count:
-            log.info("Reset %d stale '%s' claims to pending", count, state_column)
+    count = _db_reset_stale_claims(state_column)
+    if count:
+        log.info("Reset %d stale '%s' claims to pending", count, state_column)
 
 
 def _get_pending_count(state_column: str) -> int:
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"SELECT COUNT(*) as cnt FROM library_tracks WHERE {state_column} = 'pending'"
-        )
-        return cur.fetchone()["cnt"]
+    return _db_get_pending_count(state_column)
 
 
 # ── Audio Analysis Daemon ────────────────────────────────────────
@@ -197,12 +169,7 @@ def bliss_daemon(config: dict):
                 vector = analyze_file(path)
 
                 if vector and len(vector) == 20:
-                    with get_db_ctx() as cur:
-                        cur.execute(
-                            "UPDATE library_tracks SET bliss_vector = %s, bliss_state = 'done' "
-                            "WHERE id = %s",
-                            (vector, track_id),
-                        )
+                    _db_store_bliss_vector(track_id, vector)
                     log.debug("Bliss computed: %s", track.get("title", path))
                     consecutive_failures = 0
                 else:
@@ -233,19 +200,4 @@ def bliss_daemon(config: dict):
 
 def get_analysis_status() -> dict:
     """Return current analysis progress for both daemons."""
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT
-                COUNT(*) as total,
-                COUNT(*) FILTER (WHERE analysis_state = 'done') as analysis_done,
-                COUNT(*) FILTER (WHERE analysis_state = 'pending') as analysis_pending,
-                COUNT(*) FILTER (WHERE analysis_state = 'analyzing') as analysis_active,
-                COUNT(*) FILTER (WHERE analysis_state = 'failed') as analysis_failed,
-                COUNT(*) FILTER (WHERE bliss_state = 'done') as bliss_done,
-                COUNT(*) FILTER (WHERE bliss_state = 'pending') as bliss_pending,
-                COUNT(*) FILTER (WHERE bliss_state = 'analyzing') as bliss_active,
-                COUNT(*) FILTER (WHERE bliss_state = 'failed') as bliss_failed
-            FROM library_tracks
-        """)
-        row = cur.fetchone()
-        return dict(row) if row else {}
+    return _db_get_analysis_status()

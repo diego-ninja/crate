@@ -2,10 +2,37 @@ import json
 import os
 
 from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
-from crate.db import get_setting, set_setting, get_db_table_stats, get_db_ctx, get_cache_stats, delete_cache_prefix
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.settings import (
+    CacheClearRequest,
+    CacheClearResponse,
+    EnrichmentUpdateRequest,
+    LastfmSyncRequest,
+    LastfmSyncResponse,
+    LibrarySettingsUpdateRequest,
+    ProcessingSettingsUpdateRequest,
+    ScheduleIntervalsRequest,
+    SettingsResponse,
+    SettingsUpdateResponse,
+    ShowsSettingsUpdateRequest,
+    SoulseekSettingsUpdateRequest,
+    TelegramSettingsUpdateRequest,
+    TelegramTestResponse,
+    WorkerSettingsRequest,
+)
+from crate.db.audit import get_db_table_stats
+from crate.db.cache import (
+    clear_all_cache_tables,
+    delete_cache,
+    delete_cache_prefix,
+    get_cache_stats,
+    get_setting,
+    set_setting,
+)
+from crate.db.library import get_library_stats, get_library_track_count
+from crate.db.tasks import create_task
 from crate.scheduler import get_schedules, set_schedules
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -13,16 +40,21 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 VALID_ENRICHMENT_SOURCES = {"lastfm", "spotify", "fanart", "setlistfm", "musicbrainz"}
 DEFAULT_ENRICHMENT = '{"lastfm":true,"spotify":true,"fanart":true,"setlistfm":true,"musicbrainz":true}'
 
+_SETTINGS_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
-class WorkerSettings(BaseModel):
-    max_workers: int
 
-
-class CacheClearRequest(BaseModel):
-    type: str
-
-
-@router.get("")
+@router.get(
+    "",
+    response_model=SettingsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get administrative settings and runtime info",
+)
 def get_settings(request: Request):
     _require_admin(request)
     return {
@@ -66,28 +98,22 @@ def _mask_token(token: str) -> str:
 
 
 def _get_shows_settings() -> dict:
-    from crate.db.shows import get_unique_user_cities
-    from crate.db.core import get_db_ctx
+    from crate.db.shows import get_unique_user_cities, get_upcoming_show_counts
     cities = []
     try:
         cities = get_unique_user_cities()
     except Exception:
         pass
-    show_count = 0
-    lastfm_count = 0
+    counts = {"show_count": 0, "lastfm_count": 0}
     try:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT COUNT(*)::INTEGER AS c FROM shows WHERE date >= CURRENT_DATE")
-            show_count = cur.fetchone()["c"]
-            cur.execute("SELECT COUNT(*)::INTEGER AS c FROM shows WHERE date >= CURRENT_DATE AND (source = 'lastfm' OR source = 'both')")
-            lastfm_count = cur.fetchone()["c"]
+        counts = get_upcoming_show_counts()
     except Exception:
         pass
     return {
         "lastfm_scraping_enabled": get_setting("lastfm_scraping_enabled", "true") == "true",
         "active_cities": [{"city": c["city"], "country": c.get("country", "")} for c in cities],
-        "upcoming_shows": show_count,
-        "lastfm_shows": lastfm_count,
+        "upcoming_shows": counts["show_count"],
+        "lastfm_shows": counts["lastfm_count"],
     }
 
 
@@ -103,7 +129,6 @@ def _get_about_info() -> dict:
     except Exception:
         pass
 
-    from crate.db import get_library_stats, get_library_track_count
     track_count = get_library_track_count()
     stats = get_library_stats() if track_count > 0 else {}
 
@@ -126,18 +151,29 @@ def _get_about_info() -> dict:
     }
 
 
-@router.put("/schedules")
-def update_schedules(request: Request, body: dict[str, int]):
+@router.put(
+    "/schedules",
+    response_model=SettingsUpdateResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Update scheduler intervals",
+)
+def update_schedules(request: Request, body: ScheduleIntervalsRequest):
     _require_admin(request)
-    for key, val in body.items():
+    payload = body.root
+    for key, val in payload.items():
         if not isinstance(val, int) or val < 0:
             raise HTTPException(status_code=422, detail=f"Invalid interval for '{key}': must be int >= 0")
-    set_schedules(body)
+    set_schedules(payload)
     return {"ok": True}
 
 
-@router.put("/worker")
-def update_worker(request: Request, body: WorkerSettings):
+@router.put(
+    "/worker",
+    response_model=SettingsUpdateResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Update worker concurrency settings",
+)
+def update_worker(request: Request, body: WorkerSettingsRequest):
     _require_admin(request)
     if body.max_workers < 1 or body.max_workers > 10:
         raise HTTPException(status_code=422, detail="max_workers must be between 1 and 10")
@@ -145,17 +181,28 @@ def update_worker(request: Request, body: WorkerSettings):
     return {"ok": True}
 
 
-@router.put("/enrichment")
-def update_enrichment(request: Request, body: dict[str, bool]):
+@router.put(
+    "/enrichment",
+    response_model=SettingsUpdateResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Update enrichment source toggles",
+)
+def update_enrichment(request: Request, body: EnrichmentUpdateRequest):
     _require_admin(request)
-    invalid = set(body.keys()) - VALID_ENRICHMENT_SOURCES
+    payload = body.root
+    invalid = set(payload.keys()) - VALID_ENRICHMENT_SOURCES
     if invalid:
         raise HTTPException(status_code=422, detail=f"Invalid sources: {', '.join(sorted(invalid))}")
-    set_setting("enrichment_sources", json.dumps(body))
+    set_setting("enrichment_sources", json.dumps(payload))
     return {"ok": True}
 
 
-@router.post("/cache/clear")
+@router.post(
+    "/cache/clear",
+    response_model=CacheClearResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Clear one or more cache namespaces",
+)
 def clear_cache(request: Request, body: CacheClearRequest):
     _require_admin(request)
     cache_type = body.type
@@ -166,10 +213,7 @@ def clear_cache(request: Request, body: CacheClearRequest):
     # Clear Redis + PostgreSQL
     if cache_type == "all":
         delete_cache_prefix("")  # all cache keys
-        # Also clear mb_cache in PostgreSQL
-        with get_db_ctx() as cur:
-            cur.execute("DELETE FROM cache")
-            cur.execute("DELETE FROM mb_cache")
+        clear_all_cache_tables()
         # Clear all Redis mb: keys
         from crate.db.cache import _get_redis
         r = _get_redis()
@@ -189,59 +233,76 @@ def clear_cache(request: Request, body: CacheClearRequest):
     elif cache_type == "lastfm":
         delete_cache_prefix("lastfm:")
     elif cache_type == "analytics":
-        from crate.db import delete_cache
         delete_cache("analytics")
         delete_cache("stats")
 
     return {"ok": True, "type": cache_type}
 
 
-@router.put("/library")
-def update_library(request: Request, body: dict):
+@router.put(
+    "/library",
+    response_model=SettingsUpdateResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Update library-related settings",
+)
+def update_library(request: Request, body: LibrarySettingsUpdateRequest):
     _require_admin(request)
-    if "audio_extensions" in body:
-        if not isinstance(body["audio_extensions"], list):
-            raise HTTPException(status_code=422, detail="audio_extensions must be a list")
-        set_setting("audio_extensions", json.dumps(body["audio_extensions"]))
+    if body.audio_extensions is not None:
+        set_setting("audio_extensions", json.dumps(body.audio_extensions))
     return {"ok": True}
 
 
-@router.put("/processing")
-def update_processing(request: Request, body: dict):
+@router.put(
+    "/processing",
+    response_model=SettingsUpdateResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Update processing thresholds and limits",
+)
+def update_processing(request: Request, body: ProcessingSettingsUpdateRequest):
     _require_admin(request)
-    if "mb_auto_apply_threshold" in body:
-        val = int(body["mb_auto_apply_threshold"])
+    if body.mb_auto_apply_threshold is not None:
+        val = int(body.mb_auto_apply_threshold)
         if val < 50 or val > 100:
             raise HTTPException(status_code=422, detail="Threshold must be 50-100")
         set_setting("mb_auto_apply_threshold", str(val))
-    if "enrichment_min_age_hours" in body:
-        val = int(body["enrichment_min_age_hours"])
+    if body.enrichment_min_age_hours is not None:
+        val = int(body.enrichment_min_age_hours)
         if val < 1 or val > 168:
             raise HTTPException(status_code=422, detail="Must be 1-168 hours")
         set_setting("enrichment_min_age_hours", str(val))
-    if "max_track_popularity" in body:
-        val = int(body["max_track_popularity"])
+    if body.max_track_popularity is not None:
+        val = int(body.max_track_popularity)
         if val < 10 or val > 500:
             raise HTTPException(status_code=422, detail="Must be 10-500")
         set_setting("max_track_popularity", str(val))
     return {"ok": True}
 
 
-@router.put("/telegram")
-def update_telegram(request: Request, body: dict):
+@router.put(
+    "/telegram",
+    response_model=SettingsUpdateResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Update Telegram integration settings",
+)
+def update_telegram(request: Request, body: TelegramSettingsUpdateRequest):
     _require_admin(request)
-    if "bot_token" in body:
-        token = (body["bot_token"] or "").strip()
+    if body.bot_token is not None:
+        token = (body.bot_token or "").strip()
         if token and "..." not in token:
             set_setting("telegram_bot_token", token)
-    if "enabled" in body:
-        set_setting("telegram_enabled", "true" if body["enabled"] else "false")
-    if "chat_id" in body:
-        set_setting("telegram_chat_id", str(body["chat_id"]).strip())
+    if body.enabled is not None:
+        set_setting("telegram_enabled", "true" if body.enabled else "false")
+    if body.chat_id is not None:
+        set_setting("telegram_chat_id", str(body.chat_id).strip())
     return {"ok": True}
 
 
-@router.post("/telegram/test")
+@router.post(
+    "/telegram/test",
+    response_model=TelegramTestResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Send a Telegram test message",
+)
 def test_telegram(request: Request):
     _require_admin(request)
     from crate.telegram import send_message
@@ -251,22 +312,31 @@ def test_telegram(request: Request):
     return {"ok": True}
 
 
-@router.put("/shows")
-def update_shows_settings(request: Request, body: dict):
+@router.put(
+    "/shows",
+    response_model=SettingsUpdateResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Update live-show scraping settings",
+)
+def update_shows_settings(request: Request, body: ShowsSettingsUpdateRequest):
     _require_admin(request)
-    if "lastfm_scraping_enabled" in body:
-        set_setting("lastfm_scraping_enabled", "true" if body["lastfm_scraping_enabled"] else "false")
+    if body.lastfm_scraping_enabled is not None:
+        set_setting("lastfm_scraping_enabled", "true" if body.lastfm_scraping_enabled else "false")
     return {"ok": True}
 
 
-@router.post("/shows/sync-lastfm")
-def trigger_lastfm_sync(request: Request, body: dict | None = None):
+@router.post(
+    "/shows/sync-lastfm",
+    response_model=LastfmSyncResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Queue a Last.fm show sync",
+)
+def trigger_lastfm_sync(request: Request, body: LastfmSyncRequest | None = None):
     """Manually trigger Last.fm scrape for a specific city or all user cities."""
     _require_admin(request)
-    from crate.db import create_task
     from crate.db.shows import get_unique_user_cities
 
-    payload = body or {}
+    payload = body.model_dump(exclude_none=True) if body else {}
     city = (payload.get("city") or "").strip()
 
     if city:
@@ -293,20 +363,25 @@ def trigger_lastfm_sync(request: Request, body: dict | None = None):
     return {"task_ids": task_ids, "cities": [c["city"] for c in cities]}
 
 
-@router.put("/soulseek")
-def update_soulseek(request: Request, body: dict):
+@router.put(
+    "/soulseek",
+    response_model=SettingsUpdateResponse,
+    responses=_SETTINGS_RESPONSES,
+    summary="Update Soulseek integration settings",
+)
+def update_soulseek(request: Request, body: SoulseekSettingsUpdateRequest):
     _require_admin(request)
-    if "url" in body:
-        set_setting("slskd_url", body["url"])
-    if "quality" in body:
+    if body.url is not None:
+        set_setting("slskd_url", body.url)
+    if body.quality is not None:
         valid = ("flac", "flac_320", "any")
-        if body["quality"] not in valid:
+        if body.quality not in valid:
             raise HTTPException(status_code=422, detail=f"quality must be one of {valid}")
-        set_setting("soulseek_quality", body["quality"])
-    if "min_bitrate" in body:
-        set_setting("soulseek_min_bitrate", str(int(body["min_bitrate"])))
-    if "username" in body:
-        set_setting("slskd_username", body["username"])
-    if "shares_music" in body:
-        set_setting("slskd_shares_music", "true" if body["shares_music"] else "false")
+        set_setting("soulseek_quality", body.quality)
+    if body.min_bitrate is not None:
+        set_setting("soulseek_min_bitrate", str(int(body.min_bitrate)))
+    if body.username is not None:
+        set_setting("slskd_username", body.username)
+    if body.shares_music is not None:
+        set_setting("slskd_shares_music", "true" if body.shares_music else "false")
     return {"ok": True}

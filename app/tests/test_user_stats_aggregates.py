@@ -74,7 +74,7 @@ class TestUserListeningAggregates:
                 """
                 SELECT artist_name, play_count, minutes_listened
                 FROM user_artist_stats
-                WHERE user_id = %s AND window = 'all_time'
+                WHERE user_id = %s AND stat_window = 'all_time'
                 """,
                 (1,),
             )
@@ -86,7 +86,7 @@ class TestUserListeningAggregates:
                 """
                 SELECT genre_name, play_count
                 FROM user_genre_stats
-                WHERE user_id = %s AND window = 'all_time'
+                WHERE user_id = %s AND stat_window = 'all_time'
                 """,
                 (1,),
             )

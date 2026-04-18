@@ -28,10 +28,10 @@ class TestPlayEventContract:
             "app_platform": "listen-web",
         }
 
-        with patch("crate.db.user_library.record_play_event", return_value=77) as mock_record, patch(
-            "crate.db.create_task_dedup",
-            return_value="task123",
-        ) as mock_enqueue:
+        with patch("crate.db.user_library.record_play_event", return_value=77) as mock_record, \
+             patch("crate.db.create_task_dedup", return_value="task123") as mock_enqueue, \
+             patch("crate.db.get_cache", return_value=None), \
+             patch("crate.db.set_cache"):
             resp = test_app.post("/api/me/play-events", json=payload)
 
         assert resp.status_code == 200
@@ -40,6 +40,7 @@ class TestPlayEventContract:
             1,
             track_id=12,
             track_path="Converge/Jane Doe/01 - Concubine.flac",
+            track_storage_id=None,
             title="Concubine",
             artist="Converge",
             album="Jane Doe",

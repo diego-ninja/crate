@@ -46,7 +46,7 @@ export function TopBarUserMenu() {
           <div className="min-w-0">
             <p className="text-[11px] font-medium text-white/85 truncate">{userName || "Signed in"}</p>
             {user?.email ? (
-              <p className="truncate text-[10px] text-white/45">{user.email}</p>
+              <p className="truncate text-[10px] text-muted-foreground">{user.email}</p>
             ) : null}
           </div>
         </div>
@@ -84,11 +84,11 @@ export function TopBarUserMenu() {
           ref={userMenuButtonRef}
           onClick={() => setShowUserMenu(!showUserMenu)}
           aria-label="User menu"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-black/30 backdrop-blur-sm text-sm font-medium text-white/60 transition-colors hover:bg-black/50 hover:text-white overflow-hidden"
+          className="flex h-11 w-11 md:h-12 md:w-12 items-center justify-center rounded-full border border-white/10 bg-black/30 backdrop-blur-sm text-sm font-medium text-white/70 transition-colors hover:bg-black/50 hover:text-white overflow-hidden shadow-[0_6px_20px_rgba(0,0,0,0.18)]"
         >
           {user?.avatar ? (
             <img src={user.avatar} alt="" className="h-full w-full object-cover" />
-          ) : userInitial || <User size={16} />}
+          ) : userInitial || <User size={18} />}
         </button>
 
         {showUserMenu && isDesktop && (

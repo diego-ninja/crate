@@ -21,7 +21,16 @@ from pathlib import Path
 
 import requests
 
-from crate.db import get_setting, set_setting
+from crate.db.cache import get_setting, set_setting
+from crate.db.queries.telegram import (
+    find_active_task_by_prefix,
+    get_library_status_summary,
+    get_server_db_stats,
+    list_active_tasks,
+    list_recent_albums,
+    list_recently_played,
+)
+from crate.db.tasks import create_task, update_task
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +101,7 @@ def notify_task_completed(task_type: str, task_id: str, result: dict | None = No
         "process_new_content": "\u2728",  # sparkles
         "enrich_artists": "\U0001f50d",  # magnifying glass
         "index_genres": "\U0001f3f7",    # label
+        "cleanup_invalid_genre_taxonomy": "\U0001f9f9",  # broom
         "library_sync": "\U0001f4c2",    # folder
         "scan": "\U0001f4c2",
     }
@@ -143,31 +153,17 @@ def _cmd_start(chat_id: str, _args: str):
 
 
 def _cmd_status(chat_id: str, _args: str):
-    from crate.db.core import get_db_ctx
+    summary = get_library_status_summary()
 
-    with get_db_ctx() as cur:
-        cur.execute("SELECT COUNT(*)::INTEGER AS c FROM library_artists")
-        artists = cur.fetchone()["c"]
-        cur.execute("SELECT COUNT(*)::INTEGER AS c FROM library_albums")
-        albums = cur.fetchone()["c"]
-        cur.execute("SELECT COUNT(*)::INTEGER AS c FROM library_tracks")
-        tracks = cur.fetchone()["c"]
-        cur.execute("SELECT COALESCE(SUM(size), 0)::BIGINT AS s FROM library_tracks")
-        size_bytes = cur.fetchone()["s"]
-        cur.execute("SELECT COUNT(*)::INTEGER AS c FROM tasks WHERE status = 'running'")
-        running = cur.fetchone()["c"]
-        cur.execute("SELECT COUNT(*)::INTEGER AS c FROM tasks WHERE status = 'pending'")
-        pending = cur.fetchone()["c"]
-
-    size_gb = size_bytes / (1024 ** 3)
+    size_gb = summary["size_bytes"] / (1024 ** 3)
     disk = _disk_usage()
 
     send_message(
         f"\U0001f4ca <b>Crate Status</b>\n\n"
-        f"\U0001f3b5 {artists:,} artists / {albums:,} albums / {tracks:,} tracks\n"
+        f"\U0001f3b5 {summary['artists']:,} artists / {summary['albums']:,} albums / {summary['tracks']:,} tracks\n"
         f"\U0001f4be Library: {size_gb:.1f} GB\n"
         f"\U0001f4bf Disk: {disk}\n"
-        f"\u2699\ufe0f Tasks: {running} running, {pending} pending",
+        f"\u2699\ufe0f Tasks: {summary['running']} running, {summary['pending']} pending",
         chat_id=chat_id,
     )
 
@@ -176,38 +172,22 @@ def _cmd_server(chat_id: str, _args: str):
     mem = _memory_info()
     disk = _disk_usage()
     api_health = _api_health()
-
-    from crate.db.core import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("SELECT pg_database_size(current_database())::BIGINT AS s")
-        db_size_mb = cur.fetchone()["s"] / (1024 * 1024)
-        cur.execute("SELECT COUNT(*)::INTEGER AS c FROM pg_stat_activity WHERE state = 'active'")
-        db_conns = cur.fetchone()["c"]
+    db_stats = get_server_db_stats()
+    db_size_mb = db_stats["size_bytes"] / (1024 * 1024)
 
     send_message(
         f"\U0001f5a5 <b>Server</b>\n\n"
         f"RAM: {mem['used_gb']:.1f} / {mem['total_gb']:.1f} GB ({mem['percent']}%)\n"
         f"Swap: {mem['swap_used_gb']:.1f} / {mem['swap_total_gb']:.1f} GB ({mem['swap_percent']}%)\n"
         f"Disk: {disk}\n"
-        f"DB: {db_size_mb:.0f} MB, {db_conns} active connections\n"
+        f"DB: {db_size_mb:.0f} MB, {db_stats['active_connections']} active connections\n"
         f"API: {api_health}",
         chat_id=chat_id,
     )
 
 
 def _cmd_tasks(chat_id: str, _args: str):
-    from crate.db.core import get_db_ctx
-
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT id, type, status, substring(progress for 120) as progress,
-                   created_at, updated_at
-            FROM tasks
-            WHERE status IN ('running', 'pending')
-            ORDER BY status, created_at
-            LIMIT 15
-        """)
-        rows = cur.fetchall()
+    rows = list_active_tasks(limit=15)
 
     if not rows:
         send_message("\u2705 No active tasks", chat_id=chat_id)
@@ -232,28 +212,7 @@ def _cmd_tasks(chat_id: str, _args: str):
 
 
 def _cmd_playing(chat_id: str, _args: str):
-    from crate.db.core import get_db_ctx
-
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT
-                ph.user_id,
-                u.username,
-                u.display_name,
-                ph.artist,
-                ph.album,
-                ph.title,
-                t.format,
-                t.bit_depth,
-                t.sample_rate,
-                ph.played_at
-            FROM play_history ph
-            LEFT JOIN users u ON u.id = ph.user_id
-            LEFT JOIN library_tracks t ON t.id = ph.track_id
-            WHERE ph.played_at > now() - INTERVAL '10 minutes'
-            ORDER BY ph.played_at DESC
-        """)
-        rows = cur.fetchall()
+    rows = list_recently_played(limit_minutes=10)
 
     if not rows:
         send_message("\U0001f508 Nothing playing right now", chat_id=chat_id)
@@ -286,17 +245,7 @@ def _cmd_recent(chat_id: str, args: str):
     if args.strip().isdigit():
         limit = min(int(args.strip()), 25)
 
-    from crate.db.core import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT DISTINCT ON (a.id)
-                a.artist, a.name, a.year,
-                a.track_count, a.formats_json
-            FROM library_albums a
-            ORDER BY a.id DESC
-            LIMIT %s
-        """, (limit,))
-        rows = cur.fetchall()
+    rows = list_recent_albums(limit)
 
     if not rows:
         send_message("No albums in library yet", chat_id=chat_id)
@@ -323,7 +272,6 @@ def _cmd_download(chat_id: str, args: str):
         send_message("\u26a0\ufe0f Usage: /download &lt;tidal-url&gt;", chat_id=chat_id)
         return
 
-    from crate.db import create_task
     task_id = create_task("tidal_download", {"url": url, "quality": "max"})
     send_message(f"\U0001f4e5 Download queued\n<code>{task_id[:8]}</code>\n{url}", chat_id=chat_id)
 
@@ -334,15 +282,7 @@ def _cmd_cancel(chat_id: str, args: str):
         send_message("\u26a0\ufe0f Usage: /cancel &lt;task_id&gt; (first 8 chars are enough)", chat_id=chat_id)
         return
 
-    from crate.db.core import get_db_ctx
-    from crate.db.tasks import update_task
-
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT id, type, status FROM tasks WHERE id LIKE %s AND status IN ('running', 'pending') LIMIT 1",
-            (f"{task_id_prefix}%",),
-        )
-        row = cur.fetchone()
+    row = find_active_task_by_prefix(task_id_prefix)
 
     if not row:
         send_message(f"\u26a0\ufe0f No active task matching <code>{task_id_prefix}</code>", chat_id=chat_id)

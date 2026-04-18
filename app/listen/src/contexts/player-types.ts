@@ -34,5 +34,6 @@ export interface PlaySource {
   type: "album" | "playlist" | "radio" | "track" | "queue";
   name: string;
   id?: string | number | null;
+  href?: string | null;
   radio?: RadioSession;
 }

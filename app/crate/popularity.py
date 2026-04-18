@@ -5,7 +5,14 @@ import time
 
 import requests
 
-from crate.db import get_db_ctx, get_setting
+from crate.db.cache import get_setting
+from crate.db.jobs.popularity import (
+    get_albums_without_popularity,
+    get_tracks_without_popularity,
+    normalize_popularity_scores,
+    update_album_lastfm,
+    update_track_lastfm,
+)
 
 log = logging.getLogger(__name__)
 
@@ -45,9 +52,7 @@ def compute_popularity(progress_callback=None) -> dict:
     tracks_fetched = 0
 
     # 1. Fetch album popularity from Last.fm (only albums without data)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, artist, name, tag_album FROM library_albums WHERE lastfm_listeners IS NULL")
-        albums = [dict(r) for r in cur.fetchall()]
+    albums = get_albums_without_popularity()
 
     total_albums = len(albums)
     for i, album in enumerate(albums):
@@ -67,23 +72,13 @@ def compute_popularity(progress_callback=None) -> dict:
             playcount = _parse_int(info.get("playcount", 0))
 
             if listeners > 0 or playcount > 0:
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE library_albums SET lastfm_listeners = %s, lastfm_playcount = %s WHERE id = %s",
-                        (listeners, playcount, album["id"]),
-                    )
+                update_album_lastfm(album["id"], listeners, playcount)
                 albums_fetched += 1
 
         time.sleep(0.25)  # Last.fm rate limit
 
     # 2. Fetch track popularity (sample: tracks from albums with listeners)
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.id, t.artist, t.title, t.album
-            FROM library_tracks t
-            WHERE t.title IS NOT NULL AND t.title != '' AND t.lastfm_listeners IS NULL
-        """)
-        tracks = [dict(r) for r in cur.fetchall()]
+    tracks = get_tracks_without_popularity()
 
     total_tracks = len(tracks)
     for i, track in enumerate(tracks):
@@ -97,11 +92,7 @@ def compute_popularity(progress_callback=None) -> dict:
             playcount = _parse_int(info.get("playcount", 0))
 
             if listeners > 0 or playcount > 0:
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE library_tracks SET lastfm_listeners = %s, lastfm_playcount = %s WHERE id = %s",
-                        (listeners, playcount, track["id"]),
-                    )
+                update_track_lastfm(track["id"], listeners, playcount)
                 tracks_fetched += 1
 
         time.sleep(0.2)
@@ -122,27 +113,4 @@ def compute_popularity(progress_callback=None) -> dict:
 
 def _normalize_popularity():
     """Normalize lastfm_listeners to a 0-100 popularity score relative to library max."""
-    with get_db_ctx() as cur:
-        # Artists: use existing listeners column
-        cur.execute("SELECT MAX(listeners) AS m FROM library_artists WHERE listeners IS NOT NULL")
-        max_artist = cur.fetchone()["m"] or 1
-        # We already have spotify_popularity for artists, but update lastfm_playcount
-        # Artists don't need a separate popularity column — they have listeners + spotify_popularity
-
-        # Albums: normalize
-        cur.execute("SELECT MAX(lastfm_listeners) AS m FROM library_albums WHERE lastfm_listeners IS NOT NULL")
-        max_album = cur.fetchone()["m"] or 1
-        cur.execute(
-            "UPDATE library_albums SET popularity = LEAST(100, GREATEST(1, (lastfm_listeners::float / %s * 100)::int)) "
-            "WHERE lastfm_listeners IS NOT NULL AND lastfm_listeners > 0",
-            (max_album,),
-        )
-
-        # Tracks: normalize
-        cur.execute("SELECT MAX(lastfm_listeners) AS m FROM library_tracks WHERE lastfm_listeners IS NOT NULL")
-        max_track = cur.fetchone()["m"] or 1
-        cur.execute(
-            "UPDATE library_tracks SET popularity = LEAST(100, GREATEST(1, (lastfm_listeners::float / %s * 100)::int)) "
-            "WHERE lastfm_listeners IS NOT NULL AND lastfm_listeners > 0",
-            (max_track,),
-        )
+    normalize_popularity_scores()

@@ -2,19 +2,100 @@ import logging
 import math
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
 
 from crate.api._deps import enrich_radio_tracks as _enrich_radio_tracks, library_path, safe_path
 from crate.api.auth import _require_auth
-from crate.api.browse_shared import _YEAR_PREFIX_RE, fs_search, has_library_data
-from crate.db import get_cache, get_db_ctx, set_cache
+from crate.api.browse_shared import fs_search, has_library_data
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.common import OkResponse
+from crate.api.schemas.media import (
+    DiscoverCompletenessRefreshResponse,
+    DiscoverCompletenessResponse,
+    EqFeaturesResponse,
+    FavoriteMutationRequest,
+    FavoritesResponse,
+    MoodPresetsResponse,
+    MoodTracksResponse,
+    SearchResponse,
+    SimilarTracksResponse,
+    TrackGenreResponse,
+    TrackInfoResponse,
+    TrackRatingRequest,
+    TrackRatingResponse,
+)
+from crate.db import get_cache
+from crate.db.queries.browse_media import (
+    add_favorite,
+    count_mood_tracks,
+    find_track_id_by_path,
+    get_mood_tracks,
+    get_track_album_genres,
+    get_track_artist_genres,
+    get_track_exists,
+    get_track_id_by_storage_id,
+    get_track_info_cols,
+    get_track_info_cols_by_path,
+    get_track_info_cols_by_storage_id,
+    get_track_path,
+    get_track_path_by_storage_id,
+    list_favorites,
+    remove_favorite,
+    search_albums,
+    search_artists,
+    search_tracks,
+)
 
 log = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["browse"])
+
+_BROWSE_MEDIA_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested media resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
+
+_STREAM_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Binary audio stream response.",
+            "content": {
+                "audio/flac": {"schema": {"type": "string", "format": "binary"}},
+                "audio/mpeg": {"schema": {"type": "string", "format": "binary"}},
+                "audio/mp4": {"schema": {"type": "string", "format": "binary"}},
+                "audio/ogg": {"schema": {"type": "string", "format": "binary"}},
+                "audio/opus": {"schema": {"type": "string", "format": "binary"}},
+                "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        404: error_response("The requested track stream could not be found."),
+    },
+)
+
+_DOWNLOAD_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Binary file download response.",
+            "content": {
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        404: error_response("The requested download could not be found."),
+    },
+)
 
 
-@router.get("/api/search")
+@router.get(
+    "/api/search",
+    response_model=SearchResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Search artists, albums, and tracks",
+)
 def api_search(request: Request, q: str = "", limit: int = 20):
     _require_auth(request)
     q_stripped = q.strip()
@@ -28,46 +109,9 @@ def api_search(request: Request, q: str = "", limit: int = 20):
         return result
 
     like = f"%{q_stripped}%"
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT id, slug, name, album_count, has_photo
-            FROM library_artists
-            WHERE name ILIKE %s
-            ORDER BY listeners DESC NULLS LAST, album_count DESC, name ASC
-            LIMIT %s
-            """,
-            (like, capped_limit),
-        )
-        artist_rows = cur.fetchall()
-        cur.execute(
-            """
-            SELECT a.id, a.slug, a.artist, a.name, a.year, a.has_cover,
-                   ar.id AS artist_id, ar.slug AS artist_slug
-            FROM library_albums a
-            LEFT JOIN library_artists ar ON ar.name = a.artist
-            WHERE a.name ILIKE %s OR a.artist ILIKE %s
-            ORDER BY year DESC NULLS LAST, name ASC
-            LIMIT %s
-            """,
-            (like, like, capped_limit),
-        )
-        album_rows = cur.fetchall()
-        cur.execute(
-            """
-            SELECT t.id, t.storage_id, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
-                   a.name AS album, ar.id AS artist_id, ar.slug AS artist_slug,
-                   t.path, t.duration
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            LEFT JOIN library_artists ar ON ar.name = t.artist
-            WHERE t.title ILIKE %s OR t.artist ILIKE %s OR a.name ILIKE %s
-            ORDER BY t.title ASC
-            LIMIT %s
-            """,
-            (like, like, like, capped_limit),
-        )
-        track_rows = cur.fetchall()
+    artist_rows = search_artists(like, capped_limit)
+    album_rows = search_albums(like, capped_limit)
+    track_rows = search_tracks(like, capped_limit)
 
     artists = [
         {
@@ -112,73 +156,82 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     return {"artists": artists, "albums": albums, "tracks": tracks}
 
 
-@router.get("/api/favorites")
+@router.get(
+    "/api/favorites",
+    response_model=FavoritesResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List favorite artists, albums, and tracks",
+)
 def api_favorites_list(request: Request):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT item_type, item_id, created_at FROM favorites ORDER BY created_at DESC")
-        items = [dict(row) for row in cur.fetchall()]
-    return {"items": items}
+    return {"items": list_favorites()}
 
 
-@router.post("/api/favorites/add")
-def api_favorites_add(request: Request, body: dict):
+@router.post(
+    "/api/favorites/add",
+    response_model=OkResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Add an item to favorites",
+)
+def api_favorites_add(request: Request, body: FavoriteMutationRequest):
     _require_auth(request)
     from datetime import datetime, timezone
 
-    item_id = body.get("item_id", "")
-    item_type = body.get("type", "song")
+    item_id = body.item_id
+    item_type = body.type
     if not item_id:
-        return Response(status_code=400)
+        raise HTTPException(status_code=400, detail="item_id is required")
     if item_type not in ("song", "album", "artist"):
-        return JSONResponse({"error": "type must be song, album, or artist"}, status_code=400)
+        raise HTTPException(status_code=400, detail="type must be song, album, or artist")
 
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            "INSERT INTO favorites (item_type, item_id, created_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
-            (item_type, item_id, now),
-        )
+    add_favorite(item_type, item_id, now)
 
     return {"ok": True}
 
 
-@router.post("/api/favorites/remove")
-def api_favorites_remove(request: Request, body: dict):
+@router.post(
+    "/api/favorites/remove",
+    response_model=OkResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Remove an item from favorites",
+)
+def api_favorites_remove(request: Request, body: FavoriteMutationRequest):
     _require_auth(request)
-    item_id = body.get("item_id", "")
-    item_type = body.get("type", "song")
+    item_id = body.item_id
+    item_type = body.type
     if not item_id:
-        return Response(status_code=400)
+        raise HTTPException(status_code=400, detail="item_id is required")
     if item_type not in ("song", "album", "artist"):
-        return JSONResponse({"error": "type must be song, album, or artist"}, status_code=400)
+        raise HTTPException(status_code=400, detail="type must be song, album, or artist")
 
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM favorites WHERE item_id = %s AND item_type = %s", (item_id, item_type))
+    remove_favorite(item_type, item_id)
 
     return {"ok": True}
 
 
-@router.post("/api/track/rate")
-def api_rate_track(request: Request, body: dict):
+@router.post(
+    "/api/track/rate",
+    response_model=TrackRatingResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Set a rating for a track",
+)
+def api_rate_track(request: Request, body: TrackRatingRequest):
     _require_auth(request)
     from crate.db import set_track_rating
 
-    rating = body.get("rating", 0)
-    track_id = body.get("track_id")
-    track_path = body.get("path")
+    rating = body.rating
+    track_id = body.track_id
+    track_path = body.path
 
     if not isinstance(rating, int) or not 0 <= rating <= 5:
-        return JSONResponse({"error": "Rating must be 0-5"}, status_code=400)
+        raise HTTPException(status_code=400, detail="Rating must be 0-5")
 
     if not track_id and track_path:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT id FROM library_tracks WHERE path LIKE %s LIMIT 1", (f"%{track_path}",))
-            row = cur.fetchone()
-            track_id = row["id"] if row else None
+        track_id = find_track_id_by_path(track_path)
 
     if not track_id:
-        return JSONResponse({"error": "Track not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
 
     set_track_rating(track_id, rating)
     return {"ok": True, "rating": rating}
@@ -229,57 +282,53 @@ def _serialize_track_info_row(row) -> dict:
     return payload
 
 
-@router.get("/api/tracks/{track_id}/info")
+@router.get(
+    "/api/tracks/{track_id}/info",
+    response_model=TrackInfoResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get detailed track metadata by track ID",
+)
 def api_track_info_by_id(request: Request, track_id: int):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute(f"SELECT {_TRACK_INFO_QUERY_COLS} FROM library_tracks WHERE id = %s", (track_id,))
-        row = cur.fetchone()
+    row = get_track_info_cols(track_id, _TRACK_INFO_QUERY_COLS)
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_track_info_row(row)
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/info")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/info",
+    response_model=TrackInfoResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get detailed track metadata by storage ID",
+)
 def api_track_info_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute(f"SELECT {_TRACK_INFO_QUERY_COLS} FROM library_tracks WHERE storage_id = %s", (storage_id,))
-        row = cur.fetchone()
+    row = get_track_info_cols_by_storage_id(storage_id, _TRACK_INFO_QUERY_COLS)
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_track_info_row(row)
 
 
-@router.get("/api/track-info/{filepath:path}")
+@router.get(
+    "/api/track-info/{filepath:path}",
+    response_model=TrackInfoResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get detailed track metadata by file path",
+)
 def api_track_info(request: Request, filepath: str):
     _require_auth(request)
     if filepath.startswith("/music/"):
         filepath = filepath[len("/music/") :]
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"SELECT {_TRACK_INFO_QUERY_COLS} FROM library_tracks WHERE path LIKE %s LIMIT 1",
-            (f"%{filepath}",),
-        )
-        row = cur.fetchone()
+    row = get_track_info_cols_by_path(filepath, _TRACK_INFO_QUERY_COLS)
 
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_track_info_row(row)
 
 
 # ── EQ adaptive features ────────────────────────────────────────────
-#
-# Minimal subset of audio-analysis columns exposed for the client-side
-# adaptive equalizer heuristic. Keep this narrow: the front-end shouldn't
-# learn about every analysis column we persist, and this payload gets
-# requested on every track change when the user selects the "adaptive"
-# preset — a smaller JSON = fewer bytes on the wire and a clearer
-# contract.
-#
-# spectral_complexity already lives in [0, 1] (normalized centroid at
-# analysis time), so it doubles as a brightness indicator.
 
 _EQ_FEATURES_QUERY_COLS = (
     "energy, loudness, dynamic_range, spectral_complexity, "
@@ -292,9 +341,9 @@ def _serialize_eq_features(row) -> dict:
     data = dict(row)
     return {
         "energy": data.get("energy"),
-        "loudness": data.get("loudness"),              # LUFS, roughly -30..-6
-        "dynamicRange": data.get("dynamic_range"),     # dB crest-like
-        "brightness": data.get("spectral_complexity"), # normalized centroid 0..1
+        "loudness": data.get("loudness"),
+        "dynamicRange": data.get("dynamic_range"),
+        "brightness": data.get("spectral_complexity"),
         "danceability": data.get("danceability"),
         "valence": data.get("valence"),
         "acousticness": data.get("acousticness"),
@@ -302,43 +351,35 @@ def _serialize_eq_features(row) -> dict:
     }
 
 
-@router.get("/api/tracks/{track_id}/eq-features")
+@router.get(
+    "/api/tracks/{track_id}/eq-features",
+    response_model=EqFeaturesResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get adaptive EQ features for a track by ID",
+)
 def api_eq_features_by_id(request: Request, track_id: int):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"SELECT {_EQ_FEATURES_QUERY_COLS} FROM library_tracks WHERE id = %s",
-            (track_id,),
-        )
-        row = cur.fetchone()
+    row = get_track_info_cols(track_id, _EQ_FEATURES_QUERY_COLS)
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_eq_features(row)
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/eq-features")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/eq-features",
+    response_model=EqFeaturesResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get adaptive EQ features for a track by storage ID",
+)
 def api_eq_features_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"SELECT {_EQ_FEATURES_QUERY_COLS} FROM library_tracks WHERE storage_id = %s",
-            (storage_id,),
-        )
-        row = cur.fetchone()
+    row = get_track_info_cols_by_storage_id(storage_id, _EQ_FEATURES_QUERY_COLS)
     if not row:
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_eq_features(row)
 
 
 # ── Track primary genre ─────────────────────────────────────────────
-#
-# Returns the dominant genre for a track, used by the "Genre Adaptive"
-# equalizer mode. We pick the highest-weight canonical genre from the
-# track's album; if no album genres exist (or none are canonical) we
-# fall back to the artist's genres. Non-canonical tags (raw Last.fm
-# noise like "blackened-post-sludge") are still returned if nothing
-# canonical is available, but `primary.canonical = false` tells the
-# client to skip preset lookup.
 
 def _pick_primary_genre(rows):
     """Prefer the highest-weight canonical genre; fall back to the
@@ -400,38 +441,14 @@ def _pick_primary_genre(rows):
     return canonical_pick or raw_pick
 
 
-def _resolve_track_genre(cur, track_id: int) -> dict | None:
-    cur.execute(
-        """
-        SELECT g.name, g.slug, ag.weight
-        FROM library_tracks t
-        JOIN album_genres ag ON ag.album_id = t.album_id
-        JOIN genres g ON g.id = ag.genre_id
-        WHERE t.id = %s
-        ORDER BY ag.weight DESC NULLS LAST, g.name ASC
-        LIMIT 10
-        """,
-        (track_id,),
-    )
-    album_rows = cur.fetchall()
+def _resolve_track_genre(track_id: int) -> dict | None:
+    album_rows = get_track_album_genres(track_id)
     picked = _pick_primary_genre(album_rows) if album_rows else None
     if picked:
         picked["source"] = "album"
         return picked
 
-    cur.execute(
-        """
-        SELECT g.name, g.slug, arg.weight
-        FROM library_tracks t
-        JOIN artist_genres arg ON arg.artist_name = t.artist
-        JOIN genres g ON g.id = arg.genre_id
-        WHERE t.id = %s
-        ORDER BY arg.weight DESC NULLS LAST, g.name ASC
-        LIMIT 10
-        """,
-        (track_id,),
-    )
-    artist_rows = cur.fetchall()
+    artist_rows = get_track_artist_genres(track_id)
     picked = _pick_primary_genre(artist_rows) if artist_rows else None
     if picked:
         picked["source"] = "artist"
@@ -440,47 +457,62 @@ def _resolve_track_genre(cur, track_id: int) -> dict | None:
     return None
 
 
-@router.get("/api/tracks/{track_id}/genre")
+@router.get(
+    "/api/tracks/{track_id}/genre",
+    response_model=TrackGenreResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get the primary genre for a track by ID",
+)
 def api_track_genre_by_id(request: Request, track_id: int):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT 1 FROM library_tracks WHERE id = %s", (track_id,))
-        if not cur.fetchone():
-            return Response(status_code=404)
-        result = _resolve_track_genre(cur, track_id)
+    if not get_track_exists(track_id):
+        raise HTTPException(status_code=404, detail="Track not found")
+    result = _resolve_track_genre(track_id)
     if result is None:
         return {"primary": None, "topLevel": None, "source": None, "preset": None}
     return result
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/genre")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/genre",
+    response_model=TrackGenreResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get the primary genre for a track by storage ID",
+)
 def api_track_genre_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id FROM library_tracks WHERE storage_id = %s", (storage_id,))
-        row = cur.fetchone()
-        if not row:
-            return Response(status_code=404)
-        result = _resolve_track_genre(cur, row["id"])
+    tid = get_track_id_by_storage_id(storage_id)
+    if tid is None:
+        raise HTTPException(status_code=404, detail="Track not found")
+    result = _resolve_track_genre(tid)
     if result is None:
         return {"primary": None, "topLevel": None, "source": None, "preset": None}
     return result
 
 
-@router.get("/api/discover/completeness")
+@router.get(
+    "/api/discover/completeness",
+    response_model=DiscoverCompletenessResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List cached library completeness results",
+)
 def api_discover_completeness(request: Request):
     """Return cached completeness data. The heavy computation runs as a worker task."""
     _require_auth(request)
     cached = get_cache("discover:completeness", max_age_seconds=86400)
     if cached is not None:
         return cached
-    # No cached data — queue a worker task to compute it
     from crate.db import create_task_dedup
     create_task_dedup("compute_completeness", {})
     return []
 
 
-@router.post("/api/discover/completeness/refresh")
+@router.post(
+    "/api/discover/completeness/refresh",
+    response_model=DiscoverCompletenessRefreshResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue a completeness refresh",
+)
 def api_discover_completeness_refresh(request: Request):
     """Force recompute of completeness data."""
     _require_auth(request)
@@ -511,7 +543,7 @@ def _stream_file(request: Request, filepath: str):
         filepath = filepath[len("/music/"):].lstrip("/")
     file_path = safe_path(lib, filepath)
     if not file_path or not file_path.is_file():
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
 
     ext = file_path.suffix.lower()
     return FileResponse(
@@ -521,44 +553,55 @@ def _stream_file(request: Request, filepath: str):
     )
 
 
-@router.get("/api/tracks/{track_id}/stream")
+@router.get(
+    "/api/tracks/{track_id}/stream",
+    responses=_STREAM_RESPONSES,
+    summary="Stream a track by track ID",
+)
 def api_stream_by_id(request: Request, track_id: int):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
-        row = cur.fetchone()
-    if not row:
-        return Response(status_code=404)
-    return _stream_file(request, row["path"])
+    path = get_track_path(track_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return _stream_file(request, path)
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/stream")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/stream",
+    responses=_STREAM_RESPONSES,
+    summary="Stream a track by storage ID",
+)
 def api_stream_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT path FROM library_tracks WHERE storage_id = %s", (storage_id,))
-        row = cur.fetchone()
-    if not row:
-        return Response(status_code=404)
-    return _stream_file(request, row["path"])
+    path = get_track_path_by_storage_id(storage_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return _stream_file(request, path)
 
 
-@router.get("/api/stream/{filepath:path}")
+@router.get(
+    "/api/stream/{filepath:path}",
+    responses=_STREAM_RESPONSES,
+    summary="Stream a track by file path",
+)
 def api_stream_file(request: Request, filepath: str):
     return _stream_file(request, filepath)
 
 
-@router.get("/api/similar-tracks")
+@router.get(
+    "/api/similar-tracks",
+    response_model=SimilarTracksResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Find tracks similar to a seed track",
+)
 def api_similar_tracks_query(request: Request, path: str = "", track_id: int = 0, limit: int = 20):
     _require_auth(request)
     from crate.bliss import get_similar_from_db
 
     if track_id:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
-            row = cur.fetchone()
-            if row:
-                path = row["path"]
+        found_path = get_track_path(track_id)
+        if found_path:
+            path = found_path
 
     if not path:
         raise HTTPException(status_code=400, detail="path or track_id required")
@@ -567,7 +610,12 @@ def api_similar_tracks_query(request: Request, path: str = "", track_id: int = 0
     return {"tracks": _enrich_radio_tracks(results)}
 
 
-@router.get("/api/similar-tracks/{filepath:path}")
+@router.get(
+    "/api/similar-tracks/{filepath:path}",
+    response_model=SimilarTracksResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Find tracks similar to a seed file path",
+)
 def api_similar_tracks(request: Request, filepath: str, limit: int = 20):
     _require_auth(request)
     from crate.bliss import get_similar_from_db
@@ -575,7 +623,7 @@ def api_similar_tracks(request: Request, filepath: str, limit: int = 20):
     lib = library_path()
     full_path = safe_path(lib, filepath)
     if not full_path or not full_path.is_file():
-        return JSONResponse({"error": "Track not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
     similar = get_similar_from_db(str(full_path), limit=limit)
     return {"tracks": _enrich_radio_tracks(similar)}
 
@@ -592,34 +640,42 @@ def _download_track(request: Request, filepath: str):
         filepath = filepath[len("/music/"):].lstrip("/")
     file_path = safe_path(lib, filepath)
     if not file_path or not file_path.is_file():
-        return Response(status_code=404)
+        raise HTTPException(status_code=404, detail="Track not found")
 
     return FileResponse(path=str(file_path), filename=file_path.name, media_type="application/octet-stream")
 
 
-@router.get("/api/tracks/{track_id}/download")
+@router.get(
+    "/api/tracks/{track_id}/download",
+    responses=_DOWNLOAD_RESPONSES,
+    summary="Download a track by track ID",
+)
 def api_download_track_by_id(request: Request, track_id: int):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
-        row = cur.fetchone()
-    if not row:
-        return Response(status_code=404)
-    return _download_track(request, row["path"])
+    path = get_track_path(track_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return _download_track(request, path)
 
 
-@router.get("/api/tracks/by-storage/{storage_id}/download")
+@router.get(
+    "/api/tracks/by-storage/{storage_id}/download",
+    responses=_DOWNLOAD_RESPONSES,
+    summary="Download a track by storage ID",
+)
 def api_download_track_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT path FROM library_tracks WHERE storage_id = %s", (storage_id,))
-        row = cur.fetchone()
-    if not row:
-        return Response(status_code=404)
-    return _download_track(request, row["path"])
+    path = get_track_path_by_storage_id(storage_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return _download_track(request, path)
 
 
-@router.get("/api/download/track/{filepath:path}")
+@router.get(
+    "/api/download/track/{filepath:path}",
+    responses=_DOWNLOAD_RESPONSES,
+    summary="Download a track by file path",
+)
 def api_download_track(request: Request, filepath: str):
     return _download_track(request, filepath)
 
@@ -638,58 +694,46 @@ MOOD_PRESETS = {
 }
 
 
-@router.get("/api/browse/moods")
+def _mood_conditions(filters: dict) -> tuple[list[str], list]:
+    conditions = ["bpm IS NOT NULL"]
+    params: list = []
+    for key, val in filters.items():
+        col = key.rsplit("_", 1)[0]
+        op = ">" if key.endswith("_min") else "<"
+        conditions.append(f"{col} {op}= %s")
+        params.append(val)
+    return conditions, params
+
+
+@router.get(
+    "/api/browse/moods",
+    response_model=MoodPresetsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List mood presets with available track counts",
+)
 def api_browse_moods(request: Request):
     """Return available mood presets with track counts."""
     _require_auth(request)
-    from crate.db import get_db_ctx
     results = []
-    with get_db_ctx() as cur:
-        for name, filters in MOOD_PRESETS.items():
-            conditions = ["bpm IS NOT NULL"]
-            params: list = []
-            for key, val in filters.items():
-                col = key.rsplit("_", 1)[0]
-                op = ">" if key.endswith("_min") else "<"
-                conditions.append(f"{col} {op}= %s")
-                params.append(val)
-            cur.execute(
-                f"SELECT COUNT(*) AS cnt FROM library_tracks WHERE {' AND '.join(conditions)}",
-                params,
-            )
-            count = cur.fetchone()["cnt"]
-            results.append({"name": name, "track_count": count, "filters": filters})
+    for name, filters in MOOD_PRESETS.items():
+        conditions, params = _mood_conditions(filters)
+        count = count_mood_tracks(conditions, params)
+        results.append({"name": name, "track_count": count, "filters": filters})
     return results
 
 
-@router.get("/api/browse/mood/{mood}")
+@router.get(
+    "/api/browse/mood/{mood}",
+    response_model=MoodTracksResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="List tracks matching a mood preset",
+)
 def api_browse_mood_tracks(request: Request, mood: str, limit: int = Query(50, ge=1, le=200)):
     """Return tracks matching a mood preset."""
     _require_auth(request)
     preset = MOOD_PRESETS.get(mood)
     if not preset:
         raise HTTPException(status_code=404, detail=f"Unknown mood: {mood}")
-    from crate.db import get_db_ctx
-    conditions = ["bpm IS NOT NULL"]
-    params: list = []
-    for key, val in preset.items():
-        col = key.rsplit("_", 1)[0]
-        op = ">" if key.endswith("_min") else "<"
-        conditions.append(f"{col} {op}= %s")
-        params.append(val)
-    params.append(limit)
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"""SELECT t.id, t.storage_id, t.title, t.artist, a.name AS album, t.path, t.duration,
-                       ar.id AS artist_id, ar.slug AS artist_slug,
-                       a.id AS album_id, a.slug AS album_slug,
-                       t.bpm, t.energy, t.danceability, t.valence
-                FROM library_tracks t
-                JOIN library_albums a ON a.id = t.album_id
-                LEFT JOIN library_artists ar ON ar.name = t.artist
-                WHERE {' AND '.join(conditions)}
-                ORDER BY RANDOM() LIMIT %s""",
-            params,
-        )
-        tracks = [dict(r) for r in cur.fetchall()]
+    conditions, params = _mood_conditions(preset)
+    tracks = get_mood_tracks(conditions, params, limit)
     return {"mood": mood, "filters": preset, "tracks": tracks, "count": len(tracks)}

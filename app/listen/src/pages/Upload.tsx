@@ -61,7 +61,7 @@ export function Upload() {
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <div className="space-y-2">
-        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-wider text-white/45">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-wider text-muted-foreground">
           <UploadIcon size={12} />
           Upload music
         </div>
@@ -103,7 +103,7 @@ export function Upload() {
                   </div>
                   <button
                     onClick={() => setFiles([])}
-                    className="text-xs text-white/45 transition-colors hover:text-white/70"
+                    className="text-xs text-muted-foreground transition-colors hover:text-white/70"
                   >
                     Clear
                   </button>
@@ -120,7 +120,7 @@ export function Upload() {
                         <Music size={14} className="shrink-0 text-primary" />
                       )}
                       <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                      <span className="text-[11px] text-white/35">{formatBytes(file.size)}</span>
+                      <span className="text-[11px] text-white/40">{formatBytes(file.size)}</span>
                     </div>
                   ))}
                 </div>
@@ -129,7 +129,7 @@ export function Upload() {
           </div>
 
           <div className="space-y-4 rounded-[24px] border border-white/10 bg-[var(--gradient-bg-50)] p-5">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-white/45">What happens next</h2>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">What happens next</h2>
             <ul className="space-y-3 text-sm leading-6 text-muted-foreground">
               <li>Crate imports the files into the shared library.</li>
               <li>Library sync and enrichment run in the background.</li>

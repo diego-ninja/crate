@@ -12,6 +12,7 @@ SCP           := scp
 DC            := docker compose
 DC_PROD       := $(DC) -f docker-compose.yaml
 DC_LOCAL      := $(DC) -f docker-compose.yaml -f docker-compose.override.yaml
+REMOTE_DC     := docker compose -f docker-compose.yaml -f docker-compose.project.yaml
 
 # Dominios locales
 LOCAL_DOMAIN  := crate.local
@@ -35,11 +36,12 @@ DEV_CONTAINERS := crate-dev-api crate-dev-worker crate-dev-postgres crate-dev-re
 .PHONY: dev
 dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend dev servers
 	@# Kill any leftover Vite processes from previous runs (by port AND pattern)
-	@-lsof -ti :5173,:5174,:5175,:5176 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@-lsof -ti :5173,:5174,:5175,:5176,:5177 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
+	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build
@@ -50,15 +52,18 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@cd app/listen && npm install --silent 2>/dev/null; cd ../..
 	@cd app/docs && npm install --silent 2>/dev/null; cd ../..
 	@cd app/site && npm install --silent 2>/dev/null; cd ../..
+	@cd app/reference && npm install --silent 2>/dev/null; cd ../..
 	@(cd app/ui && npx vite --port 5173 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/docs && npx vite --port 5175 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/site && npx vite --port 5176 --strictPort --host > /dev/null 2>&1 &)
+	@(cd app/reference && npx vite --port 5177 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo ""
 	@echo "  $(GREEN)Admin:$(NC)  https://admin.dev.lespedants.org"
 	@echo "  $(GREEN)Listen:$(NC) https://listen.dev.lespedants.org"
 	@echo "  $(GREEN)Docs:$(NC)   https://docs.dev.cratemusic.app"
+	@echo "  $(GREEN)API Ref:$(NC) https://reference.dev.cratemusic.app"
 	@echo "  $(GREEN)Site:$(NC)   https://www.dev.cratemusic.app"
 	@echo "  $(GREEN)API:$(NC)    https://api.dev.lespedants.org"
 	@echo "  Login:  admin@cratemusic.app / admin"
@@ -88,15 +93,20 @@ dev-docs: ## Arrancar solo Docs dev server (:5175)
 dev-site: ## Arrancar solo Site dev server (:5176)
 	@cd app/site && npx vite --port 5176 --host
 
+.PHONY: dev-reference
+dev-reference: ## Arrancar solo Scalar reference dev server (:5177)
+	@cd app/reference && npx vite --port 5177 --host
+
 .PHONY: dev-down
 dev-down: ## Parar todo (backend + frontends)
 	@$(DC_DEV) down
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
-	@-lsof -ti :5173,:5174,:5175,:5176 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@-lsof -ti :5173,:5174,:5175,:5176,:5177 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
+	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@echo "$(GREEN)Todo parado$(NC)"
 
 .PHONY: dev-logs
@@ -113,6 +123,7 @@ dev-rebuild: ## Rebuild y restart todo
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
+	@-pkill -f "vite.*app/reference" 2>/dev/null || true
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build --force-recreate
@@ -120,6 +131,7 @@ dev-rebuild: ## Rebuild y restart todo
 	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/docs && npx vite --port 5175 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/site && npx vite --port 5176 --strictPort --host > /dev/null 2>&1 &)
+	@(cd app/reference && npx vite --port 5177 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
 	@echo "$(GREEN)Todo rebuildeado$(NC)"
 
@@ -184,6 +196,7 @@ ps: ## Estado de los servicios (dev)
 	@-pgrep -af "vite.*5174" > /dev/null 2>&1 && echo "  Listen: http://localhost:5174 (running)" || echo "  Listen: not running"
 	@-pgrep -af "vite.*5175" > /dev/null 2>&1 && echo "  Docs:   http://localhost:5175 (running)" || echo "  Docs:   not running"
 	@-pgrep -af "vite.*5176" > /dev/null 2>&1 && echo "  Site:   http://localhost:5176 (running)" || echo "  Site:   not running"
+	@-pgrep -af "vite.*5177" > /dev/null 2>&1 && echo "  APIRef: http://localhost:5177 (running)" || echo "  APIRef: not running"
 
 .PHONY: pull
 pull: ## Pull de imagenes en local
@@ -254,9 +267,9 @@ deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
 	@$(SSH) "mkdir -p $(SERVER_PATH)/media/downloads/soulseek/incomplete $(SERVER_PATH)/media/downloads/tidal/incomplete && chown -R $(shell grep PUID .env 2>/dev/null | cut -d= -f2 || echo 1000):$(shell grep PGID .env 2>/dev/null | cut -d= -f2 || echo 1000) $(SERVER_PATH)/media/downloads"
 	@echo "$(YELLOW)Sincronizando config...$(NC)"
 	@# docker-compose.project.yaml is the overlay that adds crate-site
-	@# and crate-docs (the official project surfaces). It only affects
-	@# the canonical cratemusic.app server; other self-hosters don't have
-	@# it listed in COMPOSE_FILE and therefore never start those services.
+	@# and crate-docs (the official project surfaces). The remote commands
+	@# below include it explicitly so deploys do not depend on COMPOSE_FILE
+	@# being present in the server's .env.
 	@scp docker-compose.yaml docker-compose.project.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az \
 		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
@@ -270,9 +283,9 @@ deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
 	@# deploys.
 	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
 	@echo "$(YELLOW)Pulling imagenes (GHCR + externas)...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose pull --ignore-pull-failures"
+	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) pull --ignore-pull-failures"
 	@echo "$(YELLOW)Reiniciando servicios (sin build local)...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose up -d --no-build --remove-orphans"
+	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) up -d --no-build --remove-orphans"
 	@echo "$(GREEN)Deploy completado$(NC)"
 
 .PHONY: deploy-build
@@ -289,20 +302,18 @@ deploy-build: ## Deploy con build en servidor (sin GHCR, fallback)
 	@# build time. Without this the build fails on COPY docs/ /docs/.
 	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
 	@echo "$(YELLOW)Building servicios en servidor...$(NC)"
-	@# Build every buildable service. If the server has the project
-	@# overlay active (COMPOSE_FILE=docker-compose.yaml:docker-compose.project.yaml),
-	@# this also builds crate-site + crate-docs; otherwise just the four
-	@# per-instance services.
-	@$(SSH) "cd $(SERVER_PATH) && docker compose build"
+	@# Build every buildable service in the canonical project stack,
+	@# including the project overlay that defines crate-site + crate-docs.
+	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) build"
 	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose pull --ignore-buildable"
+	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) pull --ignore-buildable"
 	@echo "$(YELLOW)Reiniciando servicios...$(NC)"
-	@$(SSH) "cd $(SERVER_PATH) && docker compose up -d"
+	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) up -d"
 	@echo "$(GREEN)Deploy completado$(NC)"
 
 .PHONY: deploy-sync
 deploy-sync: ## Solo sincronizar ficheros al servidor (sin restart)
-	@scp docker-compose.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
+	@scp docker-compose.yaml docker-compose.project.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az --delete \
 		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
 		--exclude='.vite' --exclude='*.tsbuildinfo' \
@@ -312,28 +323,28 @@ deploy-sync: ## Solo sincronizar ficheros al servidor (sin restart)
 
 .PHONY: deploy-restart
 deploy-restart: ## Reiniciar servicios en remoto (sin sync)
-	@$(SSH) "cd $(SERVER_PATH) && docker compose up -d"
+	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) up -d"
 
 .PHONY: deploy-pull
 deploy-pull: ## Pull de imagenes en remoto
-	@$(SSH) "cd $(SERVER_PATH) && docker compose pull --ignore-buildable"
+	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) pull --ignore-buildable"
 
 .PHONY: deploy-logs
 deploy-logs: ## Ver logs en remoto (uso: make deploy-logs s=crate-api)
 	@if [ -n "$(s)" ]; then \
-		$(SSH) "cd $(SERVER_PATH) && docker compose logs -f --tail=100 $(s)"; \
+		$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) logs -f --tail=100 $(s)"; \
 	else \
-		$(SSH) "cd $(SERVER_PATH) && docker compose logs -f --tail=100"; \
+		$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) logs -f --tail=100"; \
 	fi
 
 .PHONY: deploy-ps
 deploy-ps: ## Estado de servicios en remoto
-	@$(SSH) "cd $(SERVER_PATH) && docker compose ps --format 'table {{.Name}}\t{{.Status}}'"
+	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) ps --format 'table {{.Name}}\t{{.Status}}'"
 
 .PHONY: deploy-shell
 deploy-shell: ## Shell remoto en un servicio (uso: make deploy-shell s=crate-api)
 	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make deploy-shell s=crate-api$(NC)"; exit 1; fi
-	@$(SSH) -t "cd $(SERVER_PATH) && docker compose exec $(s) sh"
+	@$(SSH) -t "cd $(SERVER_PATH) && $(REMOTE_DC) exec $(s) sh"
 
 .PHONY: deploy-ssh
 deploy-ssh: ## SSH al servidor

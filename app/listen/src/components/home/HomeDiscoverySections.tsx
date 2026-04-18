@@ -197,7 +197,7 @@ export function HomeTasteHero({
             {hero.name}
           </h1>
 
-          <div className="mt-4 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-white/55">
+          <div className="mt-4 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
               {statValue(hero.listeners)} listeners
             </div>
@@ -298,7 +298,7 @@ export function RecentEntityRow({
         </div>
       </div>
 
-      <div className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-white/45">
+      <div className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
         {item.type}
       </div>
     </button>
@@ -451,7 +451,7 @@ export function CustomMixCard({
       <div className="mt-1 line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-muted-foreground">
         {mixArtistSummary(item)}
       </div>
-      <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-white/35">{item.track_count} tracks</div>
+      <div className="mt-2 text-[11px] uppercase tracking-[0.18em] text-white/40">{item.track_count} tracks</div>
       <ItemActionMenu
         actions={actions}
         open={actionMenu.open}
@@ -529,6 +529,7 @@ export function RecommendedTracksSection({
                   showArtist
                   showAlbum
                   showCoverThumb
+                  queueTracks={pageTracks}
                 />
               ))}
             </div>

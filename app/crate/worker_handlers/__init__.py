@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
-from crate.db import get_db_ctx
+from crate.db.jobs.tasks import get_task_status
 
 log = logging.getLogger(__name__)
 
@@ -27,10 +27,8 @@ def audio_extensions() -> set[str]:
 def is_cancelled(task_id: str) -> bool:
     """Check if a task has been cancelled."""
     try:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT status FROM tasks WHERE id = %s", (task_id,))
-            row = cur.fetchone()
-            return row is not None and row["status"] == "cancelled"
+        status = get_task_status(task_id)
+        return status == "cancelled"
     except Exception:
         return False
 

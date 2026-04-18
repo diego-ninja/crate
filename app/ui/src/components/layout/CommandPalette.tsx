@@ -256,6 +256,18 @@ export function CommandPalette() {
                 <Command.Item
                   onSelect={() =>
                     action(
+                      () => api("/api/genres/taxonomy/cleanup-invalid", "POST"),
+                      "Genre taxonomy cleanup",
+                    )
+                  }
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
+                >
+                  <Sparkles size={14} className="text-muted-foreground" />
+                  Clean Invalid Genre Taxonomy Nodes
+                </Command.Item>
+                <Command.Item
+                  onSelect={() =>
+                    action(
                       () => api("/api/acquisition/new-releases/check", "POST"),
                       "Check New Releases",
                     )

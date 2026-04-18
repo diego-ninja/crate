@@ -218,8 +218,30 @@ def _strip_musicbrainz_html_to_lines(html_text: str) -> list[str]:
 def _normalize_musicbrainz_relation_name(value: str) -> str:
     normalized = re.sub(r"\s+\([^)]+\)$", "", (value or "").strip())
     normalized = re.sub(r"\[[^\]]+\]$", "", normalized).strip()
+    normalized = re.sub(r":\s*$", "", normalized).strip()
     normalized = re.sub(r"\s+", " ", normalized).strip().lower()
     return normalized
+
+
+def _is_valid_musicbrainz_relation_candidate(value: str) -> bool:
+    normalized = _normalize_musicbrainz_relation_name(value)
+    if not normalized:
+        return False
+    if "://" in normalized or normalized.startswith("www."):
+        return False
+    if re.fullmatch(r"q\d+", normalized):
+        return False
+    if normalized in {
+        "external links",
+        "editing",
+        "collections",
+        "aliases",
+        "associated tags",
+        "wikidata",
+        "other databases",
+    }:
+        return False
+    return True
 
 
 def _parse_musicbrainz_genre_relationships(lines: list[str]) -> dict[str, list[str]]:
@@ -230,13 +252,14 @@ def _parse_musicbrainz_genre_relationships(lines: list[str]) -> dict[str, list[s
     for line in lines:
         normalized = re.sub(r"^\#+\s*", "", line).strip()
         normalized_lower = normalized.lower()
+        section_label = normalized_lower.rstrip(":").strip()
         if normalized_lower == "relationships":
             in_relationships = True
             current_label = None
             continue
         if not in_relationships:
             continue
-        if normalized_lower in {"external links", "editing", "collections", "aliases", "associated tags"}:
+        if section_label in {"external links", "editing", "collections", "aliases", "associated tags"}:
             break
 
         label_match = re.match(
@@ -247,13 +270,13 @@ def _parse_musicbrainz_genre_relationships(lines: list[str]) -> dict[str, list[s
             current_label = label_match.group(1)
             relationships.setdefault(current_label, [])
             remainder = _normalize_musicbrainz_relation_name(label_match.group(2))
-            if remainder:
+            if _is_valid_musicbrainz_relation_candidate(remainder):
                 relationships[current_label].append(remainder)
             continue
 
         if current_label:
             candidate = _normalize_musicbrainz_relation_name(normalized)
-            if candidate:
+            if _is_valid_musicbrainz_relation_candidate(candidate):
                 relationships.setdefault(current_label, []).append(candidate)
 
     deduped: dict[str, list[str]] = {}
@@ -516,10 +539,8 @@ def enrich_genre_descriptions_batch(
             if len(examples_skipped) < 8:
                 examples_skipped.append({"slug": slug, "reason": "exception", "error": str(exc)})
 
-    from crate.db.core import get_db_ctx as _get_db_ctx
-    with _get_db_ctx() as cur:
-        cur.execute("SELECT COUNT(*)::INTEGER AS cnt FROM genre_taxonomy_nodes WHERE external_description IS NULL OR external_description = ''")
-        remaining_without_external = cur.fetchone()["cnt"]
+    from crate.db.genres import get_remaining_without_external_description
+    remaining_without_external = get_remaining_without_external_description()
 
     return {
         "processed": total,

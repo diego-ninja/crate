@@ -256,6 +256,7 @@ export function HomeSection() {
               showArtist
               showAlbum
               showCoverThumb
+              queueTracks={recommendedTracks}
             />
           ))}
         </div>

@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import mutagen
 from fastapi import APIRouter, Query, Request
@@ -7,20 +8,80 @@ from fastapi.responses import JSONResponse, Response
 from crate.api._deps import COVER_NAMES, artist_name_from_id, coerce_date, extensions, library_path, safe_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import ARTIST_PHOTO_NAMES, display_name, fs_artist_detail, fs_build_artists_list, has_library_data
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.browse import (
+    ArtistsWithShowsResponse,
+    ArtistBrowseListResponse,
+    ArtistCheckLibraryRequest,
+    ArtistCheckLibraryResponse,
+    ArtistDetailResponse,
+    ArtistEnqueueResponse,
+    ArtistInfoResponse,
+    ArtistNetworkResponse,
+    ArtistSetlistPlayableResponse,
+    CachedShowsResponse,
+    ShowsListResponse,
+    UpcomingResponse,
+    ArtistShowsResponse,
+    ArtistTopTrackResponse,
+    ArtistTrackTitleResponse,
+    BrowseFiltersResponse,
+)
 from crate.audio import get_audio_files
 from crate.db import (
     get_all_artist_issue_counts,
     get_artist_issue_count,
-    get_db_ctx,
     get_library_albums,
     get_library_artist,
+)
+from crate.db.queries.browse_artist import (
+    check_artists_in_library,
+    get_all_artist_genre_map,
+    get_artist_all_tracks,
+    get_artist_genres_by_name,
+    get_artist_list_genres,
+    get_artist_refs_by_names_full,
+    get_artist_setlist_tracks,
+    get_artist_top_genres,
+    get_artist_track_titles_with_albums,
+    get_artists_count,
+    get_artists_page,
+    get_browse_filter_countries,
+    get_browse_filter_decades,
+    get_browse_filter_formats,
+    get_browse_filter_genres,
+    get_similar_artist_refs,
 )
 from crate.lastfm import get_artist_info
 from crate.storage_layout import resolve_artist_dir
 
 log = logging.getLogger(__name__)
 
-router = APIRouter()
+router = APIRouter(tags=["browse"])
+
+_BROWSE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested browse resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
+
+_IMAGE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Binary image response.",
+            "content": {
+                "image/jpeg": {},
+                "image/png": {},
+                "image/svg+xml": {},
+            },
+        },
+        404: error_response("The requested image was not found."),
+    },
+)
 
 
 def _library_artist_ref(name: str) -> dict | None:
@@ -35,27 +96,7 @@ def _library_artist_ref(name: str) -> dict | None:
 
 
 def _lookup_artist_refs(names: list[str]) -> dict[str, dict]:
-    normalized_names = sorted({(name or "").strip() for name in names if (name or "").strip()})
-    if not normalized_names:
-        return {}
-
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT id, slug, name
-            FROM library_artists
-            WHERE LOWER(name) = ANY(%s)
-            """,
-            ([name.lower() for name in normalized_names],),
-        )
-        return {
-            row["name"].lower(): {
-                "id": row.get("id"),
-                "slug": row.get("slug"),
-                "name": row.get("name"),
-            }
-            for row in cur.fetchall()
-        }
+    return get_artist_refs_by_names_full(names)
 
 
 def _show_lineup_artists(show: dict, refs_by_name: dict[str, dict]) -> list[dict]:
@@ -77,23 +118,7 @@ def _enrich_similar_artists(similar: list[dict]) -> list[dict]:
     if not names:
         return []
 
-    placeholders = ",".join(["%s"] * len(names))
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"""
-            SELECT id, slug, name
-            FROM library_artists
-            WHERE LOWER(name) IN ({placeholders})
-            """,
-            [name.lower() for name in names],
-        )
-        refs = {
-            row["name"].lower(): {
-                "id": row.get("id"),
-                "slug": row.get("slug"),
-            }
-            for row in cur.fetchall()
-        }
+    refs = get_similar_artist_refs(names)
 
     enriched: list[dict] = []
     for item in similar:
@@ -110,7 +135,7 @@ def _normalize_song_title(value: str) -> str:
     return (
         (value or "")
         .lower()
-        .replace("’", "'")
+        .replace("'", "'")
         .replace("`", "'")
         .replace("\"", "")
         .replace("(", " ")
@@ -174,57 +199,28 @@ def _match_setlist_track(
     return contains
 
 
-@router.get("/api/browse/filters")
+@router.get(
+    "/api/browse/filters",
+    response_model=BrowseFiltersResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List available browse filters",
+)
 def api_browse_filters(request: Request):
     """Available filter options for the browse page."""
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT g.name, COUNT(DISTINCT ag.artist_name) AS cnt
-            FROM genres g JOIN artist_genres ag ON g.id = ag.genre_id
-            GROUP BY g.name HAVING COUNT(DISTINCT ag.artist_name) >= 1
-            ORDER BY cnt DESC LIMIT 50
-            """
-        )
-        genres = [{"name": row["name"], "count": row["cnt"]} for row in cur.fetchall()]
-
-        cur.execute(
-            """
-            SELECT country, COUNT(*) AS cnt FROM library_artists
-            WHERE country IS NOT NULL AND country != ''
-            GROUP BY country ORDER BY cnt DESC
-            """
-        )
-        countries = [{"name": row["country"], "count": row["cnt"]} for row in cur.fetchall()]
-
-        cur.execute(
-            """
-            SELECT DISTINCT formed FROM library_artists
-            WHERE formed IS NOT NULL AND formed != '' AND length(formed) >= 4
-            """
-        )
-        decades_set = set()
-        for row in cur.fetchall():
-            try:
-                decade = f"{int(row['formed'][:4]) // 10 * 10}s"
-                decades_set.add(decade)
-            except (ValueError, TypeError):
-                pass
-        decades = sorted(decades_set)
-
-        cur.execute(
-            """
-            SELECT format, COUNT(*) AS cnt FROM library_tracks
-            WHERE format IS NOT NULL GROUP BY format ORDER BY cnt DESC
-            """
-        )
-        formats = [{"name": row["format"], "count": row["cnt"]} for row in cur.fetchall()]
-
+    genres = get_browse_filter_genres()
+    countries = get_browse_filter_countries()
+    decades = get_browse_filter_decades()
+    formats = get_browse_filter_formats()
     return {"genres": genres, "countries": countries, "decades": decades, "formats": formats}
 
 
-@router.get("/api/artists")
+@router.get(
+    "/api/artists",
+    response_model=ArtistBrowseListResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List artists in the library",
+)
 def api_artists(
     request: Request,
     q: str = "",
@@ -256,33 +252,34 @@ def api_artists(
     select_cols = "la.*, COALESCE(la.dir_mtime, EXTRACT(EPOCH FROM la.updated_at)::bigint) AS recent_sort"
     joins = ""
     where_clauses = ["1=1"]
-    params: list = []
+    params: dict = {}
 
     if genre:
         joins += " JOIN artist_genres ag ON la.name = ag.artist_name JOIN genres g ON ag.genre_id = g.id"
-        where_clauses.append("g.name = %s")
-        params.append(genre)
+        where_clauses.append("g.name = :genre")
+        params["genre"] = genre
 
     if country:
-        where_clauses.append("la.country = %s")
-        params.append(country)
+        where_clauses.append("la.country = :country")
+        params["country"] = country
 
     if decade:
         try:
             decade_start = int(decade.rstrip("s"))
             where_clauses.append("la.formed IS NOT NULL AND length(la.formed) >= 4")
-            where_clauses.append("CAST(substring(la.formed, 1, 4) AS INTEGER) BETWEEN %s AND %s")
-            params.extend([decade_start, decade_start + 9])
+            where_clauses.append("CAST(substring(la.formed, 1, 4) AS INTEGER) BETWEEN :decade_start AND :decade_end")
+            params["decade_start"] = decade_start
+            params["decade_end"] = decade_start + 9
         except (ValueError, TypeError):
             pass
 
     if format:
-        where_clauses.append("la.primary_format = %s")
-        params.append(format)
+        where_clauses.append("la.primary_format = :format")
+        params["format"] = format
 
     if q:
-        where_clauses.append("la.name ILIKE %s")
-        params.append(f"%{q}%")
+        where_clauses.append("la.name ILIKE :q")
+        params["q"] = f"%{q}%"
 
     where_sql = " AND ".join(where_clauses)
     sort_map = {
@@ -295,17 +292,8 @@ def api_artists(
     }
     order_sql = sort_map.get(sort, "la.name ASC")
 
-    with get_db_ctx() as cur:
-        count_sql = f"SELECT COUNT(DISTINCT la.name) AS cnt FROM library_artists la {joins} WHERE {where_sql}"
-        cur.execute(count_sql, params)
-        total = cur.fetchone()["cnt"]
-
-        query_sql = (
-            f"SELECT DISTINCT {select_cols} FROM library_artists la {joins} "
-            f"WHERE {where_sql} ORDER BY {order_sql} LIMIT %s OFFSET %s"
-        )
-        cur.execute(query_sql, params + [per_page, (page - 1) * per_page])
-        rows = cur.fetchall()
+    total = get_artists_count(joins, where_sql, params)
+    rows = get_artists_page(select_cols, joins, where_sql, order_sql, params, per_page, (page - 1) * per_page)
 
     issue_counts = get_all_artist_issue_counts()
     items = []
@@ -326,35 +314,34 @@ def api_artists(
             item["listeners"] = row.get("listeners") or 0
             item["track_count"] = row["track_count"]
             item["total_size_mb"] = round(row["total_size"] / (1024**2)) if row["total_size"] else 0
-            with get_db_ctx() as cur2:
-                cur2.execute(
-                    "SELECT g.name FROM artist_genres ag JOIN genres g ON ag.genre_id = g.id "
-                    "WHERE ag.artist_name = %s ORDER BY ag.weight DESC LIMIT 5",
-                    (row["name"],),
-                )
-                item["genres"] = [genre_row["name"] for genre_row in cur2.fetchall()]
+            item["genres"] = get_artist_list_genres(row["name"])
         items.append(item)
 
     return {"items": items, "total": total, "page": page, "per_page": per_page}
 
 
-@router.post("/api/artists/check-library")
-def api_check_artists_in_library(request: Request, body: dict):
-    """Check which artists from a list exist in the local library. Returns a dict of name → boolean."""
+@router.post(
+    "/api/artists/check-library",
+    response_model=ArtistCheckLibraryResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Check which artists already exist in the local library",
+)
+def api_check_artists_in_library(request: Request, body: ArtistCheckLibraryRequest):
+    """Check which artists from a list exist in the local library. Returns a dict of name -> boolean."""
     _require_auth(request)
-    names = body.get("names", [])
-    if not names or not isinstance(names, list):
+    names = body.names
+    if not names:
         return {}
-    from crate.db import get_db_ctx
-    with get_db_ctx() as cur:
-        placeholders = ",".join(["%s"] * len(names))
-        cur.execute(f"SELECT name FROM library_artists WHERE LOWER(name) IN ({placeholders})",
-                    [n.lower() for n in names])
-        found = {r["name"].lower() for r in cur.fetchall()}
+    found = check_artists_in_library(names)
     return {name: name.lower() in found for name in names}
 
 
-@router.get("/api/artists/{artist_id}")
+@router.get(
+    "/api/artists/{artist_id}",
+    response_model=ArtistDetailResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get detailed artist information",
+)
 def api_artist_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -362,7 +349,11 @@ def api_artist_by_id(request: Request, artist_id: int):
     return api_artist(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/background")
+@router.get(
+    "/api/artists/{artist_id}/background",
+    responses=_IMAGE_RESPONSES,
+    summary="Get an artist background image",
+)
 def api_artist_background_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -370,7 +361,12 @@ def api_artist_background_by_id(request: Request, artist_id: int, random_pick: b
     return api_artist_background(request, artist_name, random_pick)
 
 
-@router.get("/api/artists/{artist_id}/top-tracks")
+@router.get(
+    "/api/artists/{artist_id}/top-tracks",
+    response_model=list[ArtistTopTrackResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get top tracks for an artist",
+)
 def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(20, ge=1, le=50)):
     """Top tracks for an artist. Uses Last.fm global popularity to rank,
     matched against tracks in the local library. Falls back to local play
@@ -380,21 +376,8 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
     if not artist_name:
         return JSONResponse([], status_code=200)
 
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT
-                t.id, t.title, t.artist, t.album, t.path, t.duration,
-                t.track_number, t.format,
-                a.id as album_id, a.slug as album_slug, a.year,
-                ar.id as artist_id, ar.slug as artist_slug
-            FROM library_tracks t
-            LEFT JOIN library_albums a ON a.id = t.album_id
-            LEFT JOIN library_artists ar ON ar.name = t.artist
-            WHERE t.artist = %s
-        """, (artist_name,))
-        all_tracks = {r["title"].lower(): dict(r) for r in cur.fetchall()}
+    all_tracks = {r["title"].lower(): r for r in get_artist_all_tracks(artist_name)}
 
-    # Rank by Last.fm global popularity, matched to local library
     from crate.lastfm import get_top_tracks
     lastfm_top = get_top_tracks(artist_name, limit=count * 2) or []
 
@@ -408,7 +391,6 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
             if len(ranked) >= count:
                 break
 
-    # Fill remaining with unmatched tracks (newest albums first)
     if len(ranked) < count:
         remaining = [t for t in all_tracks.values() if t["id"] not in seen_ids]
         remaining.sort(key=lambda t: (t.get("year") or "0", t.get("track_number") or 0), reverse=True)
@@ -433,7 +415,11 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
     return [_fmt(r) for r in ranked]
 
 
-@router.get("/api/artists/{artist_id}/photo")
+@router.get(
+    "/api/artists/{artist_id}/photo",
+    responses=_IMAGE_RESPONSES,
+    summary="Get an artist photo",
+)
 def api_artist_photo_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -441,7 +427,12 @@ def api_artist_photo_by_id(request: Request, artist_id: int, random_pick: bool =
     return api_artist_photo(request, artist_name, random_pick)
 
 
-@router.get("/api/artists/{artist_id}/info")
+@router.get(
+    "/api/artists/{artist_id}/info",
+    response_model=ArtistInfoResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get external metadata for an artist",
+)
 def api_artist_info_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -449,7 +440,12 @@ def api_artist_info_by_id(request: Request, artist_id: int):
     return api_artist_info(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/shows")
+@router.get(
+    "/api/artists/{artist_id}/shows",
+    response_model=ArtistShowsResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get upcoming shows for an artist",
+)
 def api_artist_shows_by_id(request: Request, artist_id: int, limit: int = Query(10), country: str = Query("")):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -457,7 +453,12 @@ def api_artist_shows_by_id(request: Request, artist_id: int, limit: int = Query(
     return api_artist_shows(request, artist_name, limit, country)
 
 
-@router.post("/api/artists/{artist_id}/enrich")
+@router.post(
+    "/api/artists/{artist_id}/enrich",
+    response_model=ArtistEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue artist enrichment",
+)
 def api_artist_enrich_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -465,7 +466,12 @@ def api_artist_enrich_by_id(request: Request, artist_id: int):
     return api_artist_enrich(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/track-titles")
+@router.get(
+    "/api/artists/{artist_id}/track-titles",
+    response_model=list[ArtistTrackTitleResponse],
+    responses=_BROWSE_RESPONSES,
+    summary="List track titles for an artist with album references",
+)
 def api_artist_track_titles_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -473,7 +479,12 @@ def api_artist_track_titles_by_id(request: Request, artist_id: int):
     return api_artist_track_titles(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/setlist-playable")
+@router.get(
+    "/api/artists/{artist_id}/setlist-playable",
+    response_model=ArtistSetlistPlayableResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Match a probable setlist against playable local tracks",
+)
 def api_artist_setlist_playable_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -481,7 +492,12 @@ def api_artist_setlist_playable_by_id(request: Request, artist_id: int):
     return api_artist_setlist_playable(request, artist_name)
 
 
-@router.get("/api/artists/{artist_id}/network")
+@router.get(
+    "/api/artists/{artist_id}/network",
+    response_model=ArtistNetworkResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get the related-artist network for an artist",
+)
 def api_artist_network_by_id(request: Request, artist_id: int, depth: int = 2):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -614,7 +630,6 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
                 return Response(content=pic.data, media_type=pic.mime, headers=_IMG_CACHE)
             if audio and hasattr(audio, "tags") and audio.tags:
                 for key in audio.tags:
-                    # Guard against FLAC VComment which yields tuples.
                     if isinstance(key, str) and key.startswith("APIC"):
                         pic = audio.tags[key]
                         return Response(content=pic.data, media_type=pic.mime)
@@ -642,19 +657,7 @@ def api_artist_shows(request: Request, name: str, limit: int = Query(10), countr
 
     artist_ref = _library_artist_ref(name)
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT g.name
-            FROM artist_genres ag
-            JOIN genres g ON g.id = ag.genre_id
-            WHERE ag.artist_name = %s
-            ORDER BY ag.weight DESC
-            LIMIT 5
-            """,
-            (name,),
-        )
-        artist_genres = [row["name"] for row in cur.fetchall()]
+    artist_genres = get_artist_genres_by_name(name, limit=5)
 
     cached = db_get_shows(artist_name=name, country=country or None, limit=limit)
     probable_setlist = []
@@ -733,7 +736,12 @@ def api_artist_shows(request: Request, name: str, limit: int = Query(10), countr
     return {"events": normalized, "configured": True, "source": "live"}
 
 
-@router.get("/api/shows/artists-with-shows")
+@router.get(
+    "/api/shows/artists-with-shows",
+    response_model=ArtistsWithShowsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List artists that currently have cached shows",
+)
 def api_artists_with_shows(request: Request):
     _require_auth(request)
     from crate.db import get_upcoming_shows as db_get_shows
@@ -743,22 +751,18 @@ def api_artists_with_shows(request: Request):
     return {"artists": artist_names}
 
 
-@router.get("/api/shows/cached")
+@router.get(
+    "/api/shows/cached",
+    response_model=CachedShowsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List cached upcoming shows",
+)
 def api_cached_shows(request: Request, limit: int = Query(50)):
     _require_auth(request)
     from crate.db import get_upcoming_shows as db_get_shows
 
     shows = db_get_shows(limit=limit)
-    genre_map = {}
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT ag.artist_name, g.name FROM artist_genres ag
-            JOIN genres g ON ag.genre_id = g.id ORDER BY ag.weight DESC
-            """
-        )
-        for row in cur.fetchall():
-            genre_map.setdefault(row["artist_name"], []).append(row["name"])
+    genre_map = get_all_artist_genre_map()
 
     refs_by_name = _lookup_artist_refs(
         [
@@ -784,7 +788,12 @@ def api_cached_shows(request: Request, limit: int = Query(50)):
     return {"events": events}
 
 
-@router.get("/api/shows")
+@router.get(
+    "/api/shows",
+    response_model=ShowsListResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List upcoming shows with available filters",
+)
 def api_shows_list(request: Request, city: str = "", country: str = ""):
     _require_auth(request)
     from crate.db import get_show_cities, get_show_countries, get_upcoming_shows as db_get_shows
@@ -816,22 +825,13 @@ def api_artist_enrich(request: Request, name: str):
     _require_auth(request)
     from crate.content import queue_process_new_content_if_needed
 
-    # force=True because this endpoint is the "re-enrich" button; the admin
-    # explicitly asked for a fresh run even if the filesystem hash is stable.
     task_id = queue_process_new_content_if_needed(name, force=True)
     return {"status": "queued", "task_id": task_id}
 
 
 def api_artist_track_titles(request: Request, name: str):
     _require_auth(request)
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT t.title, t.path, a.name AS album, a.id AS album_id, a.slug AS album_slug "
-            "FROM library_tracks t JOIN library_albums a ON t.album_id = a.id "
-            "WHERE a.artist = %s ORDER BY t.title",
-            (name,),
-        )
-        rows = cur.fetchall()
+    rows = get_artist_track_titles_with_albums(name)
     return [
         {
             "title": row["title"],
@@ -856,26 +856,7 @@ def api_artist_setlist_playable(request: Request, name: str):
     artist_id = artist_row["id"] if artist_row else None
     artist_slug = artist_row.get("slug") if artist_row else None
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT
-                t.id,
-                t.storage_id::text AS track_storage_id,
-                t.title,
-                t.path,
-                t.album,
-                t.album_id,
-                a.slug AS album_slug,
-                t.duration
-            FROM library_tracks t
-            JOIN library_albums a ON a.id = t.album_id
-            WHERE a.artist = %s
-            ORDER BY a.year NULLS LAST, a.name, t.track_number NULLS LAST, t.title
-            """,
-            (name,),
-        )
-        library_tracks = [dict(row) for row in cur.fetchall()]
+    library_tracks = get_artist_setlist_tracks(name)
 
     used_ids: set[int] = set()
     matched_tracks: list[dict] = []
@@ -905,7 +886,12 @@ def api_artist_setlist_playable(request: Request, name: str):
     return {"tracks": matched_tracks}
 
 
-@router.get("/api/upcoming")
+@router.get(
+    "/api/upcoming",
+    response_model=UpcomingResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List upcoming releases and shows",
+)
 def api_upcoming(request: Request):
     from datetime import datetime, timezone
 
@@ -951,17 +937,7 @@ def api_upcoming(request: Request):
             if artist_name
         ]
     )
-    genre_map = {}
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT ag.artist_name, g.name FROM artist_genres ag
-            JOIN genres g ON ag.genre_id = g.id
-            ORDER BY ag.weight DESC
-            """
-        )
-        for row in cur.fetchall():
-            genre_map.setdefault(row["artist_name"], []).append(row["name"])
+    genre_map = get_all_artist_genre_map()
 
     for show in shows:
         artist = show["artist_name"]
@@ -1007,7 +983,12 @@ def api_artist_network(request: Request, name: str, depth: int = 2):
     return get_artist_network(name, depth=min(depth, 3), limit_per_level=15)
 
 
-@router.get("/api/network/external-artist")
+@router.get(
+    "/api/network/external-artist",
+    response_model=ArtistNetworkResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get the related-artist network for a free-form artist name",
+)
 def api_artist_network_by_name(request: Request, name: str = Query(""), depth: int = 2):
     if not name.strip():
         return JSONResponse({"error": "name required"}, status_code=400)
@@ -1032,13 +1013,7 @@ def api_artist(request: Request, name: str):
     canonical = artist["name"]
     albums_data = get_library_albums(canonical)
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT g.name FROM artist_genres ag JOIN genres g ON ag.genre_id = g.id "
-            "WHERE ag.artist_name = %s ORDER BY ag.weight DESC",
-            (canonical,),
-        )
-        top_genres = [row["name"] for row in cur.fetchall()]
+    top_genres = get_artist_top_genres(canonical)
 
     albums = []
     for album in albums_data:

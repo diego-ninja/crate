@@ -56,7 +56,7 @@ export function apiWsUrl(path: string): string {
   const baseOrigin = base
     ? base.replace(/^http/i, "ws")
     : window.location.origin.replace(/^http/i, "ws");
-  const token = isNative ? getAuthToken() : null;
+  const token = getAuthToken();
   if (!token) return `${baseOrigin}${path}`;
   const separator = path.includes("?") ? "&" : "?";
   return `${baseOrigin}${path}${separator}token=${encodeURIComponent(token)}`;
@@ -65,29 +65,28 @@ export function apiWsUrl(path: string): string {
 // ── Auth token ──────────────────────────────────────────────────────
 //
 // In Capacitor, the token lives on the ServerConfig — every server can
-// have its own session and switching between them is cheap. Web still
-// uses cookie-based auth and never touches the token directly.
+// have its own session. On web, the token is stored in localStorage.
 
 export function getAuthToken(): string | null {
-  if (!isNative) return null;
-  return getCurrentServer()?.token ?? null;
+  if (isNative) return getCurrentServer()?.token ?? null;
+  try { return localStorage.getItem("listen-auth-token"); } catch { return null; }
 }
 
 export function setAuthToken(token: string | null) {
-  if (!isNative) return;
-  setCurrentServerToken(token);
+  if (isNative) { setCurrentServerToken(token); return; }
+  try {
+    if (token) localStorage.setItem("listen-auth-token", token);
+    else localStorage.removeItem("listen-auth-token");
+  } catch {}
 }
 
-/** Build headers with Bearer token for native, plus device identification. */
-function authHeaders(): Record<string, string> {
+export function getApiAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
+  const token = getAuthToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  headers["X-Crate-App"] = isNative ? `listen-${platform}` : "listen-web";
   if (isNative) {
-    const token = getAuthToken();
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    headers["X-Crate-App"] = `listen-${platform}`;
     headers["X-Device-Label"] = `${platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "Native"} (Listen)`;
-  } else {
-    headers["X-Crate-App"] = "listen-web";
   }
   return headers;
 }
@@ -97,7 +96,7 @@ function authHeaders(): Record<string, string> {
 // base-URL getter and wrap calls through our own thin proxy.
 const innerApi = createApiClient({
   credentials: "include",
-  defaultHeaders: authHeaders,
+  defaultHeaders: getApiAuthHeaders,
   onUnauthorized: () => {
     if (window.location.pathname !== "/login" && window.location.pathname !== "/server-setup") {
       window.location.href = "/login";
@@ -113,7 +112,7 @@ export function api<T = unknown>(path: string, method?: "GET" | "POST" | "PUT" |
 export function apiFetch(path: string, init?: RequestInit): Promise<Response> {
   const headers: Record<string, string> = {
     ...(init?.headers as Record<string, string> || {}),
-    ...authHeaders(),
+    ...getApiAuthHeaders(),
   };
   return fetch(`${getApiBase()}${path}`, { ...init, credentials: "include", headers });
 }

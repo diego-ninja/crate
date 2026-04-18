@@ -79,7 +79,7 @@ function QueuePanelRow({
             </span>
           ) : null}
         </div>
-        <p className={`truncate text-[10px] ${faded ? "text-white/30" : "text-white/40"}`}>{track.artist}</p>
+        <p className={`truncate text-[10px] ${faded ? "text-white/40" : "text-muted-foreground"}`}>{track.artist}</p>
       </div>
       <ItemActionMenuButton
         buttonRef={actionMenu.triggerRef}
@@ -120,7 +120,7 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
       {/* Now Playing */}
       {currentTrack && (
         <div className="px-4 py-3 border-b border-white/5">
-          <p className="text-[10px] font-bold text-white/30 uppercase tracking-wider mb-2">Now Playing</p>
+          <p className="text-[10px] font-bold text-white/40 uppercase tracking-wider mb-2">Now Playing</p>
           <div className="flex items-center gap-3">
             {currentTrack.albumCover ? (
               <img src={currentTrack.albumCover} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
@@ -129,7 +129,7 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
             )}
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-medium text-primary truncate">{currentTrack.title}</p>
-              <p className="text-[11px] text-white/50 truncate">{currentTrack.artist}</p>
+              <p className="text-[11px] text-muted-foreground truncate">{currentTrack.artist}</p>
             </div>
             {isPlaying && (
               <div className="flex gap-0.5 items-end h-4">
@@ -146,7 +146,7 @@ export function QueuePanel({ open, onClose }: QueuePanelProps) {
       <div className="flex-1 overflow-y-auto">
         {upcoming.length > 0 && (
           <div className="px-4 pt-3">
-            <p className="text-[10px] font-bold text-white/30 uppercase tracking-wider mb-2">
+            <p className="text-[10px] font-bold text-white/40 uppercase tracking-wider mb-2">
               Next up ({upcoming.length})
             </p>
           </div>

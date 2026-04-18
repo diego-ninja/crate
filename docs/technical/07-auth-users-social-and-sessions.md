@@ -32,7 +32,7 @@ Relevant fields and concepts include:
 - subsonic token
 - last login
 
-The DB layer also owns username suggestion and bootstrap admin seeding.
+The DB layer also owns username suggestion, bootstrap admin seeding, and the lower-level auth/session maintenance helpers. Several write helpers now accept an optional shared DB session so signup, login, invite, and bootstrap flows can compose multiple writes atomically.
 
 ## Bootstrap admin
 
@@ -41,6 +41,8 @@ On an empty install, `_seed_admin()` in [app/crate/db/auth.py](https://github.co
 - creates `admin@cratemusic.app`
 - uses `DEFAULT_ADMIN_PASSWORD`
 - ensures a stable admin username
+- runs after schema bootstrap and Alembic upgrade
+- shares one transaction with the other bootstrap seeds so init either commits as a unit or rolls back as a unit
 
 This is part of the schema/init flow, not a separate setup script.
 
@@ -123,6 +125,18 @@ Use cases:
 - joining via deep link and later continuing to the intended destination
 
 This is part of the auth router, not a separate invitation subsystem.
+
+At the DB layer the lifecycle lives in `create_auth_invite()` and `consume_auth_invite()`, which means invite acceptance can participate in the same transaction as user creation or session issuance when needed.
+
+## Maintenance routines
+
+The auth data layer also owns cleanup and lifecycle maintenance:
+
+- `cleanup_expired_sessions()` removes stale persisted sessions
+- `cleanup_ended_jam_rooms()` removes old jam rooms and related rows once they are long finished
+- the worker service loop runs both cleanup helpers on an hourly cadence alongside old task/event cleanup
+
+This matters because auth in Crate is not only request validation. It is also an operational subsystem with retention and hygiene rules.
 
 ## Frontend auth behavior
 

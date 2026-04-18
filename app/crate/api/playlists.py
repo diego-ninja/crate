@@ -1,14 +1,33 @@
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 
 from crate.api.auth import _require_auth
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.playlist_utils import apply_playlist_cover_payload, execute_smart_rules
+from crate.api.schemas.common import OkResponse
+from crate.api.schemas.playlists import (
+    AddTracksRequest,
+    CreatePlaylistRequest,
+    PlaylistCreateResponse,
+    PlaylistDetailResponse,
+    PlaylistFilterOptionsResponse,
+    PlaylistGenerateResponse,
+    PlaylistInviteAcceptResponse,
+    PlaylistInviteRequest,
+    PlaylistInviteResponse,
+    PlaylistMemberRequest,
+    PlaylistMemberResponse,
+    PlaylistMembersMutationResponse,
+    PlaylistSummaryResponse,
+    PlaylistTracksAddedResponse,
+    ReorderRequest,
+    UpdatePlaylistRequest,
+)
 from crate.playlist_covers import delete_playlist_cover, playlist_cover_abspath
 from crate.db import (
     create_playlist, get_playlists, get_playlist, update_playlist,
     delete_playlist, get_playlist_tracks, add_playlist_tracks,
-    remove_playlist_track, reorder_playlist, get_db_ctx,
+    remove_playlist_track, reorder_playlist,
     can_view_playlist, can_edit_playlist, is_playlist_owner,
     get_playlist_members, add_playlist_member, remove_playlist_member,
     create_playlist_invite, consume_playlist_invite,
@@ -16,92 +35,72 @@ from crate.db import (
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
 
+_PLAYLIST_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested playlist resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
-class CreatePlaylistRequest(BaseModel):
-    name: str
-    description: str = ""
-    cover_data_url: str | None = None
-    is_smart: bool = False
-    smart_rules: dict | None = None
-    visibility: str | None = None
-    is_collaborative: bool = False
-
-
-class UpdatePlaylistRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    cover_data_url: str | None = None
-    smart_rules: dict | None = None
-    visibility: str | None = None
-    is_collaborative: bool | None = None
-
-
-class AddTracksRequest(BaseModel):
-    tracks: list[dict]  # [{path, title, artist, album, duration}]
-
-
-class ReorderRequest(BaseModel):
-    track_ids: list[int]
-
-
-class PlaylistMemberRequest(BaseModel):
-    user_id: int
-    role: str = "collab"
-
-
-class PlaylistInviteRequest(BaseModel):
-    expires_in_hours: int = 168
-    max_uses: int | None = 20
+_PLAYLIST_COVER_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Playlist cover image.",
+            "content": {
+                "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                "image/png": {"schema": {"type": "string", "format": "binary"}},
+                "image/webp": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        404: error_response("The requested playlist cover could not be found."),
+    },
+)
 
 
 # ── Filter options ───────────────────────────────────────────────
 
-@router.get("/filter-options")
+@router.get(
+    "/filter-options",
+    response_model=PlaylistFilterOptionsResponse,
+    responses={
+        200: {
+            "description": "Available smart-playlist filter values.",
+        }
+    },
+    summary="List available smart-playlist filter options",
+)
 def filter_options():
     """Return available values for smart playlist filters."""
     from crate.db import get_all_genres
+    from crate.db.playlists import get_playlist_filter_options
     genres = [g["name"] for g in get_all_genres()]
-
-    with get_db_ctx() as cur:
-        cur.execute("SELECT DISTINCT format FROM library_tracks WHERE format IS NOT NULL AND format != '' ORDER BY format")
-        formats = [r["format"] for r in cur.fetchall()]
-
-        cur.execute("SELECT DISTINCT audio_key FROM library_tracks WHERE audio_key IS NOT NULL AND audio_key != '' ORDER BY audio_key")
-        keys = [r["audio_key"] for r in cur.fetchall()]
-
-        cur.execute("SELECT DISTINCT audio_scale FROM library_tracks WHERE audio_scale IS NOT NULL AND audio_scale != '' ORDER BY audio_scale")
-        scales = [r["audio_scale"] for r in cur.fetchall()]
-
-        cur.execute("SELECT name FROM library_artists ORDER BY name")
-        artists = [r["name"] for r in cur.fetchall()]
-
-        cur.execute("SELECT MIN(year) AS min_y, MAX(year) AS max_y FROM library_tracks WHERE year IS NOT NULL AND year != ''")
-        yr = cur.fetchone()
-
-        cur.execute("SELECT MIN(bpm) AS min_b, MAX(bpm) AS max_b FROM library_tracks WHERE bpm IS NOT NULL")
-        bpm = cur.fetchone()
-
-    return {
-        "genres": genres,
-        "formats": formats,
-        "keys": keys,
-        "scales": scales,
-        "artists": artists,
-        "year_range": [yr["min_y"] or "1960", yr["max_y"] or "2026"],
-        "bpm_range": [int(bpm["min_b"] or 60), int(bpm["max_b"] or 200)],
-    }
+    opts = get_playlist_filter_options()
+    return {"genres": genres, **opts}
 
 
 # ── CRUD ─────────────────────────────────────────────────────────
 
-@router.get("")
+@router.get(
+    "",
+    response_model=list[PlaylistSummaryResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List playlists visible to the current user",
+)
 def list_playlists(request: Request):
     user = _require_auth(request)
     playlists = get_playlists(user_id=user["id"])
     return playlists
 
 
-@router.post("")
+@router.post(
+    "",
+    response_model=PlaylistCreateResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Create a playlist",
+)
 def create(request: Request, body: CreatePlaylistRequest):
     user = _require_auth(request)
     if not body.name.strip():
@@ -121,7 +120,12 @@ def create(request: Request, body: CreatePlaylistRequest):
     return {"id": playlist_id}
 
 
-@router.get("/{playlist_id}")
+@router.get(
+    "/{playlist_id}",
+    response_model=PlaylistDetailResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Get a playlist with tracks and members",
+)
 def get_one(request: Request, playlist_id: int):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -135,7 +139,12 @@ def get_one(request: Request, playlist_id: int):
     return pl
 
 
-@router.put("/{playlist_id}")
+@router.put(
+    "/{playlist_id}",
+    response_model=OkResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Update a playlist",
+)
 def update(request: Request, playlist_id: int, body: UpdatePlaylistRequest):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -165,7 +174,12 @@ def update(request: Request, playlist_id: int, body: UpdatePlaylistRequest):
     return {"ok": True}
 
 
-@router.delete("/{playlist_id}")
+@router.delete(
+    "/{playlist_id}",
+    response_model=OkResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Delete a playlist",
+)
 def delete(request: Request, playlist_id: int):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -178,7 +192,11 @@ def delete(request: Request, playlist_id: int):
     return {"ok": True}
 
 
-@router.get("/{playlist_id}/cover")
+@router.get(
+    "/{playlist_id}/cover",
+    responses=_PLAYLIST_COVER_RESPONSES,
+    summary="Fetch the cover image for a playlist",
+)
 def get_cover(request: Request, playlist_id: int):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -194,7 +212,12 @@ def get_cover(request: Request, playlist_id: int):
 
 # ── Tracks ───────────────────────────────────────────────────────
 
-@router.post("/{playlist_id}/tracks")
+@router.post(
+    "/{playlist_id}/tracks",
+    response_model=PlaylistTracksAddedResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Add tracks to a playlist",
+)
 def add_tracks(request: Request, playlist_id: int, body: AddTracksRequest):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -208,7 +231,12 @@ def add_tracks(request: Request, playlist_id: int, body: AddTracksRequest):
     return {"ok": True, "added": len(body.tracks)}
 
 
-@router.delete("/{playlist_id}/tracks/{position}")
+@router.delete(
+    "/{playlist_id}/tracks/{position}",
+    response_model=OkResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Remove a track from a playlist by position",
+)
 def remove_track(request: Request, playlist_id: int, position: int):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -220,7 +248,12 @@ def remove_track(request: Request, playlist_id: int, position: int):
     return {"ok": True}
 
 
-@router.post("/{playlist_id}/reorder")
+@router.post(
+    "/{playlist_id}/reorder",
+    response_model=OkResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Reorder playlist tracks",
+)
 def reorder(request: Request, playlist_id: int, body: ReorderRequest):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -234,7 +267,12 @@ def reorder(request: Request, playlist_id: int, body: ReorderRequest):
 
 # ── Smart playlist generation ───────────────────────────────────
 
-@router.post("/{playlist_id}/generate")
+@router.post(
+    "/{playlist_id}/generate",
+    response_model=PlaylistGenerateResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Generate tracks for a smart playlist",
+)
 def generate_smart(request: Request, playlist_id: int):
     """Re-generate tracks for a smart playlist based on its rules."""
     user = _require_auth(request)
@@ -253,7 +291,12 @@ def generate_smart(request: Request, playlist_id: int):
     return {"ok": True, "track_count": len(tracks)}
 
 
-@router.get("/{playlist_id}/members")
+@router.get(
+    "/{playlist_id}/members",
+    response_model=list[PlaylistMemberResponse],
+    responses=_PLAYLIST_RESPONSES,
+    summary="List playlist members",
+)
 def members(request: Request, playlist_id: int):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -264,7 +307,12 @@ def members(request: Request, playlist_id: int):
     return get_playlist_members(playlist_id)
 
 
-@router.post("/{playlist_id}/members")
+@router.post(
+    "/{playlist_id}/members",
+    response_model=PlaylistMembersMutationResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Add or update a playlist member",
+)
 def add_member(request: Request, playlist_id: int, body: PlaylistMemberRequest):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -279,7 +327,12 @@ def add_member(request: Request, playlist_id: int, body: PlaylistMemberRequest):
     return {"ok": True, "members": get_playlist_members(playlist_id)}
 
 
-@router.delete("/{playlist_id}/members/{user_id}")
+@router.delete(
+    "/{playlist_id}/members/{user_id}",
+    response_model=PlaylistMembersMutationResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Remove a playlist member",
+)
 def delete_member(request: Request, playlist_id: int, user_id: int):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -295,7 +348,12 @@ def delete_member(request: Request, playlist_id: int, user_id: int):
     return {"ok": True, "members": get_playlist_members(playlist_id)}
 
 
-@router.post("/{playlist_id}/invites")
+@router.post(
+    "/{playlist_id}/invites",
+    response_model=PlaylistInviteResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Create a playlist invite",
+)
 def invite(request: Request, playlist_id: int, body: PlaylistInviteRequest):
     user = _require_auth(request)
     pl = get_playlist(playlist_id)
@@ -316,7 +374,12 @@ def invite(request: Request, playlist_id: int, body: PlaylistInviteRequest):
     }
 
 
-@router.post("/invites/{token}/accept")
+@router.post(
+    "/invites/{token}/accept",
+    response_model=PlaylistInviteAcceptResponse,
+    responses=_PLAYLIST_RESPONSES,
+    summary="Accept a playlist invite",
+)
 def accept_invite(request: Request, token: str):
     user = _require_auth(request)
     invite_row = consume_playlist_invite(token)

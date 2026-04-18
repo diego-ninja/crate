@@ -11,13 +11,22 @@ from crate.audio import read_tags
 from crate.db import (
     delete_album,
     delete_artist,
-    get_db_ctx,
     get_library_albums,
     get_library_artist,
     get_library_artists,
     upsert_album,
     upsert_artist,
     upsert_track,
+)
+from crate.db.jobs.sync import (
+    delete_track_by_path,
+    get_album_id_by_path,
+    get_album_track_count,
+    get_all_album_paths,
+    get_all_artist_names_and_counts,
+    get_album_paths_for_artist,
+    get_tracks_by_album_id,
+    merge_artist_into,
 )
 from crate.storage_layout import looks_like_storage_id
 from crate.utils import COVER_NAMES, PHOTO_NAMES, normalize_key, to_datetime
@@ -242,12 +251,7 @@ class LibrarySync:
                     # caused by sync_album crashing mid-insert). If the album
                     # row claims N tracks but fewer rows exist in library_tracks,
                     # force a full sync instead of trusting the counter.
-                    with get_db_ctx() as cur:
-                        cur.execute(
-                            "SELECT COUNT(*) AS cnt FROM library_tracks WHERE album_id = %s",
-                            (existing_album["id"],),
-                        )
-                        actual_row_count = int(cur.fetchone()["cnt"] or 0)
+                    actual_row_count = get_album_track_count(existing_album["id"])
                     if actual_row_count == actual_track_count:
                         total_tracks += existing_album.get("track_count", 0)
                         continue
@@ -307,22 +311,11 @@ class LibrarySync:
         audio_files = self._iter_album_audio_files(album_dir)
 
         # Get existing tracks for this album to reuse data for unchanged files
-        existing_album_row = None
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT id FROM library_albums WHERE path = %s", (str(album_dir),)
-            )
-            existing_album_row = cur.fetchone()
+        existing_album_id = get_album_id_by_path(str(album_dir))
 
         existing_tracks_by_path: dict[str, dict] = {}
-        if existing_album_row:
-            with get_db_ctx() as cur:
-                cur.execute(
-                    "SELECT * FROM library_tracks WHERE album_id = %s",
-                    (existing_album_row["id"],),
-                )
-                rows = cur.fetchall()
-                existing_tracks_by_path = {r["path"]: dict(r) for r in rows}
+        if existing_album_id:
+            existing_tracks_by_path = get_tracks_by_album_id(existing_album_id)
 
         total_size = 0
         total_duration = 0.0
@@ -480,8 +473,7 @@ class LibrarySync:
 
         # Remove deleted tracks
         for old_path in set(existing_tracks_by_path.keys()) - synced_paths:
-            with get_db_ctx() as cur:
-                cur.execute("DELETE FROM library_tracks WHERE path = %s", (old_path,))
+            delete_track_by_path(old_path)
 
         return {
             "track_count": len(track_data_list),
@@ -513,9 +505,7 @@ class LibrarySync:
     def _merge_duplicate_artists(self) -> int:
         """Merge artists with same normalized name into one canonical entry."""
         merged = 0
-        with get_db_ctx() as cur:
-            cur.execute("SELECT name, album_count, track_count FROM library_artists")
-            all_artists = cur.fetchall()
+        all_artists = get_all_artist_names_and_counts()
 
         # Group by normalized key
         groups: dict[str, list[dict]] = {}
@@ -531,47 +521,20 @@ class LibrarySync:
             keep = artists[0]["name"]
             for other in artists[1:]:
                 discard = other["name"]
-                self._merge_artist_into(discard, keep)
+                merge_artist_into(discard, keep)
                 merged += 1
                 log.info("Merged duplicate artist '%s' into '%s'", discard, keep)
 
         return merged
 
-    def _merge_artist_into(self, source: str, target: str):
-        """Move all albums and tracks from source artist to target, then delete source."""
-        with get_db_ctx() as cur:
-            # Get albums from source that would conflict with target (same album name)
-            cur.execute("""
-                SELECT s.id AS source_id, t.id AS target_id
-                FROM library_albums s
-                JOIN library_albums t ON LOWER(s.name) = LOWER(t.name) AND t.artist = %s
-                WHERE s.artist = %s
-            """, (target, source))
-            conflicts = cur.fetchall()
-
-            # For conflicting albums, move tracks to target album and delete source album
-            for c in conflicts:
-                cur.execute("UPDATE library_tracks SET album_id = %s, artist = %s WHERE album_id = %s",
-                            (c["target_id"], target, c["source_id"]))
-                cur.execute("DELETE FROM library_albums WHERE id = %s", (c["source_id"],))
-
-            # Re-assign remaining non-conflicting albums
-            cur.execute("UPDATE library_albums SET artist = %s WHERE artist = %s", (target, source))
-            # Re-assign any remaining tracks
-            cur.execute("UPDATE library_tracks SET artist = %s WHERE artist = %s", (target, source))
-            # Delete source artist
-            cur.execute("DELETE FROM library_artists WHERE name = %s", (source,))
-
     def remove_stale(self) -> int:
         removed = 0
-        with get_db_ctx() as cur:
-            cur.execute("SELECT name, folder_name, album_count, track_count FROM library_artists")
-            artists = cur.fetchall()
+        artists, _ = get_library_artists(per_page=100000)
 
         # Build set of canonical artist names (those with albums) and their claimed folders
         canonical_folders = set()
         for row in artists:
-            if row["folder_name"] and row["album_count"] > 0:
+            if row.get("folder_name") and row["album_count"] > 0:
                 canonical_folders.add(row["folder_name"])
 
         for row in artists:
@@ -595,22 +558,18 @@ class LibrarySync:
                         continue
 
             # Use folder_name to locate the directory; fall back to name for legacy rows
-            dir_name = row["folder_name"] or row["name"]
+            dir_name = row.get("folder_name") or row["name"]
             artist_dir = self.library_path / dir_name
             if not artist_dir.is_dir():
                 # Also check if any album paths still exist
-                with get_db_ctx() as cur:
-                    cur.execute("SELECT path FROM library_albums WHERE artist = %s", (row["name"],))
-                    album_paths = [r["path"] for r in cur.fetchall()]
+                album_paths = get_album_paths_for_artist(row["name"])
                 if any(Path(p).is_dir() for p in album_paths):
                     continue
                 delete_artist(row["name"])
                 removed += 1
                 log.info("Removed stale artist: %s", row["name"])
 
-        with get_db_ctx() as cur:
-            cur.execute("SELECT path, artist FROM library_albums")
-            albums = cur.fetchall()
+        albums = get_all_album_paths()
 
         for row in albums:
             if not Path(row["path"]).is_dir():

@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router";
 import { Loader2, Play } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { AlbumCard } from "@/components/cards/AlbumCard";
-import { TrackRow } from "@/components/cards/TrackRow";
+import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 
 interface SearchData {
@@ -31,6 +31,24 @@ export function SearchResults() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [query]);
+
+  const trackRowData = useMemo<TrackRowData[]>(() =>
+    (data?.tracks ?? []).map((t, i) => ({
+      id: String(t.id || t.path || i),
+      title: t.title,
+      artist: t.artist,
+      artist_id: t.artist_id,
+      artist_slug: t.artist_slug,
+      album: t.album,
+      album_id: t.album_id,
+      album_slug: t.album_slug,
+      storage_id: t.storage_id,
+      duration: t.duration,
+      path: t.path,
+      library_track_id: typeof t.id === "number" ? t.id : undefined,
+    })),
+    [data?.tracks],
+  );
 
   if (!query) return <p className="text-muted-foreground">Enter a search term</p>;
   if (loading && !data) return <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>;
@@ -89,26 +107,14 @@ export function SearchResults() {
             </button>
           </div>
           <div>
-            {data.tracks.map((t, i) => (
+            {trackRowData.map((t, i) => (
               <TrackRow
-                key={t.path || `${t.artist}-${t.title}-${i}`}
-                track={{
-                  id: String(t.id || t.path || i),
-                  title: t.title,
-                  artist: t.artist,
-                  artist_id: t.artist_id,
-                  artist_slug: t.artist_slug,
-                  album: t.album,
-                  album_id: t.album_id,
-                  album_slug: t.album_slug,
-                  storage_id: t.storage_id,
-                  duration: t.duration,
-                  path: t.path,
-                  library_track_id: typeof t.id === "number" ? t.id : undefined,
-                }}
+                key={t.storage_id || t.path || `${t.artist}-${t.title}-${i}`}
+                track={t}
                 index={i}
                 showArtist
                 showAlbum
+                queueTracks={trackRowData}
               />
             ))}
           </div>

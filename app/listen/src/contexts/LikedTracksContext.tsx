@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { api } from "@/lib/api";
+import { onCacheInvalidation } from "@/lib/cache";
 
 export interface LikedTrack {
   track_id: number;
@@ -82,6 +83,13 @@ export function LikedTracksProvider({ children }: { children: ReactNode }) {
       likedTracksRequestRef.current?.abort();
       likedTracksRequestRef.current = null;
     };
+  }, [refetch]);
+
+  // Sync with backend when SSE invalidation fires for "likes"
+  useEffect(() => {
+    return onCacheInvalidation((scope: string) => {
+      if (scope === "likes") void refetch();
+    });
   }, [refetch]);
 
   const likedIndex = useMemo(() => {

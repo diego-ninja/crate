@@ -15,7 +15,6 @@ export function createAnalyserNode(fftSize = 2048): AnalyserNode | null {
     if (analyser.fftSize !== fftSize) {
       analyser.fftSize = fftSize;
     }
-    analyser.smoothingTimeConstant = 0.8;
     return analyser;
   } catch {
     return null;
@@ -27,10 +26,11 @@ export function useAudioVisualizer(
   trackKey?: string,
   analyserNode?: AnalyserNode | null,
 ) {
-  const [frequencies, setFrequencies] = useState<number[]>([]);
+  const [frequenciesDb, setFrequenciesDb] = useState<number[]>([]);
+  const [sampleRate, setSampleRate] = useState(44100);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const rafRef = useRef<number>(0);
-  const dataRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
+  const dataRef = useRef<Float32Array<ArrayBuffer> | null>(null);
 
   const [waveform, setWaveform] = useState<number[]>([]);
   const waveRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
@@ -43,13 +43,13 @@ export function useAudioVisualizer(
     // Throttle state updates to ~20fps (every 3rd frame at 60fps)
     const shouldUpdate = frameCountRef.current % 3 === 0;
 
-    analyserRef.current.getByteFrequencyData(dataRef.current);
+    analyserRef.current.getFloatFrequencyData(dataRef.current);
     if (shouldUpdate) {
-      const bars: number[] = [];
+      const spectrum: number[] = [];
       for (let i = 0; i < dataRef.current.length; i++) {
-        bars.push(dataRef.current[i]! / 255);
+        spectrum.push(dataRef.current[i]!);
       }
-      setFrequencies(bars);
+      setFrequenciesDb(spectrum);
 
       if (waveRef.current) {
         analyserRef.current.getByteTimeDomainData(waveRef.current);
@@ -66,15 +66,20 @@ export function useAudioVisualizer(
 
   useEffect(() => {
     if (!enabled) {
-      setFrequencies([]);
+      setFrequenciesDb([]);
       return;
     }
 
     const node = analyserNode || getAnalyserNode();
     if (!node) return;
 
+    // Lower smoothing for more responsive peaks (default 0.8 flattens everything)
+    node.smoothingTimeConstant = 0.55;
+    node.minDecibels = -90;
+    node.maxDecibels = -10;
     analyserRef.current = node;
-    dataRef.current = new Uint8Array(node.frequencyBinCount);
+    setSampleRate(node.context.sampleRate || 44100);
+    dataRef.current = new Float32Array(node.frequencyBinCount);
     waveRef.current = new Uint8Array(node.fftSize);
     rafRef.current = requestAnimationFrame(tick);
 
@@ -83,5 +88,5 @@ export function useAudioVisualizer(
     };
   }, [analyserNode, enabled, tick, trackKey]);
 
-  return { frequencies, waveform, barCount: BAR_COUNT };
+  return { frequenciesDb, waveform, barCount: BAR_COUNT, sampleRate };
 }

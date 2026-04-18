@@ -111,12 +111,8 @@ class TestFolderNamingRepair:
                 },
             }
 
-            with patch("crate.repair.get_db_ctx") as mock_ctx, \
+            with patch("crate.repair.update_album_path_and_name"), \
                  patch("crate.repair.log_audit"):
-                mock_cur = MagicMock()
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
                 result = repair._fix_folder_naming(issue, dry_run=False)
 
             assert result is not None
@@ -163,12 +159,8 @@ class TestFolderNamingRepair:
                 },
             }
 
-            with patch("crate.repair.get_db_ctx") as mock_ctx, \
+            with patch("crate.repair.merge_album_folder"), \
                  patch("crate.repair.log_audit"):
-                mock_cur = MagicMock()
-                mock_ctx.return_value.__enter__ = MagicMock(return_value=mock_cur)
-                mock_ctx.return_value.__exit__ = MagicMock(return_value=False)
-
                 result = repair._fix_folder_naming(issue, dry_run=False)
 
             assert result is not None
@@ -286,7 +278,7 @@ class TestUnindexedFilesRepair:
             assert (correct_dir / "01.flac").exists()
 
     def test_triggers_reindex_for_real_unindexed(self):
-        """Non-duplicate unindexed files create process_new_content task."""
+        """Non-duplicate unindexed files trigger a sync via LibrarySync."""
         from crate.repair import LibraryRepair
 
         with tempfile.TemporaryDirectory() as lib:
@@ -304,13 +296,18 @@ class TestUnindexedFilesRepair:
                 "details": {"dir": str(album_dir), "count": 1},
             }
 
-            with patch("crate.repair.create_task_dedup") as mock_dedup, \
-                 patch("crate.repair.log_audit"):
+            mock_syncer_instance = MagicMock()
+            with patch("crate.repair.find_canonical_artist_by_folder", return_value=None), \
+                 patch("crate.repair.log_audit"), \
+                 patch("crate.config.load_config", return_value=config), \
+                 patch("crate.library_sync.LibrarySync", return_value=mock_syncer_instance), \
+                 patch.object(repair, "_count_artist_tracks", side_effect=[0, 1]):
                 result = repair._fix_unindexed_files(issue, dry_run=False)
 
             assert result is not None
-            assert result["action"] == "flag_unindexed"
-            mock_dedup.assert_called_once_with("process_new_content", {"artist": "NewBand"})
+            assert result["action"] == "reindex_unindexed"
+            assert result["applied"] is True
+            mock_syncer_instance.sync_artist.assert_called_once()
 
 
 class TestDuplicateFoldersRepair:

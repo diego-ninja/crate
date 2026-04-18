@@ -13,10 +13,15 @@ vi.mock("@/lib/gapless-player", () => ({
   isCurrentTrackFullyBuffered: vi.fn(() => false),
 }));
 
-// Mock capacitor online check.
-vi.mock("@/lib/capacitor", () => ({
-  isOnline: vi.fn(() => Promise.resolve(true)),
-}));
+// Mock capacitor online check while keeping the rest of the module shape
+// intact for consumers that depend on isNative/platform helpers.
+vi.mock(import("@/lib/capacitor"), async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    isOnline: vi.fn(() => Promise.resolve(true)),
+  };
+});
 
 import * as gaplessPlayer from "@/lib/gapless-player";
 import * as capacitor from "@/lib/capacitor";

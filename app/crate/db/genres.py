@@ -1,9 +1,11 @@
-from crate.db.core import get_db_ctx
+from sqlalchemy import text
+
+from crate.db.tx import transaction_scope
 from crate.genre_taxonomy import (
     get_genre_description,
     get_genre_display_name,
     get_top_level_slug,
-    invalidate_runtime_taxonomy_cache,
+    invalidate_runtime_taxonomy_cache_after_commit,
     resolve_genre_slug,
     slugify_genre,
 )
@@ -14,51 +16,82 @@ def _slugify(name: str) -> str:
     return slugify_genre(name)
 
 
-def get_or_create_genre(name: str) -> int:
+def _invalid_genre_taxonomy_reason(slug: str) -> str | None:
+    normalized = (slug or "").strip().lower()
+    if not normalized:
+        return None
+    if normalized in {"wikidata", "other-databases"}:
+        return "external-section-marker"
+    if normalized.startswith(("http-", "https-")):
+        return "external-url"
+    if normalized.startswith("q") and normalized[1:].isdigit():
+        return "wikidata-entity-id"
+    return None
+
+
+def get_or_create_genre(name: str, *, session=None) -> int:
     name = name.strip().lower()
     slug = _slugify(name)
     if not slug:
         return -1
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id FROM genres WHERE slug = %s", (slug,))
-        row = cur.fetchone()
-        if row:
-            return row["id"]
-        cur.execute(
-            "INSERT INTO genres (name, slug) VALUES (%s, %s) ON CONFLICT(slug) DO UPDATE SET name=EXCLUDED.name RETURNING id",
-            (name, slug),
-        )
-        return cur.fetchone()["id"]
+    if session is None:
+        with transaction_scope() as s:
+            return get_or_create_genre(name, session=s)
+    row = session.execute(
+        text("SELECT id FROM genres WHERE slug = :slug"),
+        {"slug": slug},
+    ).mappings().first()
+    if row:
+        return row["id"]
+    row = session.execute(
+        text("INSERT INTO genres (name, slug) VALUES (:name, :slug) ON CONFLICT(slug) DO UPDATE SET name=EXCLUDED.name RETURNING id"),
+        {"name": name, "slug": slug},
+    ).mappings().first()
+    return row["id"]
 
 
-def set_artist_genres(artist_name: str, genres: list[tuple[str, float, str]]):
+def set_artist_genres(artist_name: str, genres: list[tuple[str, float, str]], *, session=None):
     """Set genres for an artist. genres: [(name, weight, source), ...]"""
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM artist_genres WHERE artist_name = %s", (artist_name,))
-        for name, weight, source in genres:
-            genre_id = get_or_create_genre(name)
-            if genre_id < 0:
-                continue
-            cur.execute(
-                "INSERT INTO artist_genres (artist_name, genre_id, weight, source) VALUES (%s, %s, %s, %s) "
-                "ON CONFLICT DO NOTHING",
-                (artist_name, genre_id, weight, source),
-            )
+    if session is None:
+        with transaction_scope() as s:
+            return set_artist_genres(artist_name, genres, session=s)
+    session.execute(
+        text("DELETE FROM artist_genres WHERE artist_name = :artist_name"),
+        {"artist_name": artist_name},
+    )
+    for name, weight, source in genres:
+        genre_id = get_or_create_genre(name, session=session)
+        if genre_id < 0:
+            continue
+        session.execute(
+            text(
+                "INSERT INTO artist_genres (artist_name, genre_id, weight, source) VALUES (:artist_name, :genre_id, :weight, :source) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {"artist_name": artist_name, "genre_id": genre_id, "weight": weight, "source": source},
+        )
 
 
-def set_album_genres(album_id: int, genres: list[tuple[str, float, str]]):
+def set_album_genres(album_id: int, genres: list[tuple[str, float, str]], *, session=None):
     """Set genres for an album. genres: [(name, weight, source), ...]"""
-    with get_db_ctx() as cur:
-        cur.execute("DELETE FROM album_genres WHERE album_id = %s", (album_id,))
-        for name, weight, source in genres:
-            genre_id = get_or_create_genre(name)
-            if genre_id < 0:
-                continue
-            cur.execute(
-                "INSERT INTO album_genres (album_id, genre_id, weight, source) VALUES (%s, %s, %s, %s) "
-                "ON CONFLICT DO NOTHING",
-                (album_id, genre_id, weight, source),
-            )
+    if session is None:
+        with transaction_scope() as s:
+            return set_album_genres(album_id, genres, session=s)
+    session.execute(
+        text("DELETE FROM album_genres WHERE album_id = :album_id"),
+        {"album_id": album_id},
+    )
+    for name, weight, source in genres:
+        genre_id = get_or_create_genre(name, session=session)
+        if genre_id < 0:
+            continue
+        session.execute(
+            text(
+                "INSERT INTO album_genres (album_id, genre_id, weight, source) VALUES (:album_id, :genre_id, :weight, :source) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {"album_id": album_id, "genre_id": genre_id, "weight": weight, "source": source},
+        )
 
 
 def _annotate_genre_mapping(items: list[dict]) -> list[dict]:
@@ -85,8 +118,8 @@ def _annotate_genre_mapping(items: list[dict]) -> list[dict]:
 
 
 def get_all_genres() -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute("""
+    with transaction_scope() as session:
+        rows = session.execute(text("""
             SELECT
                 g.id,
                 g.name,
@@ -109,14 +142,14 @@ def get_all_genres() -> list[dict]:
             GROUP BY g.id, g.name, g.slug, tn.slug, tn.name, tn.description, tn.external_description, tn.external_description_source, tn.musicbrainz_mbid, tn.wikidata_entity_id, tn.wikidata_url
             HAVING COUNT(DISTINCT ag.artist_name) > 0 OR COUNT(DISTINCT alg.album_id) > 0
             ORDER BY COUNT(DISTINCT ag.artist_name) DESC
-        """)
-        return _annotate_genre_mapping([dict(r) for r in cur.fetchall()])
+        """)).mappings().all()
+        return _annotate_genre_mapping([dict(r) for r in rows])
 
 
 def get_unmapped_genres(limit: int = 24) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 g.id,
                 g.name,
@@ -131,11 +164,11 @@ def get_unmapped_genres(limit: int = 24) -> list[dict]:
             GROUP BY g.id, g.name, g.slug
             HAVING COUNT(DISTINCT ag.artist_name) > 0 OR COUNT(DISTINCT alg.album_id) > 0
             ORDER BY COUNT(DISTINCT ag.artist_name) DESC, COUNT(DISTINCT alg.album_id) DESC, g.name ASC
-            LIMIT %s
-            """,
-            (limit,),
-        )
-        items = [dict(row) for row in cur.fetchall()]
+            LIMIT :lim
+            """),
+            {"lim": limit},
+        ).mappings().all()
+    items = [dict(row) for row in rows]
     for item in items:
         item["mapped"] = False
         item["canonical_slug"] = None
@@ -153,9 +186,9 @@ def get_unmapped_genres(limit: int = 24) -> list[dict]:
     return items
 
 
-def _get_genre_summary_by_slug(cur, slug: str) -> dict | None:
-    cur.execute(
-        """
+def _get_genre_summary_by_slug(session, slug: str) -> dict | None:
+    row = session.execute(
+        text("""
         SELECT
             g.id,
             g.name,
@@ -176,12 +209,11 @@ def _get_genre_summary_by_slug(cur, slug: str) -> dict | None:
         LEFT JOIN album_genres alg ON g.id = alg.genre_id
         LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
         LEFT JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
-        WHERE g.slug = %s
+        WHERE g.slug = :slug
         GROUP BY g.id, g.name, g.slug, tn.slug, tn.name, tn.description, tn.external_description, tn.external_description_source, tn.musicbrainz_mbid, tn.wikidata_entity_id, tn.wikidata_url, tn.eq_gains
-        """,
-        (slug,),
-    )
-    row = cur.fetchone()
+        """),
+        {"slug": slug},
+    ).mappings().first()
     if not row:
         return None
     annotated = _annotate_genre_mapping([dict(row)])[0]
@@ -197,11 +229,8 @@ def _annotate_eq_preset(item: dict) -> None:
     canonical_gains = item.pop("canonical_eq_gains", None)
     canonical_slug = item.get("canonical_slug")
 
-    # Own gains on the taxonomy node. Null = "inherit from parent".
     item["eq_gains"] = [float(v) for v in canonical_gains] if canonical_gains is not None else None
 
-    # Resolved preset (may inherit from an ancestor). None for non-canonical
-    # tags or orphan canonical nodes without any ancestor preset.
     if canonical_slug:
         resolved = resolve_genre_eq_preset(canonical_slug)
         item["eq_preset_resolved"] = resolved
@@ -210,15 +239,14 @@ def _annotate_eq_preset(item: dict) -> None:
 
 
 def get_genre_detail(slug: str) -> dict | None:
-    with get_db_ctx() as cur:
-        genre = _get_genre_summary_by_slug(cur, slug)
+    with transaction_scope() as session:
+        genre = _get_genre_summary_by_slug(session, slug)
         if not genre:
             return None
         if not genre.get("description") and not genre.get("mapped"):
             genre["description"] = "raw library tag detected in your collection but not yet linked into the curated taxonomy."
 
-        # Top artists by weight
-        cur.execute("""
+        rows = session.execute(text("""
             SELECT
                 ag.artist_name,
                 la.id AS artist_id,
@@ -232,13 +260,12 @@ def get_genre_detail(slug: str) -> dict | None:
                 la.listeners
             FROM artist_genres ag
             JOIN library_artists la ON ag.artist_name = la.name
-            WHERE ag.genre_id = %s
+            WHERE ag.genre_id = :genre_id
             ORDER BY ag.weight DESC, la.listeners DESC NULLS LAST
-        """, (genre["id"],))
-        genre["artists"] = [dict(r) for r in cur.fetchall()]
+        """), {"genre_id": genre["id"]}).mappings().all()
+        genre["artists"] = [dict(r) for r in rows]
 
-        # Albums in this genre: from album_genres OR from artists in this genre
-        cur.execute("""
+        rows = session.execute(text("""
             SELECT DISTINCT ON (a.id)
                 a.id AS album_id,
                 a.slug AS album_slug,
@@ -252,21 +279,21 @@ def get_genre_detail(slug: str) -> dict | None:
                 COALESCE(alg.weight, ag.weight, 0.5) AS weight
             FROM library_albums a
             LEFT JOIN library_artists ar ON ar.name = a.artist
-            LEFT JOIN album_genres alg ON alg.album_id = a.id AND alg.genre_id = %s
-            LEFT JOIN artist_genres ag ON ag.artist_name = a.artist AND ag.genre_id = %s
+            LEFT JOIN album_genres alg ON alg.album_id = a.id AND alg.genre_id = :genre_id
+            LEFT JOIN artist_genres ag ON ag.artist_name = a.artist AND ag.genre_id = :genre_id
             WHERE alg.genre_id IS NOT NULL OR ag.genre_id IS NOT NULL
             ORDER BY a.id, a.year DESC NULLS LAST
-        """, (genre["id"], genre["id"]))
-        genre["albums"] = [dict(r) for r in cur.fetchall()]
+        """), {"genre_id": genre["id"]}).mappings().all()
+        genre["albums"] = [dict(r) for r in rows]
 
         return genre
 
 
-def _get_taxonomy_node_stats(cur, slugs: list[str]) -> dict[str, dict]:
+def _get_taxonomy_node_stats(session, slugs: list[str]) -> dict[str, dict]:
     if not slugs:
         return {}
-    cur.execute(
-        """
+    rows = session.execute(
+        text("""
         SELECT
             n.slug,
             n.name,
@@ -280,15 +307,15 @@ def _get_taxonomy_node_stats(cur, slugs: list[str]) -> dict[str, dict]:
         LEFT JOIN genres g ON g.slug = gta.alias_slug
         LEFT JOIN artist_genres ag ON ag.genre_id = g.id
         LEFT JOIN album_genres alg ON alg.genre_id = g.id
-        WHERE n.slug = ANY(%s)
+        WHERE n.slug = ANY(:slugs)
         GROUP BY n.id, n.slug, n.name, n.description, n.external_description, n.is_top_level
-        """,
-        (slugs,),
-    )
-    stats = {row["slug"]: dict(row) for row in cur.fetchall()}
+        """),
+        {"slugs": slugs},
+    ).mappings().all()
+    stats = {row["slug"]: dict(row) for row in rows}
 
-    cur.execute(
-        """
+    rows = session.execute(
+        text("""
         WITH alias_counts AS (
             SELECT
                 n.slug AS taxonomy_slug,
@@ -301,7 +328,7 @@ def _get_taxonomy_node_stats(cur, slugs: list[str]) -> dict[str, dict]:
             LEFT JOIN genres g ON g.slug = gta.alias_slug
             LEFT JOIN artist_genres ag ON ag.genre_id = g.id
             LEFT JOIN album_genres alg ON alg.genre_id = g.id
-            WHERE n.slug = ANY(%s)
+            WHERE n.slug = ANY(:slugs)
             GROUP BY n.id, n.slug, g.id, g.slug, g.name
         )
         SELECT DISTINCT ON (taxonomy_slug)
@@ -311,10 +338,10 @@ def _get_taxonomy_node_stats(cur, slugs: list[str]) -> dict[str, dict]:
         FROM alias_counts
         WHERE genre_slug IS NOT NULL
         ORDER BY taxonomy_slug, artist_count DESC, album_count DESC, genre_slug ASC
-        """,
-        (slugs,),
-    )
-    for row in cur.fetchall():
+        """),
+        {"slugs": slugs},
+    ).mappings().all()
+    for row in rows:
         bucket = stats.get(row["taxonomy_slug"])
         if not bucket:
             continue
@@ -340,20 +367,15 @@ def _get_taxonomy_node_stats(cur, slugs: list[str]) -> dict[str, dict]:
 
 
 def get_genre_graph(slug: str) -> dict | None:
-    with get_db_ctx() as cur:
-        genre = _get_genre_summary_by_slug(cur, slug)
+    with transaction_scope() as session:
+        genre = _get_genre_summary_by_slug(session, slug)
         canonical_slug = genre.get("canonical_slug") if genre else None
         if canonical_slug is None:
             resolved = resolve_genre_slug(slug)
-            cur.execute(
-                """
-                SELECT slug, name, is_top_level
-                FROM genre_taxonomy_nodes
-                WHERE slug = %s
-                """,
-                (resolved,),
-            )
-            taxonomy_row = cur.fetchone()
+            taxonomy_row = session.execute(
+                text("SELECT slug, name, is_top_level FROM genre_taxonomy_nodes WHERE slug = :slug"),
+                {"slug": resolved},
+            ).mappings().first()
             canonical_slug = taxonomy_row["slug"] if taxonomy_row else None
 
         nodes: list[dict] = []
@@ -380,12 +402,10 @@ def get_genre_graph(slug: str) -> dict | None:
             )
             return {"nodes": nodes, "links": links, "mapping": genre}
 
-        # Load edges reachable from the canonical node (2 hops for parent
-        # chains, 1 hop for other relation types) instead of the full graph.
-        cur.execute(
-            """
+        edge_rows = [dict(row) for row in session.execute(
+            text("""
             WITH RECURSIVE reachable(slug, depth) AS (
-                SELECT %s::TEXT, 0
+                SELECT CAST(:canonical_slug AS TEXT), 0
                 UNION
                 SELECT
                     CASE WHEN r.slug = source.slug THEN target.slug ELSE source.slug END,
@@ -413,10 +433,9 @@ def get_genre_graph(slug: str) -> dict | None:
             WHERE edge.relation_type IN ('parent', 'related', 'influenced_by', 'fusion_of')
               AND (source.slug IN (SELECT slug FROM reachable)
                 OR target.slug IN (SELECT slug FROM reachable))
-            """,
-            (canonical_slug,),
-        )
-        edge_rows = [dict(row) for row in cur.fetchall()]
+            """),
+            {"canonical_slug": canonical_slug},
+        ).mappings().all()]
 
         parent_by_child: dict[str, set[str]] = {}
         child_by_parent: dict[str, set[str]] = {}
@@ -509,7 +528,7 @@ def get_genre_graph(slug: str) -> dict | None:
             target_slug = link["target"].replace("taxonomy:", "")
             taxonomy_slugs.extend([source_slug, target_slug])
 
-        taxonomy_stats = _get_taxonomy_node_stats(cur, list(dict.fromkeys(taxonomy_slugs)))
+        taxonomy_stats = _get_taxonomy_node_stats(session, list(dict.fromkeys(taxonomy_slugs)))
         center_taxonomy_stats = taxonomy_stats.get(canonical_slug, {})
 
         direct_nodes: set[str] = set()
@@ -607,13 +626,74 @@ def get_genre_graph(slug: str) -> dict | None:
         }
 
 
+def list_invalid_genre_taxonomy_nodes(*, session=None) -> list[dict]:
+    if session is None:
+        with transaction_scope() as s:
+            return list_invalid_genre_taxonomy_nodes(session=s)
+
+    rows = session.execute(
+        text("""
+        SELECT
+            n.id,
+            n.slug,
+            n.name,
+            COUNT(DISTINCT a.alias_slug)::INTEGER AS alias_count,
+            COUNT(DISTINCT (e.source_genre_id, e.target_genre_id, e.relation_type))::INTEGER AS edge_count
+        FROM genre_taxonomy_nodes n
+        LEFT JOIN genre_taxonomy_aliases a ON a.genre_id = n.id
+        LEFT JOIN genre_taxonomy_edges e
+          ON e.source_genre_id = n.id
+          OR e.target_genre_id = n.id
+        GROUP BY n.id, n.slug, n.name
+        ORDER BY n.slug ASC
+        """)
+    ).mappings().all()
+
+    invalid_items: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        reason = _invalid_genre_taxonomy_reason(item["slug"])
+        if not reason:
+            continue
+        item["reason"] = reason
+        invalid_items.append(item)
+    return invalid_items
+
+
+def cleanup_invalid_genre_taxonomy_nodes(*, dry_run: bool = True, session=None) -> dict:
+    if session is None:
+        with transaction_scope() as s:
+            return cleanup_invalid_genre_taxonomy_nodes(dry_run=dry_run, session=s)
+
+    invalid_items = list_invalid_genre_taxonomy_nodes(session=session)
+    summary = {
+        "dry_run": dry_run,
+        "invalid_count": len(invalid_items),
+        "deleted_count": 0,
+        "alias_count": sum(int(item.get("alias_count") or 0) for item in invalid_items),
+        "edge_count": sum(int(item.get("edge_count") or 0) for item in invalid_items),
+        "items": invalid_items,
+    }
+    if dry_run or not invalid_items:
+        return summary
+
+    for item in invalid_items:
+        session.execute(
+            text("DELETE FROM genre_taxonomy_nodes WHERE id = :node_id"),
+            {"node_id": item["id"]},
+        )
+    invalidate_runtime_taxonomy_cache_after_commit(session)
+    summary["deleted_count"] = len(invalid_items)
+    return summary
+
+
 def list_genre_taxonomy_nodes_for_external_enrichment(
     *,
     limit: int = 100,
     focus_slug: str | None = None,
     only_missing_external: bool = True,
 ) -> list[dict]:
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         query = """
             SELECT
                 slug,
@@ -628,16 +708,16 @@ def list_genre_taxonomy_nodes_for_external_enrichment(
             FROM genre_taxonomy_nodes
             WHERE 1=1
         """
-        params: list[object] = []
+        params: dict = {}
         if focus_slug:
-            query += " AND slug = %s"
-            params.append((focus_slug or "").strip().lower())
+            query += " AND slug = :focus_slug"
+            params["focus_slug"] = (focus_slug or "").strip().lower()
         if only_missing_external:
             query += " AND (external_description IS NULL OR external_description = '')"
-        query += " ORDER BY is_top_level DESC, slug ASC LIMIT %s"
-        params.append(max(1, min(int(limit or 100), 500)))
-        cur.execute(query, params)
-        return [dict(row) for row in cur.fetchall()]
+        query += " ORDER BY is_top_level DESC, slug ASC LIMIT :lim"
+        params["lim"] = max(1, min(int(limit or 100), 500))
+        rows = session.execute(text(query), params).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def list_genre_taxonomy_nodes_for_musicbrainz_sync(
@@ -646,7 +726,7 @@ def list_genre_taxonomy_nodes_for_musicbrainz_sync(
     focus_slug: str | None = None,
 ) -> list[dict]:
     resolved_focus = resolve_genre_slug(focus_slug or "") if focus_slug else None
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         query = """
             SELECT
                 n.slug,
@@ -667,10 +747,10 @@ def list_genre_taxonomy_nodes_for_musicbrainz_sync(
             LEFT JOIN album_genres alg ON alg.genre_id = g.id
             WHERE 1=1
         """
-        params: list[object] = []
+        params: dict = {}
         if resolved_focus:
-            query += " AND n.slug = %s"
-            params.append(resolved_focus)
+            query += " AND n.slug = :focus_slug"
+            params["focus_slug"] = resolved_focus
         query += """
             GROUP BY
                 n.id,
@@ -689,11 +769,11 @@ def list_genre_taxonomy_nodes_for_musicbrainz_sync(
                 COUNT(DISTINCT alg.album_id) DESC,
                 n.is_top_level DESC,
                 n.name ASC
-            LIMIT %s
+            LIMIT :lim
         """
-        params.append(max(1, min(int(limit or 100), 500)))
-        cur.execute(query, params)
-        return [dict(row) for row in cur.fetchall()]
+        params["lim"] = max(1, min(int(limit or 100), 500))
+        rows = session.execute(text(query), params).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def upsert_genre_taxonomy_node(
@@ -703,6 +783,7 @@ def upsert_genre_taxonomy_node(
     description: str | None = None,
     is_top_level: bool = False,
     musicbrainz_mbid: str | None = None,
+    session=None,
 ) -> dict | None:
     import re
 
@@ -715,95 +796,92 @@ def upsert_genre_taxonomy_node(
     if not candidate_name:
         candidate_name = candidate_slug.replace("-", " ")
 
-    with get_db_ctx() as cur:
-        row = None
-        if mbid:
-            cur.execute(
-                """
-                SELECT id, slug, name, description, is_top_level, musicbrainz_mbid
-                FROM genre_taxonomy_nodes
-                WHERE musicbrainz_mbid = %s
-                """,
-                (mbid,),
-            )
-            row = cur.fetchone()
-        if not row:
-            cur.execute(
-                """
-                SELECT id, slug, name, description, is_top_level, musicbrainz_mbid
-                FROM genre_taxonomy_nodes
-                WHERE slug = %s
-                """,
-                (candidate_slug,),
-            )
-            row = cur.fetchone()
+    if session is None:
+        with transaction_scope() as s:
+            return upsert_genre_taxonomy_node(slug, name=name, description=description,
+                                               is_top_level=is_top_level,
+                                               musicbrainz_mbid=musicbrainz_mbid, session=s)
+    row = None
+    if mbid:
+        row = session.execute(
+            text("SELECT id, slug, name, description, is_top_level, musicbrainz_mbid FROM genre_taxonomy_nodes WHERE musicbrainz_mbid = :mbid"),
+            {"mbid": mbid},
+        ).mappings().first()
+    if not row:
+        row = session.execute(
+            text("SELECT id, slug, name, description, is_top_level, musicbrainz_mbid FROM genre_taxonomy_nodes WHERE slug = :slug"),
+            {"slug": candidate_slug},
+        ).mappings().first()
 
-        if row:
-            row = dict(row)
-            update_fields: list[str] = []
-            values: list[object] = []
-            current_name = (row.get("name") or "").strip().lower()
-            generic_name = row["slug"].replace("-", " ")
-            if candidate_name and (not current_name or current_name == generic_name):
-                update_fields.append("name = %s")
-                values.append(candidate_name)
-            if candidate_description and not (row.get("description") or "").strip():
-                update_fields.append("description = %s")
-                values.append(candidate_description)
-            if is_top_level and not row.get("is_top_level"):
-                update_fields.append("is_top_level = TRUE")
-            if mbid and not (row.get("musicbrainz_mbid") or "").strip():
-                update_fields.append("musicbrainz_mbid = %s")
-                values.append(mbid)
-            if update_fields:
-                values.append(row["id"])
-                cur.execute(
-                    f"""
-                    UPDATE genre_taxonomy_nodes
-                    SET {', '.join(update_fields)}
-                    WHERE id = %s
-                    RETURNING id, slug, name, description, is_top_level, musicbrainz_mbid
-                    """,
-                    values,
-                )
-                row = dict(cur.fetchone())
-        else:
-            cur.execute(
-                """
-                INSERT INTO genre_taxonomy_nodes (slug, name, description, is_top_level, musicbrainz_mbid)
-                VALUES (%s, %s, %s, %s, %s)
+    if row:
+        row = dict(row)
+        update_fields: list[str] = []
+        values: dict = {"node_id": row["id"]}
+        idx = 0
+        current_name = (row.get("name") or "").strip().lower()
+        generic_name = row["slug"].replace("-", " ")
+        if candidate_name and (not current_name or current_name == generic_name):
+            update_fields.append(f"name = :u{idx}")
+            values[f"u{idx}"] = candidate_name
+            idx += 1
+        if candidate_description and not (row.get("description") or "").strip():
+            update_fields.append(f"description = :u{idx}")
+            values[f"u{idx}"] = candidate_description
+            idx += 1
+        if is_top_level and not row.get("is_top_level"):
+            update_fields.append("is_top_level = TRUE")
+        if mbid and not (row.get("musicbrainz_mbid") or "").strip():
+            update_fields.append(f"musicbrainz_mbid = :u{idx}")
+            values[f"u{idx}"] = mbid
+            idx += 1
+        if update_fields:
+            row = dict(session.execute(
+                text(f"""
+                UPDATE genre_taxonomy_nodes
+                SET {', '.join(update_fields)}
+                WHERE id = :node_id
                 RETURNING id, slug, name, description, is_top_level, musicbrainz_mbid
-                """,
-                (candidate_slug, candidate_name, candidate_description, bool(is_top_level), mbid),
-            )
-            row = dict(cur.fetchone())
+                """),
+                values,
+            ).mappings().first())
+    else:
+        row = dict(session.execute(
+            text("""
+            INSERT INTO genre_taxonomy_nodes (slug, name, description, is_top_level, musicbrainz_mbid)
+            VALUES (:slug, :name, :description, :is_top_level, :mbid)
+            RETURNING id, slug, name, description, is_top_level, musicbrainz_mbid
+            """),
+            {"slug": candidate_slug, "name": candidate_name,
+             "description": candidate_description, "is_top_level": bool(is_top_level),
+             "mbid": mbid},
+        ).mappings().first())
 
-        alias_entries: list[tuple[str, str]] = []
-        seen_alias_slugs: set[str] = set()
-        for candidate_alias in (row["slug"].replace("-", " "), row["name"], candidate_name):
-            alias_name = re.sub(r"\s+", " ", (candidate_alias or "").strip().lower()).strip()
-            alias_slug = _slugify(alias_name)
-            if not alias_name or not alias_slug or alias_slug in seen_alias_slugs:
-                continue
-            seen_alias_slugs.add(alias_slug)
-            alias_entries.append((alias_slug, alias_name))
-        for alias_slug, alias_name in alias_entries:
-            cur.execute(
-                "DELETE FROM genre_taxonomy_aliases WHERE alias_name = %s AND alias_slug != %s",
-                (alias_name, alias_slug),
-            )
-            cur.execute(
-                """
-                INSERT INTO genre_taxonomy_aliases (alias_slug, alias_name, genre_id)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (alias_slug) DO UPDATE
-                SET alias_name = EXCLUDED.alias_name,
-                    genre_id = EXCLUDED.genre_id
-                """,
-                (alias_slug, alias_name, row["id"]),
-            )
+    alias_entries: list[tuple[str, str]] = []
+    seen_alias_slugs: set[str] = set()
+    for candidate_alias in (row["slug"].replace("-", " "), row["name"], candidate_name):
+        alias_name = re.sub(r"\s+", " ", (candidate_alias or "").strip().lower()).strip()
+        alias_slug = _slugify(alias_name)
+        if not alias_name or not alias_slug or alias_slug in seen_alias_slugs:
+            continue
+        seen_alias_slugs.add(alias_slug)
+        alias_entries.append((alias_slug, alias_name))
+    for alias_slug, alias_name in alias_entries:
+        session.execute(
+            text("DELETE FROM genre_taxonomy_aliases WHERE alias_name = :alias_name AND alias_slug != :alias_slug"),
+            {"alias_name": alias_name, "alias_slug": alias_slug},
+        )
+        session.execute(
+            text("""
+            INSERT INTO genre_taxonomy_aliases (alias_slug, alias_name, genre_id)
+            VALUES (:alias_slug, :alias_name, :genre_id)
+            ON CONFLICT (alias_slug) DO UPDATE
+            SET alias_name = EXCLUDED.alias_name,
+                genre_id = EXCLUDED.genre_id
+            """),
+            {"alias_slug": alias_slug, "alias_name": alias_name, "genre_id": row["id"]},
+        )
 
-    invalidate_runtime_taxonomy_cache()
+    invalidate_runtime_taxonomy_cache_after_commit(session)
     return row
 
 
@@ -813,6 +891,7 @@ def upsert_genre_taxonomy_edge(
     *,
     relation_type: str,
     weight: float | None = None,
+    session=None,
 ) -> bool:
     source_slug = (source_slug or "").strip().lower()
     target_slug = (target_slug or "").strip().lower()
@@ -823,25 +902,55 @@ def upsert_genre_taxonomy_edge(
         return False
     edge_weight = weight if weight is not None else (0.7 if relation_type == "related" else 1.0)
 
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id FROM genre_taxonomy_nodes WHERE slug = %s", (source_slug,))
-        source_row = cur.fetchone()
-        cur.execute("SELECT id FROM genre_taxonomy_nodes WHERE slug = %s", (target_slug,))
-        target_row = cur.fetchone()
-        if not source_row or not target_row:
-            return False
-        cur.execute(
-            """
-            INSERT INTO genre_taxonomy_edges (source_genre_id, target_genre_id, relation_type, weight)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (source_genre_id, target_genre_id, relation_type) DO UPDATE
-            SET weight = EXCLUDED.weight
-            """,
-            (source_row["id"], target_row["id"], relation_type, edge_weight),
-        )
+    if session is None:
+        with transaction_scope() as s:
+            return upsert_genre_taxonomy_edge(source_slug, target_slug,
+                                               relation_type=relation_type,
+                                               weight=weight, session=s)
+    source_row = session.execute(
+        text("SELECT id FROM genre_taxonomy_nodes WHERE slug = :slug"),
+        {"slug": source_slug},
+    ).mappings().first()
+    target_row = session.execute(
+        text("SELECT id FROM genre_taxonomy_nodes WHERE slug = :slug"),
+        {"slug": target_slug},
+    ).mappings().first()
+    if not source_row or not target_row:
+        return False
+    session.execute(
+        text("""
+        INSERT INTO genre_taxonomy_edges (source_genre_id, target_genre_id, relation_type, weight)
+        VALUES (:source_id, :target_id, :relation_type, :weight)
+        ON CONFLICT (source_genre_id, target_genre_id, relation_type) DO UPDATE
+        SET weight = EXCLUDED.weight
+        """),
+        {"source_id": source_row["id"], "target_id": target_row["id"],
+         "relation_type": relation_type, "weight": edge_weight},
+    )
 
-    invalidate_runtime_taxonomy_cache()
+    invalidate_runtime_taxonomy_cache_after_commit(session)
     return True
+
+
+def get_genre_taxonomy_node_id(slug: str) -> int | None:
+    """Return the id of a genre_taxonomy_nodes row by slug, or None."""
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT id FROM genre_taxonomy_nodes WHERE slug = :slug"),
+            {"slug": slug},
+        ).mappings().first()
+    return row["id"] if row else None
+
+
+def set_genre_eq_gains(slug: str, gains: list[float] | None, *, session=None) -> None:
+    """Set eq_gains for a genre taxonomy node by slug."""
+    if session is None:
+        with transaction_scope() as s:
+            return set_genre_eq_gains(slug, gains, session=s)
+    session.execute(
+        text("UPDATE genre_taxonomy_nodes SET eq_gains = :gains WHERE slug = :slug"),
+        {"gains": gains, "slug": slug},
+    )
 
 
 def update_genre_external_metadata(
@@ -852,38 +961,281 @@ def update_genre_external_metadata(
     wikidata_url: str | None = None,
     external_description: str | None = None,
     external_description_source: str | None = None,
+    session=None,
 ) -> bool:
     slug = (slug or "").strip().lower()
     if not slug:
         return False
 
     fields: list[str] = []
-    values: list[object] = []
+    params: dict = {"slug": slug}
+    idx = 0
     if musicbrainz_mbid is not None:
-        fields.append("musicbrainz_mbid = %s")
-        values.append((musicbrainz_mbid or "").strip() or None)
+        fields.append(f"musicbrainz_mbid = :v{idx}")
+        params[f"v{idx}"] = (musicbrainz_mbid or "").strip() or None
+        idx += 1
     if wikidata_entity_id is not None:
-        fields.append("wikidata_entity_id = %s")
-        values.append((wikidata_entity_id or "").strip() or None)
+        fields.append(f"wikidata_entity_id = :v{idx}")
+        params[f"v{idx}"] = (wikidata_entity_id or "").strip() or None
+        idx += 1
     if wikidata_url is not None:
-        fields.append("wikidata_url = %s")
-        values.append((wikidata_url or "").strip() or None)
+        fields.append(f"wikidata_url = :v{idx}")
+        params[f"v{idx}"] = (wikidata_url or "").strip() or None
+        idx += 1
     if external_description is not None:
-        fields.append("external_description = %s")
-        values.append((external_description or "").strip())
+        fields.append(f"external_description = :v{idx}")
+        params[f"v{idx}"] = (external_description or "").strip()
+        idx += 1
     if external_description_source is not None:
-        fields.append("external_description_source = %s")
-        values.append((external_description_source or "").strip())
+        fields.append(f"external_description_source = :v{idx}")
+        params[f"v{idx}"] = (external_description_source or "").strip()
+        idx += 1
     if not fields:
         return False
 
-    values.append(slug)
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"UPDATE genre_taxonomy_nodes SET {', '.join(fields)} WHERE slug = %s",
-            values,
-        )
-        changed = cur.rowcount > 0
+    if session is None:
+        with transaction_scope() as s:
+            return update_genre_external_metadata(
+                slug, musicbrainz_mbid=musicbrainz_mbid, wikidata_entity_id=wikidata_entity_id,
+                wikidata_url=wikidata_url, external_description=external_description,
+                external_description_source=external_description_source, session=s,
+            )
+    result = session.execute(
+        text(f"UPDATE genre_taxonomy_nodes SET {', '.join(fields)} WHERE slug = :slug"),
+        params,
+    )
+    changed = result.rowcount > 0
     if changed:
-        invalidate_runtime_taxonomy_cache()
+        invalidate_runtime_taxonomy_cache_after_commit(session)
     return changed
+
+
+# ── Genre indexer queries ─────────────────────────────────────────
+
+def get_artists_with_tags() -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("SELECT name, tags_json FROM library_artists WHERE tags_json IS NOT NULL")
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def get_albums_with_genres() -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(text("""
+            SELECT a.id, a.artist, a.name, a.genre,
+                   array_agg(DISTINCT t.genre) FILTER (WHERE t.genre IS NOT NULL AND t.genre != '') AS track_genres
+            FROM library_albums a
+            LEFT JOIN library_tracks t ON t.album_id = a.id
+            GROUP BY a.id, a.artist, a.name, a.genre
+        """)).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def get_artists_missing_genre_mapping() -> list[str]:
+    with transaction_scope() as session:
+        rows = session.execute(text("""
+            SELECT DISTINCT a.artist AS name
+            FROM library_albums a
+            JOIN album_genres ag ON ag.album_id = a.id
+            WHERE a.artist NOT IN (SELECT artist_name FROM artist_genres)
+        """)).mappings().all()
+    return [r["name"] for r in rows]
+
+
+def get_artist_album_genres(artist_name: str) -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(text("""
+            SELECT g.name, COUNT(*) AS cnt
+            FROM album_genres ag
+            JOIN genres g ON ag.genre_id = g.id
+            JOIN library_albums a ON ag.album_id = a.id
+            WHERE a.artist = :artist
+            GROUP BY g.name
+            ORDER BY cnt DESC
+        """), {"artist": artist_name}).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def get_total_genre_count() -> int:
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT COUNT(*) as cnt FROM genres")
+        ).mappings().first()
+    return int(row["cnt"]) if row else 0
+
+
+# ── Genre taxonomy inference queries ─────────────────────────────
+
+def list_unmapped_genres_for_inference(
+    limit: int,
+    focus_slug: str | None = None,
+) -> list[dict]:
+    with transaction_scope() as session:
+        items: list[dict] = []
+        if focus_slug:
+            row = session.execute(
+                text("""
+                SELECT
+                    g.id,
+                    g.name,
+                    g.slug,
+                    COUNT(DISTINCT ag.artist_name)::INTEGER AS artist_count,
+                    COUNT(DISTINCT alg.album_id)::INTEGER AS album_count
+                FROM genres g
+                LEFT JOIN artist_genres ag ON g.id = ag.genre_id
+                LEFT JOIN album_genres alg ON g.id = alg.genre_id
+                LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
+                WHERE gta.alias_slug IS NULL
+                  AND g.slug = :focus_slug
+                GROUP BY g.id, g.name, g.slug
+                """),
+                {"focus_slug": focus_slug},
+            ).mappings().first()
+            if row:
+                items.append(dict(row))
+
+        remaining_limit = max(limit - len(items), 0)
+        if remaining_limit > 0:
+            rows = session.execute(
+                text("""
+                SELECT
+                    g.id,
+                    g.name,
+                    g.slug,
+                    COUNT(DISTINCT ag.artist_name)::INTEGER AS artist_count,
+                    COUNT(DISTINCT alg.album_id)::INTEGER AS album_count
+                FROM genres g
+                LEFT JOIN artist_genres ag ON g.id = ag.genre_id
+                LEFT JOIN album_genres alg ON g.id = alg.genre_id
+                LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
+                WHERE gta.alias_slug IS NULL
+                  AND (:focus_slug IS NULL OR g.slug <> :focus_slug)
+                GROUP BY g.id, g.name, g.slug
+                HAVING COUNT(DISTINCT ag.artist_name) > 0 OR COUNT(DISTINCT alg.album_id) > 0
+                ORDER BY COUNT(DISTINCT ag.artist_name) DESC, COUNT(DISTINCT alg.album_id) DESC, g.name ASC
+                LIMIT :remaining_limit
+                """),
+                {"focus_slug": focus_slug, "remaining_limit": remaining_limit},
+            ).mappings().all()
+            items.extend(dict(row) for row in rows)
+    return items
+
+
+def get_unmapped_genre_count() -> int:
+    with transaction_scope() as session:
+        row = session.execute(
+            text("""
+            SELECT COUNT(*)::INTEGER AS cnt
+            FROM genres g
+            LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
+            WHERE gta.alias_slug IS NULL
+            """)
+        ).mappings().first()
+    return int(row["cnt"] or 0) if row else 0
+
+
+# ── Genre descriptions queries ────────────────────────────────────
+
+def get_remaining_without_external_description() -> int:
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT COUNT(*)::INTEGER AS cnt FROM genre_taxonomy_nodes WHERE external_description IS NULL OR external_description = ''")
+        ).mappings().first()
+    return int(row["cnt"] or 0) if row else 0
+
+
+def get_genre_seed_artists(genre_slug: str) -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
+            WITH seed_artists AS (
+                SELECT DISTINCT ag.artist_name
+                FROM artist_genres ag
+                JOIN genres g ON g.id = ag.genre_id
+                WHERE g.slug = :slug
+                UNION
+                SELECT DISTINCT a.artist AS artist_name
+                FROM album_genres alg
+                JOIN genres g ON g.id = alg.genre_id
+                JOIN library_albums a ON a.id = alg.album_id
+                WHERE g.slug = :slug
+            )
+            SELECT
+                ag.artist_name,
+                MAX(ag.weight)::DOUBLE PRECISION AS weight,
+                MAX(COALESCE(la.listeners, 0))::INTEGER AS listeners
+            FROM seed_artists sa
+            JOIN artist_genres ag ON ag.artist_name = sa.artist_name
+            LEFT JOIN library_artists la ON la.name = ag.artist_name
+            GROUP BY ag.artist_name
+            ORDER BY MAX(ag.weight) DESC, MAX(COALESCE(la.listeners, 0)) DESC, ag.artist_name ASC
+            LIMIT 8
+            """),
+            {"slug": genre_slug},
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def get_genre_cooccurring_artist_slugs(genre_slug: str) -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
+            WITH seed_artists AS (
+                SELECT DISTINCT ag.artist_name
+                FROM artist_genres ag
+                JOIN genres g ON g.id = ag.genre_id
+                WHERE g.slug = :slug
+                UNION
+                SELECT DISTINCT a.artist AS artist_name
+                FROM album_genres alg
+                JOIN genres g ON g.id = alg.genre_id
+                JOIN library_albums a ON a.id = alg.album_id
+                WHERE g.slug = :slug
+            )
+            SELECT
+                tn.slug AS canonical_slug,
+                SUM(ag.weight)::DOUBLE PRECISION AS score,
+                COUNT(DISTINCT ag.artist_name)::INTEGER AS hits
+            FROM seed_artists sa
+            JOIN artist_genres ag ON ag.artist_name = sa.artist_name
+            JOIN genres g ON g.id = ag.genre_id
+            JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
+            JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
+            WHERE g.slug <> :slug
+            GROUP BY tn.slug
+            ORDER BY SUM(ag.weight) DESC, COUNT(DISTINCT ag.artist_name) DESC, tn.slug ASC
+            LIMIT 24
+            """),
+            {"slug": genre_slug},
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+def get_genre_cooccurring_album_slugs(genre_slug: str) -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
+            WITH seed_albums AS (
+                SELECT DISTINCT alg.album_id
+                FROM album_genres alg
+                JOIN genres g ON g.id = alg.genre_id
+                WHERE g.slug = :slug
+            )
+            SELECT
+                tn.slug AS canonical_slug,
+                SUM(alg.weight)::DOUBLE PRECISION AS score,
+                COUNT(DISTINCT alg.album_id)::INTEGER AS hits
+            FROM seed_albums sa
+            JOIN album_genres alg ON alg.album_id = sa.album_id
+            JOIN genres g ON g.id = alg.genre_id
+            JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
+            JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
+            WHERE g.slug <> :slug
+            GROUP BY tn.slug
+            ORDER BY SUM(alg.weight) DESC, COUNT(DISTINCT alg.album_id) DESC, tn.slug ASC
+            LIMIT 24
+            """),
+            {"slug": genre_slug},
+        ).mappings().all()
+    return [dict(r) for r in rows]

@@ -83,19 +83,19 @@ export function ServerSetup() {
         <div className="flex flex-col items-center pb-2">
           <img src="/icons/logo.svg" alt="Crate" className="mb-2 h-16 w-16" />
           <h1 className="text-2xl font-bold text-white">Connect to a Crate server</h1>
-          <p className="mt-2 text-center text-sm text-white/55">
+          <p className="mt-2 text-center text-sm text-muted-foreground">
             Point the app at your Crate instance. You can add more later from Settings.
           </p>
         </div>
 
         <label className="flex flex-col gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-white/45">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Server URL
           </span>
           <div className="relative">
             <Server
               size={16}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35"
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
             />
             <input
               type="url"
@@ -106,7 +106,7 @@ export function ServerSetup() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://api.your-crate.com"
-              className="h-12 w-full rounded-xl border border-white/10 bg-white/5 pl-10 pr-3 text-[15px] text-white outline-none placeholder:text-white/25 focus:border-cyan-400/60"
+              className="h-12 w-full rounded-xl border border-white/10 bg-white/5 pl-10 pr-3 text-[15px] text-white outline-none placeholder:text-white/40 focus:border-cyan-400/60"
               required
             />
           </div>
@@ -133,7 +133,7 @@ export function ServerSetup() {
           )}
         </button>
 
-        <p className="pt-2 text-center text-[12px] leading-5 text-white/35">
+        <p className="pt-2 text-center text-[12px] leading-5 text-white/40">
           Don't run your own server yet?{" "}
           <a
             href="https://docs.cratemusic.app/technical/development-deployment-and-operations"

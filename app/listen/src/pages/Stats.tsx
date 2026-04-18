@@ -116,15 +116,15 @@ export function Stats() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Tracks</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Tracks</div>
               <div className="mt-1 text-lg font-semibold text-foreground">{replay?.track_count ?? 0}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Minutes</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Minutes</div>
               <div className="mt-1 text-lg font-semibold text-foreground">{formatStatsMinutes(replay?.minutes_listened ?? 0)}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-3">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Window</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Window</div>
               <div className="mt-1 text-lg font-semibold text-foreground">
                 {STATS_WINDOW_OPTIONS.find((item) => item.value === selectedWindow)?.label ?? selectedWindow}
               </div>
@@ -153,7 +153,7 @@ export function Stats() {
                 onClick={() => playTopTrack(item)}
                 className="flex items-center gap-3 rounded-xl border border-transparent bg-black/10 px-3 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/5"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-muted-foreground">
                   {index + 1}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -210,7 +210,7 @@ export function Stats() {
                 onClick={() => playTopTrack(item)}
                 className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2 text-left transition-colors hover:border-white/10 hover:bg-white/5"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-muted-foreground">
                   {index + 1}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -237,7 +237,7 @@ export function Stats() {
                 to={artistPagePath({ artistId: item.artist_id, artistSlug: item.artist_slug })}
                 className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-white/10 hover:bg-white/5"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-muted-foreground">
                   {index + 1}
                 </div>
                 <div className="min-w-0 flex-1">
@@ -263,7 +263,7 @@ export function Stats() {
                 to={albumPagePath({ albumId: item.album_id, albumSlug: item.album_slug })}
                 className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-white/10 hover:bg-white/5"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-muted-foreground">
                   <Disc3 size={14} />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -289,7 +289,7 @@ export function Stats() {
                 key={`${item.genre_name}-${index}`}
                 className="flex items-center gap-3 rounded-xl border border-transparent px-3 py-2"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-white/45">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-xs font-semibold text-muted-foreground">
                   <Tag size={14} />
                 </div>
                 <div className="min-w-0 flex-1">

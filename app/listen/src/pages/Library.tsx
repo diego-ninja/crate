@@ -9,7 +9,7 @@ import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { ArtistCard } from "@/components/cards/ArtistCard";
 import { AlbumCard } from "@/components/cards/AlbumCard";
-import { TrackRow } from "@/components/cards/TrackRow";
+import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { PlaylistListRow } from "@/components/playlists/PlaylistListRow";
 import { PlaylistCreateModal, type PlaylistComposerTrack } from "@/components/playlists/PlaylistCreateModal";
 import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from "@/components/ui/AppModal";
@@ -261,7 +261,7 @@ function PlaylistsTab() {
 
       {followedCurated && followedCurated.length > 0 ? (
         <div className="space-y-1">
-          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-white/35">
+          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-white/40">
             From Crate
           </div>
           {followedCurated.map((playlist) => (
@@ -269,6 +269,7 @@ function PlaylistsTab() {
               key={`curated-${playlist.id}`}
               playlistId={playlist.id}
               name={playlist.name}
+              isSmart={playlist.is_smart}
               description={playlist.description}
               coverDataUrl={playlist.cover_data_url}
               artworkTracks={playlist.artwork_tracks}
@@ -292,7 +293,7 @@ function PlaylistsTab() {
         ) : null
       ) : (
         <div className="space-y-1">
-          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-white/35">
+          <div className="px-1 pb-1 text-[11px] font-bold uppercase tracking-wider text-white/40">
             Your Playlists
           </div>
           {playlists.map((pl) => (
@@ -300,6 +301,7 @@ function PlaylistsTab() {
               key={pl.id}
               playlistId={pl.id}
               name={pl.name}
+              isSmart={pl.is_smart}
               description={pl.description}
               coverDataUrl={pl.cover_data_url}
               artworkTracks={pl.artwork_tracks}
@@ -467,6 +469,23 @@ function LikedTab() {
     return list;
   }, [tracks, search, sort]);
 
+  const trackRows = useMemo<TrackRowData[]>(() =>
+    filtered.map((t) => ({
+      id: t.track_id,
+      title: t.title,
+      artist: t.artist,
+      artist_id: t.artist_id,
+      artist_slug: t.artist_slug,
+      album: t.album,
+      album_id: t.album_id,
+      album_slug: t.album_slug,
+      duration: t.duration,
+      path: t.relative_path || t.path,
+      library_track_id: t.track_id,
+    })),
+    [filtered],
+  );
+
   if (loading) return <Spinner />;
   if (!tracks || tracks.length === 0) {
     return <EmptyState message="No liked tracks yet. Tap the heart on any track to save it here." />;
@@ -503,13 +522,13 @@ function LikedTab() {
           Play {filtered.length < tracks.length ? `${filtered.length}` : "All"}
         </button>
         <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter liked tracks..."
-            className="w-full h-10 pl-9 pr-3 rounded-lg bg-white/5 text-sm text-white placeholder:text-white/25 outline-none focus:bg-white/8"
+            className="w-full h-10 pl-9 pr-3 rounded-lg bg-white/5 text-sm text-white placeholder:text-white/40 outline-none focus:bg-white/8"
           />
         </div>
         <select
@@ -524,29 +543,18 @@ function LikedTab() {
         </select>
       </div>
       <div>
-        {filtered.map((t, i) => (
+        {trackRows.map((row, i) => (
           <TrackRow
-            key={t.track_id}
-            track={{
-              id: t.track_id,
-              title: t.title,
-              artist: t.artist,
-              artist_id: t.artist_id,
-              artist_slug: t.artist_slug,
-              album: t.album,
-              album_id: t.album_id,
-              album_slug: t.album_slug,
-              duration: t.duration,
-              path: t.relative_path || t.path,
-              library_track_id: t.track_id,
-            }}
+            key={row.id}
+            track={row}
             index={i + 1}
             showArtist
             showAlbum
-            albumCover={t.artist && t.album
-              ? albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album })
+            albumCover={row.artist && row.album
+              ? albumCoverApiUrl({ albumId: row.album_id, albumSlug: row.album_slug, artistName: row.artist, albumName: row.album })
               : undefined}
             showCoverThumb
+            queueTracks={trackRows}
           />
         ))}
       </div>

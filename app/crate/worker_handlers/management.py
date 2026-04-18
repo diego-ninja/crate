@@ -12,10 +12,15 @@ from crate.db import (
     delete_cache,
     emit_task_event,
     get_cache,
-    get_db_ctx,
     get_task,
     set_cache,
     update_task,
+)
+from crate.db.jobs.management import (
+    apply_mbid_to_album,
+    find_album_path,
+    find_album_path_for_match,
+    rename_artist_in_db,
 )
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled, start_scan
 
@@ -310,21 +315,7 @@ def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
     mode = params.get("mode", "db_only")
     lib = Path(config["library_path"])
 
-    db_path = None
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT path FROM library_albums WHERE artist = %s AND name = %s LIMIT 1",
-            (artist_name, album_name),
-        )
-        row = cur.fetchone()
-        if not row:
-            cur.execute(
-                "SELECT path FROM library_albums WHERE artist = %s AND name LIKE %s ESCAPE '\\' LIMIT 1",
-                (artist_name, _escape_like(album_name)),
-            )
-            row = cur.fetchone()
-        if row:
-            db_path = row["path"]
+    db_path = find_album_path(artist_name, album_name, _escape_like)
 
     album_dir = Path(db_path) if db_path else lib / artist_name / album_name
 
@@ -380,23 +371,7 @@ def _handle_move_artist(task_id: str, params: dict, config: dict) -> dict:
     if old_dir.is_dir():
         shutil.move(str(old_dir), str(new_dir))
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_artists SET name = %s, folder_name = %s WHERE name = %s",
-            (new_name, new_name, name),
-        )
-        cur.execute("UPDATE library_albums SET artist = %s WHERE artist = %s", (new_name, name))
-        cur.execute("UPDATE library_tracks SET artist = %s WHERE artist = %s", (new_name, name))
-        cur.execute("SELECT id, path FROM library_albums WHERE artist = %s", (new_name,))
-        for row in cur.fetchall():
-            old_path = row["path"]
-            new_path = old_path.replace(f"/{folder}/", f"/{new_name}/", 1)
-            cur.execute("UPDATE library_albums SET path = %s WHERE id = %s", (new_path, row["id"]))
-        cur.execute("SELECT id, path FROM library_tracks WHERE artist = %s", (new_name,))
-        for row in cur.fetchall():
-            old_path = row["path"]
-            new_path = old_path.replace(f"/{folder}/", f"/{new_name}/", 1)
-            cur.execute("UPDATE library_tracks SET path = %s WHERE id = %s", (new_path, row["id"]))
+    rename_artist_in_db(name, new_name, folder)
 
     try:
         import mutagen
@@ -567,39 +542,11 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
     if mbid:
         try:
             album_db_path = str(album_dir)
-            with get_db_ctx() as cur:
-                cur.execute("SELECT path FROM library_albums WHERE path = %s", (album_db_path,))
-                row = cur.fetchone()
-                if not row:
-                    cur.execute(
-                        "SELECT path FROM library_albums WHERE artist = %s AND (name = %s OR name LIKE %s ESCAPE '\\') LIMIT 1",
-                        (artist_folder, album_folder, _escape_like(album_folder)),
-                    )
-                    row = cur.fetchone()
-                if row:
-                    album_db_path = row["path"]
+            album_db_path = find_album_path_for_match(artist_folder, album_folder, album_db_path, _escape_like)
 
-            with get_db_ctx() as cur:
-                cur.execute(
-                    "UPDATE library_albums SET musicbrainz_albumid = %s WHERE path = %s RETURNING id",
-                    (mbid, album_db_path),
-                )
-                album_row = cur.fetchone()
-                if release_group_id:
-                    cur.execute(
-                        "UPDATE library_albums SET musicbrainz_releasegroupid = %s WHERE path = %s",
-                        (release_group_id, album_db_path),
-                    )
-                updated = 1 if album_row else 0
-                # Propagate MBID to tracks
-                if album_row:
-                    cur.execute(
-                        "UPDATE library_tracks SET musicbrainz_albumid = %s "
-                        "WHERE album_id = %s AND (musicbrainz_albumid IS NULL OR musicbrainz_albumid = '')",
-                        (mbid, album_row["id"]),
-                    )
+            album_id = apply_mbid_to_album(mbid, album_db_path, release_group_id)
 
-            if updated:
+            if album_id:
                 emit_task_event(task_id, "info", {"message": f"Synced MBID {mbid[:8]}... to DB"})
             else:
                 log.warning("MBID update matched 0 rows for path=%s", album_db_path)

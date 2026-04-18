@@ -2,96 +2,72 @@
 
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Request, HTTPException, Query
-from pydantic import BaseModel, field_validator, model_validator
+from fastapi import APIRouter, HTTPException, Query, Request
 
-from crate.api.auth import _require_auth
 from crate.api._deps import artist_name_from_id, coerce_date as _coerce_date
+from crate.api.auth import _require_auth
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.common import OkResponse
+from crate.api.schemas.me import (
+    ChangePasswordRequest,
+    CitySearchResultResponse,
+    FollowMutationResponse,
+    FollowRequest,
+    FeedItemResponse,
+    FollowedArtistResponse,
+    FollowedPlaylistResponse,
+    FollowingStateResponse,
+    GeolocationResponse,
+    HomeCardResponse,
+    HomeDiscoveryResponse,
+    HomeSectionResponse,
+    LastfmCallbackRequest,
+    LastfmAuthUrlResponse,
+    LikeMutationResponse,
+    LikeTrackRequest,
+    LikedTrackResponse,
+    ListenBrainzConnectResponse,
+    ListenBrainzConnectRequest,
+    LocationPreferencesResponse,
+    PlayEventRecordedResponse,
+    PlayHistoryEntryResponse,
+    PlayStatsResponse,
+    RecordPlayEventRequest,
+    RecordPlayRequest,
+    ReplayMixResponse,
+    SaveAlbumRequest,
+    SaveAlbumResponse,
+    SavedAlbumResponse,
+    ShowReminderRequest,
+    ShowAttendanceAddResponse,
+    ShowAttendanceRemoveResponse,
+    ShowReminderCreateResponse,
+    ScrobbleStatusResponse,
+    StatsOverviewResponse,
+    StatsTrendsResponse,
+    SyncStatusResponse,
+    TopAlbumsResponse,
+    TopArtistsResponse,
+    TopGenresResponse,
+    TopTracksResponse,
+    UnlikeMutationResponse,
+    MeUpcomingResponse,
+    UpdateProfileRequest,
+    UpdateProfileResponse,
+    UpdateLocationBody,
+    UserLibraryCountsResponse,
+)
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
-
-# ── Models ───────────────────────────────────────────────────
-
-class FollowRequest(BaseModel):
-    artist_name: str
-
-class SaveAlbumRequest(BaseModel):
-    album_id: int
-
-class LikeTrackRequest(BaseModel):
-    track_id: int | None = None
-    track_storage_id: str | None = None
-    track_path: str | None = None
-
-class RecordPlayRequest(BaseModel):
-    track_id: int | None = None
-    track_storage_id: str | None = None
-    track_path: str | None = None
-    title: str = ""
-    artist: str = ""
-    album: str = ""
-
-
-class RecordPlayEventRequest(BaseModel):
-    track_id: int | None = None
-    track_storage_id: str | None = None
-    track_path: str | None = None
-    title: str = ""
-    artist: str = ""
-    album: str = ""
-    started_at: datetime
-    ended_at: datetime
-    played_seconds: float = 0
-    track_duration_seconds: float | None = None
-    completion_ratio: float | None = None
-    was_skipped: bool = False
-    was_completed: bool = False
-    play_source_type: str | None = None
-    play_source_id: str | None = None
-    play_source_name: str | None = None
-    context_artist: str | None = None
-    context_album: str | None = None
-    context_playlist_id: int | None = None
-    device_type: str | None = None
-    app_platform: str | None = None
-
-    @field_validator("played_seconds")
-    @classmethod
-    def _validate_played_seconds(cls, value: float) -> float:
-        if value < 0:
-            raise ValueError("played_seconds must be >= 0")
-        return value
-
-    @field_validator("track_duration_seconds")
-    @classmethod
-    def _validate_track_duration(cls, value: float | None) -> float | None:
-        if value is not None and value <= 0:
-            raise ValueError("track_duration_seconds must be > 0")
-        return value
-
-    @field_validator("completion_ratio")
-    @classmethod
-    def _validate_completion_ratio(cls, value: float | None) -> float | None:
-        if value is not None and not 0 <= value <= 1:
-            raise ValueError("completion_ratio must be between 0 and 1")
-        return value
-
-    @model_validator(mode="after")
-    def _validate_consistency(self):
-        if self.started_at > self.ended_at:
-            raise ValueError("started_at must be <= ended_at")
-        if self.was_skipped and self.was_completed:
-            raise ValueError("was_skipped and was_completed cannot both be true")
-        if self.track_duration_seconds and self.completion_ratio is not None:
-            derived = min(1.0, max(0.0, self.played_seconds / self.track_duration_seconds))
-            if abs(derived - self.completion_ratio) > 0.15:
-                raise ValueError("completion_ratio does not match played_seconds and track_duration_seconds")
-        return self
-
-
-class ShowReminderRequest(BaseModel):
-    reminder_type: str
+_ME_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
 def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
@@ -207,7 +183,12 @@ def _build_upcoming_insights(
 
 # ── Library Summary ──────────────────────────────────────────
 
-@router.get("")
+@router.get(
+    "",
+    response_model=UserLibraryCountsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get counts for the current user's library",
+)
 def my_library(request: Request):
     """Get counts for user's personal library."""
     user = _require_auth(request)
@@ -215,14 +196,24 @@ def my_library(request: Request):
     return get_user_library_counts(user["id"])
 
 
-@router.get("/sync")
+@router.get(
+    "/sync",
+    response_model=SyncStatusResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get external sync status",
+)
 def my_sync_status(request: Request):
     """External service sync status. Returns an empty service list for backwards compat."""
     _require_auth(request)
     return {"services": []}
 
 
-@router.get("/followed-playlists")
+@router.get(
+    "/followed-playlists",
+    response_model=list[FollowedPlaylistResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List followed system playlists",
+)
 def my_followed_playlists(request: Request):
     user = _require_auth(request)
     from crate.db import get_followed_system_playlists, get_playlist_followers_count
@@ -239,13 +230,23 @@ def my_followed_playlists(request: Request):
 
 # ── Follows ──────────────────────────────────────────────────
 
-@router.get("/follows")
+@router.get(
+    "/follows",
+    response_model=list[FollowedArtistResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List followed artists",
+)
 def list_follows(request: Request):
     user = _require_auth(request)
     from crate.db.user_library import get_followed_artists
     return get_followed_artists(user["id"])
 
-@router.post("/follows")
+@router.post(
+    "/follows",
+    response_model=FollowMutationResponse,
+    responses=_ME_RESPONSES,
+    summary="Follow an artist by name",
+)
 def follow(request: Request, body: FollowRequest):
     user = _require_auth(request)
     from crate.db.user_library import follow_artist
@@ -253,14 +254,24 @@ def follow(request: Request, body: FollowRequest):
     return {"ok": True, "added": added}
 
 
-@router.post("/follows/artists/{artist_id}")
+@router.post(
+    "/follows/artists/{artist_id}",
+    response_model=FollowMutationResponse,
+    responses=_ME_RESPONSES,
+    summary="Follow an artist by library id",
+)
 def follow_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         raise HTTPException(status_code=404, detail="Artist not found")
     return follow(request, FollowRequest(artist_name=artist_name))
 
-@router.delete("/follows/{artist_name}")
+@router.delete(
+    "/follows/{artist_name}",
+    response_model=OkResponse,
+    responses=_ME_RESPONSES,
+    summary="Unfollow an artist by name",
+)
 def unfollow(request: Request, artist_name: str):
     user = _require_auth(request)
     from crate.db.user_library import unfollow_artist
@@ -270,21 +281,36 @@ def unfollow(request: Request, artist_name: str):
     return {"ok": True}
 
 
-@router.delete("/follows/artists/{artist_id}")
+@router.delete(
+    "/follows/artists/{artist_id}",
+    response_model=OkResponse,
+    responses=_ME_RESPONSES,
+    summary="Unfollow an artist by library id",
+)
 def unfollow_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         raise HTTPException(status_code=404, detail="Artist not found")
     return unfollow(request, artist_name)
 
-@router.get("/follows/{artist_name}")
+@router.get(
+    "/follows/{artist_name}",
+    response_model=FollowingStateResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Check whether the current user follows an artist by name",
+)
 def is_following_check(request: Request, artist_name: str):
     user = _require_auth(request)
     from crate.db.user_library import is_following
     return {"following": is_following(user["id"], artist_name)}
 
 
-@router.get("/follows/artists/{artist_id}")
+@router.get(
+    "/follows/artists/{artist_id}",
+    response_model=FollowingStateResponse,
+    responses=_ME_RESPONSES,
+    summary="Check whether the current user follows an artist by library id",
+)
 def is_following_check_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
@@ -294,20 +320,35 @@ def is_following_check_by_id(request: Request, artist_id: int):
 
 # ── Saved Albums ─────────────────────────────────────────────
 
-@router.get("/albums")
+@router.get(
+    "/albums",
+    response_model=list[SavedAlbumResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List saved albums",
+)
 def list_saved_albums(request: Request):
     user = _require_auth(request)
     from crate.db.user_library import get_saved_albums
     return get_saved_albums(user["id"])
 
-@router.post("/albums")
+@router.post(
+    "/albums",
+    response_model=SaveAlbumResponse,
+    responses=_ME_RESPONSES,
+    summary="Save an album to the user's library",
+)
 def save_album_endpoint(request: Request, body: SaveAlbumRequest):
     user = _require_auth(request)
     from crate.db.user_library import save_album
     added = save_album(user["id"], body.album_id)
     return {"ok": True, "added": added}
 
-@router.delete("/albums/{album_id}")
+@router.delete(
+    "/albums/{album_id}",
+    response_model=OkResponse,
+    responses=_ME_RESPONSES,
+    summary="Remove a saved album",
+)
 def unsave_album_endpoint(request: Request, album_id: int):
     user = _require_auth(request)
     from crate.db.user_library import unsave_album
@@ -319,13 +360,23 @@ def unsave_album_endpoint(request: Request, album_id: int):
 
 # ── Liked Tracks ─────────────────────────────────────────────
 
-@router.get("/likes")
+@router.get(
+    "/likes",
+    response_model=list[LikedTrackResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List liked tracks",
+)
 def list_likes(request: Request, limit: int = 100):
     user = _require_auth(request)
     from crate.db.user_library import get_liked_tracks
     return get_liked_tracks(user["id"], limit=limit)
 
-@router.post("/likes")
+@router.post(
+    "/likes",
+    response_model=LikeMutationResponse,
+    responses=_ME_RESPONSES,
+    summary="Like a track",
+)
 def like(request: Request, body: LikeTrackRequest):
     user = _require_auth(request)
     from crate.db.user_library import like_track
@@ -339,7 +390,12 @@ def like(request: Request, body: LikeTrackRequest):
         raise HTTPException(status_code=404, detail="Track not found")
     return {"ok": True, "added": added}
 
-@router.delete("/likes")
+@router.delete(
+    "/likes",
+    response_model=UnlikeMutationResponse,
+    responses=_ME_RESPONSES,
+    summary="Remove a track like",
+)
 def unlike(request: Request, body: LikeTrackRequest):
     user = _require_auth(request)
     from crate.db.user_library import unlike_track
@@ -354,13 +410,23 @@ def unlike(request: Request, body: LikeTrackRequest):
 
 # ── Play History ─────────────────────────────────────────────
 
-@router.get("/history")
+@router.get(
+    "/history",
+    response_model=list[PlayHistoryEntryResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List recent play history",
+)
 def history(request: Request, limit: int = 50):
     user = _require_auth(request)
     from crate.db.user_library import get_play_history
     return get_play_history(user["id"], limit=limit)
 
-@router.post("/history")
+@router.post(
+    "/history",
+    response_model=OkResponse,
+    responses=_ME_RESPONSES,
+    summary="Record a legacy play-history entry",
+)
 def record(request: Request, body: RecordPlayRequest):
     user = _require_auth(request)
     from crate.db.user_library import record_play
@@ -377,14 +443,24 @@ def record(request: Request, body: RecordPlayRequest):
     )
     return {"ok": True}
 
-@router.get("/stats")
+@router.get(
+    "/stats",
+    response_model=PlayStatsResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get all-time listening stats",
+)
 def stats(request: Request):
     user = _require_auth(request)
     from crate.db.user_library import get_play_stats
     return get_play_stats(user["id"])
 
 
-@router.get("/stats/overview")
+@router.get(
+    "/stats/overview",
+    response_model=StatsOverviewResponse,
+    responses=_ME_RESPONSES,
+    summary="Get a listening stats overview for a time window",
+)
 def stats_overview(request: Request, window: str = Query("30d")):
     user = _require_auth(request)
     from crate.db.user_library import get_stats_overview
@@ -395,7 +471,12 @@ def stats_overview(request: Request, window: str = Query("30d")):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/stats/trends")
+@router.get(
+    "/stats/trends",
+    response_model=StatsTrendsResponse,
+    responses=_ME_RESPONSES,
+    summary="Get daily listening trends for a time window",
+)
 def stats_trends(request: Request, window: str = Query("30d")):
     user = _require_auth(request)
     from crate.db.user_library import get_stats_trends
@@ -406,7 +487,12 @@ def stats_trends(request: Request, window: str = Query("30d")):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/stats/top-tracks")
+@router.get(
+    "/stats/top-tracks",
+    response_model=TopTracksResponse,
+    responses=_ME_RESPONSES,
+    summary="Get top tracks for a time window",
+)
 def stats_top_tracks(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
     user = _require_auth(request)
     from crate.db.user_library import get_top_tracks
@@ -417,7 +503,12 @@ def stats_top_tracks(request: Request, window: str = Query("30d"), limit: int = 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/stats/top-artists")
+@router.get(
+    "/stats/top-artists",
+    response_model=TopArtistsResponse,
+    responses=_ME_RESPONSES,
+    summary="Get top artists for a time window",
+)
 def stats_top_artists(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
     user = _require_auth(request)
     from crate.db.user_library import get_top_artists
@@ -428,7 +519,12 @@ def stats_top_artists(request: Request, window: str = Query("30d"), limit: int =
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/stats/top-albums")
+@router.get(
+    "/stats/top-albums",
+    response_model=TopAlbumsResponse,
+    responses=_ME_RESPONSES,
+    summary="Get top albums for a time window",
+)
 def stats_top_albums(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
     user = _require_auth(request)
     from crate.db.user_library import get_top_albums
@@ -439,7 +535,12 @@ def stats_top_albums(request: Request, window: str = Query("30d"), limit: int = 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/stats/top-genres")
+@router.get(
+    "/stats/top-genres",
+    response_model=TopGenresResponse,
+    responses=_ME_RESPONSES,
+    summary="Get top genres for a time window",
+)
 def stats_top_genres(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
     user = _require_auth(request)
     from crate.db.user_library import get_top_genres
@@ -450,7 +551,12 @@ def stats_top_genres(request: Request, window: str = Query("30d"), limit: int = 
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/stats/replay")
+@router.get(
+    "/stats/replay",
+    response_model=ReplayMixResponse,
+    responses=_ME_RESPONSES,
+    summary="Build a replay mix from recent listening",
+)
 def stats_replay(request: Request, window: str = Query("30d"), limit: int = Query(30, ge=1, le=100)):
     user = _require_auth(request)
     from crate.db.user_library import get_replay_mix
@@ -461,15 +567,145 @@ def stats_replay(request: Request, window: str = Query("30d"), limit: int = Quer
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/home/discovery")
+@router.get(
+    "/home/hero",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the home hero artist card",
+)
+def home_hero(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_hero
+    return get_home_hero(user["id"])
+
+
+@router.get(
+    "/home/recently-played",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get recently played items for home",
+)
+def home_recently_played(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_recently_played
+    return {"items": get_home_recently_played(user["id"])}
+
+
+@router.get(
+    "/home/mixes",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get personalized mixes for home",
+)
+def home_mixes(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_mixes
+    return {"items": get_home_mixes(user["id"])}
+
+
+@router.get(
+    "/home/suggested-albums",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get suggested albums for home",
+)
+def home_suggested_albums(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_suggested_albums
+    return {"items": get_home_suggested_albums(user["id"])}
+
+
+@router.get(
+    "/home/recommended-tracks",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get recommended tracks for home",
+)
+def home_recommended_tracks(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_recommended_tracks
+    return {"items": get_home_recommended_tracks(user["id"])}
+
+
+@router.get(
+    "/home/radio-stations",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get radio stations for home",
+)
+def home_radio_stations(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_radio_stations
+    return {"items": get_home_radio_stations(user["id"])}
+
+
+@router.get(
+    "/home/favorite-artists",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get favorite artists for home",
+)
+def home_favorite_artists(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_favorite_artists
+    return {"items": get_home_favorite_artists(user["id"])}
+
+
+@router.get(
+    "/home/essentials",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get essentials playlists for home",
+)
+def home_essentials(request: Request):
+    user = _require_auth(request)
+    from crate.db.home import get_home_essentials
+    return {"items": get_home_essentials(user["id"])}
+
+
+@router.get(
+    "/home/discovery",
+    response_model=HomeDiscoveryResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Build the personalized home discovery payload (compat)",
+)
 def home_discovery(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_discovery
+    import logging
 
-    return get_home_discovery(user["id"])
+    cache_key = f"home:discovery:{user['id']}"
+
+    # The discovery payload is the most expensive endpoint in the whole
+    # API (~10 heavy queries, JOINs across genres + similarities + follows).
+    # A 60 s cache prevents hammering the DB on quick navigations (open
+    # home → go to album → come back → home). Pull-to-refresh bypasses
+    # this via the `?fresh=1` param.
+    fresh = request.query_params.get("fresh") == "1"
+    if not fresh:
+        cached = get_cache(cache_key, max_age_seconds=60)
+        if cached is not None:
+            return cached
+
+    try:
+        result = get_home_discovery(user["id"])
+        set_cache(cache_key, result, ttl=60)
+        return result
+    except Exception as exc:
+        # If the heavy computation fails (timeout, data edge case, pool
+        # exhaustion), return the last successful payload rather than a
+        # blank 500 that hides the entire home. Stale-but-visible is
+        # strictly better than broken-and-empty.
+        logging.getLogger(__name__).warning(
+            "home/discovery failed for user %s, falling back to cache: %s",
+            user["id"],
+            exc,
+        )
+        stale = get_cache(cache_key, max_age_seconds=3600)
+        if stale is not None:
+            return stale
+        raise
 
 
-@router.get("/home/mixes/{mix_id}")
+@router.get(
+    "/home/mixes/{mix_id}",
+    response_model=HomeCardResponse,
+    responses=_ME_RESPONSES,
+    summary="Get one personalized home mix",
+)
 def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
     from crate.db.home import get_home_playlist
@@ -480,7 +716,12 @@ def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, 
     return mix
 
 
-@router.get("/home/playlists/{playlist_id}")
+@router.get(
+    "/home/playlists/{playlist_id}",
+    response_model=HomeCardResponse,
+    responses=_ME_RESPONSES,
+    summary="Get one personalized home playlist",
+)
 def home_playlist_detail(request: Request, playlist_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
     from crate.db import get_cache, set_cache
@@ -499,7 +740,12 @@ def home_playlist_detail(request: Request, playlist_id: str, limit: int = Query(
     return playlist
 
 
-@router.get("/home/sections/{section_id}")
+@router.get(
+    "/home/sections/{section_id}",
+    response_model=HomeSectionResponse,
+    responses=_ME_RESPONSES,
+    summary="Get one expanded home section",
+)
 def home_section_detail(request: Request, section_id: str, limit: int = Query(42, ge=1, le=120)):
     user = _require_auth(request)
     from crate.db.home import get_home_section
@@ -510,7 +756,12 @@ def home_section_detail(request: Request, section_id: str, limit: int = Query(42
     return section
 
 
-@router.post("/play-events")
+@router.post(
+    "/play-events",
+    response_model=PlayEventRecordedResponse,
+    responses=_ME_RESPONSES,
+    summary="Record a rich play event",
+)
 def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
     user = _require_auth(request)
     from crate.db import create_task_dedup
@@ -551,56 +802,30 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
 
 # ── Feed ─────────────────────────────────────────────────────
 
-@router.get("/feed")
+@router.get(
+    "/feed",
+    response_model=list[FeedItemResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List the personalized activity feed",
+)
 def feed(request: Request, limit: int = 30):
     """Personalized feed: new releases from followed artists + new library additions + upcoming shows."""
     user = _require_auth(request)
     from crate.db.user_library import get_followed_artists
-    from crate.db.core import get_db_ctx
+    from crate.db.queries.user import get_feed_new_albums, get_feed_shows, get_feed_new_releases
 
     followed = get_followed_artists(user["id"])
     followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
 
-    items = []
+    items: list[dict] = []
     recent_day_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     today = datetime.now(timezone.utc).date()
-    with get_db_ctx() as cur:
-        if followed_names:
-            placeholders = ",".join(["%s"] * len(followed_names))
-            cur.execute(f"""
-                SELECT 'new_album' AS type, la.artist, la.name AS title, la.year, la.has_cover,
-                       la.updated_at AS date
-                FROM library_albums la
-                WHERE la.artist IN ({placeholders})
-                AND la.updated_at >= %s
-                ORDER BY la.updated_at DESC
-                LIMIT %s
-            """, list(followed_names) + [recent_day_cutoff, limit])
-            for r in cur.fetchall():
-                items.append(dict(r))
 
-            cur.execute(f"""
-                SELECT 'show' AS type, s.artist_name AS artist, s.venue AS title,
-                       s.city, s.country, s.date, s.url, s.image_url
-                FROM shows s
-                WHERE s.artist_name IN ({placeholders})
-                AND s.date >= %s
-                ORDER BY s.date
-                LIMIT %s
-            """, list(followed_names) + [today, limit])
-            for r in cur.fetchall():
-                items.append(dict(r))
+    if followed_names:
+        items.extend(get_feed_new_albums(followed_names, recent_day_cutoff, limit))
+        items.extend(get_feed_shows(followed_names, today, limit))
 
-        cur.execute("""
-            SELECT 'release' AS type, nr.artist_name AS artist, nr.album_title AS title,
-                   nr.cover_url, nr.year, nr.status, nr.detected_at AS date
-            FROM new_releases nr
-            WHERE nr.status != 'dismissed'
-            ORDER BY nr.detected_at DESC
-            LIMIT %s
-        """, (limit,))
-        for r in cur.fetchall():
-            items.append(dict(r))
+    items.extend(get_feed_new_releases(limit))
 
     def _feed_sort_key(item: dict):
         value = item.get("date")
@@ -612,13 +837,18 @@ def feed(request: Request, limit: int = 30):
     return items[:limit]
 
 
-@router.get("/upcoming")
+@router.get(
+    "/upcoming",
+    response_model=MeUpcomingResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List upcoming releases and shows for followed artists",
+)
 def upcoming(request: Request, limit: int = 120):
     """Upcoming releases and shows for followed artists."""
     user = _require_auth(request)
     from crate.db.user_library import get_followed_artists
-    from crate.db.core import get_db_ctx
     from crate.db import get_attending_show_ids
+    from crate.db.queries.user import get_upcoming_releases, get_upcoming_shows, get_artist_genres_for_names
 
     followed = get_followed_artists(user["id"])
     followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
@@ -637,7 +867,6 @@ def upcoming(request: Request, limit: int = 120):
 
     today = datetime.now(timezone.utc).date()
     recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
-    placeholders = ",".join(["%s"] * len(followed_names))
 
     # Resolve user location for show filtering.
     # The middleware user dict only has JWT fields (id, email, role) — location
@@ -658,106 +887,35 @@ def upcoming(request: Request, limit: int = 120):
 
     items: list[dict] = []
     setlist_map: dict[str, list[dict]] = {}
-    with get_db_ctx() as cur:
-        cur.execute(
-            f"""
-            SELECT
-                nr.id,
-                nr.artist_name,
-                la.id AS artist_id,
-                la.slug AS artist_slug,
-                nr.album_title,
-                nr.cover_url,
-                nr.status,
-                nr.tidal_url,
-                nr.release_type,
-                nr.release_date,
-                nr.detected_at
-            FROM new_releases nr
-            LEFT JOIN library_artists la ON la.name = nr.artist_name
-            WHERE nr.artist_name IN ({placeholders})
-              AND nr.status != 'dismissed'
-              AND (
-                (nr.release_date IS NOT NULL AND nr.release_date >= %s)
-                OR nr.detected_at >= %s
-              )
-            ORDER BY COALESCE(nr.release_date, (nr.detected_at AT TIME ZONE 'UTC')::date) ASC
-            LIMIT %s
-            """,
-            followed_names + [today, recent_cutoff, limit],
-        )
-        for release in cur.fetchall():
-            scheduled_date = _coerce_date(release.get("release_date"))
-            fallback_date = scheduled_date or _coerce_date(release.get("detected_at"))
-            items.append(
-                {
-                    "type": "release",
-                    "date": fallback_date.isoformat() if fallback_date else "",
-                    "artist": release.get("artist_name", ""),
-                    "artist_id": release.get("artist_id"),
-                    "artist_slug": release.get("artist_slug"),
-                    "title": release.get("album_title", ""),
-                    "subtitle": release.get("release_type") or "Album",
-                    "cover_url": release.get("cover_url"),
-                    "status": release.get("status", "detected"),
-                    "tidal_url": release.get("tidal_url"),
-                    "release_id": release.get("id"),
-                    "is_upcoming": bool(scheduled_date and scheduled_date >= today),
-                }
-            )
 
-        cur.execute(
-            f"""
-            SELECT
-                   s.id,
-                   s.artist_name,
-                   la.id AS artist_id,
-                   la.slug AS artist_slug,
-                   s.venue,
-                   s.address_line1,
-                   s.city,
-                   s.region,
-                   s.postal_code,
-                   s.country,
-                   s.country_code,
-                   s.date,
-                   s.local_time,
-                   s.url, s.image_url, s.lineup, s.latitude, s.longitude,
-                   s.source, s.lastfm_attendance, s.lastfm_url, s.tickets_url
-            FROM shows s
-            LEFT JOIN library_artists la ON la.name = s.artist_name
-            WHERE s.artist_name IN ({placeholders})
-              AND s.date >= %s
-              AND s.status != 'cancelled'
-              {"AND (s.latitude BETWEEN %s AND %s AND s.longitude BETWEEN %s AND %s OR s.latitude IS NULL)" if user_lat else ""}
-            ORDER BY s.date ASC
-            LIMIT %s
-            """,
-            followed_names + [today] + (
-                [user_lat - user_radius / 111.0, user_lat + user_radius / 111.0,
-                 user_lon - user_radius / 70.0, user_lon + user_radius / 70.0]
-                if user_lat else []
-            ) + [limit],
-        )
-        shows = cur.fetchall()
-        attending_show_ids = get_attending_show_ids(
-            user["id"],
-            [show["id"] for show in shows if show.get("id") is not None],
+    releases = get_upcoming_releases(followed_names, today, recent_cutoff, limit)
+    for release in releases:
+        scheduled_date = _coerce_date(release.get("release_date"))
+        fallback_date = scheduled_date or _coerce_date(release.get("detected_at"))
+        items.append(
+            {
+                "type": "release",
+                "date": fallback_date.isoformat() if fallback_date else "",
+                "artist": release.get("artist_name", ""),
+                "artist_id": release.get("artist_id"),
+                "artist_slug": release.get("artist_slug"),
+                "title": release.get("album_title", ""),
+                "subtitle": release.get("release_type") or "Album",
+                "cover_url": release.get("cover_url"),
+                "status": release.get("status", "detected"),
+                "tidal_url": release.get("tidal_url"),
+                "release_id": release.get("id"),
+                "is_upcoming": bool(scheduled_date and scheduled_date >= today),
+            }
         )
 
-        cur.execute(
-            f"""
-            SELECT ag.artist_name, g.name
-            FROM artist_genres ag
-            JOIN genres g ON g.id = ag.genre_id
-            WHERE ag.artist_name IN ({placeholders})
-            ORDER BY ag.weight DESC
-            """,
-            followed_names,
-        )
-        genre_map: dict[str, list[str]] = {}
-        for row in cur.fetchall():
-            genre_map.setdefault(row["artist_name"], []).append(row["name"])
+    shows = get_upcoming_shows(followed_names, today, user_lat, user_lon, user_radius, limit)
+    attending_show_ids = get_attending_show_ids(
+        user["id"],
+        [show["id"] for show in shows if show.get("id") is not None],
+    )
+
+    genre_map = get_artist_genres_for_names(followed_names)
 
     show_artists = sorted({show["artist_name"] for show in shows if show.get("artist_name")})
     if show_artists:
@@ -822,7 +980,12 @@ def upcoming(request: Request, limit: int = 120):
     }
 
 
-@router.post("/shows/{show_id}/attendance")
+@router.post(
+    "/shows/{show_id}/attendance",
+    response_model=ShowAttendanceAddResponse,
+    responses=_ME_RESPONSES,
+    summary="Mark the current user as attending a show",
+)
 def attend_show_endpoint(request: Request, show_id: int):
     user = _require_auth(request)
     from crate.db import attend_show
@@ -830,7 +993,12 @@ def attend_show_endpoint(request: Request, show_id: int):
     return {"ok": True, "added": attend_show(user["id"], show_id)}
 
 
-@router.delete("/shows/{show_id}/attendance")
+@router.delete(
+    "/shows/{show_id}/attendance",
+    response_model=ShowAttendanceRemoveResponse,
+    responses=_ME_RESPONSES,
+    summary="Remove the current user's attendance for a show",
+)
 def unattend_show_endpoint(request: Request, show_id: int):
     user = _require_auth(request)
     from crate.db import unattend_show
@@ -838,7 +1006,12 @@ def unattend_show_endpoint(request: Request, show_id: int):
     return {"ok": True, "removed": unattend_show(user["id"], show_id)}
 
 
-@router.post("/shows/{show_id}/reminders")
+@router.post(
+    "/shows/{show_id}/reminders",
+    response_model=ShowReminderCreateResponse,
+    responses=_ME_RESPONSES,
+    summary="Create a reminder for an upcoming show",
+)
 def create_show_reminder_endpoint(request: Request, show_id: int, body: ShowReminderRequest):
     user = _require_auth(request)
     from crate.db import create_show_reminder
@@ -851,23 +1024,33 @@ def create_show_reminder_endpoint(request: Request, show_id: int, body: ShowRemi
 
 # ── Profile ─────────────────────────────────────────────────────
 
-@router.put("/profile")
-def update_profile(request: Request, body: dict):
+@router.put(
+    "/profile",
+    response_model=UpdateProfileResponse,
+    responses=_ME_RESPONSES,
+    summary="Update the current user's profile",
+)
+def update_profile(request: Request, body: UpdateProfileRequest):
     _require_auth(request)
     user = request.state.user
     from crate.db.auth import update_user
-    name = (body.get("name") or "").strip()
+    name = body.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Name cannot be empty")
     updated = update_user(user["id"], name=name)
     return {"ok": True, "name": updated["name"] if updated else name}
 
 
-@router.put("/password")
-def change_password(request: Request, body: dict):
+@router.put(
+    "/password",
+    response_model=OkResponse,
+    responses=_ME_RESPONSES,
+    summary="Change the current user's password",
+)
+def change_password(request: Request, body: ChangePasswordRequest):
     user = _require_auth(request)
-    current = body.get("current_password", "")
-    new_pw = body.get("new_password", "")
+    current = body.current_password
+    new_pw = body.new_password
     if not new_pw or len(new_pw) < 8:
         raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
 
@@ -888,18 +1071,17 @@ def change_password(request: Request, body: dict):
 # ── Scrobble Services ──────────────────────────────────────────
 
 
-@router.get("/scrobble/status")
+@router.get(
+    "/scrobble/status",
+    response_model=ScrobbleStatusResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get scrobble service connection status",
+)
 def scrobble_status(request: Request):
     """Get current scrobble service connections."""
     user = _require_auth(request)
-    from crate.db import get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT provider, status, metadata_json
-            FROM user_external_identities
-            WHERE user_id = %s AND provider IN ('lastfm', 'listenbrainz')
-        """, (user["id"],))
-        rows = cur.fetchall()
+    from crate.db.queries.user import get_scrobble_identities
+    rows = get_scrobble_identities(user["id"])
 
     result = {}
     for row in rows:
@@ -910,12 +1092,12 @@ def scrobble_status(request: Request):
         }
     return result
 
-
-class ListenBrainzConnectRequest(BaseModel):
-    token: str
-
-
-@router.post("/scrobble/listenbrainz")
+@router.post(
+    "/scrobble/listenbrainz",
+    response_model=ListenBrainzConnectResponse,
+    responses=_ME_RESPONSES,
+    summary="Connect ListenBrainz with a personal token",
+)
 def connect_listenbrainz(request: Request, body: ListenBrainzConnectRequest):
     """Connect ListenBrainz with a personal API token."""
     user = _require_auth(request)
@@ -948,7 +1130,12 @@ def connect_listenbrainz(request: Request, body: ListenBrainzConnectRequest):
     return {"ok": True, "username": lb_user}
 
 
-@router.delete("/scrobble/listenbrainz")
+@router.delete(
+    "/scrobble/listenbrainz",
+    response_model=OkResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Disconnect ListenBrainz",
+)
 def disconnect_listenbrainz(request: Request):
     """Disconnect ListenBrainz."""
     user = _require_auth(request)
@@ -957,7 +1144,12 @@ def disconnect_listenbrainz(request: Request):
     return {"ok": True}
 
 
-@router.get("/scrobble/lastfm/auth-url")
+@router.get(
+    "/scrobble/lastfm/auth-url",
+    response_model=LastfmAuthUrlResponse,
+    responses=_ME_RESPONSES,
+    summary="Get the Last.fm API key for browser auth",
+)
 def lastfm_auth_url(request: Request):
     """Return the Last.fm API key so the frontend can build the auth URL."""
     import os
@@ -967,12 +1159,12 @@ def lastfm_auth_url(request: Request):
         raise HTTPException(status_code=501, detail="Last.fm API key not configured")
     return {"api_key": api_key}
 
-
-class LastfmCallbackRequest(BaseModel):
-    token: str
-
-
-@router.post("/scrobble/lastfm")
+@router.post(
+    "/scrobble/lastfm",
+    response_model=OkResponse,
+    responses=_ME_RESPONSES,
+    summary="Exchange a Last.fm auth token for a stored session",
+)
 def connect_lastfm(request: Request, body: LastfmCallbackRequest):
     """Exchange Last.fm auth token for a session key and store it."""
     import os
@@ -999,7 +1191,12 @@ def connect_lastfm(request: Request, body: LastfmCallbackRequest):
     return {"ok": True}
 
 
-@router.delete("/scrobble/lastfm")
+@router.delete(
+    "/scrobble/lastfm",
+    response_model=OkResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Disconnect Last.fm scrobbling",
+)
 def disconnect_lastfm(request: Request):
     """Disconnect Last.fm scrobbling."""
     user = _require_auth(request)
@@ -1011,7 +1208,12 @@ def disconnect_lastfm(request: Request):
 # ── Location / Shows Preferences ──────────────────────────────
 
 
-@router.get("/geolocation")
+@router.get(
+    "/geolocation",
+    response_model=GeolocationResponse,
+    responses=_ME_RESPONSES,
+    summary="Detect the user's location from their IP address",
+)
 def detect_geolocation(request: Request):
     """Detect user's city from their IP address."""
     _require_auth(request)
@@ -1023,7 +1225,12 @@ def detect_geolocation(request: Request):
     return result
 
 
-@router.get("/location")
+@router.get(
+    "/location",
+    response_model=LocationPreferencesResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get saved show-location preferences",
+)
 def get_location(request: Request):
     """Get the user's saved location preferences."""
     user = _require_auth(request)
@@ -1037,25 +1244,19 @@ def get_location(request: Request):
         "show_location_mode": user.get("show_location_mode") or "fixed",
     }
 
-
-class UpdateLocationBody(BaseModel):
-    city: str | None = None
-    country: str | None = None
-    country_code: str | None = None
-    latitude: float | None = None
-    longitude: float | None = None
-    show_radius_km: int | None = None
-    show_location_mode: str | None = None
-
-
-@router.put("/location")
+@router.put(
+    "/location",
+    response_model=OkResponse,
+    responses=_ME_RESPONSES,
+    summary="Update saved show-location preferences",
+)
 def update_location(request: Request, body: UpdateLocationBody):
     """Update the user's location preferences.
 
     If only city is provided, geocodes it to fill lat/lon/country.
     """
     user = _require_auth(request)
-    from crate.db.core import get_db_ctx
+    from crate.db.queries.user import update_user_location
 
     city = (body.city or "").strip() or None
     lat = body.latitude
@@ -1099,14 +1300,17 @@ def update_location(request: Request, body: UpdateLocationBody):
         fields.append("show_location_mode = %s"); values.append(mode)
 
     if fields:
-        values.append(user["id"])
-        with get_db_ctx() as cur:
-            cur.execute(f"UPDATE users SET {', '.join(fields)} WHERE id = %s", values)
+        update_user_location(user["id"], fields, values)
 
     return {"ok": True}
 
 
-@router.get("/cities/search")
+@router.get(
+    "/cities/search",
+    response_model=list[CitySearchResultResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Search cities for show-location autocomplete",
+)
 def search_cities_endpoint(request: Request, q: str = Query("", min_length=2)):
     """Search cities for autocomplete."""
     _require_auth(request)

@@ -3,7 +3,8 @@ from fastapi.responses import JSONResponse
 
 from crate.api.auth import _require_auth
 from crate.api._deps import enrich_radio_tracks as _enrich_radio_tracks
-from crate.db import get_cache, set_cache
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.radio import RadioResponse
 from crate.bliss import (
     generate_album_radio,
     generate_artist_radio,
@@ -11,14 +12,25 @@ from crate.bliss import (
     generate_track_radio,
     generate_virtual_playlist_radio,
 )
-from crate.db import (
-    get_db_ctx,
-    get_library_artist_by_id,
-    get_library_track_by_storage_id,
-    get_user_by_email,
+from crate.db.auth import get_user_by_email
+from crate.db.cache import get_cache, set_cache
+from crate.db.library import get_library_artist_by_id, get_library_track_by_storage_id
+from crate.db.queries.radio import (
+    get_track_path_by_id,
+    get_track_path_by_pattern,
+    get_album_for_radio,
+    get_playlist_for_radio,
 )
 
-router = APIRouter()
+router = APIRouter(tags=["radio"])
+
+_RADIO_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        404: error_response("The seed resource was not found or no radio data is available yet."),
+        422: error_response("The route parameters failed validation."),
+    },
+)
 
 
 def _escape_like(value: str) -> str:
@@ -37,10 +49,7 @@ def _effective_user_id(user: dict) -> int | None:
 
 def _resolve_track_path(track_id: int = 0, path: str = "", storage_id: str = "") -> str | None:
     if track_id:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT path FROM library_tracks WHERE id = %s", (track_id,))
-            row = cur.fetchone()
-        return row["path"] if row else None
+        return get_track_path_by_id(track_id)
 
     if storage_id:
         row = get_library_track_by_storage_id(storage_id)
@@ -49,20 +58,7 @@ def _resolve_track_path(track_id: int = 0, path: str = "", storage_id: str = "")
     if not path:
         return None
 
-    with get_db_ctx() as cur:
-        escaped_path = _escape_like(path)
-        cur.execute(
-            """
-            SELECT path
-            FROM library_tracks
-            WHERE path = %s OR path LIKE %s ESCAPE '\\'
-            ORDER BY CASE WHEN path = %s THEN 0 ELSE 1 END, path ASC
-            LIMIT 1
-            """,
-            (path, f"%{escaped_path}", path),
-        )
-        row = cur.fetchone()
-    return row["path"] if row else None
+    return get_track_path_by_pattern(path, _escape_like(path))
 
 
 _RADIO_CACHE_TTL = 300  # 5 minutes
@@ -97,12 +93,22 @@ def api_artist_radio(request: Request, artist_id: int, limit: int = Query(50, ge
     return result
 
 
-@router.get("/api/artists/{artist_id}/radio")
+@router.get(
+    "/api/artists/{artist_id}/radio",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build artist radio",
+)
 def api_artist_radio_by_id(request: Request, artist_id: int, limit: int = Query(50, ge=1, le=100)):
     return api_artist_radio(request, artist_id, limit)
 
 
-@router.get("/api/radio/track")
+@router.get(
+    "/api/radio/track",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build track radio",
+)
 def api_track_radio(
     request: Request,
     track_id: int = 0,
@@ -145,13 +151,16 @@ def api_track_radio(
     return result
 
 
-@router.get("/api/radio/album/{album_id}")
+@router.get(
+    "/api/radio/album/{album_id}",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build album radio",
+)
 def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1, le=100)):
     user = _require_auth(request)
     effective_user_id = _effective_user_id(user)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT artist, name FROM library_albums WHERE id = %s", (album_id,))
-        row = cur.fetchone()
+    row = get_album_for_radio(album_id)
     if not row:
         raise HTTPException(status_code=404, detail="Album not found")
 
@@ -181,13 +190,16 @@ def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1
     return result
 
 
-@router.get("/api/radio/playlist/{playlist_id}")
+@router.get(
+    "/api/radio/playlist/{playlist_id}",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build playlist radio",
+)
 def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50, ge=1, le=100)):
     user = _require_auth(request)
     effective_user_id = _effective_user_id(user)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, name, scope, user_id, is_active FROM playlists WHERE id = %s", (playlist_id,))
-        row = cur.fetchone()
+    row = get_playlist_for_radio(playlist_id)
     if not row:
         raise HTTPException(status_code=404, detail="Playlist not found")
     if row.get("scope") == "system" and not row.get("is_active", False):
@@ -224,7 +236,12 @@ def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50
     return result
 
 
-@router.get("/api/radio/home-playlist/{playlist_id}")
+@router.get(
+    "/api/radio/home-playlist/{playlist_id}",
+    response_model=RadioResponse,
+    responses=_RADIO_RESPONSES,
+    summary="Build radio from a home playlist",
+)
 def api_home_playlist_radio(request: Request, playlist_id: str, limit: int = Query(50, ge=1, le=100)):
     user = _require_auth(request)
     effective_user_id = _effective_user_id(user)

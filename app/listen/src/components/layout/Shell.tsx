@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Outlet, NavLink, useLocation, useNavigate } from "react-router";
+import { Outlet, useLocation, useNavigate } from "react-router";
+import { VtNavLink as NavLink } from "@/components/ui/VtNavLink";
 import {
   Home, Compass, Rss, Library, Music, Disc, Heart, Users, User,
   ListMusic, PanelLeftClose, PanelLeftOpen, ChevronRight, BarChart3,
@@ -80,7 +81,7 @@ function Sidebar() {
         <NavLink
           to="/"
           end
-          viewTransition
+
           title="Music"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
@@ -93,7 +94,7 @@ function Sidebar() {
         {/* Explore */}
         <NavLink
           to="/explore"
-          viewTransition
+
           title="Explore"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
@@ -106,7 +107,7 @@ function Sidebar() {
         {/* Upcoming */}
         <NavLink
           to="/upcoming"
-          viewTransition
+
           title="Upcoming"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
@@ -118,7 +119,7 @@ function Sidebar() {
 
         <NavLink
           to="/stats"
-          viewTransition
+
           title="Stats"
           className={({ isActive }) =>
             `flex items-center gap-3 rounded-lg transition-colors ${expanded ? "px-3 py-2" : "w-10 h-10 justify-center"} ${navClass(isActive)}`
@@ -237,7 +238,7 @@ export function Shell() {
           <TopBar />
         </div>
 
-        <main className={`flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[90px]" : ""}`}>
+        <main className={`relative z-0 flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[90px]" : ""}`}>
           <div className={`mx-auto w-full max-w-[1440px] py-6 ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
             <Outlet />
           </div>
@@ -262,7 +263,7 @@ export function Shell() {
         <TopBar />
       </div>
 
-      <main className={`flex-1 overflow-x-hidden ${mobileBottomPad}`}>
+      <main className={`relative z-0 flex-1 overflow-x-hidden ${mobileBottomPad}`}>
         <div className={`mx-auto w-full max-w-[1440px] py-4 px-[max(1rem,env(safe-area-inset-left))] ${overlayHeader ? "" : "pt-[calc(4rem+env(safe-area-inset-top,0px))]"}`}>
           <Outlet />
         </div>
@@ -286,7 +287,7 @@ export function Shell() {
             key={to}
             to={to}
             end={to === "/"}
-            viewTransition
+  
             className={({ isActive }) =>
               `flex flex-col items-center gap-1 py-1 px-3 transition-colors ${isActive ? "text-primary" : "text-white/40 hover:text-white/70"}`
             }

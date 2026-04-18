@@ -2,8 +2,14 @@
 
 import json
 import logging
-from crate.db import (
-    get_db_ctx, set_artist_genres, set_album_genres, get_or_create_genre,
+
+from crate.db import set_artist_genres, set_album_genres, get_or_create_genre
+from crate.db.genres import (
+    get_albums_with_genres,
+    get_artist_album_genres,
+    get_artists_missing_genre_mapping,
+    get_artists_with_tags,
+    get_total_genre_count,
 )
 
 log = logging.getLogger(__name__)
@@ -16,9 +22,7 @@ def index_all_genres(progress_callback=None) -> dict:
     genre_count = 0
 
     # 1. Artist genres from enrichment tags (Last.fm + Spotify)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT name, tags_json FROM library_artists WHERE tags_json IS NOT NULL")
-        artists = cur.fetchall()
+    artists = get_artists_with_tags()
 
     for i, row in enumerate(artists):
         name = row["name"]
@@ -45,15 +49,7 @@ def index_all_genres(progress_callback=None) -> dict:
             progress_callback({"phase": "artists", "done": i, "total": len(artists)})
 
     # 2. Album genres from track tags
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT a.id, a.artist, a.name, a.genre,
-                   array_agg(DISTINCT t.genre) FILTER (WHERE t.genre IS NOT NULL AND t.genre != '') AS track_genres
-            FROM library_albums a
-            LEFT JOIN library_tracks t ON t.album_id = a.id
-            GROUP BY a.id, a.artist, a.name, a.genre
-        """)
-        albums = cur.fetchall()
+    albums = get_albums_with_genres()
 
     for i, row in enumerate(albums):
         album_genres_raw: set[str] = set()
@@ -86,29 +82,11 @@ def index_all_genres(progress_callback=None) -> dict:
     if progress_callback:
         progress_callback({"phase": "deriving_artist_genres"})
 
-    with get_db_ctx() as cur:
-        # Find artists that have album_genres but no artist_genres
-        cur.execute("""
-            SELECT DISTINCT a.artist AS name
-            FROM library_albums a
-            JOIN album_genres ag ON ag.album_id = a.id
-            WHERE a.artist NOT IN (SELECT artist_name FROM artist_genres)
-        """)
-        missing_artists = [r["name"] for r in cur.fetchall()]
+    missing_artists = get_artists_missing_genre_mapping()
 
     for i, artist_name in enumerate(missing_artists):
         # Aggregate genres from all albums, weighted by frequency
-        with get_db_ctx() as cur:
-            cur.execute("""
-                SELECT g.name, COUNT(*) AS cnt
-                FROM album_genres ag
-                JOIN genres g ON ag.genre_id = g.id
-                JOIN library_albums a ON ag.album_id = a.id
-                WHERE a.artist = %s
-                GROUP BY g.name
-                ORDER BY cnt DESC
-            """, (artist_name,))
-            rows = cur.fetchall()
+        rows = get_artist_album_genres(artist_name)
 
         if not rows:
             continue
@@ -126,9 +104,7 @@ def index_all_genres(progress_callback=None) -> dict:
             progress_callback({"phase": "deriving_artist_genres", "done": i, "total": len(missing_artists)})
 
     # Count total genres
-    with get_db_ctx() as cur:
-        cur.execute("SELECT COUNT(*) as cnt FROM genres")
-        genre_count = cur.fetchone()["cnt"]
+    genre_count = get_total_genre_count()
 
     return {
         "artists_indexed": artist_count,

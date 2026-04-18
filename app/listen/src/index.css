@@ -1,3 +1,6 @@
+/* Poppins is loaded conditionally in main.tsx — web only, not
+   Capacitor native. iOS/Android use system fonts (San Francisco /
+   Roboto) for a native feel. */
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
@@ -81,7 +84,7 @@ html, body {
 
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   overscroll-behavior: none;
   -webkit-user-select: none;
   user-select: none;
@@ -207,16 +210,20 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 }
 .animate-track-in { animation: trackFade 0.25s ease-out; }
 
-/* View Transitions API (page navigation) */
+/* ── View Transitions API ── */
+
+/* Page crossfade: slight slide so it's visible on dark backgrounds */
 ::view-transition-old(root) {
-  animation: 0.2s ease-out fadeOut;
+  animation: 0.2s ease both vt-out;
 }
 ::view-transition-new(root) {
-  animation: 0.2s ease-out fadeIn;
+  animation: 0.2s ease both vt-in;
 }
-@keyframes fadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
+@keyframes vt-out {
+  to { opacity: 0; transform: translateY(-6px); }
+}
+@keyframes vt-in {
+  from { opacity: 0; transform: translateY(6px); }
 }
 
 /* Lyric line gradient mask */

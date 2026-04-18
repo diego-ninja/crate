@@ -2,14 +2,19 @@ import logging
 import shutil
 from pathlib import Path
 
-from crate.db import (
-    get_db_ctx,
-    log_audit,
-    delete_artist,
-    delete_album,
-    delete_track,
-    upsert_artist,
+from crate.db.audit import log_audit
+from crate.db.jobs.repair import (
+    count_artist_tracks,
+    find_artist_canonical,
+    find_canonical_artist_by_folder,
+    merge_album_folder,
+    reassign_album_artist,
+    rename_artist,
+    update_album_path_and_name,
+    update_artist_has_photo,
+    update_track_artist,
 )
+from crate.db.library import delete_album, delete_artist, delete_track, upsert_artist
 from crate.utils import PHOTO_NAMES
 
 log = logging.getLogger(__name__)
@@ -133,12 +138,7 @@ class LibraryRepair:
         album_path = details.get("path", "")
 
         # Try to find canonical artist (case-insensitive match)
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT name FROM library_artists WHERE LOWER(name) = LOWER(%s) LIMIT 1",
-                (album_artist,),
-            )
-            row = cur.fetchone()
+        row = find_artist_canonical(album_artist)
 
         result = {
             "action": "fix_orphan_album",
@@ -153,8 +153,7 @@ class LibraryRepair:
 
         if row:
             canonical = row["name"]
-            with get_db_ctx() as cur:
-                cur.execute("UPDATE library_albums SET artist = %s WHERE path = %s", (canonical, album_path))
+            reassign_album_artist(album_path, canonical)
             result["details"] = {"reassigned_to": canonical}
             log_audit("fix_orphan_album", "album", album_name,
                       details={"reassigned_to": canonical}, task_id=task_id)
@@ -269,11 +268,7 @@ class LibraryRepair:
         }
 
         if not dry_run:
-            with get_db_ctx() as cur:
-                cur.execute(
-                    "UPDATE library_artists SET has_photo = %s WHERE name = %s",
-                    (fs_has_photo, artist_name),
-                )
+            update_artist_has_photo(artist_name, fs_has_photo)
             log_audit("fix_has_photo", "artist", artist_name,
                       details={"new_value": fs_has_photo}, task_id=task_id)
 
@@ -296,19 +291,7 @@ class LibraryRepair:
         }
 
         if not dry_run:
-            with get_db_ctx() as cur:
-                cur.execute(
-                    "UPDATE library_artists SET name = %s, folder_name = %s WHERE name = %s",
-                    (tag_name, details.get("folder", ""), artist_name),
-                )
-                cur.execute(
-                    "UPDATE library_albums SET artist = %s WHERE artist = %s",
-                    (tag_name, artist_name),
-                )
-                cur.execute(
-                    "UPDATE library_tracks SET artist = %s WHERE artist = %s",
-                    (tag_name, artist_name),
-                )
+            rename_artist(artist_name, tag_name, details.get("folder", ""))
             log_audit("fix_canonical_mismatch", "artist", artist_name,
                       details={"tag_name": tag_name}, task_id=task_id)
 
@@ -417,15 +400,9 @@ class LibraryRepair:
         # Resolve canonical artist name from DB (folder name may differ from canonical)
         canonical_artist = folder_artist_name
         try:
-            with get_db_ctx() as cur:
-                cur.execute(
-                    "SELECT name FROM library_artists "
-                    "WHERE folder_name = %s OR LOWER(name) = LOWER(%s) LIMIT 1",
-                    (folder_artist_name, folder_artist_name),
-                )
-                row = cur.fetchone()
-                if row:
-                    canonical_artist = row["name"]
+            row = find_canonical_artist_by_folder(folder_artist_name)
+            if row:
+                canonical_artist = row["name"]
         except Exception:
             log.debug("Could not resolve canonical artist for %s", folder_artist_name, exc_info=True)
 
@@ -475,14 +452,7 @@ class LibraryRepair:
 
     def _count_artist_tracks(self, artist_name: str) -> int:
         try:
-            with get_db_ctx() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) AS c FROM library_tracks t "
-                    "JOIN library_albums a ON t.album_id = a.id WHERE a.artist = %s",
-                    (artist_name,),
-                )
-                row = cur.fetchone()
-                return int(row["c"] if row else 0)
+            return count_artist_tracks(artist_name)
         except Exception:
             return 0
 
@@ -504,11 +474,7 @@ class LibraryRepair:
         }
 
         if not dry_run:
-            with get_db_ctx() as cur:
-                cur.execute(
-                    "UPDATE library_tracks SET artist = %s WHERE path = %s",
-                    (tag_artist, track_path),
-                )
+            update_track_artist(track_path, tag_artist)
             log_audit("fix_tag_mismatch", "track", track_path,
                       details={"old_artist": details.get("db_artist"), "new_artist": tag_artist},
                       task_id=task_id)
@@ -583,21 +549,7 @@ class LibraryRepair:
                          current_dir, expected_dir, len(copied), len(upgraded))
                 old_path_str = str(current_dir)
                 new_path_str = str(expected_dir)
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE library_albums SET name = %s, path = %s WHERE path = %s",
-                        (clean_name, new_path_str, details.get("path", old_path_str)),
-                    )
-                    cur.execute(
-                        "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
-                        (old_path_str + "/", new_path_str + "/", old_path_str + "/%"),
-                    )
-                    # Remove duplicate album DB entry if both paths existed
-                    cur.execute(
-                        "DELETE FROM library_albums WHERE path = %s AND EXISTS "
-                        "(SELECT 1 FROM library_albums WHERE path = %s)",
-                        (old_path_str, new_path_str),
-                    )
+                merge_album_folder(details.get("path", old_path_str), new_path_str, clean_name)
                 result["details"]["merged"] = True
                 result["details"]["files_copied"] = len(copied)
                 result["details"]["files_upgraded"] = upgraded
@@ -613,15 +565,7 @@ class LibraryRepair:
                 # Update DB
                 old_path_str = str(current_dir)
                 new_path_str = str(expected_dir)
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE library_albums SET name = %s, path = %s WHERE path = %s",
-                        (clean_name, new_path_str, details.get("path", old_path_str)),
-                    )
-                    cur.execute(
-                        "UPDATE library_tracks SET path = REPLACE(path, %s, %s) WHERE path LIKE %s",
-                        (old_path_str + "/", new_path_str + "/", old_path_str + "/%"),
-                    )
+                update_album_path_and_name(details.get("path", old_path_str), new_path_str, clean_name)
                 log_audit("reorganize_album_folder", "album", f"{artist}/{year}/{clean_name}",
                           details=result["details"], task_id=task_id)
             except Exception as e:

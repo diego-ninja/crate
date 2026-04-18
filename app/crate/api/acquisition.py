@@ -8,15 +8,39 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from crate import soulseek
+from crate import tidal
 from crate.api.auth import _require_auth, _require_admin
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.acquisition import (
+    AcquisitionDownloadRequest,
+    AcquisitionDownloadResponse,
+    AcquisitionQueueResponse,
+    AcquisitionStatusResponse,
+    AcquisitionUploadResponse,
+    NewReleasesResponse,
+    QueueClearResponse,
+    SoulseekSearchPollResponse,
+    SoulseekSearchRequest,
+    SoulseekSearchStartResponse,
+)
+from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
 from crate.db import get_setting, create_task, list_tasks
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/acquisition", tags=["acquisition"])
+
+_ACQUISITION_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested acquisition resource could not be found."),
+        422: error_response("The request payload failed validation."),
+        502: error_response("The upstream acquisition service failed."),
+    },
+)
 
 ALLOWED_UPLOAD_EXTENSIONS = {
     ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".aac", ".alac", ".zip",
@@ -35,31 +59,35 @@ def _safe_upload_name(filename: str, index: int) -> str:
     return f"{index:03d}_{cleaned}"
 
 
-@router.get("/status")
+@router.get(
+    "/status",
+    response_model=AcquisitionStatusResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get acquisition source status",
+)
 def acquisition_status(request: Request):
     """Get status of all acquisition sources."""
     _require_auth(request)
-    tidal_status = {"authenticated": False}
-    try:
-        from crate.tidal import get_auth_status
-        tidal_status = get_auth_status()
-    except Exception:
-        pass
-
+    tidal_status = {"authenticated": tidal.is_authenticated()}
     slsk_status = soulseek.get_status()
     return {"tidal": tidal_status, "soulseek": slsk_status}
 
 
-@router.post("/search/soulseek")
-def start_soulseek_search(request: Request, body: dict):
+@router.post(
+    "/search/soulseek",
+    response_model=SoulseekSearchStartResponse,
+    responses=_ACQUISITION_RESPONSES,
+    summary="Start a Soulseek search",
+)
+def start_soulseek_search(request: Request, body: SoulseekSearchRequest):
     """Start a Soulseek search (non-blocking). Returns search_id to poll."""
     _require_admin(request)
-    query = body.get("query", "").strip()
-    artist = body.get("artist", "").strip()
-    album = body.get("album", "").strip()
+    query = body.query.strip()
+    artist = body.artist.strip()
+    album = body.album.strip()
 
     if not query and not artist:
-        return JSONResponse({"error": "query or artist required"}, status_code=400)
+        raise HTTPException(status_code=400, detail="query or artist required")
 
     search_text = query or f"{artist} {album}".strip()
     quality_filter = get_setting("soulseek_quality", "flac")
@@ -70,12 +98,17 @@ def start_soulseek_search(request: Request, body: dict):
 
     search_id = soulseek.start_search(search_text)
     if not search_id:
-        return JSONResponse({"error": "Failed to start search"}, status_code=502)
+        raise HTTPException(status_code=502, detail="Failed to start search")
 
     return {"search_id": search_id, "query": search_text}
 
 
-@router.get("/search/soulseek/{search_id}")
+@router.get(
+    "/search/soulseek/{search_id}",
+    response_model=SoulseekSearchPollResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Poll Soulseek search results",
+)
 def poll_soulseek_search(request: Request, search_id: str):
     """Poll Soulseek search results (progressive — call every 2-3s)."""
     _require_auth(request)
@@ -91,33 +124,38 @@ def poll_soulseek_search(request: Request, search_id: str):
     }
 
 
-@router.post("/download")
-def acquisition_download(request: Request, body: dict):
+@router.post(
+    "/download",
+    response_model=AcquisitionDownloadResponse,
+    responses=_ACQUISITION_RESPONSES,
+    summary="Queue a Tidal or Soulseek download",
+)
+def acquisition_download(request: Request, body: AcquisitionDownloadRequest):
     """Download from the specified source."""
     _require_admin(request)
-    source = body.get("source", "")
-    artist = body.get("artist", "")
-    album = body.get("album", "")
+    source = body.source
+    artist = body.artist
+    album = body.album
 
     if source == "tidal":
-        tidal_id = body.get("tidal_id", "")
+        tidal_id = body.tidal_id
         if not tidal_id:
-            return JSONResponse({"error": "tidal_id required"}, status_code=400)
+            raise HTTPException(status_code=400, detail="tidal_id required")
         task_id = create_task("tidal_download", {
             "tidal_id": tidal_id,
             "artist": artist,
             "album": album,
-            "type": body.get("tidal_type", "album"),
+            "type": body.tidal_type,
         })
         return {"task_id": task_id, "source": "tidal"}
 
     elif source == "soulseek":
-        username = body.get("username", "")
-        files = body.get("files", [])
-        find_alternate = body.get("find_alternate", False)
+        username = body.username
+        files = body.files
+        find_alternate = body.find_alternate
 
         if not files:
-            return JSONResponse({"error": "files required"}, status_code=400)
+            raise HTTPException(status_code=400, detail="files required")
 
         file_names = [f.get("filename", "") if isinstance(f, dict) else f for f in files]
 
@@ -158,16 +196,21 @@ def acquisition_download(request: Request, body: dict):
         })
         return {"task_id": task_id, "source": "soulseek", "finding_alternate": True}
 
-    return JSONResponse({"error": "source must be 'tidal' or 'soulseek'"}, status_code=400)
+    raise HTTPException(status_code=400, detail="source must be 'tidal' or 'soulseek'")
 
 
-@router.post("/upload")
+@router.post(
+    "/upload",
+    response_model=AcquisitionUploadResponse,
+    responses=_ACQUISITION_RESPONSES,
+    summary="Upload and stage music files for import",
+)
 async def acquisition_upload(request: Request, files: list[UploadFile] = File(...)):
     """Stage uploaded music into shared /data and queue worker import."""
     user = _require_auth(request)
 
     if not files:
-        return JSONResponse({"error": "No files uploaded"}, status_code=400)
+        raise HTTPException(status_code=400, detail="No files uploaded")
 
     upload_id = uuid.uuid4().hex[:12]
     staging_root = _upload_staging_root()
@@ -188,7 +231,7 @@ async def acquisition_upload(request: Request, files: list[UploadFile] = File(..
     )
     if invalid_name:
         shutil.rmtree(staging_dir, ignore_errors=True)
-        return JSONResponse({"error": f"Unsupported file type: {invalid_name}"}, status_code=400)
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {invalid_name}")
 
     try:
         for index, upload in enumerate(files, start=1):
@@ -239,7 +282,12 @@ async def acquisition_upload(request: Request, files: list[UploadFile] = File(..
 
 # ── New Releases ──────────────────────────────────────────────────
 
-@router.get("/new-releases")
+@router.get(
+    "/new-releases",
+    response_model=NewReleasesResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List detected new releases",
+)
 def api_new_releases(request: Request, status: str = "", upcoming: bool = False):
     """Get detected new releases."""
     _require_auth(request)
@@ -248,17 +296,19 @@ def api_new_releases(request: Request, status: str = "", upcoming: bool = False)
     return {"releases": releases}
 
 
-@router.post("/new-releases/{release_id}/download")
+@router.post(
+    "/new-releases/{release_id}/download",
+    response_model=TaskEnqueueResponse,
+    responses=_ACQUISITION_RESPONSES,
+    summary="Queue download of a detected release",
+)
 def api_download_release(request: Request, release_id: int):
     """Download a detected new release via Tidal."""
     _require_admin(request)
-    from crate.db import mark_release_downloading, get_db_ctx
-    with get_db_ctx() as cur:
-        cur.execute("SELECT * FROM new_releases WHERE id = %s", (release_id,))
-        row = cur.fetchone()
-    release = dict(row) if row else None
+    from crate.db import mark_release_downloading, get_release_by_id
+    release = get_release_by_id(release_id)
     if not release or not release.get("tidal_url"):
-        return JSONResponse({"error": "Release not found or no Tidal URL"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Release not found or no Tidal URL")
     mark_release_downloading(release_id)
     task_id = create_task("tidal_download", {
         "url": release["tidal_url"],
@@ -270,7 +320,12 @@ def api_download_release(request: Request, release_id: int):
     return {"task_id": task_id}
 
 
-@router.post("/new-releases/{release_id}/dismiss")
+@router.post(
+    "/new-releases/{release_id}/dismiss",
+    response_model=OkResponse,
+    responses=_ACQUISITION_RESPONSES,
+    summary="Dismiss a detected release",
+)
 def api_dismiss_release(request: Request, release_id: int):
     """Dismiss a new release (won't be shown again)."""
     _require_auth(request)
@@ -279,7 +334,12 @@ def api_dismiss_release(request: Request, release_id: int):
     return {"ok": True}
 
 
-@router.post("/new-releases/check")
+@router.post(
+    "/new-releases/check",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue a new-release check",
+)
 def api_check_new_releases(request: Request):
     """Trigger a new release check for all library artists."""
     _require_admin(request)
@@ -287,7 +347,12 @@ def api_check_new_releases(request: Request):
     return {"task_id": task_id}
 
 
-@router.get("/queue")
+@router.get(
+    "/queue",
+    response_model=AcquisitionQueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List the unified acquisition queue",
+)
 def acquisition_queue(request: Request):
     """Get unified download queue from all sources."""
     _require_auth(request)
@@ -330,7 +395,12 @@ def acquisition_queue(request: Request):
     return queue
 
 
-@router.post("/queue/clear-completed")
+@router.post(
+    "/queue/clear-completed",
+    response_model=QueueClearResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Clear completed Soulseek downloads",
+)
 def clear_completed(request: Request):
     """Clear completed Soulseek downloads from slskd queue."""
     _require_admin(request)
@@ -338,7 +408,12 @@ def clear_completed(request: Request):
     return {"cleared": ok}
 
 
-@router.post("/queue/clear-errored")
+@router.post(
+    "/queue/clear-errored",
+    response_model=QueueClearResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Clear errored Soulseek downloads",
+)
 def clear_errored(request: Request):
     """Clear errored/cancelled Soulseek downloads from slskd queue."""
     _require_admin(request)
@@ -346,7 +421,12 @@ def clear_errored(request: Request):
     return {"cleared": ok}
 
 
-@router.post("/queue/cleanup-incomplete")
+@router.post(
+    "/queue/cleanup-incomplete",
+    response_model=TaskEnqueueResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Queue cleanup of incomplete downloads",
+)
 def cleanup_incomplete(request: Request):
     """Create task to clean up incomplete Soulseek album downloads."""
     _require_admin(request)

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Heart, Play, Radio, Share2, Shuffle } from "lucide-react";
+import { ArrowDownToLine, Heart, Loader2, Play, Radio, Share2, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 
 import type { ItemActionMenuEntry } from "@/components/actions/ItemActionMenu";
@@ -8,11 +8,15 @@ import {
   sharePath,
   type PlaylistMenuData,
 } from "@/components/actions/shared";
+import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions } from "@/contexts/PlayerContext";
+import { getOfflineActionLabel, isOfflineBusy } from "@/lib/offline";
 import { fetchPlaylistRadio } from "@/lib/radio";
 
 export function usePlaylistActionEntries(input: PlaylistMenuData): ItemActionMenuEntry[] {
   const { playAll } = usePlayerActions();
+  const { supported: offlineSupported, getPlaylistState, togglePlaylistOffline } = useOffline();
+  const offlineState = getPlaylistState(input.playlistId);
 
   return useMemo<ItemActionMenuEntry[]>(() => {
     const entries: ItemActionMenuEntry[] = [];
@@ -85,6 +89,34 @@ export function usePlaylistActionEntries(input: PlaylistMenuData): ItemActionMen
       }));
     }
 
+    entries.push({ type: "divider", key: "divider-playlist-offline" });
+    entries.push(action({
+      key: "offline",
+      label:
+        input.isSmart
+          ? "Offline is only available for static playlists"
+          : getOfflineActionLabel(offlineState),
+      icon: isOfflineBusy(offlineState) ? Loader2 : ArrowDownToLine,
+      active: offlineState === "ready",
+      disabled:
+        !offlineSupported ||
+        input.playlistId == null ||
+        Boolean(input.isSmart) ||
+        isOfflineBusy(offlineState),
+      onSelect: async () => {
+        try {
+          const result = await togglePlaylistOffline({
+            playlistId: input.playlistId,
+            title: input.name,
+            isSmart: input.isSmart,
+          });
+          toast.success(result === "removed" ? "Offline copy removed" : "Playlist available offline");
+        } catch (error) {
+          toast.error((error as Error).message || "Failed to update offline copy");
+        }
+      },
+    }));
+
     if (input.href) {
       entries.push({ type: "divider", key: "divider-playlist-share" });
       entries.push(action({
@@ -96,5 +128,5 @@ export function usePlaylistActionEntries(input: PlaylistMenuData): ItemActionMen
     }
 
     return entries;
-  }, [input, playAll]);
+  }, [input, offlineState, offlineSupported, playAll, togglePlaylistOffline]);
 }

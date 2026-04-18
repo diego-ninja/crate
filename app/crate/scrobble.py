@@ -210,18 +210,10 @@ def scrobble_play_event(
 ):
     """Scrobble to all configured services for the given user. Best-effort, never raises."""
     import os
-    from crate.db import get_db_ctx
+    from crate.db.queries.user import get_user_scrobble_identities
 
     try:
-        with get_db_ctx() as cur:
-            # Get user's scrobble credentials from external identities
-            cur.execute("""
-                SELECT provider, external_username, metadata_json
-                FROM user_external_identities
-                WHERE user_id = %s AND provider IN ('lastfm', 'listenbrainz')
-                  AND status = 'linked'
-            """, (user_id,))
-            identities = cur.fetchall()
+        identities = get_user_scrobble_identities(user_id)
 
         for identity in identities:
             provider = identity["provider"]

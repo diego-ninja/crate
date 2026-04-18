@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 import { api } from "@/lib/api";
-import { cacheGet, cacheSet, onCacheInvalidation } from "@/lib/cache";
+import { cacheGet, cacheSet, onCacheInvalidation, scopesForUrl } from "@/lib/cache";
 
 export interface UseApiState<T> {
   data: T | null;
@@ -74,12 +74,18 @@ export function useApi<T>(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, method, trigger]);
 
-  // Listen to SSE invalidation events — refetch when our URL's scope is invalidated
+  // Listen to SSE invalidation events — refetch when ANY matching scope fires.
+  // The old code only refetched if cacheGet returned null, which let stale
+  // localStorage entries prevent the refetch. Now we refetch unconditionally
+  // whenever a scope that covers this URL is invalidated.
   useEffect(() => {
     if (!url) return;
-    return onCacheInvalidation(() => {
-      // cacheInvalidate() already cleared matching entries — if ours is gone, refetch
-      if (!cacheGet(url)) refetch();
+    const myScopes = scopesForUrl(url);
+    if (!myScopes.length) return;
+    return onCacheInvalidation((scope) => {
+      if (myScopes.includes(scope)) {
+        refetch();
+      }
     });
   }, [url, refetch]);
 

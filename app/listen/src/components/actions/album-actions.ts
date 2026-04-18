@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Heart, Play, Radio, Share2, Shuffle } from "lucide-react";
+import { ArrowDownToLine, Heart, Loader2, Play, Radio, Share2, Shuffle } from "lucide-react";
 import { toast } from "sonner";
 
 import type { ItemActionMenuEntry } from "@/components/actions/ItemActionMenu";
@@ -10,8 +10,10 @@ import {
   type AlbumMenuData,
 } from "@/components/actions/shared";
 import { usePlayerActions, type PlaySource } from "@/contexts/PlayerContext";
+import { useOffline } from "@/contexts/OfflineContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { albumPagePath } from "@/lib/library-routes";
+import { getOfflineActionLabel, isOfflineBusy } from "@/lib/offline";
 import { fetchAlbumRadio } from "@/lib/radio";
 import { shuffleArray } from "@/lib/utils";
 
@@ -26,7 +28,9 @@ function albumPlaySource(data: AlbumMenuData): PlaySource {
 export function useAlbumActionEntries(input: AlbumMenuData): ItemActionMenuEntry[] {
   const { playAll } = usePlayerActions();
   const { isSaved, toggleAlbumSaved } = useSavedAlbums();
+  const { supported: offlineSupported, getAlbumState, toggleAlbumOffline } = useOffline();
   const saved = isSaved(input.albumId);
+  const offlineState = getAlbumState(input.albumId);
 
   return useMemo<ItemActionMenuEntry[]>(() => {
     const albumPath = albumPagePath({
@@ -107,11 +111,26 @@ export function useAlbumActionEntries(input: AlbumMenuData): ItemActionMenuEntry
         },
       }),
       action({
+        key: "offline",
+        label: getOfflineActionLabel(offlineState),
+        icon: isOfflineBusy(offlineState) ? Loader2 : ArrowDownToLine,
+        active: offlineState === "ready",
+        disabled: !offlineSupported || input.albumId == null || isOfflineBusy(offlineState),
+        onSelect: async () => {
+          try {
+            const result = await toggleAlbumOffline({ albumId: input.albumId, title: input.album });
+            toast.success(result === "removed" ? "Offline copy removed" : "Album available offline");
+          } catch (error) {
+            toast.error((error as Error).message || "Failed to update offline copy");
+          }
+        },
+      }),
+      action({
         key: "share",
         label: "Share album",
         icon: Share2,
         onSelect: sharePath(albumPath, `${input.artist} - ${input.album}`),
       }),
     ];
-  }, [input, playAll, saved, toggleAlbumSaved]);
+  }, [input, offlineState, offlineSupported, playAll, saved, toggleAlbumOffline, toggleAlbumSaved]);
 }

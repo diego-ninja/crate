@@ -6,8 +6,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from crate.audio import read_tags
-from crate.db import get_db_ctx
 from crate.db.health import upsert_health_issue, resolve_stale_issues
+from crate.db.queries.health import (
+    get_albums_with_year,
+    get_all_albums,
+    get_all_albums_for_covers,
+    get_all_artists,
+    get_all_track_paths,
+    get_artists_with_folder,
+    get_artists_with_photo,
+    get_duplicate_albums,
+    get_duplicate_tracks,
+    get_orphan_albums,
+    get_orphan_tracks,
+    get_tracks_sample,
+    get_tracks_tag_sample,
+    get_zombie_artists,
+)
 from crate.storage_layout import looks_like_storage_id
 from crate.utils import PHOTO_NAMES, normalize_key
 
@@ -36,6 +51,7 @@ class LibraryHealthCheck:
             ("zombie_artists", self._check_zombie_artists),
             ("has_photo_desync", self._check_has_photo_desync),
             ("duplicate_albums", self._check_duplicate_albums),
+            ("duplicate_tracks", self._check_duplicate_tracks),
             ("unindexed_files", self._check_unindexed_files),
             ("tag_mismatch", self._check_tag_mismatch),
             ("folder_naming", self._check_folder_naming),
@@ -121,11 +137,7 @@ class LibraryHealthCheck:
 
     def _check_canonical_mismatch(self) -> list[dict]:
         issues = []
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT name, folder_name FROM library_artists WHERE folder_name IS NOT NULL"
-            )
-            artists = cur.fetchall()
+        artists = get_artists_with_folder()
         for row in artists:
             db_name = row["name"]
             folder_name = row["folder_name"]
@@ -147,12 +159,7 @@ class LibraryHealthCheck:
         return issues
 
     def _check_fk_orphan_albums(self) -> list[dict]:
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT name, artist, path FROM library_albums "
-                "WHERE artist NOT IN (SELECT name FROM library_artists)"
-            )
-            rows = cur.fetchall()
+        rows = get_orphan_albums()
         return [
             {
                 "check": "fk_orphan_albums",
@@ -164,12 +171,7 @@ class LibraryHealthCheck:
         ]
 
     def _check_fk_orphan_tracks(self) -> list[dict]:
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT path, album_id FROM library_tracks "
-                "WHERE album_id NOT IN (SELECT id FROM library_albums)"
-            )
-            rows = cur.fetchall()
+        rows = get_orphan_tracks()
         return [
             {
                 "check": "fk_orphan_tracks",
@@ -181,9 +183,7 @@ class LibraryHealthCheck:
         ]
 
     def _check_stale_artists(self) -> list[dict]:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT name, folder_name FROM library_artists")
-            artists = cur.fetchall()
+        artists = get_all_artists()
         issues = []
         for row in artists:
             folder = row["folder_name"] or row["name"]
@@ -198,9 +198,7 @@ class LibraryHealthCheck:
         return issues
 
     def _check_stale_albums(self) -> list[dict]:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT name, artist, path FROM library_albums")
-            albums = cur.fetchall()
+        albums = get_all_albums()
         issues = []
         for row in albums:
             if not Path(row["path"]).is_dir():
@@ -217,17 +215,7 @@ class LibraryHealthCheck:
         return issues
 
     def _check_stale_tracks(self) -> list[dict]:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT COUNT(*) AS cnt FROM library_tracks")
-            total = cur.fetchone()["cnt"]
-            if total < 5000:
-                cur.execute("SELECT path, artist FROM library_tracks")
-            else:
-                cur.execute(
-                    "SELECT path, artist FROM library_tracks "
-                    "WHERE MOD(id, 10) = 0"
-                )
-            tracks = cur.fetchall()
+        tracks = get_tracks_sample(total_threshold=5000, modulo=10)
         issues = []
         for row in tracks:
             if not Path(row["path"]).is_file():
@@ -240,12 +228,7 @@ class LibraryHealthCheck:
         return issues
 
     def _check_zombie_artists(self) -> list[dict]:
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT name FROM library_artists "
-                "WHERE album_count = 0 AND track_count = 0"
-            )
-            rows = cur.fetchall()
+        rows = get_zombie_artists()
         return [
             {
                 "check": "zombie_artists",
@@ -257,9 +240,7 @@ class LibraryHealthCheck:
         ]
 
     def _check_has_photo_desync(self) -> list[dict]:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT name, folder_name, has_photo FROM library_artists")
-            artists = cur.fetchall()
+        artists = get_artists_with_photo()
         issues = []
         for row in artists:
             folder = row["folder_name"] or row["name"]
@@ -284,12 +265,7 @@ class LibraryHealthCheck:
         return issues
 
     def _check_duplicate_albums(self) -> list[dict]:
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT artist, LOWER(name) AS album_key, MIN(name) AS album_name, COUNT(*) AS cnt "
-                "FROM library_albums GROUP BY artist, LOWER(name) HAVING COUNT(*) > 1"
-            )
-            rows = cur.fetchall()
+        rows = get_duplicate_albums()
         return [
             {
                 "check": "duplicate_albums",
@@ -304,13 +280,31 @@ class LibraryHealthCheck:
             for r in rows
         ]
 
+    def _check_duplicate_tracks(self) -> list[dict]:
+        """Detect tracks that appear multiple times in the same album
+        (same artist + title, different file paths)."""
+        rows = get_duplicate_tracks()
+        return [
+            {
+                "check": "duplicate_tracks",
+                "severity": "medium",
+                "auto_fixable": True,
+                "details": {
+                    "artist": r["artist"],
+                    "album": r["album"],
+                    "title": r["title"],
+                    "count": r["cnt"],
+                    "paths": r.get("paths", []),
+                },
+            }
+            for r in rows
+        ]
+
     def _check_unindexed_files(self) -> list[dict]:
         if not self.library_path.is_dir():
             return []
         # Collect all DB track paths
-        with get_db_ctx() as cur:
-            cur.execute("SELECT path FROM library_tracks")
-            db_paths = {r["path"] for r in cur.fetchall()}
+        db_paths = get_all_track_paths()
 
         unindexed_by_dir: dict[str, int] = defaultdict(int)
         for audio_file in self.library_path.rglob("*"):
@@ -334,17 +328,7 @@ class LibraryHealthCheck:
         ]
 
     def _check_tag_mismatch(self) -> list[dict]:
-        with get_db_ctx() as cur:
-            cur.execute("SELECT COUNT(*) AS cnt FROM library_tracks")
-            total = cur.fetchone()["cnt"]
-            if total < 5000:
-                cur.execute("SELECT path, artist FROM library_tracks")
-            else:
-                cur.execute(
-                    "SELECT path, artist FROM library_tracks "
-                    "WHERE MOD(id, 20) = 0"
-                )
-            tracks = cur.fetchall()
+        tracks = get_tracks_tag_sample(total_threshold=5000, modulo=20)
         issues = []
         for row in tracks:
             track_path = Path(row["path"])
@@ -378,12 +362,7 @@ class LibraryHealthCheck:
         issues = []
         year_prefix_re = re.compile(r"^(\d{4})\s*[-–]\s*(.+)$")
 
-        with get_db_ctx() as cur:
-            cur.execute(
-                "SELECT name, artist, year, path FROM library_albums "
-                "WHERE year IS NOT NULL AND year != '' AND length(year) >= 4"
-            )
-            albums = cur.fetchall()
+        albums = get_albums_with_year()
 
         for row in albums:
             folder_name = row["name"]
@@ -448,9 +427,7 @@ class LibraryHealthCheck:
              blew the 600s task budget.
         """
         cover_names = {"cover.jpg", "cover.png", "folder.jpg", "folder.png"}
-        with get_db_ctx() as cur:
-            cur.execute("SELECT artist, name, path FROM library_albums")
-            albums = [dict(r) for r in cur.fetchall()]
+        albums = get_all_albums_for_covers()
 
         candidates: list[dict] = []
         for row in albums:

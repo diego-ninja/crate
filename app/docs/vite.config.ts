@@ -11,7 +11,16 @@ export default defineConfig({
     },
   },
   server: {
-    allowedHosts: [".crate.local", ".dev.lespedants.org", ".dev.cratemusic.app", ".cratemusic.app"],
+    allowedHosts: [
+      ".crate.local",
+      ".dev.lespedants.org",
+      ".dev.cratemusic.app",
+      ".cratemusic.app",
+      "docs.dev.cratemusic.app",
+      "docs.cratemusic.app",
+      "docs.dev.lespedants.org",
+      "docs.lespedants.org",
+    ],
     fs: {
       allow: [
         path.resolve(__dirname, "../.."),

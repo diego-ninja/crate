@@ -1,0 +1,6 @@
+# Test-only dependencies — NOT shipped in the production Docker image.
+# Install with: pip install -r requirements-test.txt
+-r requirements.txt
+pytest>=8.0
+testcontainers[postgres]>=4.0
+httpx>=0.27

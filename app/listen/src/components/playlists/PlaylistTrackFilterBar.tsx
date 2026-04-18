@@ -50,14 +50,14 @@ export function PlaylistTrackFilterBar({
       <div className="relative min-w-0 flex-1">
         <Search
           size={16}
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35"
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
         />
         <input
           type="text"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Filter by title, artist or album"
-          className="h-11 w-full rounded-xl border border-white/10 bg-black/10 pl-10 pr-28 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20 sm:pr-36"
+          className="h-11 w-full rounded-lg border border-white/10 bg-black/10 pl-10 pr-28 text-sm text-foreground outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground focus:border-primary/40 focus:ring-2 focus:ring-primary/20 sm:pr-36"
         />
         <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium uppercase tracking-[0.18em] text-primary/85">
           {countLabel}
@@ -67,7 +67,7 @@ export function PlaylistTrackFilterBar({
           <button
             type="button"
             onClick={() => onQueryChange("")}
-            className="absolute right-24 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-white/45 transition-colors hover:bg-white/8 hover:text-white/75 sm:right-32"
+            className="absolute right-24 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-white/8 hover:text-white/75 sm:right-32"
             aria-label="Clear filter"
           >
             <X size={14} />

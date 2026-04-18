@@ -1,6 +1,9 @@
 import json
 from datetime import datetime, timezone
-from crate.db.core import get_db_ctx
+
+from sqlalchemy import text
+
+from crate.db.tx import transaction_scope
 
 # ── Audit log ────────────────────────────────────────────────────
 
@@ -8,31 +11,40 @@ def log_audit(action: str, target_type: str, target_name: str,
               details: dict | None = None, user_id: int | None = None,
               task_id: str | None = None):
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            "INSERT INTO audit_log (timestamp, action, target_type, target_name, details_json, user_id, task_id) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (now, action, target_type, target_name,
-             json.dumps(details, default=str) if details else "{}", user_id, task_id),
+    with transaction_scope() as session:
+        session.execute(
+            text(
+                "INSERT INTO audit_log (timestamp, action, target_type, target_name, details_json, user_id, task_id) "
+                "VALUES (:ts, :action, :target_type, :target_name, :details_json, :user_id, :task_id)"
+            ),
+            {
+                "ts": now, "action": action, "target_type": target_type,
+                "target_name": target_name,
+                "details_json": json.dumps(details, default=str) if details else "{}",
+                "user_id": user_id, "task_id": task_id,
+            },
         )
 
 
 def get_audit_log(limit: int = 100, offset: int = 0,
                   action: str | None = None) -> tuple[list[dict], int]:
     where = "WHERE 1=1"
-    params: list = []
+    params: dict = {}
     if action:
-        where += " AND action = %s"
-        params.append(action)
+        where += " AND action = :action"
+        params["action"] = action
 
-    with get_db_ctx() as cur:
-        cur.execute(f"SELECT COUNT(*) AS cnt FROM audit_log {where}", params)
-        total = cur.fetchone()["cnt"]
-        cur.execute(
-            f"SELECT * FROM audit_log {where} ORDER BY timestamp DESC LIMIT %s OFFSET %s",
-            params + [limit, offset],
-        )
-        rows = cur.fetchall()
+    with transaction_scope() as session:
+        row = session.execute(
+            text(f"SELECT COUNT(*) AS cnt FROM audit_log {where}"), params
+        ).mappings().first()
+        total = row["cnt"]
+        params["lim"] = limit
+        params["off"] = offset
+        rows = session.execute(
+            text(f"SELECT * FROM audit_log {where} ORDER BY timestamp DESC LIMIT :lim OFFSET :off"),
+            params,
+        ).mappings().all()
 
     results = []
     for row in rows:
@@ -46,8 +58,8 @@ def get_audit_log(limit: int = 100, offset: int = 0,
 # ── Library management ───────────────────────────────────────────
 
 def wipe_library_tables():
-    with get_db_ctx() as cur:
-        cur.execute("TRUNCATE library_tracks, library_albums, library_artists CASCADE")
+    with transaction_scope() as session:
+        session.execute(text("TRUNCATE library_tracks, library_albums, library_artists CASCADE"))
 
 
 def get_db_table_stats() -> dict:
@@ -57,15 +69,16 @@ def get_db_table_stats() -> dict:
         "scan_results", "dir_mtimes", "users", "sessions",
     ]
     stats = {}
-    with get_db_ctx() as cur:
+    with transaction_scope() as session:
         for table in tables:
             try:
-                cur.execute(
-                    "SELECT pg_total_relation_size(%s) AS size, "
-                    "(SELECT COUNT(*) FROM {} ) AS cnt".format(table),
-                    (table,),
-                )
-                row = cur.fetchone()
+                row = session.execute(
+                    text(
+                        "SELECT pg_total_relation_size(:tbl) AS size, "
+                        f"(SELECT COUNT(*) FROM {table} ) AS cnt"
+                    ),
+                    {"tbl": table},
+                ).mappings().first()
                 stats[table] = {"size": row["size"], "rows": row["cnt"]}
             except Exception:
                 stats[table] = {"size": 0, "rows": 0}

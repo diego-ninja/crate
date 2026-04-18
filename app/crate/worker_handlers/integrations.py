@@ -1,6 +1,7 @@
 import json
 import logging
-from crate.db import emit_task_event, get_db_ctx, update_task
+from crate.db import emit_task_event, update_task
+from crate.db.jobs.integrations import get_artists_with_similar_json
 from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
@@ -69,9 +70,7 @@ def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> d
     """Populate artist_similarities from existing similar_json on library_artists."""
     from crate.db import bulk_upsert_similarities, mark_library_status
 
-    with get_db_ctx() as cur:
-        cur.execute("SELECT name, similar_json FROM library_artists WHERE similar_json IS NOT NULL")
-        rows = cur.fetchall()
+    rows = get_artists_with_similar_json()
 
     total = len(rows)
     upserted = 0

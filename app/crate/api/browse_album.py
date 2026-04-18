@@ -7,14 +7,60 @@ from fastapi.responses import JSONResponse, Response
 from crate.api._deps import COVER_NAMES, extensions, library_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import display_name, find_album_dir, find_album_row, fs_album_detail, has_library_data
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.browse import AlbumDetailResponse, RelatedAlbumResponse
+from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
-from crate.db import get_db_ctx, get_library_album_by_id, get_library_artist, get_library_tracks
+from crate.db import get_library_album_by_id, get_library_artist, get_library_tracks
+from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list
 from crate.storage_layout import resolve_album_dir
 
-router = APIRouter()
+router = APIRouter(tags=["browse"])
+
+_BROWSE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested browse resource could not be found."),
+        422: error_response("The request payload failed validation."),
+    },
+)
+
+_IMAGE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Binary image response.",
+            "content": {
+                "image/jpeg": {},
+                "image/png": {},
+                "image/svg+xml": {},
+            },
+        },
+        404: error_response("The requested image was not found."),
+    },
+)
+
+_ZIP_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Zip archive download.",
+            "content": {
+                "application/zip": {},
+            },
+        },
+        404: error_response("The requested album archive was not found."),
+    },
+)
 
 
-@router.get("/api/albums/{album_id}/related")
+@router.get(
+    "/api/albums/{album_id}/related",
+    response_model=list[RelatedAlbumResponse],
+    responses=_BROWSE_RESPONSES,
+    summary="List albums related to a given album",
+)
 def api_related_albums_by_id(request: Request, album_id: int, limit: int = 15):
     album = get_library_album_by_id(album_id)
     if not album:
@@ -33,76 +79,16 @@ def api_related_albums(request: Request, artist: str, album: str, limit: int = 1
         return []
 
     album_id = current["id"]
+    year = current["year"][:4] if current.get("year") and len(current.get("year", "")) >= 4 else None
+    seen.add(album_id)
 
-    with get_db_ctx() as cur:
-        year = current["year"][:4] if current.get("year") and len(current.get("year", "")) >= 4 else None
-        seen.add(album_id)
-
-        cur.execute("SELECT genre_id FROM album_genres WHERE album_id = %s", (album_id,))
-        genre_ids = [row["genre_id"] for row in cur.fetchall()]
-
-        cur.execute(
-            "SELECT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug, "
-            "a.year, a.track_count, a.has_cover "
-            "FROM library_albums a LEFT JOIN library_artists ar ON ar.name = a.artist "
-            "WHERE a.artist = %s AND a.id != %s ORDER BY a.year",
-            (artist, album_id),
-        )
-        for row in cur.fetchall():
+    genre_ids = get_album_genre_ids(album_id)
+    grouped = get_related_albums(album_id, artist, year, genre_ids)
+    for reason, rows in grouped.items():
+        for row in rows:
             if row["id"] not in seen:
                 seen.add(row["id"])
-                related.append({**dict(row), "reason": "same_artist"})
-
-        if genre_ids and year:
-            year_int = int(year)
-            placeholders = ",".join(["%s"] * len(genre_ids))
-            cur.execute(
-                f"""
-                SELECT DISTINCT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug,
-                    a.year, a.track_count, a.has_cover
-                FROM library_albums a
-                LEFT JOIN library_artists ar ON ar.name = a.artist
-                JOIN album_genres ag ON a.id = ag.album_id
-                WHERE ag.genre_id IN ({placeholders})
-                AND a.artist != %s
-                AND a.year IS NOT NULL AND length(a.year) >= 4
-                AND CAST(substring(a.year, 1, 4) AS INTEGER) BETWEEN %s AND %s
-                ORDER BY RANDOM() LIMIT 10
-                """,
-                (*genre_ids, artist, year_int - 5, year_int + 5),
-            )
-            for row in cur.fetchall():
-                if row["id"] not in seen:
-                    seen.add(row["id"])
-                    related.append({**dict(row), "reason": "genre_decade"})
-
-        cur.execute(
-            """
-            SELECT AVG(energy) AS e, AVG(danceability) AS d, AVG(valence) AS v
-            FROM library_tracks WHERE album_id = %s AND energy IS NOT NULL
-            """,
-            (album_id,),
-        )
-        audio = cur.fetchone()
-        if audio and audio["e"] is not None:
-            cur.execute(
-                """
-                SELECT a.id, a.slug, a.name, a.artist, ar.id AS artist_id, ar.slug AS artist_slug,
-                    a.year, a.track_count, a.has_cover,
-                    ABS(AVG(t.energy) - %s) + ABS(AVG(t.danceability) - %s) + ABS(AVG(t.valence) - %s) AS dist
-                FROM library_albums a
-                LEFT JOIN library_artists ar ON ar.name = a.artist
-                JOIN library_tracks t ON t.album_id = a.id
-                WHERE t.energy IS NOT NULL AND a.id != %s AND a.artist != %s
-                GROUP BY a.id, a.slug, a.name, a.artist, ar.id, ar.slug, a.year, a.track_count, a.has_cover
-                ORDER BY dist ASC LIMIT 8
-                """,
-                (audio["e"], audio["d"], audio["v"], album_id, artist),
-            )
-            for row in cur.fetchall():
-                if row["id"] not in seen:
-                    seen.add(row["id"])
-                    related.append({**dict(row), "reason": "audio_similar"})
+                related.append({**row, "reason": reason})
 
     import re
 
@@ -181,13 +167,7 @@ def api_album(request: Request, artist: str, album: str):
     total_size = sum(track.get("size", 0) or 0 for track in tracks_data)
     total_length = sum(track["length_sec"] for track in track_list)
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT g.name FROM album_genres ag JOIN genres g ON ag.genre_id = g.id "
-            "WHERE ag.album_id = %s ORDER BY ag.weight DESC",
-            (album_data["id"],),
-        )
-        album_genres = [row["name"] for row in cur.fetchall()]
+    album_genres = get_album_genres_list(album_data["id"])
 
     if album_genres:
         album_tags["genre"] = ", ".join(album_genres)
@@ -218,7 +198,12 @@ def api_album(request: Request, artist: str, album: str):
     }
 
 
-@router.get("/api/albums/{album_id}")
+@router.get(
+    "/api/albums/{album_id}",
+    response_model=AlbumDetailResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get detailed album information",
+)
 def api_album_by_id(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
@@ -320,7 +305,12 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None):
     return _placeholder_cover(album or artist)
 
 
-@router.post("/api/albums/{album_id}/enrich")
+@router.post(
+    "/api/albums/{album_id}/enrich",
+    response_model=TaskEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue album enrichment",
+)
 def api_enrich_album(request: Request, album_id: int):
     """Enrich an album: MBID lookup, cover fetch, audio analysis, bliss."""
     _require_auth(request)
@@ -336,7 +326,12 @@ def api_enrich_album(request: Request, album_id: int):
     return {"task_id": task_id}
 
 
-@router.post("/api/albums/{album_id}/fetch-cover")
+@router.post(
+    "/api/albums/{album_id}/fetch-cover",
+    response_model=TaskEnqueueResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Queue artwork fetching for an album",
+)
 def api_fetch_cover(request: Request, album_id: int):
     """Search and download a cover for an album from all available sources."""
     _require_auth(request)
@@ -354,7 +349,11 @@ def api_fetch_cover(request: Request, album_id: int):
     return {"task_id": task_id}
 
 
-@router.get("/api/albums/{album_id}/cover")
+@router.get(
+    "/api/albums/{album_id}/cover",
+    responses=_IMAGE_RESPONSES,
+    summary="Get album artwork",
+)
 def api_cover_by_id(album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
@@ -393,7 +392,11 @@ def api_download_album(request: Request, artist: str, album: str):
     return FileResponse(path=tmp.name, filename=safe_name, media_type="application/zip", background=None)
 
 
-@router.get("/api/albums/{album_id}/download")
+@router.get(
+    "/api/albums/{album_id}/download",
+    responses=_ZIP_RESPONSES,
+    summary="Download an album as a zip archive",
+)
 def api_download_album_by_id(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:

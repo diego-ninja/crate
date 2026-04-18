@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { ChevronDown, Settings } from "lucide-react";
 
 import { InfoTab } from "@/components/player/extended/InfoTab";
+import { artistPagePath, albumPagePath } from "@/lib/library-routes";
 import { LyricsTab } from "@/components/player/extended/LyricsTab";
 import { QueueTab } from "@/components/player/extended/QueueTab";
 import { SuggestedTab } from "@/components/player/extended/SuggestedTab";
@@ -30,6 +32,7 @@ const TABS: { id: TabId; label: string }[] = [
 ];
 
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
+  const navigate = useNavigate();
   const isDesktop = useIsDesktop();
   const { currentTrack, isPlaying, volume, analyserVersion, crossfadeTransition } = usePlayer();
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
@@ -207,18 +210,18 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
                   <h2 className="truncate text-xl font-bold leading-tight text-white">
                     {crossfadeTransition.outgoing.title}
                   </h2>
-                  <p className="mt-1 truncate text-base text-white/50">{crossfadeTransition.outgoing.artist}</p>
+                  <p className="mt-1 truncate text-base text-muted-foreground">{crossfadeTransition.outgoing.artist}</p>
                   {crossfadeTransition.outgoing.album ? (
-                    <p className="mt-0.5 truncate text-sm text-white/25">{crossfadeTransition.outgoing.album}</p>
+                    <p className="mt-0.5 truncate text-sm text-white/40">{crossfadeTransition.outgoing.album}</p>
                   ) : null}
                 </div>
                 <div style={{ opacity: crossfadeProgress }}>
                   <h2 className="truncate text-xl font-bold leading-tight text-white">
                     {crossfadeTransition.incoming.title}
                   </h2>
-                  <p className="mt-1 truncate text-base text-white/50">{crossfadeTransition.incoming.artist}</p>
+                  <p className="mt-1 truncate text-base text-muted-foreground">{crossfadeTransition.incoming.artist}</p>
                   {crossfadeTransition.incoming.album ? (
-                    <p className="mt-0.5 truncate text-sm text-white/25">{crossfadeTransition.incoming.album}</p>
+                    <p className="mt-0.5 truncate text-sm text-white/40">{crossfadeTransition.incoming.album}</p>
                   ) : null}
                 </div>
               </>
@@ -227,15 +230,33 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
                 <h2 className="truncate text-xl font-bold leading-tight text-white">
                   {currentTrack.title}
                 </h2>
-                <p className="mt-1 truncate text-base text-white/50">{currentTrack.artist}</p>
+                {currentTrack.artistId ? (
+                  <p
+                    className="mt-1 truncate text-base text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
+                    onClick={() => navigate(artistPagePath({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug, artistName: currentTrack.artist }))}
+                  >
+                    {currentTrack.artist}
+                  </p>
+                ) : (
+                  <p className="mt-1 truncate text-base text-muted-foreground">{currentTrack.artist}</p>
+                )}
                 {currentTrack.album ? (
-                  <p className="mt-0.5 truncate text-sm text-white/25">{currentTrack.album}</p>
+                  currentTrack.albumId ? (
+                    <p
+                      className="mt-0.5 truncate text-sm text-white/40 hover:text-foreground hover:underline transition-colors cursor-pointer"
+                      onClick={() => navigate(albumPagePath({ albumId: currentTrack.albumId, albumSlug: currentTrack.albumSlug, albumName: currentTrack.album, artistName: currentTrack.artist }))}
+                    >
+                      {currentTrack.album}
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 truncate text-sm text-white/40">{currentTrack.album}</p>
+                  )
                 ) : null}
               </>
             )}
           </div>
           {vizCfg.trackAdaptiveViz && vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
-            <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.22em] text-white/35">
+            <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.22em] text-white/40">
               spheres · {vizCfg.trackVizProfile.summary}
             </p>
           ) : null}

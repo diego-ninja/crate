@@ -69,7 +69,7 @@ The hosted site exposes two content groups:
 - `technical` — long-lived architecture docs, numbered and meant to be read in order.
 - `reference` — shorter topical notes still useful as quick lookups.
 
-These correspond directly to the repo layout:
+These correspond directly to the repo layout that the docs app actually imports:
 
 - [`docs/technical/`](https://github.com/diego-ninja/crate/blob/main/docs/technical) for the technical set.
 - top-level files under [`docs/`](https://github.com/diego-ninja/crate/blob/main/docs) (excluding the technical subfolder) for reference.
@@ -77,15 +77,19 @@ These correspond directly to the repo layout:
 The grouping is intentionally simple — a navigation model over the
 repository structure, not a CMS taxonomy.
 
-Design notes and internal roadmaps live in a `docs/plans/` folder that
-is gitignored. They stay on the author's disk, never reach the public
-site, and never ship with the container. If a plan graduates to
-something that should be public, it gets rewritten into the technical
-or reference set.
+Subdirectories such as `docs/plans/` may exist in the repository for
+internal design work, but they are not part of the published site.
+`app/docs/src/content.ts` only globs `docs/technical/*.md` and top-level
+`docs/*.md`, so plans and other nested folders stay unpublished until
+their content is deliberately rewritten into the technical or reference
+set.
 
 ## Source-of-truth stance
 
 Markdown files in the repository are the canonical artifacts.
+
+The hosted site is a filtered projection of that markdown, not a promise
+that every file under `docs/` is public.
 
 The site should never become the only place where documentation can be edited. That means:
 

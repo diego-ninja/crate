@@ -2,7 +2,10 @@ import uuid
 import json
 import logging
 from datetime import date, datetime, timezone
-from crate.db.core import get_db_ctx
+
+from sqlalchemy import text
+
+from crate.db.tx import register_after_commit, transaction_scope
 
 log = logging.getLogger(__name__)
 
@@ -20,10 +23,25 @@ def _json_default(obj):
 
 # ── Task CRUD ─────────────────────────────────────────────────────
 
+
+def _dispatch_task(task_type: str, task_id: str) -> None:
+    try:
+        from crate.actors import dispatch_to_dramatiq
+
+        dispatch_to_dramatiq(task_type, task_id)
+    except Exception:
+        log.debug(
+            "Dramatiq dispatch failed for %s/%s, task stays pending",
+            task_type,
+            task_id,
+            exc_info=True,
+        )
+
+
 def create_task(task_type: str, params: dict | None = None, *,
                 priority: int | None = None, pool: str | None = None,
                 parent_task_id: str | None = None,
-                dispatch: bool = True) -> str:
+                dispatch: bool = True, session=None) -> str:
     """Create a task in PG and optionally dispatch to Dramatiq.
 
     If priority/pool are not provided, defaults are looked up from TASK_POOL_CONFIG.
@@ -43,23 +61,32 @@ def create_task(task_type: str, params: dict | None = None, *,
 
     task_id = uuid.uuid4().hex[:12]
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            """INSERT INTO tasks
-               (id, type, status, params_json, priority, pool,
-                parent_task_id, max_duration_sec, max_retries, created_at, updated_at)
-               VALUES (%s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s)""",
-            (task_id, task_type, _dumps(params or {}),
-             priority, pool, parent_task_id, max_duration, max_retries, now, now),
-        )
+    if session is None:
+        with transaction_scope() as s:
+            return create_task(
+                task_type,
+                params,
+                priority=priority,
+                pool=pool,
+                parent_task_id=parent_task_id,
+                dispatch=dispatch,
+                session=s,
+            )
+
+    session.execute(
+        text("""INSERT INTO tasks
+           (id, type, status, params_json, priority, pool,
+            parent_task_id, max_duration_sec, max_retries, created_at, updated_at)
+           VALUES (:id, :type, 'pending', :params_json, :priority, :pool,
+                   :parent_task_id, :max_duration, :max_retries, :created_at, :updated_at)"""),
+        {"id": task_id, "type": task_type, "params_json": _dumps(params or {}),
+         "priority": priority, "pool": pool, "parent_task_id": parent_task_id,
+         "max_duration": max_duration, "max_retries": max_retries,
+         "created_at": now, "updated_at": now},
+    )
 
     if dispatch:
-        try:
-            from crate.actors import dispatch_to_dramatiq
-            dispatch_to_dramatiq(task_type, task_id)
-        except Exception:
-            log.debug("Dramatiq dispatch failed for %s/%s, task stays pending",
-                      task_type, task_id, exc_info=True)
+        register_after_commit(session, lambda: _dispatch_task(task_type, task_id))
 
     return task_id
 
@@ -80,140 +107,183 @@ def create_task_dedup(task_type: str, params: dict | None = None,
     max_duration = config[2] if config else 1800
     max_retries = config[3] if config else 0
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """INSERT INTO tasks
+    with transaction_scope() as session:
+        result = session.execute(
+            text("""INSERT INTO tasks
                (id, type, status, params_json, priority, pool,
                 max_duration_sec, max_retries, created_at, updated_at)
-               SELECT %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s
+               SELECT :id, :type, 'pending', :params_json, :priority, :pool,
+                      :max_duration, :max_retries, :created_at, :updated_at
                WHERE NOT EXISTS (
-                   SELECT 1 FROM tasks WHERE type = %s AND status IN ('pending', 'running')
-                   AND params_json::text = %s
-               )""",
-            (task_id, task_type, params_text, priority, pool,
-             max_duration, max_retries, now, now,
-             task_type, params_text),
+                   SELECT 1 FROM tasks WHERE type = :type AND status IN ('pending', 'running')
+                   AND params_json::text = :params_text
+               )"""),
+            {"id": task_id, "type": task_type, "params_json": params_text,
+             "priority": priority, "pool": pool, "max_duration": max_duration,
+             "max_retries": max_retries, "created_at": now, "updated_at": now,
+             "params_text": params_text},
         )
-        if cur.rowcount == 0:
-            return None  # duplicate
+        if result.rowcount == 0:
+            return None
 
-    if dispatch:
-        try:
-            from crate.actors import dispatch_to_dramatiq
-            dispatch_to_dramatiq(task_type, task_id)
-        except Exception:
-            log.debug("Dramatiq dispatch failed for %s/%s", task_type, task_id, exc_info=True)
+        if dispatch:
+            register_after_commit(session, lambda: _dispatch_task(task_type, task_id))
 
     return task_id
 
 
 def update_task(task_id: str, *, status: str | None = None, progress: str | None = None,
-                result: dict | None = None, error: str | None = None):
+                result: dict | None = None, error: str | None = None, session=None):
+    if session is None:
+        with transaction_scope() as s:
+            return update_task(task_id, status=status, progress=progress,
+                               result=result, error=error, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    fields = ["updated_at = %s"]
-    values: list = [now]
-
+    fields = ["updated_at = :updated_at"]
+    params: dict = {"updated_at": now, "task_id": task_id}
     if status is not None:
-        fields.append("status = %s")
-        values.append(status)
+        fields.append("status = :set_status")
+        params["set_status"] = status
         if status == "running":
-            fields.append("started_at = %s")
-            values.append(now)
+            fields.append("started_at = :set_started_at")
+            params["set_started_at"] = now
     if progress is not None:
-        fields.append("progress = %s")
-        values.append(progress)
+        fields.append("progress = :set_progress")
+        params["set_progress"] = progress
     if result is not None:
-        fields.append("result_json = %s")
-        values.append(_dumps(result))
+        fields.append("result_json = :set_result_json")
+        params["set_result_json"] = _dumps(result)
     if error is not None:
-        fields.append("error = %s")
-        values.append(error)
+        fields.append("error = :set_error")
+        params["set_error"] = error
 
-    values.append(task_id)
-    with get_db_ctx() as cur:
-        cur.execute(f"UPDATE tasks SET {', '.join(fields)} WHERE id = %s", values)
+    session.execute(
+        text(f"UPDATE tasks SET {', '.join(fields)} WHERE id = :task_id"),
+        params,
+    )
 
 
-def heartbeat_task(task_id: str):
+def heartbeat_task(task_id: str, *, session=None):
     """Update heartbeat timestamp. Called by worker threads every 30s."""
+    if session is None:
+        with transaction_scope() as s:
+            return heartbeat_task(task_id, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute("UPDATE tasks SET heartbeat_at = %s WHERE id = %s", (now, task_id))
+    session.execute(
+        text("UPDATE tasks SET heartbeat_at = :now WHERE id = :id"),
+        {"now": now, "id": task_id},
+    )
 
 
 def get_task(task_id: str) -> dict | None:
-    with get_db_ctx() as cur:
-        cur.execute("SELECT * FROM tasks WHERE id = %s", (task_id,))
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT * FROM tasks WHERE id = :id"),
+            {"id": task_id},
+        ).mappings().first()
     return _row_to_task(row) if row else None
 
 
 def list_tasks(status: str | None = None, task_type: str | None = None, limit: int = 50) -> list[dict]:
     query = "SELECT * FROM tasks WHERE 1=1"
-    params: list = []
+    params: dict = {}
     if status:
-        query += " AND status = %s"
-        params.append(status)
+        query += " AND status = :status"
+        params["status"] = status
     if task_type:
-        query += " AND type = %s"
-        params.append(task_type)
+        query += " AND type = :task_type"
+        params["task_type"] = task_type
     query += (" ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,"
               " CASE WHEN status IN ('running','pending') THEN priority ELSE 999 END ASC,"
-              " updated_at DESC LIMIT %s")
-    params.append(limit)
+              " updated_at DESC LIMIT :lim")
+    params["lim"] = limit
 
-    with get_db_ctx() as cur:
-        cur.execute(query, params)
-        rows = cur.fetchall()
+    with transaction_scope() as session:
+        rows = session.execute(text(query), params).mappings().all()
     return [_row_to_task(r) for r in rows]
 
 
 def list_child_tasks(parent_task_id: str) -> list[dict]:
     """List all sub-tasks of a parent task."""
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT * FROM tasks WHERE parent_task_id = %s ORDER BY created_at",
-            (parent_task_id,),
-        )
-        rows = cur.fetchall()
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("SELECT * FROM tasks WHERE parent_task_id = :parent_id ORDER BY created_at"),
+            {"parent_id": parent_task_id},
+        ).mappings().all()
     return [_row_to_task(r) for r in rows]
 
 
 # ── Zombie detection ──────────────────────────────────────────────
 
-def cleanup_zombie_tasks(heartbeat_timeout_min: int = 5, no_heartbeat_timeout_min: int = 2) -> int:
+def cleanup_zombie_tasks(heartbeat_timeout_min: int = 5, no_heartbeat_timeout_min: int = 2, *, session=None) -> int:
     """Mark tasks as failed if heartbeat is stale or missing.
 
-    - Tasks with heartbeat_at older than heartbeat_timeout_min → failed
-    - Tasks with NULL heartbeat_at and updated_at older than no_heartbeat_timeout_min → failed
+    - Tasks with heartbeat_at older than heartbeat_timeout_min -> failed
+    - Tasks with NULL heartbeat_at and updated_at older than no_heartbeat_timeout_min -> failed
     Returns count of zombies cleaned.
     """
-    with get_db_ctx() as cur:
-        cur.execute("""
-            UPDATE tasks SET status = 'failed', error = 'Worker died (no heartbeat)'
-            WHERE status = 'running'
-              AND (
-                  (heartbeat_at IS NOT NULL
-                   AND heartbeat_at < (NOW() AT TIME ZONE 'UTC' - INTERVAL '%s minutes')::text)
-                  OR
-                  (heartbeat_at IS NULL
-                   AND updated_at < (NOW() AT TIME ZONE 'UTC' - INTERVAL '%s minutes')::text)
-              )
-        """, (heartbeat_timeout_min, no_heartbeat_timeout_min))
-        count = cur.rowcount
+    if session is None:
+        with transaction_scope() as s:
+            return cleanup_zombie_tasks(heartbeat_timeout_min, no_heartbeat_timeout_min, session=s)
+    result = session.execute(text("""
+        UPDATE tasks SET status = 'failed', error = 'Worker died (no heartbeat)'
+        WHERE status = 'running'
+          AND (
+              (heartbeat_at IS NOT NULL
+               AND heartbeat_at < (NOW() AT TIME ZONE 'UTC' - make_interval(mins => :hb_timeout))::text)
+              OR
+              (heartbeat_at IS NULL
+               AND updated_at < (NOW() AT TIME ZONE 'UTC' - make_interval(mins => :no_hb_timeout))::text)
+          )
+    """), {"hb_timeout": heartbeat_timeout_min, "no_hb_timeout": no_heartbeat_timeout_min})
+    count = result.rowcount
     if count > 0:
         log.warning("Cleaned %d zombie tasks", count)
     return count
 
 
-def cleanup_orphaned_tasks() -> int:
+def delete_tasks_by_status(status: str, *, session=None) -> int:
+    """Delete all tasks (and dependent rows) with the given status."""
+    if session is None:
+        with transaction_scope() as s:
+            return delete_tasks_by_status(status, session=s)
+    session.execute(
+        text("DELETE FROM task_events WHERE task_id IN (SELECT id FROM tasks WHERE status = :status)"),
+        {"status": status},
+    )
+    session.execute(
+        text("DELETE FROM scan_results WHERE task_id IN (SELECT id FROM tasks WHERE status = :status)"),
+        {"status": status},
+    )
+    result = session.execute(
+        text("DELETE FROM tasks WHERE status = :status"),
+        {"status": status},
+    )
+    return result.rowcount
+
+
+def delete_old_finished_tasks(cutoff_iso: str, *, session=None) -> int:
+    """Delete completed/failed/cancelled tasks older than the given ISO cutoff."""
+    if session is None:
+        with transaction_scope() as s:
+            return delete_old_finished_tasks(cutoff_iso, session=s)
+    result = session.execute(
+        text("DELETE FROM tasks WHERE status IN ('completed', 'failed', 'cancelled') AND created_at < :cutoff"),
+        {"cutoff": cutoff_iso},
+    )
+    return result.rowcount
+
+
+def cleanup_orphaned_tasks(*, session=None) -> int:
     """Mark all running tasks as failed (called on startup)."""
-    with get_db_ctx() as cur:
-        cur.execute("""
-            UPDATE tasks SET status = 'failed', error = 'Orphaned: worker restarted'
-            WHERE status = 'running'
-        """)
-        count = cur.rowcount
+    if session is None:
+        with transaction_scope() as s:
+            return cleanup_orphaned_tasks(session=s)
+    result = session.execute(text("""
+        UPDATE tasks SET status = 'failed', error = 'Orphaned: worker restarted'
+        WHERE status = 'running'
+    """))
+    count = result.rowcount
     if count > 0:
         log.warning("Marked %d orphaned tasks as failed", count)
     return count
@@ -227,37 +297,42 @@ DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_l
 
 def claim_next_task(max_running: int = 5) -> dict | None:
     """Legacy: poll-based task claiming. Not used with Dramatiq."""
-    with get_db_ctx() as cur:
-        cur.execute("SELECT COUNT(*) AS cnt FROM tasks WHERE status = 'running'")
-        running_count = cur.fetchone()["cnt"]
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT COUNT(*) AS cnt FROM tasks WHERE status = 'running'")
+        ).mappings().first()
+        running_count = row["cnt"]
         if running_count >= max_running:
             return None
 
-        cur.execute(
-            "SELECT COUNT(*) AS cnt FROM tasks WHERE status = 'running' AND type = ANY(%s)",
-            (list(DB_HEAVY_TASKS),),
-        )
-        db_heavy_running = cur.fetchone()["cnt"] > 0
+        row = session.execute(
+            text("SELECT COUNT(*) AS cnt FROM tasks WHERE status = 'running' AND type = ANY(:heavy)"),
+            {"heavy": list(DB_HEAVY_TASKS)},
+        ).mappings().first()
+        db_heavy_running = row["cnt"] > 0
 
         if db_heavy_running:
-            cur.execute(
-                "SELECT * FROM tasks WHERE status = 'pending' AND type != ALL(%s) "
-                "ORDER BY priority ASC, created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
-                (list(DB_HEAVY_TASKS),),
-            )
+            row = session.execute(
+                text(
+                    "SELECT * FROM tasks WHERE status = 'pending' AND type != ALL(:heavy) "
+                    "ORDER BY priority ASC, created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
+                ),
+                {"heavy": list(DB_HEAVY_TASKS)},
+            ).mappings().first()
         else:
-            cur.execute(
-                "SELECT * FROM tasks WHERE status = 'pending' "
-                "ORDER BY priority ASC, created_at LIMIT 1 FOR UPDATE SKIP LOCKED",
-            )
+            row = session.execute(
+                text(
+                    "SELECT * FROM tasks WHERE status = 'pending' "
+                    "ORDER BY priority ASC, created_at LIMIT 1 FOR UPDATE SKIP LOCKED"
+                ),
+            ).mappings().first()
 
-        row = cur.fetchone()
         if not row:
             return None
         now = datetime.now(timezone.utc).isoformat()
-        cur.execute(
-            "UPDATE tasks SET status = 'running', updated_at = %s WHERE id = %s AND status = 'pending'",
-            (now, row["id"]),
+        session.execute(
+            text("UPDATE tasks SET status = 'running', updated_at = :now WHERE id = :id AND status = 'pending'"),
+            {"now": now, "id": row["id"]},
         )
     return _row_to_task(row) if row else None
 
@@ -275,21 +350,22 @@ def _row_to_task(row: dict) -> dict:
 
 # ── Scan results ──────────────────────────────────────────────────
 
-def save_scan_result(task_id: str, issues: list[dict]):
+def save_scan_result(task_id: str, issues: list[dict], *, session=None):
+    if session is None:
+        with transaction_scope() as s:
+            return save_scan_result(task_id, issues, session=s)
     now = datetime.now(timezone.utc).isoformat()
-    with get_db_ctx() as cur:
-        cur.execute(
-            "INSERT INTO scan_results (task_id, issues_json, scanned_at) VALUES (%s, %s, %s)",
-            (task_id, _dumps(issues), now),
-        )
+    session.execute(
+        text("INSERT INTO scan_results (task_id, issues_json, scanned_at) VALUES (:task_id, :issues_json, :scanned_at)"),
+        {"task_id": task_id, "issues_json": _dumps(issues), "scanned_at": now},
+    )
 
 
 def get_latest_scan() -> dict | None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT * FROM scan_results ORDER BY scanned_at DESC LIMIT 1"
-        )
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT * FROM scan_results ORDER BY scanned_at DESC LIMIT 1")
+        ).mappings().first()
     if not row:
         return None
     d = dict(row)

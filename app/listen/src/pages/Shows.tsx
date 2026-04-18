@@ -136,7 +136,7 @@ export function Shows() {
             Upcoming
           </div>
           <h1 className="mt-3 text-3xl font-bold text-foreground">Shows & Upcoming Releases</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
             Everything coming up from the artists you follow: upcoming shows, future releases, and the latest releases you might have missed.
           </p>
         </div>
@@ -180,7 +180,7 @@ export function Shows() {
                         {insight.type === "show_prep" ? "Show prep" : insight.type === "one_week" ? "This week" : "One month"}
                       </div>
                       <h3 className="mt-3 text-lg font-semibold text-foreground">{insight.title}</h3>
-                      <p className="mt-1 text-sm text-white/55">{insight.subtitle}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{insight.subtitle}</p>
                       <p className="mt-3 text-sm leading-6 text-white/70">{insight.message}</p>
                     </div>
                     {insight.weight === "high" ? (
@@ -233,12 +233,12 @@ export function Shows() {
             <div className="flex gap-3">
               {nextAttendingDate ? (
                 <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Date</div>
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Date</div>
                   <div className="mt-1 text-sm font-semibold text-foreground">{nextAttendingDate}</div>
                 </div>
               ) : null}
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Venue</div>
+                <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Venue</div>
                 <div className="mt-1 text-sm font-semibold text-foreground">{nextAttendingShow.title}</div>
               </div>
             </div>
@@ -256,7 +256,7 @@ export function Shows() {
                 "rounded-full border px-4 py-2 text-sm transition-colors",
                 filter === value
                   ? "border-primary/40 bg-primary/15 text-primary"
-                  : "border-white/10 text-white/50 hover:border-white/20 hover:text-foreground",
+                  : "border-white/10 text-muted-foreground hover:border-white/20 hover:text-foreground",
               )}
             >
               {value === "all" ? "All" : value === "shows" ? "Shows" : "Releases"}
@@ -270,7 +270,7 @@ export function Shows() {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Filter by artist, venue, city..."
-            className="h-11 w-full rounded-2xl border border-white/10 bg-input px-4 text-sm text-foreground placeholder:text-white/25 focus:border-primary/40 focus:outline-none"
+            className="h-11 w-full rounded-2xl border border-white/10 bg-input px-4 text-sm text-foreground placeholder:text-white/40 focus:border-primary/40 focus:outline-none"
           />
         </div>
       </div>
@@ -322,8 +322,8 @@ export function Shows() {
           {recentlyReleased.length > 0 ? (
             <section className="space-y-4">
               <div className="flex items-center gap-2">
-                <Calendar size={15} className="text-white/45" />
-                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-white/45">Recently released</h2>
+                <Calendar size={15} className="text-muted-foreground" />
+                <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-muted-foreground">Recently released</h2>
               </div>
               <div className="space-y-8">
                 {groupByMonth(recentlyReleased).map(([month, monthItems]) => (
@@ -385,7 +385,7 @@ function EmptyState({
         {icon}
       </div>
       <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-      <p className="mt-2 max-w-md text-sm leading-6 text-white/50">{body}</p>
+      <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">{body}</p>
     </div>
   );
 }

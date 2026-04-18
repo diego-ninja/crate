@@ -30,8 +30,10 @@ export function TopBar() {
 
       <div className="hidden md:block flex-1" />
 
-      <TopBarSearch />
-      <TopBarUserMenu />
+      <div className="flex min-w-0 flex-1 items-center gap-3 md:flex-none md:gap-4 pointer-events-auto">
+        <TopBarSearch />
+        <TopBarUserMenu />
+      </div>
     </div>
   );
 }

@@ -4,7 +4,8 @@ import mutagen
 
 from crate.api._deps import COVER_NAMES, exclude_dirs, extensions, library_path, safe_path
 from crate.audio import get_audio_files, read_tags
-from crate.db import get_db_ctx, get_library_album, get_library_track_count
+from crate.db import get_library_album, get_library_track_count
+from crate.db.queries.browse import find_album_row
 
 import re as _re
 
@@ -208,30 +209,8 @@ def fs_search(q: str) -> dict:
     return {"artists": artists[:20], "albums": albums[:50]}
 
 
-def find_album_row(artist: str, album: str) -> dict | None:
-    """Find album in DB, handling year-prefixed names, clean names, and case differences."""
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s) AND LOWER(name) = LOWER(%s) LIMIT 1",
-            (artist, album),
-        )
-        row = cur.fetchone()
-        if row:
-            return dict(row)
-
-        cur.execute(
-            "SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s) AND name ILIKE %s LIMIT 1",
-            (artist, f"% - {album}"),
-        )
-        row = cur.fetchone()
-        if row:
-            return dict(row)
-
-        cur.execute("SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(%s)", (artist,))
-        for row in cur.fetchall():
-            if display_name(row["name"]) == album:
-                return dict(row)
-    return None
+# find_album_row is imported from crate.db.queries.browse and re-exported
+# for backward compatibility with other modules that import from browse_shared.
 
 
 def find_album_dir(lib: Path, artist: str, album: str) -> Path | None:

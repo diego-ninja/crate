@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 from datetime import date, datetime, timedelta, timezone
 
-from crate.db.core import get_db_ctx
+from sqlalchemy import text
+
+from crate.db.tx import transaction_scope
 from crate.db.releases import get_new_releases
 from crate.db.user_library import (
     get_followed_artists,
@@ -29,26 +31,26 @@ def _coerce_datetime(value: object) -> datetime | None:
         return datetime.combine(value, datetime.min.time(), tzinfo=timezone.utc)
     if not value:
         return None
-    text = str(value).strip()
-    if not text:
+    text_val = str(value).strip()
+    if not text_val:
         return None
     try:
-        if "T" in text:
-            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if "T" in text_val:
+            parsed = datetime.fromisoformat(text_val.replace("Z", "+00:00"))
             if parsed.tzinfo is None:
                 return parsed.replace(tzinfo=timezone.utc)
             return parsed.astimezone(timezone.utc)
-        parsed_date = date.fromisoformat(text)
+        parsed_date = date.fromisoformat(text_val)
         return datetime.combine(parsed_date, datetime.min.time(), tzinfo=timezone.utc)
     except ValueError:
         return None
 
 
 def _trim_bio(value: str, max_length: int = 280) -> str:
-    text = re.sub(r"\s+", " ", (value or "")).strip()
-    if len(text) <= max_length:
-        return text
-    trimmed = text[:max_length].rsplit(" ", 1)[0].strip()
+    text_val = re.sub(r"\s+", " ", (value or "")).strip()
+    if len(text_val) <= max_length:
+        return text_val
+    trimmed = text_val[:max_length].rsplit(" ", 1)[0].strip()
     return f"{trimmed}…"
 
 
@@ -269,11 +271,11 @@ def _select_diverse_tracks_with_backfill(
     return selected
 
 
-def _playlist_artwork_map(cur, playlist_ids: list[int]) -> dict[int, list[dict]]:
+def _playlist_artwork_map(session, playlist_ids: list[int]) -> dict[int, list[dict]]:
     if not playlist_ids:
         return {}
-    cur.execute(
-        """
+    rows = session.execute(
+        text("""
         SELECT
             pt.playlist_id,
             lt.artist,
@@ -293,13 +295,13 @@ def _playlist_artwork_map(cur, playlist_ids: list[int]) -> dict[int, list[dict]]
         ) lt ON TRUE
         LEFT JOIN library_artists art ON art.name = lt.artist
         LEFT JOIN library_albums alb ON alb.id = lt.album_id
-        WHERE pt.playlist_id = ANY(%s) AND lt.id IS NOT NULL
+        WHERE pt.playlist_id = ANY(:playlist_ids) AND lt.id IS NOT NULL
         ORDER BY pt.playlist_id ASC, pt.position ASC
-        """,
-        (playlist_ids,),
-    )
+        """),
+        {"playlist_ids": playlist_ids},
+    ).mappings().all()
     artwork: dict[int, list[dict]] = {}
-    for row in cur.fetchall():
+    for row in rows:
         bucket = artwork.setdefault(row["playlist_id"], [])
         if len(bucket) >= 4:
             continue
@@ -359,9 +361,9 @@ def _build_recently_played(user_id: int, limit: int = 9) -> list[dict]:
             break
 
     recent_playlists: list[dict] = []
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        playlist_rows = [dict(row) for row in session.execute(
+            text("""
             SELECT *
             FROM (
                 SELECT DISTINCT ON (upe.context_playlist_id)
@@ -373,18 +375,17 @@ def _build_recently_played(user_id: int, limit: int = 9) -> list[dict]:
                     upe.ended_at AS played_at
                 FROM user_play_events upe
                 JOIN playlists p ON p.id = upe.context_playlist_id
-                WHERE upe.user_id = %s
+                WHERE upe.user_id = :user_id
                   AND upe.context_playlist_id IS NOT NULL
                 ORDER BY upe.context_playlist_id ASC, upe.ended_at DESC
             ) recent
                 ORDER BY recent.played_at DESC
-                LIMIT %s
-            """,
-            (user_id, target_per_bucket),
-        )
-        playlist_rows = [dict(row) for row in cur.fetchall()]
+                LIMIT :lim
+            """),
+            {"user_id": user_id, "lim": target_per_bucket},
+        ).mappings().all()]
         artwork_map = _playlist_artwork_map(
-            cur,
+            session,
             [row["playlist_id"] for row in playlist_rows if row.get("playlist_id") is not None],
         )
 
@@ -420,9 +421,9 @@ def _get_home_hero(
     similar_target_names_lower: list[str],
     top_genres_lower: list[str],
 ) -> dict | None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows_result = session.execute(
+            text("""
             SELECT
                 la.id,
                 la.slug,
@@ -432,37 +433,34 @@ def _get_home_hero(
                 COALESCE(la.album_count, 0) AS album_count,
                 COALESCE(la.track_count, 0) AS track_count,
                 COALESCE(la.bio, '') AS bio,
-                COUNT(DISTINCT CASE WHEN LOWER(g.name) = ANY(%s) THEN g.name END) AS genre_hits,
-                MAX(CASE WHEN LOWER(sim.similar_name) = ANY(%s) THEN 1 ELSE 0 END) AS similar_hits
+                COUNT(DISTINCT CASE WHEN LOWER(g.name) = ANY(:top_genres) THEN g.name END) AS genre_hits,
+                MAX(CASE WHEN LOWER(sim.similar_name) = ANY(:similar_targets) THEN 1 ELSE 0 END) AS similar_hits
             FROM library_artists la
             LEFT JOIN artist_genres ag ON ag.artist_name = la.name
             LEFT JOIN genres g ON g.id = ag.genre_id
             LEFT JOIN artist_similarities sim ON sim.artist_name = la.name AND sim.in_library = TRUE
             WHERE la.has_photo = 1
               AND COALESCE(la.bio, '') <> ''
-              AND NOT (LOWER(la.name) = ANY(%s))
+              AND NOT (LOWER(la.name) = ANY(:followed))
             GROUP BY la.id, la.slug, la.name, la.listeners, la.lastfm_playcount, la.album_count, la.track_count, la.bio
-            HAVING COUNT(DISTINCT CASE WHEN LOWER(g.name) = ANY(%s) THEN g.name END) > 0
+            HAVING COUNT(DISTINCT CASE WHEN LOWER(g.name) = ANY(:top_genres) THEN g.name END) > 0
             ORDER BY
-                MAX(CASE WHEN LOWER(sim.similar_name) = ANY(%s) THEN 1 ELSE 0 END) DESC,
-                COUNT(DISTINCT CASE WHEN LOWER(g.name) = ANY(%s) THEN g.name END) DESC,
+                MAX(CASE WHEN LOWER(sim.similar_name) = ANY(:similar_targets) THEN 1 ELSE 0 END) DESC,
+                COUNT(DISTINCT CASE WHEN LOWER(g.name) = ANY(:top_genres) THEN g.name END) DESC,
                 COALESCE(la.listeners, 0) DESC,
                 COALESCE(la.lastfm_playcount, 0) DESC
             LIMIT 7
-            """,
-            (
-                top_genres_lower,
-                similar_target_names_lower,
-                followed_names_lower,
-                top_genres_lower,
-                similar_target_names_lower,
-                top_genres_lower,
-            ),
-        )
-        row = cur.fetchone()
-        if not row:
-            cur.execute(
-                """
+            """),
+            {
+                "top_genres": top_genres_lower,
+                "similar_targets": similar_target_names_lower,
+                "followed": followed_names_lower,
+            },
+        ).mappings().all()
+
+        if not rows_result:
+            rows_result = session.execute(
+                text("""
                 SELECT
                     id,
                     slug,
@@ -475,16 +473,14 @@ def _get_home_hero(
                 FROM library_artists
                 WHERE has_photo = 1
                   AND COALESCE(bio, '') <> ''
-                  AND NOT (LOWER(name) = ANY(%s))
+                  AND NOT (LOWER(name) = ANY(:followed))
                 ORDER BY COALESCE(listeners, 0) DESC, COALESCE(lastfm_playcount, 0) DESC
                 LIMIT 7
-                """,
-                (followed_names_lower,),
-            )
-            rows = [dict(item) for item in cur.fetchall()]
-        else:
-            rows = [dict(row)] + [dict(item) for item in cur.fetchall()]
+                """),
+                {"followed": followed_names_lower},
+            ).mappings().all()
 
+    rows = [dict(item) for item in rows_result]
     if not rows:
         return None
 
@@ -496,12 +492,12 @@ def _get_home_hero(
 def _track_candidates_for_album_ids(user_id: int, album_ids: list[int], limit: int = 240) -> list[dict]:
     if not album_ids:
         return []
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 t.id AS track_id,
-                t.storage_id AS track_storage_id,
+                t.storage_id::text AS track_storage_id,
                 t.path AS track_path,
                 t.title,
                 t.artist,
@@ -522,27 +518,27 @@ def _track_candidates_for_album_ids(user_id: int, album_ids: list[int], limit: i
             JOIN library_albums alb ON alb.id = t.album_id
             LEFT JOIN library_artists art ON art.name = t.artist
             LEFT JOIN user_track_stats uts
-              ON uts.user_id = %s
+              ON uts.user_id = :user_id
              AND uts.stat_window = 'all_time'
              AND (
                 uts.track_id = t.id
                 OR (uts.track_id IS NULL AND COALESCE(uts.track_path, '') != '' AND uts.track_path = t.path)
              )
             LEFT JOIN user_liked_tracks ult
-              ON ult.user_id = %s
+              ON ult.user_id = :user_id
              AND ult.track_id = t.id
-            WHERE t.album_id = ANY(%s)
+            WHERE t.album_id = ANY(:album_ids)
             ORDER BY
                 COALESCE(uts.play_count, 0) ASC,
                 CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END ASC,
                 COALESCE(t.lastfm_playcount, 0) DESC,
                 COALESCE(t.track_number, 9999) ASC,
                 t.title ASC
-            LIMIT %s
-            """,
-            (user_id, user_id, album_ids, limit),
-        )
-        return [dict(row) for row in cur.fetchall()]
+            LIMIT :lim
+            """),
+            {"user_id": user_id, "album_ids": album_ids, "lim": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def _query_discovery_tracks(
@@ -554,15 +550,13 @@ def _query_discovery_tracks(
 ) -> list[dict]:
     if not genres:
         return []
-    # Expand genre terms to include all known aliases so we match
-    # library tags like "hc" → "hardcore punk", "alt rock" → "alternative", etc.
     genres = expand_genre_terms_with_aliases(genres)
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 t.id AS track_id,
-                t.storage_id AS track_storage_id,
+                t.storage_id::text AS track_storage_id,
                 t.path AS track_path,
                 t.title,
                 t.artist,
@@ -585,14 +579,14 @@ def _query_discovery_tracks(
             LEFT JOIN library_albums alb ON alb.id = t.album_id
             LEFT JOIN library_artists art ON art.name = t.artist
             LEFT JOIN user_track_stats uts
-              ON uts.user_id = %s
+              ON uts.user_id = :user_id
              AND uts.stat_window = 'all_time'
              AND (
                 uts.track_id = t.id
                 OR (uts.track_id IS NULL AND COALESCE(uts.track_path, '') != '' AND uts.track_path = t.path)
              )
             LEFT JOIN user_liked_tracks ult
-              ON ult.user_id = %s
+              ON ult.user_id = :user_id
              AND ult.track_id = t.id
             LEFT JOIN LATERAL (
                 SELECT COUNT(DISTINCT matched.genre_name)::INTEGER AS genre_hits
@@ -601,7 +595,7 @@ def _query_discovery_tracks(
                     FROM artist_genres ag
                     JOIN genres g_artist ON g_artist.id = ag.genre_id
                     WHERE ag.artist_name = t.artist
-                      AND LOWER(g_artist.name) = ANY(%s)
+                      AND LOWER(g_artist.name) = ANY(:genres)
 
                     UNION
 
@@ -609,17 +603,17 @@ def _query_discovery_tracks(
                     FROM album_genres alg
                     JOIN genres g_album ON g_album.id = alg.genre_id
                     WHERE alg.album_id = t.album_id
-                      AND LOWER(g_album.name) = ANY(%s)
+                      AND LOWER(g_album.name) = ANY(:genres)
 
                     UNION
 
                     SELECT BTRIM(track_genre.genre_name) AS genre_name
-                    FROM regexp_split_to_table(LOWER(COALESCE(t.genre, '')), '\s*,\s*') AS track_genre(genre_name)
-                    WHERE BTRIM(track_genre.genre_name) = ANY(%s)
+                    FROM regexp_split_to_table(LOWER(COALESCE(t.genre, '')), E'\\s*,\\s*') AS track_genre(genre_name)
+                    WHERE BTRIM(track_genre.genre_name) = ANY(:genres)
                 ) matched
             ) genre_match ON TRUE
             WHERE genre_match.genre_hits > 0
-              AND NOT (LOWER(t.artist) = ANY(%s))
+              AND NOT (LOWER(t.artist) = ANY(:excluded))
             ORDER BY
                 COALESCE(uts.play_count, 0) ASC,
                 CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END ASC,
@@ -627,11 +621,11 @@ def _query_discovery_tracks(
                 COALESCE(art.listeners, 0) DESC,
                 COALESCE(t.lastfm_playcount, 0) DESC,
                 t.title ASC
-            LIMIT %s
-            """,
-            (user_id, user_id, genres, genres, genres, excluded_artist_names, limit),
-        )
-        return [dict(row) for row in cur.fetchall()]
+            LIMIT :lim
+            """),
+            {"user_id": user_id, "genres": genres, "excluded": excluded_artist_names, "lim": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def _filter_interesting_releases(
@@ -668,12 +662,12 @@ def _filter_interesting_releases(
 def _fallback_recent_interest_tracks(user_id: int, interest_artists_lower: list[str], limit: int = 240) -> list[dict]:
     if not interest_artists_lower:
         return []
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 t.id AS track_id,
-                t.storage_id AS track_storage_id,
+                t.storage_id::text AS track_storage_id,
                 t.path AS track_path,
                 t.title,
                 t.artist,
@@ -694,27 +688,27 @@ def _fallback_recent_interest_tracks(user_id: int, interest_artists_lower: list[
             JOIN library_albums alb ON alb.id = t.album_id
             LEFT JOIN library_artists art ON art.name = t.artist
             LEFT JOIN user_track_stats uts
-              ON uts.user_id = %s
+              ON uts.user_id = :user_id
              AND uts.stat_window = 'all_time'
              AND (
                 uts.track_id = t.id
                 OR (uts.track_id IS NULL AND COALESCE(uts.track_path, '') != '' AND uts.track_path = t.path)
              )
             LEFT JOIN user_liked_tracks ult
-              ON ult.user_id = %s
+              ON ult.user_id = :user_id
              AND ult.track_id = t.id
-            WHERE LOWER(t.artist) = ANY(%s)
+            WHERE LOWER(t.artist) = ANY(:artists)
             ORDER BY
                 COALESCE(uts.play_count, 0) ASC,
                 CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END ASC,
                 alb.updated_at DESC NULLS LAST,
                 COALESCE(t.lastfm_playcount, 0) DESC,
                 COALESCE(t.track_number, 9999) ASC
-            LIMIT %s
-            """,
-            (user_id, user_id, interest_artists_lower, limit),
-        )
-        return [dict(row) for row in cur.fetchall()]
+            LIMIT :lim
+            """),
+            {"user_id": user_id, "artists": interest_artists_lower, "lim": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def _build_mix_rows(
@@ -819,12 +813,12 @@ def _build_artist_core_rows(
     artist_name: str,
     limit: int,
 ) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
             SELECT
                 t.id AS track_id,
-                t.storage_id AS track_storage_id,
+                t.storage_id::text AS track_storage_id,
                 t.path AS track_path,
                 t.title,
                 t.artist,
@@ -847,16 +841,16 @@ def _build_artist_core_rows(
             LEFT JOIN library_albums alb ON alb.id = t.album_id
             LEFT JOIN library_artists art ON art.name = t.artist
             LEFT JOIN user_track_stats uts
-              ON uts.user_id = %s
+              ON uts.user_id = :user_id
              AND uts.stat_window = 'all_time'
              AND (
                 uts.track_id = t.id
                 OR (uts.track_id IS NULL AND COALESCE(uts.track_path, '') != '' AND uts.track_path = t.path)
              )
             LEFT JOIN user_liked_tracks ult
-              ON ult.user_id = %s
+              ON ult.user_id = :user_id
              AND ult.track_id = t.id
-            WHERE art.id = %s OR (art.id IS NULL AND t.artist = %s)
+            WHERE art.id = :artist_id OR (art.id IS NULL AND t.artist = :artist_name)
             ORDER BY
                 COALESCE(uts.play_count, 0) DESC,
                 CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END DESC,
@@ -864,26 +858,22 @@ def _build_artist_core_rows(
                 COALESCE(alb.year, '') DESC,
                 COALESCE(t.track_number, 9999) ASC,
                 t.title ASC
-            LIMIT %s
-            """,
-            (user_id, user_id, artist_id, artist_name, max(limit * 5, 80)),
-        )
-        rows = [dict(row) for row in cur.fetchall()]
+            LIMIT :lim
+            """),
+            {"user_id": user_id, "artist_id": artist_id,
+             "artist_name": artist_name, "lim": max(limit * 5, 80)},
+        ).mappings().all()
+        rows = [dict(row) for row in rows]
 
     return _select_diverse_tracks_with_backfill(rows, limit=limit, max_per_artist=limit, max_per_album=2)
 
 
 def _get_library_artist(artist_id: int) -> dict | None:
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT id, slug, name
-            FROM library_artists
-            WHERE id = %s
-            """,
-            (artist_id,),
-        )
-        row = cur.fetchone()
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT id, slug, name FROM library_artists WHERE id = :id"),
+            {"id": artist_id},
+        ).mappings().first()
     return dict(row) if row else None
 
 
@@ -916,19 +906,18 @@ def _get_home_context(
     followed_names_lower = [(row.get("artist_name") or "").lower() for row in followed if row.get("artist_name")]
     top_artist_names_lower = [(row.get("artist_name") or "").lower() for row in top_artists if row.get("artist_name")]
     interest_artists_lower = list(dict.fromkeys(top_artist_names_lower + followed_names_lower))
-    saved_album_ids = {row["id"] for row in saved_albums if row.get("id") is not None}
+    saved_album_ids = list({row["id"] for row in saved_albums if row.get("id") is not None})
     fallback_genre_names: list[str] = []
     if followed_names_lower:
-        with get_db_ctx() as cur:
-            placeholders = ",".join(["%s"] * len(followed_names_lower))
-            cur.execute(
-                f"""SELECT g.name, COUNT(*) AS cnt
+        with transaction_scope() as session:
+            rows = session.execute(
+                text("""SELECT g.name, COUNT(*) AS cnt
                     FROM artist_genres ag JOIN genres g ON g.id = ag.genre_id
-                    WHERE LOWER(ag.artist_name) IN ({placeholders})
-                    GROUP BY g.name ORDER BY cnt DESC LIMIT %s""",
-                followed_names_lower + [top_genre_limit],
-            )
-            fallback_genre_names = [row["name"].lower() for row in cur.fetchall()]
+                    WHERE LOWER(ag.artist_name) = ANY(:names)
+                    GROUP BY g.name ORDER BY cnt DESC LIMIT :lim"""),
+                {"names": followed_names_lower, "lim": top_genre_limit},
+            ).mappings().all()
+            fallback_genre_names = [row["name"].lower() for row in rows]
     top_genres_lower, mix_seed_genres = _derive_home_genres(top_genres, fallback_genre_names, top_genre_limit)
 
     return {
@@ -1123,15 +1112,14 @@ def get_home_mix(user_id: int, mix_id: str, limit: int = 40) -> dict | None:
     followed_lower = [r["artist_name"].lower() for r in followed if r.get("artist_name")]
     fallback_genre_names: list[str] = []
     if followed_lower:
-        with get_db_ctx() as cur:
-            placeholders = ",".join(["%s"] * len(followed_lower))
-            cur.execute(
-                f"""SELECT g.name FROM artist_genres ag JOIN genres g ON g.id = ag.genre_id
-                    WHERE LOWER(ag.artist_name) IN ({placeholders})
-                    GROUP BY g.name ORDER BY COUNT(*) DESC LIMIT 8""",
-                followed_lower,
-            )
-            fallback_genre_names = [row["name"].lower() for row in cur.fetchall()]
+        with transaction_scope() as session:
+            rows = session.execute(
+                text("""SELECT g.name FROM artist_genres ag JOIN genres g ON g.id = ag.genre_id
+                    WHERE LOWER(ag.artist_name) = ANY(:names)
+                    GROUP BY g.name ORDER BY COUNT(*) DESC LIMIT 8"""),
+                {"names": followed_lower},
+            ).mappings().all()
+            fallback_genre_names = [row["name"].lower() for row in rows]
     top_genres_lower, _ = _derive_home_genres(top_genres, fallback_genre_names, 8)
 
     name, description, rows = _build_mix_rows(
@@ -1199,8 +1187,118 @@ def get_home_playlist(user_id: int, playlist_id: str, limit: int = 40) -> dict |
     }
 
 
+def _get_cached_home_context(
+    user_id: int,
+    *,
+    top_artist_limit: int = 28,
+    top_album_limit: int = 12,
+    top_genre_limit: int = 8,
+) -> dict:
+    cache_key = f"home:context:{user_id}"
+    from crate.db.cache import get_cache, set_cache
+    cached = get_cache(cache_key, max_age_seconds=120)
+    if cached:
+        return cached
+    ctx = _get_home_context(
+        user_id,
+        top_artist_limit=top_artist_limit,
+        top_album_limit=top_album_limit,
+        top_genre_limit=top_genre_limit,
+    )
+    set_cache(cache_key, ctx, ttl=120)
+    return ctx
+
+
+def _merged_artists_from_context(context: dict) -> list[dict]:
+    top_artists = context["top_artists"]
+    followed = context["followed"]
+    seen_artist_ids = {row.get("artist_id") for row in top_artists if row.get("artist_id") is not None}
+    merged = list(top_artists)
+    for row in followed:
+        aid = row.get("artist_id")
+        if aid is not None and aid not in seen_artist_ids:
+            merged.append({
+                "artist_id": aid,
+                "artist_slug": row.get("artist_slug"),
+                "artist_name": row.get("artist_name") or "",
+                "play_count": 0,
+                "minutes_listened": 0,
+            })
+            seen_artist_ids.add(aid)
+    return merged
+
+
+def _recent_releases_from_context(context: dict) -> list[dict]:
+    return _filter_interesting_releases(
+        get_new_releases(limit=250),
+        interest_artists_lower=set(context["interest_artists_lower"]),
+        saved_album_ids=set(context["saved_album_ids"]),
+        days=240,
+    )
+
+
+def get_home_hero(user_id: int) -> dict | None:
+    ctx = _get_cached_home_context(user_id)
+    return _get_home_hero(
+        user_id,
+        ctx["followed_names_lower"],
+        ctx["top_artist_names_lower"][:8],
+        ctx["top_genres_lower"][:4],
+    )
+
+
+def get_home_recently_played(user_id: int) -> list[dict]:
+    return _build_recently_played(user_id, limit=18)
+
+
+def get_home_mixes(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    return _build_custom_mix_summaries(
+        user_id,
+        mix_seed_genres=ctx["mix_seed_genres"],
+        mix_count=8,
+        track_limit=36,
+    )
+
+
+def get_home_suggested_albums(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    recent_releases = _recent_releases_from_context(ctx)
+    return _build_suggested_albums(recent_releases, 14)
+
+
+def get_home_recommended_tracks(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    recent_releases = _recent_releases_from_context(ctx)
+    rows = _build_recommended_tracks(
+        user_id,
+        recent_releases=recent_releases,
+        interest_artists_lower=ctx["interest_artists_lower"],
+        limit=18,
+    )
+    return [_track_payload(row) for row in rows]
+
+
+def get_home_radio_stations(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    merged = _merged_artists_from_context(ctx)
+    return _build_radio_stations(merged, ctx["top_albums"], 14)
+
+
+def get_home_favorite_artists(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    merged = _merged_artists_from_context(ctx)
+    return _build_favorite_artists(merged, 14)
+
+
+def get_home_essentials(user_id: int) -> list[dict]:
+    ctx = _get_cached_home_context(user_id)
+    merged = _merged_artists_from_context(ctx)
+    return _build_core_playlists(user_id, merged, 14, track_limit=18)
+
+
 def get_home_discovery(user_id: int) -> dict:
-    context = _get_home_context(user_id, top_artist_limit=28, top_album_limit=12, top_genre_limit=8)
+    context = _get_cached_home_context(user_id, top_artist_limit=28, top_album_limit=12, top_genre_limit=8)
     top_artists = context["top_artists"]
     top_albums = context["top_albums"]
     followed_names_lower = context["followed_names_lower"]
@@ -1214,7 +1312,7 @@ def get_home_discovery(user_id: int) -> dict:
     recent_releases = _filter_interesting_releases(
         get_new_releases(limit=250),
         interest_artists_lower=set(interest_artists_lower),
-        saved_album_ids=context["saved_album_ids"],
+        saved_album_ids=set(context["saved_album_ids"]),
         days=240,
     )
 
@@ -1231,21 +1329,7 @@ def get_home_discovery(user_id: int) -> dict:
         mix_count=8,
         track_limit=36,
     )
-    # Merge top_artists + followed for sections that show user's artists
-    followed = context["followed"]
-    seen_artist_ids = {row.get("artist_id") for row in top_artists if row.get("artist_id") is not None}
-    merged_artists = list(top_artists)
-    for row in followed:
-        aid = row.get("artist_id")
-        if aid is not None and aid not in seen_artist_ids:
-            merged_artists.append({
-                "artist_id": aid,
-                "artist_slug": row.get("artist_slug"),
-                "artist_name": row.get("artist_name") or "",
-                "play_count": 0,
-                "minutes_listened": 0,
-            })
-            seen_artist_ids.add(aid)
+    merged_artists = _merged_artists_from_context(context)
 
     radio_stations = _build_radio_stations(merged_artists, top_albums, 14)
     favorite_artists = _build_favorite_artists(merged_artists, 14)
@@ -1278,7 +1362,7 @@ def get_home_section(user_id: int, section_id: str, limit: int = 42) -> dict | N
     recent_releases = _filter_interesting_releases(
         get_new_releases(limit=max(limit * 8, 250)),
         interest_artists_lower=set(interest_artists_lower),
-        saved_album_ids=context["saved_album_ids"],
+        saved_album_ids=set(context["saved_album_ids"]),
         days=240,
     )
 

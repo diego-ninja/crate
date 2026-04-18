@@ -1,4 +1,4 @@
-import { apiUrl, getAuthToken } from "@/lib/api";
+import { getApiBase, getAuthToken } from "@/lib/api";
 import { isNative } from "@/lib/capacitor";
 
 // ── Cache Store ────────────────────────────────────────────────
@@ -12,11 +12,28 @@ interface CacheEntry<T = unknown> {
 const STORAGE_KEY = "crate-api-cache";
 const memoryCache = new Map<string, CacheEntry>();
 
-/** Scope tags for API URLs — determines what invalidation events affect which cache entries. */
-function scopesForUrl(url: string): string[] {
+/** Safety-net TTL for localStorage entries. Data older than this is
+ *  discarded on retrieval even if no invalidation event was missed.
+ *  24 hours is generous — scope-based invalidation should clear it
+ *  much sooner in practice. */
+const LOCALSTORAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** Scope tags for API URLs — determines what invalidation events
+ *  affect which cache entries. Every URL that goes through useApi
+ *  should be covered here; unmapped URLs won't invalidate. */
+export function scopesForUrl(url: string): string[] {
   const scopes: string[] = [];
 
-  // Home — depends on follows, likes, history, library
+  // Home — per-section scopes
+  if (url === "/api/me/home/hero") return ["home", "library", "follows"];
+  if (url === "/api/me/home/recently-played") return ["home", "history"];
+  if (url === "/api/me/home/mixes") return ["home", "library"];
+  if (url === "/api/me/home/suggested-albums") return ["home", "library"];
+  if (url === "/api/me/home/recommended-tracks") return ["home", "library", "history"];
+  if (url === "/api/me/home/radio-stations") return ["home", "follows"];
+  if (url === "/api/me/home/favorite-artists") return ["home", "follows", "history"];
+  if (url === "/api/me/home/essentials") return ["home", "follows"];
+  // Home sections (compat / other home endpoints)
   if (url.startsWith("/api/me/home")) {
     scopes.push("home", "follows", "likes", "history", "library");
   }
@@ -36,11 +53,11 @@ function scopesForUrl(url: string): string[] {
   }
   // Curation
   else if (url.startsWith("/api/curation")) scopes.push("curation");
-  // Artist detail
+  // Artist detail — also invalidates on follows (follow button state)
   else if (url.match(/^\/api\/artists\/\d+/)) {
     const m = url.match(/^\/api\/artists\/(\d+)/);
     if (m) scopes.push(`artist:${m[1]}`);
-    scopes.push("library");
+    scopes.push("library", "follows");
   }
   // Album detail
   else if (url.match(/^\/api\/albums\/\d+/)) {
@@ -52,26 +69,33 @@ function scopesForUrl(url: string): string[] {
   else if (url.startsWith("/api/artists")) scopes.push("library");
   else if (url.startsWith("/api/albums")) scopes.push("library");
   // Search, browse, genres
+  else if (url.startsWith("/api/search")) scopes.push("library");
   else if (url.startsWith("/api/browse")) scopes.push("library");
   else if (url.startsWith("/api/genres")) scopes.push("library");
   // Radio
   else if (url.startsWith("/api/radio")) scopes.push("library");
   // Shows
   else if (url.startsWith("/api/shows")) scopes.push("shows");
+  else if (url.startsWith("/api/upcoming")) scopes.push("upcoming");
 
   return scopes;
 }
 
-/** Get cached data for a URL. Returns null if not cached. */
+/** Get cached data for a URL. Returns null if not cached or expired. */
 export function cacheGet<T>(url: string): T | null {
   const entry = memoryCache.get(url);
   if (entry) return entry.data as T;
 
-  // Fallback to localStorage
+  // Fallback to localStorage with TTL check
   try {
     const raw = localStorage.getItem(`${STORAGE_KEY}:${url}`);
     if (raw) {
       const parsed: CacheEntry<T> = JSON.parse(raw);
+      // Discard entries older than the safety-net TTL
+      if (Date.now() - parsed.timestamp > LOCALSTORAGE_MAX_AGE_MS) {
+        localStorage.removeItem(`${STORAGE_KEY}:${url}`);
+        return null;
+      }
       memoryCache.set(url, parsed);
       return parsed.data;
     }
@@ -86,11 +110,9 @@ export function cacheSet<T>(url: string, data: T): void {
   const entry: CacheEntry<T> = { data, timestamp: Date.now(), scopes };
   memoryCache.set(url, entry);
 
-  // Persist to localStorage (async, non-blocking)
   try {
     localStorage.setItem(`${STORAGE_KEY}:${url}`, JSON.stringify(entry));
   } catch {
-    // Storage full — evict oldest entries
     _evictOldest(5);
     try {
       localStorage.setItem(`${STORAGE_KEY}:${url}`, JSON.stringify(entry));
@@ -144,23 +166,23 @@ export function onCacheInvalidation(fn: (scope: string) => void): () => void {
   return () => invalidationListeners.delete(fn);
 }
 
-/** Connect to the SSE cache invalidation stream. Call once at app startup. */
+/** Connect to the SSE cache invalidation stream. Call once at app startup.
+ *
+ *  The SSE stream carries event IDs (``id: N``). On reconnect, the
+ *  browser sends ``Last-Event-ID: N`` automatically, and the server
+ *  replays everything the client missed. No custom reconnection
+ *  logic needed — EventSource handles it. */
 export function connectCacheEvents(): () => void {
   if (eventSource) return () => {};
 
-  const base = isNative ? (import.meta.env.VITE_API_URL || "") : "";
-  const token = getAuthToken();
+  const base = getApiBase();
+  const token = isNative ? getAuthToken() : null;
   const url = token
     ? `${base}/api/cache/events?token=${encodeURIComponent(token)}`
     : `${base}/api/cache/events`;
 
   try {
-    eventSource = new EventSource(apiUrl("/api/cache/events"));
-    // For native, EventSource doesn't send cookies — use token URL
-    if (isNative && token) {
-      eventSource.close();
-      eventSource = new EventSource(url);
-    }
+    eventSource = new EventSource(url, { withCredentials: !isNative });
 
     eventSource.onmessage = (event) => {
       const scope = event.data?.trim();
@@ -172,7 +194,7 @@ export function connectCacheEvents(): () => void {
     };
 
     eventSource.onerror = () => {
-      // EventSource auto-reconnects. Just log.
+      // EventSource auto-reconnects with Last-Event-ID. Just log.
       console.debug("[cache] SSE connection lost, reconnecting...");
     };
   } catch {

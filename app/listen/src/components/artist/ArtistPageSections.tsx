@@ -3,7 +3,8 @@ import { useNavigate } from "react-router";
 
 import { AlbumCard } from "@/components/cards/AlbumCard";
 import { ArtistCard } from "@/components/cards/ArtistCard";
-import { TrackRow } from "@/components/cards/TrackRow";
+import { useMemo } from "react";
+import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import {
   buildArtistAlbumCover,
   buildArtistPhotoUrl,
@@ -27,6 +28,19 @@ export function ArtistTopTracksSection({
   coverFallback,
 }: ArtistTopTracksSectionProps) {
   const navigate = useNavigate();
+  const trackRows = useMemo<TrackRowData[]>(() =>
+    tracks.map((track) => ({
+      id: track.id,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      album_id: track.album_id,
+      album_slug: track.album_slug,
+      duration: track.duration,
+      path: track.id.includes("/") ? track.id : undefined,
+    })),
+    [tracks],
+  );
   if (!tracks.length) return null;
 
   return (
@@ -44,20 +58,14 @@ export function ArtistTopTracksSection({
         {tracks.map((track, index) => (
           <TrackRow
             key={`${track.id}-${index}`}
-            track={{
-              id: track.id,
-              title: track.title,
-              artist: track.artist,
-              album: track.album,
-              duration: track.duration,
-              path: track.id.includes("/") ? track.id : undefined,
-            }}
+            track={trackRows[index]!}
             index={track.track || index + 1}
             showAlbum
             albumCover={track.album_id
               ? buildArtistAlbumCover(track.artist, track.album, track.album_id, track.album_slug)
               : coverFallback}
             showCoverThumb
+            queueTracks={trackRows}
           />
         ))}
       </div>

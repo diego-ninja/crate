@@ -68,7 +68,9 @@ This is one of the most important architectural choices in the project.
 
 - inserts a row into `tasks`
 - derives queue, priority, max duration, and retries from `TASK_POOL_CONFIG`
-- optionally dispatches to Dramatiq immediately
+- if `dispatch=True`, schedules Dramatiq dispatch only after the surrounding transaction commits
+- can participate in a larger transaction by reusing a caller-provided DB session
+- `dispatch=False` persists the task row without sending an actor message
 
 ### Execution
 
@@ -201,6 +203,8 @@ Separate background daemons in the worker handle throughput-oriented analysis fl
 - bliss daemon
 
 These are conceptually different from request-triggered jobs. They let Crate absorb newly indexed content and background resets without requiring every analysis step to run synchronously inside one monolithic task.
+
+[app/crate/analysis_daemon.py](https://github.com/diego-ninja/crate/blob/main/app/crate/analysis_daemon.py) is intentionally thin orchestration. Claim/reset/status logic and Bliss vector writes live in [app/crate/db/jobs/analysis.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/jobs/analysis.py), where the system keeps the atomic SQL patterns that make per-track claiming and recovery safe.
 
 ## Import queue
 

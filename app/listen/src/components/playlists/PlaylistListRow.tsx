@@ -5,11 +5,14 @@ import { toast } from "sonner";
 
 import { ItemActionMenu, ItemActionMenuButton, type ItemActionMenuEntry, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { usePlaylistActionEntries } from "@/components/actions/playlist-actions";
+import { OfflineBadge } from "@/components/offline/OfflineBadge";
+import { useOffline } from "@/contexts/OfflineContext";
 import { api } from "@/lib/api";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
-import { shuffleArray } from "@/lib/utils";
+import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
+import { cn, shuffleArray } from "@/lib/utils";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 
 interface PlaylistTrackResponse {
@@ -32,6 +35,7 @@ interface PlaylistDetailResponse {
 interface PlaylistListRowProps {
   playlistId?: number;
   name: string;
+  isSmart?: boolean;
   description?: string;
   coverDataUrl?: string | null;
   artworkTracks?: PlaylistArtworkTrack[];
@@ -77,6 +81,7 @@ function toPlayerTracks(tracks: PlaylistTrackResponse[]): Track[] {
 export function PlaylistListRow({
   playlistId,
   name,
+  isSmart = false,
   description,
   coverDataUrl,
   artworkTracks,
@@ -90,8 +95,19 @@ export function PlaylistListRow({
 }: PlaylistListRowProps) {
   const navigate = useNavigate();
   const { playAll } = usePlayerActions();
+  const { getPlaylistState, getPlaylistRecord } = useOffline();
   const [playingMode, setPlayingMode] = useState<"play" | "shuffle" | null>(null);
   const [togglingFollow, setTogglingFollow] = useState(false);
+  const offlineState = getPlaylistState(playlistId);
+  const offlineRecord = getPlaylistRecord(playlistId);
+  const offlineMeta =
+    offlineState === "ready"
+      ? offlineRecord?.trackCount
+        ? `${offlineRecord.trackCount} offline`
+        : getOfflineStateLabel(offlineState)
+      : isOfflineBusy(offlineState) && offlineRecord?.trackCount
+        ? `${Math.min(offlineRecord.readyTrackCount || 0, offlineRecord.trackCount)}/${offlineRecord.trackCount} offline`
+        : getOfflineStateLabel(offlineState);
 
   const loadAndPlay = useCallback(async (mode: "play" | "shuffle") => {
     setPlayingMode(mode);
@@ -118,6 +134,7 @@ export function PlaylistListRow({
   const baseActions = usePlaylistActionEntries({
     playlistId,
     name,
+    isSmart,
     href,
     canFollow: Boolean(followState),
     isFollowed: followState?.isFollowed,
@@ -167,13 +184,22 @@ export function PlaylistListRow({
           navigate(href);
         }
       }}
-      className="flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
+        offlineState === "ready"
+          ? "bg-cyan-400/[0.04] hover:bg-cyan-400/[0.08] focus-visible:bg-cyan-400/[0.08]"
+          : isOfflineBusy(offlineState)
+            ? "bg-primary/[0.05] hover:bg-primary/[0.09] focus-visible:bg-primary/[0.09]"
+            : offlineState === "error"
+              ? "bg-amber-400/[0.05] hover:bg-amber-400/[0.09] focus-visible:bg-amber-400/[0.09]"
+              : "hover:bg-white/5 focus-visible:bg-white/5",
+      )}
     >
       <PlaylistArtwork
         name={name}
         coverDataUrl={coverDataUrl}
         tracks={artworkTracks}
-        className="h-12 w-12 flex-shrink-0 rounded-lg"
+        className="h-12 w-12 flex-shrink-0 rounded-md"
       />
 
       <div className="min-w-0 flex-1">
@@ -185,12 +211,29 @@ export function PlaylistListRow({
               {badgeLabel}
             </span>
           ) : null}
+          <OfflineBadge state={offlineState} compact />
         </div>
         <div className="truncate text-xs text-muted-foreground">
           {trackCount} track{trackCount !== 1 ? "s" : ""}
           {meta ? ` · ${meta}` : ""}
+          {offlineMeta ? (
+            <span
+              className={cn(
+                "ml-1.5",
+                offlineState === "ready"
+                  ? "text-cyan-300/90"
+                  : isOfflineBusy(offlineState)
+                    ? "text-primary"
+                    : offlineState === "error"
+                      ? "text-amber-300/90"
+                      : undefined,
+              )}
+            >
+              · {offlineMeta}
+            </span>
+          ) : null}
         </div>
-        {description ? <div className="mt-1 truncate text-[11px] text-white/35">{description}</div> : null}
+        {description ? <div className="mt-1 truncate text-[11px] text-white/40">{description}</div> : null}
       </div>
 
       <div className="flex shrink-0 items-center gap-1">

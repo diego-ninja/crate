@@ -495,11 +495,17 @@ export function Artist() {
         variant="destructive"
         onConfirm={async () => {
           try {
-            await api(`/api/manage/artists/${data!.id}/delete`, "POST", { mode: "full" });
-            toast.success(`Artist ${data!.name} deleted`);
+            await api<{ task_id: string }>(`/api/manage/artists/${data!.id}/delete`, "POST", { mode: "full" });
+            toast.success(`Deletion queued for ${data!.name}`, {
+              description: "The worker will delete the artist in the background.",
+            });
             window.location.href = "/browse";
-          } catch {
-            toast.error("Failed to delete artist");
+          } catch (error) {
+            const message =
+              error instanceof Error && error.message
+                ? error.message
+                : "Failed to queue artist deletion";
+            toast.error(message);
           }
         }}
       />

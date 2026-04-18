@@ -73,7 +73,7 @@ export function ServersSection() {
         <Server size={16} className="text-cyan-400" />
         <h2 className="text-sm font-semibold text-foreground">Servers</h2>
       </div>
-      <p className="mb-4 text-[12px] text-white/45">
+      <p className="mb-4 text-[12px] text-muted-foreground">
         Crate servers this app can talk to. Switching drops you back to the login screen for the new host.
       </p>
 
@@ -106,13 +106,13 @@ export function ServersSection() {
                     </span>
                   ) : null}
                 </div>
-                <div className="text-[11px] text-white/45">{server.url}</div>
+                <div className="text-[11px] text-muted-foreground">{server.url}</div>
               </button>
               <button
                 type="button"
                 onClick={() => handleRemove(server)}
                 aria-label={`Remove ${server.label}`}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 text-white/55 transition hover:border-rose-400/40 hover:bg-rose-400/10 hover:text-rose-200"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 text-muted-foreground transition hover:border-rose-400/40 hover:bg-rose-400/10 hover:text-rose-200"
               >
                 <Trash2 size={14} />
               </button>

@@ -54,7 +54,7 @@ export function ArtistCard({
   const actionMenu = useItemActionMenu(actions, { disabled: external || artistId == null });
   const imageSize = compact ? 100 : large ? 156 : 140;
   const wrapperClassName = cn(
-    "group snap-start cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-lg",
+    "group snap-start cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-xl",
     layout === "grid"
       ? "w-full min-w-0"
       : `flex-shrink-0 ${compact ? "w-[100px]" : large ? "w-[156px]" : "w-[140px]"}`,

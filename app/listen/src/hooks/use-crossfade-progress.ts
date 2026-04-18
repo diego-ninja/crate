@@ -36,34 +36,32 @@ export function useCrossfadeProgress(transition: CrossfadeTransition | null): nu
 }
 
 /**
- * During a crossfade, keep the progress bar on the OUTGOING track
- * sliding linearly from `duration - crossfadeSec` toward `duration`.
- * Without this trick the bar would snap from "near end of outgoing" to
- * "0:00 of incoming" the instant Gapless fires onnext, even though the
- * outgoing is still audible. This makes the audio crossfade feel
- * coherent with the visual.
- *
- * Outside a crossfade, returns the live values unchanged.
+ * The player UI still crossfades artwork/title, but the seek bar and
+ * time labels should always reflect the currently active track. The old
+ * "show the tail of the outgoing song" trick made sense when progress
+ * was visually fused with the crossfade treatment, but it becomes
+ * confusing with a normal seek bar because the incoming track appears to
+ * start near its end and then jump backwards.
  */
+export function getCrossfadeAwareProgress(
+  _transition: CrossfadeTransition | null,
+  liveCurrentTime: number,
+  liveDuration: number,
+): { displayedTime: number; displayedDuration: number } {
+  return {
+    displayedTime: liveCurrentTime,
+    displayedDuration: liveDuration,
+  };
+}
+
 export function useCrossfadeAwareProgress(
   transition: CrossfadeTransition | null,
   liveCurrentTime: number,
   liveDuration: number,
 ): { displayedTime: number; displayedDuration: number } {
-  const progress = useCrossfadeProgress(transition);
-
-  if (!transition) {
-    return { displayedTime: liveCurrentTime, displayedDuration: liveDuration };
-  }
-
-  const crossfadeSec = transition.durationMs / 1000;
-  const outDuration = transition.outgoingDurationSeconds;
-  // Map progress 0..1 → outDuration - crossfadeSec .. outDuration.
-  const startTime = Math.max(0, outDuration - crossfadeSec);
-  const displayedTime = startTime + progress * (outDuration - startTime);
-
-  return {
-    displayedTime,
-    displayedDuration: outDuration,
-  };
+  // Keep the same internal hook shape as before so Fast Refresh does
+  // not see a different hook order in PlayerBar / FullscreenPlayer when
+  // this helper changes behavior.
+  useCrossfadeProgress(transition);
+  return getCrossfadeAwareProgress(transition, liveCurrentTime, liveDuration);
 }

@@ -1,15 +1,18 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ArrowLeft, Heart, Loader2, Play, Radio, Shuffle, Share2, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowDownToLine, CheckCircle2, Heart, Loader2, Play, Radio, Shuffle, Share2, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { TrackRow } from "@/components/cards/TrackRow";
+import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { PlaylistTrackFilterBar, filterPlaylistTracks } from "@/components/playlists/PlaylistTrackFilterBar";
+import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
+import { isOfflineBusy } from "@/lib/offline";
 import { fetchPlaylistRadio } from "@/lib/radio";
 import { shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumCoverApiUrl } from "@/lib/library-routes";
@@ -56,6 +59,7 @@ export function CuratedPlaylist() {
   const { id } = useParams<{ id: string }>();
   const { playAll } = usePlayerActions();
   const { openCreatePlaylist } = usePlaylistComposer();
+  const { supported: offlineSupported, getPlaylistState, getPlaylistRecord, togglePlaylistOffline } = useOffline();
   const { data, loading, refetch } = useApi<CuratedPlaylistData>(
     id ? `/api/curation/playlists/${id}` : null,
   );
@@ -97,7 +101,20 @@ export function CuratedPlaylist() {
     playAll(playerTracks, 0, {
       type: "playlist",
       name: data?.name || "Playlist",
+      href: data ? `/curation/playlists/${data.id}` : undefined,
       radio: data ? { seedType: "playlist", seedId: data.id } : undefined,
+    });
+  }
+
+  function handlePlayTrack(trackEntryId: number) {
+    if (!data || playerTracks.length === 0) return;
+    const startIndex = data.tracks.findIndex((track) => track.id === trackEntryId);
+    if (startIndex < 0) return;
+    playAll(playerTracks, startIndex, {
+      type: "playlist",
+      name: data.name || "Playlist",
+      href: `/curation/playlists/${data.id}`,
+      radio: { seedType: "playlist", seedId: data.id },
     });
   }
 
@@ -106,6 +123,7 @@ export function CuratedPlaylist() {
     playAll(shuffleArray(playerTracks), 0, {
       type: "playlist",
       name: data?.name || "Playlist",
+      href: data ? `/curation/playlists/${data.id}` : undefined,
       radio: data ? { seedType: "playlist", seedId: data.id } : undefined,
     });
   }
@@ -220,6 +238,53 @@ export function CuratedPlaylist() {
   }
 
   const badgeLabel = data.is_curated ? "Curated Playlist" : data.is_smart ? "Smart Playlist" : "System Playlist";
+  const offlineState = getPlaylistState(data.id);
+  const offlineRecord = getPlaylistRecord(data.id);
+  const offlineBusy = isOfflineBusy(offlineState);
+  const offlineProgress =
+    offlineRecord?.trackCount
+      ? `${Math.min(offlineRecord.readyTrackCount || 0, offlineRecord.trackCount)}/${offlineRecord.trackCount}`
+      : null;
+  const offlineButtonLabel =
+    data.is_smart
+      ? "Static only"
+      : offlineState === "ready"
+        ? "Available offline"
+        : offlineState === "error"
+          ? "Retry offline"
+          : offlineState === "syncing"
+            ? `Syncing...${offlineProgress ? ` ${offlineProgress}` : ""}`
+            : offlineBusy
+              ? `Downloading...${offlineProgress ? ` ${offlineProgress}` : ""}`
+              : "Make available offline";
+  const offlineStatusDetail =
+    data.is_smart
+      ? "Offline mirror is only available for static playlists."
+      : offlineState === "ready"
+        ? offlineRecord?.trackCount
+          ? `${offlineRecord.trackCount} track${offlineRecord.trackCount === 1 ? "" : "s"} available offline`
+          : "Available offline"
+        : offlineBusy && offlineProgress
+          ? `${offlineProgress} tracks saved for offline`
+          : offlineState === "error"
+            ? offlineRecord?.readyTrackCount
+              ? `${offlineRecord.readyTrackCount}/${offlineRecord.trackCount} tracks saved. Retry to finish the offline copy.`
+              : "Offline copy failed. Retry to finish the playlist mirror."
+            : null;
+
+  async function handleToggleOffline() {
+    if (!data) return;
+    try {
+      const result = await togglePlaylistOffline({
+        playlistId: data.id,
+        title: data.name,
+        isSmart: data.is_smart,
+      });
+      toast.success(result === "removed" ? "Offline copy removed" : "Playlist available offline");
+    } catch (error) {
+      toast.error((error as Error).message || "Failed to update offline copy");
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -247,7 +312,10 @@ export function CuratedPlaylist() {
             {badgeLabel}
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-foreground">{data.name}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-3xl font-bold text-foreground">{data.name}</h1>
+              <OfflineBadge state={offlineState} />
+            </div>
             {data.description ? (
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{data.description}</p>
             ) : null}
@@ -290,6 +358,31 @@ export function CuratedPlaylist() {
           Playlist Radio
         </button>
         <button
+          onClick={handleToggleOffline}
+          disabled={!offlineSupported || data.is_smart || offlineBusy}
+          className={`inline-flex h-11 w-11 items-center justify-center rounded-full border text-sm transition-colors disabled:opacity-50 ${
+            offlineState === "ready"
+              ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
+              : offlineBusy
+                ? "border border-primary/25 bg-primary/10 text-primary"
+                : offlineState === "error"
+                  ? "border border-amber-400/25 bg-amber-400/10 text-amber-200"
+                  : "border-white/15 text-foreground hover:bg-white/5"
+          }`}
+          aria-label={offlineState === "ready" ? "Remove offline copy" : "Make available offline"}
+          title={offlineButtonLabel}
+        >
+          {offlineState === "ready" ? (
+            <CheckCircle2 size={15} />
+          ) : offlineBusy ? (
+            <Loader2 size={15} className="animate-spin" />
+          ) : offlineState === "error" ? (
+            <AlertCircle size={15} />
+          ) : (
+            <ArrowDownToLine size={15} />
+          )}
+        </button>
+        <button
           onClick={handleToggleFollow}
           disabled={togglingFollow}
           className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm transition-colors ${
@@ -309,6 +402,12 @@ export function CuratedPlaylist() {
           Share
         </button>
       </div>
+
+      {offlineStatusDetail ? (
+        <p className="text-xs text-muted-foreground">
+          {offlineStatusDetail}
+        </p>
+      ) : null}
 
       <PlaylistTrackFilterBar
         query={filterQuery}
@@ -350,6 +449,7 @@ export function CuratedPlaylist() {
               playlistOptions={(playlistOptions || []).map((playlist) => ({ id: playlist.id, name: playlist.name }))}
               onAddToPlaylist={handleAddTrackToPlaylist}
               onCreatePlaylist={handleCreatePlaylistFromTrack}
+              onPlayOverride={() => handlePlayTrack(track.id)}
             />
           ))}
         </div>

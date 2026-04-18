@@ -1,23 +1,38 @@
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from crate.api.auth import _require_admin
 from crate.api._deps import get_config
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
+from crate.api.schemas.operations import (
+    FixIssuesResponse,
+    FixRequest,
+    ScanIssueResponse,
+    ScannerStatusResponse,
+    ScanRequest,
+    ScanStartResponse,
+)
 from crate.db import create_task, get_task, list_tasks, get_latest_scan
 
-router = APIRouter()
+router = APIRouter(tags=["scanner"])
+
+_SCANNER_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        400: error_response("The request could not be processed."),
+        404: error_response("The requested scan resource could not be found."),
+        409: error_response("A conflicting scan is already in progress."),
+        422: error_response("The request payload failed validation."),
+    },
+)
 
 
-class ScanRequest(BaseModel):
-    only: str | None = None
-
-
-class FixRequest(BaseModel):
-    dry_run: bool = True
-
-
-@router.post("/api/scan")
+@router.post(
+    "/api/scan",
+    response_model=ScanStartResponse,
+    responses=_SCANNER_RESPONSES,
+    summary="Queue a library scan",
+)
 def start_scan(request: Request, body: ScanRequest | None = None):
     _require_admin(request)
     running = list_tasks(status="running", task_type="scan", limit=1)
@@ -32,7 +47,16 @@ def start_scan(request: Request, body: ScanRequest | None = None):
     return {"status": "started", "task_id": task_id, "only": params.get("only")}
 
 
-@router.get("/api/status")
+@router.get(
+    "/api/status",
+    response_model=ScannerStatusResponse,
+    responses={
+        200: {
+            "description": "Current scanner state and latest scan summary.",
+        }
+    },
+    summary="Get public scanner status",
+)
 def api_status(request: Request):
     # No auth — used by Docker healthcheck and sidebar polling
     pass
@@ -59,7 +83,12 @@ def api_status(request: Request):
     }
 
 
-@router.get("/api/issues")
+@router.get(
+    "/api/issues",
+    response_model=list[ScanIssueResponse],
+    responses=AUTH_ERROR_RESPONSES,
+    summary="List issues from the latest scan",
+)
 def api_issues(request: Request, type: str | None = None):
     _require_admin(request)
     latest = get_latest_scan()
@@ -72,7 +101,12 @@ def api_issues(request: Request, type: str | None = None):
     return issues
 
 
-@router.post("/api/fix")
+@router.post(
+    "/api/fix",
+    response_model=FixIssuesResponse,
+    responses=_SCANNER_RESPONSES,
+    summary="Dry-run or queue issue fixes from the latest scan",
+)
 def fix_issues(request: Request, body: FixRequest | None = None):
     _require_admin(request)
     dry_run = body.dry_run if body else True

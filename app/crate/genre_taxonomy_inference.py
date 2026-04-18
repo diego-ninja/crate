@@ -6,8 +6,15 @@ from difflib import SequenceMatcher
 import logging
 import re
 
+from crate.db.genres import (
+    get_genre_cooccurring_album_slugs,
+    get_genre_cooccurring_artist_slugs,
+    get_genre_seed_artists,
+    get_unmapped_genre_count,
+    list_unmapped_genres_for_inference,
+)
+from crate.db.jobs.genre_taxonomy import assign_genre_alias_value
 from crate.genre_taxonomy import (
-    assign_genre_alias,
     get_genre_alias_terms,
     get_genre_catalog,
     get_top_level_slug,
@@ -220,147 +227,13 @@ def infer_canonical_genre(
 
 
 def _list_unmapped_genres(limit: int, focus_slug: str | None = None) -> list[dict]:
-    from crate.db.core import get_db_ctx
-
-    with get_db_ctx() as cur:
-        items: list[dict] = []
-        if focus_slug:
-            cur.execute(
-                """
-                SELECT
-                    g.id,
-                    g.name,
-                    g.slug,
-                    COUNT(DISTINCT ag.artist_name)::INTEGER AS artist_count,
-                    COUNT(DISTINCT alg.album_id)::INTEGER AS album_count
-                FROM genres g
-                LEFT JOIN artist_genres ag ON g.id = ag.genre_id
-                LEFT JOIN album_genres alg ON g.id = alg.genre_id
-                LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
-                WHERE gta.alias_slug IS NULL
-                  AND g.slug = %s
-                GROUP BY g.id, g.name, g.slug
-                """,
-                (focus_slug,),
-            )
-            row = cur.fetchone()
-            if row:
-                items.append(dict(row))
-
-        remaining_limit = max(limit - len(items), 0)
-        if remaining_limit > 0:
-            cur.execute(
-                """
-                SELECT
-                    g.id,
-                    g.name,
-                    g.slug,
-                    COUNT(DISTINCT ag.artist_name)::INTEGER AS artist_count,
-                    COUNT(DISTINCT alg.album_id)::INTEGER AS album_count
-                FROM genres g
-                LEFT JOIN artist_genres ag ON g.id = ag.genre_id
-                LEFT JOIN album_genres alg ON g.id = alg.genre_id
-                LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
-                WHERE gta.alias_slug IS NULL
-                  AND (%s IS NULL OR g.slug <> %s)
-                GROUP BY g.id, g.name, g.slug
-                HAVING COUNT(DISTINCT ag.artist_name) > 0 OR COUNT(DISTINCT alg.album_id) > 0
-                ORDER BY COUNT(DISTINCT ag.artist_name) DESC, COUNT(DISTINCT alg.album_id) DESC, g.name ASC
-                LIMIT %s
-                """,
-                (focus_slug, focus_slug, remaining_limit),
-            )
-            items.extend(dict(row) for row in cur.fetchall())
-    return items
+    return list_unmapped_genres_for_inference(limit=limit, focus_slug=focus_slug)
 
 
-def _collect_local_evidence(cur, genre_slug: str, genre_name: str) -> InferenceEvidence:
-    cur.execute(
-        """
-        WITH seed_artists AS (
-            SELECT DISTINCT ag.artist_name
-            FROM artist_genres ag
-            JOIN genres g ON g.id = ag.genre_id
-            WHERE g.slug = %s
-            UNION
-            SELECT DISTINCT a.artist AS artist_name
-            FROM album_genres alg
-            JOIN genres g ON g.id = alg.genre_id
-            JOIN library_albums a ON a.id = alg.album_id
-            WHERE g.slug = %s
-        )
-        SELECT
-            ag.artist_name,
-            MAX(ag.weight)::DOUBLE PRECISION AS weight,
-            MAX(COALESCE(la.listeners, 0))::INTEGER AS listeners
-        FROM seed_artists sa
-        JOIN artist_genres ag ON ag.artist_name = sa.artist_name
-        LEFT JOIN library_artists la ON la.name = ag.artist_name
-        GROUP BY ag.artist_name
-        ORDER BY MAX(ag.weight) DESC, MAX(COALESCE(la.listeners, 0)) DESC, ag.artist_name ASC
-        LIMIT 8
-        """,
-        (genre_slug, genre_slug),
-    )
-    artist_rows = [dict(row) for row in cur.fetchall()]
-
-    cur.execute(
-        """
-        WITH seed_artists AS (
-            SELECT DISTINCT ag.artist_name
-            FROM artist_genres ag
-            JOIN genres g ON g.id = ag.genre_id
-            WHERE g.slug = %s
-            UNION
-            SELECT DISTINCT a.artist AS artist_name
-            FROM album_genres alg
-            JOIN genres g ON g.id = alg.genre_id
-            JOIN library_albums a ON a.id = alg.album_id
-            WHERE g.slug = %s
-        )
-        SELECT
-            tn.slug AS canonical_slug,
-            SUM(ag.weight)::DOUBLE PRECISION AS score,
-            COUNT(DISTINCT ag.artist_name)::INTEGER AS hits
-        FROM seed_artists sa
-        JOIN artist_genres ag ON ag.artist_name = sa.artist_name
-        JOIN genres g ON g.id = ag.genre_id
-        JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
-        JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
-        WHERE g.slug <> %s
-        GROUP BY tn.slug
-        ORDER BY SUM(ag.weight) DESC, COUNT(DISTINCT ag.artist_name) DESC, tn.slug ASC
-        LIMIT 24
-        """,
-        (genre_slug, genre_slug, genre_slug),
-    )
-    cooccurring_rows = [dict(row) for row in cur.fetchall()]
-
-    cur.execute(
-        """
-        WITH seed_albums AS (
-            SELECT DISTINCT alg.album_id
-            FROM album_genres alg
-            JOIN genres g ON g.id = alg.genre_id
-            WHERE g.slug = %s
-        )
-        SELECT
-            tn.slug AS canonical_slug,
-            SUM(alg.weight)::DOUBLE PRECISION AS score,
-            COUNT(DISTINCT alg.album_id)::INTEGER AS hits
-        FROM seed_albums sa
-        JOIN album_genres alg ON alg.album_id = sa.album_id
-        JOIN genres g ON g.id = alg.genre_id
-        JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
-        JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
-        WHERE g.slug <> %s
-        GROUP BY tn.slug
-        ORDER BY SUM(alg.weight) DESC, COUNT(DISTINCT alg.album_id) DESC, tn.slug ASC
-        LIMIT 24
-        """,
-        (genre_slug, genre_slug),
-    )
-    album_rows = [dict(row) for row in cur.fetchall()]
+def _collect_local_evidence(genre_slug: str, genre_name: str) -> InferenceEvidence:
+    artist_rows = get_genre_seed_artists(genre_slug)
+    cooccurring_rows = get_genre_cooccurring_artist_slugs(genre_slug)
+    album_rows = get_genre_cooccurring_album_slugs(genre_slug)
 
     cooccurring: dict[str, float] = defaultdict(float)
     for row in cooccurring_rows:
@@ -434,8 +307,6 @@ def infer_genre_taxonomy_batch(
     progress_callback=None,
     event_callback=None,
 ) -> dict:
-    from crate.db.core import get_db_ctx
-
     unmapped = _list_unmapped_genres(limit=limit, focus_slug=focus_slug)
     total = len(unmapped)
     mapped = 0
@@ -460,27 +331,26 @@ def infer_genre_taxonomy_batch(
         if event_callback:
             event_callback({"message": f"Inferring taxonomy for {genre_name}", "genre": genre_name, "step": index, "total": total})
 
-        with get_db_ctx() as cur:
-            evidence = _collect_local_evidence(cur, genre_slug, genre_name)
+        evidence = _collect_local_evidence(genre_slug, genre_name)
 
-            if include_external and evidence.artists:
-                evidence.external = _collect_external_evidence(evidence.artists)
-                for slug, score in evidence.external.items():
-                    top_level_slug = get_top_level_slug(slug)
-                    if top_level_slug and top_level_slug != slug:
-                        evidence.family_hints[top_level_slug] = evidence.family_hints.get(top_level_slug, 0.0) + min(score, 6.0) * 0.08
+        if include_external and evidence.artists:
+            evidence.external = _collect_external_evidence(evidence.artists)
+            for slug, score in evidence.external.items():
+                top_level_slug = get_top_level_slug(slug)
+                if top_level_slug and top_level_slug != slug:
+                    evidence.family_hints[top_level_slug] = evidence.family_hints.get(top_level_slug, 0.0) + min(score, 6.0) * 0.08
 
-            proposal = infer_canonical_genre(
-                genre_name,
-                cooccurring=evidence.cooccurring,
-                external=evidence.external,
-                family_hints=evidence.family_hints,
-                aggressive=aggressive,
-            )
+        proposal = infer_canonical_genre(
+            genre_name,
+            cooccurring=evidence.cooccurring,
+            external=evidence.external,
+            family_hints=evidence.family_hints,
+            aggressive=aggressive,
+        )
 
-            applied = False
-            if proposal and proposal.get("canonical_slug"):
-                applied = assign_genre_alias(cur, genre_name, proposal["canonical_slug"])
+        applied = False
+        if proposal and proposal.get("canonical_slug"):
+            applied = assign_genre_alias_value(genre_name, proposal["canonical_slug"])
 
         if applied:
             mapped += 1
@@ -527,16 +397,7 @@ def infer_genre_taxonomy_batch(
                 }
             )
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT COUNT(*)::INTEGER AS cnt
-            FROM genres g
-            LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
-            WHERE gta.alias_slug IS NULL
-            """
-        )
-        remaining_unmapped = int(cur.fetchone()["cnt"] or 0)
+    remaining_unmapped = get_unmapped_genre_count()
 
     return {
         "processed": total,

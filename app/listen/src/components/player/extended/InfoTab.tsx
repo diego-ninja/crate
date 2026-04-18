@@ -36,7 +36,7 @@ function MetricBar({ label, value }: { label: string; value: number | null }) {
           style={{ width: `${Math.min(normalizedValue * 100, 100)}%` }}
         />
       </div>
-      <span className="w-8 text-right text-[10px] tabular-nums text-white/30">
+      <span className="w-8 text-right text-[10px] tabular-nums text-white/40">
         {(normalizedValue * 100).toFixed(0)}%
       </span>
     </div>
@@ -121,20 +121,20 @@ export function InfoTab() {
   return (
     <div className="flex-1 space-y-5 overflow-y-auto py-1 pr-1">
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/25">Track</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/40">Track</p>
         <p className="text-[13px] font-medium text-white">{info.title}</p>
-        <p className="text-[11px] text-white/50">{info.artist}</p>
-        <p className="text-[11px] text-white/30">{info.album}</p>
+        <p className="text-[11px] text-muted-foreground">{info.artist}</p>
+        <p className="text-[11px] text-white/40">{info.album}</p>
       </div>
 
       {(info.bpm || info.audio_key) && (
         <div>
-          <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-white/25">Audio Analysis</p>
+          <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-white/40">Audio Analysis</p>
           <div className="mb-4 flex items-baseline gap-4">
             {info.bpm ? (
               <div>
                 <span className="text-2xl font-bold tabular-nums text-white">{Math.round(info.bpm)}</span>
-                <span className="ml-1 text-[10px] text-white/30">BPM</span>
+                <span className="ml-1 text-[10px] text-white/40">BPM</span>
               </div>
             ) : null}
             {info.audio_key ? (
@@ -156,7 +156,7 @@ export function InfoTab() {
 
       {(info.acousticness !== null || info.instrumentalness !== null) && (
         <div>
-          <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-white/25">Mood Profile</p>
+          <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-white/40">Mood Profile</p>
           <div className="space-y-2.5">
             <MetricBar label="Acousticness" value={info.acousticness} />
             <MetricBar label="Instrumentalness" value={info.instrumentalness} />
@@ -166,12 +166,12 @@ export function InfoTab() {
 
       {(info.loudness !== null || info.dynamic_range !== null) && (
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/25">Dynamics</p>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/40">Dynamics</p>
           <div className="flex gap-6">
             {info.loudness !== null ? (
               <div>
                 <span className="text-sm font-semibold tabular-nums text-white">{info.loudness.toFixed(1)}</span>
-                <span className="ml-1 text-[10px] text-white/30">dB LUFS</span>
+                <span className="ml-1 text-[10px] text-white/40">dB LUFS</span>
               </div>
             ) : null}
             {info.dynamic_range !== null ? (
@@ -179,7 +179,7 @@ export function InfoTab() {
                 <span className="text-sm font-semibold tabular-nums text-white">
                   {info.dynamic_range.toFixed(1)}
                 </span>
-                <span className="ml-1 text-[10px] text-white/30">dB DR</span>
+                <span className="ml-1 text-[10px] text-white/40">dB DR</span>
               </div>
             ) : null}
           </div>
@@ -188,14 +188,14 @@ export function InfoTab() {
 
       {(info.lastfm_listeners || info.lastfm_playcount) && (
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/25">Popularity</p>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/40">Popularity</p>
           <div className="flex gap-6">
             {info.lastfm_listeners != null && info.lastfm_listeners > 0 ? (
               <div>
                 <span className="text-sm font-semibold tabular-nums text-white">
                   {formatCompact(info.lastfm_listeners)}
                 </span>
-                <span className="ml-1 text-[10px] text-white/30">listeners</span>
+                <span className="ml-1 text-[10px] text-white/40">listeners</span>
               </div>
             ) : null}
             {info.lastfm_playcount != null && info.lastfm_playcount > 0 ? (
@@ -203,7 +203,7 @@ export function InfoTab() {
                 <span className="text-sm font-semibold tabular-nums text-white">
                   {formatCompact(info.lastfm_playcount)}
                 </span>
-                <span className="ml-1 text-[10px] text-white/30">plays</span>
+                <span className="ml-1 text-[10px] text-white/40">plays</span>
               </div>
             ) : null}
           </div>
@@ -212,7 +212,7 @@ export function InfoTab() {
 
       {info.rating != null && info.rating > 0 ? (
         <div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/25">Rating</p>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-white/40">Rating</p>
           <StarRating rating={Math.round(info.rating)} />
         </div>
       ) : null}

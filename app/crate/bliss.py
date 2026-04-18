@@ -4,10 +4,25 @@ import json
 import logging
 import random
 import re
-from datetime import datetime, timedelta, timezone
-
 from crate.crate_cli import find_binary, is_available, run_bliss
-from crate.db import get_db_ctx
+from crate.db.queries.bliss import (
+    build_user_radio_profile,
+    get_album_tracks_for_radio,
+    get_artist_by_id,
+    get_artist_genre_ids as _db_get_artist_genre_ids,
+    get_artist_genre_map as _db_get_artist_genre_map,
+    get_artist_tracks,
+    get_bliss_candidates,
+    get_multi_seed_bliss_candidates,
+    get_playlist_tracks_for_radio,
+    get_recommend_without_bliss_candidates,
+    get_same_artist_tracks,
+    get_seed_tracks_by_paths,
+    get_similar_artist_rows as _db_get_similar_artist_rows,
+    get_similar_artist_tracks_for_radio,
+    get_track_with_artist,
+    store_bliss_vectors,
+)
 
 log = logging.getLogger(__name__)
 
@@ -213,99 +228,20 @@ def _score_candidate(candidate: dict, seeds: list[dict],
 
 
 def _get_similar_artist_rows(
-    cur,
     *,
     artist_id: int | None = None,
     artist_name: str | None = None,
 ) -> list[dict]:
-    """Return similar artists using current schema, falling back to similar_json if needed."""
-    rows: list[dict] = []
-
-    if artist_id is not None:
-        cur.execute(
-            """
-            SELECT s.similar_name, s.score, COALESCE(s.in_library, FALSE) AS in_library
-            FROM artist_similarities s
-            JOIN library_artists ar ON LOWER(s.artist_name) = LOWER(ar.name)
-            WHERE ar.id = %s
-            ORDER BY s.score DESC NULLS LAST, s.similar_name ASC
-            """,
-            (artist_id,),
-        )
-        rows = [dict(row) for row in cur.fetchall()]
-    elif artist_name:
-        cur.execute(
-            """
-            SELECT similar_name, score, COALESCE(in_library, FALSE) AS in_library
-            FROM artist_similarities
-            WHERE LOWER(artist_name) = LOWER(%s)
-            ORDER BY score DESC NULLS LAST, similar_name ASC
-            """,
-            (artist_name,),
-        )
-        rows = [dict(row) for row in cur.fetchall()]
-
-    if rows:
-        return rows
-
-    if artist_id is not None:
-        cur.execute("SELECT name, similar_json FROM library_artists WHERE id = %s", (artist_id,))
-    else:
-        cur.execute(
-            "SELECT name, similar_json FROM library_artists WHERE LOWER(name) = LOWER(%s) LIMIT 1",
-            (artist_name,),
-        )
-    artist_row = cur.fetchone()
-    if not artist_row or not artist_row.get("similar_json"):
-        return []
-
-    similar = artist_row["similar_json"]
-    if isinstance(similar, str):
-        similar = json.loads(similar)
-    if not isinstance(similar, list):
-        return []
-
-    parsed_rows: list[dict] = []
-    names: list[str] = []
-    for item in similar:
-        if isinstance(item, dict):
-            name = (item.get("name") or "").strip()
-            score = item.get("score", item.get("match"))
-        else:
-            name = str(item).strip()
-            score = None
-        if not name:
-            continue
-        names.append(name)
-        parsed_rows.append(
-            {
-                "similar_name": name,
-                "score": _normalize_similarity_score(score),
-                "in_library": False,
-            }
-        )
-
-    if not parsed_rows:
-        return []
-
-    cur.execute(
-        "SELECT LOWER(name) AS artist_key FROM library_artists WHERE LOWER(name) = ANY(%s)",
-        ([name.lower() for name in names],),
-    )
-    in_library = {row["artist_key"] for row in cur.fetchall()}
-    for row in parsed_rows:
-        row["in_library"] = row["similar_name"].lower() in in_library
-    return parsed_rows
+    return _db_get_similar_artist_rows(artist_id=artist_id, artist_name=artist_name)
 
 
 def _get_similar_artist_names(
-    cur,
     artist_name: str | None = None,
     *,
     artist_id: int | None = None,
     in_library_only: bool = False,
 ) -> set[str]:
-    rows = _get_similar_artist_rows(cur, artist_id=artist_id, artist_name=artist_name)
+    rows = _get_similar_artist_rows(artist_id=artist_id, artist_name=artist_name)
     if in_library_only:
         rows = [row for row in rows if row.get("in_library")]
     return {row["similar_name"] for row in rows if row.get("similar_name")}
@@ -319,33 +255,12 @@ def _get_similar_artist_score_map(rows: list[dict]) -> dict[str, float]:
     }
 
 
-def _get_artist_genre_ids(cur, artist_name: str) -> set[str]:
-    """Return genre names for an artist via artist_genres table."""
-    cur.execute("""
-        SELECT g.name FROM genres g
-        JOIN artist_genres ag ON ag.genre_id = g.id
-        WHERE ag.artist_name = %s
-    """, (artist_name,))
-    return {r["name"] for r in cur.fetchall()}
+def _get_artist_genre_ids(artist_name: str) -> set[str]:
+    return _db_get_artist_genre_ids(artist_name=artist_name)
 
 
-def _get_artist_genre_map(cur, artist_names: set[str]) -> dict[str, set[str]]:
-    if not artist_names:
-        return {}
-
-    cur.execute(
-        """
-        SELECT ag.artist_name, g.name
-        FROM artist_genres ag
-        JOIN genres g ON ag.genre_id = g.id
-        WHERE ag.artist_name = ANY(%s)
-        """,
-        (list(artist_names),),
-    )
-    genre_map: dict[str, set[str]] = {name: set() for name in artist_names}
-    for row in cur.fetchall():
-        genre_map.setdefault(row["artist_name"], set()).add(row["name"])
-    return genre_map
+def _get_artist_genre_map(artist_names: set[str]) -> dict[str, set[str]]:
+    return _db_get_artist_genre_map(artist_names=artist_names)
 
 
 def _select_seed_tracks(tracks: list[dict], *, max_count: int, require_bliss: bool = True) -> list[dict]:
@@ -535,12 +450,7 @@ def find_similar(source_path: str, library_path: str, limit: int = 20) -> list[d
 
 def store_vectors(vectors: dict[str, list[float]]):
     """Store bliss feature vectors in the database (only for tracks missing them)."""
-    with get_db_ctx() as cur:
-        for path, features in vectors.items():
-            cur.execute(
-                "UPDATE library_tracks SET bliss_vector = %s WHERE path = %s AND bliss_vector IS NULL",
-                (features, path),
-            )
+    store_bliss_vectors(vectors)
 
 
 def _radio_track_payload(track: dict) -> dict:
@@ -578,95 +488,14 @@ def _build_user_radio_profile(
         for track in tracks
         if _candidate_artist_name(track) and (track.get("album") or "").strip()
     })
-    recency_cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
 
-    with get_db_ctx() as cur:
-        liked_track_ids: set[int] = set()
-        if track_ids:
-            cur.execute(
-                """
-                SELECT track_id
-                FROM user_liked_tracks
-                WHERE user_id = %s AND track_id = ANY(%s)
-                """,
-                (user_id, track_ids),
-            )
-            liked_track_ids = {row["track_id"] for row in cur.fetchall()}
-
-        recent_track_events: dict[int, dict] = {}
-        if track_ids:
-            cur.execute(
-                """
-                SELECT
-                    track_id,
-                    COUNT(*)::INTEGER AS play_count,
-                    SUM(CASE WHEN was_skipped THEN 1 ELSE 0 END)::INTEGER AS skip_count,
-                    MAX(ended_at) AS last_played_at
-                FROM user_play_events
-                WHERE user_id = %s
-                  AND track_id = ANY(%s)
-                  AND ended_at >= %s
-                GROUP BY track_id
-                """,
-                (user_id, track_ids, recency_cutoff),
-            )
-            recent_track_events = {row["track_id"]: dict(row) for row in cur.fetchall()}
-
-        artist_stats: dict[str, dict] = {}
-        if artist_names:
-            cur.execute(
-                """
-                SELECT
-                    artist_name,
-                    play_count,
-                    complete_play_count,
-                    last_played_at
-                FROM user_artist_stats
-                WHERE user_id = %s
-                  AND stat_window = '30d'
-                  AND LOWER(artist_name) = ANY(%s)
-                """,
-                (user_id, artist_name_keys),
-            )
-            artist_stats = {row["artist_name"].lower(): dict(row) for row in cur.fetchall()}
-
-        album_stats: dict[tuple[str, str], dict] = {}
-        if album_pairs:
-            # Match exact (artist, album) pairs. Using two separate ANY() arrays
-            # would return the cartesian cross-product of both sets.
-            artist_list = [artist.lower() for artist, _ in album_pairs]
-            album_list = [album.lower() for _, album in album_pairs]
-            cur.execute(
-                """
-                WITH pairs(artist_key, album_key) AS (
-                    SELECT UNNEST(%s::text[]), UNNEST(%s::text[])
-                )
-                SELECT
-                    s.artist,
-                    s.album,
-                    s.play_count,
-                    s.complete_play_count,
-                    s.last_played_at
-                FROM user_album_stats s
-                JOIN pairs p
-                  ON LOWER(s.artist) = p.artist_key
-                 AND LOWER(s.album) = p.album_key
-                WHERE s.user_id = %s
-                  AND s.stat_window = '30d'
-                """,
-                (artist_list, album_list, user_id),
-            )
-            album_stats = {
-                ((row["artist"] or "").lower(), (row["album"] or "").lower()): dict(row)
-                for row in cur.fetchall()
-            }
-
-    return {
-        "liked_track_ids": liked_track_ids,
-        "recent_track_events": recent_track_events,
-        "artist_stats": artist_stats,
-        "album_stats": album_stats,
-    }
+    return build_user_radio_profile(
+        user_id,
+        track_ids,
+        artist_names,
+        artist_name_keys,
+        album_pairs,
+    )
 
 
 def _apply_user_profile_score(track: dict, score: float, user_profile: dict | None) -> float:
@@ -779,82 +608,40 @@ def _recommend_without_bliss(
     if not seed_artists:
         return []
 
-    with get_db_ctx() as cur:
-        seed_genre_map = _get_artist_genre_map(cur, seed_artists)
-        similar_artist_map: dict[str, set[str]] = {}
-        combined_score_map: dict[str, float] = {}
-        for seed in seeds:
-            seed_artist = _candidate_artist_name(seed)
-            if not seed_artist:
-                continue
-            rows = _get_similar_artist_rows(
-                cur,
-                artist_id=seed.get("artist_id"),
-                artist_name=seed_artist,
-            )
-            in_library_rows = [row for row in rows if row.get("in_library")]
-            similar_artist_map[seed_artist] = {
-                row["similar_name"] for row in in_library_rows if row.get("similar_name")
-            }
-            for key, score in _get_similar_artist_score_map(in_library_rows).items():
-                if score > combined_score_map.get(key, 0.0):
-                    combined_score_map[key] = score
-
-        similar_artist_names = sorted({
-            name.lower()
-            for names in similar_artist_map.values()
-            for name in names
-            if isinstance(name, str) and name
-        })
-
-        cur.execute(
-            """
-            WITH ranked AS (
-                SELECT
-                    t.id AS track_id,
-                    t.path,
-                    t.title,
-                    t.artist,
-                    a.artist AS album_artist,
-                    a.name AS album,
-                    a.year,
-                    t.duration,
-                    t.bliss_vector,
-                    t.bpm,
-                    t.audio_key,
-                    t.audio_scale,
-                    t.energy,
-                    t.rating,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY LOWER(a.artist)
-                        ORDER BY RANDOM()
-                    ) AS artist_pick
-                FROM library_tracks t
-                JOIN library_albums a ON t.album_id = a.id
-                WHERE t.path <> ALL(%s)
-                  AND (
-                    LOWER(a.artist) = ANY(%s)
-                    OR t.bpm IS NOT NULL
-                    OR t.energy IS NOT NULL
-                    OR t.audio_key IS NOT NULL
-                    OR t.rating > 0
-                  )
-            )
-            SELECT *
-            FROM ranked
-            WHERE artist_pick <= %s
-            LIMIT %s
-            """,
-            (
-                seed_paths,
-                similar_artist_names or ["__no_similar__"],
-                10 if similar_artist_names else 5,
-                max(limit * 8, 240),
-            ),
+    seed_genre_map = _get_artist_genre_map(seed_artists)
+    similar_artist_map: dict[str, set[str]] = {}
+    combined_score_map: dict[str, float] = {}
+    for seed in seeds:
+        seed_artist = _candidate_artist_name(seed)
+        if not seed_artist:
+            continue
+        rows = _get_similar_artist_rows(
+            artist_id=seed.get("artist_id"),
+            artist_name=seed_artist,
         )
-        candidates = [dict(row) for row in cur.fetchall()]
-        candidate_artists = {_candidate_artist_name(row) for row in candidates if _candidate_artist_name(row)}
-        candidate_genre_map = _get_artist_genre_map(cur, candidate_artists)
+        in_library_rows = [row for row in rows if row.get("in_library")]
+        similar_artist_map[seed_artist] = {
+            row["similar_name"] for row in in_library_rows if row.get("similar_name")
+        }
+        for key, score in _get_similar_artist_score_map(in_library_rows).items():
+            if score > combined_score_map.get(key, 0.0):
+                combined_score_map[key] = score
+
+    similar_artist_names = sorted({
+        name.lower()
+        for names in similar_artist_map.values()
+        for name in names
+        if isinstance(name, str) and name
+    })
+
+    candidates = get_recommend_without_bliss_candidates(
+        seed_paths=seed_paths,
+        similar_artist_names=similar_artist_names,
+        artist_pick_limit=10 if similar_artist_names else 5,
+        row_limit=max(limit * 8, 240),
+    )
+    candidate_artists = {_candidate_artist_name(row) for row in candidates if _candidate_artist_name(row)}
+    candidate_genre_map = _get_artist_genre_map(candidate_artists)
 
     if not candidates:
         return []
@@ -940,46 +727,12 @@ def _get_artist_radio_recommendations(
     similar_score_map = _get_similar_artist_score_map(in_library_similar)
     similar_artist_keys = [row["similar_name"].lower() for row in in_library_similar if row.get("similar_name")]
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            WITH ranked AS (
-                SELECT
-                    t.id AS track_id,
-                    t.path,
-                    t.title,
-                    t.artist,
-                    a.artist AS album_artist,
-                    a.name AS album,
-                    a.year,
-                    t.duration,
-                    t.bliss_vector,
-                    t.bpm,
-                    t.audio_key,
-                    t.audio_scale,
-                    t.energy,
-                    t.rating,
-                    LOWER(a.artist) AS similar_name_key,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY LOWER(a.artist)
-                        ORDER BY RANDOM()
-                    ) AS artist_pick
-                FROM library_tracks t
-                JOIN library_albums a ON t.album_id = a.id
-                WHERE t.bliss_vector IS NOT NULL
-                  AND LOWER(a.artist) = ANY(%s)
-            )
-            SELECT *
-            FROM ranked
-            WHERE artist_pick <= 8
-            LIMIT %s
-            """,
-            (similar_artist_keys[:16], max(limit * 3, 60)),
-        )
-        candidate_rows = [dict(row) for row in cur.fetchall()]
-
-        candidate_artists = {_candidate_artist_name(row) for row in candidate_rows if _candidate_artist_name(row)}
-        artist_genre_map = _get_artist_genre_map(cur, candidate_artists)
+    candidate_rows = get_similar_artist_tracks_for_radio(
+        similar_artist_keys=similar_artist_keys,
+        limit=max(limit * 3, 60),
+    )
+    candidate_artists = {_candidate_artist_name(row) for row in candidate_rows if _candidate_artist_name(row)}
+    artist_genre_map = _get_artist_genre_map(candidate_artists)
 
     if not candidate_rows:
         return _diversify_tracks(bliss_recommendations)[:limit]
@@ -1022,45 +775,17 @@ def generate_artist_radio(
     user_id: int | None = None,
 ) -> list[dict]:
     """Generate an Artist Radio playlist using stable artist IDs and multi-seed scoring."""
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, name FROM library_artists WHERE id = %s", (artist_id,))
-        artist_row = cur.fetchone()
-        if not artist_row:
-            return []
-        artist_name = artist_row["name"]
+    artist_row = get_artist_by_id(artist_id=artist_id)
+    if not artist_row:
+        return []
+    artist_name = artist_row["name"]
 
-        cur.execute(
-            """
-            SELECT
-                t.id AS track_id,
-                t.path,
-                t.title,
-                t.artist,
-                a.artist AS album_artist,
-                a.name AS album,
-                a.year,
-                t.duration,
-                t.bliss_vector,
-                t.bpm,
-                t.audio_key,
-                t.audio_scale,
-                t.energy,
-                t.rating
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            JOIN library_artists ar ON LOWER(a.artist) = LOWER(ar.name)
-            WHERE ar.id = %s
-            ORDER BY RANDOM()
-            """,
-            (artist_id,),
-        )
-        all_artist_tracks = [dict(row) for row in cur.fetchall()]
+    all_artist_tracks = get_artist_tracks(artist_id=artist_id)
+    if not all_artist_tracks:
+        return []
 
-        if not all_artist_tracks:
-            return []
-
-        artist_genres = _get_artist_genre_ids(cur, artist_name)
-        similar_rows = _get_similar_artist_rows(cur, artist_id=artist_id, artist_name=artist_name)
+    artist_genres = _get_artist_genre_ids(artist_name)
+    similar_rows = _get_similar_artist_rows(artist_id=artist_id, artist_name=artist_name)
 
     seed_count = min(6, max(3, limit // 10 or 1))
     seeds = _select_seed_tracks(all_artist_tracks, max_count=seed_count, require_bliss=True)
@@ -1101,66 +826,42 @@ def generate_artist_radio(
 
 def get_similar_from_db(track_path: str, limit: int = 20, *, user_id: int | None = None) -> list[dict]:
     """Find similar tracks using pre-computed vectors stored in DB (multi-signal scoring)."""
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
-                   ar.id AS artist_id
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            LEFT JOIN library_artists ar ON LOWER(a.artist) = LOWER(ar.name)
-            WHERE t.path = %s
-        """, (track_path,))
-        row = cur.fetchone()
-        if not row:
-            return []
+    source = get_track_with_artist(track_path=track_path)
+    if not source:
+        return []
 
-        source = dict(row)
+    # Get source artist genres
+    source_artist_name = _candidate_artist_name(source)
+    source_genres = _get_artist_genre_ids(source_artist_name)
+    source["_genres"] = list(source_genres)
 
-        # Get source artist genres
-        source_artist_name = _candidate_artist_name(source)
-        source_genres = _get_artist_genre_ids(cur, source_artist_name)
-        source["_genres"] = list(source_genres)
-
-        if not source.get("bliss_vector"):
-            return _recommend_without_bliss(
-                [source],
-                exclude_paths=[track_path],
-                limit=limit,
-                user_id=user_id,
-                allow_seed_artists=False,
-            )
-
-        # Get candidates via broad bliss distance (top 200), then re-rank in Python
-        cur.execute("""
-            SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
-                   SQRT(
-                       (SELECT SUM(POW(x - y, 2))
-                        FROM UNNEST(t.bliss_vector, %s::float8[]) AS v(x, y))
-                   ) AS bliss_dist
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            WHERE t.bliss_vector IS NOT NULL AND t.path != %s
-            ORDER BY bliss_dist ASC
-            LIMIT 200
-        """, (source["bliss_vector"], track_path))
-        candidates = [dict(r) for r in cur.fetchall()]
-
-        if not candidates:
-            return []
-
-        # Fetch genres for unique candidate artists
-        candidate_artists = {_candidate_artist_name(c) for c in candidates if _candidate_artist_name(c)}
-        artist_genre_map = _get_artist_genre_map(cur, candidate_artists)
-
-        # Get similar artist names for source artist
-        similar_artist_names = _get_similar_artist_names(
-            cur,
-            source_artist_name,
-            artist_id=source.get("artist_id"),
-            in_library_only=True,
+    if not source.get("bliss_vector"):
+        return _recommend_without_bliss(
+            [source],
+            exclude_paths=[track_path],
+            limit=limit,
+            user_id=user_id,
+            allow_seed_artists=False,
         )
+
+    # Get candidates via broad bliss distance (top 200), then re-rank in Python
+    candidates = get_bliss_candidates(
+        bliss_vector=source["bliss_vector"],
+        exclude_path=track_path,
+    )
+    if not candidates:
+        return []
+
+    # Fetch genres for unique candidate artists
+    candidate_artists = {_candidate_artist_name(c) for c in candidates if _candidate_artist_name(c)}
+    artist_genre_map = _get_artist_genre_map(candidate_artists)
+
+    # Get similar artist names for source artist
+    similar_artist_names = _get_similar_artist_names(
+        source_artist_name,
+        artist_id=source.get("artist_id"),
+        in_library_only=True,
+    )
 
     # Attach genres and score
     for c in candidates:
@@ -1199,63 +900,16 @@ def generate_track_radio(
     user_id: int | None = None,
 ) -> list[dict]:
     """Generate a Track Radio queue based on a source track."""
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                   t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
-                   ar.id AS artist_id
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            LEFT JOIN library_artists ar ON LOWER(a.artist) = LOWER(ar.name)
-            WHERE t.path = %s
-        """, (track_path,))
-        row = cur.fetchone()
-        if not row:
-            return []
+    seed = get_track_with_artist(track_path=track_path)
+    if not seed:
+        return []
 
-        seed = dict(row)
-        if seed.get("artist_id") is not None:
-            cur.execute(
-                """
-                SELECT
-                    t.id AS track_id,
-                    t.path,
-                    t.title,
-                    t.artist,
-                    a.artist AS album_artist,
-                    a.name AS album,
-                    a.year,
-                    t.duration
-                FROM library_tracks t
-                JOIN library_albums a ON t.album_id = a.id
-                JOIN library_artists ar ON LOWER(a.artist) = LOWER(ar.name)
-                WHERE ar.id = %s AND t.path != %s
-                ORDER BY RANDOM()
-                LIMIT %s
-                """,
-                (seed["artist_id"], track_path, max(limit, 24)),
-            )
-        else:
-            cur.execute(
-                """
-                SELECT
-                    t.id AS track_id,
-                    t.path,
-                    t.title,
-                    t.artist,
-                    a.artist AS album_artist,
-                    a.name AS album,
-                    a.year,
-                    t.duration
-                FROM library_tracks t
-                JOIN library_albums a ON t.album_id = a.id
-                WHERE LOWER(a.artist) = LOWER(%s) AND t.path != %s
-                ORDER BY RANDOM()
-                LIMIT %s
-                """,
-                (_candidate_artist_name(seed), track_path, max(limit, 24)),
-            )
-        same_artist_tracks = [dict(r) for r in cur.fetchall()]
+    same_artist_tracks = get_same_artist_tracks(
+        artist_id=seed.get("artist_id"),
+        artist_name=_candidate_artist_name(seed),
+        exclude_path=track_path,
+        limit=max(limit, 24),
+    )
 
     seed_payload = _radio_track_payload(seed)
     similar_tracks = get_similar_from_db(track_path, limit=max(limit * 3, 60), user_id=user_id)
@@ -1314,103 +968,34 @@ def _aggregate_similar_candidates(
     if not seed_paths:
         return []
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            """
-            SELECT
-                t.id AS track_id,
-                t.path,
-                t.title,
-                t.artist,
-                a.artist AS album_artist,
-                a.name AS album,
-                a.year,
-                t.duration,
-                t.bliss_vector,
-                t.bpm,
-                t.audio_key,
-                t.audio_scale,
-                t.energy,
-                t.rating
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            WHERE t.path = ANY(%s)
-            """,
-            (seed_paths,),
+    seeds = get_seed_tracks_by_paths(seed_paths=seed_paths)
+    if not seeds:
+        return []
+
+    bliss_seeds = [seed for seed in seeds if seed.get("bliss_vector")]
+    if not bliss_seeds:
+        return _recommend_without_bliss(
+            seeds,
+            exclude_paths=seed_paths,
+            limit=max(per_seed_limit * 2, 80),
+            user_id=user_id,
+            allow_seed_artists=True,
         )
-        seeds = [dict(row) for row in cur.fetchall()]
 
-        if not seeds:
-            return []
+    candidate_rows = get_multi_seed_bliss_candidates(
+        bliss_seed_paths=[seed["path"] for seed in bliss_seeds],
+        all_seed_paths=seed_paths,
+        per_seed_limit=per_seed_limit,
+    )
 
-        bliss_seeds = [seed for seed in seeds if seed.get("bliss_vector")]
-        if not bliss_seeds:
-            return _recommend_without_bliss(
-                seeds,
-                exclude_paths=seed_paths,
-                limit=max(per_seed_limit * 2, 80),
-                user_id=user_id,
-                allow_seed_artists=True,
-            )
-
-        cur.execute(
-            """
-            WITH seeds AS (
-                SELECT
-                    t.path AS seed_path,
-                    t.bliss_vector AS seed_bliss_vector
-                FROM library_tracks t
-                WHERE t.path = ANY(%s) AND t.bliss_vector IS NOT NULL
-            ),
-            ranked AS (
-                SELECT
-                    s.seed_path,
-                    t.id AS track_id,
-                    t.path,
-                    t.title,
-                    t.artist,
-                    a.artist AS album_artist,
-                    a.name AS album,
-                    a.year,
-                    t.duration,
-                    t.bliss_vector,
-                    t.bpm,
-                    t.audio_key,
-                    t.audio_scale,
-                    t.energy,
-                    t.rating,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY s.seed_path
-                        ORDER BY SQRT(
-                            (
-                                SELECT SUM(POW(x - y, 2))
-                                FROM UNNEST(t.bliss_vector, s.seed_bliss_vector) AS v(x, y)
-                            )
-                        ) ASC
-                    ) AS seed_rank
-                FROM seeds s
-                JOIN library_tracks t
-                  ON t.bliss_vector IS NOT NULL
-                 AND t.path <> s.seed_path
-                 AND t.path <> ALL(%s)
-                JOIN library_albums a ON t.album_id = a.id
-            )
-            SELECT *
-            FROM ranked
-            WHERE seed_rank <= %s
-            """,
-            ([seed["path"] for seed in bliss_seeds], seed_paths, per_seed_limit),
-        )
-        candidate_rows = [dict(row) for row in cur.fetchall()]
-
-        seed_artists = {_candidate_artist_name(seed) for seed in seeds if _candidate_artist_name(seed)}
-        candidate_artists = {_candidate_artist_name(row) for row in candidate_rows if _candidate_artist_name(row)}
-        seed_genre_map = _get_artist_genre_map(cur, seed_artists)
-        candidate_genre_map = _get_artist_genre_map(cur, candidate_artists)
-        similar_artist_map = {
-            artist_name: _get_similar_artist_names(cur, artist_name, in_library_only=True)
-            for artist_name in seed_artists
-        }
+    seed_artists = {_candidate_artist_name(seed) for seed in seeds if _candidate_artist_name(seed)}
+    candidate_artists = {_candidate_artist_name(row) for row in candidate_rows if _candidate_artist_name(row)}
+    seed_genre_map = _get_artist_genre_map(seed_artists)
+    candidate_genre_map = _get_artist_genre_map(candidate_artists)
+    similar_artist_map = {
+        artist_name: _get_similar_artist_names(artist_name, in_library_only=True)
+        for artist_name in seed_artists
+    }
 
     if not candidate_rows:
         return []
@@ -1515,16 +1100,7 @@ def generate_album_radio(
     *,
     user_id: int | None = None,
 ) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
-                   t.bliss_vector, t.rating
-            FROM library_tracks t
-            JOIN library_albums a ON t.album_id = a.id
-            WHERE a.id = %s
-            ORDER BY t.disc_number, t.track_number
-        """, (album_id,))
-        album_tracks = [dict(row) for row in cur.fetchall()]
+    album_tracks = get_album_tracks_for_radio(album_id=album_id)
 
     if not album_tracks:
         return []
@@ -1558,33 +1134,7 @@ def generate_playlist_radio(
     *,
     user_id: int | None = None,
 ) -> list[dict]:
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT
-                lt.id AS track_id,
-                lt.path,
-                COALESCE(pt.title, lt.title) AS title,
-                COALESCE(pt.artist, lt.artist) AS artist,
-                COALESCE(la.artist, lt.artist, pt.artist) AS album_artist,
-                COALESCE(pt.album, lt.album) AS album,
-                la.year,
-                COALESCE(pt.duration, lt.duration, 0) AS duration,
-                lt.bliss_vector,
-                lt.rating
-            FROM playlist_tracks pt
-            LEFT JOIN LATERAL (
-                SELECT lt.id, lt.path, lt.title, lt.artist, lt.album, lt.duration, lt.bliss_vector, lt.album_id
-                FROM library_tracks lt
-                WHERE lt.path = pt.track_path
-                   OR lt.path LIKE ('%%/' || pt.track_path)
-                ORDER BY CASE WHEN lt.path = pt.track_path THEN 0 ELSE 1 END
-                LIMIT 1
-            ) lt ON TRUE
-            LEFT JOIN library_albums la ON la.id = lt.album_id
-            WHERE pt.playlist_id = %s
-            ORDER BY pt.position
-        """, (playlist_id,))
-        playlist_tracks = [dict(row) for row in cur.fetchall()]
+    playlist_tracks = get_playlist_tracks_for_radio(playlist_id=playlist_id)
 
     source_tracks = [_radio_track_payload(track) for track in playlist_tracks if track.get("path")]
     if not source_tracks:

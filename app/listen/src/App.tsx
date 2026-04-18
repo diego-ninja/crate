@@ -11,12 +11,14 @@ import { LikedTracksProvider } from "@/contexts/LikedTracksContext";
 import { PlayerProvider } from "@/contexts/PlayerContext";
 import { PlaylistComposerProvider } from "@/contexts/PlaylistComposerContext";
 import { SavedAlbumsProvider } from "@/contexts/SavedAlbumsContext";
+import { OfflineProvider } from "@/contexts/OfflineContext";
 import { Shell } from "@/components/layout/Shell";
 import { Home } from "@/pages/Home";
 import { Explore } from "@/pages/Explore";
 import { Library } from "@/pages/Library";
 import { Settings } from "@/pages/Settings";
 import { Upload } from "@/pages/Upload";
+import { AuthCallback } from "@/pages/AuthCallback";
 import { Login } from "@/pages/Login";
 import { Register } from "@/pages/Register";
 
@@ -154,6 +156,7 @@ export function App() {
       <ServerGate>
       <Routes>
         <Route path="/server-setup" element={<ServerSetup />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route
@@ -162,11 +165,13 @@ export function App() {
               <PlayerProvider>
                 <ArtistFollowsProvider>
                   <LikedTracksProvider>
-                    <SavedAlbumsProvider>
-                      <PlaylistComposerProvider>
-                        <Shell />
-                      </PlaylistComposerProvider>
-                    </SavedAlbumsProvider>
+                    <OfflineProvider>
+                      <SavedAlbumsProvider>
+                        <PlaylistComposerProvider>
+                          <Shell />
+                        </PlaylistComposerProvider>
+                      </SavedAlbumsProvider>
+                    </OfflineProvider>
                   </LikedTracksProvider>
                 </ArtistFollowsProvider>
               </PlayerProvider>

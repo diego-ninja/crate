@@ -1,6 +1,7 @@
 from crate.genre_descriptions import (
     _extract_wikidata_entity_id,
     _genre_lookup_key,
+    _is_valid_musicbrainz_relation_candidate,
     _is_low_value_description,
     _map_musicbrainz_relationships,
     _normalize_musicbrainz_relation_name,
@@ -85,6 +86,25 @@ def test_parse_musicbrainz_genre_relationships_reads_multiple_sections() -> None
     }
 
 
+def test_parse_musicbrainz_genre_relationships_stops_before_external_links_and_filters_noise() -> None:
+    lines = [
+        "Relationships",
+        "related: melodic hardcore",
+        "influenced by: hardcore punk",
+        "External links:",
+        "Wikidata:",
+        "Q183862",
+        "Other databases:",
+        "https://rateyourmusic.com/genre/metalcore/",
+    ]
+
+    relationships = _parse_musicbrainz_genre_relationships(lines)
+
+    assert relationships == {
+        "influenced by": ["hardcore punk"],
+    }
+
+
 def test_map_musicbrainz_relationships_uses_direction_expected_by_local_model() -> None:
     relationships = {
         "subgenre of": ["punk"],
@@ -107,3 +127,10 @@ def test_map_musicbrainz_relationships_uses_direction_expected_by_local_model() 
 
 def test_normalize_musicbrainz_relation_name_strips_parenthetical_notes() -> None:
     assert _normalize_musicbrainz_relation_name("beat rock (Japanese 1980s genre)") == "beat rock"
+
+
+def test_musicbrainz_relation_candidate_filter_rejects_urls_and_wikidata_noise() -> None:
+    assert not _is_valid_musicbrainz_relation_candidate("wikidata:")
+    assert not _is_valid_musicbrainz_relation_candidate("Q183862")
+    assert not _is_valid_musicbrainz_relation_candidate("https://rateyourmusic.com/genre/metalcore/")
+    assert _is_valid_musicbrainz_relation_candidate("melodic hardcore")

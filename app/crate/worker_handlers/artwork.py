@@ -4,7 +4,8 @@ import json
 import logging
 import time
 from pathlib import Path
-from crate.db import emit_task_event, get_db_ctx, get_library_artist, get_task, set_cache, update_task
+from crate.db import emit_task_event, get_library_artist, get_task, set_cache, update_task
+from crate.db.jobs.artwork import set_album_has_cover, set_artist_has_photo
 from crate.storage_layout import resolve_artist_dir
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled, start_scan
 
@@ -447,8 +448,7 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
             return {"error": "Artist directory not found"}
         dest = _safe_dest(found_dir / "artist.jpg")
         img.save(str(dest), "JPEG", quality=92)
-        with get_db_ctx() as cur:
-            cur.execute("UPDATE library_artists SET has_photo = 1 WHERE name = %s", (artist,))
+        set_artist_has_photo(artist)
     elif img_type == "background":
         artist_row = get_library_artist(artist)
         found_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist, existing_only=True)
@@ -534,8 +534,7 @@ def _handle_fetch_album_cover(task_id: str, params: dict, config: dict) -> dict:
     if cover_data:
         save_cover(album_dir, cover_data)
         if album_id:
-            with get_db_ctx() as cur:
-                cur.execute("UPDATE library_albums SET has_cover = 1 WHERE id = %s", (album_id,))
+            set_album_has_cover(album_id)
         emit_task_event(task_id, "cover_applied", {
             "message": f"Cover found for {artist} / {album} ({source})",
             "source": source,

@@ -1,18 +1,21 @@
 import {
   getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
+  getSmartCrossfadePreference,
   getSmartPlaylistSuggestionsCadencePreference,
   getSmartPlaylistSuggestionsPreference,
   setInfinitePlaybackPreference,
   setCrossfadeDurationPreference,
+  setSmartCrossfadePreference,
   setSmartPlaylistSuggestionsCadencePreference,
   setSmartPlaylistSuggestionsPreference,
 } from "@/lib/player-playback-prefs";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { Upload, BarChart3, Loader2, LogOut, Lock, MapPin, Moon, Navigation, Radio, Shield, Smartphone, Users } from "lucide-react";
+import { ArrowDownToLine, BarChart3, Loader2, LogOut, Lock, MapPin, Moon, Navigation, Radio, RefreshCw, Shield, Smartphone, Trash2, Upload, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { ServersSection } from "@/components/settings/ServersSection";
 import { api } from "@/lib/api";
@@ -45,6 +48,18 @@ interface UserSession {
   user_agent?: string | null;
   app_id?: string | null;
   device_label?: string | null;
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
 }
 
 function Section({
@@ -152,7 +167,15 @@ function ToggleRow({
 
 export function Settings() {
   const { user, logout } = useAuth();
+  const {
+    supported: offlineSupported,
+    syncing: offlineSyncing,
+    summary: offlineSummary,
+    syncAll,
+    clearActiveProfile,
+  } = useOffline();
   const [crossfadeSeconds, setCrossfadeSeconds] = useState(getCrossfadeDurationPreference);
+  const [smartCrossfadeEnabled, setSmartCrossfadeEnabled] = useState(getSmartCrossfadePreference);
   const [infinitePlaybackEnabled, setInfinitePlaybackEnabled] = useState(getInfinitePlaybackPreference);
   const [smartPlaylistSuggestionsEnabled, setSmartPlaylistSuggestionsEnabled] = useState(
     getSmartPlaylistSuggestionsPreference,
@@ -186,9 +209,18 @@ export function Settings() {
             setInfinitePlaybackPreference(value);
           }}
         />
+        <ToggleRow
+          label="Smart crossfade"
+          description="Use your crossfade setting for playlists, radio, and mixed queues, but keep straight-through gapless playback for album sequencing when shuffle is off."
+          checked={smartCrossfadeEnabled}
+          onChange={(value) => {
+            setSmartCrossfadeEnabled(value);
+            setSmartCrossfadePreference(value);
+          }}
+        />
         <RangeRow
           label="Crossfade"
-          description="Set a preferred crossfade length for compatible transitions. Continuous album playback should still favor the most seamless handoff available."
+          description="Set the preferred crossfade length for transitions that are allowed to blend."
           value={crossfadeSeconds}
           min={0}
           max={12}
@@ -222,6 +254,84 @@ export function Settings() {
             setSmartPlaylistSuggestionsCadencePreference(value);
           }}
         />
+      </Section>
+
+      <Section
+        title="Offline mirror"
+        description="Keep a transparent local mirror of tracks, albums, and static playlists so playback can continue when the network drops."
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-white/40">Items</div>
+            <div className="mt-2 text-2xl font-semibold text-foreground">{offlineSummary.itemCount}</div>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {offlineSummary.readyItemCount} ready
+              {offlineSummary.errorItemCount ? ` · ${offlineSummary.errorItemCount} need attention` : ""}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-white/40">Tracks</div>
+            <div className="mt-2 text-2xl font-semibold text-foreground">
+              {offlineSummary.readyTrackCount}/{offlineSummary.trackCount}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Mirrored on this device</p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-white/40">Storage</div>
+            <div className="mt-2 text-2xl font-semibold text-foreground">
+              {formatBytes(offlineSummary.totalBytes)}
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Approximate offline footprint</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={!offlineSupported || offlineSyncing || offlineSummary.itemCount === 0}
+            onClick={() => {
+              void syncAll()
+                .then(() => {
+                  toast.success("Offline copies synced");
+                })
+                .catch((error) => {
+                  toast.error((error as Error).message || "Failed to sync offline copies");
+                });
+            }}
+            className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-medium text-cyan-100 transition-colors hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {offlineSyncing ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+            Sync offline copy now
+          </button>
+          <button
+            type="button"
+            disabled={!offlineSupported || offlineSyncing || offlineSummary.itemCount === 0}
+            onClick={() => {
+              void clearActiveProfile()
+                .then(() => {
+                  toast.success("Offline copies removed from this device");
+                })
+                .catch((error) => {
+                  toast.error((error as Error).message || "Failed to clear offline copies");
+                });
+            }}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-2 text-sm font-medium text-red-200 transition-colors hover:bg-red-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Trash2 size={16} />
+            Remove offline copies
+          </button>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-muted-foreground">
+          <div className="flex items-start gap-3">
+            <ArrowDownToLine size={16} className="mt-0.5 text-white/50" />
+            <div>
+              {offlineSupported
+                ? "Marked items keep a local mirror on this device. The player will transparently prefer the mirrored copy when it is available."
+                : "Offline mirror is not available in this environment."}
+            </div>
+          </div>
+        </div>
       </Section>
 
       <ServersSection />
@@ -440,7 +550,7 @@ function ScrobbleSection() {
               value={lbToken}
               onChange={(e) => setLbToken(e.target.value)}
               placeholder="API token"
-              className="w-36 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground placeholder:text-white/30 focus:outline-none focus:border-primary/50"
+              className="w-36 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground placeholder:text-white/40 focus:outline-none focus:border-primary/50"
               onKeyDown={(e) => e.key === "Enter" && handleListenBrainzConnect()}
             />
             <button
@@ -751,10 +861,10 @@ function AccountSection() {
                         Last seen {lastSeen ? new Date(lastSeen).toLocaleString() : "recently"}
                       </div>
                       {session.user_agent ? (
-                        <div className="mt-1 truncate text-xs text-white/45">{session.user_agent}</div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground">{session.user_agent}</div>
                       ) : null}
                       {session.last_seen_ip ? (
-                        <div className="mt-1 text-[11px] text-white/35">IP {session.last_seen_ip}</div>
+                        <div className="mt-1 text-[11px] text-white/40">IP {session.last_seen_ip}</div>
                       ) : null}
                     </div>
                     <button
@@ -989,9 +1099,9 @@ function ShowsLocationSection() {
               onFocus={() => searchResults.length > 0 && setShowDropdown(true)}
               onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
               placeholder="Search for a city..."
-              className="w-full h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white outline-none focus:border-primary/40 placeholder:text-white/25"
+              className="w-full h-10 px-3 rounded-lg bg-white/5 border border-white/10 text-sm text-white outline-none focus:border-primary/40 placeholder:text-white/40"
             />
-            {searching && <Loader2 size={14} className="absolute right-3 top-3 animate-spin text-white/30" />}
+            {searching && <Loader2 size={14} className="absolute right-3 top-3 animate-spin text-white/40" />}
             {showDropdown && searchResults.length > 0 && (
               <div className="absolute inset-x-0 top-full z-50 mt-1 overflow-hidden rounded-xl border border-white/10 bg-[#1a1a2e] shadow-xl">
                 {searchResults.map((result) => (
@@ -1021,7 +1131,7 @@ function ShowsLocationSection() {
               key={r}
               onClick={() => saveRadius(r)}
               className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                radius === r ? "bg-primary text-white" : "bg-white/5 text-white/50 hover:bg-white/10"
+                radius === r ? "bg-primary text-white" : "bg-white/5 text-muted-foreground hover:bg-white/10"
               }`}
             >
               {r} km

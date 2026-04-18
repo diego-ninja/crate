@@ -14,7 +14,17 @@ import os
 import shutil
 from pathlib import Path
 
-from crate.db import emit_task_event, get_db_ctx, set_cache, delete_cache, update_task
+from crate.db import emit_task_event, set_cache, delete_cache, update_task
+from crate.db.jobs.migration import (
+    get_album_tracks,
+    get_all_artists_for_migration,
+    get_all_tracks_for_verification,
+    get_artist_album_paths,
+    get_artist_albums_ordered,
+    update_album_path,
+    update_artist_folder_name,
+    update_track_path,
+)
 from crate.storage_layout import looks_like_storage_id
 from crate.worker_handlers import TaskHandler, is_cancelled
 
@@ -27,12 +37,7 @@ def _is_already_migrated_artist(artist: dict) -> bool:
     if not looks_like_storage_id(folder):
         return False
     # Verify albums are actually at V2 paths
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT path FROM library_albums WHERE artist = %s LIMIT 5",
-            (artist["name"],),
-        )
-        albums = cur.fetchall()
+    albums = get_artist_album_paths(artist["name"], limit=5)
     if not albums:
         return True
     # If any album path doesn't contain the artist's storage_id, not fully migrated
@@ -81,12 +86,7 @@ def _migrate_album(
     tracks_moved = 0
     tracks_failed = 0
 
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT id, storage_id, path, filename FROM library_tracks WHERE album_id = %s",
-            (album_id,),
-        )
-        tracks = cur.fetchall()
+    tracks = get_album_tracks(album_id)
 
     for track in tracks:
         track_id = track["id"]
@@ -98,11 +98,7 @@ def _migrate_album(
             new_candidate = target_album_dir / f"{track_storage_id}{old_track_path.suffix.lower()}"
             if new_candidate.is_file():
                 # Already moved — just update DB
-                with get_db_ctx() as cur:
-                    cur.execute(
-                        "UPDATE library_tracks SET path = %s, filename = %s WHERE id = %s",
-                        (str(new_candidate), new_candidate.name, track_id),
-                    )
+                update_track_path(track_id, str(new_candidate), new_candidate.name)
                 tracks_moved += 1
                 continue
             tracks_failed += 1
@@ -124,11 +120,7 @@ def _migrate_album(
                 continue
 
         # Update DB path for this track
-        with get_db_ctx() as cur:
-            cur.execute(
-                "UPDATE library_tracks SET path = %s, filename = %s WHERE id = %s",
-                (str(new_track_path), new_filename, track_id),
-            )
+        update_track_path(track_id, str(new_track_path), new_filename)
         tracks_moved += 1
 
     # Move non-audio files (cover.jpg, artwork, etc.) preserving names
@@ -146,11 +138,7 @@ def _migrate_album(
                             log.debug("Failed to move non-audio file %s", item)
 
     # Update album path in DB
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_albums SET path = %s WHERE id = %s",
-            (str(target_album_dir), album_id),
-        )
+    update_album_path(album_id, str(target_album_dir))
 
     # Clean up empty source directory (only if different from target)
     if old_album_path.resolve() != target_album_dir.resolve():
@@ -209,12 +197,7 @@ def _migrate_artist(
     set_cache(f"processing:{artist_name.lower()}", True, ttl=3600)
 
     # Fetch all albums for this artist
-    with get_db_ctx() as cur:
-        cur.execute(
-            "SELECT id, storage_id, path, name FROM library_albums WHERE artist = %s ORDER BY name",
-            (artist_name,),
-        )
-        albums = cur.fetchall()
+    albums = get_artist_albums_ordered(artist_name)
 
     if not albums:
         return {"status": "skipped", "reason": "no_albums", "artist": artist_name}
@@ -243,11 +226,7 @@ def _migrate_artist(
             albums_failed += 1
 
     # Update artist folder_name to storage_id
-    with get_db_ctx() as cur:
-        cur.execute(
-            "UPDATE library_artists SET folder_name = %s WHERE name = %s",
-            (artist_storage_id, artist_name),
-        )
+    update_artist_folder_name(artist_name, artist_storage_id)
 
     # Move artist-level files (artist.jpg, background.jpg) to new dir
     old_folder = artist.get("folder_name") or artist_name
@@ -305,17 +284,7 @@ def _handle_migrate_storage_v2(task_id: str, params: dict, config: dict) -> dict
     # Optional: migrate a single artist
     single_artist = params.get("artist")
 
-    with get_db_ctx() as cur:
-        if single_artist:
-            cur.execute(
-                "SELECT id, name, storage_id, folder_name FROM library_artists WHERE name = %s",
-                (single_artist,),
-            )
-        else:
-            cur.execute(
-                "SELECT id, name, storage_id, folder_name FROM library_artists ORDER BY name"
-            )
-        artists = cur.fetchall()
+    artists = get_all_artists_for_migration(single_artist)
 
     total = len(artists)
     migrated = 0
@@ -431,9 +400,7 @@ def _handle_verify_storage_v2(task_id: str, params: dict, config: dict) -> dict:
     ok_tracks = 0
 
     # Check all tracks in DB have existing files
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, path, storage_id, artist, title FROM library_tracks")
-        tracks = cur.fetchall()
+    tracks = get_all_tracks_for_verification()
 
     total = len(tracks)
     for i, track in enumerate(tracks):

@@ -85,6 +85,7 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "infer_genre_taxonomy": ("fast",    3, 3600, 0),
     "enrich_genre_descriptions": ("fast", 3, 3600, 0),
     "sync_musicbrainz_genre_graph": ("fast", 3, 5400, 0),
+    "cleanup_invalid_genre_taxonomy": ("fast", 3, 900, 0),
     "remux_m4a_dash":       ("fast",    3, 7200, 0),
     "scan_missing_covers":  ("fast",    3, 3600, 0),
     "fetch_artwork_all":    ("fast",    3, 3600, 0),

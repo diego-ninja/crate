@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, getApiBase } from "@/lib/api";
+import { isNative } from "@/lib/capacitor";
 
 interface ProviderConfig {
   enabled: boolean;
@@ -48,17 +49,27 @@ export function OAuthButtons({ returnTo = "/", inviteToken }: OAuthButtonsProps)
 
   function handleOAuth(_provider: string, item: ProviderConfig) {
     if (!item.configured || !item.login_url) return;
-    const target = new URL(item.login_url, window.location.origin);
-    target.searchParams.set("return_to", `${window.location.origin}${returnTo}`);
+    const base = getApiBase() || window.location.origin;
+    const target = new URL(item.login_url, base);
     if (inviteToken) target.searchParams.set("invite", inviteToken);
-    window.location.href = target.toString();
+    if (isNative) {
+      target.searchParams.set("return_to", "cratemusic://oauth/callback");
+      import("@capacitor/browser").then(({ Browser }) => {
+        Browser.open({ url: target.toString() });
+      });
+    } else {
+      const callbackUrl = new URL("/auth/callback", window.location.origin);
+      if (returnTo && returnTo !== "/") callbackUrl.searchParams.set("next", returnTo);
+      target.searchParams.set("return_to", callbackUrl.toString());
+      window.location.href = target.toString();
+    }
   }
 
   return (
     <>
       <div className="relative flex items-center gap-3 py-1">
         <div className="flex-1 border-t border-white/10" />
-        <span className="text-xs text-white/30">or</span>
+        <span className="text-xs text-white/40">or</span>
         <div className="flex-1 border-t border-white/10" />
       </div>
 

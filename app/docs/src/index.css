@@ -1,3 +1,4 @@
+@import "../../shared/fonts/poppins.css";
 @import "tailwindcss";
 
 @theme inline {
@@ -42,7 +43,7 @@ body {
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-family: "Poppins", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   background:
     radial-gradient(circle at top left, rgba(6, 182, 212, 0.08), transparent 28%),
     radial-gradient(circle at top right, rgba(14, 116, 144, 0.1), transparent 22%),

@@ -11,18 +11,71 @@ import hmac
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import FileResponse, JSONResponse
 
-from crate.db import get_db_ctx, get_user_by_email
+from crate.db import get_user_by_email
+from crate.db.queries.subsonic import (
+    get_user_by_username,
+    get_all_artists_sorted,
+    get_artist_by_id,
+    get_albums_by_artist_name,
+    get_album_with_artist,
+    get_tracks_by_album_id,
+    get_track_full,
+    get_album_list,
+    search_artists,
+    search_albums,
+    search_tracks,
+    get_track_path_and_format,
+    get_track_basic,
+    get_random_tracks,
+)
 from crate.auth import verify_password
 from crate.api._deps import library_path
+from crate.api.schemas.subsonic import (
+    SubsonicAlbumList2Response,
+    SubsonicAlbumResponse,
+    SubsonicArtistResponse,
+    SubsonicArtistsResponse,
+    SubsonicLicenseResponse,
+    SubsonicMusicFoldersResponse,
+    SubsonicOkResponse,
+    SubsonicPlaylistsResponse,
+    SubsonicRandomSongsResponse,
+    SubsonicSearchResult3Response,
+    SubsonicSongResponse,
+    SubsonicStarred2Response,
+    SubsonicUserResponse,
+)
 
 log = logging.getLogger(__name__)
-router = APIRouter(prefix="/rest", tags=["subsonic"])
 
 SUBSONIC_API_VERSION = "1.16.1"
 SERVER_NAME = "Crate"
+
+
+def _subsonic_docs_params(
+    username: str = Query("", alias="u", description="Subsonic username or email."),
+    password: str = Query(
+        "",
+        alias="p",
+        description="Plain password, or `enc:` plus a UTF-8 hex payload. Use either `p` or `t` + `s`.",
+    ),
+    token: str = Query("", alias="t", description="MD5 token used for Subsonic token authentication."),
+    salt: str = Query("", alias="s", description="Random salt paired with `t`."),
+    version: str = Query(SUBSONIC_API_VERSION, alias="v", description="Requested Subsonic API version."),
+    client: str = Query("crate-docs", alias="c", description="Client identifier."),
+    response_format: str = Query(
+        "json",
+        alias="f",
+        description="Requested response format. Crate currently responds with JSON.",
+    ),
+) -> None:
+    del username, password, token, salt, version, client, response_format
+
+
+router = APIRouter(prefix="/rest", tags=["subsonic"], dependencies=[Depends(_subsonic_docs_params)])
 
 
 # ── Auth ────────────────────────────────────────────────────────
@@ -41,11 +94,7 @@ def _subsonic_auth(request: Request) -> dict | None:
     user = get_user_by_email(username)
     if not user:
         # Try username field too
-        with get_db_ctx() as cur:
-            cur.execute("SELECT * FROM users WHERE username = %s", (username,))
-            row = cur.fetchone()
-            if row:
-                user = dict(row)
+        user = get_user_by_username(username)
 
     if not user or not user.get("password_hash"):
         return None
@@ -106,8 +155,8 @@ class SubsonicAuthError(Exception):
 
 # ── System ──────────────────────────────────────────────────────
 
-@router.get("/ping")
-@router.get("/ping.view")
+@router.get("/ping", response_model=SubsonicOkResponse, summary="Ping the Subsonic API")
+@router.get("/ping.view", include_in_schema=False)
 def ping(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -116,8 +165,8 @@ def ping(request: Request):
     return _subsonic_response({})
 
 
-@router.get("/getLicense")
-@router.get("/getLicense.view")
+@router.get("/getLicense", response_model=SubsonicLicenseResponse, summary="Get the Subsonic license status")
+@router.get("/getLicense.view", include_in_schema=False)
 def get_license(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -128,8 +177,12 @@ def get_license(request: Request):
     })
 
 
-@router.get("/getMusicFolders")
-@router.get("/getMusicFolders.view")
+@router.get(
+    "/getMusicFolders",
+    response_model=SubsonicMusicFoldersResponse,
+    summary="List available Subsonic music folders",
+)
+@router.get("/getMusicFolders.view", include_in_schema=False)
 def get_music_folders(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -140,8 +193,8 @@ def get_music_folders(request: Request):
     })
 
 
-@router.get("/getUser")
-@router.get("/getUser.view")
+@router.get("/getUser", response_model=SubsonicUserResponse, summary="Fetch a Subsonic user profile")
+@router.get("/getUser.view", include_in_schema=False)
 def get_user(request: Request, username: str = Query("")):
     try:
         user = _require_subsonic_auth(request)
@@ -169,21 +222,15 @@ def get_user(request: Request, username: str = Query("")):
 
 # ── Browse ──────────────────────────────────────────────────────
 
-@router.get("/getArtists")
-@router.get("/getArtists.view")
+@router.get("/getArtists", response_model=SubsonicArtistsResponse, summary="Browse artists grouped by index letter")
+@router.get("/getArtists.view", include_in_schema=False)
 def get_artists(request: Request):
     try:
         _require_subsonic_auth(request)
     except SubsonicAuthError:
         return _subsonic_error(40, "Wrong username or password")
 
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT id, name, album_count, COALESCE(listeners, 0) as listeners
-            FROM library_artists
-            ORDER BY name
-        """)
-        rows = cur.fetchall()
+    rows = get_all_artists_sorted()
 
     # Group by first letter
     index_map: dict[str, list] = {}
@@ -204,8 +251,8 @@ def get_artists(request: Request):
     })
 
 
-@router.get("/getArtist")
-@router.get("/getArtist.view")
+@router.get("/getArtist", response_model=SubsonicArtistResponse, summary="Fetch a Subsonic artist with albums")
+@router.get("/getArtist.view", include_in_schema=False)
 def get_artist(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -214,20 +261,11 @@ def get_artist(request: Request, id: str = Query("")):
 
     artist_id = int(id.replace("ar-", "")) if id.startswith("ar-") else int(id)
 
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, name FROM library_artists WHERE id = %s", (artist_id,))
-        artist = cur.fetchone()
-        if not artist:
-            return _subsonic_error(70, "Artist not found")
+    artist = get_artist_by_id(artist_id)
+    if not artist:
+        return _subsonic_error(70, "Artist not found")
 
-        cur.execute("""
-            SELECT id, name, year, track_count, has_cover,
-                   COALESCE(total_duration, 0) as duration
-            FROM library_albums
-            WHERE artist = %s
-            ORDER BY year DESC NULLS LAST, name
-        """, (artist["name"],))
-        albums = cur.fetchall()
+    albums = get_albums_by_artist_name(artist["name"])
 
     return _subsonic_response({
         "artist": {
@@ -248,8 +286,8 @@ def get_artist(request: Request, id: str = Query("")):
     })
 
 
-@router.get("/getAlbum")
-@router.get("/getAlbum.view")
+@router.get("/getAlbum", response_model=SubsonicAlbumResponse, summary="Fetch a Subsonic album with songs")
+@router.get("/getAlbum.view", include_in_schema=False)
 def get_album(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -258,29 +296,11 @@ def get_album(request: Request, id: str = Query("")):
 
     album_id = int(id.replace("al-", "")) if id.startswith("al-") else int(id)
 
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT a.id, a.name, a.artist, a.year, a.track_count, a.has_cover,
-                   COALESCE(a.total_duration, 0) as duration,
-                   ar.id as artist_id
-            FROM library_albums a
-            LEFT JOIN library_artists ar ON ar.name = a.artist
-            WHERE a.id = %s
-        """, (album_id,))
-        album = cur.fetchone()
-        if not album:
-            return _subsonic_error(70, "Album not found")
+    album = get_album_with_artist(album_id)
+    if not album:
+        return _subsonic_error(70, "Album not found")
 
-        cur.execute("""
-            SELECT id, title, artist, album, path, duration,
-                   COALESCE(track_number, 0) as track,
-                   COALESCE(disc_number, 1) as disc,
-                   format, bitrate, sample_rate
-            FROM library_tracks
-            WHERE album_id = %s
-            ORDER BY disc_number, track_number
-        """, (album_id,))
-        tracks = cur.fetchall()
+    tracks = get_tracks_by_album_id(album_id)
 
     return _subsonic_response({
         "album": {
@@ -314,8 +334,8 @@ def get_album(request: Request, id: str = Query("")):
     })
 
 
-@router.get("/getSong")
-@router.get("/getSong.view")
+@router.get("/getSong", response_model=SubsonicSongResponse, summary="Fetch a single Subsonic song")
+@router.get("/getSong.view", include_in_schema=False)
 def get_song(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -323,20 +343,9 @@ def get_song(request: Request, id: str = Query("")):
         return _subsonic_error(40, "Wrong username or password")
 
     track_id = int(id)
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.id, t.title, t.artist, t.album, t.path, t.duration,
-                   t.track_number, t.disc_number, t.format, t.bitrate,
-                   a.id as album_id, a.has_cover, a.year,
-                   ar.id as artist_id
-            FROM library_tracks t
-            LEFT JOIN library_albums a ON a.id = t.album_id
-            LEFT JOIN library_artists ar ON ar.name = t.artist
-            WHERE t.id = %s
-        """, (track_id,))
-        t = cur.fetchone()
-        if not t:
-            return _subsonic_error(70, "Song not found")
+    t = get_track_full(track_id)
+    if not t:
+        return _subsonic_error(70, "Song not found")
 
     return _subsonic_response({
         "song": {
@@ -362,8 +371,12 @@ def get_song(request: Request, id: str = Query("")):
 
 # ── Album Lists ─────────────────────────────────────────────────
 
-@router.get("/getAlbumList2")
-@router.get("/getAlbumList2.view")
+@router.get(
+    "/getAlbumList2",
+    response_model=SubsonicAlbumList2Response,
+    summary="List albums using a Subsonic album-list strategy",
+)
+@router.get("/getAlbumList2.view", include_in_schema=False)
 def get_album_list2(
     request: Request,
     type: str = Query("alphabeticalByName"),
@@ -385,17 +398,7 @@ def get_album_list2(
     }
     order = order_map.get(type, "a.name ASC")
 
-    with get_db_ctx() as cur:
-        cur.execute(f"""
-            SELECT a.id, a.name, a.artist, a.year, a.track_count, a.has_cover,
-                   COALESCE(a.total_duration, 0) as duration,
-                   ar.id as artist_id
-            FROM library_albums a
-            LEFT JOIN library_artists ar ON ar.name = a.artist
-            ORDER BY {order}
-            LIMIT %s OFFSET %s
-        """, (size, offset))
-        albums = cur.fetchall()
+    albums = get_album_list(order, size, offset)
 
     return _subsonic_response({
         "albumList2": {
@@ -415,8 +418,8 @@ def get_album_list2(
 
 # ── Search ──────────────────────────────────────────────────────
 
-@router.get("/search3")
-@router.get("/search3.view")
+@router.get("/search3", response_model=SubsonicSearchResult3Response, summary="Search artists, albums, and songs")
+@router.get("/search3.view", include_in_schema=False)
 def search3(
     request: Request,
     query: str = Query("", alias="query"),
@@ -432,51 +435,53 @@ def search3(
     q = f"%{query}%"
     result: dict = {"artist": [], "album": [], "song": []}
 
-    with get_db_ctx() as cur:
-        cur.execute("SELECT id, name FROM library_artists WHERE name ILIKE %s LIMIT %s", (q, artistCount))
-        result["artist"] = [{"id": f"ar-{r['id']}", "name": r["name"]} for r in cur.fetchall()]
+    result["artist"] = [{"id": f"ar-{r['id']}", "name": r["name"]} for r in search_artists(q, artistCount)]
 
-        cur.execute("""
-            SELECT a.id, a.name, a.artist, a.year, a.has_cover, ar.id as artist_id
-            FROM library_albums a
-            LEFT JOIN library_artists ar ON ar.name = a.artist
-            WHERE a.name ILIKE %s
-            LIMIT %s
-        """, (q, albumCount))
-        result["album"] = [{
-            "id": f"al-{r['id']}", "name": r["name"], "artist": r["artist"],
-            "artistId": f"ar-{r['artist_id']}" if r["artist_id"] else None,
-            "year": int(r["year"]) if r["year"] else None,
-            "coverArt": f"al-{r['id']}" if r["has_cover"] else None,
-        } for r in cur.fetchall()]
+    result["album"] = [{
+        "id": f"al-{r['id']}", "name": r["name"], "artist": r["artist"],
+        "artistId": f"ar-{r['artist_id']}" if r["artist_id"] else None,
+        "year": int(r["year"]) if r["year"] else None,
+        "coverArt": f"al-{r['id']}" if r["has_cover"] else None,
+    } for r in search_albums(q, albumCount)]
 
-        cur.execute("""
-            SELECT t.id, t.title, t.artist, t.album, t.duration, t.path,
-                   t.format, t.bitrate, a.id as album_id, a.has_cover, ar.id as artist_id
-            FROM library_tracks t
-            LEFT JOIN library_albums a ON a.id = t.album_id
-            LEFT JOIN library_artists ar ON ar.name = t.artist
-            WHERE t.title ILIKE %s OR t.artist ILIKE %s
-            LIMIT %s
-        """, (q, q, songCount))
-        result["song"] = [{
-            "id": str(r["id"]), "title": r["title"], "artist": r["artist"],
-            "album": r["album"], "duration": r["duration"] or 0,
-            "albumId": f"al-{r['album_id']}" if r["album_id"] else None,
-            "artistId": f"ar-{r['artist_id']}" if r["artist_id"] else None,
-            "coverArt": f"al-{r['album_id']}" if r["album_id"] and r["has_cover"] else None,
-            "suffix": (r["format"] or "mp3").lower(),
-            "contentType": _content_type(r["format"]),
-            "type": "music",
-        } for r in cur.fetchall()]
+    result["song"] = [{
+        "id": str(r["id"]), "title": r["title"], "artist": r["artist"],
+        "album": r["album"], "duration": r["duration"] or 0,
+        "albumId": f"al-{r['album_id']}" if r["album_id"] else None,
+        "artistId": f"ar-{r['artist_id']}" if r["artist_id"] else None,
+        "coverArt": f"al-{r['album_id']}" if r["album_id"] and r["has_cover"] else None,
+        "suffix": (r["format"] or "mp3").lower(),
+        "contentType": _content_type(r["format"]),
+        "type": "music",
+    } for r in search_tracks(q, songCount)]
 
     return _subsonic_response({"searchResult3": result})
 
 
 # ── Stream & Cover Art ──────────────────────────────────────────
 
-@router.get("/stream")
-@router.get("/stream.view")
+@router.get(
+    "/stream",
+    summary="Stream a track through the Subsonic API",
+    responses={
+        200: {
+            "description": "Audio stream for the requested track, or a Subsonic error envelope.",
+            "content": {
+                "application/json": {"schema": {"$ref": "#/components/schemas/SubsonicOkResponse"}},
+                "audio/mpeg": {"schema": {"type": "string", "format": "binary"}},
+                "audio/flac": {"schema": {"type": "string", "format": "binary"}},
+                "audio/ogg": {"schema": {"type": "string", "format": "binary"}},
+                "audio/mp4": {"schema": {"type": "string", "format": "binary"}},
+                "audio/aac": {"schema": {"type": "string", "format": "binary"}},
+                "audio/wav": {"schema": {"type": "string", "format": "binary"}},
+                "audio/opus": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        403: {"description": "Forbidden path outside the library root."},
+        404: {"description": "Track file not found."},
+    },
+)
+@router.get("/stream.view", include_in_schema=False)
 def stream(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -484,13 +489,9 @@ def stream(request: Request, id: str = Query("")):
         return _subsonic_error(40, "Wrong username or password")
 
     track_id = int(id)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT path, format FROM library_tracks WHERE id = %s", (track_id,))
-        track = cur.fetchone()
-        if not track:
-            return Response(status_code=404)
-
-    from fastapi.responses import FileResponse
+    track = get_track_path_and_format(track_id)
+    if not track:
+        return Response(status_code=404)
 
     lib = library_path()
     filepath = Path(track["path"])
@@ -512,8 +513,23 @@ def stream(request: Request, id: str = Query("")):
     )
 
 
-@router.get("/getCoverArt")
-@router.get("/getCoverArt.view")
+@router.get(
+    "/getCoverArt",
+    summary="Fetch album or artist artwork via the Subsonic API",
+    responses={
+        200: {
+            "description": "Artwork image, or a Subsonic error envelope.",
+            "content": {
+                "application/json": {"schema": {"$ref": "#/components/schemas/SubsonicOkResponse"}},
+                "image/jpeg": {"schema": {"type": "string", "format": "binary"}},
+                "image/png": {"schema": {"type": "string", "format": "binary"}},
+                "image/webp": {"schema": {"type": "string", "format": "binary"}},
+            },
+        },
+        404: {"description": "Artwork not found."},
+    },
+)
+@router.get("/getCoverArt.view", include_in_schema=False)
 def get_cover_art(request: Request, id: str = Query("")):
     try:
         _require_subsonic_auth(request)
@@ -534,10 +550,10 @@ def get_cover_art(request: Request, id: str = Query("")):
 
 # ── Scrobble ────────────────────────────────────────────────────
 
-@router.get("/scrobble")
-@router.get("/scrobble.view")
-@router.post("/scrobble")
-@router.post("/scrobble.view")
+@router.get("/scrobble", response_model=SubsonicOkResponse, summary="Record a completed Subsonic scrobble")
+@router.get("/scrobble.view", include_in_schema=False)
+@router.post("/scrobble", response_model=SubsonicOkResponse, summary="Record a completed Subsonic scrobble")
+@router.post("/scrobble.view", include_in_schema=False)
 def scrobble(request: Request, id: str = Query(""), submission: str = Query("true")):
     try:
         user = _require_subsonic_auth(request)
@@ -548,9 +564,7 @@ def scrobble(request: Request, id: str = Query(""), submission: str = Query("tru
         return _subsonic_response({})
 
     track_id = int(id)
-    with get_db_ctx() as cur:
-        cur.execute("SELECT title, artist, album FROM library_tracks WHERE id = %s", (track_id,))
-        track = cur.fetchone()
+    track = get_track_basic(track_id)
 
     if track:
         from crate.db.user_library import record_play
@@ -561,8 +575,8 @@ def scrobble(request: Request, id: str = Query(""), submission: str = Query("tru
 
 # ── Stubs (required by clients but not critical) ────────────────
 
-@router.get("/getPlaylists")
-@router.get("/getPlaylists.view")
+@router.get("/getPlaylists", response_model=SubsonicPlaylistsResponse, summary="List playlists for Subsonic clients")
+@router.get("/getPlaylists.view", include_in_schema=False)
 def get_playlists(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -571,8 +585,8 @@ def get_playlists(request: Request):
     return _subsonic_response({"playlists": {"playlist": []}})
 
 
-@router.get("/getStarred2")
-@router.get("/getStarred2.view")
+@router.get("/getStarred2", response_model=SubsonicStarred2Response, summary="List starred artists, albums, and songs")
+@router.get("/getStarred2.view", include_in_schema=False)
 def get_starred2(request: Request):
     try:
         _require_subsonic_auth(request)
@@ -581,26 +595,15 @@ def get_starred2(request: Request):
     return _subsonic_response({"starred2": {"artist": [], "album": [], "song": []}})
 
 
-@router.get("/getRandomSongs")
-@router.get("/getRandomSongs.view")
+@router.get("/getRandomSongs", response_model=SubsonicRandomSongsResponse, summary="Fetch random songs for Subsonic clients")
+@router.get("/getRandomSongs.view", include_in_schema=False)
 def get_random_songs(request: Request, size: int = Query(10)):
     try:
         _require_subsonic_auth(request)
     except SubsonicAuthError:
         return _subsonic_error(40, "Wrong username or password")
 
-    with get_db_ctx() as cur:
-        cur.execute("""
-            SELECT t.id, t.title, t.artist, t.album, t.duration, t.path,
-                   t.format, t.bitrate, t.track_number, t.disc_number,
-                   a.id as album_id, a.has_cover, a.year, ar.id as artist_id
-            FROM library_tracks t
-            LEFT JOIN library_albums a ON a.id = t.album_id
-            LEFT JOIN library_artists ar ON ar.name = t.artist
-            ORDER BY RANDOM()
-            LIMIT %s
-        """, (size,))
-        tracks = cur.fetchall()
+    tracks = get_random_tracks(size)
 
     return _subsonic_response({
         "randomSongs": {

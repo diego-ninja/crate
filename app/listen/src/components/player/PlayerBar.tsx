@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
   Heart, Airplay, ListMusic, Mic2, Maximize2, Loader2, SlidersHorizontal,
 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { artistPagePath, albumPagePath } from "@/lib/library-routes";
 import { api } from "@/lib/api";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
@@ -22,17 +24,18 @@ import { WaveformCanvas } from "@/components/player/bar/WaveformCanvas";
 import {
   formatPlayerTime,
   getTrackQualityBadge,
-  generateWaveformBars,
 } from "@/components/player/bar/player-bar-utils";
 import { QualityBadge } from "@/components/player/bar/QualityBadge";
 
 const FS_OPEN_KEY = "listen-fs-player-open";
+const SHOW_PLAYER_BAR_ANALYZER = true;
 
 function getStoredFsOpen(): boolean {
   try { return localStorage.getItem(FS_OPEN_KEY) === "true"; } catch { return false; }
 }
 
 export function PlayerBar() {
+  const navigate = useNavigate();
   const { currentTime, duration, isPlaying, isBuffering, volume, analyserVersion, crossfadeTransition } = usePlayer();
   const {
     currentTrack, shuffle, repeat, playSource, queue, currentIndex,
@@ -41,9 +44,9 @@ export function PlayerBar() {
   } = usePlayerActions();
 
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
-  // While crossfading, the progress bar tracks the OUTGOING track's
-  // remaining audio (the still-audible song) instead of jumping to 0:00
-  // of the incoming. Outside a crossfade these are the live values.
+  // Crossfade still animates visual elements like artwork/title, but
+  // the seek bar and timestamps should always reflect the active
+  // incoming track's live playback state.
   const { displayedTime, displayedDuration } = useCrossfadeAwareProgress(
     crossfadeTransition,
     currentTime,
@@ -66,7 +69,12 @@ export function PlayerBar() {
     return () => window.clearTimeout(id);
   }, [playSource, displayedSource]);
 
-  const { frequencies } = useAudioVisualizer(isPlaying, `${currentTrack?.id ?? "none"}:${analyserVersion}`);
+  const { frequenciesDb, sampleRate } = useAudioVisualizer(
+    SHOW_PLAYER_BAR_ANALYZER && isPlaying,
+    `${currentTrack?.id ?? "none"}:${analyserVersion}`,
+  );
+
+  const [seekHover, setSeekHover] = useState<{ pct: number; time: string } | null>(null);
 
   const isDesktop = useIsDesktop();
   const [extendedOpen, setExtendedOpen] = useState(false);
@@ -117,10 +125,6 @@ export function PlayerBar() {
     }
   }
 
-  const pseudoBars = useMemo(
-    () => currentTrack ? generateWaveformBars(currentTrack.id, 80) : [],
-    [currentTrack],
-  );
   // Fetch quality metadata for the current track (format, bitrate, sample_rate, bit_depth).
   // The Track object may not carry these fields depending on the source (playlist, radio, etc.)
   // so we lazily fetch from the API when the track changes.
@@ -224,8 +228,17 @@ export function PlayerBar() {
               onClick={() => { if (!isDesktop) setFsOpen(true); }}
               onKeyDown={(e) => { if (!isDesktop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setFsOpen(true); } }}
             >
-            {/* Album art — crossfades outgoing ↔ incoming during audio crossfade */}
-              <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-white/5 md:h-12 md:w-12">
+            {/* Album art — crossfades outgoing ↔ incoming during audio crossfade.
+                On desktop, clicking navigates to the album page. */}
+              <div
+                className={`relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-white/5 md:h-12 md:w-12 ${isDesktop && currentTrack.albumId ? "cursor-pointer" : ""}`}
+                onClick={(e) => {
+                  if (isDesktop && currentTrack.albumId) {
+                    e.stopPropagation();
+                    navigate(albumPagePath({ albumId: currentTrack.albumId, albumSlug: currentTrack.albumSlug, albumName: currentTrack.album, artistName: currentTrack.artist }));
+                  }
+                }}
+              >
                 {crossfadeTransition ? (
                   <>
                     {crossfadeTransition.outgoing.albumCover ? (
@@ -266,7 +279,7 @@ export function PlayerBar() {
                       <p className="text-[13px] font-semibold text-white truncate leading-tight">
                         {crossfadeTransition.outgoing.title}
                       </p>
-                      <p className="text-[11px] text-white/50 truncate leading-tight mt-0.5">
+                      <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
                         {crossfadeTransition.outgoing.artist}
                       </p>
                     </div>
@@ -274,19 +287,37 @@ export function PlayerBar() {
                       <p className="text-[13px] font-semibold text-white truncate leading-tight">
                         {crossfadeTransition.incoming.title}
                       </p>
-                      <p className="text-[11px] text-white/50 truncate leading-tight mt-0.5">
+                      <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
                         {crossfadeTransition.incoming.artist}
                       </p>
                     </div>
                   </>
                 ) : (
                   <div key={currentTrack.id} className="animate-track-in">
-                    <p className="text-[13px] font-semibold text-white truncate leading-tight">
-                      {currentTrack.title}
-                    </p>
-                    <p className="text-[11px] text-white/50 truncate leading-tight mt-0.5">
-                      {currentTrack.artist}
-                    </p>
+                    {isDesktop && currentTrack.albumId ? (
+                      <p
+                        className="text-[13px] font-semibold text-white truncate leading-tight hover:underline cursor-pointer"
+                        onClick={(e) => { e.stopPropagation(); navigate(albumPagePath({ albumId: currentTrack.albumId, albumSlug: currentTrack.albumSlug, albumName: currentTrack.album, artistName: currentTrack.artist })); }}
+                      >
+                        {currentTrack.title}
+                      </p>
+                    ) : (
+                      <p className="text-[13px] font-semibold text-white truncate leading-tight">
+                        {currentTrack.title}
+                      </p>
+                    )}
+                    {isDesktop && currentTrack.artistId ? (
+                      <p
+                        className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5 hover:text-foreground hover:underline cursor-pointer transition-colors"
+                        onClick={(e) => { e.stopPropagation(); navigate(artistPagePath({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug, artistName: currentTrack.artist })); }}
+                      >
+                        {currentTrack.artist}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground truncate leading-tight mt-0.5">
+                        {currentTrack.artist}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
@@ -299,7 +330,7 @@ export function PlayerBar() {
                   {previousSource && (
                     <p
                       key={`prev-${previousSource.name}`}
-                      className="absolute inset-0 text-[10px] text-white/30 truncate leading-tight"
+                      className="absolute inset-0 text-[10px] text-white/40 truncate leading-tight"
                       style={{ animation: "fadeOut 320ms ease-out forwards" }}
                     >
                       Playing from: {previousSource.name}
@@ -308,9 +339,17 @@ export function PlayerBar() {
                   {displayedSource && (
                     <p
                       key={`cur-${displayedSource.name}`}
-                      className="text-[10px] text-white/30 truncate leading-tight animate-fade-in"
+                      className="text-[10px] text-white/40 truncate leading-tight animate-fade-in"
                     >
-                      Playing from: {displayedSource.name}
+                      Playing from:{" "}
+                      {displayedSource.href ? (
+                        <span
+                          className="hover:text-foreground hover:underline cursor-pointer transition-colors"
+                          onClick={(e) => { e.stopPropagation(); navigate(displayedSource.href!); }}
+                        >
+                          {displayedSource.name}
+                        </span>
+                      ) : displayedSource.name}
                     </p>
                   )}
                 </div>
@@ -338,73 +377,96 @@ export function PlayerBar() {
             </div>
 
           {/* ── Block 2: Controls + Progress ── */}
-          <div className="mx-auto hidden max-w-[600px] flex-1 flex-col items-center justify-center gap-1 md:flex">
-            {/* Controls */}
-            <div className="flex items-center gap-3 lg:gap-5">
-              <button
-                onClick={toggleShuffle}
-                aria-label={shuffle ? "Disable shuffle" : "Enable shuffle"}
-                className={`transition-colors ${shuffle ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-              >
-                <Shuffle size={15} />
-              </button>
-              <button onClick={prev} aria-label="Previous track" className="text-white/50 hover:text-white transition-colors">
-                <SkipBack size={18} fill="currentColor" />
-              </button>
-              <button
-                onClick={isPlaying ? pause : resume}
-                aria-label={isPlaying ? "Pause" : "Play"}
-                className="w-9 h-9 rounded-full bg-white flex items-center justify-center hover:scale-105 transition-transform"
-              >
-                {isBuffering ? (
-                  <Loader2 size={15} className="animate-spin text-black" />
-                ) : isPlaying ? (
-                  <Pause size={16} className="text-black" />
-                ) : (
-                  <Play size={16} className="text-black ml-0.5" fill="black" />
-                )}
-              </button>
-              <button onClick={next} aria-label="Next track" className="text-white/50 hover:text-white transition-colors">
-                <SkipForward size={18} fill="currentColor" />
-              </button>
-              <button
-                onClick={cycleRepeat}
-                aria-label={`Repeat: ${repeat}`}
-                className={`transition-colors ${repeat !== "off" ? "text-primary" : "text-white/30 hover:text-white/60"}`}
-              >
-                {repeat === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
-              </button>
-            </div>
+          <div className="mx-auto hidden max-w-[640px] flex-1 md:flex md:items-center md:justify-center">
+            <div className="relative w-full overflow-hidden px-4 py-2">
+              {SHOW_PLAYER_BAR_ANALYZER ? (
+                <div className="pointer-events-none absolute inset-0 opacity-28">
+                  <WaveformCanvas
+                    frequenciesDb={frequenciesDb}
+                    sampleRate={sampleRate}
+                    isPlaying={isPlaying}
+                  />
+                  <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(2,6,12,0.14),rgba(2,6,12,0.32)_44%,rgba(2,6,12,0.74))]" />
+                  <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(2,6,12,0.9),rgba(2,6,12,0.14)_12%,rgba(2,6,12,0.14)_88%,rgba(2,6,12,0.9))]" />
+                </div>
+              ) : null}
 
-            {/* Progress with waveform bars. During a crossfade the
-                values come from useCrossfadeAwareProgress so the bar
-                stays on the still-audible outgoing track. */}
-            <div className="flex items-center gap-2 w-full">
-              <span className="text-[10px] text-white/40 w-9 text-right tabular-nums font-mono">
-                {formatPlayerTime(displayedTime)}
-              </span>
-              <div
-                className="flex-1 h-5 relative cursor-pointer group flex items-end"
-                onClick={(e) => {
-                  // Seek operates on the LIVE track (the one the engine
-                  // is actually controlling), not the visually-displayed
-                  // outgoing — clicking during a crossfade should still
-                  // seek the incoming source.
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-                  seek(pct * duration);
-                }}
-              >
-                <WaveformCanvas
-                  bars={pseudoBars}
-                  progress={displayedDuration > 0 ? (displayedTime / displayedDuration) * 100 : 0}
-                  frequencies={frequencies}
-                  isPlaying={isPlaying}
-                />
+              <div className="relative flex items-center justify-center gap-3 lg:gap-5">
+                <button
+                  onClick={toggleShuffle}
+                  aria-label={shuffle ? "Disable shuffle" : "Enable shuffle"}
+                  className={`transition-colors ${shuffle ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                >
+                  <Shuffle size={15} />
+                </button>
+                <button onClick={prev} aria-label="Previous track" className="text-white/50 hover:text-white transition-colors">
+                  <SkipBack size={18} fill="currentColor" />
+                </button>
+                <button
+                  onClick={isPlaying ? pause : resume}
+                  aria-label={isPlaying ? "Pause" : "Play"}
+                  className="w-9 h-9 rounded-full bg-white flex items-center justify-center hover:scale-105 transition-transform"
+                >
+                  {isBuffering ? (
+                    <Loader2 size={15} className="animate-spin text-black" />
+                  ) : isPlaying ? (
+                    <Pause size={16} className="text-black" />
+                  ) : (
+                    <Play size={16} className="text-black ml-0.5" fill="black" />
+                  )}
+                </button>
+                <button onClick={next} aria-label="Next track" className="text-white/50 hover:text-white transition-colors">
+                  <SkipForward size={18} fill="currentColor" />
+                </button>
+                <button
+                  onClick={cycleRepeat}
+                  aria-label={`Repeat: ${repeat}`}
+                  className={`transition-colors ${repeat !== "off" ? "text-primary" : "text-white/30 hover:text-white/60"}`}
+                >
+                  {repeat === "one" ? <Repeat1 size={15} /> : <Repeat size={15} />}
+                </button>
               </div>
-              <span className="text-[10px] text-white/40 w-9 tabular-nums font-mono">
-                {formatPlayerTime(displayedDuration)}
-              </span>
+
+              <div className="relative mt-2 flex items-center gap-2 w-full">
+                <span className="text-[10px] text-white/40 w-9 text-right tabular-nums font-mono">
+                  {formatPlayerTime(displayedTime)}
+                </span>
+                <div
+                  className="group relative flex-1 cursor-pointer py-2"
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    seek(pct * duration);
+                  }}
+                  onPointerMove={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                    setSeekHover({ pct, time: formatPlayerTime(pct * displayedDuration) });
+                  }}
+                  onPointerLeave={() => setSeekHover(null)}
+                >
+                  {seekHover && displayedDuration > 0 && (
+                    <div
+                      className="pointer-events-none absolute -top-6 -translate-x-1/2 rounded bg-black/85 px-1.5 py-0.5 text-[10px] tabular-nums text-white/90 border border-white/10"
+                      style={{ left: `${seekHover.pct * 100}%` }}
+                    >
+                      {seekHover.time}
+                    </div>
+                  )}
+                  <div className="absolute inset-x-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-white/10" />
+                  <div
+                    className="absolute left-0 top-1/2 h-[3px] -translate-y-1/2 rounded-full bg-primary/85 transition-[width] duration-150"
+                    style={{ width: `${displayedDuration > 0 ? (displayedTime / displayedDuration) * 100 : 0}%` }}
+                  />
+                  <div
+                    className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-primary/80 bg-cyan-100 opacity-0 shadow-[0_0_0_3px_rgba(34,211,238,0.14)] transition-opacity duration-150 group-hover:opacity-100"
+                    style={{ left: `calc(${displayedDuration > 0 ? (displayedTime / displayedDuration) * 100 : 0}% - 5px)` }}
+                  />
+                </div>
+                <span className="text-[10px] text-white/40 w-9 tabular-nums font-mono">
+                  {formatPlayerTime(displayedDuration)}
+                </span>
+              </div>
             </div>
           </div>
 

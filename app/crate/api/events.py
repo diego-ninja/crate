@@ -5,11 +5,29 @@ from fastapi import APIRouter, Request
 from starlette.responses import StreamingResponse
 
 from crate.api.auth import _require_auth
+from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, merge_responses
 from crate.db import list_tasks, get_latest_scan, get_task, get_task_events
 from crate.api._deps import get_config, json_dumps
 from crate.importer import ImportQueue
 
-router = APIRouter()
+router = APIRouter(tags=["events"])
+
+_EVENT_SSE_RESPONSES = merge_responses(
+    AUTH_ERROR_RESPONSES,
+    {
+        200: {
+            "description": "Server-sent events stream.",
+            "content": {
+                "text/event-stream": {
+                    "schema": {
+                        "type": "string",
+                        "example": "data: {\"tasks\": [], \"last_scan\": null, \"issue_count\": 0, \"pending_imports\": 0, \"recent_completed\": []}\n\n",
+                    }
+                }
+            },
+        },
+    },
+)
 
 
 # ── Global status stream ─────────────────────────────────────────
@@ -54,7 +72,11 @@ async def _event_stream():
         await asyncio.sleep(2)
 
 
-@router.get("/api/events")
+@router.get(
+    "/api/events",
+    responses=_EVENT_SSE_RESPONSES,
+    summary="Stream global task and scan events",
+)
 async def api_events(request: Request):
     _require_auth(request)
     return StreamingResponse(
@@ -93,7 +115,11 @@ async def _task_event_stream(task_id: str):
         await asyncio.sleep(1)
 
 
-@router.get("/api/events/task/{task_id}")
+@router.get(
+    "/api/events/task/{task_id}",
+    responses=_EVENT_SSE_RESPONSES,
+    summary="Stream events for one task",
+)
 async def api_task_events(request: Request, task_id: str):
     """SSE stream for a specific task's events. Closes when task completes."""
     _require_auth(request)
