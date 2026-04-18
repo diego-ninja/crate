@@ -261,6 +261,7 @@ def test_app():
 
     with patch("crate.api._deps.load_config", return_value=mock_config), \
          patch("crate.db.init_db"), \
+         patch("crate.api.cache_events.broadcast_invalidation"), \
          patch("crate.api.auth.AuthMiddleware.dispatch", _fake_dispatch):
         from crate.api import create_app
         app = create_app()

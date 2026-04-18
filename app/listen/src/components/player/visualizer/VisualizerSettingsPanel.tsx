@@ -37,26 +37,26 @@ export function VisualizerSettingsPanel({ config, className }: VisualizerSetting
   return (
     <div className={`space-y-3 ${className ?? ""}`}>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-white/50">Visualizer</span>
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Visualizer</span>
         <button onClick={resetConfig} className="text-[10px] text-primary hover:underline">Reset</button>
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-white/50">Enabled</span>
+        <span className="text-[11px] text-muted-foreground">Enabled</span>
         <Toggle on={vizEnabled} onToggle={toggleEnabled} />
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-white/50">Album palette</span>
+        <span className="text-[11px] text-muted-foreground">Album palette</span>
         <Toggle on={useAlbumPalette} onToggle={toggleAlbumPalette} />
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-white/50">Track adaptive</span>
+        <span className="text-[11px] text-muted-foreground">Track adaptive</span>
         <Toggle on={trackAdaptiveViz} onToggle={toggleTrackAdaptive} />
       </div>
 
-      <div className="rounded-md border border-white/8 bg-white/[0.03] px-2.5 py-2 text-[10px] text-white/45">
+      <div className="rounded-md border border-white/8 bg-white/[0.03] px-2.5 py-2 text-[10px] text-muted-foreground">
         {trackAdaptiveViz
           ? trackVizProfile.hasAnalysis
             ? `Using track analysis${trackVizProfile.summary ? ` · ${trackVizProfile.summary}` : ""}`
@@ -70,7 +70,7 @@ export function VisualizerSettingsPanel({ config, className }: VisualizerSetting
             <span className="text-white/40">{label}</span>
             <div className="flex items-center gap-2 font-mono">
               {trackAdaptiveViz ? (
-                <span className="text-white/35">
+                <span className="text-white/40">
                   {vizConfig[key].toFixed(key === "octaves" ? 0 : 1)}
                 </span>
               ) : null}

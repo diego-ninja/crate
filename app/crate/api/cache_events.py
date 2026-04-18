@@ -80,14 +80,20 @@ def broadcast_invalidation(*scopes: str):
     Writes to Redis (shared across workers) and also clears the
     backend's own cache for the affected scopes so that refetch
     requests don't receive stale data.
+
+    Failures are logged but never propagate — mutations must succeed
+    even if cache invalidation is temporarily unavailable.
     """
-    r = _get_redis()
-    for scope in scopes:
-        event_id = r.incr(_EVENT_ID_KEY)
-        event = json.dumps({"id": event_id, "scope": scope, "ts": time()})
-        r.lpush(_EVENTS_KEY, event)
-        r.ltrim(_EVENTS_KEY, 0, _MAX_EVENTS - 1)
-        log.debug("cache invalidation: %s (event %d)", scope, event_id)
+    try:
+        r = _get_redis()
+        for scope in scopes:
+            event_id = r.incr(_EVENT_ID_KEY)
+            event = json.dumps({"id": event_id, "scope": scope, "ts": time()})
+            r.lpush(_EVENTS_KEY, event)
+            r.ltrim(_EVENTS_KEY, 0, _MAX_EVENTS - 1)
+            log.debug("cache invalidation: %s (event %d)", scope, event_id)
+    except Exception as exc:
+        log.warning("Failed to broadcast cache invalidation for %s: %s", scopes, exc)
 
     # Clear backend cache for the affected scopes so refetch gets
     # fresh data, not stale L1/L2/L3 responses.

@@ -69,7 +69,7 @@ function QueueTabRow({
             </span>
           ) : null}
         </div>
-        <p className={`truncate text-[10px] ${faded ? "text-white/25" : "text-white/40"}`}>{track.artist}</p>
+        <p className={`truncate text-[10px] ${faded ? "text-white/40" : "text-muted-foreground"}`}>{track.artist}</p>
       </div>
       <ItemActionMenuButton
         buttonRef={actionMenu.triggerRef}
@@ -122,7 +122,7 @@ export function QueueTab() {
     <div className="flex-1 overflow-y-auto pr-1">
       {history.length > 0 && (
         <div className="mb-4">
-          <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-white/25">
+          <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
             History
           </p>
           {history.map((track, i) => {
@@ -143,12 +143,12 @@ export function QueueTab() {
       {currentTrack && (
         <div className="mb-4">
           <div className="mb-2 flex items-center justify-between px-1">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-white/25">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">
               Now playing from: {sourceName}
             </p>
             {queue.length > 0 && (
               <button
-                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white/30 transition-colors hover:bg-white/5 hover:text-white/50"
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:bg-white/5 hover:text-muted-foreground"
                 onClick={() => void handleSaveAsPlaylist()}
                 title="Save as Playlist"
               >
@@ -168,7 +168,7 @@ export function QueueTab() {
             )}
             <div className="min-w-0 flex-1">
               <p className="truncate text-[12px] font-medium text-primary">{currentTrack.title}</p>
-              <p className="truncate text-[10px] text-white/50">{currentTrack.artist}</p>
+              <p className="truncate text-[10px] text-muted-foreground">{currentTrack.artist}</p>
             </div>
             {isPlaying && (
               <div className="flex h-4 shrink-0 items-end gap-0.5">
@@ -183,7 +183,7 @@ export function QueueTab() {
 
       {upcoming.length > 0 && (
         <div>
-          <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-white/25">
+          <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
             Next up from: {sourceName} ({upcoming.length})
           </p>
           {upcoming.map((track, i) => {

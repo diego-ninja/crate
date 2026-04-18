@@ -48,7 +48,7 @@ export function HomeUpcomingSection({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-white/55">
+            <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
               {nextUpcoming.type === "show" ? "Next show" : "Next release"}
             </div>
             {nextUpcoming.user_attending && nextUpcoming.type === "show" ? (
@@ -70,16 +70,16 @@ export function HomeUpcomingSection({
           <div className="mt-4 flex flex-wrap gap-2">
             {nextUpcomingDate ? (
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-                <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Date</div>
+                <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Date</div>
                 <div className="mt-1 text-sm font-semibold text-foreground">{nextUpcomingDate}</div>
               </div>
             ) : null}
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Shows</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Shows</div>
               <div className="mt-1 text-sm font-semibold text-foreground">{summary?.show_count ?? 0}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Releases</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Releases</div>
               <div className="mt-1 text-sm font-semibold text-foreground">{summary?.release_count ?? 0}</div>
             </div>
           </div>

@@ -210,16 +210,20 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 }
 .animate-track-in { animation: trackFade 0.25s ease-out; }
 
-/* View Transitions API (page navigation) */
+/* ── View Transitions API ── */
+
+/* Page crossfade: slight slide so it's visible on dark backgrounds */
 ::view-transition-old(root) {
-  animation: 0.2s ease-out fadeOut;
+  animation: 0.2s ease both vt-out;
 }
 ::view-transition-new(root) {
-  animation: 0.2s ease-out fadeIn;
+  animation: 0.2s ease both vt-in;
 }
-@keyframes fadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
+@keyframes vt-out {
+  to { opacity: 0; transform: translateY(-6px); }
+}
+@keyframes vt-in {
+  from { opacity: 0; transform: translateY(6px); }
 }
 
 /* Lyric line gradient mask */

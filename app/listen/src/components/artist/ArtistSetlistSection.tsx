@@ -96,7 +96,7 @@ export function ArtistSetlistModal({
                       style={{ width: `${Math.round(track.frequency * 100)}%` }}
                     />
                   </div>
-                  <span className="text-[10px] tabular-nums text-white/25">
+                  <span className="text-[10px] tabular-nums text-white/40">
                     {Math.round(track.frequency * 100)}%
                   </span>
                   {track.play_count > 0 && (

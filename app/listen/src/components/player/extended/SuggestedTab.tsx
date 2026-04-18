@@ -142,7 +142,7 @@ export function SuggestedTab() {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <span className="text-[10px] tabular-nums text-white/25">{formatDuration(track.duration)}</span>
+            <span className="text-[10px] tabular-nums text-white/40">{formatDuration(track.duration)}</span>
             <div className="h-1 w-12 overflow-hidden rounded-full bg-white/5">
               <div
                 className="h-full rounded-full bg-primary/60"

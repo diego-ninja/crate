@@ -1,13 +1,18 @@
 import { memo } from "react";
+import { useNavigate } from "react-router";
 import { Play, Pause, Heart } from "lucide-react";
 import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { useTrackActionEntries } from "@/components/actions/track-actions";
+import { buildTrackMenuPlayerTrack } from "@/components/actions/shared";
+import { OfflineBadge } from "@/components/offline/OfflineBadge";
+import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerState, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { TrackCoverThumb } from "@/components/cards/TrackCoverThumb";
-import { formatDuration } from "@/lib/utils";
-import { albumCoverApiUrl } from "@/lib/library-routes";
+import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
+import { cn, formatDuration } from "@/lib/utils";
+import { albumCoverApiUrl, artistPagePath, albumPagePath } from "@/lib/library-routes";
 
 export interface TrackRowData {
   id?: string | number;
@@ -41,6 +46,9 @@ interface TrackRowProps {
   playlistOptions?: TrackRowPlaylistOption[];
   onAddToPlaylist?: (playlistId: number, track: TrackRowData) => void | Promise<void>;
   onCreatePlaylist?: (track: TrackRowData) => void | Promise<void>;
+  onPlayOverride?: () => void;
+  /** Pass the full sibling track list so clicking plays all from this track's position. */
+  queueTracks?: TrackRowData[];
 }
 
 export const TrackRow = memo(function TrackRow({
@@ -53,10 +61,14 @@ export const TrackRow = memo(function TrackRow({
   playlistOptions,
   onAddToPlaylist,
   onCreatePlaylist,
+  onPlayOverride,
+  queueTracks,
 }: TrackRowProps) {
+  const navigate = useNavigate();
   const { isPlaying } = usePlayerState();
-  const { currentTrack, play, pause, resume } = usePlayerActions();
+  const { currentTrack, play, playAll, pause, resume } = usePlayerActions();
   const { isLiked, toggleTrackLike } = useLikedTracks();
+  const { getTrackState } = useOffline();
 
   const playbackId = track.storage_id || track.path || String(track.id || "");
   const liked = isLiked(
@@ -64,6 +76,8 @@ export const TrackRow = memo(function TrackRow({
     track.storage_id,
     track.path,
   );
+  const offlineState = getTrackState(track.storage_id);
+  const offlineLabel = getOfflineStateLabel(offlineState);
   const isActive = currentTrack?.id === playbackId;
   const cover = albumCover || (track.album_id != null
     ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
@@ -89,6 +103,7 @@ export const TrackRow = memo(function TrackRow({
     playlistOptions,
     onAddToPlaylist,
     onCreatePlaylist,
+    onPlayNowOverride: onPlayOverride,
   });
   const actionMenu = useItemActionMenu(actions);
 
@@ -101,13 +116,30 @@ export const TrackRow = memo(function TrackRow({
       }
       return;
     }
+    if (onPlayOverride) {
+      onPlayOverride();
+      return;
+    }
+    if (queueTracks && queueTracks.length > 1) {
+      const myId = track.storage_id || track.path || String(track.id || "");
+      const idx = queueTracks.findIndex((t) => {
+        const tId = t.storage_id || t.path || String(t.id || "");
+        return tId === myId;
+      });
+      playAll(queueTracks.map((t) => buildTrackMenuPlayerTrack(t)), Math.max(0, idx));
+      return;
+    }
     play(playerTrack);
   }
 
   return (
     <div
-      className={`group flex items-center gap-3 px-3 py-2 rounded-lg transition-colors cursor-pointer
-        ${isActive ? "bg-primary/10" : "hover:bg-white/5"}`}
+      className={cn(
+        "group flex items-center gap-3 rounded-lg px-3 py-2 transition-colors cursor-pointer",
+        isActive
+          ? "bg-primary/10"
+          : "hover:bg-white/5",
+      )}
       onContextMenu={actionMenu.handleContextMenu}
       onClick={handleActivate}
     >
@@ -151,14 +183,47 @@ export const TrackRow = memo(function TrackRow({
 
       {/* Title + optional artist/album */}
       <div className="flex-1 min-w-0">
-        <div className={`text-sm truncate ${isActive ? "text-primary font-medium" : "text-foreground"}`}>
-          {track.title || "Unknown"}
+        <div className="flex min-w-0 items-center gap-2">
+          <div className={`min-w-0 truncate text-sm ${isActive ? "text-primary font-medium" : "text-foreground"}`}>
+            {track.title || "Unknown"}
+          </div>
+          <OfflineBadge state={offlineState} compact subtle className="flex-shrink-0" />
         </div>
-        {(showArtist || showAlbum) && (
+        {(showArtist || showAlbum || offlineLabel) && (
           <div className="text-xs text-muted-foreground truncate">
-            {showArtist && track.artist}
+            {showArtist && (track.artist_id ? (
+              <span
+                className="hover:text-foreground hover:underline transition-colors cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); navigate(artistPagePath({ artistId: track.artist_id, artistSlug: track.artist_slug, artistName: track.artist })); }}
+              >
+                {track.artist}
+              </span>
+            ) : track.artist)}
             {showArtist && showAlbum && " · "}
-            {showAlbum && track.album}
+            {showAlbum && (track.album_id ? (
+              <span
+                className="hover:text-foreground hover:underline transition-colors cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); navigate(albumPagePath({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })); }}
+              >
+                {track.album}
+              </span>
+            ) : track.album)}
+            {(showArtist || showAlbum) && offlineLabel && " · "}
+            {offlineLabel ? (
+              <span
+                className={cn(
+                  offlineState === "ready"
+                    ? "text-cyan-300/75"
+                    : isOfflineBusy(offlineState)
+                      ? "text-primary/80"
+                      : offlineState === "error"
+                        ? "text-amber-300/80"
+                        : undefined,
+                )}
+              >
+                {offlineLabel}
+              </span>
+            ) : null}
           </div>
         )}
       </div>

@@ -30,6 +30,28 @@ export async function initCapacitor() {
     }
   });
 
+  // OAuth deep link handler — capture token from system browser callback
+  App.addListener("appUrlOpen", ({ url }) => {
+    if (url.startsWith("cratemusic://oauth/callback")) {
+      try {
+        const params = new URL(url).searchParams;
+        const token = params.get("token");
+        if (token) {
+          import("@/lib/api").then(({ setAuthToken }) => {
+            setAuthToken(token);
+          });
+          import("@capacitor/browser").then(({ Browser }) => {
+            Browser.close().catch(() => {});
+          });
+          window.dispatchEvent(new CustomEvent("crate:auth-token-received"));
+          window.location.href = "/";
+        }
+      } catch {
+        // Malformed URL
+      }
+    }
+  });
+
   // Network status → trigger audio resume on reconnect
   Network.addListener("networkStatusChange", (status) => {
     console.log("[capacitor] network:", status.connected ? "online" : "offline");

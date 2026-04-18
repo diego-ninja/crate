@@ -16,7 +16,7 @@ def get_artist_album_paths(artist_name: str, limit: int = 5) -> list[dict]:
 def get_album_tracks(album_id: int) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(
-            text("SELECT id, storage_id, path, filename FROM library_tracks WHERE album_id = :album_id"),
+            text("SELECT id, storage_id::text, path, filename FROM library_tracks WHERE album_id = :album_id"),
             {"album_id": album_id},
         ).mappings().all()
         return [dict(row) for row in rows]
@@ -41,7 +41,7 @@ def update_album_path(album_id: int, new_path: str) -> None:
 def get_artist_albums_ordered(artist_name: str) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(
-            text("SELECT id, storage_id, path, name FROM library_albums WHERE artist = :artist ORDER BY name"),
+            text("SELECT id, storage_id::text, path, name FROM library_albums WHERE artist = :artist ORDER BY name"),
             {"artist": artist_name},
         ).mappings().all()
         return [dict(row) for row in rows]
@@ -59,12 +59,12 @@ def get_all_artists_for_migration(single_artist: str | None = None) -> list[dict
     with transaction_scope() as session:
         if single_artist:
             rows = session.execute(
-                text("SELECT id, name, storage_id, folder_name FROM library_artists WHERE name = :name"),
+                text("SELECT id, name, storage_id::text, folder_name FROM library_artists WHERE name = :name"),
                 {"name": single_artist},
             ).mappings().all()
         else:
             rows = session.execute(
-                text("SELECT id, name, storage_id, folder_name FROM library_artists ORDER BY name")
+                text("SELECT id, name, storage_id::text, folder_name FROM library_artists ORDER BY name")
             ).mappings().all()
         return [dict(row) for row in rows]
 
@@ -72,6 +72,6 @@ def get_all_artists_for_migration(single_artist: str | None = None) -> list[dict
 def get_all_tracks_for_verification() -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(
-            text("SELECT id, path, storage_id, artist, title FROM library_tracks")
+            text("SELECT id, path, storage_id::text, artist, title FROM library_tracks")
         ).mappings().all()
         return [dict(row) for row in rows]

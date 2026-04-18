@@ -134,7 +134,7 @@ function HomeReplayRowAction({
         <div className="truncate text-sm font-medium text-foreground">{item.title}</div>
         <div className="truncate text-xs text-muted-foreground">{item.artist}</div>
       </div>
-      <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/45">
+      <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         {item.play_count}×
       </span>
       <ItemActionMenuButton
@@ -201,7 +201,7 @@ function HomeQueueCardAction({
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-foreground">{track.title}</div>
           <div className="mt-1 truncate text-xs text-muted-foreground">{track.artist}</div>
-          {track.album ? <div className="mt-1 truncate text-[11px] text-white/35">{track.album}</div> : null}
+          {track.album ? <div className="mt-1 truncate text-[11px] text-white/40">{track.album}</div> : null}
         </div>
         <ItemActionMenuButton
           buttonRef={actionMenu.triggerRef}
@@ -322,11 +322,11 @@ export function HomeReplaySection({
           <p className="mt-2 text-sm leading-6 text-muted-foreground">{replay?.subtitle}</p>
           <div className="mt-4 flex flex-wrap gap-2">
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Tracks</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Tracks</div>
               <div className="mt-1 text-sm font-semibold text-foreground">{replay?.track_count ?? 0}</div>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2">
-              <div className="text-[10px] uppercase tracking-[0.16em] text-white/35">Time listened</div>
+              <div className="text-[10px] uppercase tracking-[0.16em] text-white/40">Time listened</div>
               <div className="mt-1 text-sm font-semibold text-foreground">
                 {Math.round(replay?.minutes_listened ?? 0)}m
               </div>

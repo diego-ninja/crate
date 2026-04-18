@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
 import { Loader2 } from "lucide-react";
 import { OAuthButtons } from "@/components/auth/OAuthButtons";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, setAuthToken } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 export function Register() {
@@ -40,7 +40,8 @@ export function Register() {
     setError("");
     setLoading(true);
     try {
-      await api("/api/auth/register", "POST", { email, password, name, invite_token: inviteToken });
+      const res = await api<{ token?: string }>("/api/auth/register", "POST", { email, password, name, invite_token: inviteToken });
+      if (res?.token) setAuthToken(res.token);
       await refetch();
       navigate(returnTo, { replace: true });
     } catch (err) {

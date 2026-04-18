@@ -19,7 +19,7 @@ export function OverviewCard({
     <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/35">{label}</p>
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/40">{label}</p>
           <p className="mt-3 text-2xl font-bold text-foreground">{value}</p>
           {hint ? <p className="mt-2 text-sm text-muted-foreground">{hint}</p> : null}
         </div>
@@ -67,7 +67,7 @@ export function WindowPicker({
           className={`rounded-xl px-3 py-1.5 text-sm transition-colors ${
             value === option.value
               ? "bg-primary text-primary-foreground"
-              : "text-white/50 hover:bg-white/5 hover:text-white"
+              : "text-muted-foreground hover:bg-white/5 hover:text-white"
           }`}
         >
           {option.label}

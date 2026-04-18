@@ -121,15 +121,15 @@ export function People() {
             </div>
           </Link>
           <Link to={ownFollowersHref} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.05] transition-colors">
-            <div className="text-xs uppercase tracking-wide text-white/45">Followers</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">Followers</div>
             <div className="mt-2 text-2xl font-semibold text-foreground">{data?.followers_count ?? "—"}</div>
           </Link>
           <Link to={ownFollowingHref} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.05] transition-colors">
-            <div className="text-xs uppercase tracking-wide text-white/45">Following</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">Following</div>
             <div className="mt-2 text-2xl font-semibold text-foreground">{data?.following_count ?? "—"}</div>
           </Link>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-xs uppercase tracking-wide text-white/45">Friends</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">Friends</div>
             <div className="mt-2 text-2xl font-semibold text-foreground">{data?.friends_count ?? "—"}</div>
           </div>
         </div>
@@ -137,12 +137,12 @@ export function People() {
 
       <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
         <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-          <Search size={16} className="text-white/45" />
+          <Search size={16} className="text-muted-foreground" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search by username or display name"
-            className="h-7 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-white/30"
+            className="h-7 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-white/40"
           />
         </div>
 
@@ -180,7 +180,7 @@ export function People() {
                   <div className="truncate text-xs text-muted-foreground">
                     {item.username ? `@${item.username}` : "No username yet"}
                   </div>
-                  {item.bio ? <div className="mt-1 truncate text-xs text-white/55">{item.bio}</div> : null}
+                  {item.bio ? <div className="mt-1 truncate text-xs text-muted-foreground">{item.bio}</div> : null}
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/65">
                   <UserRoundPlus size={13} />

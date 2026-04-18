@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router";
-import { Clock, Disc, Heart, ListPlus, MoreHorizontal, Play, Radio, Share2, Shuffle, User } from "lucide-react";
+import { AlertCircle, ArrowDownToLine, CheckCircle2, Clock, Disc, Heart, ListPlus, Loader2, MoreHorizontal, Play, Radio, Share2, Shuffle, User } from "lucide-react";
 import { toast } from "sonner";
 
 import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
@@ -10,9 +10,12 @@ import { useApi } from "@/hooks/use-api";
 import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
 import { api } from "@/lib/api";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
+import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
+import { OfflineBadge } from "@/components/offline/OfflineBadge";
+import { isOfflineBusy } from "@/lib/offline";
 import { fetchAlbumRadio } from "@/lib/radio";
 import { formatBadgeClass, shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
@@ -98,6 +101,7 @@ export function Album() {
   const { playAll, playNext } = usePlayerActions();
   const { openCreatePlaylist } = usePlaylistComposer();
   const { isSaved, saveAlbum, unsaveAlbum } = useSavedAlbums();
+  const { supported: offlineSupported, getAlbumState, getAlbumRecord, toggleAlbumOffline } = useOffline();
   const [menuOpen, setMenuOpen] = useState(false);
   const [playlistPickerOpen, setPlaylistPickerOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -144,6 +148,35 @@ export function Album() {
   const genre = data.genres.length > 0 ? data.genres.join(", ") : data.album_tags?.genre;
   const playerTracks = buildPlayerTracks(data);
   const saved = isSaved(albumId);
+  const offlineState = getAlbumState(albumId);
+  const offlineRecord = getAlbumRecord(albumId);
+  const offlineBusy = isOfflineBusy(offlineState);
+  const offlineProgress =
+    offlineRecord?.trackCount
+      ? `${Math.min(offlineRecord.readyTrackCount || 0, offlineRecord.trackCount)}/${offlineRecord.trackCount}`
+      : null;
+  const offlineButtonLabel =
+    offlineState === "ready"
+      ? "Available offline"
+      : offlineState === "error"
+        ? "Retry offline"
+        : offlineState === "syncing"
+          ? `Syncing...${offlineProgress ? ` ${offlineProgress}` : ""}`
+          : offlineBusy
+            ? `Downloading...${offlineProgress ? ` ${offlineProgress}` : ""}`
+            : "Make available offline";
+  const offlineStatusDetail =
+    offlineState === "ready"
+      ? offlineRecord?.trackCount
+        ? `${offlineRecord.trackCount} track${offlineRecord.trackCount === 1 ? "" : "s"} available offline`
+        : "Available offline"
+      : offlineBusy && offlineProgress
+        ? `${offlineProgress} tracks saved for offline`
+        : offlineState === "error"
+          ? offlineRecord?.readyTrackCount
+            ? `${offlineRecord.readyTrackCount}/${offlineRecord.trackCount} tracks saved. Retry to finish the offline copy.`
+            : "Offline copy failed. Retry to finish the album mirror."
+          : null;
 
   const formats = [...new Set(albumTracks.map((t) => t.format).filter(Boolean))];
   const hasMultipleDiscs = albumTracks.some(
@@ -155,6 +188,7 @@ export function Album() {
       playAll(playerTracks, startIndex, {
         type: "album",
         name: `${artistName} — ${displayName}`,
+        href: albumPagePath({ albumId, albumSlug: data.slug, artistName, albumName: displayName }),
         radio: {
           seedType: "album",
           seedId: albumId,
@@ -163,12 +197,19 @@ export function Album() {
     }
   };
 
+  const handlePlayTrack = (trackId: number) => {
+    const startIndex = data.tracks.findIndex((track) => track.id === trackId);
+    if (startIndex < 0) return;
+    handlePlay(startIndex);
+  };
+
   const handleShuffle = () => {
     if (playerTracks.length === 0) return;
     const shuffled = shuffleArray(playerTracks);
     playAll(shuffled, 0, {
       type: "album",
       name: `${artistName} — ${displayName}`,
+      href: albumPagePath({ albumId, albumSlug: data.slug, artistName, albumName: displayName }),
       radio: {
         seedType: "album",
         seedId: albumId,
@@ -225,6 +266,15 @@ export function Album() {
       }
     } catch {
       toast.error("Failed to update collection");
+    }
+  }
+
+  async function handleToggleOffline() {
+    try {
+      const result = await toggleAlbumOffline({ albumId, title: displayName });
+      toast.success(result === "removed" ? "Offline copy removed" : "Album available offline");
+    } catch (error) {
+      toast.error((error as Error).message || "Failed to update offline copy");
     }
   }
 
@@ -327,7 +377,10 @@ export function Album() {
 
           {/* Info */}
           <div className="flex flex-col justify-end text-left">
-            <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1.5">{displayName}</h1>
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">{displayName}</h1>
+              <OfflineBadge state={offlineState} />
+            </div>
             <button
               className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors mb-3 self-start"
               onClick={() => navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug }))}
@@ -389,6 +442,31 @@ export function Album() {
         </button>
         <button
           className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
+            offlineState === "ready"
+              ? "border border-cyan-400/25 bg-cyan-400/10 text-cyan-200"
+              : offlineBusy
+                ? "border border-primary/25 bg-primary/10 text-primary"
+                : offlineState === "error"
+                  ? "border border-amber-400/25 bg-amber-400/10 text-amber-200"
+                  : "border border-white/15 text-foreground hover:bg-white/5"
+          }`}
+          onClick={handleToggleOffline}
+          disabled={!offlineSupported || offlineBusy}
+          aria-label={offlineState === "ready" ? "Remove offline copy" : "Make available offline"}
+          title={offlineButtonLabel}
+        >
+          {offlineState === "ready" ? (
+            <CheckCircle2 size={16} />
+          ) : offlineBusy ? (
+            <Loader2 size={16} className="animate-spin" />
+          ) : offlineState === "error" ? (
+            <AlertCircle size={16} />
+          ) : (
+            <ArrowDownToLine size={16} />
+          )}
+        </button>
+        <button
+          className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${
             saved
               ? "border border-primary/30 bg-primary/15 text-primary"
               : "border border-white/15 text-foreground hover:bg-white/5"
@@ -400,7 +478,7 @@ export function Album() {
         </button>
         <div className="relative" ref={menuRef}>
           <button
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/50 transition-colors hover:bg-white/5 hover:text-foreground"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
             onClick={() => setMenuOpen((open) => !open)}
             aria-label="More"
           >
@@ -421,6 +499,10 @@ export function Album() {
                 onCreatePlaylist={handleCreatePlaylistFromAlbum}
                 onAddToPlaylist={handleAddToPlaylist}
                 onToggleSaved={async () => { await handleToggleSaved(); setMenuOpen(false); }}
+                offlineSupported={offlineSupported}
+                offlineState={offlineState}
+                offlineLabel={offlineButtonLabel}
+                onToggleOffline={async () => { await handleToggleOffline(); setMenuOpen(false); }}
                 onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
                 onShare={async () => { await handleShare(); setMenuOpen(false); }}
               />
@@ -442,6 +524,10 @@ export function Album() {
                   onCreatePlaylist={handleCreatePlaylistFromAlbum}
                   onAddToPlaylist={handleAddToPlaylist}
                   onToggleSaved={async () => { await handleToggleSaved(); setMenuOpen(false); }}
+                  offlineSupported={offlineSupported}
+                  offlineState={offlineState}
+                  offlineLabel={offlineButtonLabel}
+                  onToggleOffline={async () => { await handleToggleOffline(); setMenuOpen(false); }}
                   onGoToArtist={() => { navigate(artistPagePath({ artistId: data.artist_id, artistSlug: data.artist_slug })); setMenuOpen(false); }}
                   onShare={async () => { await handleShare(); setMenuOpen(false); }}
                 />
@@ -450,6 +536,14 @@ export function Album() {
           )}
         </div>
       </div>
+
+      {offlineStatusDetail ? (
+        <div className="px-4 sm:px-6 pb-4">
+          <p className="text-xs text-muted-foreground">
+            {offlineStatusDetail}
+          </p>
+        </div>
+      ) : null}
 
       {/* Track List */}
       <div className="px-4 sm:px-6 pb-8">
@@ -474,6 +568,7 @@ export function Album() {
                       album: displayName,
                       album_id: data.id,
                       album_slug: data.slug,
+                      storage_id: t.storage_id,
                       duration: t.length_sec,
                       path: t.path,
                       track_number: parseInt(t.tags.tracknumber) || idx + 1,
@@ -485,6 +580,7 @@ export function Album() {
                     playlistOptions={playlists ?? undefined}
                     onAddToPlaylist={handleAddTrackToPlaylist}
                     onCreatePlaylist={handleCreatePlaylistFromTrack}
+                    onPlayOverride={() => handlePlayTrack(t.id)}
                   />
                 ))}
               </div>
@@ -502,6 +598,7 @@ export function Album() {
                   album: displayName,
                   album_id: data.id,
                   album_slug: data.slug,
+                  storage_id: t.storage_id,
                   duration: t.length_sec,
                 path: t.path,
                 track_number: parseInt(t.tags.tracknumber) || idx + 1,
@@ -513,6 +610,7 @@ export function Album() {
               playlistOptions={playlists ?? undefined}
               onAddToPlaylist={handleAddTrackToPlaylist}
               onCreatePlaylist={handleCreatePlaylistFromTrack}
+              onPlayOverride={() => handlePlayTrack(t.id)}
             />
           ))
         )}
@@ -523,7 +621,7 @@ export function Album() {
 
 function AlbumMenuContent({
   data, coverUrl, displayName, saved, playlists, playlistPickerOpen, setPlaylistPickerOpen,
-  onPlay, onPlayNext, onCreatePlaylist, onAddToPlaylist, onToggleSaved, onGoToArtist, onShare,
+  onPlay, onPlayNext, onCreatePlaylist, onAddToPlaylist, onToggleSaved, offlineSupported, offlineState, offlineLabel, onToggleOffline, onGoToArtist, onShare,
 }: {
   data: { has_cover: boolean; artist: string };
   coverUrl: string;
@@ -537,6 +635,10 @@ function AlbumMenuContent({
   onCreatePlaylist: () => void;
   onAddToPlaylist: (id: number) => void;
   onToggleSaved: () => void;
+  offlineSupported: boolean;
+  offlineState: "idle" | "queued" | "downloading" | "syncing" | "ready" | "error";
+  offlineLabel: string;
+  onToggleOffline: () => void;
   onGoToArtist: () => void;
   onShare: () => void;
 }) {
@@ -566,7 +668,7 @@ function AlbumMenuContent({
         </AppMenuButton>
         <AppMenuButton className="justify-between" onClick={() => setPlaylistPickerOpen((o) => !o)}>
           <span className="flex items-center gap-3"><ListPlus size={15} /> Add to playlist</span>
-          <span className="text-white/35">{playlistPickerOpen ? "−" : "+"}</span>
+          <span className="text-white/40">{playlistPickerOpen ? "−" : "+"}</span>
         </AppMenuButton>
         {playlistPickerOpen && (
           <div className="px-3 pb-2 space-y-1">
@@ -584,6 +686,18 @@ function AlbumMenuContent({
         <AppMenuButton onClick={onToggleSaved}>
           <Heart size={15} className={saved ? "fill-current text-primary" : ""} />
           {saved ? "Remove from collection" : "Add to collection"}
+        </AppMenuButton>
+        <AppMenuButton onClick={onToggleOffline} disabled={!offlineSupported || isOfflineBusy(offlineState)}>
+          {offlineState === "ready" ? (
+            <CheckCircle2 size={15} className="text-cyan-200" />
+          ) : isOfflineBusy(offlineState) ? (
+            <Loader2 size={15} className="animate-spin text-primary" />
+          ) : offlineState === "error" ? (
+            <AlertCircle size={15} className="text-amber-200" />
+          ) : (
+            <ArrowDownToLine size={15} />
+          )}
+          {offlineLabel}
         </AppMenuButton>
         <AppMenuButton onClick={onGoToArtist}>
           <User size={15} /> Go to artist

@@ -112,7 +112,9 @@ export function ArtistHeroSection({
 
             <div className="max-w-3xl pb-1">
               <div className="flex items-center gap-3 sm:block">
-                <div className="sm:hidden h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-white/5 shadow-xl ring-2 ring-white/10">
+                <div
+                  className="sm:hidden h-14 w-14 flex-shrink-0 overflow-hidden rounded-full bg-white/5 shadow-xl ring-2 ring-white/10"
+                >
                   <img
                     src={photoUrl}
                     alt={artist.name}
@@ -226,14 +228,14 @@ export function ArtistHeroSection({
         </button>
         <div className="relative" ref={menuRef}>
           <button
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-white/50 transition-colors hover:bg-white/5 hover:text-foreground"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/15 text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
             onClick={() => setMenuOpen((current) => !current)}
             aria-label="More"
           >
             <MoreHorizontal size={16} />
           </button>
           {menuOpen && isDesktop ? (
-            <AppPopover className="absolute right-0 top-12 z-[1200] w-64 p-1">
+            <AppPopover className="absolute right-0 top-12 z-app-popover w-64 p-1">
               {menuContent}
             </AppPopover>
           ) : null}

@@ -113,8 +113,8 @@ function FullscreenQueueRow({
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const { currentTrack, queue, currentIndex, currentTime, duration, seek, jumpTo, isPlaying, volume, analyserVersion, crossfadeTransition } = usePlayer();
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
-  // Keep the seek bar on the still-audible outgoing track during a
-  // crossfade — see useCrossfadeAwareProgress for the rationale.
+  // Keep the crossfade visuals, but let time/progress track the live
+  // incoming song so the UI does not jump backwards after the fade.
   const { displayedTime, displayedDuration } = useCrossfadeAwareProgress(
     crossfadeTransition,
     currentTime,
@@ -376,7 +376,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
               activeTab === id
                 ? "bg-white/12 text-white border border-white/15"
-                : "text-white/35 border border-transparent active:text-white/60"
+                : "text-white/40 border border-transparent active:text-white/60"
             }`}
           >
             <Icon size={13} />
@@ -459,7 +459,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                     {crossfadeTransition.outgoing.title}
                   </h2>
                   {crossfadeTransition.outgoing.album && (
-                    <p className="mt-1 text-xs text-white/30 truncate">{crossfadeTransition.outgoing.album}</p>
+                    <p className="mt-1 text-xs text-white/40 truncate">{crossfadeTransition.outgoing.album}</p>
                   )}
                 </div>
                 <div style={{ opacity: crossfadeProgress }}>
@@ -467,7 +467,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                     {crossfadeTransition.incoming.title}
                   </h2>
                   {crossfadeTransition.incoming.album && (
-                    <p className="mt-1 text-xs text-white/30 truncate">{crossfadeTransition.incoming.album}</p>
+                    <p className="mt-1 text-xs text-white/40 truncate">{crossfadeTransition.incoming.album}</p>
                   )}
                 </div>
               </>
@@ -477,7 +477,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                   {currentTrack.title}
                 </h2>
                 {currentTrack.album && (
-                  <p className="mt-1 text-xs text-white/30 truncate">{currentTrack.album}</p>
+                  <p className="mt-1 text-xs text-white/40 truncate">{currentTrack.album}</p>
                 )}
               </>
             )}
@@ -489,7 +489,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           ) : null}
 
           <div className="mx-auto mt-4 w-full max-w-[360px]">
-            <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium tabular-nums text-white/45">
+            <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium tabular-nums text-muted-foreground">
               <span>{formatPlayerTime(displayedTime)}</span>
               <span>-{formatPlayerTime(remainingTime)}</span>
             </div>
@@ -532,7 +532,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       {activeTab === "lyrics" && (
         <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4 pb-40">
           {!lyrics ? (
-            <p className="text-center text-white/30 text-sm mt-20">Loading lyrics...</p>
+            <p className="text-center text-white/40 text-sm mt-20">Loading lyrics...</p>
           ) : lyrics.synced ? (
             <div className="flex flex-col items-center gap-2 py-8">
               {lyrics.synced.map((line, i) => (
@@ -544,7 +544,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                     i === activeLyricIndex
                       ? "text-white scale-105"
                       : i < activeLyricIndex
-                        ? "text-white/25"
+                        ? "text-white/40"
                         : "text-white/40"
                   }`}
                 >
@@ -553,9 +553,9 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
               ))}
             </div>
           ) : lyrics.plain ? (
-            <pre className="text-sm text-white/50 whitespace-pre-wrap text-center leading-relaxed py-8">{lyrics.plain}</pre>
+            <pre className="text-sm text-muted-foreground whitespace-pre-wrap text-center leading-relaxed py-8">{lyrics.plain}</pre>
           ) : (
-            <p className="text-center text-white/30 text-sm mt-20">No lyrics available</p>
+            <p className="text-center text-white/40 text-sm mt-20">No lyrics available</p>
           )}
         </div>
       )}

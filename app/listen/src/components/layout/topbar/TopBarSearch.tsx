@@ -131,91 +131,93 @@ export function TopBarSearch() {
   const showResults = showDropdown && query.trim().length > 0 && (results.length > 0 || loading);
 
   return (
-    <div className="relative flex-1 pointer-events-auto md:flex-none md:w-[420px]">
-      <div className="relative flex items-center">
-        <Search size={16} className="pointer-events-none absolute left-3 text-white/30" />
-        {loading ? <Loader2 size={14} className="absolute right-3 animate-spin text-white/30" /> : null}
-        {!loading && query ? (
-          <button
-            onClick={() => {
-              setQuery("");
-              setResults([]);
-              inputRef.current?.focus();
+    <div className="relative flex-1 md:flex-none md:w-[440px] lg:w-[500px]">
+      <div className="relative md:origin-right md:transition-transform md:duration-300 md:ease-out md:focus-within:scale-x-[1.12] lg:focus-within:scale-x-[1.14]">
+        <div className="relative flex items-center">
+          <Search size={17} className="pointer-events-none absolute left-4 text-white/40" />
+          {loading ? <Loader2 size={15} className="absolute right-4 animate-spin text-white/40" /> : null}
+          {!loading && query ? (
+            <button
+              onClick={() => {
+                setQuery("");
+                setResults([]);
+                inputRef.current?.focus();
+              }}
+              className="absolute right-4 text-white/30 hover:text-white/60"
+              aria-label="Clear search"
+            >
+              <X size={15} />
+            </button>
+          ) : null}
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setShowDropdown(true);
             }}
-            className="absolute right-3 text-white/30 hover:text-white/60"
-            aria-label="Clear search"
+            onFocus={() => setShowDropdown(true)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search artists, albums, tracks..."
+            className="h-12 w-full rounded-xl border border-white/8 bg-black/25 backdrop-blur-sm pl-11 pr-11 text-[15px] text-white outline-none transition-[background-color,border-color,box-shadow] placeholder:text-white/40 focus:border-cyan-400/25 focus:bg-black/40 focus:shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
+          />
+        </div>
+
+        {showResults ? (
+          <AppPopover
+            ref={dropdownRef}
+            className="absolute left-0 right-0 top-full mt-1 max-h-80 overflow-y-auto py-1"
           >
-            <X size={14} />
-          </button>
+            {results.map((item, index) => (
+              <button
+                key={`${item.type}-${item.label}-${index}`}
+                onClick={() => selectItem(item)}
+                className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
+                  index === activeIdx ? "bg-white/10" : "hover:bg-white/5"
+                }`}
+              >
+                <SearchResultThumb item={item} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] text-white/80">{item.label}</p>
+                  {item.sublabel ? (
+                    <p className="truncate text-[11px] text-white/40">{item.sublabel}</p>
+                  ) : null}
+                </div>
+                <span className="shrink-0 text-[10px] capitalize text-white/20">{item.type}</span>
+              </button>
+            ))}
+            {query.trim() && (
+              <button
+                onClick={() => { navigate(`/search?q=${encodeURIComponent(query.trim())}`); setShowDropdown(false); setQuery(""); }}
+                className="w-full px-3 py-2 text-xs text-primary hover:bg-white/5 transition-colors text-center border-t border-white/5 mt-1"
+              >
+                See all results for "{query.trim()}"
+              </button>
+            )}
+          </AppPopover>
         ) : null}
-        <input
-          ref={inputRef}
-          type="text"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setShowDropdown(true);
-          }}
-          onFocus={() => setShowDropdown(true)}
-          onKeyDown={handleKeyDown}
-          placeholder="Search artists, albums, tracks..."
-          className="h-11 w-full rounded-lg bg-black/25 backdrop-blur-sm pl-9 pr-9 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:bg-black/40"
-        />
+
+        {showRecents ? (
+          <AppPopover ref={dropdownRef} className="absolute left-0 right-0 top-full mt-1 py-1">
+            <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/40">
+              Recent
+            </p>
+            {recents.map((term, index) => (
+              <button
+                key={term}
+                onClick={() => selectRecent(term)}
+                className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
+                  index === activeIdx ? "bg-white/10" : "hover:bg-white/5"
+                }`}
+              >
+                <Search size={12} className="shrink-0 text-white/20" />
+                <span className="truncate text-[13px] text-white/60">{term}</span>
+              </button>
+            ))}
+          </AppPopover>
+        ) : null}
       </div>
-
-      {showResults ? (
-        <AppPopover
-          ref={dropdownRef}
-          className="absolute left-0 right-0 top-full mt-1 max-h-80 overflow-y-auto py-1"
-        >
-          {results.map((item, index) => (
-            <button
-              key={`${item.type}-${item.label}-${index}`}
-              onClick={() => selectItem(item)}
-              className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
-                index === activeIdx ? "bg-white/10" : "hover:bg-white/5"
-              }`}
-            >
-              <SearchResultThumb item={item} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] text-white/80">{item.label}</p>
-                {item.sublabel ? (
-                  <p className="truncate text-[11px] text-white/35">{item.sublabel}</p>
-                ) : null}
-              </div>
-              <span className="shrink-0 text-[10px] capitalize text-white/20">{item.type}</span>
-            </button>
-          ))}
-          {query.trim() && (
-            <button
-              onClick={() => { navigate(`/search?q=${encodeURIComponent(query.trim())}`); setShowDropdown(false); setQuery(""); }}
-              className="w-full px-3 py-2 text-xs text-primary hover:bg-white/5 transition-colors text-center border-t border-white/5 mt-1"
-            >
-              See all results for "{query.trim()}"
-            </button>
-          )}
-        </AppPopover>
-      ) : null}
-
-      {showRecents ? (
-        <AppPopover ref={dropdownRef} className="absolute left-0 right-0 top-full mt-1 py-1">
-          <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/25">
-            Recent
-          </p>
-          {recents.map((term, index) => (
-            <button
-              key={term}
-              onClick={() => selectRecent(term)}
-              className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
-                index === activeIdx ? "bg-white/10" : "hover:bg-white/5"
-              }`}
-            >
-              <Search size={12} className="shrink-0 text-white/20" />
-              <span className="truncate text-[13px] text-white/60">{term}</span>
-            </button>
-          ))}
-        </AppPopover>
-      ) : null}
     </div>
   );
 }

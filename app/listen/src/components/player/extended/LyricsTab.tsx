@@ -158,7 +158,7 @@ export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
                     ? "text-[18px] font-bold"
                     : isPast
                       ? "text-[14px] text-white/18"
-                      : "text-[14px] text-white/35 hover:text-white/60"
+                      : "text-[14px] text-white/40 hover:text-white/60"
                 }`}
                 style={
                   isActive
@@ -177,7 +177,7 @@ export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
       ) : null}
 
       {!lyrics?.synced && lyrics?.plain ? (
-        <pre className="whitespace-pre-wrap py-2 font-sans text-[14px] leading-relaxed text-white/55">
+        <pre className="whitespace-pre-wrap py-2 font-sans text-[14px] leading-relaxed text-muted-foreground">
           {lyrics.plain}
         </pre>
       ) : null}

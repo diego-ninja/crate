@@ -239,6 +239,175 @@ class TestGenresAPI:
             mock_create.assert_not_called()
 
 
+class TestOfflineAPI:
+    def test_get_track_manifest_by_storage(self, test_app):
+        track = {
+            "id": 24,
+            "storage_id": "track-storage-24",
+            "title": "Distant Populations",
+            "artist": "Quicksand",
+            "album": "Distant Populations",
+            "album_id": 14,
+            "duration": 221,
+            "format": "flac",
+            "bitrate": 950,
+            "sample_rate": 44100,
+            "bit_depth": 16,
+            "size": 12_345_678,
+            "updated_at": "2026-04-18T10:00:00",
+        }
+        album = {"id": 14, "slug": "quicksand-distant-populations"}
+
+        with patch("crate.api.offline.get_library_track_by_storage_id", return_value=track), \
+             patch("crate.api.offline.get_library_album_by_id", return_value=album), \
+             patch("crate.api.offline.get_library_artist", return_value={"id": 7, "slug": "quicksand"}):
+            resp = test_app.get("/api/offline/tracks/by-storage/track-storage-24/manifest")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["kind"] == "track"
+            assert data["id"] == "track-storage-24"
+            assert data["tracks"][0]["stream_url"] == "/api/tracks/by-storage/track-storage-24/stream"
+            assert data["tracks"][0]["download_url"] == "/api/tracks/by-storage/track-storage-24/download"
+
+    def test_get_track_manifest_by_path(self, test_app):
+        track = {
+            "id": 24,
+            "storage_id": "track-storage-24",
+            "title": "Omission",
+            "artist": "Quicksand",
+            "album": "Distant Populations",
+            "album_id": 14,
+            "size": 4_096,
+        }
+
+        with patch("crate.api.offline.get_library_track_by_path", return_value=track), \
+             patch("crate.api.offline.get_library_album_by_id", return_value={"id": 14, "slug": "quicksand-distant-populations"}), \
+             patch("crate.api.offline.get_library_artist", return_value={"id": 7, "slug": "quicksand"}):
+            resp = test_app.get("/api/offline/tracks/by-path/music/Quicksand/Distant Populations/01 Omission.flac/manifest")
+            assert resp.status_code == 200
+            assert resp.json()["tracks"][0]["storage_id"] == "track-storage-24"
+
+    def test_get_album_manifest(self, test_app):
+        album = {
+            "id": 14,
+            "slug": "quicksand-distant-populations",
+            "name": "Distant Populations",
+            "artist": "Quicksand",
+            "year": "2021",
+            "updated_at": "2026-04-18T10:00:00",
+        }
+        tracks = [
+            {
+                "id": 24,
+                "storage_id": "track-storage-24",
+                "title": "Inversion",
+                "artist": "Quicksand",
+                "album": "Distant Populations",
+                "album_id": 14,
+                "size": 100,
+                "updated_at": "2026-04-18T10:00:00",
+            },
+            {
+                "id": 25,
+                "storage_id": "track-storage-25",
+                "title": "Missile Command",
+                "artist": "Quicksand",
+                "album": "Distant Populations",
+                "album_id": 14,
+                "size": 200,
+                "updated_at": "2026-04-18T11:00:00",
+            },
+        ]
+
+        with patch("crate.api.offline.get_library_album_by_id", return_value=album), \
+             patch("crate.api.offline.get_library_tracks", return_value=tracks), \
+             patch("crate.api.offline.get_library_artist", return_value={"id": 7, "slug": "quicksand"}):
+            resp = test_app.get("/api/offline/albums/14/manifest")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["kind"] == "album"
+            assert data["track_count"] == 2
+            assert data["total_bytes"] == 300
+            assert data["artwork"]["cover_url"] == "/api/albums/14/cover"
+
+    def test_get_playlist_manifest_rejects_smart_playlists(self, test_app):
+        playlist = {
+            "id": 44,
+            "name": "Daily mix",
+            "generation_mode": "smart",
+            "is_smart": True,
+        }
+
+        with patch("crate.api.offline.get_playlist", return_value=playlist):
+            resp = test_app.get("/api/offline/playlists/44/manifest")
+            assert resp.status_code == 409
+            assert "static playlists" in resp.json()["detail"].lower()
+
+    def test_get_playlist_manifest(self, test_app):
+        playlist = {
+            "id": 52,
+            "name": "Post-hardcore forever",
+            "generation_mode": "static",
+            "visibility": "private",
+            "updated_at": "2026-04-18T10:00:00",
+        }
+        tracks = [
+            {
+                "position": 1,
+                "track_storage_id": "track-storage-24",
+                "artist_id": 7,
+                "artist_slug": "quicksand",
+                "album_id": 14,
+                "album_slug": "quicksand-distant-populations",
+                "duration": 221,
+            },
+            {
+                "position": 2,
+                "track_storage_id": "track-storage-25",
+                "artist_id": 7,
+                "artist_slug": "quicksand",
+                "album_id": 14,
+                "album_slug": "quicksand-distant-populations",
+                "duration": 247,
+            },
+        ]
+        library_tracks = {
+            "track-storage-24": {
+                "id": 24,
+                "storage_id": "track-storage-24",
+                "title": "Dine Alone",
+                "artist": "Quicksand",
+                "album": "Distant Populations",
+                "album_id": 14,
+                "size": 12_000,
+                "updated_at": "2026-04-18T10:00:00",
+            },
+            "track-storage-25": {
+                "id": 25,
+                "storage_id": "track-storage-25",
+                "title": "Colossus",
+                "artist": "Quicksand",
+                "album": "Distant Populations",
+                "album_id": 14,
+                "size": 13_000,
+                "updated_at": "2026-04-18T11:00:00",
+            },
+        }
+
+        with patch("crate.api.offline.get_playlist", return_value=playlist), \
+             patch("crate.api.offline.can_view_playlist", return_value=True), \
+             patch("crate.api.offline.get_playlist_tracks", return_value=tracks), \
+             patch("crate.api.offline.get_library_tracks_by_storage_ids", return_value=library_tracks) as mock_batch, \
+             patch("crate.api.offline.get_library_artist", return_value={"id": 7, "slug": "quicksand"}):
+            resp = test_app.get("/api/offline/playlists/52/manifest")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["kind"] == "playlist"
+            assert data["track_count"] == 2
+            assert data["total_bytes"] == 25_000
+            mock_batch.assert_called_once_with(["track-storage-24", "track-storage-25"])
+
+
 class TestSyncLibraryAPI:
     def test_sync_library(self, test_app):
         with patch("crate.api.tasks.list_tasks", return_value=[]), \

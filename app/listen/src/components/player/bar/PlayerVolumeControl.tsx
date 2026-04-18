@@ -46,7 +46,7 @@ export function PlayerVolumeControl({
         {volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
       </button>
       {showVolume ? (
-        <AppPopover ref={volumeRef} className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-lg p-2">
+        <AppPopover ref={volumeRef} className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-lg p-2 z-app-popover">
           <input
             type="range"
             aria-label="Volume"

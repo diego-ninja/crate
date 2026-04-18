@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import {
+  ArrowDownToLine,
+  Loader2,
   Disc3,
   Heart,
   ListMusic,
@@ -19,8 +21,10 @@ import {
   type TrackMenuData,
 } from "@/components/actions/shared";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";
+import { getOfflineActionLabel, isOfflineBusy } from "@/lib/offline";
 import { fetchTrackRadio } from "@/lib/radio";
 
 interface UseTrackActionEntriesInput {
@@ -41,11 +45,13 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
   const navigate = useNavigate();
   const { play, playAll, addToQueue, playNext } = usePlayerActions();
   const { isLiked, toggleTrackLike } = useLikedTracks();
+  const { supported: offlineSupported, getTrackState, toggleTrackOffline } = useOffline();
 
   const libraryTrackId =
     input.track.library_track_id ?? (typeof input.track.id === "number" ? input.track.id : null);
   const trackStorageId = input.track.storage_id ?? null;
   const liked = isLiked(libraryTrackId, trackStorageId, input.track.path);
+  const offlineState = getTrackState(trackStorageId);
 
   return useMemo<ItemActionMenuEntry[]>(() => {
     const playerTrack = buildTrackMenuPlayerTrack(input.track, input.albumCover);
@@ -100,6 +106,21 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
             playAll(radio.tracks, 0, radio.source);
           } catch {
             toast.error("Failed to start track radio");
+          }
+        },
+      }),
+      action({
+        key: "offline",
+        label: getOfflineActionLabel(offlineState),
+        icon: isOfflineBusy(offlineState) ? Loader2 : ArrowDownToLine,
+        active: offlineState === "ready",
+        disabled: !offlineSupported || !trackStorageId || isOfflineBusy(offlineState),
+        onSelect: async () => {
+          try {
+            const result = await toggleTrackOffline({ storageId: trackStorageId, title: input.track.title });
+            toast.success(result === "removed" ? "Offline copy removed" : "Track available offline");
+          } catch (error) {
+            toast.error((error as Error).message || "Failed to update offline copy");
           }
         },
       }),
@@ -173,11 +194,14 @@ export function useTrackActionEntries(input: UseTrackActionEntriesInput): ItemAc
     input.track,
     liked,
     libraryTrackId,
+    offlineState,
+    offlineSupported,
     trackStorageId,
     navigate,
     play,
     playAll,
     playNext,
+    toggleTrackOffline,
     toggleTrackLike,
   ]);
 }

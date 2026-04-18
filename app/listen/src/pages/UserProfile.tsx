@@ -198,19 +198,19 @@ export function UserProfile() {
 
         <div className="mt-5 grid gap-3 sm:grid-cols-4">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-xs uppercase tracking-wide text-white/45">Followers</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">Followers</div>
             <Link to={data.username ? `/users/${data.username}/followers` : "/people"} className="mt-2 block text-2xl font-semibold text-foreground hover:text-cyan-300 transition-colors">
               {data.followers_count}
             </Link>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-xs uppercase tracking-wide text-white/45">Following</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">Following</div>
             <Link to={data.username ? `/users/${data.username}/following` : "/people"} className="mt-2 block text-2xl font-semibold text-foreground hover:text-cyan-300 transition-colors">
               {data.following_count}
             </Link>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="text-xs uppercase tracking-wide text-white/45">Friends</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">Friends</div>
             <div className="mt-2 text-2xl font-semibold text-foreground">{data.friends_count}</div>
           </div>
           <div className={`rounded-2xl border p-4 ${affinityTone(data.affinity_band)}`}>
@@ -284,7 +284,7 @@ export function UserProfile() {
                       {playlist.total_duration > 0 ? ` · ${formatTotalDuration(playlist.total_duration)}` : ""}
                       {playlist.is_collaborative ? " · Collaborative" : ""}
                     </div>
-                    {playlist.description ? <div className="mt-1 truncate text-xs text-white/55">{playlist.description}</div> : null}
+                    {playlist.description ? <div className="mt-1 truncate text-xs text-muted-foreground">{playlist.description}</div> : null}
                   </div>
                 </Link>
               ))

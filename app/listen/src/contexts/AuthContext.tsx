@@ -10,6 +10,7 @@ import {
 import { useNavigate } from "react-router";
 
 import { api, setAuthToken } from "@/lib/api";
+import { primeOfflineRuntimeProfile, setActiveOfflineProfileKey, syncOfflineProfileToServiceWorker } from "@/lib/offline";
 import { clearQueue as clearPlayEventQueue } from "@/lib/play-event-queue";
 
 export interface AuthUser {
@@ -69,10 +70,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try { localStorage.setItem("listen-auth-user-id", String(data.id)); } catch { /* ignore */ }
       }
       setUser(data && data.id ? data : null);
+      if (data && data.id) {
+        void primeOfflineRuntimeProfile();
+      } else {
+        setActiveOfflineProfileKey(null);
+        void syncOfflineProfileToServiceWorker(null);
+      }
     } catch (error) {
       if (controller.signal.aborted || (error as Error).name === "AbortError") {
         return;
       }
+      setActiveOfflineProfileKey(null);
+      void syncOfflineProfileToServiceWorker(null);
       setUser(null);
     } finally {
       if (authRequestRef.current === controller) {
@@ -113,6 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Drop pending telemetry — after logout we don't know whose auth
     // would flush them next.
     clearPlayEventQueue();
+    setActiveOfflineProfileKey(null);
+    void syncOfflineProfileToServiceWorker(null);
     setUser(null);
     navigate("/login");
   }, [navigate]);

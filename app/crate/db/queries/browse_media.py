@@ -38,7 +38,7 @@ def search_tracks(like: str, limit: int) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(
             text("""
-            SELECT t.id, t.storage_id, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
+            SELECT t.id, t.storage_id::text, t.slug, t.title, t.artist, a.id AS album_id, a.slug AS album_slug,
                    a.name AS album, ar.id AS artist_id, ar.slug AS artist_slug,
                    t.path, t.duration
             FROM library_tracks t
@@ -198,7 +198,7 @@ def get_mood_tracks(conditions: list[str], params: list, limit: int) -> list[dic
     named_params["limit"] = limit
     with transaction_scope() as session:
         rows = session.execute(
-            text(f"""SELECT t.id, t.storage_id, t.title, t.artist, a.name AS album, t.path, t.duration,
+            text(f"""SELECT t.id, t.storage_id::text, t.title, t.artist, a.name AS album, t.path, t.duration,
                        ar.id AS artist_id, ar.slug AS artist_slug,
                        a.id AS album_id, a.slug AS album_slug,
                        t.bpm, t.energy, t.danceability, t.valence

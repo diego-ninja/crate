@@ -1,5 +1,6 @@
 import type { Track } from "@/contexts/player-types";
 import type { PlaySource, RepeatMode } from "@/contexts/player-types";
+import { getOfflineNativePlaybackUrl } from "@/lib/offline";
 
 export const STORAGE_KEY = "listen-player-state";
 export const RECENTLY_PLAYED_KEY = "listen-recently-played";
@@ -103,15 +104,20 @@ export function saveRecentlyPlayed(tracks: Track[]) {
 }
 
 export function getStreamUrl(track: Track): string {
+  if (track.storageId) {
+    const localOfflineUrl = getOfflineNativePlaybackUrl(track.storageId);
+    if (localOfflineUrl) return localOfflineUrl;
+  }
+
   const base = _apiBase();
   const suffix = _tokenSuffix();
 
-  if (track.libraryTrackId != null) {
-    return `${base}/api/tracks/${track.libraryTrackId}/stream${suffix}`;
-  }
-
   if (track.storageId) {
     return `${base}/api/tracks/by-storage/${encodeURIComponent(track.storageId)}/stream${suffix}`;
+  }
+
+  if (track.libraryTrackId != null) {
+    return `${base}/api/tracks/${track.libraryTrackId}/stream${suffix}`;
   }
 
   const playbackPath = track.path || track.id;
@@ -184,4 +190,18 @@ export function isContinuousAlbumTransition(
   if (shuffle) return false;
   if (playSource?.type !== "album") return false;
   return areTracksFromSameAlbum(currentTrack, nextTrack);
+}
+
+export function getEffectiveCrossfadeSeconds(
+  currentTrack: Track | undefined,
+  nextTrack: Track | null,
+  playSource: PlaySource | null,
+  shuffle: boolean,
+  configuredSeconds: number,
+  smartCrossfadeEnabled: boolean,
+): number {
+  const clampedSeconds = Math.max(0, configuredSeconds || 0);
+  if (clampedSeconds <= 0) return 0;
+  if (!smartCrossfadeEnabled) return clampedSeconds;
+  return isContinuousAlbumTransition(currentTrack, nextTrack, playSource, shuffle) ? 0 : clampedSeconds;
 }

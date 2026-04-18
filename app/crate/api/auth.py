@@ -4,11 +4,11 @@ import hashlib
 import base64
 import secrets
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlparse, urlencode
 
 import jwt
-import psycopg2
 import requests
+from sqlalchemy.exc import IntegrityError as SAIntegrityError
 from fastapi import APIRouter, Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response, RedirectResponse, JSONResponse
@@ -198,7 +198,11 @@ def _allowed_redirect_origins() -> set[str]:
 
 def _callback_origin(return_to: str | None = None) -> str:
     allowed = _allowed_redirect_origins()
-    if return_to and return_to.startswith(("http://", "https://")):
+    if return_to and return_to.startswith("cratemusic://"):
+        # Native OAuth — callback still goes through our web server.
+        # Fall through to default origin.
+        pass
+    elif return_to and return_to.startswith(("http://", "https://")):
         parts = return_to.split("/", 3)
         origin = "/".join(parts[:3])
         if origin in allowed:
@@ -213,6 +217,8 @@ def _validate_return_to(return_to: str | None) -> str:
     """Validate return_to against allowed origins. Returns safe URL or fallback."""
     if not return_to:
         return "/"
+    if return_to.startswith("cratemusic://"):
+        return return_to
     if return_to.startswith("/") and not return_to.startswith("//"):
         return return_to
     if return_to.startswith(("http://", "https://")):
@@ -227,7 +233,7 @@ def _oauth_callback_url(provider: str, return_to: str | None = None) -> str:
     return f"{_callback_origin(return_to)}/api/auth/oauth/{provider}/callback"
 
 
-def _build_oauth_state(*, provider: str, return_to: str | None, mode: str, user_id: int | None, invite_token: str | None) -> str:
+def _build_oauth_state(*, provider: str, return_to: str | None, mode: str, user_id: int | None, invite_token: str | None, app_id: str | None = None) -> str:
     verifier = secrets.token_urlsafe(48)
     payload = {
         "provider": provider,
@@ -235,6 +241,7 @@ def _build_oauth_state(*, provider: str, return_to: str | None, mode: str, user_
         "mode": mode,
         "user_id": user_id,
         "invite_token": invite_token,
+        "app_id": app_id,
         "verifier": verifier,
         "iat": datetime.now(timezone.utc),
         "exp": datetime.now(timezone.utc) + timedelta(minutes=15),
@@ -346,21 +353,25 @@ _AUTH_ADMIN_RESPONSES = merge_responses(
 # ── Middleware ───────────────────────────────────────────────────
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Check JWT cookie first, then fall back to Remote-User headers."""
+    """Resolve auth via Bearer header, query param, or cookie (in that order).
+
+    Falls back to Remote-User headers from trusted reverse proxy.
+    """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         user = None
 
-        # 1. Cookie auth (web browsers)
-        token = request.cookies.get(COOKIE_NAME)
-        # 2. Bearer token auth (Capacitor native app)
-        if not token:
-            auth_header = request.headers.get("Authorization", "")
-            if auth_header.startswith("Bearer "):
-                token = auth_header[7:]
-        # 3. Query param token (audio/image streams where headers can't be set)
+        # 1. Bearer token auth (primary for all clients)
+        token = None
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+        # 2. Query param token (audio/image streams where headers can't be set)
         if not token:
             token = request.query_params.get("token")
+        # 3. Cookie auth (legacy fallback)
+        if not token:
+            token = request.cookies.get(COOKIE_NAME)
 
         if token:
             payload = verify_jwt(token)
@@ -673,7 +684,7 @@ async def update_profile(request: Request, body: UpdateProfileRequest):
         raise HTTPException(status_code=400, detail="No fields to update")
     try:
         updated = update_user(user["id"], **fields)
-    except psycopg2.IntegrityError as exc:
+    except SAIntegrityError as exc:
         if "users_username_key" in str(exc):
             raise HTTPException(status_code=409, detail="Username is already taken") from exc
         raise
@@ -763,12 +774,14 @@ async def oauth_start(request: Request, provider: str, body: OAuthStartRequest):
 
     user = getattr(request.state, "user", None)
     mode = "link" if user else "login"
+    app_id = request.headers.get("x-crate-app") or request.query_params.get("app_id")
     state = _build_oauth_state(
         provider=provider,
         return_to=body.return_to,
         mode=mode,
         user_id=user["id"] if user and mode == "link" else None,
         invite_token=body.invite_token,
+        app_id=app_id,
     )
     parsed_state = _parse_oauth_state(state)
     verifier = parsed_state["verifier"]
@@ -934,8 +947,25 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
             )
 
     update_user_last_login(user["id"])
-    token, _ = _create_login_session(user, request)
-    response = RedirectResponse(url=_validate_return_to(parsed_state.get("return_to")))
+    app_id = parsed_state.get("app_id")
+    token, _ = _create_login_session(user, request, app_id=app_id)
+
+    return_to = parsed_state.get("return_to") or "/"
+    safe_return = _validate_return_to(return_to)
+
+    if safe_return.startswith("cratemusic://"):
+        separator = "&" if "?" in safe_return else "?"
+        redirect_url = f"{safe_return}{separator}token={token}"
+        return RedirectResponse(url=redirect_url)
+
+    if safe_return.startswith("http"):
+        parsed = urlparse(safe_return)
+        callback_url = f"{parsed.scheme}://{parsed.netloc}/auth/callback?token={token}"
+        response = RedirectResponse(url=callback_url)
+        _set_auth_cookie(response, token)
+        return response
+
+    response = RedirectResponse(url=f"/auth/callback?token={token}")
     _set_auth_cookie(response, token)
     return response
 
@@ -1123,8 +1153,8 @@ async def admin_get_user_detail(request: Request, user_id: int):
     payload = _user_public(user)
     payload["username"] = user.get("username")
     payload["bio"] = user.get("bio")
-    payload["created_at"] = user.get("created_at")
-    payload["last_login"] = user.get("last_login")
+    payload["created_at"] = _iso_datetime(user.get("created_at"))
+    payload["last_login"] = _iso_datetime(user.get("last_login"))
     payload["connected_accounts"] = list_user_external_identities(user_id)
     payload["sessions"] = list_sessions(user_id, include_revoked=True)
     return payload

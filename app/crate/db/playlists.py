@@ -35,7 +35,7 @@ def _fetch_artwork_tracks(session, playlist_id: int) -> list[dict]:
             alb.slug AS album_slug
         FROM playlist_tracks pt
         LEFT JOIN LATERAL (
-            SELECT id, storage_id, path, artist, album, album_id
+            SELECT id, storage_id::text, path, artist, album, album_id
             FROM library_tracks lt
             WHERE lt.id = pt.track_id
                OR lt.path = pt.track_path
@@ -250,7 +250,7 @@ def get_playlist_tracks(playlist_id: int) -> list[dict]:
                 alb.slug AS album_slug
             FROM playlist_tracks pt
             LEFT JOIN LATERAL (
-                SELECT id, storage_id, path, artist, album, album_id
+                SELECT id, storage_id::text, path, artist, album, album_id
                 FROM library_tracks lt
                 WHERE lt.id = pt.track_id
                    OR lt.path = pt.track_path

@@ -20,12 +20,12 @@ const tierStyles: Record<QualityBadgeData["tier"], { border: string; text: strin
   },
   standard: {
     border: "border-white/15",
-    text: "text-white/45",
+    text: "text-muted-foreground",
     bg: "bg-transparent",
   },
   low: {
     border: "border-white/10",
-    text: "text-white/30",
+    text: "text-white/40",
     bg: "bg-transparent",
   },
 };
@@ -44,7 +44,7 @@ export function QualityBadge({ badge }: { badge: QualityBadgeData }) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold tracking-wider leading-none border ${style.border} ${style.text} ${style.bg} ${style.glow || ""}`}
+      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold tracking-wider leading-none whitespace-nowrap border ${style.border} ${style.text} ${style.bg} ${style.glow || ""}`}
       title={badge.detail || badge.label}
     >
       {Icon && <Icon size={9} />}

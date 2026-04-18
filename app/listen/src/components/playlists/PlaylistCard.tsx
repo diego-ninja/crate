@@ -3,13 +3,17 @@ import { Heart, Loader2, Play } from "lucide-react";
 
 import { ItemActionMenu, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { usePlaylistActionEntries } from "@/components/actions/playlist-actions";
+import { OfflineBadge } from "@/components/offline/OfflineBadge";
+import { useOffline } from "@/contexts/OfflineContext";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 
 interface PlaylistCardProps {
   playlistId?: number;
   name: string;
+  isSmart?: boolean;
   description?: string;
   tracks?: PlaylistArtworkTrack[];
   coverDataUrl?: string | null;
@@ -29,6 +33,7 @@ interface PlaylistCardProps {
 export function PlaylistCard({
   playlistId,
   name,
+  isSmart = false,
   description,
   tracks,
   coverDataUrl,
@@ -46,9 +51,21 @@ export function PlaylistCard({
 }: PlaylistCardProps) {
   const [playing, setPlaying] = useState(false);
   const [togglingFollow, setTogglingFollow] = useState(false);
+  const { getPlaylistState, getPlaylistRecord } = useOffline();
+  const offlineState = getPlaylistState(playlistId);
+  const offlineRecord = getPlaylistRecord(playlistId);
+  const offlineMeta =
+    offlineState === "ready"
+      ? offlineRecord?.trackCount
+        ? `${offlineRecord.trackCount} offline`
+        : getOfflineStateLabel(offlineState)
+      : isOfflineBusy(offlineState) && offlineRecord?.trackCount
+        ? `${Math.min(offlineRecord.readyTrackCount || 0, offlineRecord.trackCount)}/${offlineRecord.trackCount} offline`
+        : getOfflineStateLabel(offlineState);
   const actions = usePlaylistActionEntries({
     playlistId,
     name,
+    isSmart,
     href,
     canFollow: systemPlaylist && Boolean(onToggleFollow),
     isFollowed,
@@ -74,8 +91,15 @@ export function PlaylistCard({
       onContextMenu={actionMenu.handleContextMenu}
       {...actionMenu.longPressHandlers}
       className={cn(
-        "group cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-lg",
+        "group cursor-pointer rounded-xl p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-xl",
         layout === "grid" ? "w-full min-w-0" : "w-[160px] flex-shrink-0",
+        offlineState === "ready"
+          ? "bg-cyan-400/[0.04]"
+          : isOfflineBusy(offlineState)
+            ? "bg-primary/[0.05]"
+            : offlineState === "error"
+              ? "bg-amber-400/[0.05]"
+              : "hover:bg-white/5",
       )}
     >
       <div className="relative mb-2 overflow-hidden rounded-lg bg-white/5">
@@ -134,10 +158,27 @@ export function PlaylistCard({
             {badge}
           </div>
         ) : null}
+        <OfflineBadge state={offlineState} compact className={badge ? "absolute left-2 top-8" : "absolute left-2 top-2"} />
       </div>
       <div className="truncate text-sm font-medium text-foreground">{name}</div>
       <div className="truncate text-xs text-muted-foreground">
         {description || meta}
+        {offlineMeta ? (
+          <span
+            className={cn(
+              "ml-1.5",
+              offlineState === "ready"
+                ? "text-cyan-300/90"
+                : isOfflineBusy(offlineState)
+                  ? "text-primary"
+                  : offlineState === "error"
+                    ? "text-amber-300/90"
+                    : undefined,
+            )}
+          >
+            · {offlineMeta}
+          </span>
+        ) : null}
       </div>
       <ItemActionMenu
         actions={actions}

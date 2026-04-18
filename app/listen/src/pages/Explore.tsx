@@ -160,6 +160,7 @@ export function Explore() {
                     key={playlist.id}
                     playlistId={playlist.id}
                     name={playlist.name}
+                    isSmart={playlist.is_smart}
                     description={playlist.description}
                     tracks={playlist.artwork_tracks}
                     coverDataUrl={playlist.cover_data_url}

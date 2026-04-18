@@ -33,6 +33,7 @@ export function FromCrateSection({
               key={playlist.id}
               playlistId={playlist.id}
               name={playlist.name}
+              isSmart={playlist.is_smart}
               description={playlist.description}
               tracks={playlist.artwork_tracks}
               meta={`${playlist.track_count} tracks${playlist.category ? ` · ${playlist.category}` : ""}`}
@@ -99,6 +100,7 @@ export function HomeLibrarySection({
                   key={`${item.type}-${item.playlist_id}-${item.added_at}`}
                   playlistId={item.playlist_id}
                   name={item.playlist_name}
+                  isSmart={item.playlist_badge?.toLowerCase() === "smart"}
                   description={item.playlist_description}
                   tracks={item.playlist_tracks}
                   coverDataUrl={item.playlist_cover_data_url}

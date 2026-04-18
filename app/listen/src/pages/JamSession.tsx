@@ -574,7 +574,7 @@ export function JamSession() {
             ) : null}
             {roomCurrentTrack ? (
               <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-                <div className="text-[11px] uppercase tracking-wide text-white/45">Now playing in room</div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Now playing in room</div>
                 <div className="mt-1 text-sm font-medium text-foreground">{roomCurrentTrack.title}</div>
                 <div className="text-xs text-muted-foreground">
                   {roomCurrentTrack.artist}
@@ -655,7 +655,7 @@ export function JamSession() {
                     {member.username ? `@${member.username}` : "Profile"} · {member.role}
                   </div>
                 </div>
-                <div className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/55">
+                <div className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-muted-foreground">
                   {member.user_id === room.host_user_id ? "Host" : "Collab"}
                 </div>
               </Link>
@@ -671,7 +671,7 @@ export function JamSession() {
                 Host and collaborators can remove tracks and reorder the flow.
               </p>
             </div>
-            <div className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/55">
+            <div className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-muted-foreground">
               {sharedQueue.length} track{sharedQueue.length === 1 ? "" : "s"}
             </div>
           </div>
@@ -682,7 +682,7 @@ export function JamSession() {
                 key={`${track.id}-${index}`}
                 className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.02] px-3 py-3"
               >
-                <div className="w-6 text-center text-xs text-white/35">{index + 1}</div>
+                <div className="w-6 text-center text-xs text-white/40">{index + 1}</div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-foreground">{track.title}</div>
                   <div className="truncate text-xs text-muted-foreground">
@@ -696,7 +696,7 @@ export function JamSession() {
                       type="button"
                       onClick={() => handleMoveInRoomQueue(index, index - 1)}
                       disabled={index === 0}
-                      className="rounded-full border border-white/10 p-1.5 text-white/55 hover:bg-white/5 disabled:opacity-30"
+                      className="rounded-full border border-white/10 p-1.5 text-muted-foreground hover:bg-white/5 disabled:opacity-30"
                     >
                       <ArrowUp size={13} />
                     </button>
@@ -704,7 +704,7 @@ export function JamSession() {
                       type="button"
                       onClick={() => handleMoveInRoomQueue(index, index + 1)}
                       disabled={index === sharedQueue.length - 1}
-                      className="rounded-full border border-white/10 p-1.5 text-white/55 hover:bg-white/5 disabled:opacity-30"
+                      className="rounded-full border border-white/10 p-1.5 text-muted-foreground hover:bg-white/5 disabled:opacity-30"
                     >
                       <ArrowDown size={13} />
                     </button>
@@ -775,7 +775,7 @@ export function JamSession() {
                   className="rounded-2xl border border-white/10 bg-[#0f1116] p-3"
                 />
               </div>
-              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/70 break-all">
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-muted-foreground break-all">
                 {inviteLink}
               </div>
               <div className="flex flex-wrap gap-2">

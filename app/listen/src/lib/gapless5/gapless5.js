@@ -223,6 +223,9 @@ function Gapless5Source(parentPlayer, parentLog, inAudioPath) {
   };
 
   const onLoadedHTML5Metadata = () => {
+    if (!audio) {
+      return;
+    }
     endpos = audio.duration * 1000;
   };
 
@@ -231,6 +234,9 @@ function Gapless5Source(parentPlayer, parentLog, inAudioPath) {
       return;
     }
     state = Gapless5State.Stop;
+    if (!audio) {
+      return;
+    }
     endpos = audio.duration * 1000;
 
     if (queuedState === Gapless5State.Play) {
@@ -363,7 +369,9 @@ function Gapless5Source(parentPlayer, parentLog, inAudioPath) {
           if (!webAudioSwitched) {
             player.onplay(this.audioPath);
           }
-          setEndedCallbackTime(audio.duration - offsetSec);
+          if (audio) {
+            setEndedCallbackTime(audio.duration - offsetSec);
+          }
         } else if (audio) {
           // in case stop was requested while awaiting promise
           audio.pause();
@@ -442,9 +450,14 @@ function Gapless5Source(parentPlayer, parentLog, inAudioPath) {
       if (player.useWebAudio && [ Starting, Play, Stop ].includes(state)) {
         seekablePercent = 1;
       } else if (player.useHTML5Audio && audio !== null && audio.seekable.length > 0) {
-        seekablePercent = audio.seekable.end(audio.seekable.length - 1) / audio.duration;
-        if (!Number.isFinite(seekablePercent)) {
+        const audioDuration = audio.duration;
+        if (!Number.isFinite(audioDuration) || audioDuration <= 0) {
           seekablePercent = 0;
+        } else {
+          seekablePercent = audio.seekable.end(audio.seekable.length - 1) / audioDuration;
+          if (!Number.isFinite(seekablePercent)) {
+            seekablePercent = 0;
+          }
         }
       } else {
         seekablePercent = 0;

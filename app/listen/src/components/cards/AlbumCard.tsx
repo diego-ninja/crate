@@ -4,10 +4,13 @@ import { Heart, Loader2, Play } from "lucide-react";
 
 import { ItemActionMenu, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { useAlbumActionEntries } from "@/components/actions/album-actions";
+import { OfflineBadge } from "@/components/offline/OfflineBadge";
+import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { ActionIconButton } from "@/components/ui/ActionIconButton";
 import { api } from "@/lib/api";
+import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 import { albumApiPath, albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 
@@ -51,9 +54,20 @@ export const AlbumCard = memo(function AlbumCard({
   const navigate = useNavigate();
   const { playAll } = usePlayerActions();
   const { isSaved, toggleAlbumSaved } = useSavedAlbums();
+  const { getAlbumState, getAlbumRecord } = useOffline();
   const [playing, setPlaying] = useState(false);
   const coverUrl = cover || albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
   const saved = isSaved(albumId);
+  const offlineState = getAlbumState(albumId);
+  const offlineRecord = getAlbumRecord(albumId);
+  const offlineMeta =
+    offlineState === "ready"
+      ? offlineRecord?.trackCount
+        ? `${offlineRecord.trackCount} offline`
+        : getOfflineStateLabel(offlineState)
+      : isOfflineBusy(offlineState) && offlineRecord?.trackCount
+        ? `${Math.min(offlineRecord.readyTrackCount || 0, offlineRecord.trackCount)}/${offlineRecord.trackCount} offline`
+        : getOfflineStateLabel(offlineState);
   const actions = useAlbumActionEntries({
     artist,
     album,
@@ -82,6 +96,7 @@ export const AlbumCard = memo(function AlbumCard({
         playAll(playerTracks, 0, {
           type: "album",
           name: `${artist} - ${album}`,
+          href: albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }),
           radio: albumId != null ? { seedType: "album", seedId: albumId } : undefined,
         });
       }
@@ -95,10 +110,17 @@ export const AlbumCard = memo(function AlbumCard({
       role="button"
       tabIndex={0}
       className={cn(
-        "group snap-start cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-lg",
+        "group snap-start cursor-pointer rounded-xl p-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:rounded-xl",
         layout === "grid"
           ? "w-full min-w-0"
           : `flex-shrink-0 ${compact ? "w-[120px]" : "w-[160px]"}`,
+        offlineState === "ready"
+          ? "bg-cyan-400/[0.04]"
+          : isOfflineBusy(offlineState)
+            ? "bg-primary/[0.05]"
+            : offlineState === "error"
+              ? "bg-amber-400/[0.05]"
+              : "hover:bg-white/5",
       )}
       onContextMenu={actionMenu.handleContextMenu}
       {...actionMenu.longPressHandlers}
@@ -136,6 +158,7 @@ export const AlbumCard = memo(function AlbumCard({
             <Heart size={16} className={saved ? "fill-current" : ""} />
           </ActionIconButton>
         )}
+        <OfflineBadge state={offlineState} compact className="absolute left-2 top-2 z-10" />
         <div className="absolute inset-0 hidden bg-black/0 transition-colors md:flex md:items-center md:justify-center md:p-0 md:group-hover:bg-black/40">
           <button
             className="flex h-10 w-10 items-center justify-center rounded-full bg-primary opacity-0 shadow-lg transition-all md:translate-y-2 md:group-hover:translate-y-0 md:group-hover:opacity-100"
@@ -152,6 +175,22 @@ export const AlbumCard = memo(function AlbumCard({
       <div className="truncate text-sm font-medium text-foreground">{album}</div>
       <div className="truncate text-xs text-muted-foreground">
         {year ? `${year} · ${artist}` : artist}
+        {offlineMeta ? (
+          <span
+            className={cn(
+              "ml-1.5",
+              offlineState === "ready"
+                ? "text-cyan-300/90"
+                : isOfflineBusy(offlineState)
+                  ? "text-primary"
+                  : offlineState === "error"
+                    ? "text-amber-300/90"
+                    : undefined,
+            )}
+          >
+            · {offlineMeta}
+          </span>
+        ) : null}
       </div>
       <ItemActionMenu
         actions={actions}

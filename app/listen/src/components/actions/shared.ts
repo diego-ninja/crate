@@ -55,6 +55,7 @@ export interface ArtistMenuData {
 export interface PlaylistMenuData {
   playlistId?: number;
   name: string;
+  isSmart?: boolean;
   href?: string;
   canFollow?: boolean;
   isFollowed?: boolean;

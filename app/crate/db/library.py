@@ -2,7 +2,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope, transaction_scope
 from crate.slugs import build_album_slug, build_artist_slug, build_track_slug
 from sqlalchemy import text
 
@@ -91,6 +91,28 @@ def get_library_track_by_storage_id(storage_id: str) -> dict | None:
     return _row_to_lib_track(row) if row else None
 
 
+def get_library_track_by_path(path: str) -> dict | None:
+    with read_scope() as session:
+        row = session.execute(text("SELECT * FROM library_tracks WHERE path = :path"), {"path": path}).mappings().first()
+    return _row_to_lib_track(row) if row else None
+
+
+def get_library_tracks_by_storage_ids(storage_ids: list[str]) -> dict[str, dict]:
+    cleaned_storage_ids = [storage_id for storage_id in storage_ids if storage_id]
+    if not cleaned_storage_ids:
+        return {}
+    with read_scope() as session:
+        rows = session.execute(
+            text("SELECT * FROM library_tracks WHERE storage_id = ANY(:storage_ids)"),
+            {"storage_ids": cleaned_storage_ids},
+        ).mappings().all()
+    return {
+        row["storage_id"]: _row_to_lib_track(row)
+        for row in rows
+        if row and row.get("storage_id") is not None
+    }
+
+
 def get_library_tracks(album_id: int) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(
@@ -149,7 +171,7 @@ def upsert_artist(data: dict, *, session=None):
             return upsert_artist(data, session=s)
     now = datetime.now(timezone.utc).isoformat()
     existing = session.execute(
-        text("SELECT slug, storage_id FROM library_artists WHERE name = :name"),
+        text("SELECT slug, storage_id::text FROM library_artists WHERE name = :name"),
         {"name": data["name"]},
     ).mappings().first()
     slug = existing["slug"] if existing and existing.get("slug") else _allocate_unique_slug(
@@ -189,7 +211,7 @@ def upsert_album(data: dict, *, session=None) -> int:
             return upsert_album(data, session=s)
     now = datetime.now(timezone.utc).isoformat()
     existing = session.execute(
-        text("SELECT slug, storage_id FROM library_albums WHERE path = :path"),
+        text("SELECT slug, storage_id::text FROM library_albums WHERE path = :path"),
         {"path": data["path"]},
     ).mappings().first()
     slug = existing["slug"] if existing and existing.get("slug") else _allocate_unique_slug(
@@ -235,7 +257,7 @@ def upsert_track(data: dict, *, session=None):
             return upsert_track(data, session=s)
     now = datetime.now(timezone.utc).isoformat()
     existing = session.execute(
-        text("SELECT slug, storage_id FROM library_tracks WHERE path = :path"),
+        text("SELECT slug, storage_id::text FROM library_tracks WHERE path = :path"),
         {"path": data["path"]},
     ).mappings().first()
     slug = existing["slug"] if existing and existing.get("slug") else _allocate_unique_slug(

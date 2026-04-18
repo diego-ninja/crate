@@ -161,7 +161,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
       {currentTrack && (
         <div className="relative border-b border-white/5 px-4 py-3">
           <p className="text-[13px] font-medium text-white truncate">{currentTrack.title}</p>
-          <p className="text-[11px] text-white/50 truncate">{currentTrack.artist}</p>
+          <p className="text-[11px] text-muted-foreground truncate">{currentTrack.artist}</p>
         </div>
       )}
 
@@ -195,7 +195,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
                       ? "text-white text-[18px] font-bold"
                     : isPast
                         ? "text-white/20 text-[14px]"
-                        : "text-white/35 text-[14px] hover:text-white/60"
+                        : "text-white/40 text-[14px] hover:text-white/60"
                   }`}
                   style={isActive ? {
                     textShadow: `0 0 24px ${cssColor(primary, 0.3)}`,
@@ -212,7 +212,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
         {/* Plain lyrics (no sync) */}
         {!lyrics?.synced && lyrics?.plain && (
           <div className="px-4 py-8">
-            <pre className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-white/55">
+            <pre className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-muted-foreground">
               {lyrics.plain}
             </pre>
           </div>

@@ -65,8 +65,8 @@ function SortableTrackItem({ track, onRemove }: { track: PlaylistComposerTrack; 
         <GripVertical size={14} />
       </button>
       <div className="flex items-center gap-3 min-w-0 flex-1">
-        <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
-          <Music2 size={15} className="text-white/45" />
+        <div className="w-9 h-9 rounded-md bg-white/5 flex items-center justify-center flex-shrink-0">
+          <Music2 size={15} className="text-muted-foreground" />
         </div>
         <div className="min-w-0">
           <div className="truncate text-sm text-foreground">{track.title}</div>
@@ -75,7 +75,7 @@ function SortableTrackItem({ track, onRemove }: { track: PlaylistComposerTrack; 
           </div>
         </div>
       </div>
-      <button type="button" className="rounded-full p-1.5 text-white/45 hover:text-white hover:bg-white/5 transition-colors" onClick={onRemove}>
+      <button type="button" className="rounded-full p-1.5 text-muted-foreground hover:text-white hover:bg-white/5 transition-colors" onClick={onRemove}>
         <X size={14} />
       </button>
     </div>
@@ -293,7 +293,7 @@ export function PlaylistCreateModal({
 
             <div className="min-w-0 flex-1 space-y-3 pt-1">
               <div className="space-y-1">
-                <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/35">
+                <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/40">
                   Playlist
                 </div>
                 {titleEditing ? (
@@ -304,7 +304,7 @@ export function PlaylistCreateModal({
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     onBlur={() => setTitleEditing(false)}
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-xl font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                   />
                 ) : (
                   <button
@@ -318,7 +318,7 @@ export function PlaylistCreateModal({
               </div>
 
               <div className="space-y-1">
-                <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/35">
+                <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-white/40">
                   Description
                 </div>
                 {descriptionEditing ? (
@@ -329,7 +329,7 @@ export function PlaylistCreateModal({
                     value={description}
                     onChange={(event) => setDescription(event.target.value)}
                     onBlur={() => setDescriptionEditing(false)}
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none"
+                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary resize-none"
                   />
                 ) : (
                   <button
@@ -381,7 +381,7 @@ export function PlaylistCreateModal({
 
           <div className="space-y-3">
             <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5">
-              <Search size={15} className="text-white/45" />
+              <Search size={15} className="text-muted-foreground" />
               <input
                 type="text"
                 placeholder="Search tracks to add"

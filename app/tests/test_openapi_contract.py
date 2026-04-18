@@ -265,6 +265,28 @@ def test_openapi_types_me_routes_and_marks_them_authenticated(test_app):
     assert replay_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ReplayMixResponse")
 
 
+def test_openapi_types_offline_routes_and_marks_them_authenticated(test_app):
+    data = test_app.get("/openapi.json").json()
+    track_operation = data["paths"]["/api/offline/tracks/by-storage/{storage_id}/manifest"]["get"]
+    track_by_id_operation = data["paths"]["/api/offline/tracks/{track_id}/manifest"]["get"]
+    track_by_path_operation = data["paths"]["/api/offline/tracks/by-path/{path}/manifest"]["get"]
+    album_operation = data["paths"]["/api/offline/albums/{album_id}/manifest"]["get"]
+    playlist_operation = data["paths"]["/api/offline/playlists/{playlist_id}/manifest"]["get"]
+
+    for operation in (
+        track_operation,
+        track_by_id_operation,
+        track_by_path_operation,
+        album_operation,
+        playlist_operation,
+    ):
+        assert operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+        assert operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/OfflineManifestResponse")
+
+    assert track_operation["summary"] == "Get an offline manifest for a track by storage ID"
+    assert playlist_operation["responses"]["409"]["content"]["application/json"]["schema"]["$ref"].endswith("/ApiErrorResponse")
+
+
 def test_openapi_types_me_profile_scrobble_and_location_routes(test_app):
     data = test_app.get("/openapi.json").json()
     profile_operation = data["paths"]["/api/me/profile"]["put"]

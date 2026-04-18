@@ -1,6 +1,7 @@
 export const PLAYER_PLAYBACK_PREFS_EVENT = "listen-player-playback-prefs";
 
 const CROSSFADE_DURATION_KEY = "listen-player-crossfade-seconds";
+const SMART_CROSSFADE_KEY = "listen-player-smart-crossfade";
 const INFINITE_PLAYBACK_KEY = "listen-player-infinite-playback";
 const SMART_PLAYLIST_SUGGESTIONS_KEY = "listen-player-smart-playlist-suggestions";
 const SMART_PLAYLIST_SUGGESTIONS_CADENCE_KEY = "listen-player-smart-playlist-suggestions-cadence";
@@ -22,6 +23,29 @@ export function setCrossfadeDurationPreference(seconds: number) {
   try {
     localStorage.setItem(CROSSFADE_DURATION_KEY, String(value));
     window.dispatchEvent(new CustomEvent(PLAYER_PLAYBACK_PREFS_EVENT, { detail: { crossfadeSeconds: value } }));
+  } catch {
+    // ignore localStorage failures in private mode or restricted environments
+  }
+}
+
+export function getSmartCrossfadePreference(): boolean {
+  try {
+    const raw = localStorage.getItem(SMART_CROSSFADE_KEY);
+    if (raw == null) return true;
+    return raw !== "false";
+  } catch {
+    return true;
+  }
+}
+
+export function setSmartCrossfadePreference(enabled: boolean) {
+  try {
+    localStorage.setItem(SMART_CROSSFADE_KEY, enabled ? "true" : "false");
+    window.dispatchEvent(
+      new CustomEvent(PLAYER_PLAYBACK_PREFS_EVENT, {
+        detail: { smartCrossfadeEnabled: enabled },
+      }),
+    );
   } catch {
     // ignore localStorage failures in private mode or restricted environments
   }

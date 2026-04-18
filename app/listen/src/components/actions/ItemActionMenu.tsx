@@ -215,7 +215,7 @@ export function ItemActionMenu({
 
         if (entry.type === "label") {
           return (
-            <div key={entry.key} className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-white/35">
+            <div key={entry.key} className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-white/40">
               {entry.label}
             </div>
           );
@@ -257,7 +257,7 @@ export function ItemActionMenu({
   return createPortal((
     <AppPopover
       ref={menuRef}
-      className="fixed z-[1300] w-60 origin-top-left p-1 animate-pop-in"
+      className="fixed z-app-popover w-60 origin-top-left p-1 animate-pop-in"
       style={{
         left: position?.x ?? 12,
         top: position?.y ?? 12,

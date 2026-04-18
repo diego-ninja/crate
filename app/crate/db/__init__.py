@@ -44,7 +44,8 @@ from crate.db.cache import (
 from crate.db.library import (
     get_library_artists, get_library_artist, get_library_albums,
     get_library_artist_by_id, get_library_album,
-    get_library_album_by_id, get_library_track_by_id, get_library_track_by_storage_id,
+    get_library_album_by_id, get_library_track_by_id, get_library_track_by_storage_id, get_library_track_by_path,
+    get_library_tracks_by_storage_ids,
     get_library_tracks, get_library_stats,
     get_library_track_count,
     upsert_artist, upsert_album, upsert_track,

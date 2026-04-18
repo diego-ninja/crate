@@ -81,9 +81,9 @@ class AuthExternalIdentityResponse(BaseModel):
     last_error: str | None = None
     last_task_id: str | None = None
     metadata_json: dict[str, Any] | str | None = None
-    last_synced_at: datetime | str | None = None
-    created_at: datetime | str | None = None
-    updated_at: datetime | str | None = None
+    last_synced_at: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
 
 class AuthSessionResponse(BaseModel):
@@ -91,19 +91,19 @@ class AuthSessionResponse(BaseModel):
 
     id: str
     user_id: int | None = None
-    expires_at: datetime | str | None = None
-    created_at: datetime | str | None = None
-    last_seen_at: datetime | str | None = None
+    expires_at: datetime | None = None
+    created_at: datetime | None = None
+    last_seen_at: datetime | None = None
     last_seen_ip: str | None = None
     user_agent: str | None = None
     app_id: str | None = None
     device_label: str | None = None
-    revoked_at: datetime | str | None = None
+    revoked_at: datetime | None = None
 
 
 class AuthCurrentSessionResponse(BaseModel):
     id: str
-    expires_at: datetime | str | None = None
+    expires_at: datetime | None = None
 
 
 class AuthLoginResponse(AuthUserPublicResponse):
@@ -157,11 +157,11 @@ class AuthInviteResponse(BaseModel):
     token: str
     email: str | None = None
     created_by: int | None = None
-    expires_at: datetime | str | None = None
+    expires_at: datetime | None = None
     max_uses: int | None = None
     use_count: int | None = None
-    accepted_at: datetime | str | None = None
-    created_at: datetime | str | None = None
+    accepted_at: datetime | None = None
+    created_at: datetime | None = None
 
 
 class AdminAuthConfigResponse(BaseModel):
@@ -176,12 +176,12 @@ class AdminUserSummaryResponse(AuthUserPublicResponse):
     google_id: str | None = None
     active_sessions: int | None = None
     connected_accounts: list[AuthExternalIdentityResponse] = Field(default_factory=list)
-    created_at: datetime | str | None = None
-    last_login: datetime | str | None = None
-    last_seen_at: datetime | str | None = None
+    created_at: datetime | None = None
+    last_login: datetime | None = None
+    last_seen_at: datetime | None = None
 
 
 class AdminUserDetailResponse(AuthMeResponse):
-    created_at: datetime | str | None = None
-    last_login: datetime | str | None = None
+    created_at: datetime | None = None
+    last_login: datetime | None = None
     sessions: list[AuthSessionResponse] = Field(default_factory=list)

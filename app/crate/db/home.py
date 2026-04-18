@@ -497,7 +497,7 @@ def _track_candidates_for_album_ids(user_id: int, album_ids: list[int], limit: i
             text("""
             SELECT
                 t.id AS track_id,
-                t.storage_id AS track_storage_id,
+                t.storage_id::text AS track_storage_id,
                 t.path AS track_path,
                 t.title,
                 t.artist,
@@ -556,7 +556,7 @@ def _query_discovery_tracks(
             text("""
             SELECT
                 t.id AS track_id,
-                t.storage_id AS track_storage_id,
+                t.storage_id::text AS track_storage_id,
                 t.path AS track_path,
                 t.title,
                 t.artist,
@@ -667,7 +667,7 @@ def _fallback_recent_interest_tracks(user_id: int, interest_artists_lower: list[
             text("""
             SELECT
                 t.id AS track_id,
-                t.storage_id AS track_storage_id,
+                t.storage_id::text AS track_storage_id,
                 t.path AS track_path,
                 t.title,
                 t.artist,
@@ -818,7 +818,7 @@ def _build_artist_core_rows(
             text("""
             SELECT
                 t.id AS track_id,
-                t.storage_id AS track_storage_id,
+                t.storage_id::text AS track_storage_id,
                 t.path AS track_path,
                 t.title,
                 t.artist,

@@ -84,7 +84,7 @@ export function UpcomingEventRow({
           ) : null}
         </div>
 
-        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/45">
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {isShow ? (
             <>
               <span className="inline-flex items-center gap-1 truncate">
@@ -98,7 +98,7 @@ export function UpcomingEventRow({
             <>
               <Link
                 to={artistPagePath({ artistId: item.artist_id, artistSlug: item.artist_slug })}
-                className="truncate text-white/55 transition-colors hover:text-foreground"
+                className="truncate text-muted-foreground transition-colors hover:text-foreground"
               >
                 {item.artist}
               </Link>
@@ -112,7 +112,7 @@ export function UpcomingEventRow({
       <div className="flex flex-shrink-0 items-center gap-2">
         <div className="text-right text-primary">
           <div className="text-xs font-semibold">{dateStr}</div>
-          {timeStr ? <div className="text-[10px] text-white/35">{timeStr}</div> : null}
+          {timeStr ? <div className="text-[10px] text-white/40">{timeStr}</div> : null}
         </div>
         {isShow ? (
           <>

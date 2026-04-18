@@ -14,6 +14,8 @@ import {
   getStoredQueue,
   getStoredRecentlyPlayed,
   getStoredVolume,
+  getEffectiveCrossfadeSeconds,
+  getPredictableNextTrack,
   getStreamUrl,
   getTrackCacheKey,
   MAX_RECENT,
@@ -36,14 +38,13 @@ import {
   next as gpNext,
   pause as gpPause,
   play as gpPlay,
-  prev as gpPrev,
   removeTrack as gpRemoveTrack,
   restoreVolume as gpRestoreVolume,
   seekTo as gpSeekTo,
+  setCrossfadeDuration as gpSetCrossfadeDuration,
   setLoop as gpSetLoop,
   setSingleMode as gpSetSingleMode,
   setVolume as gpSetVolume,
-  updateCrossfade as gpUpdateCrossfade,
   type GaplessPlayerCallbacks,
 } from "@/lib/gapless-player";
 import { useAuth } from "@/contexts/AuthContext";
@@ -59,6 +60,7 @@ import { flushQueue as flushPlayEventQueue, postWithRetry } from "@/lib/play-eve
 import {
   getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
+  getSmartCrossfadePreference,
   getSmartPlaylistSuggestionsCadencePreference,
   getSmartPlaylistSuggestionsPreference,
   PLAYER_PLAYBACK_PREFS_EVENT,
@@ -130,10 +132,19 @@ const PlayerStateContext = createContext<PlayerStateValue | null>(null);
 const PlayerActionsContext = createContext<PlayerActionsValue | null>(null);
 
 const SOFT_PAUSE_FADE_MS = 220;
+const PREV_RESTART_THRESHOLD_SECONDS = 3;
+const PREV_DOUBLE_TAP_WINDOW_MS = 1500;
 
 function clampIndex(index: number, length: number): number {
   if (length <= 0) return 0;
   return Math.max(0, Math.min(index, length - 1));
+}
+
+export function shouldRestartTrackBeforePrev(params: {
+  currentTimeSeconds: number;
+  justRestartedCurrentTrack: boolean;
+}): boolean {
+  return params.currentTimeSeconds > PREV_RESTART_THRESHOLD_SECONDS && !params.justRestartedCurrentTrack;
 }
 
 /**
@@ -229,6 +240,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [shuffle, setShuffleState] = useState(() => stored.current.shuffle);
   const [playSource, setPlaySource] = useState<PlaySource | null>(null);
   const [repeat, setRepeatState] = useState<RepeatMode>("off");
+  const [smartCrossfadeEnabled, setSmartCrossfadeEnabled] = useState(getSmartCrossfadePreference);
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>(getStoredRecentlyPlayed);
   const [infinitePlaybackEnabled, setInfinitePlaybackEnabled] = useState(getInfinitePlaybackPreference);
   const [smartPlaylistSuggestionsEnabled, setSmartPlaylistSuggestionsEnabled] = useState(
@@ -246,6 +258,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const repeatRef = useRef(repeat);
   const shuffleRef = useRef(shuffle);
   const playSourceRef = useRef(playSource);
+  const smartCrossfadeEnabledRef = useRef(smartCrossfadeEnabled);
+  const effectiveCrossfadeMsRef = useRef(getCrossfadeDurationPreference() * 1000);
   const isPlayingRef = useRef(isPlaying);
   const isBufferingRef = useRef(isBuffering);
   const currentTimeRef = useRef(currentTime);
@@ -253,6 +267,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const bufferingIntentRef = useRef(false);
   const lastNonZeroVolumeRef = useRef(Math.max(getStoredVolume(), 0.5));
   const activatedTrackKeyRef = useRef<string | null>(null);
+  const prevRestartTrackKeyRef = useRef<string | null>(null);
+  const prevRestartedAtRef = useRef(0);
   // Callbacks the Gapless-5 engine will dispatch into. Populated below
   // in render body; the proxy we hand to initGaplessPlayer reads the
   // freshest handler on each dispatch.
@@ -348,6 +364,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const clearPrevRestartLatch = useCallback(() => {
+    prevRestartTrackKeyRef.current = null;
+    prevRestartedAtRef.current = 0;
+  }, []);
+
   const commitCurrentIndex = useCallback((nextIndex: number) => {
     currentIndexRef.current = nextIndex;
     currentTrackRef.current = queueRef.current[nextIndex];
@@ -382,7 +403,29 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     repeatRef.current = repeat;
     shuffleRef.current = shuffle;
     playSourceRef.current = playSource;
-  }, [playSource, repeat, shuffle]);
+    smartCrossfadeEnabledRef.current = smartCrossfadeEnabled;
+  }, [playSource, repeat, shuffle, smartCrossfadeEnabled]);
+
+  const syncEffectiveCrossfade = useCallback(() => {
+    const nextTrack = getPredictableNextTrack(
+      queueRef.current,
+      currentIndexRef.current,
+      repeatRef.current,
+      shuffleRef.current,
+    );
+    const effectiveSeconds = getEffectiveCrossfadeSeconds(
+      currentTrackRef.current,
+      nextTrack,
+      playSourceRef.current,
+      shuffleRef.current,
+      getCrossfadeDurationPreference(),
+      smartCrossfadeEnabledRef.current,
+    );
+    const effectiveMs = Math.max(0, effectiveSeconds * 1000);
+    effectiveCrossfadeMsRef.current = effectiveMs;
+    gpSetCrossfadeDuration(effectiveMs);
+    return effectiveMs;
+  }, []);
 
   usePlaybackPersistence({
     queue,
@@ -606,13 +649,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
    * the duration read is from the new track.
    */
   const advanceCursorTo = useCallback((index: number) => {
+    clearPrevRestartLatch();
     commitCurrentIndex(index);
     commitCurrentTime(0);
     commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
     rememberActiveTrack(queueRef.current[index]);
     bufferingIntentRef.current = true;
     commitIsBuffering(true);
-  }, [commitCurrentIndex, commitCurrentTime, commitDuration, commitIsBuffering, rememberActiveTrack]);
+  }, [clearPrevRestartLatch, commitCurrentIndex, commitCurrentTime, commitDuration, commitIsBuffering, rememberActiveTrack]);
 
   // Domain-level actions for usePlaybackIntelligence. Verb-oriented
   // instead of raw state setters — the hook no longer needs to reason
@@ -755,12 +799,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onPrefsChanged = (event: Event) => {
       const detail = (event as CustomEvent<{
         crossfadeSeconds?: number;
+        smartCrossfadeEnabled?: boolean;
         infinitePlaybackEnabled?: boolean;
         smartPlaylistSuggestionsEnabled?: boolean;
         smartPlaylistSuggestionsCadence?: number;
       }>).detail;
-      // Crossfade change: push straight into Gapless, no React state needed.
-      gpUpdateCrossfade();
+      syncEffectiveCrossfade();
+      if (typeof detail?.smartCrossfadeEnabled === "boolean") {
+        setSmartCrossfadeEnabled(detail.smartCrossfadeEnabled);
+      } else {
+        setSmartCrossfadeEnabled(getSmartCrossfadePreference());
+      }
       if (typeof detail?.infinitePlaybackEnabled === "boolean") {
         setInfinitePlaybackEnabled(detail.infinitePlaybackEnabled);
       } else {
@@ -782,7 +831,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener(PLAYER_PLAYBACK_PREFS_EVENT, onPrefsChanged as EventListener);
     };
-  }, []);
+  }, [syncEffectiveCrossfade]);
+
+  useEffect(() => {
+    syncEffectiveCrossfade();
+  }, [syncEffectiveCrossfade, queue, currentIndex, playSource, repeat, shuffle, smartCrossfadeEnabled]);
 
   const {
     pendingRestoreTimeRef,
@@ -824,6 +877,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (durationSeconds > 0) {
           commitDuration(durationSeconds);
         }
+        clearPrevRestartLatch();
         if (pendingRestoreTimeRef.current > 0) {
           gpSeekTo(pendingRestoreTimeRef.current * 1000);
           commitCurrentTime(pendingRestoreTimeRef.current);
@@ -870,11 +924,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         bufferingIntentRef.current = false;
       },
       onPrev: () => {
+        clearPrevRestartLatch();
         commitCurrentTime(0);
         commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
         pullFromEngine();
+        bufferingIntentRef.current = false;
+        commitIsBuffering(false);
+        clearStallTimer();
       },
       onNext: (fromPath, toPath) => {
+        clearPrevRestartLatch();
         // Capture the outgoing duration BEFORE we overwrite durationRef
         // with the incoming's length — UI components need it for the
         // progress-bar-stays-on-outgoing trick during the crossfade.
@@ -888,7 +947,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         // both ends of the transition, emit a transition record so the
         // UI can fade artwork/title between outgoing and incoming AND
         // keep the progress bar coherent with the still-audible outgoing.
-        const crossfadeMs = getCrossfadeDurationPreference() * 1000;
+        const crossfadeMs = effectiveCrossfadeMsRef.current;
         if (crossfadeMs > 0) {
           const outgoing = engineTrackMapRef.current.get(fromPath)?.[0];
           const incoming = engineTrackMapRef.current.get(toPath)?.[0];
@@ -1122,26 +1181,50 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const prev = useCallback(() => {
     if (!queueRef.current.length) return;
-    if (currentTimeRef.current > 3) {
+    const currentTrack = queueRef.current[currentIndexRef.current];
+    const currentTrackKey = currentTrack ? getTrackCacheKey(currentTrack) : null;
+    const now = performance.now();
+    const justRestartedCurrentTrack =
+      !!currentTrackKey &&
+      prevRestartTrackKeyRef.current === currentTrackKey &&
+      now - prevRestartedAtRef.current < PREV_DOUBLE_TAP_WINDOW_MS;
+    const currentPositionSeconds = Math.max(currentTimeRef.current, gpGetPosition() / 1000);
+
+    if (shouldRestartTrackBeforePrev({
+      currentTimeSeconds: currentPositionSeconds,
+      justRestartedCurrentTrack,
+    })) {
       gpSeekTo(0);
       commitCurrentTime(0);
       markSeekPosition(0);
+      prevRestartTrackKeyRef.current = currentTrackKey;
+      prevRestartedAtRef.current = now;
+      bufferingIntentRef.current = false;
+      commitIsBuffering(false);
       return;
     }
 
     if (currentIndexRef.current > 0) {
-      // Sequential skip backward. Gapless-5 prev() doesn't crossfade.
-      gpPrev();
-      advanceToTrack(currentIndexRef.current - 1);
+      // Use gpGotoTrack instead of gpPrev: Gapless-5's prev() has its
+      // own "restart if position > 0" guard that conflicts with ours —
+      // after React seeks to 0, a few ms of playback elapse before the
+      // second press, so the engine's position > 0 check fires and it
+      // restarts the current track instead of going to the previous one,
+      // while React still advances the cursor → engine/React desync.
+      const targetIndex = currentIndexRef.current - 1;
+      clearPrevRestartLatch();
+      gpGotoTrack(targetIndex, true);
+      advanceToTrack(targetIndex);
       return;
     }
 
     if (repeatRef.current === "all" && queueRef.current.length > 0) {
       const wrappedIndex = queueRef.current.length - 1;
+      clearPrevRestartLatch();
       gpGotoTrack(wrappedIndex, true);
       advanceToTrack(wrappedIndex);
     }
-  }, [advanceToTrack, commitCurrentTime, markSeekPosition]);
+  }, [advanceToTrack, clearPrevRestartLatch, commitCurrentTime, commitIsBuffering, markSeekPosition]);
 
   const seek = useCallback((time: number) => {
     const shouldResumeBufferingFlow = isPlayingRef.current;
@@ -1416,6 +1499,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       shuffle,
       playSource,
       repeat,
+      smartCrossfadeEnabled,
       recentlyPlayed,
       currentTrack,
       play,
@@ -1441,6 +1525,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       shuffle,
       playSource,
       repeat,
+      smartCrossfadeEnabled,
       recentlyPlayed,
       currentTrack,
       play,

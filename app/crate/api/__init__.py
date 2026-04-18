@@ -53,7 +53,7 @@ def create_app() -> FastAPI:
         return variant_openapi(
             app,
             "app-api",
-            include_tags={"auth", "me", "social", "jam", "browse", "playlists", "radio", "genres", "curation", "analytics", "lyrics"},
+            include_tags={"auth", "me", "offline", "social", "jam", "browse", "playlists", "radio", "genres", "curation", "analytics", "lyrics"},
             title="Crate App & Listening API",
             summary="Authentication, personal library, browsing, playlists, radio, and listening surfaces.",
             description=(
@@ -164,6 +164,7 @@ def create_app() -> FastAPI:
     from crate.api.management import router as management_router
     from crate.api.settings import router as settings_router
     from crate.api.playlists import router as playlists_router
+    from crate.api.offline import router as offline_router
     from crate.api.curation import router as curation_router
     from crate.api.system_playlists import router as system_playlists_router
     from crate.api.genres import router as genres_router
@@ -182,6 +183,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(admin_auth_router)
     app.include_router(me_router)
+    app.include_router(offline_router)
     app.include_router(social_router)
     app.include_router(jam_router)
     app.include_router(radio_router)

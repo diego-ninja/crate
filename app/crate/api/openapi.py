@@ -43,6 +43,7 @@ _TAG_METADATA = [
     {"name": "auth", "x-displayName": "Authentication", "description": "Authentication, sessions, and identity provider flows."},
     {"name": "admin-auth", "x-displayName": "Admin Access", "description": "Administrator authentication and invite management."},
     {"name": "me", "x-displayName": "My Library", "description": "Personal library, listening history, feed, and home surfaces."},
+    {"name": "offline", "x-displayName": "Offline Mirror", "description": "Offline manifests and mirrored playback assets."},
     {"name": "social", "x-displayName": "Social Graph", "description": "User profiles, follows, and social graph operations."},
     {"name": "jam", "x-displayName": "Jam Rooms", "description": "Collaborative listening rooms and invite flows."},
     {"name": "browse", "x-displayName": "Browse & Search", "description": "Library browsing, media metadata, and streaming endpoints."},
@@ -73,7 +74,7 @@ _TAG_METADATA = [
     {"name": "subsonic", "x-displayName": "Subsonic Compatibility", "description": "Open Subsonic-compatible browsing and streaming API."},
 ]
 _TAG_GROUPS = [
-    {"name": "Identity", "tags": ["auth", "me", "social", "jam", "admin-auth"]},
+    {"name": "Identity", "tags": ["auth", "me", "offline", "social", "jam", "admin-auth"]},
     {
         "name": "Listening & Discovery",
         "tags": ["browse", "playlists", "radio", "genres", "curation", "analytics", "lyrics"],
@@ -162,7 +163,7 @@ def _openapi_servers() -> list[dict[str, str]]:
 
 _AUTH_REQUIRED_PREFIXES = frozenset({
     "/api/admin/auth", "/api/admin/system-playlists",
-    "/api/me", "/api/users", "/api/jam", "/api/curation",
+    "/api/me", "/api/offline", "/api/users", "/api/jam", "/api/curation",
     "/api/artwork", "/api/manage",
     "/api/acquisition", "/api/tidal",
     "/api/imports", "/api/organize", "/api/stack",
