@@ -1651,13 +1651,11 @@ def _m20_convert_to_timestamptz(cur):
     for table, column, target_type in conversions:
         try:
             cur.execute("SAVEPOINT sp_ts")
+            cast_type = 'timestamptz' if target_type == 'TIMESTAMPTZ' else 'date'
             cur.execute(f"""
                 ALTER TABLE {table}
                 ALTER COLUMN {column} TYPE {target_type}
-                USING CASE
-                    WHEN {column} IS NULL OR {column} = '' THEN NULL
-                    ELSE {column}::{'timestamptz' if target_type == 'TIMESTAMPTZ' else 'date'}
-                END
+                USING NULLIF({column}, '')::{cast_type}
             """)
             cur.execute("RELEASE SAVEPOINT sp_ts")
         except Exception:
