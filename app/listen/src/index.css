@@ -2,6 +2,7 @@
    Capacitor native. iOS/Android use system fonts (San Francisco /
    Roboto) for a native feel. */
 @import "tailwindcss";
+@source "../../../shared/web";
 
 @custom-variant dark (&:is(.dark *));
 

@@ -1,5 +1,6 @@
 @import "../../shared/fonts/poppins.css";
 @import "tailwindcss";
+@source "../../../shared/web";
 
 @custom-variant dark (&:is(.dark *));
 
