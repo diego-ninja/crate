@@ -121,3 +121,25 @@ class GenreTaxonomyInvalidStatusResponse(BaseModel):
     alias_count: int = 0
     edge_count: int = 0
     items: list[InvalidGenreTaxonomyNodeResponse] = Field(default_factory=list)
+
+
+class GenreTaxonomyTreeNodeResponse(BaseModel):
+    slug: str
+    name: str
+    description: str | None = None
+    musicbrainz_mbid: str | None = None
+    wikidata_url: str | None = None
+    top_level: bool = False
+    parent_slugs: list[str] = Field(default_factory=list)
+    children_slugs: list[str] = Field(default_factory=list)
+    alias_names: list[str] = Field(default_factory=list)
+    artist_count: int = 0
+    album_count: int = 0
+    eq_gains: list[float] | None = None
+    eq_preset_source: str | None = None
+    eq_preset_inherited_from: str | None = None
+
+
+class GenreTaxonomyTreeResponse(BaseModel):
+    nodes: list[GenreTaxonomyTreeNodeResponse]
+    top_level_slugs: list[str] = Field(default_factory=list)

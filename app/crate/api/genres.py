@@ -9,6 +9,7 @@ from crate.api.schemas.genres import (
     GenreGraphResponse,
     GenreSummaryResponse,
     GenreTaxonomyInvalidStatusResponse,
+    GenreTaxonomyTreeResponse,
 )
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.db.genres import (
@@ -120,6 +121,66 @@ def get_invalid_taxonomy_nodes(request: Request, limit: int = Query(8, ge=1, le=
         "edge_count": sum(int(item.get("edge_count") or 0) for item in items),
         "items": items[:limit],
     }
+
+
+@router.get(
+    "/taxonomy/tree",
+    response_model=GenreTaxonomyTreeResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Full taxonomy tree with parent/children refs, EQ preset status, and counts",
+)
+def taxonomy_tree(request: Request):
+    _require_auth(request)
+    from crate.genre_taxonomy import get_genre_catalog, resolve_genre_eq_preset
+    from crate.db.genres import get_all_genres
+
+    catalog = get_genre_catalog()
+    genre_list = get_all_genres()
+    counts: dict[str, dict[str, int]] = {}
+    mbids: dict[str, str | None] = {}
+    wikidata_urls: dict[str, str | None] = {}
+    for g in genre_list:
+        cs = g.get("canonical_slug")
+        if cs:
+            existing = counts.get(cs, {"artist_count": 0, "album_count": 0})
+            existing["artist_count"] += g.get("artist_count") or 0
+            existing["album_count"] += g.get("album_count") or 0
+            counts[cs] = existing
+            if g.get("musicbrainz_mbid"):
+                mbids[cs] = g["musicbrainz_mbid"]
+            if g.get("wikidata_url"):
+                wikidata_urls[cs] = g["wikidata_url"]
+
+    nodes = []
+    top_level_slugs = []
+    for slug, meta in catalog.items():
+        preset = resolve_genre_eq_preset(slug)
+        c = counts.get(slug, {"artist_count": 0, "album_count": 0})
+        children = sorted(
+            s for s, m in catalog.items()
+            if slug in m.get("parents", [])
+        )
+        node = {
+            "slug": slug,
+            "name": meta["name"],
+            "description": meta.get("description") or None,
+            "musicbrainz_mbid": mbids.get(slug),
+            "wikidata_url": wikidata_urls.get(slug),
+            "top_level": meta.get("top_level", False),
+            "parent_slugs": meta.get("parents", []),
+            "children_slugs": children,
+            "alias_names": meta.get("aliases", []),
+            "artist_count": c["artist_count"],
+            "album_count": c["album_count"],
+            "eq_gains": list(preset["gains"]) if preset else None,
+            "eq_preset_source": preset["source"] if preset else None,
+            "eq_preset_inherited_from": preset.get("slug") if preset and preset["source"] == "inherited" else None,
+        }
+        nodes.append(node)
+        if meta.get("top_level", False):
+            top_level_slugs.append(slug)
+
+    return {"nodes": nodes, "top_level_slugs": sorted(top_level_slugs)}
 
 
 @router.get(

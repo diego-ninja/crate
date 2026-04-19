@@ -6,12 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { GenreNetworkGraph } from "@/components/genres/GenreNetworkGraph";
 import { GenreEqEditor } from "@/components/genres/GenreEqEditor";
+import { GenreTaxonomyTree } from "@/components/genres/GenreTaxonomyTree";
 import { useApi } from "@/hooks/use-api";
 import { useTaskPoll } from "@/hooks/use-task-poll";
 import { api } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
 import { albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
-import { Search, Sparkles, Tag, Disc3, Users, ArrowLeft, Loader2, AlertTriangle } from "lucide-react";
+import { Search, Sparkles, Tag, Disc3, Users, ArrowLeft, Loader2, AlertTriangle, LayoutGrid, Network } from "lucide-react";
 import { toast } from "sonner";
 import { ErrorState } from "@/components/ui/error-state";
 
@@ -197,6 +198,7 @@ function GenreList() {
   const { pollTask } = useTaskPoll();
   const [filter, setFilter] = useState("");
   const [indexing, setIndexing] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "tree">("grid");
   const navigate = useNavigate();
 
   const afterSuccess = useCallback(() => { refetch(); refetchUnmapped(); refetchInvalidTaxonomy(); }, [refetch, refetchUnmapped, refetchInvalidTaxonomy]);
@@ -335,16 +337,38 @@ function GenreList() {
         </div>
       )}
 
-      <div className="relative mb-6 max-w-sm">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter genres..."
-          className="pl-9 bg-card border-border"
-        />
+      <div className="flex items-center gap-3 mb-6">
+        <div className="relative max-w-sm flex-1">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter genres..."
+            className="pl-9 bg-card border-border"
+          />
+        </div>
+        <div className="flex items-center rounded-lg border border-border bg-card p-0.5">
+          <button
+            type="button"
+            onClick={() => setViewMode("grid")}
+            className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${viewMode === "grid" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <LayoutGrid size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("tree")}
+            className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${viewMode === "tree" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            <Network size={14} />
+          </button>
+        </div>
       </div>
 
+      {viewMode === "tree" ? (
+        <GenreTaxonomyTree />
+      ) : (
+      <>
       {(unmappedGenres?.length || 0) > 0 && (
         <div className="mb-6 rounded-2xl border border-amber-500/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.15),rgba(120,53,15,0.08))] p-4">
           <div className="mb-3 flex items-center gap-2">
@@ -424,6 +448,8 @@ function GenreList() {
             </button>
           ))}
         </div>
+      )}
+      </>
       )}
     </div>
   );
