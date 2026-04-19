@@ -86,31 +86,6 @@ interface InvalidTaxonomyStatus {
   items: InvalidTaxonomyNode[];
 }
 
-const GENRE_COLORS = [
-  "from-primary/30 to-primary/10",
-  "from-blue-600/30 to-blue-900/10",
-  "from-emerald-600/30 to-emerald-900/10",
-  "from-green-600/30 to-green-900/10",
-  "from-yellow-600/30 to-yellow-900/10",
-  "from-orange-600/30 to-orange-900/10",
-  "from-red-600/30 to-red-900/10",
-  "from-pink-600/30 to-pink-900/10",
-  "from-fuchsia-600/30 to-fuchsia-900/10",
-  "from-indigo-600/30 to-indigo-900/10",
-  "from-teal-600/30 to-teal-900/10",
-  "from-amber-600/30 to-amber-900/10",
-  "from-sky-600/30 to-sky-900/10",
-  "from-violet-600/30 to-violet-900/10",
-  "from-rose-600/30 to-rose-900/10",
-  "from-lime-600/30 to-lime-900/10",
-];
-
-function genreColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return GENRE_COLORS[Math.abs(hash) % GENRE_COLORS.length]!;
-}
-
 // ── Task action helper ─────────────────────────────────────────
 
 function useGenreTask(
@@ -521,125 +496,140 @@ function GenreView({ slug }: { slug: string }) {
 
   return (
     <div>
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-2">
+      {/* Back */}
+      <div className="flex items-center gap-2 mb-4">
         <Button variant="ghost" size="sm" onClick={() => navigate("/genres")}>
           <ArrowLeft size={14} className="mr-1" /> Genres
         </Button>
       </div>
-      <div className={`rounded-xl p-6 mb-6 bg-gradient-to-br ${genreColor(genre.name)} border border-border`}>
-        <h1 className="text-3xl font-black mb-2">{genre.name}</h1>
-        <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
-          <span className="flex items-center gap-1"><Users size={14} />{genre.artists.length} artists</span>
-          <span className="flex items-center gap-1"><Disc3 size={14} />{genre.albums.length} albums</span>
-        </div>
-        <div className="mb-4 flex flex-wrap gap-2">
-          <Badge
-            variant="outline"
-            className={genre.mapped ? "border-primary/30 bg-primary/10 text-primary" : "border-amber-500/30 bg-amber-500/10 text-amber-100"}
-          >
-            {genre.mapped ? "Mapped in taxonomy" : "Needs taxonomy mapping"}
-          </Badge>
-          {genre.canonical_name && (
-            <Badge variant="outline" className="border-white/15 bg-black/15 text-white/85">
-              Canonical: {genre.canonical_name}
-            </Badge>
-          )}
-          {genre.top_level_name && (
-            <Badge variant="outline" className="border-white/15 bg-black/15 text-white/75">
-              Family: {genre.top_level_name}
-            </Badge>
-          )}
-        </div>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-          <div className="flex flex-wrap gap-2">
-            <TaskButton
-              label="Sync MusicBrainz"
-              busy={isBusy("mb-sync")}
-              onClick={() => run("mb-sync", "/api/genres/musicbrainz/sync", {
-                focus_slug: genre.canonical_slug || genre.slug, limit: 1, force: true,
-              }, {
-                successMessage: (r) => `MusicBrainz sync: ${r.edges_synced ?? 0} edges`,
-                errorMessage: "MusicBrainz sync failed",
-                pollTimeout: 60 * 60 * 1000,
-              })}
-            />
-            <TaskButton
-              label="Enrich Description"
-              busy={isBusy("enrich")}
-              onClick={() => run("enrich", "/api/genres/descriptions/enrich", {
-                focus_slug: genre.canonical_slug || genre.slug, limit: 1, force: true,
-              }, {
-                successMessage: (r) => `Enrichment: ${r.updated ?? 0} updated`,
-                errorMessage: "Description enrichment failed",
-                pollTimeout: 45 * 60 * 1000,
-              })}
-            />
-            <TaskButton
-              label="Infer Taxonomy"
-              busy={isBusy("infer")}
-              onClick={() => run("infer", "/api/genres/infer", {
-                focus_slug: genre.mapped ? null : genre.slug, limit: 160, aggressive: true, include_external: true,
-              }, {
-                successMessage: (r) => `Inference: ${r.mapped ?? 0} mapped, ${r.remaining_unmapped ?? 0} unmapped`,
-                errorMessage: "Taxonomy inference failed",
-              })}
-            />
-            <TaskButton
-              label="Clean Invalid Nodes"
-              busy={isBusy("cleanup-invalid")}
-              onClick={() => run("cleanup-invalid", "/api/genres/taxonomy/cleanup-invalid", {}, {
-                successMessage: (r) => `Cleanup: ${r.deleted_count ?? 0} invalid nodes removed`,
-                errorMessage: "Genre taxonomy cleanup failed",
-              })}
-              icon={AlertTriangle}
-            />
-            <TaskButton
-              label="Generate Playlist"
-              busy={creating}
-              onClick={createSmartPlaylist}
-              variant="default"
-            />
-          </div>
-          <div className="rounded-2xl border border-white/12 bg-black/15 p-4">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-white/45">
-              Description
+
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground">{genre.name}</h1>
+            <div className="mt-2 flex items-center gap-4 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1.5"><Users size={14} />{genre.artists.length} artists</span>
+              <span className="flex items-center gap-1.5"><Disc3 size={14} />{genre.albums.length} albums</span>
             </div>
-            <p className="text-sm leading-6 text-white/84">{description}</p>
-            {aliasNote && <p className="mt-3 text-xs leading-5 text-white/60">{aliasNote}</p>}
-            {(externalDescription || genre.musicbrainz_mbid || genre.wikidata_entity_id) && (
-              <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3">
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
-                  External reference
-                </div>
-                {externalDescription && (
-                  <p className="text-xs leading-5 text-white/72">{externalDescription}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge
+              variant="outline"
+              className={genre.mapped ? "border-primary/30 bg-primary/10 text-primary" : "border-amber-500/30 bg-amber-500/10 text-amber-100"}
+            >
+              {genre.mapped ? "Mapped" : "Unmapped"}
+            </Badge>
+            {genre.canonical_name && genre.canonical_name !== genre.name && (
+              <Badge variant="outline" className="border-white/10 text-white/70">
+                → {genre.canonical_name}
+              </Badge>
+            )}
+            {genre.top_level_name && (
+              <Badge variant="outline" className="border-white/10 text-white/60">
+                {genre.top_level_name}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        {/* Description + References */}
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] mb-5">
+          <div>
+            <p className="text-sm leading-6 text-white/65">{description}</p>
+            {aliasNote && <p className="mt-2 text-xs text-white/50 italic">{aliasNote}</p>}
+            {externalDescription && (
+              <div className="mt-3 rounded-lg border border-white/8 bg-white/[0.02] p-3">
+                <p className="text-xs leading-5 text-white/60">{externalDescription}</p>
+                {externalSource && (
+                  <div className="mt-1.5 text-[10px] text-white/35">Source: {externalSource}</div>
                 )}
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/55">
-                  {externalSource && (
-                    <Badge variant="outline" className="border-white/15 bg-black/10 text-white/65">
-                      {externalSource}
-                    </Badge>
-                  )}
-                  {genre.musicbrainz_mbid && (
-                    <Badge variant="outline" className="border-white/15 bg-black/10 text-white/65">
-                      mbid {genre.musicbrainz_mbid.slice(0, 8)}
-                    </Badge>
-                  )}
-                  {genre.wikidata_url && (
-                    <a
-                      href={genre.wikidata_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center rounded-full border border-white/15 bg-black/10 px-2 py-1 text-white/70 transition-colors hover:text-white"
-                    >
-                      wikidata
-                    </a>
-                  )}
-                </div>
               </div>
             )}
           </div>
+          <div className="space-y-2">
+            {genre.musicbrainz_mbid && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-white/40">MBID</span>
+                <a
+                  href={`https://musicbrainz.org/genre/${genre.musicbrainz_mbid}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-[11px] text-cyan-300/70 hover:text-cyan-200 transition-colors"
+                >
+                  {genre.musicbrainz_mbid}
+                </a>
+              </div>
+            )}
+            {genre.wikidata_url && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-white/40">Wikidata</span>
+                <a
+                  href={genre.wikidata_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-cyan-300/70 hover:text-cyan-200 transition-colors"
+                >
+                  {genre.wikidata_url.split("/").pop()}
+                </a>
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-white/40">Slug</span>
+              <span className="font-mono text-[11px] text-white/50">{genre.slug}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2">
+          <TaskButton
+            label="Sync MusicBrainz"
+            busy={isBusy("mb-sync")}
+            onClick={() => run("mb-sync", "/api/genres/musicbrainz/sync", {
+              focus_slug: genre.canonical_slug || genre.slug, limit: 1, force: true,
+            }, {
+              successMessage: (r) => `MusicBrainz sync: ${r.edges_synced ?? 0} edges`,
+              errorMessage: "MusicBrainz sync failed",
+              pollTimeout: 60 * 60 * 1000,
+            })}
+          />
+          <TaskButton
+            label="Enrich Description"
+            busy={isBusy("enrich")}
+            onClick={() => run("enrich", "/api/genres/descriptions/enrich", {
+              focus_slug: genre.canonical_slug || genre.slug, limit: 1, force: true,
+            }, {
+              successMessage: (r) => `Enrichment: ${r.updated ?? 0} updated`,
+              errorMessage: "Description enrichment failed",
+              pollTimeout: 45 * 60 * 1000,
+            })}
+          />
+          <TaskButton
+            label="Infer Taxonomy"
+            busy={isBusy("infer")}
+            onClick={() => run("infer", "/api/genres/infer", {
+              focus_slug: genre.mapped ? null : genre.slug, limit: 160, aggressive: true, include_external: true,
+            }, {
+              successMessage: (r) => `Inference: ${r.mapped ?? 0} mapped, ${r.remaining_unmapped ?? 0} unmapped`,
+              errorMessage: "Taxonomy inference failed",
+            })}
+          />
+          <TaskButton
+            label="Clean Invalid"
+            busy={isBusy("cleanup-invalid")}
+            onClick={() => run("cleanup-invalid", "/api/genres/taxonomy/cleanup-invalid", {}, {
+              successMessage: (r) => `Cleanup: ${r.deleted_count ?? 0} invalid nodes removed`,
+              errorMessage: "Genre taxonomy cleanup failed",
+            })}
+            icon={AlertTriangle}
+          />
+          <TaskButton
+            label="Generate Playlist"
+            busy={creating}
+            onClick={createSmartPlaylist}
+            variant="default"
+          />
         </div>
       </div>
 
