@@ -366,7 +366,7 @@ function GenreList() {
       </div>
 
       {viewMode === "tree" ? (
-        <GenreTaxonomyTree />
+        <GenreTaxonomyTree filter={filter} />
       ) : (
       <>
       {(unmappedGenres?.length || 0) > 0 && (

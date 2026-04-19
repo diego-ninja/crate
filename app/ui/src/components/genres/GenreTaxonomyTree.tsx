@@ -10,7 +10,6 @@ import {
   Loader2,
   Music,
   Network,
-  Search,
   SlidersHorizontal,
   Sparkles,
   Tag,
@@ -308,11 +307,11 @@ function ActionButton({ label, icon: Icon, busy, onClick }: {
 
 // ── Main Component ──────────────────────────────────────────────
 
-export function GenreTaxonomyTree() {
+export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
   const { data, refetch } = useApi<TaxonomyTree>("/api/genres/taxonomy/tree");
   const { pollTask } = useTaskPoll();
   const navigate = useNavigate();
-  const [search, setSearch] = useState("");
+  const search = filter;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
@@ -476,17 +475,7 @@ export function GenreTaxonomyTree() {
   return (
     <div className="flex gap-6 items-start">
       {/* Left: Tree */}
-      <div className="w-80 flex-shrink-0 space-y-2">
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search genres..."
-            className="w-full h-9 pl-9 pr-3 rounded-lg bg-white/5 text-sm text-white placeholder:text-white/25 outline-none focus:bg-white/8 border border-white/8 focus:border-white/15 transition-colors"
-          />
-        </div>
+      <div className="w-80 flex-shrink-0">
         <div className="max-h-[calc(100vh-220px)] overflow-y-auto space-y-px pr-1">
           {data.top_level_slugs.map((slug) => renderNode(slug, 0))}
         </div>
