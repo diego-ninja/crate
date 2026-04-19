@@ -9,7 +9,8 @@ COPY shared/ /app-shared/shared/
 # Copy listen source
 COPY listen/ .
 # Fix shared imports to work with Docker layout
-RUN ln -s /app-shared/shared ../shared
+RUN ln -s /app-shared/shared ../shared && \
+    ln -s /app/node_modules /app-shared/shared/web/node_modules
 RUN npm run build
 
 FROM nginx:alpine
