@@ -220,62 +220,61 @@ function GenreList() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Tag size={24} className="text-primary" />
-          <h1 className="text-2xl font-bold">Genres</h1>
-          {genres && <span className="text-sm text-muted-foreground">({genres.length})</span>}
-          {invalidTaxonomy && (
-            <Badge
-              variant="outline"
-              className={
-                invalidTaxonomy.invalid_count > 0
-                  ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
-                  : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-              }
-            >
-              {invalidTaxonomy.invalid_count > 0 ? `${invalidTaxonomy.invalid_count} invalid nodes` : "taxonomy clean"}
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <TaskButton
-            label="Sync MusicBrainz"
-            busy={isBusy("mb-sync")}
-            onClick={() => run("mb-sync", "/api/genres/musicbrainz/sync", { limit: 80 }, {
-              successMessage: (r) => `MusicBrainz sync: ${r.edges_synced ?? 0} edges, ${r.matched_musicbrainz ?? 0} matched`,
-              errorMessage: "MusicBrainz sync failed",
-              pollTimeout: 60 * 60 * 1000,
-            })}
-          />
-          <TaskButton
-            label="Enrich descriptions"
-            busy={isBusy("enrich")}
-            onClick={() => run("enrich", "/api/genres/descriptions/enrich", { limit: 160 }, {
-              successMessage: (r) => `Enrichment: ${r.updated ?? 0} updated, ${r.remaining_without_external ?? 0} missing`,
-              errorMessage: "Description enrichment failed",
-              pollTimeout: 45 * 60 * 1000,
-            })}
-          />
-          <TaskButton
-            label="Infer taxonomy"
-            busy={isBusy("infer")}
-            onClick={() => run("infer", "/api/genres/infer", { limit: 250, aggressive: true, include_external: true }, {
-              successMessage: (r) => `Inference: ${r.mapped ?? 0} mapped, ${r.remaining_unmapped ?? 0} unmapped`,
-              errorMessage: "Taxonomy inference failed",
-            })}
-          />
-          <TaskButton
-            label="Clean invalid nodes"
-            busy={isBusy("cleanup-invalid")}
-            onClick={() => run("cleanup-invalid", "/api/genres/taxonomy/cleanup-invalid", {}, {
-              successMessage: (r) => `Cleanup: ${r.deleted_count ?? 0} invalid nodes removed`,
-              errorMessage: "Genre taxonomy cleanup failed",
-            })}
-            icon={AlertTriangle}
-          />
-          <TaskButton label="Re-index" busy={indexing} onClick={reindex} icon={Tag} />
-        </div>
+      <div className="mb-4 flex items-center gap-3">
+        <Tag size={24} className="text-primary" />
+        <h1 className="text-2xl font-bold">Genres</h1>
+        {genres && <span className="text-sm text-muted-foreground">({genres.length})</span>}
+        {invalidTaxonomy && (
+          <Badge
+            variant="outline"
+            className={
+              invalidTaxonomy.invalid_count > 0
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+            }
+          >
+            {invalidTaxonomy.invalid_count > 0 ? `${invalidTaxonomy.invalid_count} invalid nodes` : "taxonomy clean"}
+          </Badge>
+        )}
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <TaskButton
+          label="Sync MusicBrainz"
+          busy={isBusy("mb-sync")}
+          onClick={() => run("mb-sync", "/api/genres/musicbrainz/sync", { limit: 80 }, {
+            successMessage: (r) => `MusicBrainz sync: ${r.edges_synced ?? 0} edges, ${r.matched_musicbrainz ?? 0} matched`,
+            errorMessage: "MusicBrainz sync failed",
+            pollTimeout: 60 * 60 * 1000,
+          })}
+        />
+        <TaskButton
+          label="Enrich descriptions"
+          busy={isBusy("enrich")}
+          onClick={() => run("enrich", "/api/genres/descriptions/enrich", { limit: 160 }, {
+            successMessage: (r) => `Enrichment: ${r.updated ?? 0} updated, ${r.remaining_without_external ?? 0} missing`,
+            errorMessage: "Description enrichment failed",
+            pollTimeout: 45 * 60 * 1000,
+          })}
+        />
+        <TaskButton
+          label="Infer taxonomy"
+          busy={isBusy("infer")}
+          onClick={() => run("infer", "/api/genres/infer", { limit: 250, aggressive: true, include_external: true }, {
+            successMessage: (r) => `Inference: ${r.mapped ?? 0} mapped, ${r.remaining_unmapped ?? 0} unmapped`,
+            errorMessage: "Taxonomy inference failed",
+          })}
+        />
+        <TaskButton
+          label="Clean invalid nodes"
+          busy={isBusy("cleanup-invalid")}
+          onClick={() => run("cleanup-invalid", "/api/genres/taxonomy/cleanup-invalid", {}, {
+            successMessage: (r) => `Cleanup: ${r.deleted_count ?? 0} invalid nodes removed`,
+            errorMessage: "Genre taxonomy cleanup failed",
+          })}
+          icon={AlertTriangle}
+        />
+        <TaskButton label="Re-index" busy={indexing} onClick={reindex} icon={Tag} />
       </div>
 
       {!!invalidTaxonomy?.invalid_count && (
@@ -313,7 +312,7 @@ function GenreList() {
       )}
 
       <div className="flex items-center gap-3 mb-6">
-        <div className="relative max-w-sm flex-1">
+        <div className="relative flex-1">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={filter}
