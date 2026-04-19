@@ -2,11 +2,13 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   ChevronRight,
+  Disc3,
   ExternalLink,
   Music,
   Search,
   SlidersHorizontal,
   Tag,
+  Users,
 } from "lucide-react";
 
 import { useApi } from "@/hooks/use-api";
@@ -57,6 +59,166 @@ function collectAncestors(
   }
 }
 
+// ── Detail Panel ────────────────────────────────────────────────
+
+function NodeDetailPanel({
+  node,
+  nodeMap,
+  onSelectNode,
+  onNavigate,
+}: {
+  node: TaxonomyNode;
+  nodeMap: Map<string, TaxonomyNode>;
+  onSelectNode: (slug: string) => void;
+  onNavigate: (slug: string) => void;
+}) {
+  const hasPreset = node.eq_gains !== null;
+  const empty = node.artist_count === 0 && node.album_count === 0;
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div>
+        <h3 className="text-lg font-semibold text-foreground capitalize">{node.name}</h3>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          {node.top_level && (
+            <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">top-level</Badge>
+          )}
+          <Badge variant="outline" className={hasPreset ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-200" : "border-white/15 text-white/55"}>
+            {node.eq_preset_source === "direct" ? "direct preset" : node.eq_preset_source === "inherited" ? `inherits from ${node.eq_preset_inherited_from}` : "no preset"}
+          </Badge>
+          {empty && (
+            <Badge variant="outline" className="border-white/15 text-white/40">empty</Badge>
+          )}
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <span className="flex items-center gap-1.5"><Users size={14} />{node.artist_count} artists</span>
+        <span className="flex items-center gap-1.5"><Disc3 size={14} />{node.album_count} albums</span>
+      </div>
+
+      {/* Description */}
+      {node.description && (
+        <p className="text-sm leading-6 text-white/60">{node.description}</p>
+      )}
+
+      {/* Links */}
+      <div className="flex flex-wrap gap-2">
+        {node.musicbrainz_mbid && (
+          <a
+            href={`https://musicbrainz.org/genre/${node.musicbrainz_mbid}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs text-white/55 hover:text-cyan-200 transition-colors"
+          >
+            <ExternalLink size={12} />
+            MusicBrainz
+          </a>
+        )}
+        {node.wikidata_url && (
+          <a
+            href={node.wikidata_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-xs text-white/55 hover:text-cyan-200 transition-colors"
+          >
+            <ExternalLink size={12} />
+            Wikidata
+          </a>
+        )}
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs text-primary hover:bg-primary/20 transition-colors"
+          onClick={() => onNavigate(node.slug)}
+        >
+          <Music size={12} />
+          Open genre page
+        </button>
+      </div>
+
+      {/* Aliases */}
+      {node.alias_names.length > 0 && (
+        <div>
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-white/35">
+            Aliases
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {node.alias_names.map((alias) => (
+              <Badge key={alias} variant="outline" className="text-xs">{alias}</Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* EQ Preset */}
+      {node.eq_gains && (
+        <div>
+          <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-white/35">
+            <SlidersHorizontal size={11} />
+            EQ Preset
+          </div>
+          <div className="rounded-xl border border-white/8 bg-black/20 p-3">
+            <EqBands gains={node.eq_gains} trackHeight={80} />
+          </div>
+        </div>
+      )}
+
+      {/* Subgenres */}
+      {node.children_slugs.length > 0 && (
+        <div>
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-white/35">
+            Subgenres ({node.children_slugs.length})
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {node.children_slugs.map((childSlug) => {
+              const child = nodeMap.get(childSlug);
+              return child ? (
+                <button
+                  key={childSlug}
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-foreground hover:bg-white/5 transition-colors"
+                  onClick={() => onSelectNode(childSlug)}
+                >
+                  <Tag size={10} />
+                  {child.name}
+                </button>
+              ) : null;
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Parent chain */}
+      {node.parent_slugs.length > 0 && (
+        <div>
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-white/35">
+            Parent genres
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {node.parent_slugs.map((parentSlug) => {
+              const parent = nodeMap.get(parentSlug);
+              return parent ? (
+                <button
+                  key={parentSlug}
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-foreground hover:bg-white/5 transition-colors"
+                  onClick={() => onSelectNode(parentSlug)}
+                >
+                  {parent.name}
+                </button>
+              ) : null;
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main Component ──────────────────────────────────────────────
+
 export function GenreTaxonomyTree() {
   const { data } = useApi<TaxonomyTree>("/api/genres/taxonomy/tree");
   const navigate = useNavigate();
@@ -81,9 +243,10 @@ export function GenreTaxonomyTree() {
         collectAncestors(node.slug, nodeMap, ancestors);
       }
     }
-    const all = new Set([...matches, ...ancestors]);
-    return { visibleSlugs: all, autoExpanded: ancestors };
+    return { visibleSlugs: new Set([...matches, ...ancestors]), autoExpanded: ancestors };
   }, [search, data, nodeMap]);
+
+  const selectedNode = selectedSlug ? nodeMap.get(selectedSlug) ?? null : null;
 
   if (!data) return null;
 
@@ -99,6 +262,14 @@ export function GenreTaxonomyTree() {
   const isExpanded = (slug: string) =>
     expanded.has(slug) || autoExpanded.has(slug);
 
+  const selectNode = (slug: string) => {
+    setSelectedSlug(slug);
+    // Ensure all ancestors are expanded so the node is visible
+    const ancestors = new Set<string>();
+    collectAncestors(slug, nodeMap, ancestors);
+    setExpanded((prev) => new Set([...prev, ...ancestors]));
+  };
+
   const renderNode = (slug: string, depth: number): React.ReactNode => {
     const node = nodeMap.get(slug);
     if (!node) return null;
@@ -108,168 +279,61 @@ export function GenreTaxonomyTree() {
     const open = isExpanded(slug);
     const isSelected = selectedSlug === slug;
     const hasPreset = node.eq_gains !== null;
+    const empty = node.artist_count === 0 && node.album_count === 0;
 
     return (
       <div key={slug}>
         <button
           type="button"
-          className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition ${
+          className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[13px] transition ${
             isSelected
               ? "border-cyan-400/40 bg-cyan-400/10"
-              : "border-white/6 bg-white/[0.02] hover:border-white/12 hover:bg-white/[0.04]"
+              : "border-transparent hover:border-white/8 hover:bg-white/[0.03]"
           }`}
-          style={{ marginLeft: depth * 16 }}
+          style={{ paddingLeft: depth * 16 + 10 }}
           onClick={() => {
-            if (hasChildren) toggleExpand(slug);
             setSelectedSlug(isSelected ? null : slug);
           }}
         >
           {hasChildren ? (
-            <ChevronRight
-              size={14}
-              className={`flex-shrink-0 text-white/40 transition-transform ${open ? "rotate-90" : ""}`}
-            />
+            <span
+              role="button"
+              className="flex-shrink-0 p-0.5 rounded hover:bg-white/10"
+              onClick={(e) => { e.stopPropagation(); toggleExpand(slug); }}
+            >
+              <ChevronRight
+                size={12}
+                className={`text-white/40 transition-transform ${open ? "rotate-90" : ""}`}
+              />
+            </span>
           ) : (
-            <span className="w-3.5 flex-shrink-0" />
+            <span className="w-4 flex-shrink-0" />
           )}
           <span
             className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
-              hasPreset ? "bg-cyan-400" : "bg-white/25"
+              hasPreset ? "bg-cyan-400" : "bg-white/20"
             }`}
           />
           <span
-            className={`flex-1 font-medium ${
+            className={`flex-1 truncate ${
               isSelected
-                ? "text-cyan-100"
-                : node.top_level
-                  ? "text-white"
-                  : "text-white/75"
+                ? "text-cyan-100 font-medium"
+                : empty
+                  ? "text-white/40"
+                  : node.top_level
+                    ? "text-white font-medium"
+                    : "text-white/75"
             }`}
           >
             {node.name}
           </span>
-          <span className="flex items-center gap-3 text-[11px] text-white/40">
-            {node.artist_count > 0 && (
-              <span>{node.artist_count} artists</span>
-            )}
-            <span className={hasPreset ? "text-cyan-300/80" : "text-white/35"}>
-              {node.eq_preset_source === "direct"
-                ? "preset"
-                : node.eq_preset_source === "inherited"
-                  ? "inherits"
-                  : "none"}
+          {node.artist_count > 0 && (
+            <span className="text-[10px] tabular-nums text-white/30 flex-shrink-0">
+              {node.artist_count}
             </span>
-          </span>
+          )}
         </button>
 
-        {/* Expanded detail card */}
-        {isSelected && (
-          <div
-            className="mt-1 mb-2 rounded-xl border border-white/8 bg-white/[0.02] p-4 space-y-4"
-            style={{ marginLeft: depth * 16 + 16 }}
-          >
-            {/* Description */}
-            {node.description && (
-              <p className="text-xs leading-5 text-white/55">{node.description}</p>
-            )}
-
-            {/* Metadata */}
-            <div className="flex flex-wrap gap-2">
-              {node.musicbrainz_mbid && (
-                <a
-                  href={`https://musicbrainz.org/genre/${node.musicbrainz_mbid}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] text-white/55 hover:text-cyan-200 transition-colors"
-                >
-                  <ExternalLink size={10} />
-                  MusicBrainz
-                </a>
-              )}
-              {node.wikidata_url && (
-                <a
-                  href={node.wikidata_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] text-white/55 hover:text-cyan-200 transition-colors"
-                >
-                  <ExternalLink size={10} />
-                  Wikidata
-                </a>
-              )}
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] text-white/55 hover:text-cyan-200 transition-colors"
-                onClick={() => navigate(`/genres/${slug}`)}
-              >
-                <Music size={10} />
-                Full detail
-              </button>
-            </div>
-
-            {/* Aliases */}
-            {node.alias_names.length > 0 && (
-              <div>
-                <div className="mb-1.5 text-[10px] uppercase tracking-wider text-white/35">
-                  Aliases
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {node.alias_names.slice(0, 12).map((alias) => (
-                    <Badge key={alias} variant="outline">{alias}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* EQ preset preview */}
-            {node.eq_gains && (
-              <div>
-                <div className="mb-1.5 flex items-center gap-2 text-[10px] uppercase tracking-wider text-white/35">
-                  <SlidersHorizontal size={10} />
-                  EQ Preset
-                  {node.eq_preset_source === "inherited" && node.eq_preset_inherited_from && (
-                    <span className="normal-case tracking-normal text-white/45">
-                      (from {node.eq_preset_inherited_from})
-                    </span>
-                  )}
-                </div>
-                <div className="rounded-lg border border-white/8 bg-black/20 p-2">
-                  <EqBands gains={node.eq_gains} trackHeight={64} />
-                </div>
-              </div>
-            )}
-
-            {/* Children as pills */}
-            {node.children_slugs.length > 0 && (
-              <div>
-                <div className="mb-1.5 text-[10px] uppercase tracking-wider text-white/35">
-                  Subgenres
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {node.children_slugs.map((childSlug) => {
-                    const child = nodeMap.get(childSlug);
-                    return child ? (
-                      <button
-                        key={childSlug}
-                        type="button"
-                        className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-foreground hover:bg-white/5 transition-colors"
-                        onClick={() => {
-                          setSelectedSlug(childSlug);
-                          setExpanded((prev) => new Set([...prev, slug]));
-                        }}
-                      >
-                        <Tag size={10} />
-                        {child.name}
-                      </button>
-                    ) : null;
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Children */}
         {open &&
           node.children_slugs.map((childSlug) =>
             renderNode(childSlug, depth + 1),
@@ -279,25 +343,44 @@ export function GenreTaxonomyTree() {
   };
 
   return (
-    <div className="space-y-3">
-      {/* Search */}
-      <div className="relative">
-        <Search
-          size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30"
-        />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Filter taxonomy..."
-          className="w-full h-10 pl-9 pr-3 rounded-lg bg-white/5 text-sm text-white placeholder:text-white/25 outline-none focus:bg-white/8 border border-white/8 focus:border-white/15 transition-colors"
-        />
+    <div className="flex gap-6 items-start">
+      {/* Left: Tree navigation */}
+      <div className="w-80 flex-shrink-0 space-y-2">
+        <div className="relative">
+          <Search
+            size={14}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30"
+          />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search genres..."
+            className="w-full h-9 pl-9 pr-3 rounded-lg bg-white/5 text-sm text-white placeholder:text-white/25 outline-none focus:bg-white/8 border border-white/8 focus:border-white/15 transition-colors"
+          />
+        </div>
+
+        <div className="max-h-[calc(100vh-220px)] overflow-y-auto space-y-px pr-1">
+          {data.top_level_slugs.map((slug) => renderNode(slug, 0))}
+        </div>
       </div>
 
-      {/* Tree */}
-      <div className="space-y-1">
-        {data.top_level_slugs.map((slug) => renderNode(slug, 0))}
+      {/* Right: Detail panel */}
+      <div className="flex-1 min-w-0">
+        {selectedNode ? (
+          <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-6 sticky top-6">
+            <NodeDetailPanel
+              node={selectedNode}
+              nodeMap={nodeMap}
+              onSelectNode={selectNode}
+              onNavigate={(slug) => navigate(`/genres/${slug}`)}
+            />
+          </div>
+        ) : (
+          <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed border-white/10 text-sm text-white/30">
+            Select a genre to view details
+          </div>
+        )}
       </div>
     </div>
   );
