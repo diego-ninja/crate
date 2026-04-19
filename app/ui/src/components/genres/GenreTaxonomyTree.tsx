@@ -10,8 +10,8 @@ import {
 } from "lucide-react";
 
 import { useApi } from "@/hooks/use-api";
-import { EqBands } from "@shared/EqBands";
-import { CratePill } from "@shared/CrateBadge";
+import { EqBands } from "@/components/genres/EqBands";
+import { Badge } from "@/components/ui/badge";
 
 interface TaxonomyNode {
   slug: string;
@@ -215,7 +215,7 @@ export function GenreTaxonomyTree() {
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {node.alias_names.slice(0, 12).map((alias) => (
-                    <CratePill key={alias}>{alias}</CratePill>
+                    <Badge key={alias} variant="outline">{alias}</Badge>
                   ))}
                 </div>
               </div>
@@ -249,16 +249,18 @@ export function GenreTaxonomyTree() {
                   {node.children_slugs.map((childSlug) => {
                     const child = nodeMap.get(childSlug);
                     return child ? (
-                      <CratePill
+                      <button
                         key={childSlug}
-                        icon={Tag}
+                        type="button"
+                        className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-foreground hover:bg-white/5 transition-colors"
                         onClick={() => {
                           setSelectedSlug(childSlug);
                           setExpanded((prev) => new Set([...prev, slug]));
                         }}
                       >
+                        <Tag size={10} />
                         {child.name}
-                      </CratePill>
+                      </button>
                     ) : null;
                   })}
                 </div>

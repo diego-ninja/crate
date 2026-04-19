@@ -4,9 +4,11 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import { EQ_BAND_COUNT, FLAT_GAINS } from "@shared/equalizer-constants";
-import { EqBands } from "@shared/EqBands";
-import { CratePill } from "@shared/CrateBadge";
+import { EqBands } from "@/components/genres/EqBands";
+import { Badge } from "@/components/ui/badge";
+
+const EQ_BAND_COUNT = 10;
+const FLAT_GAINS: number[] = new Array(EQ_BAND_COUNT).fill(0);
 
 interface ResolvedPreset {
   gains: number[];
@@ -98,11 +100,11 @@ export function GenreEqEditor({
           <h2 className="text-sm font-semibold">Equalizer preset</h2>
         </div>
         {hasOwnPreset ? (
-          <CratePill active>Direct preset</CratePill>
+          <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary">Direct preset</Badge>
         ) : inherited && initialResolved ? (
-          <CratePill>Inherits from {initialResolved.name}</CratePill>
+          <Badge variant="outline" className="border-white/15 bg-black/15 text-white/80">Inherits from {initialResolved.name}</Badge>
         ) : (
-          <CratePill className="border-amber-500/30 bg-amber-500/10 text-amber-100">No preset</CratePill>
+          <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-100">No preset</Badge>
         )}
       </div>
 

@@ -18,9 +18,8 @@
     "noUncheckedIndexedAccess": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@shared/*": ["../shared/web/*"]
+      "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "../shared/web/*.ts", "../shared/web/*.tsx"]
+  "include": ["src", "../shared/**/*.ts"]
 }
