@@ -192,12 +192,14 @@ function NodeDetailPanel({
             busy={actionBusy("cleanup")}
             onClick={() => onAction("cleanup")}
           />
-          <ActionButton
-            label="Generate playlist"
-            icon={ListMusic}
-            busy={actionBusy("playlist")}
-            onClick={() => onAction("playlist")}
-          />
+          {!empty && (
+            <ActionButton
+              label="Generate playlist"
+              icon={ListMusic}
+              busy={actionBusy("playlist")}
+              onClick={() => onAction("playlist")}
+            />
+          )}
           <Button
             variant="outline"
             size="sm"

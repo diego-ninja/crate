@@ -12,7 +12,7 @@ import { useTaskPoll } from "@/hooks/use-task-poll";
 import { api } from "@/lib/api";
 import { formatNumber } from "@/lib/utils";
 import { albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
-import { Search, Sparkles, Tag, Disc3, Users, ArrowLeft, Loader2, AlertTriangle, LayoutGrid, Network } from "lucide-react";
+import { Search, Sparkles, Tag, Disc3, Users, ArrowLeft, Loader2, AlertTriangle, LayoutGrid, ListMusic, Network } from "lucide-react";
 import { toast } from "sonner";
 import { ErrorState } from "@/components/ui/error-state";
 
@@ -624,12 +624,14 @@ function GenreView({ slug }: { slug: string }) {
             })}
             icon={AlertTriangle}
           />
-          <TaskButton
-            label="Generate Playlist"
-            busy={creating}
-            onClick={createSmartPlaylist}
-            variant="default"
-          />
+          {(genre.artists.length > 0 || genre.albums.length > 0) && (
+            <TaskButton
+              label="Generate Playlist"
+              busy={creating}
+              onClick={createSmartPlaylist}
+              icon={ListMusic}
+            />
+          )}
         </div>
       </div>
 
