@@ -418,8 +418,8 @@ function GenreList() {
             <button
               key={g.id}
               onClick={() => navigate(`/genres/${g.slug}`)}
-              className={`text-left rounded-lg border p-4 bg-gradient-to-br ${genreColor(g.name)} transition-all duration-200 hover:scale-[1.03] hover:shadow-lg hover:shadow-primary/10 ${
-                g.mapped ? "border-border" : "border-amber-500/30"
+              className={`text-left rounded-lg border p-4 transition-colors hover:bg-white/[0.04] ${
+                g.mapped ? "border-white/8 hover:border-primary/30" : "border-amber-500/30"
               }`}
             >
               <div className="mb-2 flex items-start justify-between gap-2">
