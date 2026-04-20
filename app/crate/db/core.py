@@ -2006,43 +2006,6 @@ def _m29_add_shows_lastfm_fields(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_scrape_city ON shows(scrape_city)")
 
 
-def _m30_add_metric_rollups_and_worker_logs(cur):
-    """Metrics time-series rollups + structured worker logs."""
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS metric_rollups (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            tags_json JSONB DEFAULT '{}',
-            period TEXT NOT NULL,
-            bucket_start TIMESTAMPTZ NOT NULL,
-            count INTEGER NOT NULL DEFAULT 0,
-            sum_value DOUBLE PRECISION DEFAULT 0,
-            min_value DOUBLE PRECISION,
-            max_value DOUBLE PRECISION,
-            avg_value DOUBLE PRECISION,
-            p95_value DOUBLE PRECISION,
-            UNIQUE(name, tags_json, period, bucket_start)
-        )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_metric_rollups_query ON metric_rollups(name, bucket_start DESC)")
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS worker_logs (
-            id BIGSERIAL PRIMARY KEY,
-            worker_id TEXT NOT NULL,
-            task_id TEXT,
-            level TEXT NOT NULL DEFAULT 'info',
-            category TEXT NOT NULL DEFAULT 'general',
-            message TEXT NOT NULL,
-            metadata_json JSONB,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )
-    """)
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_worker_logs_worker ON worker_logs(worker_id, created_at DESC)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_worker_logs_task ON worker_logs(task_id, id) WHERE task_id IS NOT NULL")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_worker_logs_level ON worker_logs(level, created_at DESC)")
-
-
 _MIGRATIONS = [
     (1, "add_artist_id_sequence", _m01_add_artist_id_sequence),
     (2, "add_slug_columns", _m02_add_slug_columns),
@@ -2072,6 +2035,4 @@ _MIGRATIONS = [
     (27, "add_track_sample_rate_and_bit_depth", _m27_add_track_sample_rate_and_bit_depth),
     (28, "add_user_location_fields", _m28_add_user_location_fields),
     (29, "add_shows_lastfm_fields", _m29_add_shows_lastfm_fields),
-    (30, "add_metric_rollups_and_worker_logs", _m30_add_metric_rollups_and_worker_logs),
-
 ]
