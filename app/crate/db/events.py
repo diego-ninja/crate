@@ -7,7 +7,11 @@ from crate.db.tx import transaction_scope
 
 
 def emit_task_event(task_id: str, event_type: str, data: dict | None = None):
-    """Emit an event for a task. Events are stored in DB and streamed via SSE."""
+    """Emit an event for a task. Events are stored in DB and streamed via SSE.
+
+    Events with type "info", "warn", "error", or "item" are also
+    written to worker_logs so they appear in the admin Logs page.
+    """
     now = datetime.now(timezone.utc).isoformat()
     with transaction_scope() as session:
         session.execute(
@@ -18,6 +22,24 @@ def emit_task_event(task_id: str, event_type: str, data: dict | None = None):
             {"task_id": task_id, "event_type": event_type,
              "data_json": json.dumps(data or {}, default=str), "created_at": now},
         )
+
+    # Mirror significant events to worker_logs for the Logs page
+    if event_type in ("info", "warn", "error", "item"):
+        try:
+            from crate.db.worker_logs import insert_log
+            safe_data = data or {}
+            message = safe_data.get("message") or safe_data.get("label") or event_type
+            level = safe_data.get("level", event_type if event_type in ("warn", "error") else "info")
+            insert_log(
+                level=level,
+                message=str(message),
+                task_id=task_id,
+                category=safe_data.get("category", "general"),
+                metadata={k: v for k, v in safe_data.items()
+                          if k not in ("level", "message", "category")} or None,
+            )
+        except Exception:
+            pass
 
 
 def get_task_events(task_id: str, after_id: int = 0, limit: int = 100) -> list[dict]:

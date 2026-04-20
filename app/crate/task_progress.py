@@ -185,16 +185,3 @@ def emit_item_event(
         emit_task_event(task_id, "item", data)
     except Exception:
         log.debug("Failed to emit item event for %s", task_id, exc_info=True)
-
-    # Also write to worker_logs so the Logs page has data
-    try:
-        from crate.db.worker_logs import insert_log
-        insert_log(
-            level=level,
-            message=message,
-            task_id=task_id,
-            category=extra.get("category", "general") if extra else "general",
-            metadata={k: v for k, v in data.items() if k not in ("level", "message")},
-        )
-    except Exception:
-        pass
