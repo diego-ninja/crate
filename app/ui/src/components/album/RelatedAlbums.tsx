@@ -1,7 +1,7 @@
 import { useApi } from "@/hooks/use-api";
 import { useNavigate } from "react-router";
 import { Badge } from "@/components/ui/badge";
-import { Music, Play } from "lucide-react";
+import { ArrowUpRight, Music } from "lucide-react";
 import { albumCoverApiUrl, albumPagePath, albumRelatedApiPath } from "@/lib/library-routes";
 
 interface RelatedAlbum {
@@ -32,7 +32,7 @@ export function RelatedAlbums({ albumId }: { albumId?: number }) {
 
   return (
     <div className="mt-8">
-      <h3 className="font-semibold mb-3">You Might Also Like</h3>
+      <h3 className="font-semibold mb-3">Related Albums</h3>
       <div className="flex gap-3 overflow-x-auto pb-2">
         {data.map((a, i) => (
           <button
@@ -52,7 +52,7 @@ export function RelatedAlbums({ albumId }: { albumId?: number }) {
                 <Music size={28} className="text-muted-foreground/30" />
               </div>
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                <Play size={20} className="text-white fill-white" />
+                <ArrowUpRight size={20} className="text-white" />
               </div>
             </div>
             <div className="text-xs font-medium truncate">{a.display_name}</div>

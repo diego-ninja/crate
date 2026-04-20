@@ -5,7 +5,6 @@ import {
   useTopTracks,
   useArtistEnrichment,
   type EnrichmentData,
-  type TopTrack,
 } from "@/hooks/use-artist-data";
 import { ArtistHeroSection } from "@/components/artist/ArtistHeroSection";
 import { ArtistDiscographySection } from "@/components/artist/ArtistDiscographySection";
@@ -27,8 +26,7 @@ import {
 } from "@/components/artist/artistPageData";
 import type { ArtistData, TabKey } from "@/components/artist/artistPageTypes";
 import { api } from "@/lib/api";
-import { albumCoverApiUrl, artistApiPath, artistPhotoApiUrl } from "@/lib/library-routes";
-import { usePlayerActions, type Track as PlayerTrack } from "@/contexts/PlayerContext";
+import { artistApiPath } from "@/lib/library-routes";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -41,9 +39,6 @@ export function Artist() {
   const { data, loading } = useApi<ArtistData>(
     artistId != null ? artistApiPath({ artistId }) : null,
   );
-  const player = usePlayerActions();
-  // Use audioElement.paused directly to avoid re-rendering the whole page (and the graph) on play/pause
-  const isTrackPlaying = () => player.audioElement ? !player.audioElement.paused : false;
   const [sort, setSort] = useState("name");
   const [photoLoaded, setPhotoLoaded] = useState(false);
   const [photoError, setPhotoError] = useState(false);
@@ -138,82 +133,11 @@ export function Artist() {
   const setlistData = enrichment?.setlist;
   const allTags = buildArtistTags(data.genres, enrichment);
 
-  function playTopTrack(_track: TopTrack, index: number) {
-      const tracks: PlayerTrack[] = topTracks.map((t) => ({
-        id: t.id,
-        title: t.title,
-        artist: t.artist,
-        artistId: t.artist_id,
-        artistSlug: t.artist_slug,
-        album: t.album,
-        albumId: t.album_id,
-        albumSlug: t.album_slug,
-        albumCover:
-        albumCoverApiUrl({
-          albumId: t.album_id,
-          albumSlug: t.album_slug,
-          artistName: t.artist,
-          albumName: t.album,
-        }) ||
-        artistPhotoApiUrl({ artistId: t.artist_id, artistSlug: t.artist_slug, artistName: t.artist }) ||
-        undefined,
-    }));
-    player.playAll(tracks, index);
-  }
-
   const mergedSimilar = buildMergedSimilarArtists(enrichment);
   const externalLinks = buildExternalLinks(enrichment);
   const tabs = buildArtistTabs(upcomingShows.length);
   const activeMembers = mb?.members?.filter((m) => !m.end) ?? [];
   const popularityScore = computePopularityScore(spotify?.popularity, lastfm?.listeners);
-
-  async function playArtistRadio() {
-    try {
-      const artistId = data?.id;
-      if (artistId == null) throw new Error("artist id missing");
-      const tracks = await api<{
-        track_path?: string;
-        path?: string;
-        title: string;
-        artist: string;
-        artist_id?: number;
-        artist_slug?: string;
-        album: string;
-        album_id?: number;
-        album_slug?: string;
-      }[]>(
-        `/api/artists/${artistId}/radio?limit=50`,
-      );
-      if (Array.isArray(tracks) && tracks.length > 0) {
-        const playerTracks = tracks.map((track) => ({
-          id: track.track_path || track.path || "",
-          title: track.title,
-          artist: track.artist,
-          artistId: track.artist_id,
-          artistSlug: track.artist_slug,
-          album: track.album,
-          albumId: track.album_id,
-          albumSlug: track.album_slug,
-          albumCover: albumCoverApiUrl({
-            albumId: track.album_id,
-            albumSlug: track.album_slug,
-            artistName: track.artist,
-            albumName: track.album,
-          }) || artistPhotoApiUrl({
-            artistId: track.artist_id,
-            artistSlug: track.artist_slug,
-            artistName: track.artist,
-          }) || undefined,
-        }));
-        player.playAll(playerTracks, 0);
-        toast.success(`Artist Radio: ${tracks.length} tracks`);
-      } else {
-        toast.error("No bliss data — run audio analysis first");
-      }
-    } catch {
-      toast.error("Artist Radio not available");
-    }
-  }
 
   async function enrichArtist() {
     setEnriching(true);
@@ -332,7 +256,6 @@ export function Artist() {
         upcomingShow={upcomingShows[0]}
         popularityScore={popularityScore}
         tags={allTags}
-        topTracksAvailable={topTracks.length > 0}
         enriching={enriching}
         isV2={data?.is_v2}
         migrating={migrating}
@@ -354,12 +277,6 @@ export function Artist() {
           setPhotoError(false);
           setPhotoLoaded(false);
           setPhotoCacheBust(String(Date.now()));
-        }}
-        onPlayTopTracks={() => {
-          if (topTracks[0]) playTopTrack(topTracks[0], 0);
-        }}
-        onPlayRadio={() => {
-          void playArtistRadio();
         }}
         onEnrich={() => {
           void enrichArtist();
@@ -385,11 +302,6 @@ export function Artist() {
             bioExpanded={bioExpanded}
             onToggleBioExpanded={() => setBioExpanded(!bioExpanded)}
             topTracks={topTracks}
-            currentTrackId={player.queue[player.currentIndex]?.id}
-            trackPlaying={isTrackPlaying()}
-            onPause={() => player.pause()}
-            onResume={() => player.resume()}
-            onPlayTopTrack={playTopTrack}
             musicbrainz={mb}
             activeMembersCount={activeMembers.length}
             lastfm={lastfm}
@@ -405,11 +317,6 @@ export function Artist() {
             <ArtistTopTracksSection
               topTracks={topTracks}
               spotifyTopTracks={spotify?.top_tracks}
-              currentTrackId={player.queue[player.currentIndex]?.id}
-              trackPlaying={isTrackPlaying()}
-              onPause={() => player.pause()}
-              onResume={() => player.resume()}
-              onPlayTopTrack={playTopTrack}
             />
           </div>
         )}
@@ -443,8 +350,6 @@ export function Artist() {
             setlistData={setlistData}
             allTrackTitles={allTrackTitles}
             onTrackTitlesLoaded={setAllTrackTitles}
-            onPlayTrack={(track) => player.play(track)}
-            onPlayAll={(tracks) => player.playAll(tracks)}
           />
         )}
 

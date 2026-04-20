@@ -161,7 +161,6 @@ export function Album() {
           totalLengthSec={data.total_length_sec}
           totalSizeMb={data.total_size_mb}
           hasCover={data.has_cover}
-          tracks={data.tracks}
           genres={data.genres}
           hasAnalysis={analysisData != null && Object.values(analysisData).some((t) => t.tempo != null)}
           onAnalysisComplete={() => {

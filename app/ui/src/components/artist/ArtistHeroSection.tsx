@@ -11,8 +11,6 @@ import {
   Headphones,
   MapPin,
   Music,
-  Play,
-  Radio,
   AudioWaveform,
   RefreshCw,
   FolderSync,
@@ -48,7 +46,6 @@ interface ArtistHeroSectionProps {
   upcomingShow?: ArtistShowEvent;
   popularityScore: number;
   tags: string[];
-  topTracksAvailable: boolean;
   enriching: boolean;
   isAdmin: boolean;
   photoLoaded: boolean;
@@ -61,8 +58,6 @@ interface ArtistHeroSectionProps {
   onPhotoError: () => void;
   onBackgroundUploaded: () => void;
   onPhotoUploaded: () => void;
-  onPlayTopTracks: () => void;
-  onPlayRadio: () => void;
   onEnrich: () => void;
   onAnalyze: () => void;
   onRepair: () => void;
@@ -86,7 +81,6 @@ export function ArtistHeroSection({
   upcomingShow,
   popularityScore,
   tags,
-  topTracksAvailable,
   enriching,
   isAdmin,
   photoLoaded,
@@ -99,8 +93,6 @@ export function ArtistHeroSection({
   onPhotoError,
   onBackgroundUploaded,
   onPhotoUploaded,
-  onPlayTopTracks,
-  onPlayRadio,
   onEnrich,
   onAnalyze,
   onRepair,
@@ -252,23 +244,6 @@ export function ArtistHeroSection({
             )}
 
             <div className="flex gap-2 flex-wrap">
-              {topTracksAvailable && (
-                <Button
-                  size="sm"
-                  className="bg-primary hover:bg-primary/80 text-primary-foreground"
-                  onClick={onPlayTopTracks}
-                >
-                  <Play size={14} className="mr-1 fill-current" /> Play Top Tracks
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
-                onClick={onPlayRadio}
-              >
-                <Radio size={14} className="mr-1" /> Artist Radio
-              </Button>
               <Button
                 size="sm"
                 variant="outline"

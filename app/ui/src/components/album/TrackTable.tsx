@@ -7,10 +7,10 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { SimilarTracksPanel } from "@/components/track/SimilarTracksPanel";
-import { Play, Pause, BarChart3, Download, Heart } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { BarChart3, Download } from "lucide-react";
 import { StarRating } from "@/components/ui/star-rating";
 import { api } from "@/lib/api";
 import {
@@ -21,9 +21,7 @@ import {
 } from "@/components/ui/tooltip";
 import { ResponsiveRadar } from "@nivo/radar";
 import { useState } from "react";
-import { formatDuration, formatBitrate, formatBadgeClass, cn } from "@/lib/utils";
-import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
-import { useFavorites } from "@/hooks/use-favorites";
+import { formatDuration, formatBitrate, formatBadgeClass } from "@/lib/utils";
 
 interface Track {
   id?: number;
@@ -196,9 +194,6 @@ export function TrackTable({
   albumCover,
   analysisData,
 }: TrackTableProps) {
-  const { play, playAll, pause, resume, isPlaying, queue, currentIndex } = usePlayer();
-  const { isFavorite, toggleFavorite } = useFavorites();
-  const currentTrack = queue[currentIndex];
   const [ratings, setRatings] = useState<Record<number, number>>(() => {
     const init: Record<number, number> = {};
     for (const t of tracks) if (t.id != null) init[t.id] = t.rating ?? 0;
@@ -219,34 +214,6 @@ export function TrackTable({
     return track.path ?? `${artist}/${track.filename}`;
   }
 
-  function toPlayerTrack(track: Track, _index: number): PlayerTrack {
-    return {
-      id: getTrackId(track),
-      title: track.tags.title || track.filename,
-      artist: artist || track.tags.artist || "",
-      artistId,
-      artistSlug,
-      album: album || track.tags.album || "",
-      albumId,
-      albumSlug,
-      albumCover,
-    };
-  }
-
-  function handlePlayTrack(track: Track, index: number) {
-    const allPlayerTracks: PlayerTrack[] = [];
-    let startIdx = 0;
-    tracks.forEach((t, i) => {
-      if (i === index) startIdx = allPlayerTracks.length;
-      allPlayerTracks.push(toPlayerTrack(t, i));
-    });
-    if (allPlayerTracks.length > 1) {
-      playAll(allPlayerTracks, startIdx);
-    } else {
-      play(toPlayerTrack(track, index));
-    }
-  }
-
   // Only show AudioAnalysis columns if at least one track has data
   // Only show audio columns if at least one track in THIS album has data
   const hasAnalysis = analysisData && tracks.some((t) => {
@@ -259,7 +226,6 @@ export function TrackTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-10" />
           <TableHead className="w-10">#</TableHead>
           <TableHead>Title</TableHead>
           <TableHead>Format</TableHead>
@@ -272,16 +238,12 @@ export function TrackTable({
           {hasAnalysis && <TableHead className="text-muted-foreground text-xs">Energy</TableHead>}
           {hasAnalysis && <TableHead className="w-8" />}
           <TableHead className="w-8" />
-          <TableHead className="w-8" />
         </TableRow>
       </TableHeader>
       <TableBody>
         {tracks.map((t, i) => {
           const trackId = getTrackId(t);
-          const isCurrentTrack = currentTrack?.id === trackId;
-          const isCurrentPlaying = isCurrentTrack && isPlaying;
           const trackTitle = (t.tags.title || t.filename).toLowerCase();
-          
           const amTrack = analysisData ? (analysisData[trackTitle] ?? undefined) : undefined;
           return (
             <MusicContextMenu
@@ -298,38 +260,11 @@ export function TrackTable({
               albumCover={albumCover}
               onFindSimilar={t.path ? () => setSimilarTrack({ path: t.path!, title: t.tags.title || t.filename, artist: artist || t.tags.artist || "" }) : undefined}
             >
-            <TableRow className={cn(isCurrentTrack && "bg-primary/5")}>
-              <TableCell>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={cn(
-                    "h-7 w-7",
-                    isCurrentTrack ? "text-primary" : "text-muted-foreground hover:text-primary"
-                  )}
-                  onClick={() => {
-                    if (isCurrentPlaying) {
-                      pause();
-                    } else if (isCurrentTrack) {
-                      resume();
-                    } else {
-                      handlePlayTrack(t, i);
-                    }
-                  }}
-                >
-                  {isCurrentPlaying ? (
-                    <Pause size={14} fill="currentColor" />
-                  ) : isCurrentTrack ? (
-                    <Play size={14} fill="currentColor" />
-                  ) : (
-                    <Play size={14} />
-                  )}
-                </Button>
-              </TableCell>
-              <TableCell className={cn("text-muted-foreground", isCurrentTrack && "text-primary")}>
+            <TableRow>
+              <TableCell className="text-muted-foreground">
                 {t.tags.tracknumber || i + 1}
               </TableCell>
-              <TableCell className={cn(isCurrentTrack && "text-primary font-medium")}>{t.tags.title || t.filename}</TableCell>
+              <TableCell>{t.tags.title || t.filename}</TableCell>
               <TableCell>
                 <span className={formatBadgeClass(t.format)}>
                   {t.format.replace(".", "").toUpperCase()}
@@ -387,14 +322,6 @@ export function TrackTable({
                     <Download size={13} />
                   </a>
                 )}
-              </TableCell>
-              <TableCell className="w-8">
-                <button
-                  onClick={(e) => { e.stopPropagation(); toggleFavorite(trackId, "song"); }}
-                  className="p-1 hover:text-red-400 transition-colors"
-                >
-                  <Heart size={13} className={isFavorite(trackId) ? "fill-red-500 text-red-500" : "text-muted-foreground"} />
-                </button>
               </TableCell>
             </TableRow>
             </MusicContextMenu>

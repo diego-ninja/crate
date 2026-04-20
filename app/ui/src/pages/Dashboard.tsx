@@ -12,11 +12,10 @@ import { ResponsiveBar } from "@nivo/bar";
 import { formatNumber, timeAgo } from "@/lib/utils";
 import {
   Users, Disc3, Music, HardDrive, Loader2, ArrowRight,
-  Play, RefreshCw, CheckCircle2, XCircle, Clock,
+  RefreshCw, CheckCircle2, XCircle, Clock,
   Activity, Database, Eye, Cpu, RotateCcw, Trash2, Stethoscope, CalendarDays,
 } from "lucide-react";
 import { toast } from "sonner";
-import { usePlayer } from "@/contexts/PlayerContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { ErrorState } from "@/components/ui/error-state";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -61,7 +60,6 @@ export function Dashboard() {
   const { data: stats, loading: loadingStats, error: statsError, refetch: refetchStats } = useApi<Stats>("/api/stats");
   const { data: analytics, refetch: refetchAnalytics } = useApi<AnalyticsData>("/api/analytics");
   const { data: live, refetch: refetchLive } = useApi<LiveActivity>("/api/activity/live");
-  const { recentlyPlayed, play: playTrack } = usePlayer();
   const [healthCounts, setHealthCounts] = useState<Record<string, number>>({});
   const [upcomingShows, setUpcomingShows] = useState<{ artist_name?: string; venue: string; city: string; country: string; date: string; url: string }[]>([]);
 
@@ -347,7 +345,7 @@ export function Dashboard() {
 
         {/* Upcoming shows */}
         {upcomingShows.length > 0 && (
-          <Link to="/shows" className="block">
+          <Link to="/upcoming" className="block">
             <Card className="bg-card hover:bg-white/5 transition-colors h-full">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -402,7 +400,7 @@ export function Dashboard() {
                       <Music size={28} className="text-muted-foreground/30" />
                     </div>
                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Play size={20} className="text-white fill-white" />
+                      <ArrowRight size={20} className="text-white" />
                     </div>
                   </div>
                   <div className="text-xs font-medium truncate">{album.display_name || album.name}</div>
@@ -410,45 +408,6 @@ export function Dashboard() {
                   {album.year && (
                     <div className="text-[10px] text-muted-foreground">{album.year}</div>
                   )}
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recently Played */}
-      {recentlyPlayed.length > 0 && (
-        <Card className="bg-card mb-8">
-          <CardHeader>
-            <CardTitle className="text-sm">Recently Played</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {recentlyPlayed.map((track) => (
-                <button
-                  key={track.id}
-                  onClick={() => playTrack(track)}
-                  className="flex-shrink-0 w-[120px] group text-left"
-                >
-                  <div className="relative w-[120px] h-[120px] rounded-lg overflow-hidden bg-secondary mb-2">
-                    {track.albumCover ? (
-                      <img
-                        src={track.albumCover}
-                        alt={track.title}
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full bg-secondary flex items-center justify-center">
-                        <Music size={24} className="text-muted-foreground/30" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Play size={20} className="text-white fill-white" />
-                    </div>
-                  </div>
-                  <div className="text-xs font-medium truncate">{track.title}</div>
-                  <div className="text-[11px] text-muted-foreground truncate">{track.artist}</div>
                 </button>
               ))}
             </div>

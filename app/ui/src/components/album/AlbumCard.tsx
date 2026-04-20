@@ -1,9 +1,8 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
 import { formatBadgeClass } from "@/lib/utils";
-import { Music, Play, Heart, ImageDown, ListPlus, Loader2 } from "lucide-react";
+import { Music, ImageDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { useFavorites } from "@/hooks/use-favorites";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
@@ -20,8 +19,6 @@ interface AlbumCardProps {
   tracks: number;
   formats: string[];
   hasCover?: boolean;
-  showHeart?: boolean;
-  showQueue?: boolean;
 }
 
 function hashColor(str: string): string {
@@ -44,17 +41,12 @@ export const AlbumCard = React.memo(function AlbumCard({
   year,
   tracks,
   formats,
-  showHeart = true,
-  showQueue = true,
 }: AlbumCardProps) {
   const navigate = useNavigate();
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
-  
-  const { isFavorite, toggleFavorite } = useFavorites();
   const [fetchingCover, setFetchingCover] = useState(false);
   const coverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: name });
-  const favId = `${artist}/${name}`;
 
   async function handleFetchCover(e: React.MouseEvent) {
     e.stopPropagation();
@@ -73,11 +65,6 @@ export const AlbumCard = React.memo(function AlbumCard({
       toast.error("Failed to search for cover");
       setFetchingCover(false);
     }
-  }
-
-  function handlePlay(e: React.MouseEvent) {
-    e.stopPropagation();
-    navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: name }));
   }
 
   return (
@@ -122,41 +109,6 @@ export const AlbumCard = React.memo(function AlbumCard({
                 </button>
               )}
               {!imgError && <Music size={16} className="text-white/10 absolute bottom-2 right-2" />}
-            </div>
-          )}
-          {/* Hover overlay */}
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <button
-              onClick={handlePlay}
-              className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-black/40 hover:bg-primary/80 transition-colors hover:scale-110"
-            >
-              <Play size={20} className="text-white fill-white ml-0.5" />
-            </button>
-            {showHeart && (
-              <button
-                onClick={(e) => { e.stopPropagation(); toggleFavorite(favId, "album"); }}
-                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
-              >
-                <Heart size={15} className={isFavorite(favId) ? "fill-red-500 text-red-500" : "text-white"} />
-              </button>
-            )}
-            {showQueue && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handlePlay(e);
-                }}
-                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
-                title="Add to queue"
-              >
-                <ListPlus size={15} className="text-white" />
-              </button>
-            )}
-          </div>
-          {/* Favorite indicator (always visible if favorited) */}
-          {isFavorite(favId) && (
-            <div className="absolute top-2 right-2 z-10">
-              <Heart size={14} className="fill-red-500 text-red-500 drop-shadow-md" />
             </div>
           )}
         </div>

@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 import {
-  Play,
   Music,
   HardDrive,
   Clock,
@@ -12,12 +11,9 @@ import {
   BrainCircuit,
   Loader2,
   Download,
-  Heart,
 } from "lucide-react";
 import { albumCoverApiUrl, artistBackgroundApiUrl, artistPagePath } from "@/lib/library-routes";
 import { formatDuration, formatSize } from "@/lib/utils";
-import { usePlayer, type Track } from "@/contexts/PlayerContext";
-import { useFavorites } from "@/hooks/use-favorites";
 import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
@@ -45,7 +41,6 @@ interface AlbumHeaderProps {
   hasAnalysis?: boolean;
   onAnalysisComplete?: () => void;
   children?: React.ReactNode;
-  tracks?: { filename: string; path?: string; title?: string }[];
 }
 
 export function AlbumHeader({
@@ -65,14 +60,10 @@ export function AlbumHeader({
   hasAnalysis: _hasAnalysis,
   onAnalysisComplete,
   children,
-  tracks: trackList,
 }: AlbumHeaderProps) {
-  const { playAll } = usePlayer();
-  const { isFavorite, toggleFavorite } = useFavorites();
   const [coverCacheBust, setCoverCacheBust] = useState("");
   const baseCoverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
   const coverUrl = `${baseCoverUrl}${coverCacheBust ? `${baseCoverUrl.includes("?") ? "&" : "?"}t=${coverCacheBust}` : ""}`;
-  const albumFavId = `${artist}/${album}`;
   const [coverLoaded, setCoverLoaded] = useState(false);
   const [coverError, setCoverError] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -112,23 +103,6 @@ export function AlbumHeader({
   const resolvedDisplayName = albumTags.album || explicitDisplayName || album;
   const displayArtist = albumTags.artist || artist;
   const letter = resolvedDisplayName.charAt(0).toUpperCase();
-
-  function handlePlayAll() {
-    if (trackList?.length) {
-      const tracks: Track[] = trackList.map((t) => ({
-        id: (t.path || "").replace(/^\/music\//, ""),
-        title: t.title || t.filename.replace(/\.\w+$/, ""),
-        artist: displayArtist,
-        artistId,
-        artistSlug,
-        album,
-        albumId,
-        albumSlug,
-        albumCover: coverUrl,
-      }));
-      playAll(tracks);
-    }
-  }
 
   const [bgLoaded, setBgLoaded] = useState(false);
   const bgUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName: artist });
@@ -247,15 +221,6 @@ export function AlbumHeader({
 
             {/* Action buttons */}
             <div className="flex gap-2 flex-wrap">
-              {trackList?.length ? (
-                <Button
-                  size="sm"
-                  className="bg-primary hover:bg-primary/80 text-white"
-                  onClick={handlePlayAll}
-                >
-                  <Play size={14} className="mr-1 fill-current" /> Play All
-                </Button>
-              ) : null}
               <Button
                 size="sm"
                 variant="outline"
@@ -278,15 +243,6 @@ export function AlbumHeader({
                 <a href={albumId != null ? `/api/albums/${albumId}/download` : "#"} download>
                   <Download size={14} className="mr-1" /> Download
                 </a>
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className={`border-white/20 hover:bg-white/10 ${isFavorite(albumFavId) ? "text-red-500 border-red-500/30" : "text-white/70 hover:text-white"}`}
-                onClick={() => toggleFavorite(albumFavId, "album")}
-              >
-                <Heart size={14} className={`mr-1 ${isFavorite(albumFavId) ? "fill-red-500" : ""}`} />
-                {isFavorite(albumFavId) ? "Favorited" : "Favorite"}
               </Button>
               {children}
             </div>

@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { api } from "@/lib/api";
-import { albumCoverApiUrl } from "@/lib/library-routes";
-import { usePlayer, type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,7 +21,6 @@ import {
   EyeOff,
   ListMusic,
   Loader2,
-  Play,
   Plus,
   Sparkles,
   Trash2,
@@ -114,7 +111,6 @@ function fmtDuration(secs: number): string {
 }
 
 export function Playlists() {
-  const player = usePlayer();
   const [playlists, setPlaylists] = useState<SystemPlaylist[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterMode>("all");
@@ -163,29 +159,6 @@ export function Playlists() {
     } catch {
       toast.error("Failed to load system playlist");
     }
-  }
-
-  function playPlaylist(playlist: SystemPlaylist) {
-    if (!playlist.tracks || playlist.tracks.length === 0) return;
-    const tracks: PlayerTrack[] = playlist.tracks.map((track) => ({
-      id: track.track_path,
-      title: track.title,
-      artist: track.artist,
-      artistId: track.artist_id,
-      artistSlug: track.artist_slug,
-      album: track.album,
-      albumId: track.album_id,
-      albumSlug: track.album_slug,
-      albumCover: track.album
-        ? albumCoverApiUrl({
-            albumId: track.album_id,
-            albumSlug: track.album_slug,
-            artistName: track.artist,
-            albumName: track.album,
-          })
-        : undefined,
-    }));
-    player.playAll(tracks, 0);
   }
 
   async function handleDelete() {
@@ -366,21 +339,6 @@ export function Playlists() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (expandedData?.id === playlist.id && expandedData?.tracks) {
-                        playPlaylist(expandedData);
-                      } else {
-                        void loadPlaylist(playlist.id);
-                      }
-                    }}
-                  >
-                    <Play size={14} />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
                     className="h-8 w-8 text-muted-foreground"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -440,33 +398,6 @@ export function Playlists() {
                             <span className="w-6 text-right text-xs text-muted-foreground">
                               {track.position}
                             </span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() =>
-                                player.play({
-                                  id: track.track_path,
-                                  title: track.title,
-                                  artist: track.artist,
-                                  artistId: track.artist_id,
-                                  artistSlug: track.artist_slug,
-                                  album: track.album,
-                                  albumId: track.album_id,
-                                  albumSlug: track.album_slug,
-                                  albumCover: track.album
-                                    ? albumCoverApiUrl({
-                                        albumId: track.album_id,
-                                        albumSlug: track.album_slug,
-                                        artistName: track.artist,
-                                        albumName: track.album,
-                                      })
-                                    : undefined,
-                                })
-                              }
-                            >
-                              <Play size={12} />
-                            </Button>
                             <div className="min-w-0 flex-1">
                               <div className="truncate text-sm">{track.title}</div>
                               <div className="truncate text-xs text-muted-foreground">

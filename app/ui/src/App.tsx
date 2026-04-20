@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { api } from "@/lib/api";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { PlayerProvider } from "@/contexts/PlayerContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import { Shell } from "@/components/layout/Shell";
@@ -76,8 +75,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <PlayerProvider>
-          <NotificationProvider>
+        <NotificationProvider>
           <TooltipProvider>
             <SetupGuard />
             <Suspense fallback={<PageSpinner />}>
@@ -117,9 +115,8 @@ export default function App() {
               </Routes>
             </Suspense>
           </TooltipProvider>
-          </NotificationProvider>
+        </NotificationProvider>
           <Toaster theme="dark" position="bottom-right" richColors />
-        </PlayerProvider>
       </AuthProvider>
     </BrowserRouter>
   );

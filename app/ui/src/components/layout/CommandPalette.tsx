@@ -185,13 +185,13 @@ export function CommandPalette() {
                   onSelect={() =>
                     action(
                       () => api("/api/manage/compute-bliss", "POST"),
-                      "Compute Bliss",
+                      "Compute Bliss vectors",
                     )
                   }
                   className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
                 >
                   <Radio size={14} className="text-muted-foreground" />
-                  Compute Bliss Vectors (Artist Radio)
+                  Compute Bliss Vectors
                 </Command.Item>
                 <Command.Item
                   onSelect={() =>

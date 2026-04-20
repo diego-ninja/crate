@@ -1,9 +1,7 @@
+import { useNavigate } from "react-router";
 import { fuzzyMatchTrack } from "@/components/artist/ArtistPageBits";
-import { Button } from "@/components/ui/button";
-import { type Track as PlayerTrack } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
-import { albumCoverApiUrl } from "@/lib/library-routes";
-import { ListMusic, Play } from "lucide-react";
+import { albumPagePath } from "@/lib/library-routes";
 import { toast } from "sonner";
 
 interface SetlistSong {
@@ -33,8 +31,6 @@ interface ArtistSetlistSectionProps {
   setlistData?: SetlistData;
   allTrackTitles: LibraryTrackTitle[];
   onTrackTitlesLoaded: (tracks: LibraryTrackTitle[]) => void;
-  onPlayTrack: (track: PlayerTrack) => void;
-  onPlayAll: (tracks: PlayerTrack[]) => void;
 }
 
 export function ArtistSetlistSection({
@@ -43,9 +39,8 @@ export function ArtistSetlistSection({
   setlistData,
   allTrackTitles,
   onTrackTitlesLoaded,
-  onPlayTrack,
-  onPlayAll,
 }: ArtistSetlistSectionProps) {
+  const navigate = useNavigate();
   const probableSetlist = setlistData?.probable_setlist ?? [];
   const lastShow = setlistData?.last_show;
   const totalShows = setlistData?.total_shows ?? 0;
@@ -73,55 +68,6 @@ export function ArtistSetlistSection({
     return [];
   }
 
-  async function playSetlist() {
-    const titles = await ensureTrackTitles();
-    if (titles.length === 0) {
-      toast.error("No library tracks found for matching");
-      return;
-    }
-
-    const matched: PlayerTrack[] = [];
-    for (const song of probableSetlist) {
-      const track = fuzzyMatchTrack(song.title, titles);
-      if (track) {
-        const streamPath = track.path.replace(/^\/music\//, "");
-        matched.push({
-          id: streamPath,
-          title: track.title,
-          artist: artistName,
-          album: track.album,
-          albumCover: albumCoverApiUrl({
-            albumId: track.album_id,
-            albumSlug: track.album_slug,
-            artistName,
-            albumName: track.album,
-          }),
-        });
-      }
-    }
-
-    if (matched.length > 0) {
-      onPlayAll(matched);
-      toast.success(`Playing setlist: ${matched.length} tracks`);
-      return;
-    }
-
-    toast.error("No tracks matched from library");
-  }
-
-  async function saveSetlistPlaylist() {
-    if (artistId == null) {
-      toast.error("Artist id missing");
-      return;
-    }
-    try {
-      await api(`/api/artists/${artistId}/setlist-playlist`, "POST");
-      toast.success("Setlist playlist created");
-    } catch {
-      toast.error("Failed to create playlist");
-    }
-  }
-
   return (
     <div className="max-w-3xl">
       <div>
@@ -134,27 +80,6 @@ export function ArtistSetlistSection({
                 <> &middot; Last show: {lastShow.date} at {lastShow.venue}, {lastShow.city}</>
               )}
             </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              className="bg-primary hover:bg-primary/80 text-primary-foreground"
-              onClick={() => {
-                void playSetlist();
-              }}
-            >
-              <Play size={14} className="mr-1 fill-current" /> Play Setlist
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
-              onClick={() => {
-                void saveSetlistPlaylist();
-              }}
-            >
-              <ListMusic size={14} className="mr-1" /> Save as Playlist
-            </Button>
           </div>
         </div>
 
@@ -176,17 +101,17 @@ export function ArtistSetlistSection({
                 className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group ${!isPlayable ? "opacity-50" : ""}`}
                 onClick={() => {
                   if (libraryMatch) {
-                    onPlayTrack({
-                      id: libraryMatch.path.replace(/^\/music\//, ""),
-                      title: libraryMatch.title,
-                      artist: artistName,
-                      album: libraryMatch.album,
-                      albumCover: albumCoverApiUrl({
+                    navigate(
+                      albumPagePath({
                         albumId: libraryMatch.album_id,
                         albumSlug: libraryMatch.album_slug,
                         artistName,
                         albumName: libraryMatch.album,
                       }),
+                    );
+                  } else {
+                    void ensureTrackTitles().catch(() => {
+                      toast.error("Failed to load artist tracks");
                     });
                   }
                 }}
@@ -194,8 +119,7 @@ export function ArtistSetlistSection({
               >
                 {isPlayable ? (
                   <>
-                    <span className="w-8 text-right text-sm text-white/30 group-hover:hidden">{i + 1}</span>
-                    <Play size={13} className="text-primary w-8 text-right fill-current hidden group-hover:block" />
+                    <span className="w-8 text-right text-sm text-white/30">{i + 1}</span>
                   </>
                 ) : (
                   <span className="w-8 text-right text-sm text-white/20">{i + 1}</span>

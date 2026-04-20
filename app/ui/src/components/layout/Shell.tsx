@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Outlet, useLocation } from "react-router";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,32 +17,15 @@ import {
 import { Sidebar } from "./Sidebar";
 import { SearchBar } from "./SearchBar";
 import { CommandPalette } from "./CommandPalette";
-import { GlobalShortcuts } from "./GlobalShortcuts";
 import { NotificationBell } from "./NotificationBell";
-import { BottomBar } from "@/components/player/BottomBar";
-import { FloatingPlayer } from "@/components/player/FloatingPlayer";
-// FloatingLyrics removed — lyrics are now a tab inside FloatingPlayer
 import { useKeyboard } from "@/hooks/use-keyboard";
-import { usePlayer } from "@/contexts/PlayerContext";
 import { useNotifications } from "@/hooks/use-notifications";
 import { VisuallyHidden } from "radix-ui";
 
 export function Shell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [playerOpen, setPlayerOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const { queue } = usePlayer();
-  const hasPlayer = queue.length > 0;
-
-  // Listen for custom events from GlobalShortcuts
-  useEffect(() => {
-    const togglePlayer = () => setPlayerOpen((p: boolean) => !p);
-    window.addEventListener("toggle-player", togglePlayer);
-    return () => {
-      window.removeEventListener("toggle-player", togglePlayer);
-    };
-  }, []);
 
   const focusSearch = useCallback(() => {
     searchInputRef.current?.focus();
@@ -94,7 +77,7 @@ export function Shell() {
         </SheetContent>
       </Sheet>
 
-      <main className={`flex-1 md:ml-[220px] overflow-x-hidden ${hasPlayer ? "pb-28" : ""}`}>
+      <main className="flex-1 md:ml-[220px] overflow-x-hidden">
         <div className="p-4 pt-16 md:p-8 md:pt-8">
           <div className="flex items-center gap-3 mb-6 max-w-[1100px] relative z-[1100]">
             <div className="flex-1">
@@ -107,20 +90,7 @@ export function Shell() {
           </div>
         </div>
       </main>
-
-      {playerOpen ? (
-        <FloatingPlayer
-          open={playerOpen}
-          onClose={() => setPlayerOpen(false)}
-        />
-      ) : (
-        <BottomBar
-          onTogglePlayer={() => setPlayerOpen(true)}
-          playerOpen={false}
-        />
-      )}
       <CommandPalette />
-      <GlobalShortcuts />
 
       {/* Keyboard shortcuts help */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
@@ -134,17 +104,6 @@ export function Shell() {
             <Shortcut keys={["\u2318", "K"]} label="Command palette" />
             <Shortcut keys={["Esc"]} label="Blur search / close modals" />
             <Shortcut keys={["?"]} label="Show this help" />
-            <div className="border-t border-border my-1" />
-            <Shortcut keys={["Space"]} label="Play / Pause" />
-            <Shortcut keys={["N"]} label="Next track" />
-            <Shortcut keys={["P"]} label="Previous track" />
-            <Shortcut keys={["M"]} label="Mute / Unmute" />
-            <Shortcut keys={["+", "-"]} label="Volume up / down" />
-            <Shortcut keys={["S"]} label="Toggle shuffle" />
-            <Shortcut keys={["R"]} label="Cycle repeat" />
-            <Shortcut keys={["[", "]"]} label="Playback speed" />
-            <Shortcut keys={["V"]} label="Toggle player panel" />
-            <Shortcut keys={["L"]} label="Toggle lyrics" />
           </div>
         </DialogContent>
       </Dialog>
