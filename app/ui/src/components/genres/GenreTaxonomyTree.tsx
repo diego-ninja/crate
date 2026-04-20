@@ -238,7 +238,7 @@ function NodeDetailPanel({
               </span>
             )}
           </div>
-          <div className="rounded-xl border border-white/8 bg-black/20 p-3">
+          <div className="rounded-md border border-white/8 bg-black/20 p-3">
             <EqBands gains={node.eq_gains} trackHeight={80} />
           </div>
         </div>
@@ -257,7 +257,7 @@ function NodeDetailPanel({
                 <button
                   key={parentSlug}
                   type="button"
-                  className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-foreground hover:bg-white/5 transition-colors"
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-white/5 transition-colors"
                   onClick={() => onSelectNode(parentSlug)}
                 >
                   {parent.name}
@@ -281,7 +281,7 @@ function NodeDetailPanel({
                 <button
                   key={childSlug}
                   type="button"
-                  className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-foreground hover:bg-white/5 transition-colors"
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-1 text-xs text-foreground hover:bg-white/5 transition-colors"
                   onClick={() => onSelectNode(childSlug)}
                 >
                   <Tag size={10} />
@@ -434,7 +434,7 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
       <div key={slug}>
         <button
           type="button"
-          className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[13px] transition ${
+          className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[13px] transition ${
             isSelected
               ? "border-cyan-400/40 bg-cyan-400/10"
               : "border-transparent hover:border-white/8 hover:bg-white/[0.03]"
@@ -456,7 +456,7 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
           ) : (
             <span className="w-4 flex-shrink-0" />
           )}
-          <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${hasPreset ? "bg-cyan-400" : "bg-white/20"}`} />
+          <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-md ${hasPreset ? "bg-cyan-400" : "bg-white/20"}`} />
           <span className={`flex-1 truncate ${
             isSelected ? "text-cyan-100 font-medium"
               : empty ? "text-white/40"
@@ -486,7 +486,7 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
       {/* Right: Detail */}
       <div className="flex-1 min-w-0">
         {selectedNode ? (
-          <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-6 sticky top-6">
+          <div className="rounded-md border border-white/8 bg-white/[0.02] p-6 sticky top-6">
             <NodeDetailPanel
               node={selectedNode}
               nodeMap={nodeMap}
@@ -497,7 +497,7 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
             />
           </div>
         ) : (
-          <div className="flex h-64 items-center justify-center rounded-2xl border border-dashed border-white/10 text-sm text-white/30">
+          <div className="flex h-64 items-center justify-center rounded-md border border-dashed border-white/10 text-sm text-white/30">
             Select a genre to view details
           </div>
         )}

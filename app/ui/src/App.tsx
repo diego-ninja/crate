@@ -49,7 +49,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background text-foreground">
         <p className="text-lg font-medium">Admin access required</p>
         <p className="text-sm text-muted-foreground">Your account ({user.email}) does not have admin privileges.</p>
-        <button onClick={() => window.location.href = "/login"} className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm text-white">
+        <button onClick={() => window.location.href = "/login"} className="mt-2 rounded-md bg-primary px-4 py-2 text-sm text-white">
           Switch account
         </button>
       </div>

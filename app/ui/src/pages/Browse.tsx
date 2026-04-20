@@ -1,12 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { AdminSelect, type AdminSelectOption } from "@/components/ui/AdminSelect";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -43,7 +37,8 @@ interface PaginatedResponse {
 
 interface FilterOption {
   name: string;
-  count: number;
+  count?: number;
+  cnt?: number;
 }
 
 interface BrowseFilters {
@@ -171,8 +166,21 @@ export function Browse() {
   const setView = (v: "grid" | "list") => setParam("view", v === "grid" ? "" : v);
 
   useEffect(() => {
-    api<BrowseFilters>("/api/browse/filters").then(setFilters).catch(() => {});
-  }, []);
+    const params = new URLSearchParams();
+    if (country) params.set("country", country);
+    if (decade) params.set("decade", decade);
+    if (format) params.set("format", format);
+    const query = params.toString();
+
+    api<BrowseFilters>(`/api/browse/filters${query ? `?${query}` : ""}`)
+      .then((data) => {
+        setFilters(data);
+        if (genre && !data.genres.some((option) => option.name === genre)) {
+          setParam("genre", "");
+        }
+      })
+      .catch(() => {});
+  }, [country, decade, format, genre, setParam]);
 
   // Reset and fetch page 1 when filters change
   useEffect(() => {
@@ -225,46 +233,77 @@ export function Browse() {
     return () => observer.disconnect();
   }, [loading, loadingMore, fetchPage]);
 
+  const genreOptions: AdminSelectOption[] = (filters?.genres ?? []).map((option) => ({
+    value: option.name,
+    label: option.name,
+    count: option.count ?? option.cnt ?? 0,
+  }));
+
+  const countryOptions: AdminSelectOption[] = (filters?.countries ?? []).map((option) => ({
+    value: option.name,
+    label: option.name,
+    count: option.count ?? option.cnt ?? 0,
+  }));
+
+  const decadeOptions: AdminSelectOption[] = (filters?.decades ?? []).map((decadeValue) => ({
+    value: decadeValue,
+    label: decadeValue,
+  }));
+
+  const formatOptions: AdminSelectOption[] = (filters?.formats ?? []).map((option) => ({
+    value: option.name,
+    label: option.name,
+    count: option.count ?? option.cnt ?? 0,
+  }));
+
+  const sortOptions: AdminSelectOption[] = SORT_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.label,
+  }));
+
   return (
     <div>
       {/* Filter bar */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <FilterSelect
-          placeholder="Genre"
+        <AdminSelect
+          placeholder="All genres"
           value={genre}
-          onChange={(v) => setParam("genre", v)}
-          options={filters?.genres}
+          onChange={(nextValue) => setParam("genre", nextValue)}
+          options={genreOptions}
+          searchable
+          searchPlaceholder="Search genres..."
         />
-        <FilterSelect
-          placeholder="Country"
+        <AdminSelect
+          placeholder="All countries"
           value={country}
-          onChange={(v) => setParam("country", v)}
-          options={filters?.countries}
+          onChange={(nextValue) => setParam("country", nextValue)}
+          options={countryOptions}
+          searchable
+          searchPlaceholder="Search countries..."
         />
-        <DecadeSelect
+        <AdminSelect
+          placeholder="All decades"
           value={decade}
-          onChange={(v) => setParam("decade", v)}
-          decades={filters?.decades ?? []}
+          onChange={(nextValue) => setParam("decade", nextValue)}
+          options={decadeOptions}
         />
-        <FilterSelect
-          placeholder="Format"
+        <AdminSelect
+          placeholder="All formats"
           value={format}
-          onChange={(v) => setParam("format", v)}
-          options={filters?.formats}
+          onChange={(nextValue) => setParam("format", nextValue)}
+          options={formatOptions}
+          searchable
+          searchPlaceholder="Search formats..."
         />
 
-        <Select value={sort} onValueChange={(v) => setParam("sort", v)}>
-          <SelectTrigger className="w-[120px] sm:w-[150px] bg-card border-border h-9 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((o) => (
-              <SelectItem key={o.value} value={o.value}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AdminSelect
+          placeholder="Name"
+          value={sort}
+          onChange={(nextValue) => setParam("sort", nextValue || "name")}
+          options={sortOptions}
+          allowClear={false}
+          triggerClassName="min-w-[120px] max-w-[150px]"
+        />
 
         <Button
           size="sm"
@@ -338,6 +377,8 @@ export function Browse() {
             <ArtistRow
               key={a.name}
               name={a.name}
+              artistId={a.id}
+              artistSlug={a.slug}
               albums={a.albums}
               tracks={a.tracks}
               total_size_mb={a.total_size_mb}
@@ -394,69 +435,12 @@ export function Browse() {
   );
 }
 
-/* ---------- Sub-components ---------- */
-
-function FilterSelect({
-  placeholder,
-  value,
-  onChange,
-  options,
-}: {
-  placeholder: string;
-  value: string;
-  onChange: (v: string) => void;
-  options?: FilterOption[];
-}) {
-  return (
-    <Select value={value || "__all__"} onValueChange={(v) => onChange(v === "__all__" ? "" : v)}>
-      <SelectTrigger className="w-[120px] sm:w-[140px] bg-card border-border h-9 text-xs">
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="__all__">All {placeholder}s</SelectItem>
-        {options?.map((o) => (
-          <SelectItem key={o.name} value={o.name}>
-            {o.name} ({o.count})
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-function DecadeSelect({
-  value,
-  onChange,
-  decades,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  decades: string[];
-}) {
-  return (
-    <Select value={value || "__all__"} onValueChange={(v) => onChange(v === "__all__" ? "" : v)}>
-      <SelectTrigger className="w-[100px] sm:w-[120px] bg-card border-border h-9 text-xs">
-        <SelectValue placeholder="Decade" />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="__all__">All Decades</SelectItem>
-        {decades.map((d) => (
-          <SelectItem key={d} value={d}>
-            {d}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
-
 function GridSkeletonBlock() {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
       {Array.from({ length: 24 }, (_, i) => (
-        <div key={i} className="bg-card border border-border rounded-lg p-3">
-          <Skeleton className="w-full aspect-square rounded-lg mb-2" />
+        <div key={i} className="bg-card border border-border rounded-md p-3">
+          <Skeleton className="w-full aspect-square rounded-md mb-2" />
           <Skeleton className="h-4 w-3/4 mb-1" />
           <Skeleton className="h-3 w-1/2" />
         </div>
@@ -470,7 +454,7 @@ function ListSkeletonBlock() {
     <div className="flex flex-col divide-y divide-border">
       {Array.from({ length: 20 }, (_, i) => (
         <div key={i} className="flex items-center gap-3 px-3 py-2">
-          <Skeleton className="w-10 h-10 rounded-full" />
+          <Skeleton className="w-10 h-10 rounded-md" />
           <Skeleton className="h-4 w-40" />
           <Skeleton className="h-3 w-16 ml-auto" />
           <Skeleton className="h-3 w-16" />

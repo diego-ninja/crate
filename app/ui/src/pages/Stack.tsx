@@ -265,10 +265,10 @@ function ContainerRow({
   const serviceUrl = SERVICE_URLS[c.name];
 
   return (
-    <div className="border border-border rounded-lg bg-card overflow-hidden">
+    <div className="border border-border rounded-md bg-card overflow-hidden">
       <div className="flex items-center gap-4 px-4 py-3">
         {/* Status dot */}
-        <div className={`w-2.5 h-2.5 rounded-full ${stateBg(c.state)} flex-shrink-0`} />
+        <div className={`w-2.5 h-2.5 rounded-md ${stateBg(c.state)} flex-shrink-0`} />
 
         {/* Name + image */}
         <div className="flex-1 min-w-0">

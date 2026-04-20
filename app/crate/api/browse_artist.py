@@ -205,10 +205,15 @@ def _match_setlist_track(
     responses=AUTH_ERROR_RESPONSES,
     summary="List available browse filters",
 )
-def api_browse_filters(request: Request):
+def api_browse_filters(
+    request: Request,
+    country: str = "",
+    decade: str = "",
+    format: str = "",
+):
     """Available filter options for the browse page."""
     _require_auth(request)
-    genres = get_browse_filter_genres()
+    genres = get_browse_filter_genres(country=country, decade=decade, format=format)
     countries = get_browse_filter_countries()
     decades = get_browse_filter_decades()
     formats = get_browse_filter_formats()

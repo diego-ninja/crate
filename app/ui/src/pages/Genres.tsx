@@ -278,7 +278,7 @@ function GenreList() {
       </div>
 
       {!!invalidTaxonomy?.invalid_count && (
-        <div className="mb-6 rounded-2xl border border-amber-500/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.16),rgba(120,53,15,0.08))] p-4">
+        <div className="mb-6 rounded-md border border-amber-500/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.16),rgba(120,53,15,0.08))] p-4">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle size={16} className="text-amber-300" />
             <div className="font-semibold text-foreground">Taxonomy cleanup recommended</div>
@@ -299,7 +299,7 @@ function GenreList() {
             {invalidTaxonomy.items.map((item) => (
               <div
                 key={`invalid-taxonomy-${item.slug}`}
-                className="rounded-xl border border-amber-500/20 bg-black/10 px-3 py-2"
+                className="rounded-md border border-amber-500/20 bg-black/10 px-3 py-2"
               >
                 <div className="truncate text-sm font-medium text-foreground">{item.name || item.slug}</div>
                 <div className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -321,7 +321,7 @@ function GenreList() {
             className="pl-9 bg-card border-border"
           />
         </div>
-        <div className="flex items-center rounded-lg border border-border bg-card p-0.5">
+        <div className="flex items-center rounded-md border border-border bg-card p-0.5">
           <button
             type="button"
             onClick={() => setViewMode("grid")}
@@ -344,7 +344,7 @@ function GenreList() {
       ) : (
       <>
       {(unmappedGenres?.length || 0) > 0 && (
-        <div className="mb-6 rounded-2xl border border-amber-500/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.15),rgba(120,53,15,0.08))] p-4">
+        <div className="mb-6 rounded-md border border-amber-500/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.15),rgba(120,53,15,0.08))] p-4">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle size={16} className="text-amber-300" />
             <div className="font-semibold text-foreground">Needs taxonomy mapping</div>
@@ -360,7 +360,7 @@ function GenreList() {
               <button
                 key={`unmapped-${genre.slug}`}
                 onClick={() => navigate(`/genres/${genre.slug}`)}
-                className="flex items-center justify-between rounded-xl border border-amber-500/20 bg-black/10 px-3 py-2 text-left transition-colors hover:bg-black/20"
+                className="flex items-center justify-between rounded-md border border-amber-500/20 bg-black/10 px-3 py-2 text-left transition-colors hover:bg-black/20"
               >
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium text-foreground">{genre.name}</div>
@@ -392,7 +392,7 @@ function GenreList() {
             <button
               key={g.id}
               onClick={() => navigate(`/genres/${g.slug}`)}
-              className={`text-left rounded-lg border p-4 transition-colors hover:bg-white/[0.04] ${
+              className={`text-left rounded-md border p-4 transition-colors hover:bg-white/[0.04] ${
                 g.mapped ? "border-white/8 hover:border-primary/30" : "border-amber-500/30"
               }`}
             >
@@ -538,7 +538,7 @@ function GenreView({ slug }: { slug: string }) {
             <p className="text-sm leading-6 text-white/65">{description}</p>
             {aliasNote && <p className="mt-2 text-xs text-white/50 italic">{aliasNote}</p>}
             {externalDescription && (
-              <div className="mt-3 rounded-lg border border-white/8 bg-white/[0.02] p-3">
+              <div className="mt-3 rounded-md border border-white/8 bg-white/[0.02] p-3">
                 <p className="text-xs leading-5 text-white/60">{externalDescription}</p>
                 {externalSource && (
                   <div className="mt-1.5 text-[10px] text-white/35">Source: {externalSource}</div>
@@ -662,9 +662,9 @@ function GenreView({ slug }: { slug: string }) {
               <button
                 key={a.artist_name}
                 onClick={() => navigate(artistPagePath({ artistId: a.artist_id, artistSlug: a.artist_slug }))}
-                className="bg-card border border-border rounded-lg p-3 text-left hover:border-primary transition-colors"
+                className="bg-card border border-border rounded-md p-3 text-left hover:border-primary transition-colors"
               >
-                <div className="w-full aspect-square rounded-lg mb-2 overflow-hidden bg-secondary">
+                <div className="w-full aspect-square rounded-md mb-2 overflow-hidden bg-secondary">
                   <img
                     src={artistPhotoApiUrl({ artistId: a.artist_id, artistSlug: a.artist_slug, artistName: a.artist_name })}
                     alt={a.artist_name}
@@ -696,7 +696,7 @@ function GenreView({ slug }: { slug: string }) {
               <button
                 key={a.album_id}
                 onClick={() => navigate(albumPagePath({ albumId: a.album_id, albumSlug: a.album_slug }))}
-                className="bg-card border border-border rounded-lg overflow-hidden text-left hover:border-primary transition-colors"
+                className="bg-card border border-border rounded-md overflow-hidden text-left hover:border-primary transition-colors"
               >
                 <div className="w-full aspect-square bg-secondary">
                   <img

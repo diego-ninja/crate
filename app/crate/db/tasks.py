@@ -340,11 +340,15 @@ def claim_next_task(max_running: int = 5) -> dict | None:
 # ── Helpers ───────────────────────────────────────────────────────
 
 def _row_to_task(row: dict) -> dict:
+    from crate.task_registry import task_label, task_icon
+
     d = dict(row)
     params_raw = d.pop("params_json", {})
     d["params"] = params_raw if isinstance(params_raw, dict) else json.loads(params_raw or "{}")
     result_raw = d.pop("result_json", None)
     d["result"] = result_raw if isinstance(result_raw, (dict, list)) else (json.loads(result_raw) if result_raw else None)
+    d["label"] = task_label(d.get("type", ""))
+    d["icon"] = task_icon(d.get("type", ""))
     return d
 
 

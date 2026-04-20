@@ -124,7 +124,7 @@ export function TagEditor({ albumId, tags, tracks, onSaved }: TagEditorProps) {
   );
 
   return (
-    <div className="bg-card border border-border rounded-lg p-6 mb-6">
+    <div className="bg-card border border-border rounded-md p-6 mb-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold">Album Tags</h3>
         <Button size="sm" onClick={save} disabled={saving}>

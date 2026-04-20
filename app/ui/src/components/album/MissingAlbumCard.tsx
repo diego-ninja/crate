@@ -27,9 +27,9 @@ export function MissingAlbumCard({ title, year, type, artist }: MissingAlbumCard
   const searchQuery = encodeURIComponent(`${artist || ""} ${title}`.trim());
 
   return (
-    <div className="border border-dashed border-border rounded-lg p-3 text-center grayscale opacity-60 hover:opacity-80 transition-opacity">
+    <div className="border border-dashed border-border rounded-md p-3 text-center grayscale opacity-60 hover:opacity-80 transition-opacity">
       <div
-        className="w-full aspect-square rounded-lg overflow-hidden mb-2 relative flex items-center justify-center"
+        className="w-full aspect-square rounded-md overflow-hidden mb-2 relative flex items-center justify-center"
         style={{ background: `linear-gradient(135deg, ${hashColor(title)}, ${hashColor(title + title)})` }}
       >
         <span className="text-3xl font-bold text-white/20">{title.charAt(0).toUpperCase()}</span>

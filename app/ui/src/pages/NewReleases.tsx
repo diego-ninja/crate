@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { CrateChip } from "@/components/ui/CrateBadge";
 import { api } from "@/lib/api";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { toast } from "sonner";
@@ -56,7 +58,7 @@ function ReleaseRow({ release: r, onDownload, onDismiss }: {
     : null;
 
   return (
-    <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-card/80 transition-colors group">
+    <div className="group flex items-center gap-3 rounded-md px-3 py-3 transition-colors hover:bg-white/5">
       {/* Date column */}
       <div className="w-12 text-center flex-shrink-0">
         {day ? (
@@ -70,7 +72,7 @@ function ReleaseRow({ release: r, onDownload, onDismiss }: {
       </div>
 
       {/* Cover */}
-      <div className="w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-secondary">
+      <div className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-md bg-white/5">
         {r.cover_url ? (
           <img src={r.cover_url} alt="" className="w-full h-full object-cover" />
         ) : (
@@ -95,10 +97,10 @@ function ReleaseRow({ release: r, onDownload, onDismiss }: {
         <div className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
           <ReleaseArtistLink release={r} className="hover:text-foreground transition-colors" />
           {r.release_type && (
-            <Badge variant="outline" className="text-[9px] px-1 py-0">{r.release_type}</Badge>
+            <CrateChip>{r.release_type}</CrateChip>
           )}
           {r.quality && (
-            <Badge variant="outline" className="text-[9px] px-1 py-0 border-green-500/30 text-green-500">{r.quality}</Badge>
+            <CrateChip className="border-green-500/30 bg-green-500/10 text-green-300">{r.quality}</CrateChip>
           )}
         </div>
       </div>
@@ -106,7 +108,7 @@ function ReleaseRow({ release: r, onDownload, onDismiss }: {
       {/* Status / Actions */}
       <div className="flex items-center gap-2 flex-shrink-0">
         {r.status === "downloaded" && (
-          <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-[10px]">Downloaded</Badge>
+          <Badge className="border-green-500/30 bg-green-500/20 text-[10px] text-green-400">Downloaded</Badge>
         )}
         {r.status === "downloading" && (
           <Loader2 size={14} className="animate-spin text-primary" />
@@ -114,15 +116,15 @@ function ReleaseRow({ release: r, onDownload, onDismiss }: {
         {r.status === "detected" && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             {r.tidal_url && (
-              <Button size="sm" variant="outline" className="h-7 text-xs border-primary/30 text-primary hover:bg-primary/10"
+              <Button size="sm" variant="outline" className="h-8 text-xs"
                 onClick={() => onDownload(r.id)}>
                 <Download size={12} className="mr-1" /> Download
               </Button>
             )}
-            <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground"
+            <ActionIconButton variant="row" className="h-8 w-8"
               onClick={() => onDismiss(r.id)}>
               <X size={12} />
-            </Button>
+            </ActionIconButton>
           </div>
         )}
       </div>
@@ -140,7 +142,7 @@ function MonthGroup({ month, releases, onDownload, onDismiss }: {
 
   return (
     <div className="mb-6">
-      <div className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider mb-3 border-b border-border/50 pb-1">
+      <div className="mb-3 border-b border-white/6 pb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
         {label}
       </div>
       <div className="space-y-2">
@@ -181,7 +183,7 @@ function TimelineView({ releases, onDownload, onDismiss }: {
     <div className="space-y-8">
       {upcoming.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-primary">
             Upcoming
           </h2>
           {[...upcomingGroups.entries()].map(([month, items]) => (
@@ -193,7 +195,7 @@ function TimelineView({ releases, onDownload, onDismiss }: {
 
       {recent.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
             Recently Released
           </h2>
           {[...recentGroups.entries()].map(([month, items]) => (
@@ -216,7 +218,7 @@ function GridView({ releases, onDownload, onDismiss }: {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
       {releases.map((r) => (
-        <div key={r.id} className="bg-card border border-border rounded-lg overflow-hidden group">
+        <div key={r.id} className="group overflow-hidden rounded-md border border-white/10 bg-card shadow-[0_24px_64px_rgba(0,0,0,0.16)] backdrop-blur-xl">
           {/* Cover */}
           <div className="relative aspect-square bg-secondary">
             {r.cover_url ? (
@@ -233,7 +235,7 @@ function GridView({ releases, onDownload, onDismiss }: {
             )}
             {r.status === "downloaded" && (
               <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                <Badge className="bg-green-500 text-white">Downloaded</Badge>
+                <Badge className="border-green-500/30 bg-green-500/20 text-green-300">Downloaded</Badge>
               </div>
             )}
             {r.status === "detected" && (
@@ -255,7 +257,7 @@ function GridView({ releases, onDownload, onDismiss }: {
               {r.year && <span className="text-[10px] text-muted-foreground">{r.year}</span>}
               {r.tracks > 0 && <span className="text-[10px] text-muted-foreground">{r.tracks} tracks</span>}
               {r.quality && (
-                <Badge variant="outline" className="text-[9px] px-1 py-0">{r.quality}</Badge>
+                <CrateChip>{r.quality}</CrateChip>
               )}
             </div>
           </div>

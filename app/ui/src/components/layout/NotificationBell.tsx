@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { useNotificationCenter } from "@/contexts/NotificationContext";
-import { Bell, CheckCircle2, XCircle, Check, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router";
+import { Bell, CheckCircle2, XCircle, Check, Trash2 } from "lucide-react";
+
+import { AppPopover } from "@/components/ui/AppPopover";
+import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { useNotificationCenter } from "@/contexts/NotificationContext";
 import { timeAgo } from "@/lib/utils";
 
 export function NotificationBell() {
@@ -11,11 +13,12 @@ export function NotificationBell() {
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    const handler = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -24,67 +27,83 @@ export function NotificationBell() {
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => { setOpen(!open); if (!open) markAllRead(); }}
-        className="relative p-2 rounded-md hover:bg-accent transition-colors"
+        type="button"
+        onClick={() => {
+          setOpen(!open);
+          if (!open) markAllRead();
+        }}
+        className="relative flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-black/30 text-white/60 shadow-[0_6px_20px_rgba(0,0,0,0.18)] backdrop-blur-sm transition-colors hover:bg-black/50 hover:text-white"
+        aria-label="Notifications"
       >
-        <Bell size={18} className="text-muted-foreground" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-primary text-[10px] text-primary-foreground rounded-full flex items-center justify-center font-bold">
+        <Bell size={17} />
+        {unreadCount > 0 ? (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-md bg-primary px-1 text-[10px] font-bold text-primary-foreground">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
-        )}
+        ) : null}
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-            <span className="text-sm font-semibold">Notifications</span>
-            <div className="flex gap-1">
-              {notifications.length > 0 && (
-                <>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={markAllRead} title="Mark all read">
-                    <Check size={12} />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={clearAll} title="Clear all">
-                    <Trash2 size={12} />
-                  </Button>
-                </>
-              )}
-            </div>
+      {open ? (
+        <AppPopover className="absolute right-0 top-full mt-2 w-80 overflow-hidden p-0">
+          <div className="flex items-center justify-between border-b border-white/6 px-4 py-3">
+            <span className="text-sm font-semibold text-white">Notifications</span>
+            {notifications.length > 0 ? (
+              <div className="flex items-center gap-1">
+                <ActionIconButton variant="row" className="h-8 w-8" onClick={markAllRead} title="Mark all read">
+                  <Check size={13} />
+                </ActionIconButton>
+                <ActionIconButton variant="row" className="h-8 w-8" onClick={clearAll} title="Clear all">
+                  <Trash2 size={13} />
+                </ActionIconButton>
+              </div>
+            ) : null}
           </div>
-          <div className="max-h-[300px] overflow-y-auto">
+
+          <div className="max-h-[320px] overflow-y-auto">
             {notifications.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">No notifications</div>
+              <div className="py-10 text-center text-sm text-white/40">No notifications</div>
             ) : (
-              notifications.map(n => (
+              notifications.map((notification) => (
                 <button
-                  key={n.id}
-                  className={`w-full flex items-start gap-2 px-3 py-2.5 text-left hover:bg-accent/50 transition-colors border-b border-border last:border-0 ${!n.read ? "bg-accent/20" : ""}`}
-                  onClick={() => { markAsRead(n.id); }}
+                  key={notification.id}
+                  type="button"
+                  className={`flex w-full items-start gap-3 border-b border-white/5 px-4 py-3 text-left transition-colors last:border-0 ${
+                    !notification.read ? "bg-white/[0.04]" : "hover:bg-white/5"
+                  }`}
+                  onClick={() => {
+                    markAsRead(notification.id);
+                  }}
                 >
-                  {n.status === "completed" ? (
-                    <CheckCircle2 size={14} className="text-green-500 mt-0.5 flex-shrink-0" />
+                  {notification.status === "completed" ? (
+                    <CheckCircle2 size={15} className="mt-0.5 shrink-0 text-green-400" />
                   ) : (
-                    <XCircle size={14} className="text-red-500 mt-0.5 flex-shrink-0" />
+                    <XCircle size={15} className="mt-0.5 shrink-0 text-red-400" />
                   )}
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm capitalize">{n.type.replace(/_/g, " ")}</div>
-                    <div className="text-[11px] text-muted-foreground">{timeAgo(n.timestamp)}</div>
+                    <div className="truncate text-sm capitalize text-white/85">
+                      {notification.type.replace(/_/g, " ")}
+                    </div>
+                    <div className="mt-1 text-[11px] text-white/35">{timeAgo(notification.timestamp)}</div>
                   </div>
                 </button>
               ))
             )}
           </div>
-          {notifications.length > 0 && (
+
+          {notifications.length > 0 ? (
             <button
-              className="w-full py-2 text-xs text-center text-muted-foreground hover:text-foreground border-t border-border"
-              onClick={() => { navigate("/tasks"); setOpen(false); }}
+              type="button"
+              className="w-full border-t border-white/6 py-2.5 text-center text-xs text-white/50 transition-colors hover:bg-white/5 hover:text-white"
+              onClick={() => {
+                navigate("/tasks");
+                setOpen(false);
+              }}
             >
-              View All Tasks
+              View all tasks
             </button>
-          )}
-        </div>
-      )}
+          ) : null}
+        </AppPopover>
+      ) : null}
     </div>
   );
 }

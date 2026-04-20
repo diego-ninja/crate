@@ -34,7 +34,7 @@ export function ImageLightbox({ src, alt, children }: ImageLightboxProps) {
             src={src}
             alt={alt}
             onClick={(e) => e.stopPropagation()}
-            className="max-w-[90vw] max-h-[90vh] rounded-lg object-contain animate-in zoom-in-90 duration-200"
+            className="max-w-[90vw] max-h-[90vh] rounded-md object-contain animate-in zoom-in-90 duration-200"
           />
         </div>
       )}

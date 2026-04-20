@@ -8,8 +8,11 @@ from crate.api.schemas.common import TaskEnqueueResponse
 
 
 class BrowseGenreFilterOptionResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     name: str
     cnt: int | None = None
+    count: int | None = None
 
 
 class BrowseCountryFilterOptionResponse(BaseModel):

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { NavLink, Link } from "react-router";
+import { Link } from "react-router";
 import {
   LayoutDashboard,
   Library,
@@ -21,11 +21,15 @@ import {
   Sparkles,
   Calendar,
   AudioWaveform,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
-import { useAuth } from "@/contexts/AuthContext";
+
+import { VtNavLink as NavLink } from "@/components/ui/VtNavLink";
 import { Badge } from "@/components/ui/badge";
+import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -35,6 +39,19 @@ interface SidebarStats {
   issue_count?: number;
   pending_imports?: number;
   running_tasks?: number;
+}
+
+export const SIDEBAR_KEY = "crate-admin-sidebar-expanded";
+export const SIDEBAR_EVENT = "crate-admin-sidebar-changed";
+export const SIDEBAR_EXPANDED_WIDTH = 240;
+export const SIDEBAR_COLLAPSED_WIDTH = 72;
+
+export function getStoredSidebarExpanded(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) !== "false";
+  } catch {
+    return true;
+  }
 }
 
 const navItems = [
@@ -62,7 +79,17 @@ const navItems = [
   { to: "/settings", icon: Settings, label: "Settings", adminOnly: true },
 ] as const;
 
+function emitSidebarExpanded(expanded: boolean) {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, String(expanded));
+    window.dispatchEvent(new CustomEvent(SIDEBAR_EVENT, { detail: { expanded } }));
+  } catch {
+    // ignore persistence failures
+  }
+}
+
 export function Sidebar({ onNavigate }: SidebarProps) {
+  const [expanded, setExpanded] = useState(getStoredSidebarExpanded);
   const [stats, setStats] = useState<SidebarStats>({});
   const { user, isAdmin, logout } = useAuth();
 
@@ -79,7 +106,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         running_tasks: Array.isArray(taskList) ? taskList.length : 0,
       });
     } catch {
-      // silently ignore
+      // ignore transient polling failures
     }
   }, []);
 
@@ -89,81 +116,184 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     return () => clearInterval(interval);
   }, [fetchStats]);
 
+  function toggleExpanded() {
+    const next = !expanded;
+    setExpanded(next);
+    emitSidebarExpanded(next);
+  }
+
+  function navClass(isActive: boolean) {
+    return isActive
+      ? "bg-white/10 text-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      : "text-white/42 hover:bg-white/5 hover:text-white";
+  }
+
+  const asideWidth = expanded ? "w-60" : "w-[4.5rem]";
+
   return (
-    <nav className="w-[220px] bg-card border-r border-border flex-shrink-0 fixed h-screen overflow-y-auto flex flex-col">
-      <div className="px-4 pb-4 pt-4 border-b border-border mb-4">
-        <Link to="/" className="flex items-center gap-3">
-          <img src="/assets/logo.svg" alt="Crate" className="w-8 h-8" />
-          <span className="text-lg font-bold text-foreground">Crate</span>
-        </Link>
-      </div>
-      <div className="flex-1 overflow-y-auto">
-      {navItems.map((item, i) => {
-        if ("section" in item) {
-          return (
-            <div
-              key={i}
-              className="px-5 pt-4 pb-1 text-xs uppercase tracking-wider text-muted-foreground font-semibold"
+    <aside
+      className={cn(
+        "z-app-sidebar fixed top-0 left-0 bottom-0 flex flex-col border-r border-white/6 bg-app-surface transition-all duration-200",
+        asideWidth,
+      )}
+    >
+      <div className="border-b border-white/6">
+        <div className={cn("flex h-16 items-center", expanded ? "gap-3 px-4" : "justify-center")}>
+          {expanded ? (
+            <>
+              <Link to="/" className="flex items-center gap-3 min-w-0">
+                <img src="/assets/logo.svg" alt="Crate" className="h-8 w-8 shrink-0" />
+                <div className="min-w-0 leading-tight">
+                  <div className="text-sm font-bold text-white">Crate</div>
+                  <div className="text-[11px] text-white/35">Admin console</div>
+                </div>
+              </Link>
+              <button
+                type="button"
+                onClick={toggleExpanded}
+                aria-label="Collapse sidebar"
+                className="ml-auto flex h-9 w-9 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/5 hover:text-white/70"
+              >
+                <PanelLeftClose size={18} />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={toggleExpanded}
+              aria-label="Expand sidebar"
+              className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-white/5 transition-colors hover:bg-white/10"
             >
-              {item.section}
+              <img src="/assets/logo.svg" alt="Crate" className="h-6 w-6" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto py-3">
+        {navItems.map((item, index) => {
+          if ("section" in item) {
+            return expanded ? (
+              <div
+                key={`${item.section}-${index}`}
+                className="px-4 pb-2 pt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-white/25"
+              >
+                {item.section}
+              </div>
+            ) : (
+              <div key={`${item.section}-${index}`} className="mx-4 my-3 border-t border-white/5" />
+            );
+          }
+
+          if ("adminOnly" in item && item.adminOnly && !isAdmin) {
+            return null;
+          }
+
+          const Icon = item.icon;
+          const badgeValue = "badgeKey" in item && item.badgeKey ? stats[item.badgeKey] : undefined;
+
+          return (
+            <div key={item.to} className={cn("relative", expanded ? "px-3" : "px-2")}>
+              <NavLink
+                to={item.to}
+                end={item.to === "/"}
+                onClick={onNavigate}
+                title={item.label}
+                className={({ isActive }) =>
+                  cn(
+                    "group flex items-center gap-3 rounded-md transition-colors",
+                    expanded ? "px-3 py-2.5" : "mx-auto h-11 w-11 justify-center",
+                    navClass(isActive),
+                  )
+                }
+              >
+                <Icon size={18} className="shrink-0" />
+                {expanded ? <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{item.label}</span> : null}
+                {expanded && badgeValue != null && badgeValue > 0 ? (
+                  <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                    {badgeValue}
+                  </Badge>
+                ) : null}
+              </NavLink>
+
+              {!expanded && badgeValue != null && badgeValue > 0 ? (
+                <span className="absolute right-2 top-1 flex h-4 min-w-4 items-center justify-center rounded-md bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                  {badgeValue > 9 ? "9+" : badgeValue}
+                </span>
+              ) : null}
             </div>
           );
-        }
-        if ("adminOnly" in item && item.adminOnly && !isAdmin) {
-          return null;
-        }
-        const Icon = item.icon;
-        const badgeValue = "badgeKey" in item && item.badgeKey ? stats[item.badgeKey] : undefined;
-        return (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === "/"}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 px-5 py-2.5 text-sm transition-colors",
-                isActive
-                  ? "text-foreground bg-secondary border-r-2 border-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary",
-              )
-            }
-          >
-            <Icon size={16} />
-            <span className="flex-1">{item.label}</span>
-            {badgeValue != null && badgeValue > 0 && (
-              <span className="bg-primary/20 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-                {badgeValue}
-              </span>
-            )}
-          </NavLink>
-        );
-      })}
+        })}
       </div>
-      {user && (
-        <div className="border-t border-border px-4 py-3 mt-auto">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Link to="/profile" className="flex items-center gap-2 flex-1 min-w-0 hover:text-foreground transition-colors" onClick={onNavigate}>
-              {user.avatar ? (
-                <img src={user.avatar} alt="" className="w-5 h-5 rounded-full" />
-              ) : (
-                <User size={14} />
-              )}
-              <span className="flex-1 truncate">{user.name}</span>
-            </Link>
-            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-              {user.role}
-            </Badge>
-            <button
-              onClick={logout}
-              title="Logout"
-              className="hover:text-foreground transition-colors"
-            >
-              <LogOut size={14} />
-            </button>
-          </div>
+
+      {user ? (
+        <div className="mt-auto border-t border-white/6 p-3">
+          {expanded ? (
+            <div className="flex items-center gap-3 rounded-md border border-white/8 bg-white/[0.03] px-3 py-3">
+              <Link to="/profile" className="flex min-w-0 flex-1 items-center gap-3" onClick={onNavigate}>
+                {user.avatar ? (
+                  <img src={user.avatar} alt="" className="h-10 w-10 rounded-md object-cover" />
+                ) : (
+                  <div className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/60">
+                    <User size={16} />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-white">{user.name}</div>
+                  <div className="mt-1">
+                    <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                      {user.role}
+                    </Badge>
+                  </div>
+                </div>
+              </Link>
+              <button
+                type="button"
+                onClick={logout}
+                title="Logout"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-white/35 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2">
+              <Link
+                to="/profile"
+                onClick={onNavigate}
+                className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70"
+              >
+                {user.avatar ? (
+                  <img src={user.avatar} alt="" className="h-11 w-11 rounded-md object-cover" />
+                ) : (
+                  <User size={16} />
+                )}
+              </Link>
+              <button
+                type="button"
+                onClick={logout}
+                title="Logout"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-white/35 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          )}
         </div>
-      )}
-    </nav>
+      ) : null}
+
+      {!expanded ? (
+        <div className="flex justify-center pb-4">
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            aria-label="Expand sidebar"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-white/20 transition-colors hover:bg-white/5 hover:text-white/50"
+          >
+            <PanelLeftOpen size={14} />
+          </button>
+        </div>
+      ) : null}
+    </aside>
   );
 }

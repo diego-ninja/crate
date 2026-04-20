@@ -1,7 +1,8 @@
 import { useApi } from "@/hooks/use-api";
 import { useNavigate } from "react-router";
-import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight, Music } from "lucide-react";
+
+import { CrateChip } from "@/components/ui/CrateBadge";
 import { albumCoverApiUrl, albumPagePath, albumRelatedApiPath } from "@/lib/library-routes";
 
 interface RelatedAlbum {
@@ -32,34 +33,37 @@ export function RelatedAlbums({ albumId }: { albumId?: number }) {
 
   return (
     <div className="mt-8">
-      <h3 className="font-semibold mb-3">Related Albums</h3>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white/70">Related Albums</h3>
+        <span className="text-[11px] uppercase tracking-[0.16em] text-white/30">Editorial context</span>
+      </div>
       <div className="flex gap-3 overflow-x-auto pb-2">
-        {data.map((a, i) => (
+        {data.map((album, index) => (
           <button
-            key={`${a.artist}-${a.name}-${i}`}
-            onClick={() => navigate(albumPagePath({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name }))}
-            className="flex-shrink-0 w-[140px] group text-left"
+            key={`${album.artist}-${album.name}-${index}`}
+            onClick={() => navigate(albumPagePath({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name }))}
+            className="group w-[148px] flex-shrink-0 rounded-md p-2 text-left transition-colors hover:bg-white/5"
           >
-            <div className="relative w-[140px] h-[140px] rounded-lg overflow-hidden bg-secondary mb-2">
+            <div className="relative mb-2 h-[148px] w-[148px] overflow-hidden rounded-md bg-white/5">
               <img
-                src={albumCoverApiUrl({ albumId: a.id, albumSlug: a.slug, artistName: a.artist, albumName: a.name })}
-                alt={a.display_name}
+                src={albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name })}
+                alt={album.display_name}
                 loading="lazy"
-                className="w-full h-full object-cover"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                className="h-full w-full object-cover"
+                onError={(event) => { (event.target as HTMLImageElement).style.display = "none"; }}
               />
-              <div className="absolute inset-0 bg-secondary flex items-center justify-center -z-10">
+              <div className="absolute inset-0 -z-10 flex items-center justify-center bg-white/5">
                 <Music size={28} className="text-muted-foreground/30" />
               </div>
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
                 <ArrowUpRight size={20} className="text-white" />
               </div>
             </div>
-            <div className="text-xs font-medium truncate">{a.display_name}</div>
-            <div className="text-[11px] text-muted-foreground truncate">{a.artist}</div>
-            <Badge variant="outline" className="text-[9px] px-1 py-0 mt-0.5">
-              {REASON_LABELS[a.reason] || a.reason}
-            </Badge>
+            <div className="truncate text-xs font-medium text-white/90">{album.display_name}</div>
+            <div className="truncate text-[11px] text-white/45">{album.artist}</div>
+            <div className="mt-1.5">
+              <CrateChip>{REASON_LABELS[album.reason] || album.reason}</CrateChip>
+            </div>
           </button>
         ))}
       </div>

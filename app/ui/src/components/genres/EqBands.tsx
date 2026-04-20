@@ -62,10 +62,10 @@ function Band({
         }}
         onPointerMove={(e) => { if (interactive && e.buttons & 1) computeGain(e.clientY); }}
       >
-        <div className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded-full bg-white/[0.06]" />
+        <div className="absolute left-1/2 top-0 h-full w-1 -translate-x-1/2 rounded-md bg-white/[0.06]" />
         <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/15" />
         <div
-          className={`absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.6)] ${dragging ? "" : "transition-all duration-500"}`}
+          className={`absolute left-1/2 h-3 w-3 -translate-x-1/2 rounded-md bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.6)] ${dragging ? "" : "transition-all duration-500"}`}
           style={{ top: `calc(${100 - pct}% - 6px)` }}
         />
       </div>

@@ -93,7 +93,7 @@ export function GenreEqEditor({
   };
 
   return (
-    <div className="rounded-2xl border border-white/12 bg-black/15 p-5">
+    <div className="rounded-md border border-white/12 bg-black/15 p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <SlidersHorizontal size={14} className="text-primary" />
@@ -114,7 +114,7 @@ export function GenreEqEditor({
         to the first ancestor that has a preset.
       </p>
 
-      <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+      <div className="rounded-md border border-white/10 bg-black/30 p-3">
         <EqBands
           gains={gains}
           onBandChange={updateBand}

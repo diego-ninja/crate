@@ -122,7 +122,7 @@ export function ShowCard({ show, compact }: { show: ShowEvent; compact?: boolean
   const headlinerHref = getArtistLink(headliner);
 
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden w-[340px] shadow-xl">
+    <div className="bg-card border border-border rounded-md overflow-hidden w-[340px] shadow-xl">
       {/* Header image */}
       <div className="relative h-[100px] bg-secondary">
         {show.image ? (
@@ -187,7 +187,7 @@ export function ShowCard({ show, compact }: { show: ShowEvent; compact?: boolean
         </div>
 
         {/* Venue card */}
-        <div className="rounded-lg bg-white/[0.03] border border-white/[0.06] p-3 space-y-2">
+        <div className="rounded-md bg-white/[0.03] border border-white/[0.06] p-3 space-y-2">
           <div className="flex items-start gap-2 text-xs text-muted-foreground">
             <MapPin size={12} className="flex-shrink-0 mt-0.5 text-primary/70" />
             <div>
@@ -213,7 +213,7 @@ export function ShowCard({ show, compact }: { show: ShowEvent; compact?: boolean
           href={show.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors text-xs font-medium"
+          className="flex items-center justify-center gap-1.5 w-full py-2 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors text-xs font-medium"
         >
           <ExternalLink size={12} /> View on Ticketmaster
         </a>

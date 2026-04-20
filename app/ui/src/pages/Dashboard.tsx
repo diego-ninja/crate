@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router";
+import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
-import { Badge } from "@/components/ui/badge";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
@@ -91,7 +91,7 @@ export function Dashboard() {
       <div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
           {Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="bg-card border border-border rounded-lg p-6">
+            <div key={i} className="bg-card border border-border rounded-md p-6">
               <GridSkeleton count={1} columns="grid-cols-1" />
             </div>
           ))}
@@ -110,25 +110,25 @@ export function Dashboard() {
       label: "Artists",
       value: formatNumber(stats?.artists ?? 0),
       icon: Users,
-      color: "border-l-primary",
+      chipClass: "border-cyan-400/20 bg-cyan-400/12 text-cyan-200",
     },
     {
       label: "Albums",
       value: formatNumber(stats?.albums ?? 0),
       icon: Disc3,
-      color: "border-l-blue-500",
+      chipClass: "border-blue-400/20 bg-blue-400/12 text-blue-200",
     },
     {
       label: "Tracks",
       value: formatNumber(stats?.tracks ?? 0),
       icon: Music,
-      color: "border-l-green-500",
+      chipClass: "border-emerald-400/20 bg-emerald-400/12 text-emerald-200",
     },
     {
       label: "Library Size",
       value: stats?.total_size_gb ? `${stats.total_size_gb} GB` : "0 GB",
       icon: HardDrive,
-      color: "border-l-orange-500",
+      chipClass: "border-amber-400/20 bg-amber-400/12 text-amber-200",
     },
   ];
 
@@ -137,23 +137,82 @@ export function Dashboard() {
   const recentTasks = live?.recent_tasks ?? [];
   const systems = live?.systems;
   const workerSlots = live?.worker_slots;
+  const totalHealthIssues = Object.values(healthCounts).reduce((sum, count) => sum + count, 0);
 
   return (
-    <div>
-      {/* Row 1: Hero stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
+    <div className="space-y-8">
+      <section className="rounded-md border border-white/10 bg-panel-surface/95 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-md border border-cyan-400/20 bg-cyan-400/12 text-primary shadow-[0_18px_40px_rgba(6,182,212,0.14)]">
+                <Activity size={22} />
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-white">Dashboard</h1>
+                <p className="text-sm text-white/55">
+                  Operational pulse for the library, worker activity, and acquisition pipeline.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <CrateChip icon={Clock}>
+                Last scan {stats?.last_scan ? timeAgo(stats.last_scan) : "not recorded"}
+              </CrateChip>
+              <CrateChip icon={Database} className={systems?.postgres ? "border-green-500/25 bg-green-500/10 text-green-300" : "border-red-500/25 bg-red-500/10 text-red-300"}>
+                PostgreSQL {systems?.postgres ? "online" : "offline"}
+              </CrateChip>
+              <CrateChip icon={Cpu}>
+                Worker {workerSlots ? `${workerSlots.active}/${workerSlots.max} slots` : "not reporting"}
+              </CrateChip>
+              <CrateChip icon={Stethoscope} className={totalHealthIssues > 0 ? "border-amber-500/25 bg-amber-500/10 text-amber-200" : "border-green-500/25 bg-green-500/10 text-green-300"}>
+                {totalHealthIssues > 0 ? `${totalHealthIssues} open issues` : "Health clean"}
+              </CrateChip>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <CratePill onClick={() => navigate("/health")} icon={Stethoscope}>
+              Health
+            </CratePill>
+            <CratePill onClick={() => navigate("/upcoming")} icon={CalendarDays}>
+              Upcoming
+            </CratePill>
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  await api("/api/tasks/sync-library", "POST");
+                  toast.success("Library sync started");
+                  refetchLive();
+                } catch {
+                  toast.error("Sync already running or failed");
+                }
+              }}
+            >
+              <RefreshCw size={14} className="mr-2" />
+              Sync library
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
         {heroStats.map((s) => {
           const Icon = s.icon;
           return (
-            <Card key={s.label} className={`bg-card border-l-4 ${s.color}`}>
+            <Card key={s.label} className="overflow-hidden border-white/10 bg-panel-surface shadow-[0_24px_70px_rgba(0,0,0,0.2)]">
               <CardContent className="pt-6">
-                <div className="flex items-center justify-between">
+                <div className="mb-5 flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-2xl font-bold text-foreground">{s.value}</div>
-                    <div className="text-xs text-muted-foreground mt-1">{s.label}</div>
+                    <div className="text-2xl font-semibold tracking-tight text-white">{s.value}</div>
+                    <div className="mt-1 text-xs text-white/50">{s.label}</div>
                   </div>
-                  <Icon size={24} className="text-muted-foreground" />
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-md border shadow-[0_16px_36px_rgba(0,0,0,0.18)] ${s.chipClass}`}>
+                    <Icon size={20} />
+                  </div>
                 </div>
+                <div className="h-px w-full bg-gradient-to-r from-white/10 via-white/5 to-transparent" />
               </CardContent>
             </Card>
           );
@@ -161,39 +220,37 @@ export function Dashboard() {
       </div>
 
       {/* Row 2: Live Activity Feed + System Status */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <Card className="bg-card col-span-1 md:col-span-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card className="col-span-1 border-white/10 bg-panel-surface md:col-span-2">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm flex items-center gap-2">
+              <CardTitle className="flex items-center gap-2 text-sm">
                 <Activity size={14} />
                 Live Activity
               </CardTitle>
               {runningTasks.length > 0 && (
-                <Badge variant="outline" className="text-blue-500 border-blue-500/30 text-[10px]">
+                <CrateChip className="border-blue-500/25 bg-blue-500/10 text-blue-300">
                   {runningTasks.length} running
-                </Badge>
+                </CrateChip>
               )}
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto">
+            <div className="flex max-h-[300px] flex-col gap-2 overflow-y-auto">
               {runningTasks.map((t) => (
-                <div key={t.id} className="flex items-center gap-3 text-sm py-1.5 px-2 rounded bg-blue-500/5 border border-blue-500/10">
+                <div key={t.id} className="flex items-center gap-3 rounded-md border border-blue-500/15 bg-blue-500/10 px-3 py-3 text-sm shadow-[0_12px_30px_rgba(0,0,0,0.16)]">
                   <Loader2 size={14} className="animate-spin text-blue-500 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <span className="text-foreground capitalize">{t.type.replace(/_/g, " ")}</span>
+                    <span className="capitalize text-white">{t.type.replace(/_/g, " ")}</span>
                     {t.progress && (
-                      <span className="text-muted-foreground ml-2">({t.progress})</span>
+                      <span className="ml-2 text-white/45">({t.progress})</span>
                     )}
                   </div>
-                  <Badge variant="outline" className="text-blue-500 border-blue-500/30 text-[10px] px-1 py-0">
-                    running
-                  </Badge>
+                  <CrateChip className="border-blue-500/25 bg-blue-500/10 text-blue-300">running</CrateChip>
                 </div>
               ))}
               {recentTasks.filter(t => t.status !== "running").map((t) => (
-                <div key={t.id} className="flex items-center gap-3 text-sm py-1.5 px-2">
+                <div key={t.id} className="flex items-center gap-3 rounded-md border border-white/6 bg-white/[0.04] px-3 py-3 text-sm shadow-[0_12px_30px_rgba(0,0,0,0.14)]">
                   {t.status === "completed" ? (
                     <CheckCircle2 size={14} className="text-green-500 flex-shrink-0" />
                   ) : t.status === "failed" ? (
@@ -202,27 +259,26 @@ export function Dashboard() {
                     <Clock size={14} className="text-muted-foreground flex-shrink-0" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <span className="text-foreground capitalize">{t.type.replace(/_/g, " ")}</span>
+                    <span className="capitalize text-white">{t.type.replace(/_/g, " ")}</span>
                   </div>
-                  <Badge
-                    variant="outline"
-                    className={`text-[10px] px-1 py-0 ${
+                  <CrateChip
+                    className={
                       t.status === "completed"
-                        ? "text-green-500 border-green-500/30"
+                        ? "border-green-500/25 bg-green-500/10 text-green-300"
                         : t.status === "failed"
-                          ? "text-red-500 border-red-500/30"
-                          : "text-muted-foreground"
-                    }`}
+                          ? "border-red-500/25 bg-red-500/10 text-red-300"
+                          : ""
+                    }
                   >
                     {t.status}
-                  </Badge>
-                  <span className="text-[11px] text-muted-foreground flex-shrink-0">
+                  </CrateChip>
+                  <span className="flex-shrink-0 text-[11px] text-white/40">
                     {timeAgo(t.updated_at)}
                   </span>
                 </div>
               ))}
               {recentTasks.length === 0 && runningTasks.length === 0 && (
-                <div className="text-sm text-muted-foreground text-center py-8">
+                <div className="py-8 text-center text-sm text-white/45">
                   No recent activity
                 </div>
               )}
@@ -230,20 +286,20 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card">
+        <Card className="border-white/10 bg-panel-surface">
           <CardHeader>
             <CardTitle className="text-sm">System Status</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-3 text-sm">
                 <div className="flex items-center gap-2">
                   <Database size={14} className="text-muted-foreground" />
                   <span>PostgreSQL</span>
                 </div>
-                <div className={`w-2 h-2 rounded-full ${systems?.postgres ? "bg-green-500" : "bg-red-500"}`} />
+                <div className={`w-2 h-2 rounded-md ${systems?.postgres ? "bg-green-500" : "bg-red-500"}`} />
               </div>
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-3 text-sm">
                 <div className="flex items-center gap-2">
                   <Cpu size={14} className="text-muted-foreground" />
                   <span>Worker</span>
@@ -252,15 +308,15 @@ export function Dashboard() {
                   {workerSlots ? `${workerSlots.active}/${workerSlots.max} slots` : "-"}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-sm">
+              <div className="flex items-center justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-3 text-sm">
                 <div className="flex items-center gap-2">
                   <Eye size={14} className="text-muted-foreground" />
                   <span>Watcher</span>
                 </div>
-                <div className={`w-2 h-2 rounded-full ${systems?.watcher ? "bg-green-500" : "bg-red-500"}`} />
+                <div className={`w-2 h-2 rounded-md ${systems?.watcher ? "bg-green-500" : "bg-red-500"}`} />
               </div>
 
-              <div className="border-t border-border pt-3 mt-1 flex flex-col gap-2">
+              <div className="mt-2 flex flex-col gap-2 border-t border-white/8 pt-3">
                 <Button
                   variant="outline"
                   size="sm"
@@ -316,26 +372,24 @@ export function Dashboard() {
       </div>
 
       {/* Health + Shows summary row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {/* Health summary */}
         {Object.keys(healthCounts).length > 0 && (
           <Link to="/health" className="block">
-            <Card className="bg-card hover:bg-white/5 transition-colors h-full">
+            <Card className="h-full border-white/10 bg-panel-surface transition-colors hover:bg-white/[0.05]">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
                   <Stethoscope size={14} className="text-yellow-500" />
                   Library Health
-                  <Badge variant="outline" className="text-yellow-500 border-yellow-500/30 ml-auto">
+                  <CrateChip className="ml-auto border-yellow-500/25 bg-yellow-500/10 text-yellow-200">
                     {Object.values(healthCounts).reduce((a, b) => a + b, 0)} issues
-                  </Badge>
+                  </CrateChip>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex flex-wrap gap-2">
                   {Object.entries(healthCounts).sort(([, a], [, b]) => b - a).slice(0, 5).map(([type, count]) => (
-                    <Badge key={type} variant="secondary" className="text-[10px]">
-                      {type.replace(/_/g, " ")} ({count})
-                    </Badge>
+                    <CrateChip key={type}>{type.replace(/_/g, " ")} ({count})</CrateChip>
                   ))}
                 </div>
               </CardContent>
@@ -346,23 +400,23 @@ export function Dashboard() {
         {/* Upcoming shows */}
         {upcomingShows.length > 0 && (
           <Link to="/upcoming" className="block">
-            <Card className="bg-card hover:bg-white/5 transition-colors h-full">
+            <Card className="h-full border-white/10 bg-panel-surface transition-colors hover:bg-white/[0.05]">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
                   <CalendarDays size={14} className="text-orange-500" />
                   Upcoming Shows
-                  <Badge variant="outline" className="text-orange-500 border-orange-500/30 ml-auto">
+                  <CrateChip className="ml-auto border-orange-500/25 bg-orange-500/10 text-orange-200">
                     {upcomingShows.length}
-                  </Badge>
+                  </CrateChip>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {upcomingShows.slice(0, 3).map((s, i) => (
-                    <div key={i} className="flex items-center gap-2 text-xs">
-                      <span className="font-medium truncate">{s.artist_name}</span>
-                      <span className="text-muted-foreground truncate">{s.venue}, {s.city}</span>
-                      <span className="text-muted-foreground ml-auto flex-shrink-0">
+                    <div key={i} className="flex items-center gap-2 rounded-md border border-white/6 bg-white/[0.04] px-3 py-2 text-xs">
+                      <span className="truncate font-medium">{s.artist_name}</span>
+                      <span className="truncate text-white/45">{s.venue}, {s.city}</span>
+                      <span className="ml-auto flex-shrink-0 text-white/35">
                         {new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
                       </span>
                     </div>
@@ -376,7 +430,7 @@ export function Dashboard() {
 
       {/* Row 3: Recent Albums */}
       {recentAlbums.length > 0 && (
-        <Card className="bg-card mb-8">
+        <Card className="border-white/10 bg-panel-surface">
           <CardHeader>
             <CardTitle className="text-sm">Recently Added Albums</CardTitle>
           </CardHeader>
@@ -386,9 +440,9 @@ export function Dashboard() {
                 <button
                   key={`${album.artist}-${album.name}-${i}`}
                   onClick={() => navigate(albumPagePath({ albumId: album.id, albumSlug: album.slug }))}
-                  className="flex-shrink-0 w-[140px] group text-left"
+                  className="group w-[148px] flex-shrink-0 text-left"
                 >
-                  <div className="relative w-[140px] h-[140px] rounded-lg overflow-hidden bg-secondary mb-2">
+                  <div className="relative mb-3 h-[148px] w-[148px] overflow-hidden rounded-md border border-white/10 bg-secondary/70 shadow-[0_20px_44px_rgba(0,0,0,0.22)]">
                     <img
                       src={albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name })}
                       alt={album.name}
@@ -399,14 +453,14 @@ export function Dashboard() {
                     <div className="absolute inset-0 bg-secondary flex items-center justify-center -z-10">
                       <Music size={28} className="text-muted-foreground/30" />
                     </div>
-                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
                       <ArrowRight size={20} className="text-white" />
                     </div>
                   </div>
-                  <div className="text-xs font-medium truncate">{album.display_name || album.name}</div>
-                  <div className="text-[11px] text-muted-foreground truncate">{album.artist}</div>
+                  <div className="truncate text-sm font-medium text-white">{album.display_name || album.name}</div>
+                  <div className="truncate text-[11px] text-white/45">{album.artist}</div>
                   {album.year && (
-                    <div className="text-[10px] text-muted-foreground">{album.year}</div>
+                    <div className="mt-1 text-[10px] text-white/35">{album.year}</div>
                   )}
                 </button>
               ))}
@@ -416,8 +470,8 @@ export function Dashboard() {
       )}
 
       {/* Row 4: Format donut + Decade bar (Nivo) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <Card className="bg-card col-span-1">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card className="col-span-1 border-white/10 bg-panel-surface">
           <CardHeader>
             <CardTitle className="text-sm">Formats</CardTitle>
           </CardHeader>
@@ -445,7 +499,7 @@ export function Dashboard() {
             </div>
           </CardContent>
         </Card>
-        <Card className="bg-card col-span-1 md:col-span-2">
+        <Card className="col-span-1 border-white/10 bg-panel-surface md:col-span-2">
           <CardHeader>
             <CardTitle className="text-sm">Albums by Decade</CardTitle>
           </CardHeader>
@@ -479,8 +533,8 @@ export function Dashboard() {
       </div>
 
       {/* Row 5: Top Genres + Library stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-        <Card className="bg-card">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card className="border-white/10 bg-panel-surface">
           <CardHeader>
             <CardTitle className="text-sm">Top Genres</CardTitle>
           </CardHeader>
@@ -513,34 +567,34 @@ export function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card className="bg-card">
+        <Card className="border-white/10 bg-panel-surface">
           <CardHeader>
             <CardTitle className="text-sm">Library Stats</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total Duration</span>
+              <div className="flex justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-2 text-sm">
+                <span className="text-white/45">Total Duration</span>
                 <span className="font-medium">{stats?.total_duration_hours ? `${stats.total_duration_hours}h` : "-"}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Avg Bitrate</span>
+              <div className="flex justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-2 text-sm">
+                <span className="text-white/45">Avg Bitrate</span>
                 <span className="font-medium">{stats?.avg_bitrate ? `${Math.round(stats.avg_bitrate / 1000)}k` : "-"}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Avg Album Duration</span>
+              <div className="flex justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-2 text-sm">
+                <span className="text-white/45">Avg Album Duration</span>
                 <span className="font-medium">{stats?.avg_album_duration_min ? `${stats.avg_album_duration_min} min` : "-"}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Avg Tracks/Album</span>
+              <div className="flex justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-2 text-sm">
+                <span className="text-white/45">Avg Tracks/Album</span>
                 <span className="font-medium">{stats?.avg_tracks_per_album ?? "-"}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Analyzed Tracks</span>
+              <div className="flex justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-2 text-sm">
+                <span className="text-white/45">Analyzed Tracks</span>
                 <span className="font-medium">{formatNumber(stats?.analyzed_tracks ?? 0)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Pending Tasks</span>
+              <div className="flex justify-between rounded-md border border-white/6 bg-white/[0.04] px-3 py-2 text-sm">
+                <span className="text-white/45">Pending Tasks</span>
                 <span className="font-medium">{stats?.pending_tasks ?? 0}</span>
               </div>
               <div className="flex gap-2 mt-2">

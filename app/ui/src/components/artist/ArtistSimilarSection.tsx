@@ -19,7 +19,7 @@ interface ArtistSimilarSectionProps {
 export function ArtistSimilarSection({ artistName, artistId, artists }: ArtistSimilarSectionProps) {
   return (
     <div>
-      <div className="bg-card border border-border rounded-lg p-4 mb-6">
+      <div className="bg-card border border-border rounded-md p-4 mb-6">
         <h4 className="text-sm font-semibold mb-3">Artist Network</h4>
         <ArtistNetworkGraph centerArtist={artistName} centerArtistId={artistId} />
       </div>

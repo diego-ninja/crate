@@ -98,7 +98,7 @@ export function ArtistSetlistSection({
             return (
               <button
                 key={i}
-                className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left group ${!isPlayable ? "opacity-50" : ""}`}
+                className={`w-full flex items-center gap-4 px-4 py-2.5 rounded-md hover:bg-white/5 transition-colors text-left group ${!isPlayable ? "opacity-50" : ""}`}
                 onClick={() => {
                   if (libraryMatch) {
                     navigate(
@@ -126,9 +126,9 @@ export function ArtistSetlistSection({
                 )}
                 <span className="flex-1 text-sm text-white/90 truncate">{song.title}</span>
                 <div className="w-28 flex items-center gap-2">
-                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-white/10 rounded-md overflow-hidden">
                     <div
-                      className="h-full rounded-full"
+                      className="h-full rounded-md"
                       style={{
                         width: `${Math.round(song.frequency * 100)}%`,
                         background: "linear-gradient(90deg, #88c0d0, #81a1c1)",

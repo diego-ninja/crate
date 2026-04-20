@@ -293,7 +293,7 @@ export function Artist() {
       <ArtistTabsNav tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
       {/* ═══ CONTENT ═══ */}
-      <div className="px-4 md:px-8 pt-6 pb-12 max-w-[1100px]">
+      <div className="mx-auto w-full max-w-[1160px] px-4 pb-12 pt-6 md:px-8">
 
         {/* ── Overview Tab ── */}
         {activeTab === "overview" && (

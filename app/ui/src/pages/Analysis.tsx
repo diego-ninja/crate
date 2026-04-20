@@ -39,8 +39,8 @@ function ProgressBar({ done, total, active, label }: { done: number; total: numb
         <span className="text-muted-foreground">{label}</span>
         <span>{done.toLocaleString()} / {total.toLocaleString()} ({pct}%)</span>
       </div>
-      <div className="h-2 bg-muted rounded-full overflow-hidden">
-        <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+      <div className="h-2 bg-muted rounded-md overflow-hidden">
+        <div className="h-full bg-primary rounded-md transition-all duration-500" style={{ width: `${pct}%` }} />
       </div>
       {active > 0 && <p className="text-xs text-primary mt-1">Analyzing {active} track{active > 1 ? "s" : ""}...</p>}
     </div>
@@ -50,7 +50,7 @@ function ProgressBar({ done, total, active, label }: { done: number; total: numb
 function LastTrack({ track, label }: { track: AnalysisStatus["last_analyzed"] | AnalysisStatus["last_bliss"]; label: string }) {
   if (!track?.title) return null;
   return (
-    <div className="rounded-lg border border-border p-4">
+    <div className="rounded-md border border-border p-4">
       <p className="text-xs text-muted-foreground mb-2">{label}</p>
       <p className="font-medium">{track.title}</p>
       <p className="text-sm text-muted-foreground">{track.artist} — {track.album}</p>
@@ -116,7 +116,7 @@ export function Analysis() {
       </p>
 
       <div className="space-y-4">
-        <div className="rounded-lg border border-border p-5 space-y-4">
+        <div className="rounded-md border border-border p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Music className="h-4 w-4 text-primary" />
@@ -135,7 +135,7 @@ export function Analysis() {
           )}
         </div>
 
-        <div className="rounded-lg border border-border p-5 space-y-4">
+        <div className="rounded-md border border-border p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AudioWaveform className="h-4 w-4 text-primary" />

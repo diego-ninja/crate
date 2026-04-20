@@ -57,7 +57,7 @@ export function SimilarTracksPanel({
       onClick={onClose}
     >
       <div
-        className="bg-card border border-border rounded-xl w-[500px] max-h-[600px] shadow-2xl overflow-hidden"
+        className="bg-card border border-border rounded-md w-[500px] max-h-[600px] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -120,9 +120,9 @@ export function SimilarTracksPanel({
               </div>
               {t.score != null && (
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <div className="w-16 h-1.5 bg-primary/10 rounded-full overflow-hidden">
+                  <div className="w-16 h-1.5 bg-primary/10 rounded-md overflow-hidden">
                     <div
-                      className="h-full bg-primary rounded-full"
+                      className="h-full bg-primary rounded-md"
                       style={{ width: `${Math.round(t.score * 100)}%` }}
                     />
                   </div>

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
+import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -274,45 +275,59 @@ export function DownloadPage() {
   const history = queue?.filter((q) => ["completed", "failed"].includes(q.status)) ?? [];
 
   return (
-    <div>
-      <div className="flex items-center gap-3 mb-6">
-        <Download size={24} className="text-primary" />
-        <h1 className="text-2xl font-bold">Acquisition</h1>
-        {tidalStatus && (
-          <div className={`w-2 h-2 rounded-full ${tidalStatus.authenticated ? "bg-green-500" : "bg-red-500"}`} title={tidalStatus.authenticated ? "Connected" : "Not authenticated"} />
-        )}
-        {activeQueue.length > 0 && (
-          <Badge variant="outline" className="text-blue-500 border-blue-500/30">
-            {activeQueue.length} in queue
-          </Badge>
-        )}
-      </div>
+    <div className="space-y-6">
+      <section className="rounded-md border border-white/10 bg-panel-surface/95 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-md border border-cyan-400/20 bg-cyan-400/12 text-primary shadow-[0_18px_40px_rgba(6,182,212,0.14)]">
+                <Download size={22} />
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-white">Acquisition</h1>
+                <p className="text-sm text-white/55">
+                  Intake for Tidal, Soulseek and uploads into the shared Crate library.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <CrateChip className={tidalStatus?.authenticated ? "border-green-500/25 bg-green-500/10 text-green-300" : "border-red-500/25 bg-red-500/10 text-red-300"}>
+                Tidal {tidalStatus?.authenticated ? "connected" : "disconnected"}
+              </CrateChip>
+              <CrateChip className={activeQueue.length > 0 ? "border-blue-500/25 bg-blue-500/10 text-blue-300" : ""}>
+                {activeQueue.length} active
+              </CrateChip>
+              <CrateChip>{wishlist.length} wishlist</CrateChip>
+              <CrateChip>{slskDownloads.length} Soulseek downloads</CrateChip>
+            </div>
+          </div>
 
-      {/* Search */}
-      <div className="flex gap-3 mb-6">
-        <div className="relative flex-1 max-w-lg">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && doSearch()}
-            placeholder="Search Tidal + Soulseek..."
-            className="pl-9"
-          />
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-white/8 bg-white/[0.03] p-3 xl:min-w-[520px]">
+            <div className="relative min-w-[240px] flex-1">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && doSearch()}
+                placeholder="Search Tidal + Soulseek..."
+                className="h-10 rounded-md border-white/10 bg-white/[0.04] pl-9"
+              />
+            </div>
+            <Select value={quality} onValueChange={setQuality}>
+              <SelectTrigger className="w-36 rounded-md border-white/10 bg-white/[0.04]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="max">Max (HiRes)</SelectItem>
+                <SelectItem value="high">High (FLAC)</SelectItem>
+                <SelectItem value="normal">Normal</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={() => doSearch()} disabled={searching || query.trim().length < 2}>
+              {searching ? <Loader2 size={14} className="animate-spin mr-1" /> : <Search size={14} className="mr-1" />}
+              Search
+            </Button>
+          </div>
         </div>
-        <Select value={quality} onValueChange={setQuality}>
-          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="max">Max (HiRes)</SelectItem>
-            <SelectItem value="high">High (FLAC)</SelectItem>
-            <SelectItem value="normal">Normal</SelectItem>
-          </SelectContent>
-        </Select>
-        <Button onClick={() => doSearch()} disabled={searching || query.trim().length < 2}>
-          {searching ? <Loader2 size={14} className="animate-spin mr-1" /> : <Search size={14} className="mr-1" />}
-          Search
-        </Button>
-      </div>
+      </section>
 
       <Tabs defaultValue="search">
         <TabsList>
@@ -326,20 +341,16 @@ export function DownloadPage() {
         {/* Search Results */}
         <TabsContent value="search">
           {/* Source sub-tabs */}
-          <div className="flex gap-2 mt-4 mb-4 border-b border-border pb-2">
-            <button
-              className={`px-3 py-1.5 text-sm rounded-t-lg transition-colors ${resultTab === "tidal" ? "text-primary border-b-2 border-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
-              onClick={() => setResultTab("tidal")}
-            >
-              Tidal {results && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{(results.albums?.length || 0) + (results.tracks?.length || 0)}</Badge>}
-            </button>
-            <button
-              className={`px-3 py-1.5 text-sm rounded-t-lg transition-colors ${resultTab === "soulseek" ? "text-primary border-b-2 border-primary font-medium" : "text-muted-foreground hover:text-foreground"}`}
-              onClick={() => setResultTab("soulseek")}
-            >
-              Soulseek {soulseekResults && <Badge variant="secondary" className="ml-1 text-[10px] px-1">{soulseekResults.length}</Badge>}
-              {searchingSlsk && <Loader2 size={12} className="animate-spin ml-1 inline" />}
-            </button>
+          <div className="mt-4 mb-4 flex flex-wrap gap-2 border-b border-white/8 pb-3">
+            <CratePill active={resultTab === "tidal"} onClick={() => setResultTab("tidal")}>
+              Tidal
+              {results && <span className="ml-1 text-white/40">{(results.albums?.length || 0) + (results.tracks?.length || 0)}</span>}
+            </CratePill>
+            <CratePill active={resultTab === "soulseek"} onClick={() => setResultTab("soulseek")}>
+              Soulseek
+              {soulseekResults && <span className="ml-1 text-white/40">{soulseekResults.length}</span>}
+              {searchingSlsk && <Loader2 size={12} className="ml-1 animate-spin" />}
+            </CratePill>
           </div>
 
           {/* Tidal results */}
@@ -353,8 +364,8 @@ export function DownloadPage() {
                   </h2>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {results.artists!.map((artist) => (
-                      <div key={artist.id} className="bg-card border border-border rounded-lg p-4 text-center">
-                        <div className="w-full aspect-square rounded-lg mb-3 overflow-hidden bg-secondary mx-auto">
+                      <div key={artist.id} className="bg-card border border-border rounded-md p-4 text-center">
+                        <div className="w-full aspect-square rounded-md mb-3 overflow-hidden bg-secondary mx-auto">
                           {artist.picture ? (
                             <img src={artist.picture} alt={artist.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                           ) : (
@@ -386,7 +397,7 @@ export function DownloadPage() {
                   </h2>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {results.albums!.map((album) => (
-                      <div key={album.id} className="bg-card border border-border rounded-lg overflow-hidden hover:border-primary transition-colors group">
+                      <div key={album.id} className="bg-card border border-border rounded-md overflow-hidden hover:border-primary transition-colors group">
                         <div className="w-full aspect-square bg-secondary relative">
                           {album.cover ? (
                             <img src={album.cover} alt={album.title} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -397,10 +408,10 @@ export function DownloadPage() {
                           )}
                           {/* Hover overlay with actions */}
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
-                            <Button size="icon" className="h-9 w-9 rounded-full bg-foreground text-background" onClick={() => startDownload(album.url, `${album.artist} - ${album.title}`)}>
+                            <Button size="icon" className="h-9 w-9 rounded-md bg-foreground text-background" onClick={() => startDownload(album.url, `${album.artist} - ${album.title}`)}>
                               {activeDownloads.has(album.url) ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                             </Button>
-                            <Button size="icon" variant="ghost" className="h-9 w-9 rounded-full text-white hover:text-pink-400" onClick={() => addToWishlist({ url: album.url, tidal_id: album.id, title: album.title, artist: album.artist, cover_url: album.cover })}>
+                            <Button size="icon" variant="ghost" className="h-9 w-9 rounded-md text-white hover:text-pink-400" onClick={() => addToWishlist({ url: album.url, tidal_id: album.id, title: album.title, artist: album.artist, cover_url: album.cover })}>
                               <Heart size={16} />
                             </Button>
                           </div>
@@ -428,7 +439,7 @@ export function DownloadPage() {
                   </h2>
                   <div className="space-y-1">
                     {results.tracks!.map((track) => (
-                      <div key={track.id} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-secondary/30 transition-colors group">
+                      <div key={track.id} className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-secondary/30 transition-colors group">
                         <div className="flex-1 min-w-0">
                           <div className="text-sm truncate">{track.title}</div>
                           <div className="text-xs text-muted-foreground truncate">{track.artist} — {track.album}</div>
@@ -460,7 +471,7 @@ export function DownloadPage() {
               {soulseekResults && soulseekResults.length > 0 ? (
                 <div className="space-y-2">
                   {soulseekResults.map((r, i) => (
-                    <div key={i} className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+                    <div key={i} className="flex items-center gap-3 p-3 bg-card border border-border rounded-md">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium truncate">{r.artist} — {r.album}</div>
                         <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
@@ -492,13 +503,13 @@ export function DownloadPage() {
 
         <TabsContent value="upload">
           <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="rounded-xl border border-border bg-card p-5">
+            <div className="rounded-md border border-border bg-card p-5">
               <h2 className="text-base font-semibold mb-2">Upload music into the library</h2>
               <p className="text-sm text-muted-foreground mb-4">
                 Upload individual tracks or zipped albums. Crate will import them into the global library and run the same enrichment pipeline as any other source.
               </p>
-              <label className="flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border bg-secondary/20 px-6 py-8 text-center hover:border-primary/40 transition-colors">
-                <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
+              <label className="flex min-h-52 cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-border bg-secondary/20 px-6 py-8 text-center hover:border-primary/40 transition-colors">
+                <div className="w-12 h-12 rounded-md bg-primary/10 text-primary flex items-center justify-center mb-4">
                   <Upload size={22} />
                 </div>
                 <div className="text-sm font-medium">Choose files or drop them here</div>
@@ -514,11 +525,11 @@ export function DownloadPage() {
                 />
               </label>
               {uploadFiles.length > 0 && (
-                <div className="mt-4 rounded-xl border border-border bg-secondary/10 p-4">
+                <div className="mt-4 rounded-md border border-border bg-secondary/10 p-4">
                   <div className="text-sm font-medium mb-2">{uploadFiles.length} file{uploadFiles.length === 1 ? "" : "s"} ready</div>
                   <div className="max-h-56 overflow-y-auto space-y-1">
                     {uploadFiles.map((file) => (
-                      <div key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-2 text-sm text-muted-foreground px-2 py-1.5 rounded-lg hover:bg-secondary/30">
+                      <div key={`${file.name}-${file.size}-${file.lastModified}`} className="flex items-center gap-2 text-sm text-muted-foreground px-2 py-1.5 rounded-md hover:bg-secondary/30">
                         {file.name.toLowerCase().endsWith(".zip") ? <Disc3 size={14} className="text-primary" /> : <Music size={14} className="text-primary" />}
                         <span className="truncate flex-1">{file.name}</span>
                         <span className="text-[11px]">{Math.round(file.size / 1024 / 1024 * 10) / 10} MB</span>
@@ -529,7 +540,7 @@ export function DownloadPage() {
               )}
             </div>
 
-            <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+            <div className="rounded-md border border-border bg-card p-5 space-y-4">
               <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Import behavior</h3>
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li>Imports land in the shared library.</li>
@@ -541,7 +552,7 @@ export function DownloadPage() {
                 Import to library
               </Button>
               {uploadTaskId && (
-                <div className="rounded-lg border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-300">
+                <div className="rounded-md border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-300">
                   Upload queued as task <span className="font-mono">{uploadTaskId}</span>
                 </div>
               )}
@@ -578,7 +589,7 @@ export function DownloadPage() {
                   <QueueRow key={item.id} item={item} onRemove={removeQueueItem} />
                 ))}
                 {slskDownloads.map((d, i) => (
-                  <div key={`slsk-${i}`} className="flex items-center gap-3 p-3 bg-card border border-border rounded-lg">
+                  <div key={`slsk-${i}`} className="flex items-center gap-3 p-3 bg-card border border-border rounded-md">
                     <div className="w-10 h-10 rounded bg-secondary flex items-center justify-center flex-shrink-0">
                       <Music size={16} className="text-muted-foreground" />
                     </div>
@@ -591,8 +602,8 @@ export function DownloadPage() {
                         <span>{d.status}</span>
                       </div>
                       {d.progress > 0 && d.progress < 100 && (
-                        <div className="h-1 bg-secondary rounded-full mt-1 overflow-hidden">
-                          <div className="h-full bg-purple-500 rounded-full transition-all" style={{ width: `${d.progress}%` }} />
+                        <div className="h-1 bg-secondary rounded-md mt-1 overflow-hidden">
+                          <div className="h-full bg-purple-500 rounded-md transition-all" style={{ width: `${d.progress}%` }} />
                         </div>
                       )}
                     </div>
@@ -673,16 +684,18 @@ function QueueRow({ item, onRemove, onPromote }: {
   const isSpinning = item.status === "downloading" || item.status === "processing";
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border">
+    <div className="flex items-center gap-3 rounded-md border border-white/10 bg-panel-surface px-4 py-3 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
       <Icon size={16} className={`${color} ${isSpinning ? "animate-spin" : ""} flex-shrink-0`} />
-      {item.cover_url && <img src={item.cover_url} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" />}
+      {item.cover_url && <img src={item.cover_url} alt="" className="h-11 w-11 flex-shrink-0 rounded-md object-cover shadow-[0_12px_26px_rgba(0,0,0,0.18)]" />}
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate">{item.title}</div>
         <div className="text-xs text-muted-foreground truncate">
           {item.artist && `${item.artist} · `}{item.source} · {item.quality}
         </div>
       </div>
-      <Badge variant="outline" className={`text-[10px] ${color}`}>{item.status}</Badge>
+      <CrateChip className={item.status === "completed" ? "border-green-500/25 bg-green-500/10 text-green-300" : item.status === "failed" ? "border-red-500/25 bg-red-500/10 text-red-300" : item.status === "wishlist" ? "border-pink-500/25 bg-pink-500/10 text-pink-300" : ""}>
+        {item.status}
+      </CrateChip>
       {onPromote && item.status === "wishlist" && (
         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onPromote(item.id)} title="Download now">
           <ArrowUp size={14} />

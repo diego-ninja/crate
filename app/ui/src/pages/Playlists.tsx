@@ -4,6 +4,8 @@ import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import {
@@ -220,6 +222,7 @@ export function Playlists() {
               Global playlists for `listen`: static, smart, and curated.
             </p>
           </div>
+          <CratePill active>{filteredPlaylists.length} visible</CratePill>
         </div>
         <div className="flex gap-2">
           <Button
@@ -295,10 +298,10 @@ export function Playlists() {
           {filteredPlaylists.map((playlist) => (
             <Card key={playlist.id} className="overflow-hidden bg-card">
               <div
-                className="flex cursor-pointer items-center gap-4 px-4 py-3 transition-colors hover:bg-secondary/30"
+                className="flex cursor-pointer items-center gap-4 px-4 py-4 transition-colors hover:bg-white/[0.03]"
                 onClick={() => void loadPlaylist(playlist.id)}
               >
-                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.03]">
                   {playlist.generation_mode === "smart" ? (
                     <Sparkles size={18} className="text-primary" />
                   ) : (
@@ -309,23 +312,15 @@ export function Playlists() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="truncate text-sm font-semibold">{playlist.name}</div>
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                      system
-                    </Badge>
+                    <CrateChip>system</CrateChip>
                     {playlist.is_curated && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        curated
-                      </Badge>
+                      <CrateChip>curated</CrateChip>
                     )}
                     {playlist.generation_mode === "smart" && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                        smart
-                      </Badge>
+                      <CrateChip active>smart</CrateChip>
                     )}
                     {!playlist.is_active && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                        inactive
-                      </Badge>
+                      <CrateChip>inactive</CrateChip>
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground">
@@ -336,28 +331,27 @@ export function Playlists() {
                 </div>
 
                 <div className="flex flex-shrink-0 items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground"
+                  <ActionIconButton
+                    variant="row"
+                    className="h-8 w-8"
                     onClick={(e) => {
                       e.stopPropagation();
                       void toggleActive(playlist);
                     }}
                   >
                     {playlist.is_active ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  </ActionIconButton>
+                  <ActionIconButton
+                    variant="row"
+                    tone="danger"
+                    className="h-8 w-8"
                     onClick={(e) => {
                       e.stopPropagation();
                       setDeleteTarget(playlist);
                     }}
                   >
                     <Trash2 size={14} />
-                  </Button>
+                  </ActionIconButton>
                   {expanded === playlist.id ? (
                     <ChevronUp size={14} className="text-muted-foreground" />
                   ) : (
@@ -393,7 +387,7 @@ export function Playlists() {
                         {(expandedData.tracks ?? []).map((track) => (
                           <div
                             key={track.id}
-                            className="flex items-center gap-3 px-4 py-2 transition-colors hover:bg-secondary/20"
+                            className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-white/[0.03]"
                           >
                             <span className="w-6 text-right text-xs text-muted-foreground">
                               {track.position}
@@ -848,7 +842,7 @@ function SmartSystemPlaylistForm({
         </div>
 
         {rules.map((rule, index) => (
-          <div key={index} className="space-y-2 rounded-lg border border-border p-3">
+          <div key={index} className="space-y-2 rounded-md border border-border p-3">
             <div className="flex items-center gap-2">
               <Select value={rule.field} onValueChange={(value) => updateField(index, value)}>
                 <SelectTrigger className="w-36">

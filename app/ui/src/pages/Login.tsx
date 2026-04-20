@@ -1,8 +1,7 @@
-import { useState, useEffect, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Navigate, useSearchParams } from "react-router";
-import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+
+import { OAuthButtons } from "@/components/auth/OAuthButtons";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, ApiError } from "@/lib/api";
 
@@ -14,18 +13,18 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [authConfig, setAuthConfig] = useState<Record<string, { enabled: boolean; configured: boolean; login_url: string | null }>>({});
+  const [authConfig, setAuthConfig] = useState<{ invite_only?: boolean }>({});
 
   useEffect(() => {
-    api<Record<string, { enabled: boolean; configured: boolean; login_url: string | null }>>("/api/auth/providers")
+    api<{ invite_only?: boolean }>("/api/auth/config")
       .then(setAuthConfig)
       .catch(() => {});
   }, []);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      <div className="flex min-h-screen items-center justify-center bg-app-surface px-4">
+        <div className="h-6 w-6 animate-spin rounded-md border-2 border-cyan-400 border-t-transparent" />
       </div>
     );
   }
@@ -42,6 +41,7 @@ export function Login() {
     e.preventDefault();
     setError("");
     setSubmitting(true);
+
     try {
       await api("/api/auth/login", "POST", { email, password });
       if (redirectTo) {
@@ -51,91 +51,80 @@ export function Login() {
       await refetch();
     } catch (err) {
       if (err instanceof ApiError) {
-        setError(err.message || "Invalid credentials");
+        try {
+          const parsed = JSON.parse(err.message);
+          setError(parsed.detail || "Invalid credentials");
+        } catch {
+          setError(err.message || "Invalid credentials");
+        }
       } else {
-        setError("Something went wrong");
+        setError("Connection error");
       }
     } finally {
       setSubmitting(false);
     }
   }
 
-  const oauthProviders = Object.entries(authConfig).filter(
-    ([key, item]) => key !== "password" && item.enabled && item.configured && item.login_url,
-  );
-  const hasOAuth = oauthProviders.length > 0;
-
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-8">
-          <img src="/assets/logo.svg" alt="Crate" className="w-20 mb-2" />
-          <h1 className="text-2xl font-bold text-foreground">Crate</h1>
-          <p className="text-sm text-muted-foreground -mt-0.5">Own your music</p>
+    <div className="flex min-h-screen items-center justify-center bg-app-surface px-4">
+      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-5">
+        <div className="flex flex-col items-center pb-4">
+          <img src="/assets/logo.svg" alt="Crate" className="mb-2 h-16 w-16" />
+          <h1 className="text-2xl font-bold text-white">Crate</h1>
+          <p className="-mt-0.5 text-sm text-white/40">Own your music</p>
         </div>
-        <div className="bg-card border border-border rounded-lg p-8 shadow-xl">
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Input
-                type="email"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                autoFocus
-                autoComplete="email"
-              />
-            </div>
-            <div>
-              <Input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-              />
-            </div>
+        {authConfig.invite_only ? (
+          <div className="rounded-md border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm text-cyan-100">
+            New accounts are invite-only right now. If you already have access, sign in below or use your social provider.
+          </div>
+        ) : null}
 
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+        {error ? (
+          <p className="text-center text-sm text-red-400">{error}</p>
+        ) : null}
 
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
-            </Button>
-          </form>
-
-          {hasOAuth && (
-            <>
-              <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-border" />
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="bg-card px-2 text-muted-foreground">or</span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {oauthProviders.map(([provider, item]) => (
-                  <Button
-                    key={provider}
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      window.location.href = `${item.login_url}${item.login_url?.includes("?") ? "&" : "?"}return_to=${encodeURIComponent(redirectTo || window.location.origin + "/")}`;
-                    }}
-                  >
-                    Sign in with {provider.charAt(0).toUpperCase() + provider.slice(1)}
-                  </Button>
-                ))}
-              </div>
-            </>
-          )}
+        <div>
+          <label htmlFor="email" className="mb-1 block text-sm text-white/60">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoFocus
+            autoComplete="email"
+            className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white focus:border-cyan-400/50 focus:outline-none"
+          />
         </div>
-      </div>
+
+        <div>
+          <label htmlFor="password" className="mb-1 block text-sm text-white/60">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+            className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white focus:border-cyan-400/50 focus:outline-none"
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={submitting}
+          className="h-10 w-full rounded-md bg-cyan-400 text-sm font-medium text-black transition-colors hover:bg-cyan-300 disabled:opacity-50"
+        >
+          {submitting ? "Signing in..." : "Sign in"}
+        </button>
+
+        <OAuthButtons returnTo={redirectTo} />
+      </form>
     </div>
   );
 }

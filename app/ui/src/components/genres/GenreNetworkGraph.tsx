@@ -151,7 +151,7 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
 
   if (loading) {
     return (
-      <div className="flex h-[520px] items-center justify-center rounded-2xl border border-border bg-card text-sm text-muted-foreground">
+      <div className="flex h-[520px] items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground">
         Loading genre graph...
       </div>
     );
@@ -159,7 +159,7 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
 
   if (!data?.nodes?.length) {
     return (
-      <div className="flex h-[520px] items-center justify-center rounded-2xl border border-border bg-card text-sm text-muted-foreground">
+      <div className="flex h-[520px] items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground">
         No genre graph available.
       </div>
     );
@@ -168,7 +168,7 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
   const graphWidth = width || 900;
 
   return (
-    <div className="rounded-2xl border border-border bg-card/70 p-4">
+    <div className="rounded-md border border-border bg-card/70 p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium text-foreground">Genre map</div>
@@ -182,7 +182,7 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
           ).map(([relationType, style]) => (
             <span
               key={relationType}
-              className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1"
+              className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1"
               style={{ borderColor: ACCENT_SOFT, backgroundColor: ACCENT_FAINT, color: TEXT_MUTED }}
             >
               <span
@@ -193,17 +193,17 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
             </span>
           ))}
           <span
-            className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1"
+            className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1"
             style={{ borderColor: ACCENT_SOFT, backgroundColor: ACCENT_FAINT, color: TEXT_MUTED }}
           >
             <span className="block h-3 w-3 border" style={{ borderColor: ACCENT, backgroundColor: ACCENT_SOFT }} />
             main genre
           </span>
           <span
-            className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1"
+            className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1"
             style={{ borderColor: ACCENT_SOFT, backgroundColor: ACCENT_FAINT, color: TEXT_MUTED }}
           >
-            <span className="block h-3 w-3 rounded-full border" style={{ borderColor: ACCENT, backgroundColor: PANEL_SOFT }} />
+            <span className="block h-3 w-3 rounded-md border" style={{ borderColor: ACCENT, backgroundColor: PANEL_SOFT }} />
             scene / subgenre
           </span>
         </div>

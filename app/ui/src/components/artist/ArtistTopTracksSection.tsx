@@ -56,7 +56,7 @@ export function ArtistTopTracksSection({
               trackTitle={track.title}
               albumCover={coverUrl}
             >
-              <div className="w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors group text-left">
+              <div className="w-full flex items-center gap-4 px-4 py-2 text-left transition-colors group hover:bg-white/5">
                 <span className="w-8 text-right text-sm text-white/30">{index + 1}</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium truncate text-white/90">
@@ -79,7 +79,7 @@ export function ArtistTopTracksSection({
           .map((spotifyTrack, index) => (
             <div
               key={`sp-${index}`}
-              className="w-full flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-white/5 transition-colors text-left opacity-60"
+              className="w-full flex items-center gap-4 px-4 py-2 text-left opacity-60 transition-colors hover:bg-white/5"
             >
               <span className="w-8 text-right text-sm text-white/30">{topTracks.length + index + 1}</span>
               <div className="flex-1 min-w-0">

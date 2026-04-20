@@ -33,8 +33,8 @@ export function TidalAlbumCard({ artist: _artist, artistId, title, year, tracks,
   }
 
   return (
-    <div className="border border-dashed border-primary/20 rounded-lg p-3 text-center group">
-      <div className="w-full aspect-square rounded-lg overflow-hidden mb-2 relative bg-secondary">
+    <div className="border border-dashed border-primary/20 rounded-md p-3 text-center group">
+      <div className="w-full aspect-square rounded-md overflow-hidden mb-2 relative bg-secondary">
         {cover ? (
           <img
             src={cover}
@@ -52,13 +52,13 @@ export function TidalAlbumCard({ artist: _artist, artistId, title, year, tracks,
           {status === "idle" && (
             <button
               onClick={handleDownload}
-              className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-black/40 hover:bg-primary/80 transition-colors hover:scale-110"
+              className="w-11 h-11 rounded-md bg-primary flex items-center justify-center shadow-lg shadow-black/40 hover:bg-primary/80 transition-colors hover:scale-110"
             >
               <Download size={20} className="text-white" />
             </button>
           )}
           {status === "downloading" && (
-            <div className="w-11 h-11 rounded-full bg-primary/50 flex items-center justify-center">
+            <div className="w-11 h-11 rounded-md bg-primary/50 flex items-center justify-center">
               <Loader2 size={20} className="text-white animate-spin" />
             </div>
           )}

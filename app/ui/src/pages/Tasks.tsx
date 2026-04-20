@@ -454,23 +454,23 @@ export function Tasks() {
       {/* Stats row */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <div className="bg-card border border-border rounded-lg p-3">
+          <div className="bg-card border border-border rounded-md p-3">
             <div className="text-lg font-bold">{stats.todayTotal}</div>
             <div className="text-[11px] text-muted-foreground">Today</div>
           </div>
-          <div className="bg-card border border-border rounded-lg p-3">
+          <div className="bg-card border border-border rounded-md p-3">
             <div className="text-lg font-bold text-green-500">{stats.todayCompleted}</div>
             <div className="text-[11px] text-muted-foreground">Completed</div>
           </div>
-          <div className="bg-card border border-border rounded-lg p-3">
+          <div className="bg-card border border-border rounded-md p-3">
             <div className="text-lg font-bold text-red-500">{stats.todayFailed}</div>
             <div className="text-[11px] text-muted-foreground">Failed</div>
           </div>
-          <div className="bg-card border border-border rounded-lg p-3">
+          <div className="bg-card border border-border rounded-md p-3">
             <div className="text-lg font-bold">{stats.successRate}%</div>
             <div className="text-[11px] text-muted-foreground">Success Rate</div>
           </div>
-          <div className="bg-card border border-border rounded-lg p-3">
+          <div className="bg-card border border-border rounded-md p-3">
             <div className="text-lg font-bold">{stats.avgDuration}s</div>
             <div className="text-[11px] text-muted-foreground">Avg Duration</div>
           </div>
@@ -495,7 +495,7 @@ export function Tasks() {
               const Icon = cfg.icon;
               const isExpanded = expandedId === task.id;
               return (
-                <div key={task.id} className={`border rounded-lg overflow-hidden ${cfg.bg}`}>
+                <div key={task.id} className={`border rounded-md overflow-hidden ${cfg.bg}`}>
                   <div className="p-4 space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -609,7 +609,7 @@ function TaskRow({ task, expanded, onToggle, onRetry }: {
   const summary = describeResult(task);
 
   return (
-    <div className={`border border-border rounded-lg overflow-hidden ${cfg.bg}`}>
+    <div className={`border border-border rounded-md overflow-hidden ${cfg.bg}`}>
       <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-secondary/20 transition-colors" onClick={onToggle}>
         <Icon size={14} className={cfg.color} />
         <div className="flex-1 min-w-0">
@@ -817,7 +817,7 @@ function WorkerStatus({ running, pending }: { running: number; pending: number }
 
         {/* Logs */}
         {showLogs && (
-          <div className="bg-[#060608] rounded-lg p-3 max-h-[250px] overflow-auto mt-3">
+          <div className="bg-[#060608] rounded-md p-3 max-h-[250px] overflow-auto mt-3">
             {logsLoading ? (
               <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Loading...</div>
             ) : (

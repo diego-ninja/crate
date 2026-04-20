@@ -2,6 +2,7 @@ import { Link } from "react-router";
 
 import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { Button } from "@/components/ui/button";
+import { CratePill } from "@/components/ui/CrateBadge";
 import { artistBackgroundApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
 import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
 import {
@@ -105,8 +106,7 @@ export function ArtistHeroSection({
 
   return (
     <div
-      className="relative h-[420px] md:h-[560px] overflow-hidden -mx-4 md:-mx-8 group/hero"
-      style={{ width: "calc(100vw - var(--sidebar-w, 0px))" }}
+      className="relative h-[420px] overflow-hidden -mx-4 md:-mx-8 md:h-[560px] group/hero"
     >
       <img
         key={bgCacheBust || "bg"}
@@ -135,16 +135,19 @@ export function ArtistHeroSection({
         }}
       />
 
-      <ImageCropUpload
-        endpoint={artistId != null ? `/api/artwork/artists/${artistId}/upload-background` : ""}
-        aspect={21 / 9}
-        onUploaded={onBackgroundUploaded}
-        className="absolute top-16 right-4 z-30 p-2 rounded-lg bg-black/50 text-white/60 hover:text-white hover:bg-black/70 opacity-0 group-hover/hero:opacity-100 transition-opacity cursor-pointer"
-      />
+      {isAdmin ? (
+        <ImageCropUpload
+          endpoint={artistId != null ? `/api/artwork/artists/${artistId}/upload-background` : ""}
+          aspect={21 / 9}
+          onUploaded={onBackgroundUploaded}
+          label="Edit hero"
+          className="absolute bottom-6 right-4 z-30 inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-black/65 px-3 py-2 text-xs font-medium text-white/85 shadow-lg shadow-black/30 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white md:bottom-8 md:right-8"
+        />
+      ) : null}
 
       <div className="absolute inset-0 flex items-end">
-        <div className="flex items-end gap-4 md:gap-6 w-full max-w-[1100px] px-4 md:px-8 pb-6 md:pb-8">
-          <div className="relative group/photo w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-xl overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
+        <div className="mx-auto flex w-full max-w-[1160px] items-end gap-4 px-4 pb-6 md:gap-6 md:px-8 md:pb-8">
+          <div className="relative group/photo w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-md overflow-hidden flex-shrink-0 ring-2 ring-white/10 shadow-2xl shadow-black/50">
             {!photoError ? (
               <img
                 key={photoCacheBust || "photo"}
@@ -160,12 +163,14 @@ export function ArtistHeroSection({
                 <span className="text-5xl font-black text-white/40">{letter}</span>
               </div>
             )}
-            <ImageCropUpload
-              endpoint={artistId != null ? `/api/artwork/artists/${artistId}/upload-photo` : ""}
-              aspect={1}
-              onUploaded={onPhotoUploaded}
-              className="absolute bottom-1 right-1 p-1.5 rounded-md bg-black/60 text-white/70 hover:text-white hover:bg-black/80 opacity-0 group-hover/photo:opacity-100 transition-opacity"
-            />
+            {isAdmin ? (
+              <ImageCropUpload
+                endpoint={artistId != null ? `/api/artwork/artists/${artistId}/upload-photo` : ""}
+                aspect={1}
+                onUploaded={onPhotoUploaded}
+                className="absolute bottom-2 right-2 z-20 inline-flex items-center gap-1 rounded-md border border-white/15 bg-black/60 px-2 py-1.5 text-xs font-medium text-white/75 opacity-0 shadow-lg shadow-black/30 transition-all duration-200 group-hover/photo:translate-y-0 group-hover/photo:opacity-100 hover:bg-black/80 hover:text-white"
+              />
+            ) : null}
           </div>
 
           <div className="flex-1 min-w-0 pb-1">
@@ -207,7 +212,7 @@ export function ArtistHeroSection({
                 href={upcomingShow.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/20 text-orange-300 hover:bg-orange-500/20 transition-colors text-xs mb-2"
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-orange-500/10 border border-orange-500/20 text-orange-300 hover:bg-orange-500/20 transition-colors text-xs mb-2"
               >
                 <Calendar size={13} />
                 <span className="font-medium">
@@ -223,9 +228,9 @@ export function ArtistHeroSection({
             {popularityScore > 0 && (
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs text-white/40">Popularity</span>
-                <div className="w-[60px] h-1.5 bg-white/10 rounded-full overflow-hidden">
+                <div className="w-[60px] h-1.5 bg-white/10 rounded-md overflow-hidden">
                   <div
-                    className="h-full rounded-full"
+                    className="h-full rounded-md"
                     style={{ width: `${popularityScore}%`, background: "linear-gradient(90deg, #06b6d433, #06b6d4)" }}
                   />
                 </div>
@@ -236,9 +241,9 @@ export function ArtistHeroSection({
             {tags.length > 0 && (
               <div className="hidden md:flex gap-1.5 flex-wrap mb-3">
                 {tags.slice(0, 8).map((tag) => (
-                  <span key={tag} className="text-[11px] px-2 py-0.5 rounded-full bg-white/8 text-white/60 border border-white/10">
+                  <CratePill key={tag} className="text-[11px]">
                     {tag.toLowerCase()}
-                  </span>
+                  </CratePill>
                 ))}
               </div>
             )}
@@ -246,8 +251,7 @@ export function ArtistHeroSection({
             <div className="flex gap-2 flex-wrap">
               <Button
                 size="sm"
-                variant="outline"
-                className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                variant="default"
                 disabled={enriching}
                 onClick={onEnrich}
               >
@@ -256,7 +260,6 @@ export function ArtistHeroSection({
               <Button
                 size="sm"
                 variant="outline"
-                className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
                 onClick={onAnalyze}
               >
                 <AudioWaveform size={14} className="mr-1" /> Analyze
@@ -265,7 +268,7 @@ export function ArtistHeroSection({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-amber-500/30 text-amber-400 hover:text-amber-300 hover:bg-amber-500/10"
+                  className="text-amber-400 hover:bg-amber-500/10"
                   onClick={onRepair}
                 >
                   <Wrench size={14} className="mr-1" /> Repair ({issueCount})
@@ -275,7 +278,7 @@ export function ArtistHeroSection({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-cyan-500/30 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                  className="text-cyan-400 hover:bg-cyan-500/10"
                   disabled={migrating}
                   onClick={onMigrateV2}
                 >
@@ -289,7 +292,7 @@ export function ArtistHeroSection({
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-red-500/30 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                  className="text-red-400 hover:bg-red-500/10"
                   onClick={onDelete}
                 >
                   <Trash2 size={14} className="mr-1" /> Delete

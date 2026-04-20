@@ -47,10 +47,10 @@ function UserAvatar({ user, size = "sm" }: { user: { name?: string; email?: stri
   const textSize = size === "md" ? "text-sm" : "text-xs";
   const initial = (user.name || user.email || "?").charAt(0).toUpperCase();
   if (user.avatar) {
-    return <img src={user.avatar} alt="" className={`${dim} rounded-full object-cover shrink-0`} />;
+    return <img src={user.avatar} alt="" className={`${dim} rounded-md object-cover shrink-0`} />;
   }
   return (
-    <div className={`${dim} rounded-full bg-muted flex items-center justify-center shrink-0 ${textSize} font-medium text-muted-foreground`}>
+    <div className={`${dim} rounded-md bg-muted flex items-center justify-center shrink-0 ${textSize} font-medium text-muted-foreground`}>
       {initial}
     </div>
   );
@@ -125,7 +125,7 @@ export function Users() {
         </Button>
       </div>
 
-      <div className="border border-border rounded-lg overflow-hidden">
+      <div className="border border-border rounded-md overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -319,7 +319,7 @@ function UserDetailDialog({
         ) : detail ? (
           <div className="space-y-5">
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-lg border border-border p-4">
+              <div className="rounded-md border border-border p-4">
                 <div className="flex items-center gap-3">
                   <UserAvatar user={detail} size="md" />
                   <div className="min-w-0">
@@ -344,7 +344,7 @@ function UserDetailDialog({
                 </div>
               </div>
 
-              <div className="rounded-lg border border-border p-4">
+              <div className="rounded-md border border-border p-4">
                 <div className="text-sm font-semibold">Connected providers</div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {(detail.connected_accounts || []).length > 0 ? (
@@ -375,7 +375,7 @@ function UserDetailDialog({
               </div>
             </div>
 
-            <div className="rounded-lg border border-border overflow-hidden">
+            <div className="rounded-md border border-border overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>

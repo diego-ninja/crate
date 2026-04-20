@@ -92,7 +92,7 @@ export function CommandPalette() {
     >
       <div className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
         <Command
-          className="bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+          className="bg-card border border-border rounded-md shadow-2xl overflow-hidden"
           shouldFilter={false}
         >
           <div className="flex items-center border-b border-border px-3">

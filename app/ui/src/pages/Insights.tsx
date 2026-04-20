@@ -52,8 +52,8 @@ function ProgressStat({ label, value, total }: { label: string; value: number; t
         <span className="text-muted-foreground">{label}</span>
         <span>{formatNumber(value)} / {formatNumber(total)} ({pct}%)</span>
       </div>
-      <div className="h-2 bg-secondary rounded-full overflow-hidden">
-        <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+      <div className="h-2 bg-secondary rounded-md overflow-hidden">
+        <div className="h-full bg-primary rounded-md transition-all duration-500" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );

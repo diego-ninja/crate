@@ -116,7 +116,7 @@ export function MissingAlbums() {
               className="bg-input border-border pl-9"
             />
             {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-xl overflow-hidden">
+              <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-md shadow-xl overflow-hidden">
                 {suggestions.map((s) => (
                   <button
                     key={s.name}
@@ -149,11 +149,11 @@ export function MissingAlbums() {
       {loading && !data && (
         <div className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
-            {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}
+            {Array.from({ length: 3 }, (_, i) => <Skeleton key={i} className="h-24 rounded-md" />)}
           </div>
           <Skeleton className="h-6 w-48" />
           <div className="space-y-2">
-            {Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
+            {Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-14 rounded-md" />)}
           </div>
         </div>
       )}
@@ -164,7 +164,7 @@ export function MissingAlbums() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <Card className="bg-card border-border">
               <CardContent className="pt-5 pb-4 px-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center">
                   <Library size={18} className="text-primary" />
                 </div>
                 <div>
@@ -175,7 +175,7 @@ export function MissingAlbums() {
             </Card>
             <Card className="bg-card border-border">
               <CardContent className="pt-5 pb-4 px-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-md bg-blue-500/10 flex items-center justify-center">
                   <Disc3 size={18} className="text-blue-400" />
                 </div>
                 <div>
@@ -186,7 +186,7 @@ export function MissingAlbums() {
             </Card>
             <Card className="bg-card border-border">
               <CardContent className="pt-5 pb-4 px-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-md bg-yellow-500/10 flex items-center justify-center">
                   <AlertTriangle size={18} className="text-yellow-400" />
                 </div>
                 <div>
@@ -199,7 +199,7 @@ export function MissingAlbums() {
             </Card>
             <Card className="bg-card border-border">
               <CardContent className="pt-5 pb-4 px-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-md bg-emerald-500/10 flex items-center justify-center">
                   <CheckCircle2 size={18} className="text-emerald-400" />
                 </div>
                 <div>
@@ -224,7 +224,7 @@ export function MissingAlbums() {
                 Missing from your library
                 <span className="text-xs text-muted-foreground font-normal ml-1">{data.missing.length}</span>
               </h3>
-              <div className="bg-card border border-border rounded-lg divide-y divide-border">
+              <div className="bg-card border border-border rounded-md divide-y divide-border">
                 {data.missing.map((m) => (
                   <div key={m.title} className="flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 transition-colors">
                     {/* Placeholder cover */}
@@ -268,7 +268,7 @@ export function MissingAlbums() {
                 Your local albums
                 <span className="text-xs text-muted-foreground font-normal ml-1">{data.local.length}</span>
               </h3>
-              <div className="bg-card border border-border rounded-lg divide-y divide-border">
+              <div className="bg-card border border-border rounded-md divide-y divide-border">
                 {data.local.map((l) => (
                   <AlbumRow
                     key={l.name}

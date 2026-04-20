@@ -5,6 +5,7 @@ import { cn, formatCompact } from "@/lib/utils";
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { Compass, ChevronDown, ChevronRight, ExternalLink, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 
@@ -47,29 +48,29 @@ function ArtistRow({ artist }: { artist: ArtistCompleteness }) {
   const navigate = useNavigate();
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4">
+    <div className="rounded-md border border-white/10 bg-card p-4 shadow-[0_24px_64px_rgba(0,0,0,0.18)] backdrop-blur-xl">
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-full overflow-hidden bg-secondary flex-shrink-0 flex items-center justify-center">
+        <div className="relative flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/5">
           <img
             src={artistPhotoApiUrl({ artistId: artist.artist_id, artistSlug: artist.artist_slug, artistName: artist.artist })}
             alt={artist.artist}
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover"
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
           />
-          <User size={20} className="text-muted-foreground absolute" style={{ display: artist.has_photo ? "none" : undefined }} />
+          <User size={20} className="absolute text-muted-foreground" style={{ display: artist.has_photo ? "none" : undefined }} />
         </div>
 
         <div className="flex-1 min-w-0">
           <button
             onClick={() => navigate(artistPagePath({ artistId: artist.artist_id, artistSlug: artist.artist_slug }))}
-            className="text-sm font-medium hover:text-primary transition-colors truncate block"
+            className="block truncate text-sm font-medium transition-colors hover:text-primary"
           >
             {artist.artist}
           </button>
-          <div className="flex items-center gap-2 mt-1">
-            <div className="flex-1 h-2 bg-secondary rounded-full overflow-hidden">
+          <div className="mt-1 flex items-center gap-2">
+            <div className="h-2 flex-1 overflow-hidden rounded-md bg-white/8">
               <div
-                className={cn("h-full rounded-full transition-all", pctColor(artist.pct))}
+                className={cn("h-full rounded-md transition-all", pctColor(artist.pct))}
                 style={{ width: `${Math.min(artist.pct, 100)}%` }}
               />
             </div>
@@ -80,9 +81,7 @@ function ArtistRow({ artist }: { artist: ArtistCompleteness }) {
         </div>
 
         {artist.listeners > 0 && (
-          <span className="text-[11px] text-muted-foreground tabular-nums hidden sm:block">
-            {formatCompact(artist.listeners)} listeners
-          </span>
+          <CrateChip className="hidden sm:inline-flex">{formatCompact(artist.listeners)} listeners</CrateChip>
         )}
 
         {artist.missing.length > 0 && (
@@ -98,21 +97,21 @@ function ArtistRow({ artist }: { artist: ArtistCompleteness }) {
       </div>
 
       {expanded && artist.missing.length > 0 && (
-        <div className="mt-3 pl-15 space-y-1">
-          <div className="text-xs text-muted-foreground mb-2">
+        <div className="mt-4 space-y-1 border-t border-white/6 pt-4">
+          <div className="mb-2 text-xs text-muted-foreground">
             Missing albums ({artist.missing.length}):
           </div>
           {artist.missing.map((m, i) => (
-            <div key={i} className="flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground w-10">{m.year || "?"}</span>
-              <span className="flex-1 truncate">{m.title}</span>
-              <span className="text-muted-foreground">{m.type}</span>
+            <div key={i} className="flex items-center gap-2 rounded-md px-2 py-2 text-xs hover:bg-white/[0.03]">
+              <span className="w-10 text-muted-foreground">{m.year || "?"}</span>
+              <span className="flex-1 truncate text-white/80">{m.title}</span>
+              <CrateChip>{m.type}</CrateChip>
             </div>
           ))}
           <Button
             variant="outline"
             size="sm"
-            className="mt-2 text-xs h-7"
+            className="mt-2 text-xs"
             onClick={() => navigate(`/download?q=${encodeURIComponent(artist.artist)}`)}
           >
             <ExternalLink size={12} className="mr-1" />
@@ -156,9 +155,12 @@ export function Discover() {
 
   return (
     <div>
-      <div className="flex items-center gap-3 mb-6">
-        <Compass size={24} className="text-primary" />
-        <h1 className="text-2xl font-bold">Discover</h1>
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3">
+          <Compass size={24} className="text-primary" />
+          <h1 className="text-2xl font-bold">Discover</h1>
+        </div>
+        <CratePill active>{filtered.length} artists</CratePill>
       </div>
 
       {data && (
@@ -167,7 +169,7 @@ export function Discover() {
         </p>
       )}
 
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <Button
           variant={showComplete ? "secondary" : "outline"}
           size="sm"

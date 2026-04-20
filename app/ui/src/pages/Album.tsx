@@ -131,10 +131,10 @@ export function Album() {
 
   if (loading) {
     return (
-      <div className="-mx-8 -mt-8">
-        <div className="h-[300px] bg-card animate-pulse" />
-        <div className="px-8 pt-6">
-          <Skeleton className="h-6 w-48 mb-4" />
+      <div className="-mt-16 md:-mt-[6.5rem]">
+        <div className="-mx-4 h-[420px] animate-pulse bg-card md:-mx-8 md:h-[560px]" />
+        <div className="mx-auto w-full max-w-[1160px] px-4 pt-6 md:px-8">
+          <Skeleton className="mb-4 h-6 w-48" />
           <div className="space-y-2">
             {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}
           </div>
@@ -146,8 +146,7 @@ export function Album() {
   if (!data) return <div className="text-center py-12 text-muted-foreground">Not found</div>;
 
   return (
-    <div className="-mx-8 -mt-8">
-      <div className="px-8 pt-8">
+    <div className="-mt-16 md:-mt-[6.5rem]">
         <AlbumHeader
           albumId={data.id}
           albumSlug={data.slug}
@@ -163,6 +162,7 @@ export function Album() {
           hasCover={data.has_cover}
           genres={data.genres}
           hasAnalysis={analysisData != null && Object.values(analysisData).some((t) => t.tempo != null)}
+          isAdmin={isAdmin}
           onAnalysisComplete={() => {
             if (data?.artist_id == null) return;
             api<Record<string, AudioAnalysisTrack>>(`/api/artists/${data.artist_id}/analysis-data`)
@@ -220,9 +220,8 @@ export function Album() {
             </Button>
           )}
         </AlbumHeader>
-      </div>
 
-      <div className="px-8 pb-12">
+      <div className="mx-auto w-full max-w-[1160px] px-4 pb-12 pt-6 md:px-8">
         {showTags && data.id != null && (
           <TagEditor
             albumId={data.id}
