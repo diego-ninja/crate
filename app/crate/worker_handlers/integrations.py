@@ -22,15 +22,16 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
     synced = 0
     shows_found = 0
 
+    p = TaskProgress(phase="fetching", phase_count=2, total=total)
+
     for index, artist in enumerate(artists):
         if is_cancelled(task_id):
             break
         name = artist["name"]
+        p.done = index
+        p.item = name
         if index % 10 == 0:
-            update_task(
-                task_id,
-                progress=json.dumps({"phase": "fetching", "artist": name, "done": index, "total": total}),
-            )
+            emit_progress(task_id, p)
 
         try:
             events = tm_get_shows(name, limit=20)
@@ -60,10 +61,22 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
                 )
                 shows_found += 1
             synced += 1
+            if events:
+                emit_task_event(task_id, "info", {
+                    "message": f"Found {len(events)} shows for {name}",
+                    "artist": name,
+                    "count": len(events),
+                })
         except Exception:
             log.debug("Failed to sync shows for %s", name, exc_info=True)
 
+    p.phase = "cleanup"
+    p.phase_index = 1
+    emit_progress(task_id, p, force=True)
     deleted = delete_past_shows(days_old=30)
+    emit_task_event(task_id, "info", {
+        "message": f"Sync complete: {synced} artists checked, {shows_found} shows found, {deleted} old shows removed",
+    })
     return {"artists_checked": synced, "shows_found": shows_found, "old_deleted": deleted}
 
 
