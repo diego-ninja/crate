@@ -74,7 +74,7 @@ The recommended direction is to split the work into two complementary tracks:
 
 ### 1. Smart rule schema (typed contract — backwards compatible)
 
-> **Decision:** Keep the existing persistence shape AND existing operator/sort values. Zero migration. The typed models use exactly the same string values that `execute_smart_rules()` in `playlists.py` already understands. New fields (`deduplicate_artist`, `max_per_artist`) have defaults and are additive.
+> **Decision:** Keep the existing persistence shape. Existing playlists require zero data migration — their `op` and `sort` values are a subset of the new schema. The schema adds new operators (`neq`, `not_contains`, `in`) and fields that `execute_smart_rules()` doesn't yet support — those get implemented as part of this work (see section 2b). Existing rules continue to work unchanged.
 
 Type the existing shape with Pydantic validation — operator and sort values match what the engine already accepts:
 
@@ -158,6 +158,58 @@ Field-to-operator compatibility:
   - `POST /api/admin/system-playlists/{id}/reorder` — reorder tracks
   - `POST /api/admin/system-playlists/{id}/duplicate` — duplicate playlist
 - Keep `PUT /api/admin/system-playlists/{id}` as the main update endpoint for metadata, cover and rules.
+
+### 2b. Expand `execute_smart_rules()` engine
+
+The current engine in `playlists.py` handles a subset of field+op combos via hardcoded `elif` branches. Refactor to a generic pattern that supports all typed operators:
+
+**File:** `app/crate/db/playlists.py` — rewrite `execute_smart_rules()`
+
+Replace the chain of `elif field == "X" and op == "Y"` with a generic builder:
+
+```python
+# Field → DB column mapping
+FIELD_COLUMNS = {
+    "genre": "t.genre",
+    "artist": "t.artist",
+    "album": "a.name",
+    "title": "t.title",
+    "year": "t.year",
+    "format": "t.format",
+    "bpm": "t.bpm",
+    "energy": "t.energy",
+    "danceability": "t.danceability",
+    "valence": "t.valence",
+    "acousticness": "t.acousticness",
+    "instrumentalness": "t.instrumentalness",
+    "loudness": "t.loudness",
+    "dynamic_range": "t.dynamic_range",
+    "rating": "t.rating",
+    "bit_depth": "t.bit_depth",
+    "sample_rate": "t.sample_rate",
+    "duration": "t.duration",
+    "popularity": "t.popularity",
+}
+
+TEXT_FIELDS = {"genre", "artist", "album", "title", "format"}
+```
+
+Generic op handling:
+- `eq` → `column = :param` (text fields use ILIKE for case-insensitive)
+- `neq` → `column != :param`
+- `contains` → `column ILIKE '%' || :param || '%'`
+- `not_contains` → `column NOT ILIKE '%' || :param || '%'`
+- `gte` → `column >= :param`
+- `lte` → `column <= :param`
+- `between` → `column BETWEEN :param_lo AND :param_hi` (value is `[lo, hi]`)
+- `in` → `column IN (:param_1, :param_2, ...)` (value is list)
+
+Special cases preserved:
+- `genre` + `contains` still checks both `t.genre` and `a_artist.tags_json` (existing behavior)
+- `artist` + `eq` with pipe `|` separator still expands to `IN` (existing behavior)
+
+New `deduplicate_artist` + `max_per_artist`:
+- After query, group by artist, keep max N per artist, fill to limit
 
 ### 3. Preview with distribution stats
 
@@ -249,7 +301,7 @@ Three tabs:
 - Collage preview of what auto-generated would look like
 
 **Content tab (smart):**
-- Rule builder (groups of rules, add/remove, field/operator/value)
+- Rule builder (flat list of rules, add/remove, field/op/value per row, top-level match toggle)
 - Sort strategy dropdown
 - Limit input
 - Deduplicate artist toggle + max per artist
