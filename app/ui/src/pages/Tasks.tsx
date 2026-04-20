@@ -31,21 +31,22 @@ import {
 // ── Types ────────────────────────────────────────────────────────
 
 interface TaskProgress {
+  phase?: string;
+  phase_index?: number;
+  phase_count?: number;
+  item?: string;
+  done?: number;
+  total?: number;
+  percent?: number;
+  rate?: number;
+  eta_sec?: number;
+  errors?: number;
+  warnings?: number;
+  // Legacy fields for backwards compat with old progress payloads
   artist?: string;
   album?: string;
   step?: string;
-  done?: number;
-  total?: number;
-  enriched?: number;
-  skipped?: number;
-  scanner?: string;
-  phase?: string;
   message?: string;
-  artists_done?: number;
-  artists_total?: number;
-  tracks_processed?: number;
-  issues_found?: number;
-  analyzed?: number;
   track?: string;
   [key: string]: unknown;
 }
@@ -54,6 +55,8 @@ interface Task {
   id: string;
   type: string;
   status: string;
+  label?: string;
+  icon?: string;
   progress: TaskProgress | string;
   error: string | null;
   params: Record<string, string> | null;
@@ -77,45 +80,10 @@ function getStatus(status: string) {
   return STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? { icon: Clock, color: "text-muted-foreground", label: status, bg: "" };
 }
 
-const TYPE_LABELS: Record<string, string> = {
-  scan: "Library Scan",
-  compute_analytics: "Compute Analytics",
-  enrich_artists: "Enrich All Artists",
-  enrich_artist: "Enrich Artist",
-  enrich_mbids: "Enrich MusicBrainz IDs",
-  fetch_artwork_all: "Fetch All Artwork",
-  fetch_cover: "Fetch Cover",
-  fetch_artist_covers: "Fetch Artist Covers",
-  batch_retag: "Batch Retag",
-  batch_covers: "Batch Fetch Covers",
-  library_sync: "Library Sync",
-  library_pipeline: "Library Pipeline",
-  health_check: "Health Check",
-  repair: "Library Repair",
-  delete_artist: "Delete Artist",
-  delete_album: "Delete Album",
-  move_artist: "Move Artist",
-  wipe_library: "Wipe Library",
-  rebuild_library: "Rebuild Library",
-  reset_enrichment: "Reset Enrichment",
-  match_apply: "Apply MusicBrainz Tags",
-  update_album_tags: "Update Album Tags",
-  update_track_tags: "Update Track Tags",
-  resolve_duplicates: "Resolve Duplicates",
-  analyze_tracks: "Analyze Audio",
-  analyze_all: "Analyze All Audio",
-  compute_popularity: "Compute Popularity",
-  index_genres: "Index Genres",
-  cleanup_invalid_genre_taxonomy: "Clean Invalid Genre Taxonomy Nodes",
-  process_new_content: "Process New Content",
-  compute_bliss: "Compute Bliss Vectors",
-  tidal_download: "Tidal Download",
-  check_new_releases: "Check New Releases",
-  scan_missing_covers: "Scan Missing Covers",
-};
+import { taskLabel } from "@/lib/task-labels";
 
 function getTaskLabel(task: Task): string {
-  const base = TYPE_LABELS[task.type] ?? task.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const base = task.label || taskLabel(task.type);
   const p = task.params;
   if (!p) return base;
   if (p.artist && p.album) return `${base}: ${p.artist} / ${p.album}`;
@@ -240,23 +208,33 @@ function TaskProgressBar({ progress }: { progress: TaskProgress | string }) {
     return progress ? <span className="text-xs text-muted-foreground">{progress}</span> : null;
   }
 
-  const done = progress.done ?? progress.artists_done;
-  const total = progress.total ?? progress.artists_total;
+  const done = Number(progress.done ?? 0);
+  const total = Number(progress.total ?? 0);
+  const pct = progress.percent != null ? Number(progress.percent) : (total > 0 ? Math.round((done / total) * 100) : 0);
 
-  if (done != null && total != null && total > 0) {
-    const pct = Math.round((done / total) * 100);
+  if (total > 0) {
     return (
       <div className="space-y-1">
         <Progress value={pct} className="h-1.5" />
         <div className="flex justify-between text-xs text-muted-foreground">
           <span>
-            {progress.step && <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">{progress.step.replace(/_/g, " ")}</Badge>}
-            {progress.phase && <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">{String(progress.phase)}</Badge>}
-            {progress.artist && <span className="text-foreground">{String(progress.artist)}</span>}
-            {progress.album && <span className="text-foreground/70">{" / "}{String(progress.album)}</span>}
-            {progress.track && <span className="text-foreground/70">{" — "}{String(progress.track)}</span>}
+            {progress.phase && (
+              <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">
+                {progress.phase_count ? `${(progress.phase_index ?? 0) + 1}/${progress.phase_count} ` : ""}{String(progress.phase)}
+              </Badge>
+            )}
+            {progress.item && <span className="text-foreground">{String(progress.item)}</span>}
+            {!progress.item && progress.artist && <span className="text-foreground">{String(progress.artist)}</span>}
           </span>
-          <span>{done}/{total} ({pct}%)</span>
+          <span className="tabular-nums">
+            {done}/{total} ({pct}%)
+            {progress.rate != null && Number(progress.rate) > 0 && (
+              <span className="ml-1 text-white/40">{Number(progress.rate).toFixed(1)}/s</span>
+            )}
+            {progress.eta_sec != null && Number(progress.eta_sec) > 0 && (
+              <span className="ml-1 text-white/40">ETA {Number(progress.eta_sec)}s</span>
+            )}
+          </span>
         </div>
       </div>
     );
@@ -549,7 +527,7 @@ export function Tasks() {
                 <SelectContent>
                   <SelectItem value="all">All types</SelectItem>
                   {taskTypes.map((t) => (
-                    <SelectItem key={t} value={t}>{TYPE_LABELS[t] ?? t}</SelectItem>
+                    <SelectItem key={t} value={t}>{taskLabel(t)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
