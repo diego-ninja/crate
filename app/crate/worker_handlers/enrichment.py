@@ -3,7 +3,7 @@ import shutil
 import time
 from pathlib import Path
 
-from crate.db import delete_cache, emit_task_event, get_library_artist, get_setting, get_task, set_cache, update_task
+from crate.db import delete_cache, emit_task_event, get_library_artist, get_setting, get_task, set_cache
 from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.jobs.enrichment import (
     get_albums_without_mbid,

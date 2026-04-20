@@ -13,7 +13,7 @@ import os
 import shutil
 from pathlib import Path
 
-from crate.db import emit_task_event, set_cache, delete_cache, update_task
+from crate.db import emit_task_event, set_cache, delete_cache
 from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.jobs.migration import (
     get_album_tracks,

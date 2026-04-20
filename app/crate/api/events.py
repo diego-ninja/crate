@@ -55,6 +55,7 @@ async def _event_stream():
             "tasks": [
                 {
                     "id": t["id"], "type": t["type"], "status": t["status"],
+                    "label": t.get("label", ""),
                     "progress": _parse_progress(t["progress"]),
                 }
                 for t in running
@@ -63,7 +64,7 @@ async def _event_stream():
             "issue_count": len(latest["issues"]) if latest else 0,
             "pending_imports": pending_imports,
             "recent_completed": [
-                {"id": t["id"], "type": t["type"], "updated_at": t["updated_at"]}
+                {"id": t["id"], "type": t["type"], "label": t.get("label", ""), "updated_at": t["updated_at"]}
                 for t in recent_completed
             ],
         }
@@ -108,8 +109,7 @@ async def _task_event_stream(task_id: str):
         # Check if task is done
         task = get_task(task_id)
         if task and task["status"] in ("completed", "failed", "cancelled"):
-            # Emit final status event
-            yield f"event: task_done\ndata: {json_dumps({'status': task['status'], 'result': task.get('result'), 'error': task.get('error')})}\n\n"
+            yield f"event: task_done\ndata: {json_dumps({'status': task['status'], 'label': task.get('label', ''), 'result': task.get('result'), 'error': task.get('error')})}\n\n"
             break
 
         await asyncio.sleep(1)
