@@ -32,6 +32,7 @@ const Upcoming = lazy(() => import("@/pages/Upcoming").then(m => ({ default: m.U
 const Setup = lazy(() => import("@/pages/Setup").then(m => ({ default: m.Setup })));
 const Analysis = lazy(() => import("@/pages/Analysis").then(m => ({ default: m.Analysis })));
 const SystemHealth = lazy(() => import("@/pages/SystemHealth").then(m => ({ default: m.SystemHealth })));
+const Logs = lazy(() => import("@/pages/Logs").then(m => ({ default: m.Logs })));
 
 function PageSpinner() {
   return (
@@ -101,6 +102,7 @@ export default function App() {
                   <Route path="quality" element={<Quality />} />
                   <Route path="analysis" element={<Analysis />} />
                   <Route path="system" element={<SystemHealth />} />
+                  <Route path="logs" element={<Logs />} />
                   <Route path="tasks" element={<Tasks />} />
                   <Route path="playlists" element={<Playlists />} />
                   <Route path="stack" element={<Stack />} />

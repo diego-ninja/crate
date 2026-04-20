@@ -1,7 +1,7 @@
 import logging
 import time
 from pathlib import Path
-from crate.db import create_task, emit_task_event, get_task, save_scan_result, update_task
+from crate.db import create_task, emit_task_event, get_task, save_scan_result
 from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.library_sync import LibrarySync
 from crate.matcher import apply_match, match_album

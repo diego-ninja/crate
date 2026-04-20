@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from crate.db import create_task, emit_task_event, get_task, set_cache, update_task
+from crate.db import create_task, emit_task_event, get_task, set_cache
 from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.genres import cleanup_invalid_genre_taxonomy_nodes
 from crate.db.jobs.analysis import (

@@ -17,7 +17,6 @@ from crate.db import (
     get_cache,
     get_task,
     set_cache,
-    update_task,
 )
 from crate.db.jobs.management import (
     apply_mbid_to_album,

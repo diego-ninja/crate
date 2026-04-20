@@ -3,7 +3,7 @@ import io as _io
 import logging
 import time
 from pathlib import Path
-from crate.db import emit_task_event, get_library_artist, get_task, set_cache, update_task
+from crate.db import emit_task_event, get_library_artist, get_task, set_cache
 from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.jobs.artwork import set_album_has_cover, set_artist_has_photo
 from crate.storage_layout import resolve_artist_dir

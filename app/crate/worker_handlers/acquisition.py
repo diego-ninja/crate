@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from crate.audio import get_audio_files, read_tags
-from crate.db import create_task, create_task_dedup, emit_task_event, get_setting, get_task, update_task
+from crate.db import create_task, create_task_dedup, emit_task_event, get_setting, get_task
 from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.jobs.acquisition import update_artist_latest_release_date
 from crate.db.user_library import follow_artist, like_track, save_album
