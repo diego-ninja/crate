@@ -10,6 +10,106 @@
 
 ---
 
+## Cross-Cutting Concerns (apply throughout all phases)
+
+### CC-1: Task Type Human Labels
+
+All task types must have a canonical human label. Currently some show `snake_case` in the UI, others use ad-hoc labels. Create a single registry:
+
+**File:** `app/crate/task_registry.py`
+
+```python
+TASK_TYPE_LABELS: dict[str, str] = {
+    "library_sync": "Library Scan",
+    "scan": "Health Check",
+    "process_new_content": "Process New Content",
+    "enrich_artists": "Artist Enrichment",
+    "enrich_artist": "Artist Enrichment",
+    "audio_analysis": "Audio Analysis",
+    "bliss_analysis": "Bliss Similarity",
+    "tidal_download": "Tidal Download",
+    "soulseek_download": "Soulseek Download",
+    "index_genres": "Genre Indexing",
+    "infer_genre_taxonomy": "Taxonomy Inference",
+    "enrich_genre_descriptions": "Genre Description Enrichment",
+    "sync_genre_musicbrainz": "MusicBrainz Sync",
+    "cleanup_invalid_genre_taxonomy": "Taxonomy Cleanup",
+    "generate_smart_playlist": "Smart Playlist Generation",
+    "repair_library": "Library Repair",
+    "migrate_storage": "Storage Migration",
+    "update_popularity": "Popularity Update",
+    "delete_artist": "Artist Deletion",
+}
+
+TASK_TYPE_ICONS: dict[str, str] = {
+    "library_sync": "📂",
+    "scan": "🔍",
+    "process_new_content": "✨",
+    "enrich_artists": "🔎",
+    "audio_analysis": "🎵",
+    "tidal_download": "📥",
+    "index_genres": "🏷️",
+    # ...
+}
+
+def task_label(task_type: str) -> str:
+    return TASK_TYPE_LABELS.get(task_type, task_type.replace("_", " ").title())
+
+def task_icon(task_type: str) -> str:
+    return TASK_TYPE_ICONS.get(task_type, "⚙️")
+```
+
+Used by: API responses (add `label` field to task serialization), Telegram messages, admin UI (frontend also has a copy for display).
+
+Frontend mirror: `app/ui/src/lib/task-labels.ts` (same map, used for display in Tasks page, Health dashboard, etc.)
+
+### CC-2: Humanized Log Context
+
+Every log entry, event, and progress message that references library entities must include human-readable context alongside IDs. Never show a UUID or numeric ID as the only identifier.
+
+**Pattern:**
+```python
+# BAD
+wlog.info(f"Processing track {track_id}", task_id=task_id)
+emit_task_event(task_id, "item", {"track_id": track_id})
+
+# GOOD
+wlog.info(f"Processing: {artist} — {title}", task_id=task_id,
+          category="enrichment",
+          meta={"track_id": track_id, "artist": artist, "album": album, "title": title})
+emit_task_event(task_id, "item", {
+    "track_id": track_id,
+    "label": f"{artist} — {title}",
+    "artist": artist,
+    "album": album,
+})
+```
+
+**Rules:**
+1. `label` field is mandatory in all event `data_json` — a single human-readable string summarizing the entity
+2. If an ID (UUID, numeric, path) appears in a message, the corresponding name/title must appear too
+3. Progress `item` field always uses `"Artist — Title"` or `"Artist — Album"` format, never a path or ID
+4. Telegram notifications always use entity names, never raw IDs (task IDs shown as short codes: `a1b2c3d4`)
+
+**Helper** (add to `app/crate/task_progress.py`):
+```python
+def entity_label(artist: str = "", album: str = "", title: str = "", path: str = "") -> str:
+    """Build a human-readable label from whatever entity fields are available."""
+    if artist and title:
+        return f"{artist} — {title}"
+    if artist and album:
+        return f"{artist} — {album}"
+    if artist:
+        return artist
+    if title:
+        return title
+    if path:
+        return path.rsplit("/", 1)[-1]  # filename as last resort
+    return "unknown"
+```
+
+---
+
 ## Phase A: Metrics Infrastructure (Backend)
 
 ### Task 1: Metrics Schema + Redis Time-Series Store
