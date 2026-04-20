@@ -534,6 +534,7 @@ _STREAM_MEDIA_TYPES = {
 def _stream_file(request: Request, filepath: str):
     _require_auth(request)
     from fastapi.responses import FileResponse
+    from crate.metrics import record, record_counter
 
     lib = library_path()
     lib_str = str(lib)
@@ -543,9 +544,16 @@ def _stream_file(request: Request, filepath: str):
         filepath = filepath[len("/music/"):].lstrip("/")
     file_path = safe_path(lib, filepath)
     if not file_path or not file_path.is_file():
+        record_counter("stream.requests", {"status": "404"})
         raise HTTPException(status_code=404, detail="Track not found")
 
     ext = file_path.suffix.lower()
+    record_counter("stream.requests", {"status": "200", "format": ext.lstrip(".")})
+    try:
+        record("stream.bytes", file_path.stat().st_size)
+    except Exception:
+        pass
+
     return FileResponse(
         path=str(file_path),
         media_type=_STREAM_MEDIA_TYPES.get(ext, "audio/mpeg"),

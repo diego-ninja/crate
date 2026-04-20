@@ -125,6 +125,7 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
     last_import_check = 0
     last_cleanup = 0
     last_status_update = 0
+    last_metrics_flush = 0
 
     while not stop_event.is_set():
         now = _time.time()
@@ -159,7 +160,7 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
             except Exception:
                 log.debug("Zombie cleanup failed", exc_info=True)
 
-        # Worker status cache every 15s
+        # Worker status cache + queue depth metrics every 15s
         if now - last_status_update > 15:
             last_status_update = now
             try:
@@ -171,19 +172,37 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                     "pending": len(pending),
                     "engine": "dramatiq",
                 }, ttl=60)
+                # Record queue depth as a metric
+                try:
+                    from crate.metrics import record
+                    record("worker.queue.depth", len(pending))
+                    record("worker.queue.running", len(running))
+                except Exception:
+                    pass
             except Exception:
                 pass
 
-        # Old task/event cleanup every hour
+        # Metrics flush every 5 minutes
+        if now - last_metrics_flush > 300:
+            last_metrics_flush = now
+            try:
+                from crate.metrics import flush_to_postgres
+                flush_to_postgres()
+            except Exception:
+                log.debug("Metrics flush failed", exc_info=True)
+
+        # Old task/event/log cleanup every hour
         if now - last_cleanup > 3600:
             last_cleanup = now
             try:
                 from crate.db.events import cleanup_old_events, cleanup_old_tasks
                 from crate.db.auth import cleanup_expired_sessions, cleanup_ended_jam_rooms
+                from crate.db.worker_logs import cleanup_old_logs
                 cleanup_old_events(max_age_hours=48)
                 cleanup_old_tasks(max_age_days=7)
                 cleanup_expired_sessions(max_age_days=7)
                 cleanup_ended_jam_rooms(max_age_days=30)
+                cleanup_old_logs(max_age_days=7)
             except Exception:
                 log.debug("Auto-cleanup failed")
 

@@ -284,10 +284,23 @@ def _execute_task(task_type: str, task_id: str):
             return
 
     # Mark running + start heartbeat
+    import time as _time
+    _task_start = _time.monotonic()
+
     update_task(task_id, status="running")
     hb_stop = threading.Event()
     hb_thread = threading.Thread(target=_heartbeat_loop, args=(task_id, hb_stop), daemon=True)
     hb_thread.start()
+
+    # Record queue wait time (created → running)
+    try:
+        from crate.metrics import record
+        created = task.get("created_at")
+        if created and hasattr(created, "timestamp"):
+            wait_sec = _time.time() - created.timestamp()
+            record("worker.queue.wait", wait_sec, {"type": task_type})
+    except Exception:
+        pass
 
     try:
         config = load_config()
@@ -299,6 +312,11 @@ def _execute_task(task_type: str, task_id: str):
             update_task(task_id, status="completed", result=result or {})
             log.info("Task %s (%s) completed", task_id, task_type)
             try:
+                from crate.metrics import record as _record
+                _record("worker.task.duration", _time.monotonic() - _task_start, {"type": task_type, "status": "completed"})
+            except Exception:
+                pass
+            try:
                 from crate.telegram import notify_task_completed
                 notify_task_completed(task_type, task_id, result)
             except Exception:
@@ -306,6 +324,11 @@ def _execute_task(task_type: str, task_id: str):
 
     except Exception as e:
         log.exception("Task %s (%s) failed", task_id, task_type)
+        try:
+            from crate.metrics import record as _record
+            _record("worker.task.duration", _time.monotonic() - _task_start, {"type": task_type, "status": "failed"})
+        except Exception:
+            pass
         try:
             update_task(task_id, status="failed", error=str(e)[:500])
         except Exception:
