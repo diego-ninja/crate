@@ -55,17 +55,18 @@ The recommended direction is to split the work into two complementary tracks:
 - Removing a manual cover returns the playlist to collage/fallback rendering.
 
 ### Cover persistence (filesystem write decision)
-> **Decision:** Worker task. API never writes to `/music` directly.
+> **Decision:** Worker task via Redis staging. API never touches any filesystem.
 >
 > Flow:
 > 1. `PUT /api/admin/system-playlists/{id}` receives cover as base64 in the request body
-> 2. API writes to `/tmp/cover-staging/{playlist_id}.jpg` (ephemeral, not /music)
-> 3. API enqueues task `persist_playlist_cover` with `{playlist_id, staging_path}`
-> 4. Worker reads from staging, writes to `/music/.covers/playlists/{id}.jpg`, cleans staging
-> 5. Worker updates `playlists.cover_path` in DB
-> 6. API response returns `cover_status: "processing"` until worker completes
+> 2. API writes the base64 payload to Redis key `cover:staging:{playlist_id}` with 10-minute TTL
+> 3. API enqueues task `persist_playlist_cover` with `{playlist_id}`
+> 4. Worker reads base64 from Redis, decodes, writes to `/music/.covers/playlists/{id}.jpg`
+> 5. Worker deletes the Redis staging key
+> 6. Worker updates `playlists.cover_path` in DB
+> 7. API response returns `cover_status: "processing"` until worker completes
 >
-> This aligns with the project rule: "API mounts /music as read-only. All filesystem writes go through worker tasks."
+> This fully aligns with the project rule: "API mounts /music as read-only. All filesystem writes go through worker tasks." The API doesn't write to `/tmp` or anywhere else — Redis is the staging buffer.
 
 ---
 
@@ -73,25 +74,21 @@ The recommended direction is to split the work into two complementary tracks:
 
 ### 1. Smart rule schema (typed contract — backwards compatible)
 
-> **Decision:** Keep the existing persistence shape (`match`, `rules[]`, `limit`, `sort`) and type it. No `rule_groups` nesting — the current flat structure covers all real use cases. Existing playlists require zero data migration. New fields (`deduplicate_artist`, `max_per_artist`) have defaults and are additive.
+> **Decision:** Keep the existing persistence shape AND existing operator/sort values. Zero migration. The typed models use exactly the same string values that `execute_smart_rules()` in `playlists.py` already understands. New fields (`deduplicate_artist`, `max_per_artist`) have defaults and are additive.
 
-Type the existing shape with Pydantic validation:
+Type the existing shape with Pydantic validation — operator and sort values match what the engine already accepts:
 
 ```python
 class SmartRuleOperator(str, Enum):
-    EQUALS = "equals"
-    NOT_EQUALS = "not_equals"
+    """Matches the ops used in execute_smart_rules() and Playlists.tsx."""
+    EQ = "eq"
+    NEQ = "neq"
     CONTAINS = "contains"
     NOT_CONTAINS = "not_contains"
-    GT = "gt"
-    LT = "lt"
     GTE = "gte"
     LTE = "lte"
     BETWEEN = "between"
     IN = "in"
-    NOT_IN = "not_in"
-    IS_NULL = "is_null"
-    IS_NOT_NULL = "is_not_null"
 
 class SmartRuleField(str, Enum):
     GENRE = "genre"
@@ -116,20 +113,19 @@ class SmartRuleField(str, Enum):
 
 class SmartRule(BaseModel):
     field: SmartRuleField
-    operator: SmartRuleOperator
+    op: SmartRuleOperator          # "op", not "operator" — matches existing persistence
     value: str | float | list[str] | list[float] | None = None
 
 class SmartSortStrategy(str, Enum):
+    """Matches the sort values in execute_smart_rules()."""
     RANDOM = "random"
-    RECENT = "recent"
-    POPULAR = "popular"
-    ALPHABETICAL = "alphabetical"
+    POPULARITY = "popularity"
     BPM = "bpm"
     ENERGY = "energy"
-    RATING = "rating"
+    TITLE = "title"
 
 class SmartPlaylistConfig(BaseModel):
-    """Matches the existing persisted shape — no migration needed."""
+    """Exact match of the persisted shape in smart_rules_json."""
     match: Literal["all", "any"] = "all"
     rules: list[SmartRule]
     limit: int = Field(50, ge=1, le=500)
@@ -140,12 +136,12 @@ class SmartPlaylistConfig(BaseModel):
 
 Frontend mirror: `app/ui/src/lib/smart-rules.ts` with matching TypeScript types.
 
-The rule builder UI component renders a list of `SmartRule` rows with add/remove buttons. The top-level `match` toggle ("All" / "Any") controls how rules combine. Each row has field dropdown → operator dropdown → value input, with operator options filtered by field type.
+The rule builder UI component renders a list of `SmartRule` rows with add/remove buttons. The top-level `match` toggle ("All" / "Any") controls how rules combine. Each row has field dropdown → op dropdown → value input, with op options filtered by field type.
 
 Field-to-operator compatibility:
-- Text fields (genre, artist, album, title, format): equals, not_equals, contains, not_contains, in, not_in
-- Numeric fields (bpm, energy, year, etc.): equals, gt, lt, gte, lte, between
-- Nullable fields: is_null, is_not_null (for checking "has rating" vs "unrated")
+- Text fields (genre, artist, album, title, format): eq, neq, contains, not_contains, in
+- Numeric fields (bpm, energy, year, etc.): eq, gte, lte, between
+- All fields: eq (always available)
 
 ### 2. Data model and API contract
 - Extend `playlists` with:
@@ -239,7 +235,7 @@ Retention: keep last 20 entries per playlist, auto-prune older ones.
 Three tabs:
 
 **Editorial tab:**
-- Name, description (rich text or plain)
+- Name, description (plain text — listen renders it as plain text, rich text would require a render/sanitization layer we don't need for v1)
 - Category (dropdown)
 - Featured rank (number input)
 - Active toggle
@@ -428,8 +424,9 @@ Static (4):
 - Creating a smart system playlist should immediately queue generation.
 - `auto_refresh_enabled` defaults to `true` for new smart system playlists.
 - Metadata-only saves do not regenerate.
-- Cover persistence uses worker task (API → staging → worker → /music). See "Cover persistence" decision above.
-- Smart rule schema keeps the current flat shape (`match` + `rules[]`). No `rule_groups` nesting. Zero data migration needed.
+- Cover persistence uses worker task via Redis staging (API → Redis base64 → worker → /music). Zero filesystem writes from API.
+- Smart rule schema keeps the current flat shape (`match` + `rules[]`) with the exact same operator values (`eq`, `gte`, `lte`, `between`, `contains`) and sort values (`random`, `popularity`, `bpm`, `energy`, `title`) that the engine already understands. Zero data migration.
+- Description is plain text for v1. Listen renders it as plain text; rich text would require render/sanitization infrastructure we don't need.
 - Curation detail endpoint returns all tracks by default (backwards compatible). Pagination is opt-in via query params.
 - Generation history retains last 20 entries per playlist.
 - Track pagination in admin editor defaults to 50 per page.
