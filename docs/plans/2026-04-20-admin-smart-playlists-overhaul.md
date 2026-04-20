@@ -54,13 +54,28 @@ The recommended direction is to split the work into two complementary tracks:
 - Manual cover always wins over auto-collage artwork.
 - Removing a manual cover returns the playlist to collage/fallback rendering.
 
+### Cover persistence (filesystem write decision)
+> **Decision:** Worker task. API never writes to `/music` directly.
+>
+> Flow:
+> 1. `PUT /api/admin/system-playlists/{id}` receives cover as base64 in the request body
+> 2. API writes to `/tmp/cover-staging/{playlist_id}.jpg` (ephemeral, not /music)
+> 3. API enqueues task `persist_playlist_cover` with `{playlist_id, staging_path}`
+> 4. Worker reads from staging, writes to `/music/.covers/playlists/{id}.jpg`, cleans staging
+> 5. Worker updates `playlists.cover_path` in DB
+> 6. API response returns `cover_status: "processing"` until worker completes
+>
+> This aligns with the project rule: "API mounts /music as read-only. All filesystem writes go through worker tasks."
+
 ---
 
 ## Implementation plan
 
-### 1. Smart rule schema (typed contract)
+### 1. Smart rule schema (typed contract — backwards compatible)
 
-Replace free-form `smart_rules: dict[str, Any]` with typed Pydantic models:
+> **Decision:** Keep the existing persistence shape (`match`, `rules[]`, `limit`, `sort`) and type it. No `rule_groups` nesting — the current flat structure covers all real use cases. Existing playlists require zero data migration. New fields (`deduplicate_artist`, `max_per_artist`) have defaults and are additive.
+
+Type the existing shape with Pydantic validation:
 
 ```python
 class SmartRuleOperator(str, Enum):
@@ -104,10 +119,6 @@ class SmartRule(BaseModel):
     operator: SmartRuleOperator
     value: str | float | list[str] | list[float] | None = None
 
-class SmartRuleGroup(BaseModel):
-    match: Literal["all", "any"] = "all"
-    rules: list[SmartRule]
-
 class SmartSortStrategy(str, Enum):
     RANDOM = "random"
     RECENT = "recent"
@@ -118,16 +129,18 @@ class SmartSortStrategy(str, Enum):
     RATING = "rating"
 
 class SmartPlaylistConfig(BaseModel):
-    rule_groups: list[SmartRuleGroup]
+    """Matches the existing persisted shape — no migration needed."""
+    match: Literal["all", "any"] = "all"
+    rules: list[SmartRule]
     limit: int = Field(50, ge=1, le=500)
     sort: SmartSortStrategy = SmartSortStrategy.RANDOM
-    deduplicate_artist: bool = True
-    max_per_artist: int = Field(3, ge=1, le=20)
+    deduplicate_artist: bool = True      # new, defaults safe
+    max_per_artist: int = Field(3, ge=1, le=20)  # new, defaults safe
 ```
 
 Frontend mirror: `app/ui/src/lib/smart-rules.ts` with matching TypeScript types.
 
-The rule builder UI component renders one card per `SmartRuleGroup` with add/remove rule buttons. Groups are combined with AND; rules within a group follow the group's `match` logic (all/any). Visual connector labels between groups show "AND".
+The rule builder UI component renders a list of `SmartRule` rows with add/remove buttons. The top-level `match` toggle ("All" / "Any") controls how rules combine. Each row has field dropdown → operator dropdown → value input, with operator options filtered by field type.
 
 Field-to-operator compatibility:
 - Text fields (genre, artist, album, title, format): equals, not_equals, contains, not_contains, in, not_in
@@ -311,10 +324,10 @@ Three tabs:
   - `/api/curation/playlists` — TTL 300s
   - `/api/curation/playlists/category/{category}` — TTL 300s
   - `/api/curation/playlists/{id}` — TTL 300s
-- Paginate tracks in detail response:
-  - Default: first 50 tracks
-  - Query param: `?offset=0&limit=50`
-  - Response includes `total_tracks` for the frontend to implement lazy loading
+- Track pagination is **opt-in, not default** (backwards compatible):
+  - `GET /api/curation/playlists/{id}` → returns ALL tracks (listen depends on this for queue/shuffle/offline)
+  - `GET /api/curation/playlists/{id}?limit=50&offset=0` → paginated (admin editor can use this for large playlists)
+  - Response always includes `total_tracks` count regardless of pagination
 - Extend cache invalidation so admin playlist mutations invalidate:
   - `curation` scope (clears list cache)
   - `playlist:{id}` scope (clears detail cache)
@@ -415,6 +428,8 @@ Static (4):
 - Creating a smart system playlist should immediately queue generation.
 - `auto_refresh_enabled` defaults to `true` for new smart system playlists.
 - Metadata-only saves do not regenerate.
-- Cover persistence should ultimately move out of direct API filesystem writes if that path is still active during implementation.
+- Cover persistence uses worker task (API → staging → worker → /music). See "Cover persistence" decision above.
+- Smart rule schema keeps the current flat shape (`match` + `rules[]`). No `rule_groups` nesting. Zero data migration needed.
+- Curation detail endpoint returns all tracks by default (backwards compatible). Pagination is opt-in via query params.
 - Generation history retains last 20 entries per playlist.
-- Track pagination defaults to 50 per page for both curation API and editor.
+- Track pagination in admin editor defaults to 50 per page.
