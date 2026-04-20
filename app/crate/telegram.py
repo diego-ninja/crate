@@ -95,34 +95,40 @@ def send_alert(alert_type: str, text: str) -> bool:
 # ── Notify helpers (called from task handlers) ────────────────────
 
 def notify_task_completed(task_type: str, task_id: str, result: dict | None = None):
-    icons = {
-        "tidal_download": "\U0001f4e5",  # inbox tray
-        "soulseek_download": "\U0001f4e5",
-        "process_new_content": "\u2728",  # sparkles
-        "enrich_artists": "\U0001f50d",  # magnifying glass
-        "index_genres": "\U0001f3f7",    # label
-        "cleanup_invalid_genre_taxonomy": "\U0001f9f9",  # broom
-        "library_sync": "\U0001f4c2",    # folder
-        "scan": "\U0001f4c2",
-    }
-    icon = icons.get(task_type, "\u2705")  # green check
-    detail = ""
-    if result:
-        if task_type == "tidal_download":
-            artists = result.get("artists") or result.get("modified_artists") or []
-            if artists:
-                detail = f"\n{', '.join(artists[:5])}"
-        elif "processed" in result or "mapped" in result:
-            detail = f"\n{json.dumps({k: v for k, v in result.items() if isinstance(v, (int, float, str)) and k != 'examples_mapped'}, indent=None)}"
+    from crate.task_registry import task_label, task_icon
 
-    send_message(f"{icon} <b>{task_type}</b> completed\n<code>{task_id[:8]}</code>{detail}")
+    icon = task_icon(task_type)
+    label = task_label(task_type)
+
+    # Build result summary
+    detail_lines = []
+    if result:
+        # Filter to scalar values, skip internal keys
+        skip_keys = {"examples_mapped", "task_id", "config"}
+        for k, v in result.items():
+            if k in skip_keys or not isinstance(v, (int, float, str)):
+                continue
+            detail_lines.append(f"  \u2022 {k.replace('_', ' ')}: {v}")
+
+    detail = "\n".join(detail_lines[:8])
+    parts = [f"{icon} <b>{label}</b> completed", f"<code>{task_id[:8]}</code>"]
+    if detail:
+        parts.append(f"\n\U0001f4ca Results:\n{detail}")
+    parts.append(f"\n/task {task_id[:8]}")
+
+    send_message("\n".join(parts))
 
 
 def notify_task_failed(task_type: str, task_id: str, error: str = ""):
-    send_message(
-        f"\u274c <b>{task_type}</b> failed\n<code>{task_id[:8]}</code>"
-        f"\n<pre>{error[:300]}</pre>" if error else ""
-    )
+    from crate.task_registry import task_label, task_icon
+
+    icon = task_icon(task_type)
+    label = task_label(task_type)
+    parts = [f"\u274c <b>{label}</b> FAILED", f"<code>{task_id[:8]}</code>"]
+    if error:
+        parts.append(f"\n\U0001f4a5 <pre>{error[:300]}</pre>")
+    parts.append(f"\n/task {task_id[:8]}")
+    send_message("\n".join(parts))
 
 
 def notify_new_release(artist: str, album: str, year: str = ""):
@@ -140,10 +146,17 @@ def _cmd_start(chat_id: str, _args: str):
     _CHAT_ID = chat_id
     send_message(
         "\U0001f3b5 <b>Crate Bot</b> linked to this chat.\n\n"
-        "/status — server & library stats\n"
+        "<b>Monitoring</b>\n"
+        "/health — degradation score + metrics\n"
+        "/status — library stats\n"
         "/server — system resources\n"
+        "/workers — worker status\n"
+        "/logs [level] — recent worker logs\n\n"
+        "<b>Tasks</b>\n"
         "/tasks — active tasks\n"
-        "/cancel &lt;id&gt; — cancel a task\n"
+        "/task &lt;id&gt; — task detail + progress\n"
+        "/cancel &lt;id&gt; — cancel a task\n\n"
+        "<b>Library</b>\n"
         "/playing — now playing\n"
         "/recent — recent additions\n"
         "/download &lt;tidal-url&gt; — start download\n"
@@ -386,43 +399,181 @@ def _api_health() -> str:
         return "unreachable"
 
 
-# ── Health check alerts ───────────────────────────────────────────
+# ── Health check alerts (metrics-driven) ─────────────────────────
 
 def _check_alerts():
-    mem = _memory_info()
-
-    if mem["swap_percent"] > 50:
-        send_alert("swap", f"\u26a0\ufe0f <b>High swap usage</b>: {mem['swap_used_gb']:.1f} / {mem['swap_total_gb']:.1f} GB ({mem['swap_percent']}%)")
-
-    if mem["percent"] > 90:
-        send_alert("ram", f"\u26a0\ufe0f <b>High memory usage</b>: {mem['used_gb']:.1f} / {mem['total_gb']:.1f} GB ({mem['percent']}%)")
-
+    """Evaluate health via the alerting engine and send alerts."""
     try:
-        usage = shutil.disk_usage("/music")
-        free_gb = usage.free / (1024 ** 3)
-        if free_gb < 100:
-            send_alert("disk", f"\u26a0\ufe0f <b>Low disk space</b>: {free_gb:.0f} GB free")
+        from crate.alerting import check_and_alert
+        check_and_alert()
     except Exception:
-        pass
-
-    api_status = _api_health()
-    if "unreachable" in api_status or "unhealthy" in api_status:
-        send_alert("api", f"\u26a0\ufe0f <b>API {api_status}</b>")
+        log.debug("Alerting check failed", exc_info=True)
 
 
 # ── Command router ────────────────────────────────────────────────
+
+def _cmd_health(chat_id: str, _args: str):
+    try:
+        from crate.alerting import evaluate_health
+        status = evaluate_health()
+        score = status.score
+        if score >= 80:
+            icon = "\U0001f7e2"
+        elif score >= 50:
+            icon = "\U0001f7e1"
+        else:
+            icon = "\U0001f534"
+        send_message(f"{icon} <b>Health: {score}/100</b>\n\n{status.summary_text()}", chat_id=chat_id)
+    except Exception as e:
+        send_message(f"\u274c Health check failed: {str(e)[:200]}", chat_id=chat_id)
+
+
+def _cmd_task(chat_id: str, args: str):
+    task_id_prefix = args.strip()
+    if not task_id_prefix:
+        send_message("\u26a0\ufe0f Usage: /task &lt;task_id&gt;", chat_id=chat_id)
+        return
+
+    from crate.db.tasks import get_task
+    from crate.task_registry import task_label, task_icon
+
+    row = find_active_task_by_prefix(task_id_prefix)
+    if not row:
+        # Try completed tasks too
+        try:
+            from crate.db.tasks import list_tasks
+            for t in list_tasks(limit=50):
+                if t["id"].startswith(task_id_prefix):
+                    row = t
+                    break
+        except Exception:
+            pass
+
+    if not row:
+        send_message(f"\u26a0\ufe0f No task matching <code>{task_id_prefix}</code>", chat_id=chat_id)
+        return
+
+    task = get_task(row["id"]) if row.get("id") else row
+    if not task:
+        send_message(f"\u26a0\ufe0f Task not found", chat_id=chat_id)
+        return
+
+    icon = task_icon(task["type"])
+    label = task_label(task["type"])
+    status_icon = {
+        "running": "\U0001f7e2", "pending": "\U0001f7e1",
+        "completed": "\u2705", "failed": "\u274c", "cancelled": "\U0001f6d1",
+    }.get(task.get("status", ""), "\u2753")
+
+    lines = [f"{icon} <b>{label}</b> {status_icon} {task.get('status', '?')}"]
+    lines.append(f"<code>{task['id'][:12]}</code>")
+
+    # Parse structured progress
+    progress = task.get("progress")
+    if progress:
+        from crate.task_progress import TaskProgress
+        p = TaskProgress.from_json(progress)
+        if p.total > 0:
+            pct = p.percent()
+            bar = "\u2588" * int(pct / 10) + "\u2591" * (10 - int(pct / 10))
+            lines.append(f"\nPhase: {p.phase_index + 1}/{p.phase_count} \u2014 {p.phase}")
+            lines.append(f"Progress: {bar} {pct:.0f}% ({p.done}/{p.total})")
+            if p.rate > 0:
+                lines.append(f"Rate: {p.rate:.1f} items/sec \u00b7 ETA: {p.eta_sec}s")
+            if p.item:
+                lines.append(f"Current: {p.item}")
+        elif p.phase:
+            lines.append(f"\nPhase: {p.phase}")
+
+    # Show recent events
+    try:
+        from crate.db.events import get_task_events
+        events = get_task_events(task["id"], limit=5)
+        if events:
+            lines.append("\n\U0001f4cb Last events:")
+            for evt in events[-5:]:
+                data = evt.get("data_json", {})
+                if isinstance(data, str):
+                    try:
+                        data = json.loads(data)
+                    except Exception:
+                        data = {}
+                level = data.get("level", "info")
+                level_icon = {
+                    "error": "\U0001f534", "warn": "\U0001f7e1", "info": "\U0001f7e2"
+                }.get(level, "\u2022")
+                msg = data.get("message") or data.get("label") or evt.get("event_type", "")
+                lines.append(f"  {level_icon} {msg[:80]}")
+    except Exception:
+        pass
+
+    if task.get("error"):
+        lines.append(f"\n\U0001f4a5 Error: <pre>{task['error'][:200]}</pre>")
+
+    send_message("\n".join(lines), chat_id=chat_id)
+
+
+def _cmd_logs(chat_id: str, args: str):
+    level = args.strip().lower() or None
+    if level and level not in ("info", "warn", "error", "debug"):
+        level = None
+
+    try:
+        from crate.db.worker_logs import query_logs
+        logs = query_logs(level=level, limit=10)
+    except Exception as e:
+        send_message(f"\u274c Failed to query logs: {str(e)[:200]}", chat_id=chat_id)
+        return
+
+    if not logs:
+        send_message("\u2705 No recent worker logs" + (f" (level={level})" if level else ""), chat_id=chat_id)
+        return
+
+    level_icons = {"error": "\U0001f534", "warn": "\U0001f7e1", "info": "\U0001f7e2", "debug": "\u26aa"}
+    lines = ["\U0001f4cb <b>Recent logs</b>"]
+    for entry in logs:
+        icon = level_icons.get(entry.get("level", "info"), "\u2022")
+        cat = entry.get("category", "")
+        msg = entry.get("message", "")[:80]
+        lines.append(f"  {icon} [{cat}] {msg}")
+
+    send_message("\n".join(lines), chat_id=chat_id)
+
+
+def _cmd_workers(chat_id: str, _args: str):
+    try:
+        from crate.db.worker_logs import list_known_workers
+        workers = list_known_workers()
+    except Exception:
+        send_message("\u274c Failed to query workers", chat_id=chat_id)
+        return
+
+    if not workers:
+        send_message("\U0001f527 No workers seen in the last 24h", chat_id=chat_id)
+        return
+
+    lines = ["\U0001f527 <b>Workers</b>"]
+    for w in workers:
+        lines.append(f"  \u2022 <code>{w['worker_id']}</code>: {w['log_count']} logs, last seen {w.get('last_seen', '?')}")
+
+    send_message("\n".join(lines), chat_id=chat_id)
+
 
 _COMMANDS: dict[str, callable] = {
     "start": _cmd_start,
     "help": _cmd_start,
     "status": _cmd_status,
     "server": _cmd_server,
+    "health": _cmd_health,
     "tasks": _cmd_tasks,
+    "task": _cmd_task,
     "cancel": _cmd_cancel,
     "playing": _cmd_playing,
     "recent": _cmd_recent,
     "download": _cmd_download,
     "search": _cmd_search,
+    "logs": _cmd_logs,
+    "workers": _cmd_workers,
 }
 
 
