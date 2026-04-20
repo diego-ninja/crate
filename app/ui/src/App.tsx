@@ -31,6 +31,7 @@ const NewReleases = lazy(() => import("@/pages/NewReleases").then(m => ({ defaul
 const Upcoming = lazy(() => import("@/pages/Upcoming").then(m => ({ default: m.Upcoming })));
 const Setup = lazy(() => import("@/pages/Setup").then(m => ({ default: m.Setup })));
 const Analysis = lazy(() => import("@/pages/Analysis").then(m => ({ default: m.Analysis })));
+const SystemHealth = lazy(() => import("@/pages/SystemHealth").then(m => ({ default: m.SystemHealth })));
 
 function PageSpinner() {
   return (
@@ -99,6 +100,7 @@ export default function App() {
                   <Route path="missing-albums" element={<MissingAlbums />} />
                   <Route path="quality" element={<Quality />} />
                   <Route path="analysis" element={<Analysis />} />
+                  <Route path="system" element={<SystemHealth />} />
                   <Route path="tasks" element={<Tasks />} />
                   <Route path="playlists" element={<Playlists />} />
                   <Route path="stack" element={<Stack />} />
