@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import {
-  ArrowLeft, Copy, ListMusic, Loader2, Play, Plus, RefreshCw,
-  Save, SlidersHorizontal, Sparkles, X,
+  ArrowLeft, Copy, ImagePlus, ListMusic, Loader2, Play, Plus, RefreshCw,
+  Save, SlidersHorizontal, Sparkles, Trash2, Upload, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { AdminSelect } from "@/components/ui/AdminSelect";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
@@ -32,6 +33,7 @@ interface Playlist {
   generation_status: string;
   generation_error: string | null;
   last_generated_at: string | null;
+  cover_data_url: string | null;
   tracks: Track[];
 }
 
@@ -160,6 +162,8 @@ export function PlaylistEditor() {
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [_dirty, setDirty] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   // Hydrate form from fetched playlist
   useEffect(() => {
@@ -245,6 +249,37 @@ export function PlaylistEditor() {
     }
   }, [id, navigate]);
 
+  const handleCoverUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingCover(true);
+    try {
+      const reader = new FileReader();
+      const b64 = await new Promise<string>((resolve) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      await api(`/api/admin/system-playlists/${id}`, "PUT", { cover_data_url: b64 });
+      toast.success("Cover uploading...");
+      refetch();
+    } catch {
+      toast.error("Cover upload failed");
+    } finally {
+      setUploadingCover(false);
+      if (coverInputRef.current) coverInputRef.current.value = "";
+    }
+  }, [id, refetch]);
+
+  const handleRemoveCover = useCallback(async () => {
+    try {
+      await api(`/api/admin/system-playlists/${id}`, "PUT", { cover_data_url: null });
+      toast.success("Cover removed");
+      refetch();
+    } catch {
+      toast.error("Failed to remove cover");
+    }
+  }, [id, refetch]);
+
   const addRule = () => {
     setRules([...rules, { field: "genre", op: "contains", value: "" }]);
     setDirty(true);
@@ -312,11 +347,14 @@ export function PlaylistEditor() {
                   className="mt-1 h-9 w-full rounded-md border border-border bg-card px-3 text-sm" />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Category</label>
-                <select value={category} onChange={(e) => { setCategory(e.target.value); setDirty(true); }}
-                  className="mt-1 h-9 w-full rounded-md border border-border bg-card px-3 text-sm">
-                  {CATEGORIES.map((c) => <option key={c} value={c}>{c || "None"}</option>)}
-                </select>
+                <label className="text-xs text-muted-foreground mb-1 block">Category</label>
+                <AdminSelect
+                  value={category}
+                  onChange={(v) => { setCategory(v); setDirty(true); }}
+                  options={CATEGORIES.filter(Boolean).map((c) => ({ value: c, label: c }))}
+                  placeholder="None"
+                  triggerClassName="w-full max-w-none"
+                />
               </div>
             </div>
             <div>
@@ -347,6 +385,35 @@ export function PlaylistEditor() {
             </div>
           </section>
 
+          {/* Cover */}
+          <section className="rounded-lg border border-border p-5 space-y-4">
+            <h2 className="text-sm font-semibold flex items-center gap-2"><ImagePlus size={14} /> Cover</h2>
+            <div className="flex items-start gap-4">
+              <div className="h-24 w-24 flex-shrink-0 rounded-lg border border-white/10 bg-white/[0.03] overflow-hidden flex items-center justify-center">
+                {playlist.cover_data_url ? (
+                  <img src={playlist.cover_data_url} alt="Cover" className="h-full w-full object-cover" />
+                ) : (
+                  <ListMusic size={24} className="text-white/20" />
+                )}
+              </div>
+              <div className="space-y-2">
+                <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverUpload} className="hidden" />
+                <Button variant="outline" size="sm" onClick={() => coverInputRef.current?.click()} disabled={uploadingCover}>
+                  {uploadingCover ? <Loader2 size={14} className="mr-1 animate-spin" /> : <Upload size={14} className="mr-1" />}
+                  {playlist.cover_data_url ? "Replace" : "Upload"}
+                </Button>
+                {playlist.cover_data_url && (
+                  <Button variant="outline" size="sm" onClick={handleRemoveCover}>
+                    <Trash2 size={14} className="mr-1" /> Remove
+                  </Button>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  {playlist.cover_data_url ? "Manual cover active. Removing returns to auto-collage." : "No manual cover. Using auto-collage from track artwork."}
+                </p>
+              </div>
+            </div>
+          </section>
+
           {/* Smart Rules */}
           {isSmart && (
             <section className="rounded-lg border border-border p-5 space-y-4">
@@ -364,26 +431,31 @@ export function PlaylistEditor() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-3 text-sm">
+              <div className="flex flex-wrap items-center gap-3 text-sm">
                 <div className="flex items-center gap-2">
-                  <label className="text-muted-foreground">Match</label>
-                  <select value={match} onChange={(e) => { setMatch(e.target.value); setDirty(true); }}
-                    className="h-8 rounded-md border border-border bg-card px-2 text-sm">
-                    <option value="all">All rules</option>
-                    <option value="any">Any rule</option>
-                  </select>
+                  <label className="text-muted-foreground text-xs">Match</label>
+                  <AdminSelect
+                    value={match}
+                    onChange={(v) => { setMatch(v); setDirty(true); }}
+                    options={[{ value: "all", label: "All rules" }, { value: "any", label: "Any rule" }]}
+                    placeholder="Match"
+                    allowClear={false}
+                  />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-muted-foreground">Limit</label>
+                  <label className="text-muted-foreground text-xs">Limit</label>
                   <input type="number" value={limit} onChange={(e) => { setLimit(Number(e.target.value)); setDirty(true); }}
-                    min={1} max={500} className="h-8 w-16 rounded-md border border-border bg-card px-2 text-sm" />
+                    min={1} max={500} className="h-10 w-20 rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs" />
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="text-muted-foreground">Sort</label>
-                  <select value={sort} onChange={(e) => { setSort(e.target.value); setDirty(true); }}
-                    className="h-8 rounded-md border border-border bg-card px-2 text-sm">
-                    {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
+                  <label className="text-muted-foreground text-xs">Sort</label>
+                  <AdminSelect
+                    value={sort}
+                    onChange={(v) => { setSort(v); setDirty(true); }}
+                    options={SORTS.map((s) => ({ value: s.value, label: s.label }))}
+                    placeholder="Sort"
+                    allowClear={false}
+                  />
                 </div>
               </div>
 
@@ -393,14 +465,22 @@ export function PlaylistEditor() {
                   const ops = getOpsForField(rule.field);
                   return (
                     <div key={i} className="flex items-center gap-2 rounded-md border border-border bg-card p-2">
-                      <select value={rule.field} onChange={(e) => updateRule(i, "field", e.target.value)}
-                        className="h-8 rounded border border-border bg-background px-2 text-xs">
-                        {FIELDS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-                      </select>
-                      <select value={rule.op} onChange={(e) => updateRule(i, "op", e.target.value)}
-                        className="h-8 rounded border border-border bg-background px-2 text-xs">
-                        {ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
+                      <AdminSelect
+                        value={rule.field}
+                        onChange={(v) => updateRule(i, "field", v)}
+                        options={FIELDS.map((f) => ({ value: f.value, label: f.label }))}
+                        placeholder="Field"
+                        allowClear={false}
+                        triggerClassName="min-w-[120px]"
+                      />
+                      <AdminSelect
+                        value={rule.op}
+                        onChange={(v) => updateRule(i, "op", v)}
+                        options={ops.map((o) => ({ value: o.value, label: o.label }))}
+                        placeholder="Op"
+                        allowClear={false}
+                        triggerClassName="min-w-[100px]"
+                      />
                       {rule.op === "between" ? (
                         <div className="flex items-center gap-1">
                           <input type="number" value={Array.isArray(rule.value) ? rule.value[0] : ""} placeholder="min"
