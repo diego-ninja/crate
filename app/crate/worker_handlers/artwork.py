@@ -40,6 +40,7 @@ def _handle_fetch_artwork_all(task_id: str, params: dict, config: dict) -> dict:
         else:
             failed += 1
 
+    emit_task_event(task_id, "info", {"message": f"Artwork fetch complete: {fetched}/{total} covers fetched"})
     return {"fetched": fetched, "failed": failed, "total": total}
 
 
@@ -77,6 +78,8 @@ def _handle_batch_covers(task_id: str, params: dict, config: dict) -> dict:
         else:
             results.append({"path": path, "error": "Not found on CAA"})
 
+    fetched = sum(1 for r in results if r.get("status") == "fetched")
+    emit_task_event(task_id, "info", {"message": f"Batch covers: fetched {fetched}/{len(albums)}"})
     return {"results": results}
 
 
@@ -88,15 +91,19 @@ def _handle_fetch_cover(task_id: str, params: dict, config: dict) -> dict:
     if not mbid:
         return {"error": "No MBID"}
 
+    emit_task_event(task_id, "info", {"message": f"Fetching cover from CoverArtArchive for {path or mbid}"})
+
     lib = Path(config["library_path"])
     album_dir = lib / path if path else None
 
     image = fetch_cover_from_caa(mbid)
     if not image:
+        emit_task_event(task_id, "info", {"message": f"No cover found on CAA for {path or mbid}"})
         return {"error": "No cover found on CAA"}
 
     if album_dir and album_dir.is_dir():
         save_cover(album_dir, image)
+        emit_task_event(task_id, "info", {"message": f"Cover saved for {path or mbid}"})
         return {"status": "saved", "path": str(album_dir / "cover.jpg")}
 
     return {"error": "Album directory not found"}
@@ -145,6 +152,7 @@ def _handle_fetch_artist_covers(task_id: str, params: dict, config: dict) -> dic
         else:
             failed += 1
 
+    emit_task_event(task_id, "info", {"message": f"Artist covers for {artist_name}: {fetched}/{total} fetched, {skipped} skipped"})
     return {"fetched": fetched, "failed": failed, "skipped": skipped, "total": total}
 
 

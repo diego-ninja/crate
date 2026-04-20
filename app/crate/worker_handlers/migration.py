@@ -440,6 +440,9 @@ def _handle_verify_storage_v2(task_id: str, params: dict, config: dict) -> dict:
     except Exception:
         log.debug("Filesystem scan for orphans failed", exc_info=True)
 
+    emit_task_event(task_id, "info", {
+        "message": f"Verification complete: {ok_tracks}/{total} tracks OK, {len(missing_files)} missing, {len(orphaned_files)} orphaned",
+    })
     return {
         "total_tracks": total,
         "ok": ok_tracks,

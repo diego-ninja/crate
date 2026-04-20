@@ -115,6 +115,7 @@ def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> d
     except Exception:
         log.warning("backfill_similarities: mark_library_status failed", exc_info=True)
 
+    emit_task_event(task_id, "info", {"message": f"Backfill similarities complete: {total} artists, {upserted} rows upserted"})
     return {"artists_processed": total, "rows_upserted": upserted}
 
 

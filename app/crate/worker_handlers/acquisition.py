@@ -972,6 +972,8 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
 def _handle_cleanup_incomplete_downloads(task_id: str, params: dict, config: dict) -> dict:
     import datetime as dt
 
+    emit_task_event(task_id, "info", {"message": "Starting cleanup of incomplete downloads..."})
+
     downloads_dir = Path(config.get("downloads_path", "/downloads/soulseek"))
     if not downloads_dir.exists():
         return {"cleaned": 0, "message": "Downloads dir not found"}
@@ -1008,6 +1010,7 @@ def _handle_cleanup_incomplete_downloads(task_id: str, params: dict, config: dic
     clear_completed_downloads()
     clear_errored_downloads()
 
+    emit_task_event(task_id, "info", {"message": f"Cleanup complete: {cleaned} incomplete downloads removed"})
     return {"cleaned": cleaned, "details": details}
 
 

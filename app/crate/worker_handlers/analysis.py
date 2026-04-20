@@ -72,6 +72,7 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
     }
     set_cache("stats", stats, ttl=3600)
 
+    emit_task_event(task_id, "info", {"message": f"Analytics complete: {artists} artists, {albums} albums, {tracks} tracks"})
     return {"artists": artists, "albums": albums, "tracks": tracks}
 
 
@@ -85,6 +86,7 @@ def _handle_refresh_user_listening_stats(task_id: str, params: dict, config: dic
     p = TaskProgress(phase="stats", phase_count=1, total=1, item=f"user:{user_id}")
     emit_progress(task_id, p, force=True)
     recompute_user_listening_aggregates(user_id)
+    emit_task_event(task_id, "info", {"message": f"Listening stats refreshed for user {user_id}"})
     return {"ok": True, "user_id": user_id}
 
 
@@ -129,6 +131,9 @@ def _handle_analyze_album_full(task_id: str, params: dict, config: dict) -> dict
                 store_vectors(vectors)
                 bliss_count = len(vectors)
 
+    emit_task_event(task_id, "info", {
+        "message": f"Album analysis complete: {artist} — {album_name} ({analysis_result.get('analyzed', 0)} analyzed, {bliss_count} bliss vectors)",
+    })
     return {
         "analyzed": analysis_result.get("analyzed", 0),
         "failed": analysis_result.get("failed", 0),
@@ -377,6 +382,7 @@ def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:
             store_vectors(vectors)
             analyzed += len(vectors)
 
+    emit_task_event(task_id, "info", {"message": f"Bliss chunk complete: {analyzed} vectors from {len(artists)} artists"})
     return {"analyzed": analyzed, "artists": len(artists)}
 
 
@@ -445,6 +451,9 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
     except Exception:
         log.debug("Failed to normalize popularity scores", exc_info=True)
 
+    emit_task_event(task_id, "info", {
+        "message": f"Popularity chunk complete: {albums_fetched} albums, {tracks_fetched} tracks from {len(artists)} artists",
+    })
     return {"albums_fetched": albums_fetched, "tracks_fetched": tracks_fetched, "artists": len(artists)}
 
 
@@ -630,6 +639,7 @@ def _handle_cleanup_invalid_genre_taxonomy(task_id: str, params: dict, config: d
 def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
     """Reset analysis/bliss state to 'pending' so background daemons re-process tracks.
     Accepts: artist, album (name), album_id, track_id, or scope='all'."""
+    emit_task_event(task_id, "info", {"message": "Requeuing tracks for re-analysis..."})
     scope = params.get("scope")
     artist = params.get("artist")
     album_name = params.get("album") or params.get("album_folder")
@@ -661,6 +671,7 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
 
     log.info("Requeued %d tracks for %s (scope: %s)", count, what,
              track_id or album_id or artist or scope)
+    emit_task_event(task_id, "info", {"message": f"Requeued {count} tracks for {what}"})
     return {"requeued": count, "what": what}
 
 

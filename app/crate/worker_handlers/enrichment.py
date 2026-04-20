@@ -881,6 +881,7 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
 
     results.sort(key=lambda item: item["pct"])
     set_cache("discover:completeness", results, ttl=86400)
+    emit_task_event(task_id, "info", {"message": f"Completeness computed: {len(results)}/{total} artists checked"})
     return {"artists_checked": len(results), "total": total}
 
 

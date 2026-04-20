@@ -128,6 +128,8 @@ def _handle_batch_retag(task_id: str, params: dict, config: dict) -> dict:
         result["match_score"] = best["match_score"]
         results.append(result)
 
+    retagged = sum(1 for r in results if "error" not in r)
+    emit_task_event(task_id, "info", {"message": f"Batch retag complete: {retagged}/{len(albums)} albums retagged"})
     return {"results": results}
 
 
