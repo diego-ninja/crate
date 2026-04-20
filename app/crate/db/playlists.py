@@ -18,6 +18,11 @@ def _normalize_playlist_row(row: dict) -> dict:
     d["visibility"] = d.get("visibility") or ("public" if d["scope"] == "system" else "private")
     d["is_collaborative"] = bool(d.get("is_collaborative"))
     d["is_system"] = d["scope"] == "system"
+    d["auto_refresh_enabled"] = True if d.get("auto_refresh_enabled") is None else bool(d.get("auto_refresh_enabled"))
+    d["generation_status"] = d.get("generation_status") or "idle"
+    d["generation_error"] = d.get("generation_error")
+    if hasattr(d.get("last_generated_at"), "isoformat"):
+        d["last_generated_at"] = d["last_generated_at"].isoformat()
     if d.get("cover_path"):
         d["cover_data_url"] = f"/api/playlists/{d['id']}/cover"
     return d
@@ -633,134 +638,165 @@ def get_playlist_filter_options() -> dict:
     }
 
 
-def execute_smart_rules(rules: dict) -> list[dict]:
-    """Execute smart playlist rules against the library DB."""
-    match_mode = rules.get("match", "all")  # "all" or "any"
+_FIELD_COLUMNS: dict[str, str] = {
+    "genre": "t.genre",
+    "artist": "t.artist",
+    "album": "a.name",
+    "title": "t.title",
+    "year": "t.year",
+    "format": "t.format",
+    "audio_key": "t.audio_key",
+    "bpm": "t.bpm",
+    "energy": "t.energy",
+    "danceability": "t.danceability",
+    "valence": "t.valence",
+    "acousticness": "t.acousticness",
+    "instrumentalness": "t.instrumentalness",
+    "loudness": "t.loudness",
+    "dynamic_range": "t.dynamic_range",
+    "rating": "t.rating",
+    "bit_depth": "t.bit_depth",
+    "sample_rate": "t.sample_rate",
+    "duration": "t.duration",
+    "popularity": "t.popularity",
+}
+
+_TEXT_FIELDS = {"genre", "artist", "album", "title", "format", "audio_key"}
+
+_SORT_MAP: dict[str, str] = {
+    "random": "RANDOM()",
+    "popularity": "t.popularity DESC NULLS LAST",
+    "bpm": "t.bpm ASC NULLS LAST",
+    "energy": "t.energy DESC NULLS LAST",
+    "title": "t.title ASC",
+}
+
+
+def execute_smart_rules(rules: dict, *, count_only: bool = False) -> list[dict] | int:
+    """Execute smart playlist rules against the library DB.
+
+    When count_only=True, returns an int (total matching tracks).
+    Otherwise returns the track list capped by limit.
+    """
+    match_mode = rules.get("match", "all")
     rule_list = rules.get("rules", [])
     limit = rules.get("limit", 50)
     sort = rules.get("sort", "random")
+    deduplicate_artist = rules.get("deduplicate_artist", False)
+    max_per_artist = rules.get("max_per_artist", 3)
 
-    conditions = []
+    conditions: list[str] = []
     params: dict = {}
     param_idx = 0
 
-    def _next_param(prefix: str = "p") -> str:
+    def _next(prefix: str = "p") -> str:
         nonlocal param_idx
         param_idx += 1
         return f"{prefix}_{param_idx}"
+
+    def _split_pipe(val: str) -> list[str]:
+        return [v.strip() for v in val.split("|") if v.strip()]
 
     for rule in rule_list:
         field = rule.get("field", "")
         op = rule.get("op", "")
         value = rule.get("value")
+        col = _FIELD_COLUMNS.get(field)
+        if not col:
+            continue
 
+        # Special case: genre contains searches both track genre and artist tags
         if field == "genre" and op == "contains":
-            if isinstance(value, str) and "|" in value:
-                genre_vals = [v.strip() for v in value.split("|") if v.strip()]
-                or_parts = []
-                for gv in genre_vals:
-                    p1 = _next_param("genre")
-                    p2 = _next_param("genre")
-                    or_parts.append(f"(t.genre ILIKE :{p1} OR a_artist.tags_json::text ILIKE :{p2})")
-                    params[p1] = f"%{gv}%"
-                    params[p2] = f"%{gv}%"
-                conditions.append(f"({' OR '.join(or_parts)})")
+            vals = _split_pipe(value) if isinstance(value, str) and "|" in value else [str(value)]
+            or_parts = []
+            for gv in vals:
+                p1, p2 = _next("g"), _next("g")
+                or_parts.append(f"({col} ILIKE :{p1} OR a_artist.tags_json::text ILIKE :{p2})")
+                params[p1] = f"%{gv}%"
+                params[p2] = f"%{gv}%"
+            conditions.append(f"({' OR '.join(or_parts)})")
+            continue
+
+        # Pipe-delimited multi-value → IN
+        if isinstance(value, str) and "|" in value and op in ("eq", "contains"):
+            vals = _split_pipe(value)
+            pnames = []
+            for v in vals:
+                p = _next("v")
+                params[p] = v
+                pnames.append(f":{p}")
+            conditions.append(f"{col} IN ({','.join(pnames)})")
+            continue
+
+        # Generic operator handling
+        if op == "eq":
+            p = _next("v")
+            if field in _TEXT_FIELDS:
+                conditions.append(f"{col} ILIKE :{p}")
+                params[p] = str(value)
             else:
-                p1 = _next_param("genre")
-                p2 = _next_param("genre")
-                conditions.append(f"(t.genre ILIKE :{p1} OR a_artist.tags_json::text ILIKE :{p2})")
-                params[p1] = f"%{value}%"
-                params[p2] = f"%{value}%"
-        elif field == "bpm" and op == "between" and isinstance(value, list):
-            p1 = _next_param("bpm")
-            p2 = _next_param("bpm")
-            conditions.append(f"t.bpm BETWEEN :{p1} AND :{p2}")
+                conditions.append(f"{col} = :{p}")
+                params[p] = value
+        elif op == "neq":
+            p = _next("v")
+            conditions.append(f"{col} != :{p}")
+            params[p] = value
+        elif op == "contains":
+            p = _next("v")
+            conditions.append(f"{col} ILIKE :{p}")
+            params[p] = f"%{value}%"
+        elif op == "not_contains":
+            p = _next("v")
+            conditions.append(f"{col} NOT ILIKE :{p}")
+            params[p] = f"%{value}%"
+        elif op == "gte":
+            p = _next("v")
+            conditions.append(f"{col} >= :{p}")
+            params[p] = value
+        elif op == "lte":
+            p = _next("v")
+            conditions.append(f"{col} <= :{p}")
+            params[p] = value
+        elif op == "between" and isinstance(value, list) and len(value) >= 2:
+            p1, p2 = _next("lo"), _next("hi")
+            conditions.append(f"{col} BETWEEN :{p1} AND :{p2}")
             params[p1] = value[0]
             params[p2] = value[1]
-        elif field == "energy" and op == "gte":
-            p = _next_param("energy")
-            conditions.append(f"t.energy >= :{p}")
-            params[p] = value
-        elif field == "energy" and op == "lte":
-            p = _next_param("energy")
-            conditions.append(f"t.energy <= :{p}")
-            params[p] = value
-        elif field == "year" and op == "between" and isinstance(value, list):
-            p1 = _next_param("year")
-            p2 = _next_param("year")
-            conditions.append(f"t.year BETWEEN :{p1} AND :{p2}")
-            params[p1] = str(value[0])
-            params[p2] = str(value[1])
-        elif field == "audio_key" and op == "eq":
-            p = _next_param("key")
-            conditions.append(f"t.audio_key = :{p}")
-            params[p] = value
-        elif field == "danceability" and op == "gte":
-            p = _next_param("dance")
-            conditions.append(f"t.danceability >= :{p}")
-            params[p] = value
-        elif field == "valence" and op == "gte":
-            p = _next_param("valence")
-            conditions.append(f"t.valence >= :{p}")
-            params[p] = value
-        elif field == "artist" and op == "eq":
-            if isinstance(value, str) and "|" in value:
-                vals = [v.strip() for v in value.split("|") if v.strip()]
-                pnames = []
-                for v in vals:
-                    p = _next_param("artist")
-                    params[p] = v
-                    pnames.append(f":{p}")
-                conditions.append(f"t.artist IN ({','.join(pnames)})")
-            else:
-                p = _next_param("artist")
-                conditions.append(f"t.artist = :{p}")
-                params[p] = value
-        elif field == "popularity" and op == "gte":
-            p = _next_param("pop")
-            conditions.append(f"t.popularity >= :{p}")
-            params[p] = int(value)
-        elif field == "popularity" and op == "lte":
-            p = _next_param("pop")
-            conditions.append(f"t.popularity <= :{p}")
-            params[p] = int(value)
-        elif field == "popularity" and op == "between" and isinstance(value, list):
-            p1 = _next_param("pop")
-            p2 = _next_param("pop")
-            conditions.append(f"t.popularity BETWEEN :{p1} AND :{p2}")
-            params[p1] = int(value[0])
-            params[p2] = int(value[1])
-        elif field == "format" and op == "eq":
-            if isinstance(value, str) and "|" in value:
-                vals = [v.strip() for v in value.split("|") if v.strip()]
-                pnames = []
-                for v in vals:
-                    p = _next_param("fmt")
-                    params[p] = v
-                    pnames.append(f":{p}")
-                conditions.append(f"t.format IN ({','.join(pnames)})")
-            else:
-                p = _next_param("fmt")
-                conditions.append(f"t.format = :{p}")
-                params[p] = value
+        elif op == "in" and isinstance(value, list):
+            pnames = []
+            for v in value:
+                p = _next("v")
+                params[p] = v
+                pnames.append(f":{p}")
+            if pnames:
+                conditions.append(f"{col} IN ({','.join(pnames)})")
 
     joiner = " AND " if match_mode == "all" else " OR "
     where = joiner.join(conditions) if conditions else "1=1"
 
-    sort_map = {
-        "random": "RANDOM()",
-        "popularity": "t.popularity DESC NULLS LAST",
-        "bpm": "t.bpm ASC NULLS LAST",
-        "energy": "t.energy DESC NULLS LAST",
-        "title": "t.title ASC",
-    }
-    sort_clause = sort_map.get(sort, "RANDOM()")
+    if count_only:
+        query = f"""
+            SELECT COUNT(*) AS cnt
+            FROM library_tracks t
+            LEFT JOIN library_albums a ON t.album_id = a.id
+            LEFT JOIN library_artists a_artist ON t.artist = a_artist.name
+            WHERE {where}
+        """
+        with transaction_scope() as session:
+            row = session.execute(text(query), params).mappings().first()
+        return row["cnt"] if row else 0
 
-    params["lim"] = limit
+    sort_clause = _SORT_MAP.get(sort, "RANDOM()")
+    fetch_limit = limit * 3 if deduplicate_artist else limit
+    params["lim"] = fetch_limit
 
     query = f"""
-        SELECT t.path, t.title, t.artist, t.album, t.duration
+        SELECT t.id, t.storage_id::text, t.path, t.title, t.artist, a.name AS album,
+               t.duration, t.format, t.bpm, t.energy, t.genre,
+               a.id AS album_id, a.slug AS album_slug,
+               a_artist.id AS artist_id, a_artist.slug AS artist_slug
         FROM library_tracks t
+        LEFT JOIN library_albums a ON t.album_id = a.id
         LEFT JOIN library_artists a_artist ON t.artist = a_artist.name
         WHERE {where}
         ORDER BY {sort_clause}
@@ -770,7 +806,22 @@ def execute_smart_rules(rules: dict) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(text(query), params).mappings().all()
 
-    return [dict(r) for r in rows]
+    results = [dict(r) for r in rows]
+
+    if deduplicate_artist and max_per_artist > 0:
+        artist_counts: dict[str, int] = {}
+        deduped: list[dict] = []
+        for track in results:
+            artist = track.get("artist", "")
+            count = artist_counts.get(artist, 0)
+            if count < max_per_artist:
+                deduped.append(track)
+                artist_counts[artist] = count + 1
+                if len(deduped) >= limit:
+                    break
+        return deduped
+
+    return results[:limit]
 
 
 # ── Smart playlist generators ─────────────────────────────────────
@@ -834,3 +885,176 @@ def generate_random(limit: int = 50) -> list[int]:
             {"lim": limit},
         ).mappings().all()
         return [r["id"] for r in rows]
+
+
+# ── Generation log ────────────────────────────────────────────────
+
+def log_generation_start(playlist_id: int, rules: dict | None, triggered_by: str = "manual") -> int:
+    now = datetime.now(timezone.utc).isoformat()
+    with transaction_scope() as session:
+        row = session.execute(
+            text("""
+                INSERT INTO playlist_generation_log (playlist_id, started_at, status, rule_snapshot_json, triggered_by)
+                VALUES (:pid, :now, 'running', :rules, :triggered_by)
+                RETURNING id
+            """),
+            {"pid": playlist_id, "now": now,
+             "rules": json.dumps(rules, default=str) if rules else None,
+             "triggered_by": triggered_by},
+        ).mappings().first()
+    return row["id"] if row else 0
+
+
+def log_generation_complete(log_id: int, track_count: int, duration_sec: int):
+    now = datetime.now(timezone.utc).isoformat()
+    with transaction_scope() as session:
+        session.execute(
+            text("""
+                UPDATE playlist_generation_log
+                SET status = 'completed', completed_at = :now, track_count = :tc, duration_sec = :dur
+                WHERE id = :id
+            """),
+            {"id": log_id, "now": now, "tc": track_count, "dur": duration_sec},
+        )
+
+
+def log_generation_failed(log_id: int, error: str):
+    now = datetime.now(timezone.utc).isoformat()
+    with transaction_scope() as session:
+        session.execute(
+            text("""
+                UPDATE playlist_generation_log
+                SET status = 'failed', completed_at = :now, error = :error
+                WHERE id = :id
+            """),
+            {"id": log_id, "now": now, "error": error[:500]},
+        )
+
+
+def get_generation_history(playlist_id: int, limit: int = 5) -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
+                SELECT * FROM playlist_generation_log
+                WHERE playlist_id = :pid
+                ORDER BY started_at DESC LIMIT :lim
+            """),
+            {"pid": playlist_id, "lim": limit},
+        ).mappings().all()
+    results = []
+    for r in rows:
+        d = dict(r)
+        snap = d.pop("rule_snapshot_json", None)
+        d["rule_snapshot"] = snap if isinstance(snap, dict) else (json.loads(snap) if snap else None)
+        for key in ("started_at", "completed_at"):
+            if hasattr(d.get(key), "isoformat"):
+                d[key] = d[key].isoformat()
+        results.append(d)
+    return results
+
+
+def set_generation_status(playlist_id: int, status: str, error: str | None = None):
+    now = datetime.now(timezone.utc).isoformat()
+    updates = ["generation_status = :status", "updated_at = :now"]
+    params: dict = {"pid": playlist_id, "status": status, "now": now}
+    if status == "idle":
+        updates.append("last_generated_at = :now")
+        updates.append("generation_error = NULL")
+    elif status == "failed" and error:
+        updates.append("generation_error = :error")
+        params["error"] = error[:500]
+    with transaction_scope() as session:
+        session.execute(
+            text(f"UPDATE playlists SET {', '.join(updates)} WHERE id = :pid"),
+            params,
+        )
+
+
+def get_smart_playlists_for_refresh() -> list[dict]:
+    """Get smart system playlists eligible for scheduled regeneration."""
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
+                SELECT * FROM playlists
+                WHERE scope = 'system'
+                  AND generation_mode = 'smart'
+                  AND is_active = TRUE
+                  AND auto_refresh_enabled = TRUE
+                  AND (last_generated_at IS NULL OR last_generated_at < now() - interval '24 hours')
+                ORDER BY last_generated_at NULLS FIRST
+            """)
+        ).mappings().all()
+    return [_normalize_playlist_row(r) for r in rows]
+
+
+def duplicate_playlist(playlist_id: int, *, session=None) -> dict | None:
+    """Duplicate a playlist (metadata + rules, not tracks for smart)."""
+    if session is None:
+        with transaction_scope() as s:
+            return duplicate_playlist(playlist_id, session=s)
+
+    original = session.execute(
+        text("SELECT * FROM playlists WHERE id = :id"), {"id": playlist_id}
+    ).mappings().first()
+    if not original:
+        return None
+
+    orig = dict(original)
+    now = datetime.now(timezone.utc).isoformat()
+    new_name = f"{orig.get('name', 'Playlist')} (Copy)"
+
+    row = session.execute(
+        text("""
+            INSERT INTO playlists (name, description, scope, user_id, managed_by_user_id,
+                is_smart, generation_mode, smart_rules_json, is_curated, is_active,
+                category, featured_rank, visibility, auto_refresh_enabled,
+                created_at, updated_at)
+            VALUES (:name, :desc, :scope, :uid, :managed,
+                :smart, :mode, :rules, :curated, :active,
+                :cat, :rank, :vis, :refresh,
+                :now, :now)
+            RETURNING id
+        """),
+        {
+            "name": new_name, "desc": orig.get("description"),
+            "scope": orig.get("scope", "system"), "uid": orig.get("user_id"),
+            "managed": orig.get("managed_by_user_id"),
+            "smart": orig.get("is_smart", False), "mode": orig.get("generation_mode", "static"),
+            "rules": orig.get("smart_rules_json"),
+            "curated": orig.get("is_curated", False), "active": False,
+            "cat": orig.get("category"), "rank": None,
+            "vis": orig.get("visibility", "public"), "refresh": orig.get("auto_refresh_enabled", True),
+            "now": now,
+        },
+    ).mappings().first()
+
+    if not row:
+        return None
+    new_id = row["id"]
+
+    # For static playlists, also duplicate tracks
+    if orig.get("generation_mode") != "smart":
+        session.execute(
+            text("""
+                INSERT INTO playlist_tracks (playlist_id, track_id, track_path, track_storage_id,
+                    title, artist, album, duration, position, added_at)
+                SELECT :new_id, track_id, track_path, track_storage_id,
+                    title, artist, album, duration, position, :now
+                FROM playlist_tracks WHERE playlist_id = :old_id
+                ORDER BY position
+            """),
+            {"new_id": new_id, "old_id": playlist_id, "now": now},
+        )
+        session.execute(
+            text("""
+                UPDATE playlists SET track_count = (
+                    SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = :id
+                ) WHERE id = :id
+            """),
+            {"id": new_id},
+        )
+
+    new_playlist = session.execute(
+        text("SELECT * FROM playlists WHERE id = :id"), {"id": new_id}
+    ).mappings().first()
+    return _normalize_playlist_row(new_playlist) if new_playlist else None

@@ -37,6 +37,10 @@ TASK_TYPE_LABELS: dict[str, str] = {
     # Popularity
     "update_popularity": "Popularity Update",
     "fetch_popularity": "Popularity Fetch",
+    # Playlists
+    "generate_system_playlist": "Playlist Generation",
+    "refresh_system_smart_playlists": "Refresh Smart Playlists",
+    "persist_playlist_cover": "Save Playlist Cover",
 }
 
 TASK_TYPE_ICONS: dict[str, str] = {

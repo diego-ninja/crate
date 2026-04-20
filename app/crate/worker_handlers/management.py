@@ -599,6 +599,128 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
     return result
 
 
+def _handle_generate_system_playlist(task_id: str, params: dict, config: dict) -> dict:
+    """Generate or regenerate a smart system playlist."""
+    from crate.db import emit_task_event
+    from crate.db.playlists import (
+        get_playlist, execute_smart_rules, replace_playlist_tracks,
+        set_generation_status, log_generation_start, log_generation_complete, log_generation_failed,
+    )
+
+    playlist_id = int(params.get("playlist_id", 0))
+    triggered_by = params.get("triggered_by", "manual")
+
+    playlist = get_playlist(playlist_id)
+    if not playlist:
+        return {"error": "Playlist not found"}
+
+    rules = playlist.get("smart_rules")
+    if not rules:
+        return {"error": "No smart rules configured"}
+
+    name = playlist.get("name", f"Playlist {playlist_id}")
+    emit_task_event(task_id, "info", {"message": f"Generating: {name}"})
+
+    set_generation_status(playlist_id, "running")
+    log_id = log_generation_start(playlist_id, rules, triggered_by)
+
+    try:
+        tracks = execute_smart_rules(rules)
+        track_dicts = [
+            {"track_path": t.get("path", ""), "track_id": t.get("id"),
+             "track_storage_id": t.get("storage_id"),
+             "title": t.get("title", ""), "artist": t.get("artist", ""),
+             "album": t.get("album", ""), "duration": t.get("duration")}
+            for t in tracks
+        ]
+        replace_playlist_tracks(playlist_id, track_dicts)
+        total_duration = sum(t.get("duration") or 0 for t in tracks)
+
+        set_generation_status(playlist_id, "idle")
+        log_generation_complete(log_id, len(tracks), total_duration)
+        emit_task_event(task_id, "info", {
+            "message": f"Generated {name}: {len(tracks)} tracks, {total_duration // 60}m",
+        })
+
+        try:
+            from crate.telegram import send_message
+            send_message(
+                f"\U0001f3b6 Smart Playlist <b>{name}</b> regenerated\n"
+                f"{len(tracks)} tracks \u00b7 {total_duration // 60}m\n"
+                f"Triggered by: {triggered_by}"
+            )
+        except Exception:
+            pass
+
+        return {"track_count": len(tracks), "duration_sec": total_duration}
+
+    except Exception as e:
+        set_generation_status(playlist_id, "failed", str(e))
+        log_generation_failed(log_id, str(e))
+        emit_task_event(task_id, "error", {"message": f"Generation failed for {name}: {str(e)[:200]}"})
+        raise
+
+
+def _handle_refresh_system_smart_playlists(task_id: str, params: dict, config: dict) -> dict:
+    """Scheduled daily refresh of eligible smart system playlists."""
+    from crate.db import emit_task_event
+    from crate.db.playlists import get_smart_playlists_for_refresh
+    from crate.db.tasks import create_task
+
+    playlists = get_smart_playlists_for_refresh()
+    emit_task_event(task_id, "info", {"message": f"Found {len(playlists)} playlists eligible for refresh"})
+
+    enqueued = 0
+    for pl in playlists:
+        create_task("generate_system_playlist", {
+            "playlist_id": pl["id"],
+            "triggered_by": "scheduler",
+        })
+        enqueued += 1
+
+    emit_task_event(task_id, "info", {"message": f"Enqueued {enqueued} playlist generation tasks"})
+    return {"eligible": len(playlists), "enqueued": enqueued}
+
+
+def _handle_persist_playlist_cover(task_id: str, params: dict, config: dict) -> dict:
+    """Read cover base64 from Redis and write to disk."""
+    import base64
+    from crate.db import emit_task_event
+    from crate.db.playlists import update_playlist
+    from crate.db.cache import _get_redis
+
+    playlist_id = int(params.get("playlist_id", 0))
+    redis_key = f"cover:staging:{playlist_id}"
+
+    r = _get_redis()
+    if not r:
+        return {"error": "Redis unavailable"}
+
+    raw = r.get(redis_key)
+    if not raw:
+        return {"error": "Cover data expired or missing from Redis"}
+
+    try:
+        b64_str = raw.decode() if isinstance(raw, bytes) else raw
+        # Strip data URL prefix if present
+        if "," in b64_str:
+            b64_str = b64_str.split(",", 1)[1]
+        image_data = base64.b64decode(b64_str)
+    except Exception as e:
+        return {"error": f"Failed to decode cover: {str(e)[:200]}"}
+
+    cover_dir = Path("/music/.covers/playlists")
+    cover_dir.mkdir(parents=True, exist_ok=True)
+    cover_path = cover_dir / f"{playlist_id}.jpg"
+
+    cover_path.write_bytes(image_data)
+    r.delete(redis_key)
+
+    update_playlist(playlist_id, cover_path=str(cover_path))
+    emit_task_event(task_id, "info", {"message": f"Cover saved for playlist {playlist_id}"})
+    return {"cover_path": str(cover_path)}
+
+
 MANAGEMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "health_check": _handle_health_check,
     "repair": _handle_repair,
@@ -612,4 +734,7 @@ MANAGEMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "update_album_tags": _handle_update_album_tags,
     "update_track_tags": _handle_update_track_tags,
     "resolve_duplicates": _handle_resolve_duplicates,
+    "generate_system_playlist": _handle_generate_system_playlist,
+    "refresh_system_smart_playlists": _handle_refresh_system_smart_playlists,
+    "persist_playlist_cover": _handle_persist_playlist_cover,
 }
