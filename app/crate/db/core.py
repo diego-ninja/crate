@@ -2006,40 +2006,6 @@ def _m29_add_shows_lastfm_fields(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_shows_scrape_city ON shows(scrape_city)")
 
 
-_MIGRATIONS = [
-    (1, "add_artist_id_sequence", _m01_add_artist_id_sequence),
-    (2, "add_slug_columns", _m02_add_slug_columns),
-    (3, "add_audio_analysis_columns", _m03_add_audio_analysis_columns),
-    (4, "add_artist_metadata_columns", _m04_add_artist_metadata_columns),
-    (5, "add_bliss_vector", _m05_add_bliss_vector),
-    (6, "add_popularity_columns", _m06_add_popularity_columns),
-    (7, "add_album_metadata", _m07_add_album_metadata),
-    (8, "add_task_events_fk", _m08_add_task_events_fk),
-    (9, "add_playlist_extended_columns", _m09_add_playlist_extended_columns),
-    (10, "fix_user_followed_playlists_fk", _m10_fix_user_followed_playlists_fk),
-    (12, "add_shows_address_columns", _m12_add_shows_address_columns),
-    (13, "add_track_rating", _m13_add_track_rating),
-    (14, "add_tasks_dramatiq_columns", _m14_add_tasks_dramatiq_columns),
-    (15, "add_new_releases_columns", _m15_add_new_releases_columns),
-    (16, "user_liked_tracks_v2", _m16_user_liked_tracks_v2),
-    (17, "add_play_history_track_id", _m17_add_play_history_track_id),
-    (18, "add_favorites_user_id", _m18_add_favorites_user_id),
-    (19, "add_username_column", _m00_add_username_column),
-    (20, "convert_to_timestamptz", _m20_convert_to_timestamptz),
-    (21, "identity_social_collab_foundation", _m21_identity_social_collab_foundation),
-    (22, "add_subsonic_token", _m22_add_subsonic_token),
-    (23, "add_storage_ids_and_playlist_track_id", _m23_add_storage_ids_and_playlist_track_id),
-    (24, "genre_taxonomy_descriptions_and_lowercase_names", _m24_genre_taxonomy_descriptions_and_lowercase_names),
-    (25, "genre_taxonomy_external_metadata", _m25_genre_taxonomy_external_metadata),
-    (26, "genre_taxonomy_musicbrainz_index", _m26_genre_taxonomy_musicbrainz_index),
-    (27, "add_track_sample_rate_and_bit_depth", _m27_add_track_sample_rate_and_bit_depth),
-    (28, "add_user_location_fields", _m28_add_user_location_fields),
-    (29, "add_shows_lastfm_fields", _m29_add_shows_lastfm_fields),
-    (30, "add_metric_rollups_and_worker_logs", _m30_add_metric_rollups_and_worker_logs),
-
-]
-
-
 def _m30_add_metric_rollups_and_worker_logs(cur):
     """Metrics time-series rollups + structured worker logs."""
     cur.execute("""
@@ -2075,3 +2041,37 @@ def _m30_add_metric_rollups_and_worker_logs(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_worker_logs_worker ON worker_logs(worker_id, created_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_worker_logs_task ON worker_logs(task_id, id) WHERE task_id IS NOT NULL")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_worker_logs_level ON worker_logs(level, created_at DESC)")
+
+
+_MIGRATIONS = [
+    (1, "add_artist_id_sequence", _m01_add_artist_id_sequence),
+    (2, "add_slug_columns", _m02_add_slug_columns),
+    (3, "add_audio_analysis_columns", _m03_add_audio_analysis_columns),
+    (4, "add_artist_metadata_columns", _m04_add_artist_metadata_columns),
+    (5, "add_bliss_vector", _m05_add_bliss_vector),
+    (6, "add_popularity_columns", _m06_add_popularity_columns),
+    (7, "add_album_metadata", _m07_add_album_metadata),
+    (8, "add_task_events_fk", _m08_add_task_events_fk),
+    (9, "add_playlist_extended_columns", _m09_add_playlist_extended_columns),
+    (10, "fix_user_followed_playlists_fk", _m10_fix_user_followed_playlists_fk),
+    (12, "add_shows_address_columns", _m12_add_shows_address_columns),
+    (13, "add_track_rating", _m13_add_track_rating),
+    (14, "add_tasks_dramatiq_columns", _m14_add_tasks_dramatiq_columns),
+    (15, "add_new_releases_columns", _m15_add_new_releases_columns),
+    (16, "user_liked_tracks_v2", _m16_user_liked_tracks_v2),
+    (17, "add_play_history_track_id", _m17_add_play_history_track_id),
+    (18, "add_favorites_user_id", _m18_add_favorites_user_id),
+    (19, "add_username_column", _m00_add_username_column),
+    (20, "convert_to_timestamptz", _m20_convert_to_timestamptz),
+    (21, "identity_social_collab_foundation", _m21_identity_social_collab_foundation),
+    (22, "add_subsonic_token", _m22_add_subsonic_token),
+    (23, "add_storage_ids_and_playlist_track_id", _m23_add_storage_ids_and_playlist_track_id),
+    (24, "genre_taxonomy_descriptions_and_lowercase_names", _m24_genre_taxonomy_descriptions_and_lowercase_names),
+    (25, "genre_taxonomy_external_metadata", _m25_genre_taxonomy_external_metadata),
+    (26, "genre_taxonomy_musicbrainz_index", _m26_genre_taxonomy_musicbrainz_index),
+    (27, "add_track_sample_rate_and_bit_depth", _m27_add_track_sample_rate_and_bit_depth),
+    (28, "add_user_location_fields", _m28_add_user_location_fields),
+    (29, "add_shows_lastfm_fields", _m29_add_shows_lastfm_fields),
+    (30, "add_metric_rollups_and_worker_logs", _m30_add_metric_rollups_and_worker_logs),
+
+]
