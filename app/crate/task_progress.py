@@ -129,18 +129,15 @@ _last_db_write: dict[str, float] = {}
 
 
 def emit_progress(task_id: str, progress: TaskProgress, *, force: bool = False):
-    """Update task progress in DB (throttled) and emit SSE event (immediate)."""
+    """Update task progress in DB (throttled).
+
+    Does NOT emit a task_event — progress updates are high-frequency
+    and would flood the event log. The UI reads the progress field
+    from the task row directly (via SSE global stream or polling).
+    """
     from crate.db.tasks import update_task
-    from crate.db.events import emit_task_event
 
     progress.update_rate()
-    payload = progress.to_dict()
-
-    # Always emit SSE event for real-time UI
-    try:
-        emit_task_event(task_id, "progress", payload)
-    except Exception:
-        log.debug("Failed to emit progress event for %s", task_id, exc_info=True)
 
     # Throttle DB writes
     now = time.monotonic()
@@ -188,3 +185,16 @@ def emit_item_event(
         emit_task_event(task_id, "item", data)
     except Exception:
         log.debug("Failed to emit item event for %s", task_id, exc_info=True)
+
+    # Also write to worker_logs so the Logs page has data
+    try:
+        from crate.db.worker_logs import insert_log
+        insert_log(
+            level=level,
+            message=message,
+            task_id=task_id,
+            category=extra.get("category", "general") if extra else "general",
+            metadata={k: v for k, v in data.items() if k not in ("level", "message")},
+        )
+    except Exception:
+        pass
