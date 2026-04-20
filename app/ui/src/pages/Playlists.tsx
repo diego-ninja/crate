@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -113,6 +114,7 @@ function fmtDuration(secs: number): string {
 }
 
 export function Playlists() {
+  const navigate = useNavigate();
   const [playlists, setPlaylists] = useState<SystemPlaylist[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterMode>("all");
@@ -299,7 +301,7 @@ export function Playlists() {
             <Card key={playlist.id} className="overflow-hidden bg-card">
               <div
                 className="flex cursor-pointer items-center gap-4 px-4 py-4 transition-colors hover:bg-white/[0.03]"
-                onClick={() => void loadPlaylist(playlist.id)}
+                onClick={() => navigate(`/playlists/${playlist.id}`)}
               >
                 <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.03]">
                   {playlist.generation_mode === "smart" ? (
