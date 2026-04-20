@@ -1,7 +1,10 @@
-import json
 import logging
 import shutil
 from pathlib import Path
+
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
+
+
 def _escape_like(value: str) -> str:
     """Escape SQL LIKE metacharacters and prepend wildcard for year-prefix matching."""
     escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -48,9 +51,17 @@ def _unmark_processing(artist_name: str):
 def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
     from crate.health_check import LibraryHealthCheck
 
+    p_hc = TaskProgress(phase="health_check", phase_count=1)
+
+    def _hc_progress(data):
+        p_hc.done = data.get("done", p_hc.done)
+        p_hc.total = data.get("total", p_hc.total)
+        p_hc.item = data.get("check", p_hc.item)
+        emit_progress(task_id, p_hc)
+
     checker = LibraryHealthCheck(config)
     report = checker.run(
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data))
+        progress_callback=_hc_progress
     )
     set_cache("health_report", report, ttl=3600)
     issue_count = len(report.get("issues", []))
@@ -104,13 +115,21 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
             _mark_processing(artist)
 
     try:
+        p_repair = TaskProgress(phase="repair", phase_count=1)
+
+        def _repair_progress(data):
+            p_repair.done = data.get("done", p_repair.done)
+            p_repair.total = data.get("total", p_repair.total)
+            p_repair.item = data.get("action", p_repair.item)
+            emit_progress(task_id, p_repair)
+
         repairer = LibraryRepair(config)
         result = repairer.repair(
             report,
             dry_run=dry_run,
             auto_only=auto_only,
             task_id=task_id,
-            progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+            progress_callback=_repair_progress,
         )
 
         action_count = len(result.get("actions", []))
@@ -183,49 +202,66 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     from crate.db import get_library_artists
     from crate.library_sync import LibrarySync
 
+    p_pipe = TaskProgress(phase="health_check", phase_count=3)
+
     emit_task_event(task_id, "info", {"message": "Pipeline: running health check..."})
-    update_task(task_id, progress=json.dumps({"phase": "health_check"}))
+    emit_progress(task_id, p_pipe, force=True)
     if is_cancelled(task_id):
         return {"status": "cancelled"}
 
+    def _pipe_hc_progress(data):
+        p_pipe.done = data.get("done", p_pipe.done)
+        p_pipe.total = data.get("total", p_pipe.total)
+        p_pipe.item = data.get("check", p_pipe.item)
+        emit_progress(task_id, p_pipe)
+
     checker = LibraryHealthCheck(config)
-    report = checker.run(
-        progress_callback=lambda data: update_task(
-            task_id,
-            progress=json.dumps({**data, "phase": "health_check"}),
-        )
-    )
+    report = checker.run(progress_callback=_pipe_hc_progress)
     set_cache("health_report", report, ttl=3600)
 
     if is_cancelled(task_id):
         return {"status": "cancelled"}
 
     emit_task_event(task_id, "info", {"message": "Pipeline: running repair..."})
-    update_task(task_id, progress=json.dumps({"phase": "repair"}))
+    p_pipe.phase = "repair"
+    p_pipe.phase_index = 1
+    p_pipe.done = 0
+    p_pipe.total = 0
+    emit_progress(task_id, p_pipe, force=True)
+
+    def _pipe_repair_progress(data):
+        p_pipe.done = data.get("done", p_pipe.done)
+        p_pipe.total = data.get("total", p_pipe.total)
+        p_pipe.item = data.get("action", p_pipe.item)
+        emit_progress(task_id, p_pipe)
+
     repairer = LibraryRepair(config)
     repair_result = repairer.repair(
         report,
         dry_run=False,
         auto_only=True,
         task_id=task_id,
-        progress_callback=lambda data: update_task(
-            task_id,
-            progress=json.dumps({**data, "phase": "repair"}),
-        ),
+        progress_callback=_pipe_repair_progress,
     )
 
     if is_cancelled(task_id):
         return {"status": "cancelled"}
 
     emit_task_event(task_id, "info", {"message": "Pipeline: running sync..."})
-    update_task(task_id, progress=json.dumps({"phase": "sync"}))
+    p_pipe.phase = "sync"
+    p_pipe.phase_index = 2
+    p_pipe.done = 0
+    p_pipe.total = 0
+    emit_progress(task_id, p_pipe, force=True)
+
+    def _pipe_sync_progress(data):
+        p_pipe.done = data.get("done", p_pipe.done)
+        p_pipe.total = data.get("total", p_pipe.total)
+        p_pipe.item = data.get("artist", p_pipe.item)
+        emit_progress(task_id, p_pipe)
+
     sync = LibrarySync(config)
-    sync_result = sync.full_sync(
-        progress_callback=lambda data: update_task(
-            task_id,
-            progress=json.dumps({**data, "phase": "sync"}),
-        )
-    )
+    sync_result = sync.full_sync(progress_callback=_pipe_sync_progress)
 
     if repair_result.get("fs_changed"):
         start_scan()
@@ -411,7 +447,8 @@ def _handle_wipe_library(task_id: str, params: dict, config: dict) -> dict:
 def _handle_rebuild_library(task_id: str, params: dict, config: dict) -> dict:
     from crate.db import log_audit, wipe_library_tables
 
-    update_task(task_id, progress=json.dumps({"phase": "wipe"}))
+    p_rebuild = TaskProgress(phase="wipe", phase_count=2)
+    emit_progress(task_id, p_rebuild, force=True)
     wipe_library_tables()
     emit_task_event(
         task_id,

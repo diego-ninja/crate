@@ -2,6 +2,7 @@ import json
 import logging
 from crate.db import emit_task_event, update_task
 from crate.db.jobs.integrations import get_artists_with_similar_json
+from crate.task_progress import TaskProgress, emit_progress, entity_label
 from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
@@ -92,7 +93,8 @@ def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> d
         except Exception:
             log.warning("backfill_similarities: failed for %s", row["name"], exc_info=True)
         if index % 50 == 0:
-            update_task(task_id, progress=json.dumps({"phase": "backfill", "done": index + 1, "total": total}))
+            p_bf = TaskProgress(phase="backfill", done=index + 1, total=total, item=row.get("name", ""))
+            emit_progress(task_id, p_bf)
 
     try:
         updated = mark_library_status()
@@ -129,7 +131,7 @@ def _handle_sync_shows_lastfm(task_id: str, params: dict, config: dict) -> dict:
         from_date=date.today(),
         to_date=date.today() + timedelta(days=180),
         fetch_details=False,
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        progress_callback=lambda data: emit_progress(task_id, TaskProgress(phase="scraping", done=data.get("done", 0), total=data.get("total", 0), item=data.get("page", ""))),
     )
 
     # Write JSON intermediate for debugging
@@ -153,9 +155,8 @@ def _handle_sync_shows_lastfm(task_id: str, params: dict, config: dict) -> dict:
         if is_cancelled(task_id):
             break
         if i % 10 == 0:
-            update_task(task_id, progress=json.dumps({
-                "phase": "consolidating", "done": i, "total": len(events),
-            }))
+            p_cons = TaskProgress(phase="consolidating", done=i, total=len(events))
+            emit_progress(task_id, p_cons)
         try:
             result = consolidate_show(event)
             if result == "inserted":

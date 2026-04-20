@@ -1,10 +1,10 @@
-import json
 import logging
 import shutil
 import time
 from pathlib import Path
 
 from crate.db import delete_cache, emit_task_event, get_library_artist, get_setting, get_task, set_cache, update_task
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.jobs.enrichment import (
     get_albums_without_mbid,
     get_album_names_for_artist,
@@ -208,36 +208,24 @@ def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
     enriched = 0
     skipped = 0
 
+    p = TaskProgress(phase="enriching", phase_count=1, total=total)
+
     for index, artist in enumerate(all_artists):
         if is_cancelled(task_id):
             break
 
         name = artist["name"]
-        if index % 5 == 0:
-            update_task(
-                task_id,
-                progress=json.dumps(
-                    {
-                        "artist": name,
-                        "done": index + 1,
-                        "total": total,
-                        "enriched": enriched,
-                        "skipped": skipped,
-                    }
-                ),
-            )
+        p.done = index + 1
+        p.item = entity_label(artist=name)
+        emit_progress(task_id, p)
 
         result = enrich_artist(name, config)
         if result.get("skipped"):
             skipped += 1
-            emit_task_event(task_id, "artist_skipped", {"message": f"Skipped: {name}", "artist": name})
+            emit_item_event(task_id, level="info", message=f"Skipped: {name}", artist=name)
         else:
             enriched += 1
-            emit_task_event(
-                task_id,
-                "artist_enriched",
-                {"message": f"Enriched: {name}", "artist": name, "sources": result},
-            )
+            emit_item_event(task_id, level="info", message=f"Enriched: {name}", artist=name)
 
     return {"enriched": enriched, "skipped": skipped, "total": total}
 
@@ -250,9 +238,12 @@ def _handle_enrich_single(task_id: str, params: dict, config: dict) -> dict:
     if not name:
         return {"error": "No artist specified"}
 
-    update_task(task_id, progress=json.dumps({"artist": name, "phase": "enriching"}))
+    p = TaskProgress(phase="enriching", phase_count=1, total=1, item=entity_label(artist=name))
+    emit_progress(task_id, p)
     result = enrich_artist(name, config, force=True)
-    emit_task_event(task_id, "info", {"message": f"Enriched: {name}", "sources": result})
+    p.done = 1
+    emit_progress(task_id, p, force=True)
+    emit_item_event(task_id, level="info", message=f"Enriched: {name}", artist=name)
     return result
 
 
@@ -302,6 +293,8 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     skipped = 0
     failed = 0
 
+    p = TaskProgress(phase="matching_mbids", phase_count=1, total=total)
+
     for index, album in enumerate(albums):
         if is_cancelled(task_id):
             break
@@ -315,20 +308,9 @@ def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
             skipped += 1
             continue
 
-        if index % 5 == 0:
-            update_task(
-                task_id,
-                progress=json.dumps(
-                    {
-                        "artist": artist_name,
-                        "album": album_name,
-                        "done": index,
-                        "total": total,
-                        "enriched": enriched,
-                        "skipped": skipped,
-                    }
-                ),
-            )
+        p.done = index
+        p.item = entity_label(artist=artist_name, album=album_name)
+        emit_progress(task_id, p)
 
         clean_album = _clean_album_lookup_name(album_name)
         tracks_db = get_library_tracks(album["id"]) if "id" in album else []
@@ -472,8 +454,12 @@ def _process_new_content_organize_folders(
     artist_name: str,
     lib: Path,
     config: dict,
+    p: TaskProgress,
 ) -> None:
-    update_task(task_id, progress=json.dumps({"step": "organize_folders", "artist": artist_name}))
+    p.phase = "organize_folders"
+    p.phase_index += 1
+    p.item = entity_label(artist=artist_name)
+    emit_progress(task_id, p, force=True)
     try:
         _reorganize_artist_folders(artist_name, lib, config, task_id)
         result["steps"]["organize_folders"] = True
@@ -487,10 +473,14 @@ def _process_new_content_enrich_artist(
     result: dict,
     artist_name: str,
     config: dict,
+    p: TaskProgress,
 ) -> None:
     from crate.enrichment import enrich_artist
 
-    update_task(task_id, progress=json.dumps({"step": "enrich_artist", "artist": artist_name}))
+    p.phase = "enrich_artist"
+    p.phase_index += 1
+    p.item = entity_label(artist=artist_name)
+    emit_progress(task_id, p, force=True)
     try:
         enrich_result = enrich_artist(artist_name, config)
         result["steps"]["enrich_artist"] = enrich_result.get("skipped", False)
@@ -509,11 +499,15 @@ def _process_new_content_album_genres(
     result: dict,
     artist_name: str,
     album_folder: str,
+    p: TaskProgress,
 ) -> list[dict]:
     from crate.db import get_library_albums, get_library_tracks, set_album_genres
 
     albums = []
-    update_task(task_id, progress=json.dumps({"step": "album_genres", "artist": artist_name}))
+    p.phase = "album_genres"
+    p.phase_index += 1
+    p.item = entity_label(artist=artist_name)
+    emit_progress(task_id, p, force=True)
     try:
         albums = get_library_albums(artist_name)
         for album in albums:
@@ -549,10 +543,14 @@ def _process_new_content_album_mbids(
     artist_name: str,
     album_folder: str,
     config: dict,
+    p: TaskProgress,
 ) -> None:
     from crate.db import get_library_tracks
 
-    update_task(task_id, progress=json.dumps({"step": "album_mbid", "artist": artist_name}))
+    p.phase = "album_mbid"
+    p.phase_index += 1
+    p.item = entity_label(artist=artist_name)
+    emit_progress(task_id, p, force=True)
     try:
         exts = DEFAULT_AUDIO_EXTENSIONS
         mbid_count = 0
@@ -599,11 +597,15 @@ def _process_new_content_popularity(
     albums: list[dict],
     artist_name: str,
     album_folder: str,
+    p: TaskProgress,
 ) -> None:
     from crate.db import get_library_tracks
     from crate.popularity import _lastfm_get, _normalize_popularity, _parse_int
 
-    update_task(task_id, progress=json.dumps({"step": "popularity", "artist": artist_name}))
+    p.phase = "popularity"
+    p.phase_index += 1
+    p.item = entity_label(artist=artist_name)
+    emit_progress(task_id, p, force=True)
     try:
         pop_count = 0
         for album in albums:
@@ -662,12 +664,16 @@ def _process_new_content_missing_covers(
     albums: list[dict],
     artist_name: str,
     album_folder: str,
+    p: TaskProgress,
 ) -> None:
     import requests as _requests
 
     from crate.artwork import fetch_cover_from_caa, save_cover
 
-    update_task(task_id, progress=json.dumps({"step": "covers", "artist": artist_name}))
+    p.phase = "covers"
+    p.phase_index += 1
+    p.item = entity_label(artist=artist_name)
+    emit_progress(task_id, p, force=True)
     try:
         covers_fetched = 0
         for album in albums:
@@ -761,10 +767,13 @@ def _process_new_content_inner(
         except Exception:
             log.warning("Pre-enrichment sync failed for %s", artist_name, exc_info=True)
 
-    _process_new_content_organize_folders(task_id, result, artist_name, lib, config)
-    _process_new_content_enrich_artist(task_id, result, artist_name, config)
-    albums = _process_new_content_album_genres(task_id, result, artist_name, album_folder)
-    _process_new_content_album_mbids(task_id, result, albums, artist_name, album_folder, config)
+    p = TaskProgress(phase="starting", phase_count=6, total=1, item=entity_label(artist=artist_name))
+    emit_progress(task_id, p, force=True)
+
+    _process_new_content_organize_folders(task_id, result, artist_name, lib, config, p)
+    _process_new_content_enrich_artist(task_id, result, artist_name, config, p)
+    albums = _process_new_content_album_genres(task_id, result, artist_name, album_folder, p)
+    _process_new_content_album_mbids(task_id, result, albums, artist_name, album_folder, config, p)
 
     # Audio analysis and bliss are handled by background daemons (analysis_daemon.py).
     # New tracks enter library_tracks with analysis_state='pending' and bliss_state='pending'
@@ -772,8 +781,8 @@ def _process_new_content_inner(
     result["steps"]["audio_analysis"] = "background_daemon"
     result["steps"]["bliss"] = "background_daemon"
 
-    _process_new_content_popularity(task_id, result, albums, artist_name, album_folder)
-    _process_new_content_missing_covers(task_id, result, albums, artist_name, album_folder)
+    _process_new_content_popularity(task_id, result, albums, artist_name, album_folder, p)
+    _process_new_content_missing_covers(task_id, result, albums, artist_name, album_folder, p)
     _process_new_content_update_artist_hash(artist_dir, artist_name)
 
     # Notify connected clients to refresh cached library data.
@@ -804,12 +813,14 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
     artists = get_artists_with_mbid()
 
     total = len(artists)
+    p = TaskProgress(phase="completeness", phase_count=1, total=total)
     results = []
     for index, artist in enumerate(artists):
         if is_cancelled(task_id):
             break
-        if index % 10 == 0:
-            update_task(task_id, progress=json.dumps({"done": index, "total": total}))
+        p.done = index
+        p.item = entity_label(artist=artist["name"])
+        emit_progress(task_id, p)
 
         try:
             mb_data = get_cache(f"mb:albums:{artist['mbid']}", max_age_seconds=86400 * 7)

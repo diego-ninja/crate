@@ -1,4 +1,3 @@
-import json
 import logging
 import re
 import shutil
@@ -10,6 +9,7 @@ from pathlib import Path
 
 from crate.audio import get_audio_files, read_tags
 from crate.db import create_task, create_task_dedup, emit_task_event, get_setting, get_task, update_task
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.jobs.acquisition import update_artist_latest_release_date
 from crate.db.user_library import follow_artist, like_track, save_album
 from crate.storage_import import resolve_import_album_target
@@ -223,17 +223,21 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     album_name = params.get("album", "")
     desc = f"{artist_name} - {album_name}" if artist_name else url
     emit_task_event(task_id, "info", {"message": f"Downloading from Tidal: {desc}"})
-    update_task(
-        task_id,
-        progress=json.dumps(
-            {"phase": "downloading", "artist": artist_name, "album": album_name, "url": url}
-        ),
-    )
+
+    p = TaskProgress(phase="downloading", phase_count=3, item=entity_label(artist=artist_name, album=album_name))
+    emit_progress(task_id, p, force=True)
+
+    def _dl_progress(data):
+        p.done = data.get("done", p.done)
+        p.total = data.get("total", p.total)
+        p.item = data.get("track", p.item)
+        emit_progress(task_id, p)
+
     result = download(
         url,
         quality=quality,
         task_id=task_id,
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        progress_callback=_dl_progress,
     )
 
     if not result.get("success"):
@@ -252,9 +256,15 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # the library, sync indexes them as ghost tracks with no metadata.
     from crate.m4a_fix import cleanup_tidal_intermediates
 
+    def _cleanup_progress(data):
+        p.phase = "cleanup"
+        p.done = data.get("done", p.done)
+        p.total = data.get("total", p.total)
+        emit_progress(task_id, p)
+
     cleanup = cleanup_tidal_intermediates(
         Path(result["path"]),
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        progress_callback=_cleanup_progress,
     )
     if cleanup.get("deleted"):
         mb = cleanup["bytes_freed"] / (1024 * 1024)
@@ -270,7 +280,11 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         "info",
         {"message": f"Moving {result.get('file_count', 0)} files to library"},
     )
-    update_task(task_id, progress=json.dumps({"phase": "moving", "files": result.get("file_count", 0)}))
+    p.phase = "moving"
+    p.phase_index = 1
+    p.done = 0
+    p.total = result.get("file_count", 0)
+    emit_progress(task_id, p, force=True)
 
     # Suppress the library_watcher for the artists we're about to write to
     # /music. Otherwise the watcher sees the new files, enqueues its own
@@ -343,7 +357,11 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
             "info",
             {"message": f"Syncing {', '.join(modified_artists)} to library"},
         )
-        update_task(task_id, progress=json.dumps({"phase": "syncing", "artists": modified_artists}))
+        p.phase = "syncing"
+        p.phase_index = 2
+        p.done = 0
+        p.total = len(modified_artists)
+        emit_progress(task_id, p, force=True)
         sync = LibrarySync(config)
         for current_artist in modified_artists:
             artist_row = _get_artist(current_artist)
@@ -432,23 +450,14 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
 
 def _update_new_releases_progress(
     task_id: str,
+    p: TaskProgress,
     artist_name: str,
     done: int,
-    total: int,
     new_count: int,
 ) -> None:
-    update_task(
-        task_id,
-        progress=json.dumps(
-            {
-                "phase": "checking",
-                "artist": artist_name,
-                "done": done,
-                "total": total,
-                "new_releases": new_count,
-            }
-        ),
-    )
+    p.done = done
+    p.item = entity_label(artist=artist_name)
+    emit_progress(task_id, p)
 
 
 def _find_tidal_release_match(artist_name: str, title: str) -> dict:
@@ -554,6 +563,8 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
     new_count = 0
     checked = 0
 
+    p = TaskProgress(phase="checking", phase_count=1, total=total)
+
     for i, artist in enumerate(all_artists):
         if is_cancelled(task_id):
             break
@@ -562,7 +573,7 @@ def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict
         mbid = artist.get("mbid")
 
         if i % 5 == 0:
-            _update_new_releases_progress(task_id, name, i, total, new_count)
+            _update_new_releases_progress(task_id, p, name, i, new_count)
 
         if not mbid:
             continue
@@ -720,6 +731,8 @@ def _poll_soulseek_download_completion(
     retries_done = 0
     completed_files: list[dict] = []
 
+    p = TaskProgress(phase="downloading", phase_count=1, total=file_count, item=entity_label(artist=artist))
+
     while elapsed < max_wait:
         if is_cancelled(task_id):
             return {"status": "cancelled"}
@@ -734,18 +747,9 @@ def _poll_soulseek_download_completion(
         completed = sum(1 for download in user_downloads if _soulseek_download_completed(download))
         failed = [download for download in user_downloads if _soulseek_download_failed(download)]
         in_progress = sum(1 for download in user_downloads if _soulseek_download_active(download))
-        update_task(
-            task_id,
-            progress=json.dumps(
-                {
-                    "completed": completed,
-                    "errored": len(failed),
-                    "in_progress": in_progress,
-                    "total": file_count,
-                    "artist": artist,
-                }
-            ),
-        )
+        p.done = completed
+        p.errors = len(failed)
+        emit_progress(task_id, p)
 
         if completed >= file_count:
             return [download for download in user_downloads if _soulseek_download_completed(download)]
@@ -1024,7 +1028,8 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
     extensions = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a", ".ogg", ".opus"]))
 
     emit_task_event(task_id, "info", {"message": "Preparing uploaded files"})
-    update_task(task_id, progress=json.dumps({"phase": "preparing"}))
+    p_upload = TaskProgress(phase="preparing", phase_count=3)
+    emit_progress(task_id, p_upload, force=True)
 
     zip_count = 0
     for file_path in sorted(raw_dir.iterdir()):
@@ -1054,7 +1059,11 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
     queue = ImportQueue(config)
     imported_albums: list[dict] = []
 
-    update_task(task_id, progress=json.dumps({"phase": "importing", "albums_total": len(album_dirs), "albums_done": 0}))
+    p_upload.phase = "importing"
+    p_upload.phase_index = 1
+    p_upload.total = len(album_dirs)
+    p_upload.done = 0
+    emit_progress(task_id, p_upload, force=True)
     for index, album_dir in enumerate(album_dirs, start=1):
         if is_cancelled(task_id):
             break
@@ -1076,24 +1085,21 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
                 "status": result.get("status", "imported"),
             }
         )
-        emit_task_event(
-            task_id,
-            "info",
-            {"message": f"Imported {artist} — {album}", "artist": artist, "album": album},
-        )
-        update_task(
-            task_id,
-            progress=json.dumps(
-                {"phase": "importing", "albums_total": len(album_dirs), "albums_done": index, "artist": artist, "album": album}
-            ),
-        )
+        emit_item_event(task_id, level="info", message=f"Imported {artist} — {album}", artist=artist, album=album)
+        p_upload.done = index
+        p_upload.item = entity_label(artist=artist, album=album)
+        emit_progress(task_id, p_upload)
 
     modified_artists = sorted({item["artist"] for item in imported_albums if item.get("artist")})
     lib = Path(config["library_path"])
     sync = LibrarySync(config)
 
     emit_task_event(task_id, "info", {"message": "Syncing imported music to library", "artists": modified_artists})
-    update_task(task_id, progress=json.dumps({"phase": "syncing", "artists": modified_artists}))
+    p_upload.phase = "syncing"
+    p_upload.phase_index = 2
+    p_upload.done = 0
+    p_upload.total = len(modified_artists)
+    emit_progress(task_id, p_upload, force=True)
     for artist in modified_artists:
         from crate.db import get_library_artist as _get_artist_fn
         artist_row = _get_artist_fn(artist)
@@ -1150,10 +1156,17 @@ def _handle_remux_m4a_dash(task_id: str, params: dict, config: dict) -> dict:
 
     emit_task_event(task_id, "info", {"message": "Scanning library for tiddl intermediate M4A files..."})
 
+    p_remux = TaskProgress(phase="cleanup", phase_count=2)
+
+    def _remux_cleanup_progress(data):
+        p_remux.done = data.get("done", p_remux.done)
+        p_remux.total = data.get("total", p_remux.total)
+        emit_progress(task_id, p_remux)
+
     # Phase 1: cleanup intermediates where FLACs exist
     cleanup = cleanup_tidal_intermediates(
         lib,
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        progress_callback=_remux_cleanup_progress,
     )
 
     deleted = cleanup["deleted"]
@@ -1176,6 +1189,10 @@ def _handle_remux_m4a_dash(task_id: str, params: dict, config: dict) -> dict:
         emit_task_event(task_id, "info", {
             "message": f"Found {total_remux} M4A files in {len(m4a_only)} albums with no FLACs — remuxing",
         })
+        p_remux.phase = "remuxing"
+        p_remux.phase_index = 1
+        p_remux.done = 0
+        p_remux.total = total_remux
         done = 0
         for album_dir, m4a_files in m4a_only.items():
             try:
@@ -1189,9 +1206,9 @@ def _handle_remux_m4a_dash(task_id: str, params: dict, config: dict) -> dict:
 
             for m4a_path in m4a_files:
                 done += 1
-                update_task(task_id, progress=json.dumps({
-                    "phase": "remuxing", "done": done, "total": total_remux, "file": m4a_path.name,
-                }))
+                p_remux.done = done
+                p_remux.item = m4a_path.name
+                emit_progress(task_id, p_remux)
                 if remux_m4a_dash_to_flac(m4a_path, artist=artist_guess, album=album_guess):
                     converted += 1
                 else:

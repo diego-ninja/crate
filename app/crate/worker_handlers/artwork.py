@@ -1,10 +1,10 @@
 import base64
 import io as _io
-import json
 import logging
 import time
 from pathlib import Path
 from crate.db import emit_task_event, get_library_artist, get_task, set_cache, update_task
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.jobs.artwork import set_album_has_cover, set_artist_has_photo
 from crate.storage_layout import resolve_artist_dir
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled, start_scan
@@ -22,13 +22,17 @@ def _handle_fetch_artwork_all(task_id: str, params: dict, config: dict) -> dict:
     failed = 0
     total = len(missing)
 
+    p = TaskProgress(phase="fetching_covers", phase_count=1, total=total)
+
     for i, album in enumerate(missing):
         if is_cancelled(task_id):
             break
         mbid = album.get("mbid")
         if not mbid:
             continue
-        update_task(task_id, progress=f"Fetching {i + 1}/{total}...")
+        p.done = i + 1
+        p.item = entity_label(artist=album.get("artist", ""), album=album.get("album", ""), path=album.get("path", ""))
+        emit_progress(task_id, p)
         image = fetch_cover_from_caa(mbid)
         if image:
             save_cover(Path(album["path"]), image)
@@ -46,12 +50,16 @@ def _handle_batch_covers(task_id: str, params: dict, config: dict) -> dict:
     albums = params.get("albums", [])
     results = []
 
+    p = TaskProgress(phase="batch_covers", phase_count=1, total=len(albums))
+
     for i, item in enumerate(albums):
         if is_cancelled(task_id):
             break
         mbid = item.get("mbid")
         path = item.get("path")
-        update_task(task_id, progress=f"Fetching cover {i + 1}/{len(albums)}")
+        p.done = i + 1
+        p.item = entity_label(path=path or "")
+        emit_progress(task_id, p)
 
         if not mbid:
             results.append({"path": path, "error": "No MBID"})
@@ -109,10 +117,12 @@ def _handle_fetch_artist_covers(task_id: str, params: dict, config: dict) -> dic
         return {"error": "Artist not found"}
 
     fetched = failed = skipped = total = 0
+    p = TaskProgress(phase="artist_covers", phase_count=1, item=entity_label(artist=artist_name))
     for album_dir in sorted(artist_dir.iterdir()):
         if not album_dir.is_dir() or album_dir.name.startswith("."):
             continue
         total += 1
+        p.total = total
         if (album_dir / "cover.jpg").exists():
             skipped += 1
             continue
@@ -125,7 +135,9 @@ def _handle_fetch_artist_covers(task_id: str, params: dict, config: dict) -> dic
         if not mbid:
             skipped += 1
             continue
-        update_task(task_id, progress=json.dumps({"album": album_dir.name, "done": total}))
+        p.done = total
+        p.item = entity_label(artist=artist_name, album=album_dir.name)
+        emit_progress(task_id, p)
         image = fetch_cover_from_caa(mbid)
         if image:
             save_cover(album_dir, image)
@@ -228,7 +240,8 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
 
     lib = Path(config["library_path"])
 
-    update_task(task_id, progress=json.dumps({"phase": "scanning"}))
+    p = TaskProgress(phase="scanning", phase_count=2)
+    emit_progress(task_id, p, force=True)
     emit_task_event(task_id, "info", {"message": "Scanning library for missing covers..."})
     missing = scan_missing_covers(lib, DEFAULT_AUDIO_EXTENSIONS)
 
@@ -240,6 +253,9 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
 
     found = 0
     not_found = 0
+    p.phase = "searching"
+    p.phase_index = 1
+    p.total = len(missing)
 
     for i, album in enumerate(missing):
         if is_cancelled(task_id):
@@ -250,19 +266,9 @@ def _handle_scan_missing_covers(task_id: str, params: dict, config: dict) -> dic
         mbid = album.get("mbid")
         album_path = album["path"]
 
-        update_task(
-            task_id,
-            progress=json.dumps(
-                {
-                    "phase": "searching",
-                    "artist": artist,
-                    "album": album_name,
-                    "done": i,
-                    "total": len(missing),
-                    "found": found,
-                }
-            ),
-        )
+        p.done = i
+        p.item = entity_label(artist=artist, album=album_name)
+        emit_progress(task_id, p)
 
         cover_data = None
         source = None

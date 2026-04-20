@@ -1,10 +1,10 @@
-import json
 import logging
 import time
 from pathlib import Path
 from typing import Callable
 
 from crate.db import create_task, emit_task_event, get_task, set_cache, update_task
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.genres import cleanup_invalid_genre_taxonomy_nodes
 from crate.db.jobs.analysis import (
     get_albums_needing_popularity,
@@ -28,32 +28,24 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
     lib = Path(config["library_path"])
     exts = set(config.get("audio_extensions", [".flac", ".mp3", ".m4a"]))
 
-    last_progress_time = [0.0]
+    p = TaskProgress(phase="analytics", phase_count=2)
 
     def _progress(data):
-        now = time.time()
-        if now - last_progress_time[0] < 2:
-            return
-        last_progress_time[0] = now
-        update_task(task_id, progress=json.dumps(data))
+        p.done = data.get("artists_done", p.done)
+        p.total = data.get("artists_total", p.total)
+        p.item = data.get("artist", p.item)
+        emit_progress(task_id, p)
 
-    update_task(
-        task_id,
-        progress=json.dumps(
-            {
-                "phase": "analytics",
-                "artists_done": 0,
-                "artists_total": 0,
-                "tracks_processed": 0,
-                "cached": 0,
-                "recomputed": 0,
-            }
-        ),
-    )
+    emit_progress(task_id, p, force=True)
     data = compute_analytics(lib, exts, progress_callback=_progress, incremental=True)
     set_cache("analytics", data, ttl=3600)
 
-    update_task(task_id, progress=json.dumps({"phase": "stats", "message": "Computing stats..."}))
+    p.phase = "stats"
+    p.phase_index = 1
+    p.done = 0
+    p.total = 0
+    p.item = "Computing stats..."
+    emit_progress(task_id, p, force=True)
     artists = albums = tracks = total_size = 0
     formats: dict[str, int] = {}
     for artist_dir in lib.iterdir():
@@ -90,7 +82,8 @@ def _handle_refresh_user_listening_stats(task_id: str, params: dict, config: dic
     if user_id <= 0:
         return {"ok": False, "error": "Missing user_id"}
 
-    update_task(task_id, progress=json.dumps({"phase": "stats", "user_id": user_id}))
+    p = TaskProgress(phase="stats", phase_count=1, total=1, item=f"user:{user_id}")
+    emit_progress(task_id, p, force=True)
     recompute_user_listening_aggregates(user_id)
     return {"ok": True, "user_id": user_id}
 
@@ -102,10 +95,15 @@ def _handle_analyze_album_full(task_id: str, params: dict, config: dict) -> dict
     artist = params.get("artist", "")
     album_name = params.get("album", "")
 
-    update_task(task_id, progress=json.dumps({"phase": "audio_analysis", "done": 0, "total": 0}))
+    p = TaskProgress(phase="audio_analysis", phase_count=2, item=entity_label(artist=artist, album=album_name))
+    emit_progress(task_id, p, force=True)
     analysis_result = _handle_analyze_tracks(task_id, {"artist": artist, "album": album_name}, config)
 
-    update_task(task_id, progress=json.dumps({"phase": "bliss", "done": 0, "total": 0}))
+    p.phase = "bliss"
+    p.phase_index = 1
+    p.done = 0
+    p.total = 0
+    emit_progress(task_id, p, force=True)
     from crate.bliss import analyze_directory, is_available, store_vectors
 
     bliss_count = 0
@@ -198,6 +196,7 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
     analyzed = 0
     failed = 0
     batch_size = PANNS_BATCH_SIZE
+    p = TaskProgress(phase="audio_analysis", phase_count=1, total=total)
 
     for batch_start in range(0, total, batch_size):
         if is_cancelled(task_id):
@@ -206,17 +205,9 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
         batch = tracks_to_analyze[batch_start : batch_start + batch_size]
         batch_paths = [path for path, _track in batch]
 
-        update_task(
-            task_id,
-            progress=json.dumps(
-                {
-                    "track": batch[0][1].get("title", Path(batch[0][0]).stem),
-                    "done": batch_start,
-                    "total": total,
-                    "analyzed": analyzed,
-                }
-            ),
-        )
+        p.done = batch_start
+        p.item = entity_label(title=batch[0][1].get("title", ""), path=batch[0][0])
+        emit_progress(task_id, p)
 
         try:
             results = analyze_batch(batch_paths)
@@ -308,6 +299,7 @@ def _chunk_coordinator(
     completed = 0
     coordinator_start = time.time()
     coordinator_timeout = 3600 * 6
+    p = TaskProgress(phase="coordinating", phase_count=1, total=len(chunks))
     while completed < len(chunk_task_ids):
         if is_cancelled(task_id):
             return {"status": "cancelled", "completed_chunks": completed}
@@ -328,17 +320,10 @@ def _chunk_coordinator(
             elif task and task["status"] == "failed":
                 failed += 1
                 completed += 1
-        update_task(
-            task_id,
-            progress=json.dumps(
-                {
-                    "chunks_done": completed,
-                    "chunks_total": len(chunks),
-                    "chunks_failed": failed,
-                    "artists_total": total,
-                }
-            ),
-        )
+        p.done = completed
+        p.errors = failed
+        p.item = f"{completed}/{len(chunks)} chunks"
+        emit_progress(task_id, p)
 
     return {"chunks": len(chunks), "artists": total, "completed": completed}
 
@@ -373,6 +358,8 @@ def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:
     artists = params.get("artists", [])
     analyzed = 0
 
+    p = TaskProgress(phase="bliss", phase_count=1, total=len(artists))
+
     for index, name in enumerate(artists):
         if is_cancelled(task_id):
             break
@@ -382,7 +369,9 @@ def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:
         if not artist_dir.is_dir():
             continue
 
-        update_task(task_id, progress=json.dumps({"artist": name, "done": index, "total": len(artists)}))
+        p.done = index
+        p.item = entity_label(artist=name)
+        emit_progress(task_id, p)
         vectors = analyze_directory(str(artist_dir))
         if vectors:
             store_vectors(vectors)
@@ -410,10 +399,14 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
     albums_fetched = 0
     tracks_fetched = 0
 
+    p = TaskProgress(phase="popularity", phase_count=1, total=len(artists))
+
     for index, artist_name in enumerate(artists):
         if is_cancelled(task_id):
             break
-        update_task(task_id, progress=json.dumps({"artist": artist_name, "done": index, "total": len(artists)}))
+        p.done = index
+        p.item = entity_label(artist=artist_name)
+        emit_progress(task_id, p)
 
         albums = get_albums_needing_popularity(artist_name)
 
@@ -458,8 +451,16 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
 def _handle_index_genres(task_id: str, params: dict, config: dict) -> dict:
     from crate.genre_indexer import index_all_genres
 
+    p = TaskProgress(phase="indexing_genres", phase_count=1)
+
+    def _genre_progress(data):
+        p.done = data.get("done", p.done)
+        p.total = data.get("total", p.total)
+        p.item = data.get("artist", p.item)
+        emit_progress(task_id, p)
+
     emit_task_event(task_id, "info", {"message": "Indexing genres..."})
-    result = index_all_genres(progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)))
+    result = index_all_genres(progress_callback=_genre_progress)
     genre_count = result.get("total_genres", 0)
     emit_task_event(task_id, "info", {"message": f"Genres indexed: {genre_count} genres"})
     return result
@@ -484,12 +485,20 @@ def _handle_infer_genre_taxonomy(task_id: str, params: dict, config: dict) -> di
             "include_external": include_external,
         },
     )
+    p_tax = TaskProgress(phase="infer_taxonomy", phase_count=1, total=limit)
+
+    def _tax_progress(data):
+        p_tax.done = data.get("done", p_tax.done)
+        p_tax.total = data.get("total", p_tax.total)
+        p_tax.item = data.get("genre", p_tax.item)
+        emit_progress(task_id, p_tax)
+
     result = infer_genre_taxonomy_batch(
         limit=limit,
         focus_slug=focus_slug,
         aggressive=aggressive,
         include_external=include_external,
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        progress_callback=_tax_progress,
         event_callback=lambda data: emit_task_event(task_id, "info", data),
     )
     emit_task_event(
@@ -522,11 +531,19 @@ def _handle_enrich_genre_descriptions(task_id: str, params: dict, config: dict) 
             "force": force,
         },
     )
+    p_desc = TaskProgress(phase="genre_descriptions", phase_count=1, total=limit)
+
+    def _desc_progress(data):
+        p_desc.done = data.get("done", p_desc.done)
+        p_desc.total = data.get("total", p_desc.total)
+        p_desc.item = data.get("genre", p_desc.item)
+        emit_progress(task_id, p_desc)
+
     result = enrich_genre_descriptions_batch(
         limit=limit,
         focus_slug=focus_slug,
         force=force,
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        progress_callback=_desc_progress,
         event_callback=lambda data: emit_task_event(task_id, "info", data),
     )
     emit_task_event(
@@ -559,11 +576,19 @@ def _handle_sync_musicbrainz_genre_graph(task_id: str, params: dict, config: dic
             "force": force,
         },
     )
+    p_mbg = TaskProgress(phase="mb_genre_graph", phase_count=1, total=limit)
+
+    def _mbg_progress(data):
+        p_mbg.done = data.get("done", p_mbg.done)
+        p_mbg.total = data.get("total", p_mbg.total)
+        p_mbg.item = data.get("genre", p_mbg.item)
+        emit_progress(task_id, p_mbg)
+
     result = sync_musicbrainz_genre_graph_batch(
         limit=limit,
         focus_slug=focus_slug,
         force=force,
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        progress_callback=_mbg_progress,
         event_callback=lambda data: emit_task_event(task_id, "info", data),
     )
     emit_task_event(
@@ -582,18 +607,13 @@ def _handle_sync_musicbrainz_genre_graph(task_id: str, params: dict, config: dic
 def _handle_cleanup_invalid_genre_taxonomy(task_id: str, params: dict, config: dict) -> dict:
     emit_task_event(task_id, "info", {"message": "Removing invalid MusicBrainz taxonomy nodes..."})
     result = cleanup_invalid_genre_taxonomy_nodes(dry_run=False)
-    update_task(
-        task_id,
-        progress=json.dumps(
-            {
-                "phase": "cleanup",
-                "deleted_count": result.get("deleted_count", 0),
-                "invalid_count": result.get("invalid_count", 0),
-                "alias_count": result.get("alias_count", 0),
-                "edge_count": result.get("edge_count", 0),
-            }
-        ),
+    p = TaskProgress(
+        phase="cleanup",
+        phase_count=1,
+        done=result.get("deleted_count", 0),
+        total=result.get("invalid_count", 0),
     )
+    emit_progress(task_id, p, force=True)
     emit_task_event(
         task_id,
         "info",

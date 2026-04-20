@@ -8,13 +8,13 @@ The migration task emits progress events and can be cancelled via the
 standard task cancellation mechanism.
 """
 
-import json
 import logging
 import os
 import shutil
 from pathlib import Path
 
 from crate.db import emit_task_event, set_cache, delete_cache, update_task
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.db.jobs.migration import (
     get_album_tracks,
     get_all_artists_for_migration,
@@ -292,6 +292,8 @@ def _handle_migrate_storage_v2(task_id: str, params: dict, config: dict) -> dict
     failed = 0
     total_tracks = 0
 
+    p = TaskProgress(phase="migrating", phase_count=2, total=total)
+
     emit_task_event(task_id, "info", {"message": f"Starting V2 storage migration for {total} artists"})
 
     for i, artist in enumerate(artists):
@@ -305,18 +307,10 @@ def _handle_migrate_storage_v2(task_id: str, params: dict, config: dict) -> dict
             skipped += 1
             continue
 
-        update_task(
-            task_id,
-            progress=json.dumps({
-                "phase": "migrating",
-                "artist": artist_name,
-                "done": i,
-                "total": total,
-                "migrated": migrated,
-                "skipped": skipped,
-                "failed": failed,
-            }),
-        )
+        p.done = i
+        p.item = entity_label(artist=artist_name)
+        p.errors = failed
+        emit_progress(task_id, p)
 
         try:
             result = _migrate_artist(lib, artist, task_id)
@@ -338,7 +332,11 @@ def _handle_migrate_storage_v2(task_id: str, params: dict, config: dict) -> dict
 
     # Verification pass
     emit_task_event(task_id, "info", {"message": "Running verification..."})
-    update_task(task_id, progress=json.dumps({"phase": "verifying"}))
+    p.phase = "verifying"
+    p.phase_index = 1
+    p.done = 0
+    p.total = 0
+    emit_progress(task_id, p, force=True)
 
     orphaned_dirs = []
     if not single_artist:
@@ -403,15 +401,13 @@ def _handle_verify_storage_v2(task_id: str, params: dict, config: dict) -> dict:
     tracks = get_all_tracks_for_verification()
 
     total = len(tracks)
+    p_v = TaskProgress(phase="checking_db", phase_count=2, total=total)
     for i, track in enumerate(tracks):
         if is_cancelled(task_id):
             break
         if i % 500 == 0:
-            update_task(task_id, progress=json.dumps({
-                "phase": "checking_db",
-                "done": i,
-                "total": total,
-            }))
+            p_v.done = i
+            emit_progress(task_id, p_v)
 
         track_path = Path(track["path"])
         if track_path.is_file():
@@ -426,7 +422,11 @@ def _handle_verify_storage_v2(task_id: str, params: dict, config: dict) -> dict:
             })
 
     # Check for files on disk not in DB
-    update_task(task_id, progress=json.dumps({"phase": "checking_filesystem"}))
+    p_v.phase = "checking_filesystem"
+    p_v.phase_index = 1
+    p_v.done = 0
+    p_v.total = 0
+    emit_progress(task_id, p_v, force=True)
     audio_exts = {".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".aac"}
     known_paths = {t["path"] for t in tracks}
 
