@@ -70,3 +70,37 @@ def admin_workers(request: Request):
     from crate.db.worker_logs import list_known_workers
 
     return list_known_workers()
+
+
+@router.get("/download-policy", responses=AUTH_ERROR_RESPONSES, summary="Download policy status and suggested limits")
+def admin_download_policy(request: Request):
+    _require_admin(request)
+    from crate.db.cache import get_setting
+    from crate.actors import (
+        _is_download_allowed, _count_active_users, _count_active_streams,
+        _is_in_time_window, get_suggested_download_limits,
+    )
+
+    suggested = get_suggested_download_limits()
+    window_enabled = get_setting("download_window_enabled", "false") == "true"
+
+    return {
+        "downloads_allowed_now": _is_download_allowed(),
+        "active_users": _count_active_users(),
+        "active_streams": _count_active_streams(),
+        "time_window": {
+            "enabled": window_enabled,
+            "in_window": _is_in_time_window() if window_enabled else True,
+            "start": get_setting("download_window_start", "02:00"),
+            "end": get_setting("download_window_end", "07:00"),
+        },
+        "user_limit": {
+            "enabled": int(get_setting("download_max_active_users", "0")) > 0,
+            "max": int(get_setting("download_max_active_users", "0")),
+        },
+        "stream_limit": {
+            "enabled": int(get_setting("download_max_active_streams", "0")) > 0,
+            "max": int(get_setting("download_max_active_streams", "0")),
+        },
+        "suggested": suggested,
+    }

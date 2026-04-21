@@ -99,7 +99,7 @@ def search_artist(name: str) -> dict | None:
 
 
 def get_top_tracks(spotify_id: str, market: str = "ES") -> list[dict] | None:
-    cache_key = f"spotify:top_tracks:{spotify_id}"
+    cache_key = f"spotify:top_tracks:{spotify_id}:{market.lower()}"
     cached = get_cache(cache_key, max_age_seconds=86400)
     if cached:
         return cached.get("tracks")

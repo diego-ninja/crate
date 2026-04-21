@@ -203,12 +203,45 @@ def _release_db_heavy_lock(task_id: str):
 DOWNLOAD_TASK_TYPES = frozenset({"tidal_download", "soulseek_download"})
 
 
-def _is_in_download_window() -> bool:
-    """Check if current time is within the configured download window.
-    Returns True (allow download) if window is disabled or we're inside it."""
+def _is_download_allowed() -> bool:
+    """Check if downloads should run right now.
+
+    Three conditions, all must pass (when enabled):
+    1. Time window: current time is within download_window_start/end
+    2. Active users: fewer than download_max_active_users are using the app
+    3. Active streams: fewer than download_max_active_streams are streaming
+
+    Each condition is independently toggleable. If all are disabled,
+    downloads run immediately (default behavior).
+    """
     from crate.db.cache import get_setting
-    if get_setting("download_window_enabled", "false") != "true":
-        return True  # Window disabled, always allow
+
+    # Time window check
+    if get_setting("download_window_enabled", "false") == "true":
+        if not _is_in_time_window():
+            return False
+
+    # Active users check
+    max_users_str = get_setting("download_max_active_users", "0")
+    max_users = int(max_users_str) if max_users_str.isdigit() else 0
+    if max_users > 0:
+        active = _count_active_users()
+        if active >= max_users:
+            return False
+
+    # Active streams check
+    max_streams_str = get_setting("download_max_active_streams", "0")
+    max_streams = int(max_streams_str) if max_streams_str.isdigit() else 0
+    if max_streams > 0:
+        streams = _count_active_streams()
+        if streams >= max_streams:
+            return False
+
+    return True
+
+
+def _is_in_time_window() -> bool:
+    from crate.db.cache import get_setting
     start_str = get_setting("download_window_start", "02:00")
     end_str = get_setting("download_window_end", "07:00")
     try:
@@ -224,24 +257,118 @@ def _is_in_download_window() -> bool:
         else:
             return current_minutes >= start_minutes or current_minutes < end_minutes
     except Exception:
-        return True  # On error, allow
+        return True
+
+
+def _count_active_users() -> int:
+    """Count users actually listening (play events in the last 5 minutes).
+
+    NOT based on session last_seen_at — that fires on every heartbeat
+    even for idle tabs. Play history only gets written when audio
+    is actually streaming, which is the real indicator of load.
+    """
+    try:
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text
+        with transaction_scope() as session:
+            row = session.execute(text(
+                "SELECT COUNT(DISTINCT user_id)::INTEGER AS cnt "
+                "FROM play_history WHERE played_at > now() - interval '5 minutes'"
+            )).mappings().first()
+            return row["cnt"] if row else 0
+    except Exception:
+        return 0
+
+
+def _count_active_streams() -> int:
+    """Count distinct streams in the last 3 minutes (tracks being played).
+
+    Uses play_history which only gets entries when audio actually plays.
+    More granular than _count_active_users — counts concurrent streams,
+    not just unique users.
+    """
+    try:
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text
+        with transaction_scope() as session:
+            row = session.execute(text(
+                "SELECT COUNT(*)::INTEGER AS cnt "
+                "FROM play_history WHERE played_at > now() - interval '3 minutes'"
+            )).mappings().first()
+            return row["cnt"] if row else 0
+    except Exception:
+        return 0
 
 
 def _ms_until_download_window() -> int:
-    """Milliseconds until the next download window opens."""
+    """Milliseconds until the next download window opens (or 5 min if user-gated)."""
     from crate.db.cache import get_setting
-    start_str = get_setting("download_window_start", "02:00")
+    if get_setting("download_window_enabled", "false") == "true":
+        start_str = get_setting("download_window_start", "02:00")
+        try:
+            from datetime import datetime, timezone, timedelta
+            now = datetime.now(timezone.utc)
+            hour, minute = map(int, start_str.split(":"))
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target <= now:
+                target += timedelta(days=1)
+            delta = target - now
+            return int(delta.total_seconds() * 1000)
+        except Exception:
+            pass
+    # If deferred by active users/streams, retry in 5 minutes
+    return 300_000
+
+
+def get_suggested_download_limits() -> dict:
+    """Suggest download concurrency limits based on server hardware.
+
+    Returns recommended settings that can be shown in the admin UI
+    as defaults or hints.
+    """
+    import os
+    import shutil
+
+    cpu_count = os.cpu_count() or 2
     try:
-        from datetime import datetime, timezone, timedelta
-        now = datetime.now(timezone.utc)
-        hour, minute = map(int, start_str.split(":"))
-        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        if target <= now:
-            target += timedelta(days=1)
-        delta = target - now
-        return int(delta.total_seconds() * 1000)
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    ram_gb = int(line.split()[1]) / (1024 * 1024)
+                    break
+            else:
+                ram_gb = 4
     except Exception:
-        return 3600_000  # fallback: 1 hour
+        ram_gb = 4
+
+    try:
+        disk = shutil.disk_usage("/music")
+        disk_free_gb = disk.free / (1024 ** 3)
+    except Exception:
+        disk_free_gb = 100
+
+    # Heuristics:
+    # - Active users threshold: ~1 per GB of RAM (min 2)
+    # - Active streams threshold: ~1 per CPU core (min 1)
+    # - Download slots: 1 for <=4GB RAM, 2 for >4GB
+    suggested_max_users = max(2, int(ram_gb * 0.8))
+    suggested_max_streams = max(1, cpu_count - 1)
+    suggested_download_slots = 1 if ram_gb <= 4 else 2
+
+    return {
+        "cpu_cores": cpu_count,
+        "ram_gb": round(ram_gb, 1),
+        "disk_free_gb": round(disk_free_gb, 0),
+        "suggested_max_active_users": suggested_max_users,
+        "suggested_max_active_streams": suggested_max_streams,
+        "suggested_download_slots": suggested_download_slots,
+        "explanation": (
+            f"Server has {cpu_count} cores, {ram_gb:.1f} GB RAM, {disk_free_gb:.0f} GB free disk. "
+            f"Recommended: defer downloads when {suggested_max_users}+ users or "
+            f"{suggested_max_streams}+ streams are active. "
+            f"Max {suggested_download_slots} concurrent download(s)."
+        ),
+    }
 _DOWNLOAD_SEM_KEY = "crate:download_semaphore"
 _DOWNLOAD_SEM_MAX = 2
 _DOWNLOAD_SEM_TTL = 14400  # 4h — matches tidal_download timeout
@@ -319,12 +446,23 @@ def _execute_task(task_type: str, task_id: str):
                 actor.send_with_options(args=(task_id,), delay=30_000)
             return
 
-    # Download window enforcement
+    # Download deferral: time window + active user/stream limits
     is_download = task_type in DOWNLOAD_TASK_TYPES
-    if is_download and not _is_in_download_window():
+    if is_download and not _is_download_allowed():
         delay_ms = _ms_until_download_window()
-        log.info("Task %s (%s) outside download window, deferring %dmin", task_id, task_type, delay_ms // 60000)
-        update_task(task_id, progress="Scheduled for download window")
+        active_users = _count_active_users()
+        active_streams = _count_active_streams()
+        reason = []
+        from crate.db.cache import get_setting
+        if get_setting("download_window_enabled", "false") == "true" and not _is_in_time_window():
+            reason.append("outside download window")
+        if active_users > 0:
+            reason.append(f"{active_users} active user(s)")
+        if active_streams > 0:
+            reason.append(f"{active_streams} active stream(s)")
+        reason_str = ", ".join(reason) or "conditions not met"
+        log.info("Task %s (%s) deferred: %s. Retrying in %dmin", task_id, task_type, reason_str, delay_ms // 60000)
+        update_task(task_id, progress=f"Deferred: {reason_str}")
         actor = _actors.get(task_type)
         if actor:
             actor.send_with_options(args=(task_id,), delay=min(delay_ms, 3600_000))
