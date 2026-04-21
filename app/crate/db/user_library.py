@@ -4,7 +4,6 @@ from functools import lru_cache
 from pathlib import Path
 
 from crate.config import load_config
-from crate.db.serialize import serialize_rows
 from crate.db.tx import transaction_scope
 from sqlalchemy import text
 
@@ -180,7 +179,7 @@ def get_followed_artists(user_id: int) -> list[dict]:
             WHERE uf.user_id = :user_id
             ORDER BY uf.created_at DESC
         """), {"user_id": user_id}).mappings().all()
-        return serialize_rows(rows)
+        return [dict(r) for r in rows]
 
 
 def is_following(user_id: int, artist_name: str) -> bool:

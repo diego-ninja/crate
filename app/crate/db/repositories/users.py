@@ -10,7 +10,6 @@ from typing import Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from crate.db.serialize import serialize_row
 from crate.db.tx import transaction_scope
 
 
@@ -21,7 +20,7 @@ def get_user_by_id(user_id: int, *, session: Session | None = None) -> dict | No
             text("SELECT * FROM users WHERE id = :id"),
             {"id": user_id},
         ).mappings().first()
-        return serialize_row(row) if row else None
+        return dict(row) if row else None
 
     if session is not None:
         return _impl(session)
@@ -36,7 +35,7 @@ def get_user_by_email(email: str, *, session: Session | None = None) -> dict | N
             text("SELECT * FROM users WHERE email = :email"),
             {"email": email},
         ).mappings().first()
-        return serialize_row(row) if row else None
+        return dict(row) if row else None
 
     if session is not None:
         return _impl(session)
@@ -51,7 +50,7 @@ def get_user_by_username(username: str, *, session: Session | None = None) -> di
             text("SELECT * FROM users WHERE username = :username"),
             {"username": username},
         ).mappings().first()
-        return serialize_row(row) if row else None
+        return dict(row) if row else None
 
     if session is not None:
         return _impl(session)

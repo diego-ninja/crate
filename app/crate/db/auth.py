@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
-from crate.db.serialize import serialize_row, serialize_rows
 from crate.db.tx import transaction_scope
 
 log = logging.getLogger(__name__)
@@ -83,19 +82,19 @@ def create_user(email: str, name: str | None = None, password_hash: str | None =
     ).mappings().first()
     if not row:
         raise ValueError(f"Email already registered: {email}")
-    return serialize_row(row)
+    return dict(row)
 
 
 def get_user_by_email(email: str) -> dict | None:
     with transaction_scope() as session:
         row = session.execute(text("SELECT * FROM users WHERE email = :email"), {"email": email}).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def get_user_by_google_id(google_id: str) -> dict | None:
     with transaction_scope() as session:
         row = session.execute(text("SELECT * FROM users WHERE google_id = :google_id"), {"google_id": google_id}).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def get_user_by_external_identity(provider: str, external_user_id: str) -> dict | None:
@@ -111,7 +110,7 @@ def get_user_by_external_identity(provider: str, external_user_id: str) -> dict 
             """),
             {"provider": provider, "external_user_id": external_user_id},
         ).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def get_user_by_id(user_id: int, *, session=None) -> dict | None:
@@ -119,7 +118,7 @@ def get_user_by_id(user_id: int, *, session=None) -> dict | None:
         with transaction_scope() as s:
             return get_user_by_id(user_id, session=s)
     row = session.execute(text("SELECT * FROM users WHERE id = :user_id"), {"user_id": user_id}).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def update_user_last_login(user_id: int, *, session=None):
@@ -174,7 +173,7 @@ def list_users() -> list[dict]:
             ORDER BY u.id
             """)
         ).mappings().all()
-    return serialize_rows(rows)
+    return [dict(r) for r in rows]
 
 
 _USER_UPDATABLE_FIELDS = frozenset({
@@ -195,7 +194,7 @@ def update_user(user_id: int, *, session=None, **fields) -> dict | None:
     params = {f"f_{k}": v for k, v in fields.items()}
     params["user_id"] = user_id
     row = session.execute(text(f"UPDATE users SET {sets} WHERE id = :user_id RETURNING *"), params).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def delete_user(user_id: int, *, session=None):
@@ -264,13 +263,14 @@ def create_session(
          "created_at": now, "last_seen_at": now, "last_seen_ip": last_seen_ip,
          "user_agent": user_agent, "app_id": app_id, "device_label": device_label},
     ).mappings().first()
-    return serialize_row(row)
+    return dict(row)
 
 
 def get_session(session_id: str) -> dict | None:
+    """Used by auth middleware — must return raw datetime for comparisons."""
     with transaction_scope() as session:
         row = session.execute(text("SELECT * FROM sessions WHERE id = :session_id"), {"session_id": session_id}).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def list_sessions(user_id: int, *, include_revoked: bool = False) -> list[dict]:
@@ -283,7 +283,7 @@ def list_sessions(user_id: int, *, include_revoked: bool = False) -> list[dict]:
             query_parts.append("AND revoked_at IS NULL")
         query_parts.append("ORDER BY COALESCE(last_seen_at, created_at) DESC")
         rows = session.execute(text("\n".join(query_parts)), params).mappings().all()
-        return serialize_rows(rows)
+        return [dict(r) for r in rows]
 
 
 def touch_session(
@@ -310,7 +310,7 @@ def touch_session(
             {"now": now, "last_seen_ip": last_seen_ip, "user_agent": user_agent,
              "app_id": app_id, "device_label": device_label, "session_id": session_id},
         ).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def revoke_session(session_id: str, *, session=None) -> bool:
@@ -362,7 +362,7 @@ def get_user_external_identity(user_id: int, provider: str) -> dict | None:
             text("SELECT * FROM user_external_identities WHERE user_id = :user_id AND provider = :provider"),
             {"user_id": user_id, "provider": provider},
         ).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def list_user_external_identities(user_id: int) -> list[dict]:
@@ -371,7 +371,7 @@ def list_user_external_identities(user_id: int) -> list[dict]:
             text("SELECT * FROM user_external_identities WHERE user_id = :user_id ORDER BY provider"),
             {"user_id": user_id},
         ).mappings().all()
-        return serialize_rows(rows)
+        return [dict(r) for r in rows]
 
 
 def upsert_user_external_identity(
@@ -430,7 +430,7 @@ def upsert_user_external_identity(
             "updated_at": now,
         },
     ).mappings().first()
-    return serialize_row(row)
+    return dict(row)
 
 
 def unlink_user_external_identity(user_id: int, provider: str, *, session=None) -> None:
@@ -480,13 +480,13 @@ def create_auth_invite(
         {"token": token, "email": email, "created_by": created_by,
          "expires_at": expires_at, "max_uses": max_uses, "created_at": now.isoformat()},
     ).mappings().first()
-    return serialize_row(row)
+    return dict(row)
 
 
 def get_auth_invite(token: str) -> dict | None:
     with transaction_scope() as session:
         row = session.execute(text("SELECT * FROM auth_invites WHERE token = :token"), {"token": token}).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def list_auth_invites(created_by: int | None = None) -> list[dict]:
@@ -498,7 +498,7 @@ def list_auth_invites(created_by: int | None = None) -> list[dict]:
                 text("SELECT * FROM auth_invites WHERE created_by = :created_by ORDER BY created_at DESC"),
                 {"created_by": created_by},
             ).mappings().all()
-        return serialize_rows(rows)
+        return [dict(r) for r in rows]
 
 
 def consume_auth_invite(token: str, *, session=None) -> dict | None:
@@ -518,7 +518,7 @@ def consume_auth_invite(token: str, *, session=None) -> dict | None:
         """),
         {"now": now, "token": token, "now2": now},
     ).mappings().first()
-    return serialize_row(row) if row else None
+    return dict(row) if row else None
 
 
 def cleanup_expired_sessions(max_age_days: int = 7, *, session=None) -> int:

@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
-from crate.db.serialize import serialize_row, serialize_rows
 from crate.db.tx import transaction_scope
 
 log = logging.getLogger(__name__)
@@ -286,7 +285,7 @@ def get_unique_user_cities() -> list[dict]:
             WHERE city IS NOT NULL AND latitude IS NOT NULL
             ORDER BY LOWER(city), id
         """)).mappings().all()
-        return serialize_rows(rows)
+        return [dict(r) for r in rows]
 
 
 def get_upcoming_shows(artist_name: str | None = None, city: str | None = None,
@@ -310,7 +309,7 @@ def get_upcoming_shows(artist_name: str | None = None, city: str | None = None,
             text(f"SELECT * FROM shows WHERE {' AND '.join(conditions)} ORDER BY date ASC LIMIT :lim"),
             params,
         ).mappings().all()
-        return serialize_rows(rows)
+        return [dict(r) for r in rows]
 
 
 def get_upcoming_shows_near(
@@ -358,7 +357,7 @@ def get_upcoming_shows_near(
 
     result = []
     for row in rows:
-        d = serialize_row(row)
+        d = dict(row)
         dist = d.pop("distance_km", None)
         if dist is not None and dist <= radius_km:
             result.append(d)
@@ -376,7 +375,7 @@ def get_all_shows(limit: int = 500) -> list[dict]:
             text("SELECT * FROM shows ORDER BY date DESC LIMIT :lim"),
             {"lim": limit},
         ).mappings().all()
-        return serialize_rows(rows)
+        return [dict(r) for r in rows]
 
 
 def get_show_cities() -> list[str]:
@@ -471,7 +470,7 @@ def get_show_reminders(user_id: int, show_ids: list[int] | None = None) -> list[
                 """),
                 {"user_id": user_id},
             ).mappings().all()
-        return serialize_rows(rows)
+        return [dict(r) for r in rows]
 
 
 def create_show_reminder(user_id: int, show_id: int, reminder_type: str) -> bool:
