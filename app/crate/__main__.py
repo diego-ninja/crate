@@ -78,9 +78,14 @@ def main():
 
     elif args.command in ("web", "api"):
         import uvicorn
-        from crate.api import create_app
-        app = create_app()
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info", workers=2)
+        uvicorn.run(
+            "crate.api:create_app",
+            factory=True,
+            host=args.host,
+            port=args.port,
+            log_level="info",
+            workers=2,
+        )
 
     elif args.command == "worker":
         if args.legacy:
