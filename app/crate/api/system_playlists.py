@@ -6,6 +6,7 @@ from crate.api.playlist_utils import apply_playlist_cover_payload, execute_smart
 from crate.api.schemas.common import OkResponse
 from crate.api.schemas.curation import (
     CreateSystemPlaylistRequest,
+    PreviewSystemPlaylistRequest,
     SystemPlaylistDetailResponse,
     SystemPlaylistGenerateResponse,
     SystemPlaylistSummaryResponse,
@@ -180,6 +181,8 @@ def admin_update_system_playlist(request: Request, playlist_id: int, body: Updat
             kwargs.update(apply_playlist_cover_payload(playlist_id, None, playlist.get("cover_path")) or {})
     if body.smart_rules is not None or mode == "static":
         kwargs["smart_rules"] = next_rules if mode == "smart" else None
+    if body.auto_refresh_enabled is not None:
+        kwargs["auto_refresh_enabled"] = body.auto_refresh_enabled
     if body.is_curated is not None:
         kwargs["is_curated"] = body.is_curated
     if body.is_active is not None:
@@ -273,10 +276,14 @@ def admin_generate_system_playlist(request: Request, playlist_id: int):
     responses=_SYSTEM_PLAYLIST_RESPONSES,
     summary="Preview smart playlist results without persisting",
 )
-def admin_preview_system_playlist(request: Request, playlist_id: int):
+def admin_preview_system_playlist(
+    request: Request,
+    playlist_id: int,
+    body: PreviewSystemPlaylistRequest | None = None,
+):
     _require_admin(request)
     playlist = _require_system_playlist(playlist_id)
-    rules = playlist.get("smart_rules")
+    rules = body.smart_rules if body and body.smart_rules is not None else playlist.get("smart_rules")
     if not rules:
         raise HTTPException(status_code=400, detail="No smart rules configured")
 

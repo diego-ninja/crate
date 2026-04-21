@@ -44,6 +44,7 @@ interface PlaylistListRowProps {
   href: string;
   detailEndpoint: string;
   badge?: "smart" | "curated" | "personal";
+  crateManaged?: boolean;
   followState?: {
     isFollowed: boolean;
     onToggle: () => Promise<void>;
@@ -90,6 +91,7 @@ export function PlaylistListRow({
   href,
   detailEndpoint,
   badge,
+  crateManaged = false,
   followState,
   extraActions,
 }: PlaylistListRowProps) {
@@ -170,6 +172,9 @@ export function PlaylistListRow({
   }
 
   const badgeLabel =
+    crateManaged
+      ? null
+      :
     badge === "smart" ? "Smart" : badge === "curated" ? "Curated" : null;
 
   return (
@@ -199,6 +204,7 @@ export function PlaylistListRow({
         name={name}
         coverDataUrl={coverDataUrl}
         tracks={artworkTracks}
+        showCrateMark={crateManaged}
         className="h-12 w-12 flex-shrink-0 rounded-md"
       />
 

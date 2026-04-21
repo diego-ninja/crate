@@ -376,15 +376,16 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if token:
             payload = verify_jwt(token)
             if payload:
+                from crate.api.auth_cache import get_cached_session, get_cached_user, should_touch_session
                 session_id = payload.get("sid")
-                session = get_session(session_id) if session_id else None
+                session = get_cached_session(session_id) if session_id else None
                 if session_id and (
                     not session
                     or session.get("revoked_at") is not None
                     or (session.get("expires_at") and session["expires_at"] <= datetime.now(timezone.utc))
                 ):
                     payload = None
-                if payload and session_id:
+                if payload and session_id and should_touch_session(session_id):
                     touch_session(
                         session_id,
                         last_seen_ip=request.client.host if request.client else None,
@@ -393,7 +394,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         device_label=request.headers.get("x-device-label"),
                     )
             if payload:
-                current_user = get_user_by_id(payload["user_id"])
+                current_user = get_cached_user(payload["user_id"])
                 if current_user:
                     user = {
                         "id": current_user["id"],
@@ -512,6 +513,8 @@ async def logout(request: Request):
     user = getattr(request.state, "user", None)
     if user and user.get("session_id"):
         revoke_session(user["session_id"])
+        from crate.api.auth_cache import invalidate_session
+        invalidate_session(user["session_id"])
     response = JSONResponse(content={"ok": True})
     _clear_auth_cookie(response)
     return response

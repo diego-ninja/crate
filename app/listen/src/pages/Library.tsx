@@ -277,7 +277,7 @@ function PlaylistsTab() {
               meta={[playlist.category, playlist.follower_count > 0 ? `${playlist.follower_count} followers` : null].filter(Boolean).join(" · ")}
               href={`/curation/playlist/${playlist.id}`}
               detailEndpoint={`/api/curation/playlists/${playlist.id}`}
-              badge={playlist.is_smart ? "smart" : "curated"}
+              crateManaged
               followState={{
                 isFollowed: true,
                 onToggle: async () => toggleSystemPlaylistFollow(playlist),

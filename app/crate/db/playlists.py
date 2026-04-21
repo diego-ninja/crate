@@ -216,7 +216,7 @@ def update_playlist(playlist_id: int, *, session=None, **kwargs):
     params: dict = {"p_updated_at": now}
     for key in (
         "name", "description", "cover_data_url", "cover_path", "scope", "visibility",
-        "is_collaborative", "generation_mode",
+        "is_collaborative", "generation_mode", "auto_refresh_enabled",
         "is_curated", "is_active", "managed_by_user_id", "curation_key",
         "featured_rank", "category",
     ):

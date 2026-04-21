@@ -40,12 +40,23 @@ _engine = None
 _session_factory = None
 
 
+def _default_pool_settings() -> tuple[int, int]:
+    """Return (pool_size, max_overflow) based on runtime context."""
+    runtime = os.environ.get("CRATE_RUNTIME", "").lower()
+    if runtime == "api":
+        return 8, 4   # API: many short queries from concurrent users
+    elif runtime == "worker":
+        return 6, 3   # Worker: fewer connections, longer transactions
+    return 10, 5       # Fallback (dev, tests)
+
+
 def get_engine():
     """Return the shared SQLAlchemy engine (created on first call)."""
     global _engine
     if _engine is None:
-        pool_size = _get_pool_setting("CRATE_SQLALCHEMY_POOL_SIZE", 10)
-        max_overflow = _get_pool_setting("CRATE_SQLALCHEMY_MAX_OVERFLOW", 5)
+        default_size, default_overflow = _default_pool_settings()
+        pool_size = _get_pool_setting("CRATE_SQLALCHEMY_POOL_SIZE", default_size)
+        max_overflow = _get_pool_setting("CRATE_SQLALCHEMY_MAX_OVERFLOW", default_overflow)
         _engine = create_engine(
             _build_dsn(),
             pool_size=pool_size,

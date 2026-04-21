@@ -11,9 +11,16 @@ from sqlalchemy import text
 
 def claim_track(state_column: str) -> dict | None:
     """Atomically claim the next pending track for processing.
-    Uses FOR UPDATE SKIP LOCKED to avoid race conditions."""
+    Uses FOR UPDATE SKIP LOCKED to avoid race conditions.
+    Quick-checks pending count first to avoid expensive lock query when idle."""
     col = _validate_state_column(state_column)
     with transaction_scope() as session:
+        # Fast path: skip the FOR UPDATE if nothing is pending
+        pending = session.execute(
+            text(f"SELECT EXISTS(SELECT 1 FROM library_tracks WHERE {col} = 'pending' AND path IS NOT NULL)")
+        ).scalar()
+        if not pending:
+            return None
         row = session.execute(text(f"""
             UPDATE library_tracks
             SET {col} = 'analyzing'

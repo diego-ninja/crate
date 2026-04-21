@@ -49,6 +49,7 @@ export interface CuratedPlaylist {
   name: string;
   description?: string;
   category?: string | null;
+  cover_data_url?: string | null;
   artwork_tracks?: PlaylistArtworkTrack[];
   track_count: number;
   follower_count: number;

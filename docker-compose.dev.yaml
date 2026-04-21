@@ -62,6 +62,7 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
+      - CRATE_RUNTIME=api
       - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
@@ -104,6 +105,7 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
+      - CRATE_RUNTIME=worker
       - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin

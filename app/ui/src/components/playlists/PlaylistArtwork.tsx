@@ -32,19 +32,21 @@ function playlistGradient(name: string): string {
 
 function buildCoverUrl(track: PlaylistArtworkTrack): string | null {
   if (!track.artist || !track.album) return null;
-  return albumCoverApiUrl({
-    albumId: track.album_id,
-    albumSlug: track.album_slug,
-    artistName: track.artist,
-    albumName: track.album,
-  }) || null;
+  return (
+    albumCoverApiUrl({
+      albumId: track.album_id,
+      albumSlug: track.album_slug,
+      artistName: track.artist,
+      albumName: track.album,
+    }) || null
+  );
 }
 
 function CrateMark({ className = "" }: { className?: string }) {
   return (
     <div className={`absolute right-2.5 top-2.5 flex items-center justify-center ${className}`}>
       <img
-        src="/icons/logo.svg"
+        src="/assets/logo.svg"
         alt=""
         aria-hidden="true"
         className="h-4 w-4 opacity-95 drop-shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
@@ -58,7 +60,7 @@ export function PlaylistArtwork({
   coverDataUrl,
   tracks = [],
   className = "",
-  showCrateMark = false,
+  showCrateMark = true,
   crateMarkClassName,
 }: PlaylistArtworkProps) {
   const collageSources: string[] = [];
@@ -75,7 +77,7 @@ export function PlaylistArtwork({
   if (coverDataUrl) {
     return (
       <div className={`relative overflow-hidden bg-white/5 ${className}`}>
-        <img src={coverDataUrl} alt={name} className="w-full h-full object-cover" />
+        <img src={coverDataUrl} alt={name} className="h-full w-full object-cover" />
         {crateMark}
       </div>
     );
@@ -85,16 +87,14 @@ export function PlaylistArtwork({
     if (collageSources.length === 1) {
       return (
         <div className={`relative overflow-hidden bg-white/5 ${className}`}>
-          <img src={collageSources[0]} alt={name} className="w-full h-full object-cover" />
+          <img src={collageSources[0]} alt={name} className="h-full w-full object-cover" />
           {crateMark}
         </div>
       );
     }
 
     const collageClassName =
-      collageSources.length === 2
-        ? "grid-cols-2 grid-rows-1"
-        : "grid-cols-2 grid-rows-2";
+      collageSources.length === 2 ? "grid-cols-2 grid-rows-1" : "grid-cols-2 grid-rows-2";
 
     return (
       <div className={`relative overflow-hidden bg-white/5 ${className}`}>
@@ -104,7 +104,7 @@ export function PlaylistArtwork({
               key={`${source}-${index}`}
               src={source}
               alt=""
-              className={`w-full h-full object-cover ${collageSources.length === 3 && index === 2 ? "col-span-2" : ""}`}
+              className={`h-full w-full object-cover ${collageSources.length === 3 && index === 2 ? "col-span-2" : ""}`}
             />
           ))}
         </div>
@@ -115,7 +115,7 @@ export function PlaylistArtwork({
 
   return (
     <div
-      className={`relative overflow-hidden flex items-center justify-center ${className}`}
+      className={`relative flex items-center justify-center overflow-hidden ${className}`}
       style={{ background: playlistGradient(name) }}
     >
       <ListMusic size={24} className="text-white/60" />

@@ -10,7 +10,7 @@ from crate.api.schemas.playlists import PlaylistDetailResponse, PlaylistSummaryR
 
 class CreateSystemPlaylistRequest(BaseModel):
     name: str
-    description: str = ""
+    description: str | None = None
     cover_data_url: str | None = None
     generation_mode: str = "static"
     smart_rules: dict[str, Any] | None = None
@@ -27,11 +27,16 @@ class UpdateSystemPlaylistRequest(BaseModel):
     cover_data_url: str | None = None
     generation_mode: str | None = None
     smart_rules: dict[str, Any] | None = None
+    auto_refresh_enabled: bool | None = None
     is_curated: bool | None = None
     is_active: bool | None = None
     curation_key: str | None = None
     featured_rank: int | None = None
     category: str | None = None
+
+
+class PreviewSystemPlaylistRequest(BaseModel):
+    smart_rules: dict[str, Any] | None = None
 
 
 class SystemPlaylistSummaryResponse(PlaylistSummaryResponse):

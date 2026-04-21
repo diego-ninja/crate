@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { AlertCircle, ArrowLeft, ArrowDownToLine, CheckCircle2, Heart, Loader2, Play, Radio, Shuffle, Share2, Sparkles, Users } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowDownToLine, CheckCircle2, Heart, Loader2, Play, Radio, Shuffle, Share2, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
@@ -237,7 +237,6 @@ export function CuratedPlaylist() {
     );
   }
 
-  const badgeLabel = data.is_curated ? "Curated Playlist" : data.is_smart ? "Smart Playlist" : "System Playlist";
   const offlineState = getPlaylistState(data.id);
   const offlineRecord = getPlaylistRecord(data.id);
   const offlineBusy = isOfflineBusy(offlineState);
@@ -302,15 +301,13 @@ export function CuratedPlaylist() {
             name={data.name}
             coverDataUrl={data.cover_data_url}
             tracks={data.artwork_tracks}
+            showCrateMark
+            crateMarkClassName="right-3.5 top-3.5 [&_img]:h-4.5 [&_img]:w-4.5"
             className="aspect-square rounded-3xl shadow-2xl"
           />
         </div>
 
         <div className="flex flex-col justify-end gap-3 text-left">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-primary/25 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-primary">
-            <Sparkles size={12} />
-            {badgeLabel}
-          </div>
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-3xl font-bold text-foreground">{data.name}</h1>
