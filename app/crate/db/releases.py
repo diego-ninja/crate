@@ -88,7 +88,16 @@ def get_new_releases(status: str = "", upcoming: bool = False, limit: int = 200)
                 ),
                 {"lim": limit},
             ).mappings().all()
-        return [dict(r) for r in rows]
+        results = []
+        for r in rows:
+            d = dict(r)
+            # release_date is a date object after the TIMESTAMPTZ migration
+            for key in ("release_date", "detected_at", "downloaded_at"):
+                val = d.get(key)
+                if val is not None and hasattr(val, "isoformat"):
+                    d[key] = val.isoformat()
+            results.append(d)
+        return results
 
 
 def mark_release_downloading(release_id: int, *, session=None):
