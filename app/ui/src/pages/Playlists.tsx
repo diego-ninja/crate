@@ -57,6 +57,7 @@ interface SystemPlaylist {
   name: string;
   description: string;
   cover_data_url?: string | null;
+  artwork_tracks?: Array<{ artist: string; album: string; album_id?: number; album_slug?: string }>;
   is_smart: boolean;
   smart_rules: SmartRules | null;
   generation_mode: "static" | "smart";
@@ -68,6 +69,8 @@ interface SystemPlaylist {
   follower_count: number;
   track_count: number;
   total_duration: number;
+  generation_status?: string;
+  last_generated_at?: string | null;
   created_at: string;
   updated_at: string;
   tracks?: PlaylistTrack[];
@@ -303,8 +306,10 @@ export function Playlists() {
                 className="flex cursor-pointer items-center gap-4 px-4 py-4 transition-colors hover:bg-white/[0.03]"
                 onClick={() => navigate(`/playlists/${playlist.id}`)}
               >
-                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.03]">
-                  {playlist.generation_mode === "smart" ? (
+                <div className="h-11 w-11 flex-shrink-0 rounded-md border border-white/10 bg-white/[0.03] overflow-hidden flex items-center justify-center">
+                  {playlist.cover_data_url ? (
+                    <img src={playlist.cover_data_url} alt="" className="h-full w-full object-cover" />
+                  ) : playlist.generation_mode === "smart" ? (
                     <Sparkles size={18} className="text-primary" />
                   ) : (
                     <ListMusic size={18} className="text-primary" />
@@ -325,10 +330,15 @@ export function Playlists() {
                       <CrateChip>inactive</CrateChip>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground">
-                    {playlist.track_count} tracks · {fmtDuration(playlist.total_duration)} ·{" "}
-                    {playlist.follower_count} follower{playlist.follower_count === 1 ? "" : "s"}
-                    {playlist.category ? ` · ${playlist.category}` : ""}
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>{playlist.track_count} tracks</span>
+                    <span>·</span>
+                    <span>{fmtDuration(playlist.total_duration)}</span>
+                    <span>·</span>
+                    <span>{playlist.follower_count} follower{playlist.follower_count === 1 ? "" : "s"}</span>
+                    {playlist.category && <><span>·</span><span>{playlist.category}</span></>}
+                    {playlist.generation_status === "running" && <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary text-[9px] px-1.5 py-0">generating</Badge>}
+                    {playlist.generation_status === "failed" && <Badge variant="outline" className="border-red-400/30 bg-red-400/10 text-red-300 text-[9px] px-1.5 py-0">failed</Badge>}
                   </div>
                 </div>
 
