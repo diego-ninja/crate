@@ -709,14 +709,17 @@ def _handle_persist_playlist_cover(task_id: str, params: dict, config: dict) -> 
     except Exception as e:
         return {"error": f"Failed to decode cover: {str(e)[:200]}"}
 
-    cover_dir = Path("/music/.covers/playlists")
-    cover_dir.mkdir(parents=True, exist_ok=True)
-    cover_path = cover_dir / f"{playlist_id}.jpg"
+    from crate.playlist_covers import playlist_covers_root
+
+    cover_dir = playlist_covers_root()
+    filename = f"{playlist_id}.jpg"
+    cover_path = cover_dir / filename
 
     cover_path.write_bytes(image_data)
     r.delete(redis_key)
 
-    update_playlist(playlist_id, cover_path=str(cover_path))
+    # Store the relative filename, not the absolute path — playlist_cover_abspath() resolves it
+    update_playlist(playlist_id, cover_path=filename)
     emit_task_event(task_id, "info", {"message": f"Cover saved for playlist {playlist_id}"})
     return {"cover_path": str(cover_path)}
 

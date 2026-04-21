@@ -158,6 +158,14 @@ export function PlaylistEditor() {
   const { data: history, refetch: refetchHistory } = useApi<GenerationLog[]>(id ? `/api/admin/system-playlists/${id}/generation-history` : null);
   const { data: filterOptions } = useApi<FilterOptions>("/api/playlists/filter-options");
 
+  // Auto-refresh while generation is in progress
+  useEffect(() => {
+    const status = playlist?.generation_status;
+    if (status !== "queued" && status !== "running") return;
+    const interval = setInterval(() => { refetch(); refetchHistory(); }, 3000);
+    return () => clearInterval(interval);
+  }, [playlist?.generation_status, refetch, refetchHistory]);
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("");
