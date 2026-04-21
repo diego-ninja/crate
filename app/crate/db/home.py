@@ -492,7 +492,11 @@ def _get_home_hero(
 def _track_candidates_for_album_ids(user_id: int, album_ids: list[int], limit: int = 240) -> list[dict]:
     if not album_ids:
         return []
+    # Cap album IDs to prevent massive IN queries
+    capped_ids = album_ids[:30]
     with transaction_scope() as session:
+        # Set per-query timeout to prevent pool starvation
+        session.execute(text("SET LOCAL statement_timeout = '5s'"))
         rows = session.execute(
             text("""
             SELECT
@@ -511,32 +515,18 @@ def _track_candidates_for_album_ids(user_id: int, album_ids: list[int], limit: i
                 t.bitrate,
                 t.sample_rate,
                 t.bit_depth,
-                COALESCE(uts.play_count, 0) AS user_play_count,
-                CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END AS is_liked,
                 COALESCE(t.lastfm_playcount, 0) AS popularity
             FROM library_tracks t
             JOIN library_albums alb ON alb.id = t.album_id
             LEFT JOIN library_artists art ON art.name = t.artist
-            LEFT JOIN user_track_stats uts
-              ON uts.user_id = :user_id
-             AND uts.stat_window = 'all_time'
-             AND (
-                uts.track_id = t.id
-                OR (uts.track_id IS NULL AND COALESCE(uts.track_path, '') != '' AND uts.track_path = t.path)
-             )
-            LEFT JOIN user_liked_tracks ult
-              ON ult.user_id = :user_id
-             AND ult.track_id = t.id
             WHERE t.album_id = ANY(:album_ids)
             ORDER BY
-                COALESCE(uts.play_count, 0) ASC,
-                CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END ASC,
                 COALESCE(t.lastfm_playcount, 0) DESC,
                 COALESCE(t.track_number, 9999) ASC,
                 t.title ASC
             LIMIT :lim
             """),
-            {"user_id": user_id, "album_ids": album_ids, "lim": limit},
+            {"album_ids": capped_ids, "lim": limit},
         ).mappings().all()
         return [dict(row) for row in rows]
 
@@ -551,7 +541,28 @@ def _query_discovery_tracks(
     if not genres:
         return []
     genres = expand_genre_terms_with_aliases(genres)
+    # Cap genres to prevent massive ANY() arrays
+    capped_genres = genres[:20]
+    capped_excluded = excluded_artist_names[:50]
     with transaction_scope() as session:
+        session.execute(text("SET LOCAL statement_timeout = '5s'"))
+        # Step 1: find artists that match the genres (cheap, indexed)
+        artist_rows = session.execute(
+            text("""
+            SELECT DISTINCT ag.artist_name
+            FROM artist_genres ag
+            JOIN genres g ON g.id = ag.genre_id
+            WHERE LOWER(g.name) = ANY(:genres)
+              AND NOT (LOWER(ag.artist_name) = ANY(:excluded))
+            LIMIT 200
+            """),
+            {"genres": capped_genres, "excluded": capped_excluded},
+        ).mappings().all()
+        matching_artists = [r["artist_name"] for r in artist_rows]
+        if not matching_artists:
+            return []
+
+        # Step 2: get tracks from those artists (simple indexed query)
         rows = session.execute(
             text("""
             SELECT
@@ -570,60 +581,17 @@ def _query_discovery_tracks(
                 t.bitrate,
                 t.sample_rate,
                 t.bit_depth,
-                COALESCE(uts.play_count, 0) AS user_play_count,
-                CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END AS is_liked,
-                COALESCE(art.listeners, 0) AS artist_listeners,
-                COALESCE(t.lastfm_playcount, 0) AS popularity,
-                genre_match.genre_hits
+                COALESCE(t.lastfm_playcount, 0) AS popularity
             FROM library_tracks t
-            LEFT JOIN library_albums alb ON alb.id = t.album_id
+            JOIN library_albums alb ON alb.id = t.album_id
             LEFT JOIN library_artists art ON art.name = t.artist
-            LEFT JOIN user_track_stats uts
-              ON uts.user_id = :user_id
-             AND uts.stat_window = 'all_time'
-             AND (
-                uts.track_id = t.id
-                OR (uts.track_id IS NULL AND COALESCE(uts.track_path, '') != '' AND uts.track_path = t.path)
-             )
-            LEFT JOIN user_liked_tracks ult
-              ON ult.user_id = :user_id
-             AND ult.track_id = t.id
-            LEFT JOIN LATERAL (
-                SELECT COUNT(DISTINCT matched.genre_name)::INTEGER AS genre_hits
-                FROM (
-                    SELECT LOWER(g_artist.name) AS genre_name
-                    FROM artist_genres ag
-                    JOIN genres g_artist ON g_artist.id = ag.genre_id
-                    WHERE ag.artist_name = t.artist
-                      AND LOWER(g_artist.name) = ANY(:genres)
-
-                    UNION
-
-                    SELECT LOWER(g_album.name) AS genre_name
-                    FROM album_genres alg
-                    JOIN genres g_album ON g_album.id = alg.genre_id
-                    WHERE alg.album_id = t.album_id
-                      AND LOWER(g_album.name) = ANY(:genres)
-
-                    UNION
-
-                    SELECT BTRIM(track_genre.genre_name) AS genre_name
-                    FROM regexp_split_to_table(LOWER(COALESCE(t.genre, '')), E'\\s*,\\s*') AS track_genre(genre_name)
-                    WHERE BTRIM(track_genre.genre_name) = ANY(:genres)
-                ) matched
-            ) genre_match ON TRUE
-            WHERE genre_match.genre_hits > 0
-              AND NOT (LOWER(t.artist) = ANY(:excluded))
+            WHERE t.artist = ANY(:artists)
             ORDER BY
-                COALESCE(uts.play_count, 0) ASC,
-                CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END ASC,
-                genre_match.genre_hits DESC,
-                COALESCE(art.listeners, 0) DESC,
                 COALESCE(t.lastfm_playcount, 0) DESC,
                 t.title ASC
             LIMIT :lim
             """),
-            {"user_id": user_id, "genres": genres, "excluded": excluded_artist_names, "lim": limit},
+            {"artists": matching_artists[:100], "lim": limit},
         ).mappings().all()
         return [dict(row) for row in rows]
 
@@ -662,7 +630,9 @@ def _filter_interesting_releases(
 def _fallback_recent_interest_tracks(user_id: int, interest_artists_lower: list[str], limit: int = 240) -> list[dict]:
     if not interest_artists_lower:
         return []
+    capped_artists = interest_artists_lower[:50]
     with transaction_scope() as session:
+        session.execute(text("SET LOCAL statement_timeout = '5s'"))
         rows = session.execute(
             text("""
             SELECT
@@ -681,32 +651,18 @@ def _fallback_recent_interest_tracks(user_id: int, interest_artists_lower: list[
                 t.bitrate,
                 t.sample_rate,
                 t.bit_depth,
-                COALESCE(uts.play_count, 0) AS user_play_count,
-                CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END AS is_liked,
                 COALESCE(t.lastfm_playcount, 0) AS popularity
             FROM library_tracks t
             JOIN library_albums alb ON alb.id = t.album_id
             LEFT JOIN library_artists art ON art.name = t.artist
-            LEFT JOIN user_track_stats uts
-              ON uts.user_id = :user_id
-             AND uts.stat_window = 'all_time'
-             AND (
-                uts.track_id = t.id
-                OR (uts.track_id IS NULL AND COALESCE(uts.track_path, '') != '' AND uts.track_path = t.path)
-             )
-            LEFT JOIN user_liked_tracks ult
-              ON ult.user_id = :user_id
-             AND ult.track_id = t.id
             WHERE LOWER(t.artist) = ANY(:artists)
             ORDER BY
-                COALESCE(uts.play_count, 0) ASC,
-                CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END ASC,
                 alb.updated_at DESC NULLS LAST,
                 COALESCE(t.lastfm_playcount, 0) DESC,
                 COALESCE(t.track_number, 9999) ASC
             LIMIT :lim
             """),
-            {"user_id": user_id, "artists": interest_artists_lower, "lim": limit},
+            {"artists": capped_artists, "lim": limit},
         ).mappings().all()
         return [dict(row) for row in rows]
 
@@ -814,6 +770,7 @@ def _build_artist_core_rows(
     limit: int,
 ) -> list[dict]:
     with transaction_scope() as session:
+        session.execute(text("SET LOCAL statement_timeout = '5s'"))
         rows = session.execute(
             text("""
             SELECT
@@ -832,35 +789,21 @@ def _build_artist_core_rows(
                 t.bitrate,
                 t.sample_rate,
                 t.bit_depth,
-                COALESCE(uts.play_count, 0) AS user_play_count,
-                CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END AS is_liked,
                 COALESCE(t.lastfm_playcount, 0) AS popularity,
                 COALESCE(alb.year, '') AS album_year,
                 COALESCE(t.track_number, 9999) AS track_number
             FROM library_tracks t
             LEFT JOIN library_albums alb ON alb.id = t.album_id
             LEFT JOIN library_artists art ON art.name = t.artist
-            LEFT JOIN user_track_stats uts
-              ON uts.user_id = :user_id
-             AND uts.stat_window = 'all_time'
-             AND (
-                uts.track_id = t.id
-                OR (uts.track_id IS NULL AND COALESCE(uts.track_path, '') != '' AND uts.track_path = t.path)
-             )
-            LEFT JOIN user_liked_tracks ult
-              ON ult.user_id = :user_id
-             AND ult.track_id = t.id
             WHERE art.id = :artist_id OR (art.id IS NULL AND t.artist = :artist_name)
             ORDER BY
-                COALESCE(uts.play_count, 0) DESC,
-                CASE WHEN ult.track_id IS NULL THEN 0 ELSE 1 END DESC,
                 COALESCE(t.lastfm_playcount, 0) DESC,
                 COALESCE(alb.year, '') DESC,
                 COALESCE(t.track_number, 9999) ASC,
                 t.title ASC
             LIMIT :lim
             """),
-            {"user_id": user_id, "artist_id": artist_id,
+            {"artist_id": artist_id,
              "artist_name": artist_name, "lim": max(limit * 5, 80)},
         ).mappings().all()
         rows = [dict(row) for row in rows]
