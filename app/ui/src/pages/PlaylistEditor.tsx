@@ -132,6 +132,21 @@ function getOpsForField(field: string) {
   return !f || f.type === "text" ? TEXT_OPS : NUMBER_OPS;
 }
 
+interface FilterOptions {
+  genres: string[];
+  formats: string[];
+  keys: string[];
+  artists: string[];
+}
+
+// Fields that should render as a searchable dropdown instead of free text
+const DROPDOWN_FIELDS: Record<string, { optionsKey: keyof FilterOptions; searchPlaceholder: string }> = {
+  artist: { optionsKey: "artists", searchPlaceholder: "Search artists..." },
+  genre: { optionsKey: "genres", searchPlaceholder: "Search genres..." },
+  format: { optionsKey: "formats", searchPlaceholder: "Search formats..." },
+  audio_key: { optionsKey: "keys", searchPlaceholder: "Search keys..." },
+};
+
 // ── Main ─────────────────────────────────────────────────────────
 
 export function PlaylistEditor() {
@@ -141,6 +156,7 @@ export function PlaylistEditor() {
 
   const { data: playlist, loading, refetch } = useApi<Playlist>(id ? `/api/admin/system-playlists/${id}` : null);
   const { data: history, refetch: refetchHistory } = useApi<GenerationLog[]>(id ? `/api/admin/system-playlists/${id}/generation-history` : null);
+  const { data: filterOptions } = useApi<FilterOptions>("/api/playlists/filter-options");
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -389,6 +405,17 @@ export function PlaylistEditor() {
                               onChange={(e) => updateRule(i, "value", [Array.isArray(rule.value) ? rule.value[0] : 0, Number(e.target.value)])}
                               className="h-10 w-20" />
                           </div>
+                        ) : DROPDOWN_FIELDS[rule.field] && filterOptions ? (
+                          <AdminSelect
+                            value={String(rule.value ?? "")}
+                            onChange={(v) => updateRule(i, "value", v)}
+                            options={(filterOptions[DROPDOWN_FIELDS[rule.field]!.optionsKey] ?? []).map((v) => ({ value: v, label: v }))}
+                            placeholder={`Select ${rule.field}...`}
+                            searchable
+                            searchPlaceholder={DROPDOWN_FIELDS[rule.field]!.searchPlaceholder}
+                            allowClear={false}
+                            triggerClassName="min-w-[160px] flex-1 max-w-none"
+                          />
                         ) : (
                           <Input value={String(rule.value ?? "")} placeholder="value"
                             onChange={(e) => updateRule(i, "value", e.target.value)}
