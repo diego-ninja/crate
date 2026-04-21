@@ -201,6 +201,47 @@ def _release_db_heavy_lock(task_id: str):
 # workers via a Redis-based counting semaphore.
 
 DOWNLOAD_TASK_TYPES = frozenset({"tidal_download", "soulseek_download"})
+
+
+def _is_in_download_window() -> bool:
+    """Check if current time is within the configured download window.
+    Returns True (allow download) if window is disabled or we're inside it."""
+    from crate.db.cache import get_setting
+    if get_setting("download_window_enabled", "false") != "true":
+        return True  # Window disabled, always allow
+    start_str = get_setting("download_window_start", "02:00")
+    end_str = get_setting("download_window_end", "07:00")
+    try:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        hour, minute = map(int, start_str.split(":"))
+        start_minutes = hour * 60 + minute
+        hour, minute = map(int, end_str.split(":"))
+        end_minutes = hour * 60 + minute
+        current_minutes = now.hour * 60 + now.minute
+        if start_minutes <= end_minutes:
+            return start_minutes <= current_minutes < end_minutes
+        else:
+            return current_minutes >= start_minutes or current_minutes < end_minutes
+    except Exception:
+        return True  # On error, allow
+
+
+def _ms_until_download_window() -> int:
+    """Milliseconds until the next download window opens."""
+    from crate.db.cache import get_setting
+    start_str = get_setting("download_window_start", "02:00")
+    try:
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc)
+        hour, minute = map(int, start_str.split(":"))
+        target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        delta = target - now
+        return int(delta.total_seconds() * 1000)
+    except Exception:
+        return 3600_000  # fallback: 1 hour
 _DOWNLOAD_SEM_KEY = "crate:download_semaphore"
 _DOWNLOAD_SEM_MAX = 2
 _DOWNLOAD_SEM_TTL = 14400  # 4h — matches tidal_download timeout
@@ -278,8 +319,18 @@ def _execute_task(task_type: str, task_id: str):
                 actor.send_with_options(args=(task_id,), delay=30_000)
             return
 
-    # Download concurrency limiter
+    # Download window enforcement
     is_download = task_type in DOWNLOAD_TASK_TYPES
+    if is_download and not _is_in_download_window():
+        delay_ms = _ms_until_download_window()
+        log.info("Task %s (%s) outside download window, deferring %dmin", task_id, task_type, delay_ms // 60000)
+        update_task(task_id, progress="Scheduled for download window")
+        actor = _actors.get(task_type)
+        if actor:
+            actor.send_with_options(args=(task_id,), delay=min(delay_ms, 3600_000))
+        return
+
+    # Download concurrency limiter
     if is_download:
         if not _acquire_download_slot(task_id):
             log.info("Task %s (%s) waiting for download slot, re-enqueueing in 30s", task_id, task_type)
@@ -326,6 +377,11 @@ def _execute_task(task_type: str, task_id: str):
                 notify_task_completed(task_type, task_id, result)
             except Exception:
                 pass
+            try:
+                from crate.db.events import _publish_to_redis
+                _publish_to_redis(task_id, "task_done", {"type": "task_done", "status": "completed", "task_type": task_type}, "")
+            except Exception:
+                pass
 
     except Exception as e:
         log.exception("Task %s (%s) failed", task_id, task_type)
@@ -341,6 +397,11 @@ def _execute_task(task_type: str, task_id: str):
         try:
             from crate.telegram import notify_task_failed
             notify_task_failed(task_type, task_id, str(e)[:300])
+        except Exception:
+            pass
+        try:
+            from crate.db.events import _publish_to_redis
+            _publish_to_redis(task_id, "task_done", {"type": "task_done", "status": "failed", "task_type": task_type, "error": str(e)[:200]}, "")
         except Exception:
             pass
         raise  # let dramatiq handle retry logic

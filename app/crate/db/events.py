@@ -8,12 +8,12 @@ from crate.db.tx import transaction_scope
 
 
 def emit_task_event(task_id: str, event_type: str, data: dict | None = None):
-    """Emit an event for a task. Events are stored in DB and streamed via SSE.
-
-    Events with type "info", "warn", "error", or "item" are also
-    written to worker_logs so they appear in the admin Logs page.
+    """Emit an event for a task. Events are stored in DB, streamed via SSE
+    (Redis pub/sub), and mirrored to worker_logs for the Logs page.
     """
     now = datetime.now(timezone.utc).isoformat()
+    safe_data = data or {}
+
     with transaction_scope() as session:
         session.execute(
             text(
@@ -21,14 +21,16 @@ def emit_task_event(task_id: str, event_type: str, data: dict | None = None):
                 "VALUES (:task_id, :event_type, :data_json, :created_at)"
             ),
             {"task_id": task_id, "event_type": event_type,
-             "data_json": json.dumps(data or {}, default=str), "created_at": now},
+             "data_json": json.dumps(safe_data, default=str), "created_at": now},
         )
+
+    # Publish to Redis for SSE subscribers (non-blocking)
+    _publish_to_redis(task_id, event_type, safe_data, now)
 
     # Mirror significant events to worker_logs for the Logs page
     if event_type in ("info", "warn", "error", "item"):
         try:
             from crate.db.worker_logs import insert_log
-            safe_data = data or {}
             message = safe_data.get("message") or safe_data.get("label") or event_type
             level = safe_data.get("level", event_type if event_type in ("warn", "error") else "info")
             insert_log(
@@ -41,6 +43,27 @@ def emit_task_event(task_id: str, event_type: str, data: dict | None = None):
             )
         except Exception:
             pass
+
+
+def _publish_to_redis(task_id: str, event_type: str, data: dict, timestamp: str):
+    """Publish event to Redis channels for SSE consumers."""
+    try:
+        from crate.db.cache import _get_redis
+        r = _get_redis()
+        if not r:
+            return
+        payload = json.dumps({
+            "task_id": task_id,
+            "event_type": event_type,
+            "data": data,
+            "timestamp": timestamp,
+        }, default=str)
+        # Per-task channel (for task detail SSE)
+        r.publish(f"crate:sse:task:{task_id}", payload)
+        # Global channel (signal to refresh the global status snapshot)
+        r.publish("crate:sse:global", payload)
+    except Exception:
+        pass  # Non-critical — SSE will fall back to polling
 
 
 def get_task_events(task_id: str, after_id: int = 0, limit: int = 100) -> list[dict]:

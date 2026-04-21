@@ -8,6 +8,7 @@ import {
   ListMusic,
   Loader2,
   Plus,
+  Search,
   Sparkles,
   Trash2,
   X,
@@ -204,6 +205,8 @@ export function Playlists() {
   const [playlists, setPlaylists] = useState<SystemPlaylist[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterMode>("all");
+  const [query, setQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [composerMode, setComposerMode] = useState<ComposerMode>(null);
   const [deleteTarget, setDeleteTarget] = useState<SystemPlaylist | null>(null);
 
@@ -234,14 +237,52 @@ export function Playlists() {
     [playlists],
   );
 
+  const categoryOptions = useMemo(() => {
+    const categories = Array.from(
+      new Set(
+        playlists
+          .map((playlist) => playlist.category?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+
+    return categories.map((category) => ({ value: category, label: category }));
+  }, [playlists]);
+
   const filteredPlaylists = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
     return playlists.filter((playlist) => {
-      if (filter === "curated") return playlist.is_curated;
-      if (filter === "smart") return playlist.generation_mode === "smart";
-      if (filter === "inactive") return !playlist.is_active;
-      return true;
+      const matchesMode = filter === "all"
+        || (filter === "curated" && playlist.is_curated)
+        || (filter === "smart" && playlist.generation_mode === "smart")
+        || (filter === "inactive" && !playlist.is_active);
+
+      if (!matchesMode) return false;
+
+      if (categoryFilter && (playlist.category ?? "") !== categoryFilter) {
+        return false;
+      }
+
+      if (!normalizedQuery) {
+        return true;
+      }
+
+      const haystack = [
+        playlist.name,
+        playlist.description,
+        playlist.category,
+        playlist.generation_mode,
+        playlist.is_curated ? "curated" : "",
+        playlist.is_active ? "active" : "inactive",
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return haystack.includes(normalizedQuery);
     });
-  }, [filter, playlists]);
+  }, [categoryFilter, filter, playlists, query]);
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -290,13 +331,6 @@ export function Playlists() {
                 </p>
               </div>
             </div>
-
-            <div className="flex flex-wrap gap-2">
-              <CratePill active>{counts.all} total</CratePill>
-              <CratePill>{counts.curated} curated</CratePill>
-              <CratePill>{counts.smart} smart</CratePill>
-              <CratePill>{counts.inactive} inactive</CratePill>
-            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -317,25 +351,57 @@ export function Playlists() {
           </div>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2">
-          {FILTER_OPTIONS.map((item) => (
-            <CratePill
-              key={item.key}
-              active={filter === item.key}
-              onClick={() => setFilter(item.key)}
-            >
-              {item.label}
-              <span className="text-white/40">
-                {item.key === "all"
-                  ? counts.all
-                  : item.key === "curated"
-                    ? counts.curated
-                    : item.key === "smart"
-                      ? counts.smart
-                      : counts.inactive}
-              </span>
-            </CratePill>
-          ))}
+        <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                size={16}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search playlists by name, description or category"
+                className="pl-9"
+              />
+            </div>
+            <AdminSelect
+              value={categoryFilter}
+              onChange={setCategoryFilter}
+              options={categoryOptions}
+              placeholder="All categories"
+              searchable
+              searchPlaceholder="Search categories..."
+              triggerClassName="w-full lg:w-[220px]"
+            />
+          </div>
+
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              {FILTER_OPTIONS.map((item) => (
+                <CratePill
+                  key={item.key}
+                  active={filter === item.key}
+                  onClick={() => setFilter(item.key)}
+                >
+                  {item.label}
+                  <span className="text-white/40">
+                    {item.key === "all"
+                      ? counts.all
+                      : item.key === "curated"
+                        ? counts.curated
+                        : item.key === "smart"
+                          ? counts.smart
+                          : counts.inactive}
+                  </span>
+                </CratePill>
+              ))}
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              Showing {filteredPlaylists.length} of {playlists.length} playlists
+            </p>
+          </div>
         </div>
       </section>
 
@@ -358,7 +424,7 @@ export function Playlists() {
           </div>
           <h2 className="mt-4 text-lg font-medium">No playlists for this view yet</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Switch filters or start a new playlist from the composer above.
+            Try a different search or filter, or start a new playlist from the composer above.
           </p>
         </Card>
       ) : (
