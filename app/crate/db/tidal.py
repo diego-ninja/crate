@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from crate.db.serialize import serialize_row, serialize_rows
 from crate.db.tx import transaction_scope
 
 # ── Tidal Downloads ──────────────────────────────────────────────
@@ -61,7 +62,7 @@ def get_tidal_downloads(status: str | None = None, limit: int = 100) -> list[dic
             ).mappings().all()
     results = []
     for r in rows:
-        d = dict(r)
+        d = serialize_row(r)
         meta = d.pop("metadata_json", {})
         d["metadata"] = meta if isinstance(meta, dict) else json.loads(meta or "{}")
         results.append(d)
@@ -76,7 +77,7 @@ def get_tidal_download(dl_id: int) -> dict | None:
         ).mappings().first()
     if not row:
         return None
-    d = dict(row)
+    d = serialize_row(row)
     meta = d.pop("metadata_json", {})
     d["metadata"] = meta if isinstance(meta, dict) else json.loads(meta or "{}")
     return d
@@ -119,7 +120,7 @@ def get_next_queued_download() -> dict | None:
         ).mappings().first()
     if not row:
         return None
-    d = dict(row)
+    d = serialize_row(row)
     meta = d.pop("metadata_json", {})
     d["metadata"] = meta if isinstance(meta, dict) else json.loads(meta or "{}")
     return d
@@ -148,7 +149,7 @@ def get_monitored_artists() -> list[dict]:
         rows = session.execute(
             text("SELECT * FROM tidal_monitored_artists WHERE enabled = TRUE ORDER BY artist_name")
         ).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def is_artist_monitored(artist_name: str) -> bool:

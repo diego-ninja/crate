@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from crate.db.serialize import serialize_rows
 from crate.db.tx import transaction_scope
 
 
@@ -45,7 +46,7 @@ def get_open_issues(check_type: str | None = None, limit: int = 500) -> list[dic
                 text("SELECT * FROM health_issues WHERE status = 'open' ORDER BY severity, created_at DESC LIMIT :lim"),
                 {"lim": limit},
             ).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def get_issue_counts() -> dict:
@@ -131,7 +132,7 @@ def get_artist_issues(artist_name: str) -> list[dict]:
             ),
             {"artist": artist_name},
         ).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def get_artist_issue_count(artist_name: str) -> int:

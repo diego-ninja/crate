@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import text
 
+from crate.db.serialize import serialize_row
 from crate.db.tx import transaction_scope
 
 
@@ -54,7 +55,7 @@ def get_task_events(task_id: str, after_id: int = 0, limit: int = 100) -> list[d
         ).mappings().all()
     results = []
     for r in rows:
-        d = dict(r)
+        d = serialize_row(r)
         data = d.pop("data_json", {})
         d["data"] = data if isinstance(data, dict) else json.loads(data or "{}")
         results.append(d)

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from crate.db.serialize import serialize_row
 from crate.db.tx import transaction_scope
 
 # ── Audit log ────────────────────────────────────────────────────
@@ -48,7 +49,7 @@ def get_audit_log(limit: int = 100, offset: int = 0,
 
     results = []
     for row in rows:
-        d = dict(row)
+        d = serialize_row(row)
         det = d.pop("details_json", {})
         d["details"] = det if isinstance(det, dict) else json.loads(det or "{}")
         results.append(d)

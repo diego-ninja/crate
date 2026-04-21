@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
+from crate.db.serialize import serialize_row, serialize_rows
 from crate.db.tx import transaction_scope
 
 
@@ -84,7 +85,7 @@ def get_followers(user_id: int, *, limit: int = 100) -> list[dict]:
             """),
             {"user_id": user_id, "lim": limit},
         ).mappings().all()
-        return [dict(row) for row in rows]
+        return serialize_rows(rows)
 
 
 def get_following(user_id: int, *, limit: int = 100) -> list[dict]:
@@ -105,7 +106,7 @@ def get_following(user_id: int, *, limit: int = 100) -> list[dict]:
             """),
             {"user_id": user_id, "lim": limit},
         ).mappings().all()
-        return [dict(row) for row in rows]
+        return serialize_rows(rows)
 
 
 def search_users(query: str, *, limit: int = 20) -> list[dict]:
@@ -132,7 +133,7 @@ def search_users(query: str, *, limit: int = 20) -> list[dict]:
             """),
             {"pattern": pattern, "lim": limit},
         ).mappings().all()
-        return [dict(row) for row in rows]
+        return serialize_rows(rows)
 
 
 def get_public_user_profile(user_id: int) -> dict | None:
@@ -170,7 +171,7 @@ def get_public_user_profile(user_id: int) -> dict | None:
             """),
             {"user_id": user_id},
         ).mappings().first()
-    return dict(row) if row else None
+    return serialize_row(row) if row else None
 
 
 def get_public_user_profile_by_username(username: str) -> dict | None:
@@ -208,7 +209,7 @@ def get_public_playlists_for_user(user_id: int) -> list[dict]:
             """),
             {"user_id": user_id},
         ).mappings().all()
-        return [dict(row) for row in rows]
+        return serialize_rows(rows)
 
 
 def get_me_social(user_id: int) -> dict:

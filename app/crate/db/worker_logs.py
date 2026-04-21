@@ -11,6 +11,7 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from crate.db.serialize import serialize_rows
 from crate.db.tx import transaction_scope
 from sqlalchemy import text
 
@@ -98,7 +99,7 @@ def list_known_workers() -> list[dict]:
                 ORDER BY last_seen DESC
             """)
         ).mappings().all()
-    return [dict(row) for row in rows]
+    return serialize_rows(rows)
 
 
 def cleanup_old_logs(max_age_days: int = 7):
