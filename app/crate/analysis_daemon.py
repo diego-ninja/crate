@@ -33,6 +33,44 @@ TRACK_SLEEP = 1
 # Max consecutive failures before backing off
 MAX_CONSECUTIVE_FAILURES = 10
 FAILURE_BACKOFF = 60
+# How long to pause when server is under load
+LOAD_PAUSE = 60
+
+
+def _should_pause_for_load() -> bool:
+    """Check if daemons should pause to let active users have resources.
+
+    Pauses when users are actively streaming. Uses play_history
+    (actual playback), not session heartbeats (idle tabs don't count).
+    Also pauses when system load is high relative to CPU count.
+    """
+    # Check active streams (users actually listening)
+    try:
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text
+        with transaction_scope() as session:
+            row = session.execute(text(
+                "SELECT COUNT(DISTINCT user_id)::INTEGER AS cnt "
+                "FROM play_history WHERE played_at > now() - interval '5 minutes'"
+            )).mappings().first()
+            active = row["cnt"] if row else 0
+        if active > 0:
+            return True
+    except Exception:
+        pass
+
+    # Check system load average
+    try:
+        import os
+        load_1min = os.getloadavg()[0]
+        cpu_count = os.cpu_count() or 2
+        # Pause if load is above 80% of available cores
+        if load_1min > cpu_count * 0.8:
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 def _claim_track(state_column: str):
@@ -76,6 +114,12 @@ def analysis_daemon(config: dict):
 
     while True:
         try:
+            # Pause when users are actively streaming or system is under load
+            if _should_pause_for_load():
+                log.debug("Analysis daemon: pausing for active users/load")
+                time.sleep(LOAD_PAUSE)
+                continue
+
             track = _claim_track("analysis_state")
             if not track:
                 time.sleep(IDLE_SLEEP)
@@ -157,6 +201,11 @@ def bliss_daemon(config: dict):
 
     while True:
         try:
+            if _should_pause_for_load():
+                log.debug("Bliss daemon: pausing for active users/load")
+                time.sleep(LOAD_PAUSE)
+                continue
+
             track = _claim_track("bliss_state")
             if not track:
                 time.sleep(IDLE_SLEEP)
