@@ -100,6 +100,11 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
 
     # Library completeness check
     "compute_completeness": ("fast",    3, 3600, 0),
+
+    # Playlist generation
+    "generate_system_playlist":         ("fast", 1, 600, 0),
+    "refresh_system_smart_playlists":   ("fast", 3, 1800, 0),
+    "persist_playlist_cover":           ("fast", 0, 120, 1),
 }
 
 # DB-heavy tasks — only one at a time via Redis mutex
