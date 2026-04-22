@@ -24,6 +24,7 @@ export function RadioPage() {
   const [discoveryAvailable, setDiscoveryAvailable] = useState(false);
   const [starting, setStarting] = useState(false);
   const [activeSession, setActiveSession] = useState<string | null>(null);
+  const [activeMode, setActiveMode] = useState<"seeded" | "discovery" | null>(null);
   const [seedLabel, setSeedLabel] = useState("");
 
   // Seed picker state
@@ -82,6 +83,7 @@ export function RadioPage() {
       return;
     }
     setActiveSession(result.sessionId);
+    setActiveMode("seeded");
     setSeedLabel(result.seedLabel);
     playAll(result.tracks, 0, result.source);
     setStarting(false);
@@ -96,7 +98,8 @@ export function RadioPage() {
       return;
     }
     setActiveSession(result.sessionId);
-    setSeedLabel(result.seedLabel);
+    setActiveMode("discovery");
+    setSeedLabel("Discovery Radio");
     playAll(result.tracks, 0, result.source);
     setStarting(false);
   };
@@ -116,17 +119,34 @@ export function RadioPage() {
       <button
         onClick={startDiscovery}
         disabled={starting || !discoveryAvailable}
-        className="group flex w-full items-center gap-4 rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-5 text-left transition hover:border-primary/35 hover:from-primary/15 disabled:opacity-40"
+        className={`group flex w-full items-center gap-4 rounded-2xl border p-5 text-left transition ${
+          activeMode === "discovery"
+            ? "border-primary/35 bg-gradient-to-r from-primary/15 via-primary/8 to-transparent"
+            : "border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent hover:border-primary/35 hover:from-primary/15 disabled:opacity-40"
+        }`}
       >
         <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary shadow-[0_0_20px_rgba(6,182,212,0.2)] transition group-hover:shadow-[0_0_30px_rgba(6,182,212,0.3)]">
-          {starting ? <Loader2 size={24} className="animate-spin" /> : <Sparkles size={24} />}
+          {starting ? (
+            <Loader2 size={24} className="animate-spin" />
+          ) : activeMode === "discovery" ? (
+            <div className="h-3 w-3 animate-pulse rounded-full bg-primary shadow-[0_0_12px_rgba(6,182,212,0.6)]" />
+          ) : (
+            <Sparkles size={24} />
+          )}
         </div>
         <div>
-          <div className="text-base font-semibold text-foreground">Discovery Radio</div>
+          <div className="flex items-center gap-2">
+            <span className="text-base font-semibold text-foreground">Discovery Radio</span>
+            {activeMode === "discovery" && (
+              <span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">playing</span>
+            )}
+          </div>
           <div className="mt-0.5 text-[13px] text-white/45">
-            {discoveryAvailable
-              ? "Based on your likes, follows, and saved albums. Like or dislike tracks to shape the sound."
-              : "Follow an artist or save an album to unlock Discovery Radio."
+            {activeMode === "discovery"
+              ? "Use thumbs up/down in the player to shape the sound."
+              : discoveryAvailable
+                ? "Based on your likes, follows, and saved albums. Like or dislike tracks to shape the sound."
+                : "Follow an artist or save an album to unlock Discovery Radio."
             }
           </div>
         </div>
@@ -177,7 +197,7 @@ export function RadioPage() {
       </div>
 
       {/* Active session info */}
-      {activeSession && (
+      {activeSession && activeMode !== "discovery" && (
         <div className="rounded-xl border border-primary/15 bg-primary/5 px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="h-2 w-2 animate-pulse rounded-full bg-primary shadow-[0_0_8px_rgba(6,182,212,0.5)]" />
