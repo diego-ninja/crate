@@ -3,14 +3,39 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "sideEffects": [
+    "tokens/*.css"
+  ],
   "exports": {
     "./tokens/*": "./tokens/*",
-    "./lib/*": "./lib/*.ts",
-    "./primitives/*": "./primitives/*.tsx",
-    "./shadcn/*": "./shadcn/*.tsx",
-    "./composites/*": "./composites/*.tsx",
-    "./domain/*": "./domain/*.tsx",
-    "./charts/*": "./charts/*.ts"
+    "./lib/*": {
+      "types": "./lib/*.ts",
+      "default": "./lib/*.ts"
+    },
+    "./primitives/*": {
+      "types": "./primitives/*.tsx",
+      "default": "./primitives/*.tsx"
+    },
+    "./shadcn/*": {
+      "types": "./shadcn/*.tsx",
+      "default": "./shadcn/*.tsx"
+    },
+    "./composites/*": {
+      "types": "./composites/*.tsx",
+      "default": "./composites/*.tsx"
+    },
+    "./domain/*": {
+      "types": "./domain/*.tsx",
+      "default": "./domain/*.tsx"
+    },
+    "./charts/*": {
+      "types": "./charts/*.ts",
+      "default": "./charts/*.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup lib/*.ts primitives/*.tsx shadcn/*.tsx composites/*.tsx domain/**/*.tsx domain/**/*.ts --format esm --dts --outdir dist --external react --external react-dom --external react-router --external radix-ui --external lucide-react --external class-variance-authority --external clsx --external tailwind-merge --external qrcode"
   },
   "peerDependencies": {
     "react": "^19.0.0",

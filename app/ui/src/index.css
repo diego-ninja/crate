@@ -1,5 +1,5 @@
 @import "../../shared/fonts/poppins.css";
-@import "../../shared/ui/tokens/index.css";
+@import "@crate/ui/tokens/index.css";
 @import "tailwindcss";
 @source "../../shared/ui";
 

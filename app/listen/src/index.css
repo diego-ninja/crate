@@ -1,7 +1,7 @@
 /* Poppins is loaded conditionally in main.tsx — web only, not
    Capacitor native. iOS/Android use system fonts (San Francisco /
    Roboto) for a native feel. */
-@import "../../shared/ui/tokens/index.css";
+@import "@crate/ui/tokens/index.css";
 @import "tailwindcss";
 @source "../../shared/ui";
 
