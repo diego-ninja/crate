@@ -184,7 +184,7 @@ export function MusicPaths() {
           </div>
 
           {/* Path visualization — horizontal route */}
-          <div className="relative mb-4 rounded-xl border border-white/8 bg-black/30 px-3 py-4">
+          <div className="relative mb-4 rounded-xl px-3 py-4">
             {/* Track line */}
             <div className="absolute left-6 right-6 top-1/2 h-px -translate-y-1/2 bg-white/8" />
             {/* Progress line */}
