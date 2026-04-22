@@ -6,6 +6,7 @@ const NAV_LINKS = [
   { href: "#features", label: "Features" },
   { href: "#stack", label: "Stack" },
   { href: "#install", label: "Install" },
+  { href: "/why", label: "Why Crate?" },
 ];
 
 export function Nav() {
