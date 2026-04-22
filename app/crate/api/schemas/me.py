@@ -6,6 +6,15 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
 from crate.api.schemas.common import OkResponse
+
+
+class _StorageIdMixin(BaseModel):
+    """Coerce UUID track_storage_id to str for JSON serialization."""
+
+    @field_validator("track_storage_id", mode="before", check_fields=False)
+    @classmethod
+    def coerce_storage_id(cls, v: Any) -> str | None:
+        return str(v) if v is not None else None
 from crate.api.schemas.playlists import PlaylistSummaryResponse
 
 
@@ -250,7 +259,7 @@ class SaveAlbumResponse(OkResponse):
     added: bool
 
 
-class LikedTrackResponse(BaseModel):
+class LikedTrackResponse(_StorageIdMixin, BaseModel):
     model_config = ConfigDict(extra="allow")
 
     track_id: int | None = None
@@ -276,7 +285,7 @@ class UnlikeMutationResponse(OkResponse):
     removed: bool
 
 
-class PlayHistoryEntryResponse(BaseModel):
+class PlayHistoryEntryResponse(_StorageIdMixin, BaseModel):
     model_config = ConfigDict(extra="allow")
 
     track_id: int | None = None
@@ -339,7 +348,7 @@ class StatsTrendsResponse(BaseModel):
     points: list[TrendPointResponse] = Field(default_factory=list)
 
 
-class StatsTrackResponse(BaseModel):
+class StatsTrackResponse(_StorageIdMixin, BaseModel):
     model_config = ConfigDict(extra="allow")
 
     track_id: int | None = None
@@ -434,7 +443,7 @@ class HomeArtworkRefResponse(BaseModel):
     artist_name: str | None = None
 
 
-class HomeTrackResponse(BaseModel):
+class HomeTrackResponse(_StorageIdMixin, BaseModel):
     model_config = ConfigDict(extra="allow")
 
     track_id: int | None = None
