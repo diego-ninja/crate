@@ -104,6 +104,9 @@ def _try_env_pg() -> bool:
         # Pin the pytest process to the test DB early so any accidental
         # import-time DB access cannot hit the local dev database.
         os.environ["CRATE_POSTGRES_DB"] = TEST_DB_NAME
+        os.environ.setdefault("POSTGRES_SUPERUSER_USER", user)
+        os.environ.setdefault("POSTGRES_SUPERUSER_PASSWORD", password)
+        os.environ.setdefault("POSTGRES_SUPERUSER_DB", TEST_DB_NAME)
         _test_dsn = dsn
         PG_AVAILABLE = True
         return True
@@ -138,6 +141,9 @@ def _try_testcontainers() -> bool:
         os.environ["CRATE_POSTGRES_HOST"] = host
         os.environ["CRATE_POSTGRES_PORT"] = str(port)
         os.environ["CRATE_POSTGRES_DB"] = TEST_DB_NAME
+        os.environ["POSTGRES_SUPERUSER_USER"] = "crate"
+        os.environ["POSTGRES_SUPERUSER_PASSWORD"] = "crate"
+        os.environ["POSTGRES_SUPERUSER_DB"] = TEST_DB_NAME
 
         dsn = f"postgresql://crate:crate@{host}:{port}/{TEST_DB_NAME}"
 

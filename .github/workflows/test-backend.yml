@@ -53,6 +53,9 @@ jobs:
           CRATE_POSTGRES_HOST: localhost
           CRATE_POSTGRES_PORT: "5432"
           CRATE_POSTGRES_DB: crate_test
+          POSTGRES_SUPERUSER_USER: crate
+          POSTGRES_SUPERUSER_PASSWORD: crate
+          POSTGRES_SUPERUSER_DB: crate_test
         run: |
           python -m pytest tests/ -v \
             --ignore=tests/test_stats_integration.py \

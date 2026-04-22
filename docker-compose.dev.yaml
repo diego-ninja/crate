@@ -61,6 +61,9 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
+      - POSTGRES_SUPERUSER_USER=crate
+      - POSTGRES_SUPERUSER_PASSWORD=crate
+      - POSTGRES_SUPERUSER_DB=crate
       - CRATE_RUNTIME=api
       - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
       - JWT_SECRET=dev-secret-not-for-production
@@ -110,6 +113,9 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
+      - POSTGRES_SUPERUSER_USER=crate
+      - POSTGRES_SUPERUSER_PASSWORD=crate
+      - POSTGRES_SUPERUSER_DB=crate
       - CRATE_RUNTIME=worker
       - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
       - JWT_SECRET=dev-secret-not-for-production

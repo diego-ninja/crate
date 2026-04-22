@@ -75,7 +75,7 @@ That means there is no single "main" flow anymore. Crate has multiple equally im
 
 ### Supporting integrations
 
-- Traefik and Authelia in production.
+- Traefik in production.
 - Caddy in local dev.
 - Tidal acquisition through `tiddl`.
 - Last.fm, MusicBrainz, Fanart.tv, Ticketmaster, Discogs, Spotify, Setlist.fm, lrclib, and others.

@@ -44,7 +44,6 @@ Core Crate services:
 Infrastructure around it:
 
 - Traefik for reverse proxy + Let's Encrypt certificates
-- Authelia as a soft-auth middleware option
 
 Images for `crate-api`, `crate-ui`, `crate-listen`, `crate-docs`, and
 `crate-site` are built and pushed to GHCR by
@@ -199,7 +198,7 @@ This is not full observability in the Prometheus sense, but it gives operators a
 ### Auth separation
 
 - app auth lives in Crate
-- outer reverse-proxy and Authelia can protect adjacent services
+- outer reverse-proxy can still protect adjacent services if needed
 
 ### Cookie posture
 
