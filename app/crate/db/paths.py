@@ -37,6 +37,7 @@ def _vector_to_pg_array(vec: list[float]) -> str:
 
 def resolve_bliss_centroid(endpoint_type: str, value: str) -> list[float] | None:
     """Resolve an endpoint (track/album/artist/genre) to a bliss centroid vector."""
+    log.info("resolve_bliss_centroid: type=%s value=%s", endpoint_type, value)
     with read_scope() as session:
         if endpoint_type == "track":
             row = session.execute(
@@ -62,16 +63,16 @@ def resolve_bliss_centroid(endpoint_type: str, value: str) -> list[float] | None
                     SELECT t.bliss_vector
                     FROM library_tracks t
                     JOIN library_albums a ON a.id = t.album_id
-                    WHERE a.artist_name = (
+                    WHERE a.artist = (
                         SELECT name FROM library_artists WHERE id = :id
                     )
                     AND t.bliss_vector IS NOT NULL
-                    ORDER BY t.play_count DESC NULLS LAST
                     LIMIT 20
                 """),
                 {"id": int(value)},
             ).mappings().all()
             vectors = [list(r["bliss_vector"]) for r in rows]
+            log.info("resolve artist id=%s: found %d vectors", value, len(vectors))
             return _centroid(vectors) if vectors else None
 
         if endpoint_type == "genre":
@@ -80,7 +81,7 @@ def resolve_bliss_centroid(endpoint_type: str, value: str) -> list[float] | None
                     SELECT t.bliss_vector
                     FROM library_tracks t
                     JOIN library_albums a ON a.id = t.album_id
-                    JOIN artist_genres ag ON ag.artist_name = a.artist_name
+                    JOIN artist_genres ag ON ag.artist_name = a.artist
                     JOIN genres g ON g.id = ag.genre_id
                     WHERE g.slug = :slug AND t.bliss_vector IS NOT NULL
                     ORDER BY ag.weight DESC
@@ -188,6 +189,8 @@ def _find_nearest_track(target: list[float], exclude: set[int]) -> dict | None:
     """Find the track with the closest bliss vector to target, excluding already-used tracks."""
     pg_array = _vector_to_pg_array(target)
 
+    pg_array = _vector_to_pg_array(target)
+
     exclude_clause = ""
     params: dict = {}
     if exclude:
@@ -197,7 +200,7 @@ def _find_nearest_track(target: list[float], exclude: set[int]) -> dict | None:
     with read_scope() as session:
         row = session.execute(
             text(f"""
-                SELECT t.id, t.storage_id, t.title, a.artist_name AS artist,
+                SELECT t.id, t.storage_id, t.title, a.artist AS artist,
                        a.name AS album, t.album_id,
                        (t.bliss_vector <-> {pg_array}) AS distance
                 FROM library_tracks t
