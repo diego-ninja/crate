@@ -420,17 +420,14 @@ function DocPage() {
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_260px]">
       <article className="min-w-0">
-        <div className="mb-6 rounded-[24px] border border-white/8 bg-white/[0.03] p-6 sm:p-7">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">
-            <SectionIcon section={doc.section} />
-            {sectionMeta[doc.section].label}
-          </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{doc.title}</h1>
-          <p className="mt-3 max-w-3xl text-sm leading-7 text-white/62 sm:text-base">{doc.summary}</p>
-          <div className="mt-4 text-xs text-white/35">Source: {doc.sourcePath}</div>
-        </div>
-
         <div className="rounded-[28px] border border-white/8 bg-white/[0.025] p-6 sm:p-8">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/25 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">
+              <SectionIcon section={doc.section} />
+              {sectionMeta[doc.section].label}
+            </div>
+            <span className="text-[11px] text-white/30">{doc.sourcePath}</span>
+          </div>
           <MarkdownArticle markdown={doc.markdown} />
         </div>
 
