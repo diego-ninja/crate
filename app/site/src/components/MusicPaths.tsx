@@ -70,21 +70,30 @@ export function MusicPaths() {
   const [activePathKey, setActivePathKey] = useState<keyof typeof DEMO_PATHS>("nyhc-crank");
   const [activeStep, setActiveStep] = useState(0);
   const [playing, setPlaying] = useState(true);
+  // Sub-step progress: 0 = just arrived at activeStep, 1 = about to arrive at next
+  const [subProgress, setSubProgress] = useState(0);
   const path = DEMO_PATHS[activePathKey]!;
+  const nodeCount = path.nodes.length;
 
-  const advance = useCallback(() => {
-    setActiveStep((prev) => (prev + 1) % path.nodes.length);
-  }, [path.nodes.length]);
-
+  // Animate sub-progress from 0→1 between steps
   useEffect(() => {
     if (!playing) return;
-    const interval = setInterval(advance, 2200);
-    return () => clearInterval(interval);
-  }, [playing, advance]);
+    setSubProgress(0);
+    // Small delay before starting the travel animation
+    const startTimer = setTimeout(() => setSubProgress(1), 80);
+    const advanceTimer = setTimeout(() => {
+      setActiveStep((prev) => (prev + 1) % nodeCount);
+    }, 2200);
+    return () => {
+      clearTimeout(startTimer);
+      clearTimeout(advanceTimer);
+    };
+  }, [activeStep, playing, nodeCount]);
 
   // Reset step when switching paths
   useEffect(() => {
     setActiveStep(0);
+    setSubProgress(0);
   }, [activePathKey]);
 
   return (
@@ -183,41 +192,47 @@ export function MusicPaths() {
             </span>
           </div>
 
-          {/* Path visualization — horizontal route */}
-          <div className="relative mb-4 rounded-xl px-3 py-4">
-            {/* Track line */}
+          {/* Path visualization — horizontal route with traveling dot */}
+          <div className="relative mb-4 px-3 py-6">
+            {/* Base track line */}
             <div className="absolute left-6 right-6 top-1/2 h-px -translate-y-1/2 bg-white/8" />
-            {/* Progress line */}
+
+            {/* Trail — glowing line behind the traveler */}
             <div
-              className="absolute left-6 top-1/2 h-px -translate-y-1/2 bg-cyan-400/40 transition-all duration-500"
-              style={{ width: `calc(${(activeStep / (path.nodes.length - 1)) * 100}% * (100% - 48px) / 100%)` }}
+              className="absolute left-6 top-1/2 h-[2px] -translate-y-1/2 rounded-full transition-[width] duration-[1800ms] ease-in-out"
+              style={{
+                width: `calc(${((activeStep + subProgress * (activeStep < nodeCount - 1 ? 1 : 0)) / (nodeCount - 1)) * 100}% * (100% - 48px) / 100%)`,
+                background: "linear-gradient(90deg, rgba(6,182,212,0.1), rgba(6,182,212,0.5))",
+                boxShadow: "0 0 8px rgba(6,182,212,0.3)",
+              }}
             />
 
+            {/* Static node markers */}
             <div className="relative flex items-center justify-between">
               {path.nodes.map((node, i) => {
-                const isActive = i === activeStep;
                 const isPast = i < activeStep;
+                const isActive = i === activeStep;
                 const showGenre = i === 0 || i === path.nodes.length - 1 || (i > 0 && node.genre !== path.nodes[i - 1]!.genre);
 
                 return (
                   <button
                     key={i}
-                    onClick={() => setActiveStep(i)}
+                    onClick={() => { setActiveStep(i); setSubProgress(0); }}
                     className="group relative flex h-4 w-4 flex-shrink-0 items-center justify-center"
                     title={`${node.track} — ${node.artist}`}
                   >
                     <div
-                      className={`rounded-full transition-[background-color,box-shadow,transform] duration-300 ${
-                        isActive
-                          ? "h-3.5 w-3.5 bg-cyan-400 shadow-[0_0_16px_rgba(6,182,212,0.7)]"
-                          : isPast
-                            ? "h-2 w-2 bg-cyan-400/60"
+                      className={`rounded-full transition-all duration-300 ${
+                        isPast
+                          ? "h-2 w-2 bg-cyan-400/70"
+                          : isActive
+                            ? "h-2 w-2 bg-cyan-400/70"
                             : "h-1.5 w-1.5 bg-white/20 group-hover:bg-white/40"
                       }`}
                     />
                     {showGenre && (
-                      <span className={`pointer-events-none absolute top-full mt-1 whitespace-nowrap text-[8px] transition-colors ${
-                        isActive ? "text-cyan-200" : "text-white/25"
+                      <span className={`pointer-events-none absolute top-full mt-1.5 whitespace-nowrap text-[8px] transition-colors duration-300 ${
+                        isActive || isPast ? "text-cyan-300/60" : "text-white/20"
                       }`}>
                         {node.genre}
                       </span>
@@ -225,6 +240,19 @@ export function MusicPaths() {
                   </button>
                 );
               })}
+            </div>
+
+            {/* Traveling dot — moves smoothly between nodes */}
+            <div
+              className="pointer-events-none absolute top-1/2 -translate-y-1/2 transition-[left] duration-[1800ms] ease-in-out"
+              style={{
+                left: `calc(24px + ${((activeStep + subProgress * (activeStep < nodeCount - 1 ? 1 : 0)) / (nodeCount - 1)) * 100}% * (100% - 48px) / 100%)`,
+              }}
+            >
+              {/* Outer glow */}
+              <div className="absolute -inset-3 rounded-full bg-cyan-400/20 blur-md" />
+              {/* Core dot */}
+              <div className="relative h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.8)]" />
             </div>
           </div>
 
