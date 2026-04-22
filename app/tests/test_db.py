@@ -4,6 +4,7 @@ import json
 import os
 import time
 from datetime import datetime, timezone
+from threading import Event, Thread
 from unittest.mock import patch
 
 import psycopg2
@@ -218,6 +219,161 @@ class TestTaskCRUD:
         assert task_id is not None
         assert mock_dispatch.call_count == 0
         assert pg_db.get_task(task_id) is None
+
+
+class TestPlaylistQueryBatching:
+    def test_list_system_playlists_batches_artwork_fetch(self):
+        from contextlib import contextmanager
+
+        from crate.db.playlists import list_system_playlists
+
+        execute_calls: list[tuple[object, dict | None]] = []
+        main_rows = [
+            {
+                "id": 1,
+                "name": "Playlist One",
+                "description": "A",
+                "smart_rules_json": None,
+                "scope": "system",
+                "generation_mode": "static",
+                "is_curated": True,
+                "is_active": True,
+                "featured_rank": None,
+                "updated_at": "2026-04-23T12:00:00+00:00",
+                "follower_count": 3,
+                "is_followed": True,
+            },
+            {
+                "id": 2,
+                "name": "Playlist Two",
+                "description": "B",
+                "smart_rules_json": None,
+                "scope": "system",
+                "generation_mode": "smart",
+                "is_curated": True,
+                "is_active": True,
+                "featured_rank": None,
+                "updated_at": "2026-04-23T11:00:00+00:00",
+                "follower_count": 1,
+                "is_followed": False,
+            },
+        ]
+        artwork_rows = [
+            {
+                "playlist_id": 1,
+                "artist": "Converge",
+                "artist_id": 101,
+                "artist_slug": "converge",
+                "album": "Jane Doe",
+                "album_id": 201,
+                "album_slug": "jane-doe",
+            },
+            {
+                "playlist_id": 2,
+                "artist": "Poison The Well",
+                "artist_id": 102,
+                "artist_slug": "poison-the-well",
+                "album": "The Opposite of December",
+                "album_id": 202,
+                "album_slug": "the-opposite-of-december",
+            },
+        ]
+
+        class MockMappings:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def all(self):
+                return self._rows
+
+        class MockSession:
+            def execute(self, statement, params=None):
+                execute_calls.append((statement, params))
+                rows = main_rows if len(execute_calls) == 1 else artwork_rows
+
+                class Result:
+                    def mappings(self_nonlocal):
+                        return MockMappings(rows)
+
+                return Result()
+
+        @contextmanager
+        def mock_scope():
+            yield MockSession()
+
+        with patch("crate.db.playlists.transaction_scope", mock_scope):
+            playlists = list_system_playlists(user_id=7)
+
+        assert len(execute_calls) == 2
+        assert [playlist["id"] for playlist in playlists] == [1, 2]
+        assert playlists[0]["follower_count"] == 3
+        assert playlists[0]["is_followed"] is True
+        assert playlists[0]["artwork_tracks"][0]["artist"] == "Converge"
+        assert playlists[1]["artwork_tracks"][0]["artist"] == "Poison The Well"
+
+
+class TestHomeCaching:
+    def test_get_or_compute_home_cache_coalesces_in_process(self):
+        from crate.db.home import _get_or_compute_home_cache
+
+        cache_store: dict[str, dict] = {}
+        compute_started = Event()
+        release_compute = Event()
+        compute_calls = {"count": 0}
+        results: list[dict] = []
+
+        def fake_get_cache(key: str, max_age_seconds: int | None = None):
+            return cache_store.get(key)
+
+        def fake_set_cache(key: str, value: dict, ttl: int | None = None):
+            cache_store[key] = value
+
+        def compute() -> dict:
+            compute_calls["count"] += 1
+            compute_started.set()
+            release_compute.wait(2)
+            return {"ok": True, "n": compute_calls["count"]}
+
+        def worker():
+            results.append(
+                _get_or_compute_home_cache(
+                    "home:test:1",
+                    max_age_seconds=600,
+                    ttl=600,
+                    compute=compute,
+                )
+            )
+
+        with patch("crate.db.cache.get_cache", side_effect=fake_get_cache), \
+             patch("crate.db.cache.set_cache", side_effect=fake_set_cache):
+            thread_one = Thread(target=worker)
+            thread_one.start()
+            assert compute_started.wait(1)
+
+            thread_two = Thread(target=worker)
+            thread_two.start()
+
+            time.sleep(0.05)
+            release_compute.set()
+            thread_one.join()
+            thread_two.join()
+
+        assert compute_calls["count"] == 1
+        assert results == [{"ok": True, "n": 1}, {"ok": True, "n": 1}]
+
+    def test_get_home_context_skips_fallback_genre_query_when_top_genres_exist(self):
+        from crate.db.home import _get_home_context
+
+        with patch("crate.db.home.get_followed_artists", return_value=[{"artist_name": "Converge"}]), \
+             patch("crate.db.home.get_saved_albums", return_value=[]), \
+             patch("crate.db.home.get_top_artists", return_value=[{"artist_name": "Converge"}]), \
+             patch("crate.db.home.get_top_albums", return_value=[]), \
+             patch("crate.db.home.get_top_genres", return_value=[{"genre_name": "Metalcore", "play_count": 10}]), \
+             patch("crate.db.home.transaction_scope", side_effect=AssertionError("fallback genre query should not run")):
+            context = _get_home_context(1)
+
+        assert context["top_genres_lower"]
+        assert context["mix_seed_genres"]
 
     def test_get_task(self, pg_db):
         task_id = pg_db.create_task("scan")

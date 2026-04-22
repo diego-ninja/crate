@@ -108,6 +108,25 @@ class TestGetJwtSecret:
         mock_set.assert_called_once_with("jwt_secret", secret)
 
 
+class TestOAuthRedirectHelpers:
+    def test_append_query_param_preserves_existing_params(self):
+        from crate.api.auth import _append_query_param
+
+        url = _append_query_param("https://listen.example/auth/callback?next=%2Fmix", "token", "abc123")
+
+        assert url == "https://listen.example/auth/callback?next=%2Fmix&token=abc123"
+
+    def test_post_auth_redirect_url_adds_token_only_for_web_callback(self):
+        from crate.api.auth import _post_auth_redirect_url
+
+        assert (
+            _post_auth_redirect_url("https://listen.example/auth/callback?next=%2Fmix", "abc123")
+            == "https://listen.example/auth/callback?next=%2Fmix&token=abc123"
+        )
+        assert _post_auth_redirect_url("https://admin.example/users", "abc123") == "https://admin.example/users"
+        assert _post_auth_redirect_url("/auth/callback?next=%2Fmix", "abc123") == "/auth/callback?next=%2Fmix&token=abc123"
+
+
 # ── API endpoint tests ─────────────────────────────────────────────
 
 

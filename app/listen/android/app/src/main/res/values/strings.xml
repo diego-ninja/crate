@@ -3,5 +3,5 @@
     <string name="app_name">Crate</string>
     <string name="title_activity_main">Crate</string>
     <string name="package_name">app.cratemusic.crate</string>
-    <string name="custom_url_scheme">app.cratemusic.crate</string>
+    <string name="custom_url_scheme">cratemusic</string>
 </resources>

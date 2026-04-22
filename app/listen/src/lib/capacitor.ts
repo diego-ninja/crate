@@ -36,6 +36,7 @@ export async function initCapacitor() {
       try {
         const params = new URL(url).searchParams;
         const token = params.get("token");
+        const next = params.get("next") || "/";
         if (token) {
           import("@/lib/api").then(({ setAuthToken }) => {
             setAuthToken(token);
@@ -43,8 +44,8 @@ export async function initCapacitor() {
           import("@capacitor/browser").then(({ Browser }) => {
             Browser.close().catch(() => {});
           });
-          window.dispatchEvent(new CustomEvent("crate:auth-token-received"));
-          window.location.href = "/";
+          window.dispatchEvent(new CustomEvent("crate:auth-token-received", { detail: { next } }));
+          window.location.href = next;
         }
       } catch {
         // Malformed URL

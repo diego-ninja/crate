@@ -100,6 +100,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refetch]);
 
   useEffect(() => {
+    function handleTokenReceived() {
+      void refetch();
+    }
+
+    window.addEventListener("crate:auth-token-received", handleTokenReceived);
+    return () => window.removeEventListener("crate:auth-token-received", handleTokenReceived);
+  }, [refetch]);
+
+  useEffect(() => {
     if (!user) return;
     const timer = window.setInterval(() => {
       void api("/api/auth/heartbeat", "POST", { app_id: "listen-web" }).catch(() => {});

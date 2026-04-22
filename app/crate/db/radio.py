@@ -64,11 +64,11 @@ def get_recent_play_vectors(user_id: int, limit: int = 20) -> list[list[float]]:
         rows = session.execute(
             text("""
                 SELECT t.bliss_vector
-                FROM play_events pe
-                JOIN library_tracks t ON t.storage_id = pe.storage_id
+                FROM user_play_events pe
+                LEFT JOIN library_tracks t ON t.id = pe.track_id
                 WHERE pe.user_id = :user_id
                   AND t.bliss_vector IS NOT NULL
-                ORDER BY pe.played_at DESC
+                ORDER BY pe.ended_at DESC
                 LIMIT :limit
             """),
             {"user_id": user_id, "limit": limit},

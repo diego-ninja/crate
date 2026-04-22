@@ -18,9 +18,16 @@ def metrics_summary(request: Request):
         "api_latency": query_summary("api.latency", minutes=5),
         "api_requests": query_summary("api.requests", minutes=5),
         "api_errors": query_summary("api.errors", minutes=5),
+        "api_slow": query_summary("api.slow", minutes=5),
         "stream_requests": query_summary("stream.requests", minutes=5),
         "stream_latency": query_summary("stream.latency", minutes=5),
         "stream_concurrent": query_summary("stream.concurrent", minutes=5),
+        "home_cache_hit": query_summary("home.cache.hit", minutes=15),
+        "home_cache_miss": query_summary("home.cache.miss", minutes=15),
+        "home_cache_waited": query_summary("home.cache.waited", minutes=15),
+        "home_cache_coalesced": query_summary("home.cache.coalesced", minutes=15),
+        "home_cache_stale_fallback": query_summary("home.cache.stale_fallback", minutes=15),
+        "home_compute_ms": query_summary("home.compute.ms", minutes=15),
     }
 
 
@@ -94,21 +101,54 @@ def metrics_system(request: Request):
         except Exception:
             disk[label] = None
 
-    # DB pool
+    # DB pools
     db_pool = {}
+    db_pools = {"combined": {}, "sqlalchemy": {}, "legacy": {}}
     try:
         from crate.db.engine import _engine
         if _engine:
             pool = _engine.pool
-            db_pool = {
+            sqlalchemy_pool = {
                 "size": pool.size(),
                 "checked_in": pool.checkedin(),
                 "checked_out": pool.checkedout(),
                 "overflow": pool.overflow(),
                 "total": pool.checkedin() + pool.checkedout(),
             }
+            db_pools["sqlalchemy"] = sqlalchemy_pool
     except Exception:
         pass
+
+    try:
+        from crate.db.core import _pool as legacy_pool
+        if legacy_pool:
+            checked_in = len(getattr(legacy_pool, "_pool", []) or [])
+            checked_out = len(getattr(legacy_pool, "_used", {}) or {})
+            legacy_state = {
+                "size": int(getattr(legacy_pool, "maxconn", 0) or 0),
+                "checked_in": checked_in,
+                "checked_out": checked_out,
+                "overflow": max(0, checked_out + checked_in - int(getattr(legacy_pool, "maxconn", 0) or 0)),
+                "total": checked_in + checked_out,
+                "minconn": int(getattr(legacy_pool, "minconn", 0) or 0),
+                "maxconn": int(getattr(legacy_pool, "maxconn", 0) or 0),
+            }
+            db_pools["legacy"] = legacy_state
+    except Exception:
+        pass
+
+    sqlalchemy_pool = db_pools.get("sqlalchemy") or {}
+    legacy_state = db_pools.get("legacy") or {}
+    if sqlalchemy_pool or legacy_state:
+        combined = {
+            "size": int(sqlalchemy_pool.get("size") or 0) + int(legacy_state.get("size") or 0),
+            "checked_in": int(sqlalchemy_pool.get("checked_in") or 0) + int(legacy_state.get("checked_in") or 0),
+            "checked_out": int(sqlalchemy_pool.get("checked_out") or 0) + int(legacy_state.get("checked_out") or 0),
+            "overflow": int(sqlalchemy_pool.get("overflow") or 0) + int(legacy_state.get("overflow") or 0),
+            "total": int(sqlalchemy_pool.get("total") or 0) + int(legacy_state.get("total") or 0),
+        }
+        db_pools["combined"] = combined
+        db_pool = combined or sqlalchemy_pool or legacy_state
 
     # Analysis progress
     analysis = {}
@@ -133,7 +173,7 @@ def metrics_system(request: Request):
     except Exception:
         pass
 
-    return {"disk": disk, "db_pool": db_pool, "analysis": analysis, "load": load}
+    return {"disk": disk, "db_pool": db_pool, "db_pools": db_pools, "analysis": analysis, "load": load}
 
 
 @router.get("/logs", responses=AUTH_ERROR_RESPONSES, summary="Query worker logs")

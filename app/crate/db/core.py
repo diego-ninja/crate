@@ -19,6 +19,27 @@ _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _db_provisioned = False
 
 
+def _default_legacy_pool_settings() -> tuple[int, int]:
+    runtime = os.environ.get("CRATE_RUNTIME", "").lower()
+    if runtime == "api":
+        return 1, 8
+    if runtime == "worker":
+        return 1, 4
+    return 1, 6
+
+
+def _get_int_setting(env_var: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.environ.get(env_var)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        log.warning("Invalid %s=%r; falling back to %d", env_var, raw, default)
+        return default
+    return max(minimum, value)
+
+
 def _reserve_unique_slug(existing: set[str], base_slug: str) -> str:
     base = base_slug or "item"
     candidate = base
@@ -152,11 +173,15 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
     global _pool
     if _pool is None or _pool.closed:
         _ensure_database()
+        default_minconn, default_maxconn = _default_legacy_pool_settings()
+        minconn = _get_int_setting("CRATE_LEGACY_POOL_MINCONN", default_minconn, minimum=1)
+        maxconn = _get_int_setting("CRATE_LEGACY_POOL_MAXCONN", default_maxconn, minimum=minconn)
         for attempt in range(10):
             try:
                 _pool = psycopg2.pool.ThreadedConnectionPool(
-                    minconn=2, maxconn=30, dsn=_get_dsn()
+                    minconn=minconn, maxconn=maxconn, dsn=_get_dsn()
                 )
+                log.info("Legacy DB pool created (minconn=%s, maxconn=%s)", minconn, maxconn)
                 break
             except psycopg2.OperationalError:
                 if attempt < 9:

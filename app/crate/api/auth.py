@@ -4,7 +4,7 @@ import hashlib
 import base64
 import secrets
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse, urlencode
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import jwt
 import requests
@@ -244,6 +244,20 @@ def _oauth_callback_url(provider: str, return_to: str | None = None) -> str:
     return f"{_callback_origin(return_to)}/api/auth/oauth/{provider}/callback"
 
 
+def _append_query_param(url: str, key: str, value: str) -> str:
+    parsed = urlparse(url)
+    params = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if k != key]
+    params.append((key, value))
+    return urlunparse(parsed._replace(query=urlencode(params)))
+
+
+def _post_auth_redirect_url(return_to: str, token: str) -> str:
+    parsed = urlparse(return_to)
+    if parsed.path == "/auth/callback":
+        return _append_query_param(return_to, "token", token)
+    return return_to
+
+
 def _build_oauth_state(*, provider: str, return_to: str | None, mode: str, user_id: int | None, invite_token: str | None, app_id: str | None = None) -> str:
     verifier = secrets.token_urlsafe(48)
     payload = {
@@ -363,6 +377,18 @@ _AUTH_ADMIN_RESPONSES = merge_responses(
 
 # ── Middleware ───────────────────────────────────────────────────
 
+
+def _should_skip_session_touch(path: str) -> bool:
+    if path.startswith(("/api/stream/", "/api/download/")):
+        return True
+    if path.startswith("/api/tracks/") and path.endswith(("/stream", "/download")):
+        return True
+    if path.startswith("/api/tracks/by-storage/") and path.endswith(("/stream", "/download")):
+        return True
+    if path.startswith("/api/albums/") and path.endswith("/download"):
+        return True
+    return False
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Resolve auth via Bearer header, query param, or cookie (in that order).
 
@@ -391,6 +417,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             if payload:
                 from crate.api.auth_cache import get_cached_session, get_cached_user, should_touch_session
                 session_id = payload.get("sid")
+                request_path = request.url.path
                 session = get_cached_session(session_id) if session_id else None
                 if session_id and (
                     not session
@@ -398,7 +425,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     or (session.get("expires_at") and session["expires_at"] <= datetime.now(timezone.utc))
                 ):
                     payload = None
-                if payload and session_id and should_touch_session(session_id):
+                if payload and session_id and not _should_skip_session_touch(request_path) and should_touch_session(session_id):
                     touch_session(
                         session_id,
                         last_seen_ip=request.client.host if request.client else None,
@@ -975,13 +1002,11 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
         return RedirectResponse(url=redirect_url)
 
     if safe_return.startswith("http"):
-        parsed = urlparse(safe_return)
-        callback_url = f"{parsed.scheme}://{parsed.netloc}/auth/callback?token={token}"
-        response = RedirectResponse(url=callback_url)
+        response = RedirectResponse(url=_post_auth_redirect_url(safe_return, token))
         _set_auth_cookie(response, token, _cookie_name_for_request(request))
         return response
 
-    response = RedirectResponse(url=f"/auth/callback?token={token}")
+    response = RedirectResponse(url=_post_auth_redirect_url(safe_return, token))
     _set_auth_cookie(response, token, _cookie_name_for_request(request))
     return response
 

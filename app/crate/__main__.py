@@ -1,5 +1,6 @@
 import argparse
 import logging
+import os
 import sys
 
 from crate.config import load_config
@@ -7,6 +8,16 @@ from crate.scanner import LibraryScanner
 from crate.fixer import LibraryFixer
 from crate.daemon import run_daemon
 from crate.report import print_report, save_report
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
 
 
 def main():
@@ -44,7 +55,7 @@ def main():
     api_cmd.add_argument("--host", default="0.0.0.0")
 
     worker_cmd = sub.add_parser("worker", help="Run Dramatiq workers + scheduler/watcher")
-    worker_cmd.add_argument("--processes", type=int, default=3, help="Number of Dramatiq worker processes (default: 3)")
+    worker_cmd.add_argument("--processes", type=int, default=_env_int("CRATE_WORKER_PROCESSES", 2), help="Number of Dramatiq worker processes")
     worker_cmd.add_argument("--legacy", action="store_true", help="Use legacy orchestrator (pre-Dramatiq)")
 
     args = parser.parse_args()
@@ -84,7 +95,7 @@ def main():
             host=args.host,
             port=args.port,
             log_level="info",
-            workers=2,
+            workers=_env_int("CRATE_API_WORKERS", 1),
         )
 
     elif args.command == "worker":

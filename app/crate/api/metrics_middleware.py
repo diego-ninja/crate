@@ -1,5 +1,6 @@
 """Middleware that captures per-request latency and error metrics."""
 
+import logging
 import re
 import time
 
@@ -8,6 +9,8 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from crate.metrics import record, record_counter
+
+log = logging.getLogger(__name__)
 
 # Patterns that normalize dynamic path segments to templates.
 _PATH_NORMALIZERS = [
@@ -25,6 +28,12 @@ _PATH_NORMALIZERS = [
     (re.compile(r"/api/events/task/[a-f0-9]+"), "/api/events/task/{id}"),
 ]
 
+_SKIP_METRICS_PREFIXES = (
+    "/api/stream/",
+    "/api/download/",
+)
+_SLOW_REQUEST_MS = 1000
+
 
 def _normalize_path(path: str) -> str:
     for pattern, template in _PATH_NORMALIZERS:
@@ -39,6 +48,14 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if not path.startswith("/api/") or path in ("/api/events", "/api/cache/events"):
             return await call_next(request)
+        if path.startswith(_SKIP_METRICS_PREFIXES):
+            return await call_next(request)
+        if path.startswith("/api/tracks/") and path.endswith(("/stream", "/download")):
+            return await call_next(request)
+        if path.startswith("/api/tracks/by-storage/") and path.endswith(("/stream", "/download")):
+            return await call_next(request)
+        if path.startswith("/api/albums/") and path.endswith("/download"):
+            return await call_next(request)
 
         start = time.monotonic()
         response = await call_next(request)
@@ -52,5 +69,14 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         if response.status_code >= 500:
             record_counter("api.errors", tags)
+        if elapsed_ms >= _SLOW_REQUEST_MS:
+            record_counter("api.slow", tags)
+            log.warning(
+                "Slow API request %s %s -> %s in %.1fms",
+                request.method,
+                template,
+                response.status_code,
+                elapsed_ms,
+            )
 
         return response

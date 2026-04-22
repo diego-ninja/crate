@@ -33,9 +33,16 @@ interface MetricsSummaryResponse {
   api_latency: MetricSummary;
   api_requests: MetricSummary;
   api_errors: MetricSummary;
+  api_slow: MetricSummary;
   stream_requests: MetricSummary;
   stream_latency: MetricSummary;
   stream_concurrent: MetricSummary;
+  home_cache_hit: MetricSummary;
+  home_cache_miss: MetricSummary;
+  home_cache_waited: MetricSummary;
+  home_cache_coalesced: MetricSummary;
+  home_cache_stale_fallback: MetricSummary;
+  home_compute_ms: MetricSummary;
 }
 
 interface TimeseriesPoint {
@@ -70,9 +77,24 @@ interface DiskUsage {
   percent: number;
 }
 
+interface DbPoolState {
+  size: number;
+  checked_in: number;
+  checked_out: number;
+  overflow: number;
+  total: number;
+  minconn?: number;
+  maxconn?: number;
+}
+
 interface SystemMetrics {
   disk: Record<string, DiskUsage | null>;
-  db_pool: { size: number; checked_in: number; checked_out: number; overflow: number; total: number };
+  db_pool: DbPoolState;
+  db_pools?: {
+    combined?: DbPoolState;
+    sqlalchemy?: DbPoolState;
+    legacy?: DbPoolState;
+  };
   analysis: {
     analysis?: { pending: number; done: number; failed: number };
     bliss?: { pending: number; done: number; failed: number };
@@ -315,8 +337,14 @@ export function SystemHealth() {
   const { data: errorsTs } = useApi<TimeseriesResponse>(
     `/api/admin/metrics/timeseries?name=api.errors&period=${period}&minutes=${minutes}`,
   );
+  const { data: apiSlowTs } = useApi<TimeseriesResponse>(
+    `/api/admin/metrics/timeseries?name=api.slow&period=${period}&minutes=${minutes}`,
+  );
   const { data: streamTs } = useApi<TimeseriesResponse>(
     `/api/admin/metrics/timeseries?name=stream.requests&period=${period}&minutes=${minutes}`,
+  );
+  const { data: homeComputeTs } = useApi<TimeseriesResponse>(
+    `/api/admin/metrics/timeseries?name=home.compute.ms&period=${period}&minutes=${minutes}`,
   );
   const { data: queueTs } = useApi<TimeseriesResponse>(
     `/api/admin/metrics/timeseries?name=worker.queue.depth&period=${period}&minutes=${minutes}`,
@@ -347,6 +375,9 @@ export function SystemHealth() {
     summary && summary.api_requests.count > 0
       ? (summary.api_errors.count / summary.api_requests.count * 100).toFixed(2)
       : "0";
+  const homeCacheTotal = (summary?.home_cache_hit.count ?? 0) + (summary?.home_cache_miss.count ?? 0);
+  const homeCacheHitRate =
+    homeCacheTotal > 0 ? ((summary?.home_cache_hit.count ?? 0) / homeCacheTotal) * 100 : 0;
 
   const scoreSummary =
     score >= 80
@@ -399,6 +430,9 @@ export function SystemHealth() {
             {errorRate}% error rate
           </CrateChip>
         ) : null}
+        {summary && homeCacheTotal > 0 ? (
+          <CrateChip>{homeCacheHitRate.toFixed(0)}% home cache hit</CrateChip>
+        ) : null}
       </OpsPageHero>
 
       <div className="grid gap-4 xl:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))]">
@@ -418,10 +452,25 @@ export function SystemHealth() {
           tone={Number(errorRate) > 1 ? "danger" : "default"}
         />
         <OpsStatTile
+          icon={Clock}
+          label="Slow Requests"
+          value={summary ? `${summary.api_slow.count}` : "—"}
+          caption={
+            summary
+              ? `${summary.api_slow.count} requests over 1s in the current window`
+              : "Waiting for metrics"
+          }
+          tone={summary && summary.api_slow.count > 0 ? "warning" : "default"}
+        />
+        <OpsStatTile
           icon={Radio}
-          label="Stream Volume"
-          value={summary ? `${summary.stream_requests.count}` : "—"}
-          caption="Requests sampled in the current window"
+          label="Home Cache"
+          value={homeCacheTotal > 0 ? `${homeCacheHitRate.toFixed(0)}%` : "—"}
+          caption={
+            summary
+              ? `${summary.home_cache_hit.count} hits, ${summary.home_cache_miss.count} misses`
+              : "Waiting for metrics"
+          }
           tone="default"
         />
         <OpsStatTile
@@ -489,7 +538,7 @@ export function SystemHealth() {
             {system.db_pool?.size > 0 ? (
               <ResourceCard
                 icon={Database}
-                label="DB Pool"
+                label="DB Pools"
                 value={`${system.db_pool.checked_out} / ${system.db_pool.size + (system.db_pool.overflow > 0 ? system.db_pool.overflow : 0)}`}
               >
                 <ProgressBar
@@ -498,6 +547,18 @@ export function SystemHealth() {
                   color={system.db_pool.checked_out >= system.db_pool.size ? "bg-red-500" : "bg-primary"}
                   label={`${system.db_pool.checked_in} idle, ${system.db_pool.checked_out} active`}
                 />
+                {system.db_pools?.sqlalchemy?.size ? (
+                  <div className="text-[10px] text-white/30">
+                    SQLAlchemy: {system.db_pools.sqlalchemy.checked_out}/{system.db_pools.sqlalchemy.size}
+                    {" "}checked out
+                  </div>
+                ) : null}
+                {system.db_pools?.legacy?.size ? (
+                  <div className="text-[10px] text-white/30">
+                    Legacy: {system.db_pools.legacy.checked_out}/{system.db_pools.legacy.size}
+                    {" "}checked out
+                  </div>
+                ) : null}
               </ResourceCard>
             ) : null}
 
@@ -537,7 +598,14 @@ export function SystemHealth() {
             yLabel="errors"
             series={[{ id: "errors", field: "count" }]}
           />
+          <MetricChart
+            title="Slow Requests"
+            data={apiSlowTs?.data ?? []}
+            yLabel="slow"
+            series={[{ id: "slow", field: "count" }]}
+          />
           <MetricChart title="Stream Activity" data={streamTs?.data ?? []} yLabel="streams" />
+          <MetricChart title="Home Compute" data={homeComputeTs?.data ?? []} yLabel="ms" />
           <MetricChart title="Task Duration" data={taskDurationTs?.data ?? []} yLabel="sec" />
           <MetricChart title="Queue Wait Time" data={queueWaitTs?.data ?? []} yLabel="sec" />
           <MetricChart title="Queue Depth" data={queueTs?.data ?? []} yLabel="tasks" />

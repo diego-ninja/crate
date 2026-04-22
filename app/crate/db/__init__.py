@@ -140,10 +140,15 @@ from crate.db.serialize import (
 
 # Home
 from crate.db.home import (
-    get_home_mix, get_home_playlist, get_home_discovery, get_home_section,
+    get_home_mix, get_home_playlist, get_home_discovery, get_cached_home_discovery, get_home_section,
     get_home_hero, get_home_recently_played, get_home_mixes,
     get_home_suggested_albums, get_home_recommended_tracks,
     get_home_radio_stations, get_home_favorite_artists, get_home_essentials,
+)
+
+# Bliss vector helpers
+from crate.db.bliss_vectors import (
+    to_pgvector_literal,
 )
 
 from crate.db.jam import (
