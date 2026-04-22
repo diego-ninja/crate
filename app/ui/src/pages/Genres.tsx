@@ -178,6 +178,7 @@ function GenreList() {
   const [filter, setFilter] = useState("");
   const [indexing, setIndexing] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "tree">("grid");
+  const [hideEmpty, setHideEmpty] = useState(false);
   const navigate = useNavigate();
 
   const afterSuccess = useCallback(() => { refetch(); refetchUnmapped(); refetchInvalidTaxonomy(); }, [refetch, refetchUnmapped, refetchInvalidTaxonomy]);
@@ -187,8 +188,9 @@ function GenreList() {
     if (!genres) return [];
     return genres
       .filter((g) => g.name.toLowerCase().includes(filter.toLowerCase()))
+      .filter((g) => !hideEmpty || g.artist_count > 0 || g.album_count > 0)
       .sort((a, b) => b.artist_count - a.artist_count);
-  }, [genres, filter]);
+  }, [genres, filter, hideEmpty]);
 
   const mappedCount = useMemo(
     () => (genres ?? []).filter((genre) => genre.mapped).length,
@@ -342,23 +344,36 @@ function GenreList() {
                 className="pl-9"
               />
             </div>
-            <div className="flex items-center gap-2 rounded-md border border-white/10 bg-black/20 p-1 shadow-[0_12px_28px_rgba(0,0,0,0.16)]">
-              <ActionIconButton
-                variant="card"
-                active={viewMode === "grid"}
-                onClick={() => setViewMode("grid")}
-                title="Grid view"
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setHideEmpty(!hideEmpty)}
+                className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
+                  hideEmpty
+                    ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200"
+                    : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:text-white"
+                }`}
               >
-                <LayoutGrid size={14} />
-              </ActionIconButton>
-              <ActionIconButton
-                variant="card"
-                active={viewMode === "tree"}
-                onClick={() => setViewMode("tree")}
-                title="Tree view"
-              >
-                <Network size={14} />
-              </ActionIconButton>
+                Non-empty only
+              </button>
+              <div className="flex items-center gap-2 rounded-md border border-white/10 bg-black/20 p-1 shadow-[0_12px_28px_rgba(0,0,0,0.16)]">
+                <ActionIconButton
+                  variant="card"
+                  active={viewMode === "grid"}
+                  onClick={() => setViewMode("grid")}
+                  title="Grid view"
+                >
+                  <LayoutGrid size={14} />
+                </ActionIconButton>
+                <ActionIconButton
+                  variant="card"
+                  active={viewMode === "tree"}
+                  onClick={() => setViewMode("tree")}
+                  title="Tree view"
+                >
+                  <Network size={14} />
+                </ActionIconButton>
+              </div>
             </div>
           </div>
 
@@ -397,7 +412,7 @@ function GenreList() {
       )}
 
       {viewMode === "tree" ? (
-        <GenreTaxonomyTree filter={filter} />
+        <GenreTaxonomyTree filter={filter} hideEmpty={hideEmpty} />
       ) : (
       <>
       {(unmappedGenres?.length || 0) > 0 && (

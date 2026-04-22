@@ -309,7 +309,7 @@ function ActionButton({ label, icon: Icon, busy, onClick }: {
 
 // ── Main Component ──────────────────────────────────────────────
 
-export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
+export function GenreTaxonomyTree({ filter = "", hideEmpty = false }: { filter?: string; hideEmpty?: boolean }) {
   const { data, refetch } = useApi<TaxonomyTree>("/api/genres/taxonomy/tree");
   const { pollTask } = useTaskPoll();
   const navigate = useNavigate();
@@ -423,6 +423,7 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
     const node = nodeMap.get(slug);
     if (!node) return null;
     if (visibleSlugs && !visibleSlugs.has(slug)) return null;
+    if (hideEmpty && node.artist_count === 0 && node.album_count === 0 && node.children_slugs.length === 0) return null;
 
     const hasChildren = node.children_slugs.length > 0;
     const open = isExpanded(slug);
@@ -436,7 +437,7 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
           type="button"
           className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition ${
             isSelected
-              ? "border-primary/40 bg-primary/10"
+              ? "border-cyan-400/40 bg-cyan-400/10"
               : "border-white/6 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]"
           }`}
           style={{ paddingLeft: depth * 16 + 10 }}
@@ -456,10 +457,14 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
           ) : (
             <span className="w-4 flex-shrink-0" />
           )}
-          <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${hasPreset ? "bg-primary" : "bg-white/25"}`} />
+          <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${
+            empty ? "bg-white/15"
+              : hasPreset ? "bg-cyan-400"
+              : "bg-white/25"
+          }`} />
           <span className={`flex-1 truncate font-medium ${
-            isSelected ? "text-primary"
-              : empty ? "text-white/40"
+            isSelected ? "text-cyan-100"
+              : empty ? "text-white/30"
               : node.top_level ? "text-white"
               : "text-white/75"
           }`}>
