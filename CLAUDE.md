@@ -9,6 +9,7 @@ Self-hosted music library manager with enrichment, analysis, streaming, and Tida
 ```
 crate-api       (FastAPI, Python 3.12)        → port 8585, /music:ro
 crate-worker    (Dramatiq + daemons)          → /music:rw, background processing
+@crate/ui       (React 19 + TW4 + shadcn)   → shared design system (npm workspace)
 crate-ui        (React 19 + Vite + TW4)      → admin web app
 crate-listen    (React 19 + Vite + TW4)      → consumer listening app (PWA + Capacitor)
 crate-site      (React 19 + Vite)            → marketing landing page (cratemusic.app)
@@ -36,10 +37,16 @@ app/crate/worker_handlers/  8 handler modules (~111 handlers)
 app/crate/scanners/         Scanner plugins (duplicates, naming, etc.)
 app/crate/fixers/           Automated repair plugins
 app/crate/llm/              LLM integration (Ollama/Gemini/litellm)
-app/ui/src/                 Admin frontend (27 pages)
-app/listen/src/             Consumer listening frontend (25 pages)
+app/shared/ui/              @crate/ui design system (npm workspace package)
+app/shared/ui/tokens/       Design tokens (colors, surfaces, radius, z-index, animations)
+app/shared/ui/primitives/   UI primitives (AppModal, AppPopover, ActionIconButton, etc.)
+app/shared/ui/shadcn/       Curated shadcn/Radix components (19 components)
+app/shared/ui/domain/       Shared domain components (EqBands, ShowCard, OAuthButtons, etc.)
+app/shared/ui/lib/          Shared hooks and utilities (cn, useIsDesktop, etc.)
 app/shared/web/             Shared frontend code (API client, hooks, utils)
 app/shared/fonts/           Shared font files (Poppins)
+app/ui/src/                 Admin frontend (27 pages)
+app/listen/src/             Consumer listening frontend (25 pages)
 app/site/                   Marketing landing page
 app/reference/              Scalar API docs viewer
 app/tests/                  Python backend tests (35 files)
@@ -66,11 +73,14 @@ test-music/                 Local dev music (3 artists, not committed)
 
 ### Frontend (TypeScript/React)
 - React 19 + React Router 7
-- Tailwind CSS 4 + shadcn/ui components
+- **@crate/ui** — shared design system (npm workspace at `app/shared/ui/`)
+- Tailwind CSS 4 with unified design tokens (`data-surface="solid|glass"` variants)
+- shadcn/ui components (curated in `@crate/ui/shadcn/`)
 - Nivo (@nivo/*) for charts — NOT recharts (legacy, being phased out)
 - sonner for toasts
 - lucide-react for icons
 - Capacitor (listen app → iOS/Android)
+- npm workspaces (root `package.json` orchestrates `app/shared/ui`, `app/ui`, `app/listen`)
 
 ### Infrastructure
 - Docker Compose (12 production services + 3 project overlay)
@@ -179,13 +189,20 @@ make deploy  # syncs app/ only, builds api+worker+ui+listen, restarts
 ## Dev Environment
 
 ```bash
-make dev                    # Docker: postgres + redis + api + worker + ollama
-cd app/ui && npm run dev    # Admin UI (Vite, port 5173)
-cd app/listen && npm run dev # Listen app (Vite, port 5174)
+npm install                 # Install all workspace dependencies (run from root)
+make dev                    # Docker backend + all frontend dev servers
+
+# Individual dev servers (via workspace):
+npm run --workspace=app/ui dev          # Admin UI (port 5173)
+npm run --workspace=app/listen dev      # Listen app (port 5174)
 
 # Or against production:
 cd app/ui && API_URL=https://admin.lespedants.org npm run dev
 cd app/listen && API_URL=https://listen.lespedants.org npm run dev
+
+# Build @crate/ui package:
+npm run --workspace=app/shared/ui build     # → dist/*.js + dist/*.d.ts
+npm run --workspace=app/shared/ui typecheck # Standalone type-check
 ```
 
 Test library: 3 artists (Birds In Row, High Vis, Rival Schools), 122 tracks in `test-music/`.
@@ -211,10 +228,20 @@ For detailed patterns (FastAPI, SQLAlchemy 2.0, async, testing): consult the `py
 - `api<T>(url, method?, body?)` for imperative calls (from `shared/web/api.ts`)
 - `toast` from sonner for user feedback
 - `encPath()` for URL-encoding path segments (from `shared/web/utils.ts`)
-- shadcn/ui components in `components/ui/`
 - Nivo for all new charts (NOT recharts)
 - No emojis in UI text
-- Keep `app/ui` and `app/listen` as separate apps — shared code goes in `app/shared/web/`
+- Keep `app/ui` and `app/listen` as separate apps
+
+#### @crate/ui design system
+- Import UI primitives from `@crate/ui/primitives/*` (AppModal, AppPopover, ActionIconButton, CrateBadge, etc.)
+- Import shadcn components from `@crate/ui/shadcn/*` (Button, Card, Dialog, etc.)
+- Import shared hooks from `@crate/ui/lib/*` (cn, useIsDesktop, useDismissibleLayer, etc.)
+- Import domain components from `@crate/ui/domain/*` (EqBands, ShowCard, OAuthButtons, etc.)
+- Import tokens via CSS: `@import "@crate/ui/tokens/index.css"`
+- Surface variants: `data-surface="solid"` (listen default) or `data-surface="glass"` (admin)
+- Components only go in `@crate/ui` when used by BOTH apps. Single-app components stay in their app.
+- Domain components use callbacks/props, not contexts — apps inject behavior via props
+- Shared utilities go in `app/shared/web/` (API client, formatters, route builders)
 
 #### Auth differences
 - **ui**: Cookie-based sessions, admin-only, no registration
@@ -263,9 +290,13 @@ Additional graph-powered skills for code navigation:
 | `app/crate/metrics.py` | Redis metrics buckets → PostgreSQL rollups |
 | `app/crate/llm/` | LLM provider abstraction (Ollama/Gemini/litellm) |
 | `app/crate/api/__init__.py` | App factory + router registration order (important!) |
+| `app/shared/ui/` | @crate/ui design system (tokens, primitives, shadcn, domain components) |
+| `app/shared/ui/tokens/` | Design tokens: colors, surfaces (solid/glass), radius, z-index, animations |
+| `app/shared/ui/package.json` | @crate/ui workspace package config + tsup build |
 | `app/shared/web/api.ts` | Shared API client factory |
 | `app/shared/web/use-api.ts` | Shared `useApi` hook factory |
 | `app/shared/web/utils.ts` | Shared utilities (formatDuration, encPath, etc.) |
+| `package.json` | Root workspace config (orchestrates shared/ui, ui, listen) |
 | `app/ui/src/components/layout/Shell.tsx` | Admin layout (sidebar, main) |
 | `app/listen/src/contexts/PlayerContext.tsx` | Full player state (gapless, crossfade, EQ, queue, offline) |
 | `app/listen/src/components/layout/Shell.tsx` | Listen layout (desktop/mobile adaptive) |

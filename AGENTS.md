@@ -9,6 +9,7 @@ Self-hosted music library manager with enrichment, analysis, streaming, and Tida
 ```
 crate-api       (FastAPI, Python 3.12)        → port 8585, /music:ro
 crate-worker    (Dramatiq + daemons)          → /music:rw, background processing
+@crate/ui       (React 19 + TW4 + shadcn)   → shared design system (npm workspace)
 crate-ui        (React 19 + Vite + TW4)      → admin web app
 crate-listen    (React 19 + Vite + TW4)      → consumer listening app (PWA + Capacitor)
 crate-site      (React 19 + Vite)            → marketing landing page (cratemusic.app)
@@ -36,10 +37,16 @@ app/crate/worker_handlers/  8 handler modules (~111 handlers)
 app/crate/scanners/         Scanner plugins (duplicates, naming, etc.)
 app/crate/fixers/           Automated repair plugins
 app/crate/llm/              LLM integration (Ollama/Gemini/litellm)
-app/ui/src/                 Admin frontend (27 pages)
-app/listen/src/             Consumer listening frontend (25 pages)
+app/shared/ui/              @crate/ui design system (npm workspace package)
+app/shared/ui/tokens/       Design tokens (colors, surfaces, radius, z-index, animations)
+app/shared/ui/primitives/   UI primitives (AppModal, AppPopover, ActionIconButton, etc.)
+app/shared/ui/shadcn/       Curated shadcn/Radix components (19 components)
+app/shared/ui/domain/       Shared domain components (EqBands, ShowCard, OAuthButtons, etc.)
+app/shared/ui/lib/          Shared hooks and utilities (cn, useIsDesktop, etc.)
 app/shared/web/             Shared frontend code (API client, hooks, utils)
 app/shared/fonts/           Shared font files (Poppins)
+app/ui/src/                 Admin frontend (27 pages)
+app/listen/src/             Consumer listening frontend (25 pages)
 app/site/                   Marketing landing page
 app/reference/              Scalar API docs viewer
 app/tests/                  Python backend tests (35 files)
@@ -66,14 +73,23 @@ test-music/                 Local dev music (3 artists, not committed)
 
 ### Frontend (TypeScript/React)
 - React 19 + React Router 7
-- Tailwind CSS 4 + shadcn/ui components
+- **@crate/ui** — shared design system (npm workspace at `app/shared/ui/`)
+- Tailwind CSS 4 with unified design tokens (`data-surface="solid|glass"` variants)
+- shadcn/ui components (curated in `@crate/ui/shadcn/`)
 - Nivo (@nivo/*) for charts — NOT recharts (legacy, being phased out)
 - sonner for toasts
 - lucide-react for icons
 - Capacitor (listen app → iOS/Android)
-- `app/ui` stays a separate admin web app
-- `app/listen` stays a separate user-facing app (Capacitor-compatible)
-- Shared frontend code lives in `app/shared/web/`
+- npm workspaces (root `package.json` orchestrates `app/shared/ui`, `app/ui`, `app/listen`)
+- Shared utilities in `app/shared/web/` (API client, formatters, route builders)
+
+#### @crate/ui import conventions
+- Primitives: `import { Button } from "@crate/ui/shadcn/button"`
+- Custom UI: `import { AppModal } from "@crate/ui/primitives/AppModal"`
+- Hooks: `import { useIsDesktop } from "@crate/ui/lib/use-breakpoint"`
+- Domain: `import { ShowCard } from "@crate/ui/domain/shows/ShowCard"`
+- Tokens (CSS): `@import "@crate/ui/tokens/index.css"`
+- Only put components in @crate/ui when used by BOTH apps
 
 ### Infrastructure
 - Docker Compose (12 production services + 3 project overlay)
@@ -158,13 +174,16 @@ make deploy  # syncs app/ only, builds api+worker+ui+listen, restarts
 ## Dev Environment
 
 ```bash
-make dev                     # Docker: postgres + redis + api + worker + ollama
-cd app/ui && npm run dev     # Admin UI (Vite, port 5173)
-cd app/listen && npm run dev # Listen app (Vite, port 5174)
+npm install                 # Install all workspace dependencies (run from root)
+make dev                    # Docker backend + all frontend dev servers
 
-# Or against production:
-cd app/ui && API_URL=https://admin.lespedants.org npm run dev
-cd app/listen && API_URL=https://listen.lespedants.org npm run dev
+# Individual dev servers:
+npm run --workspace=app/ui dev          # Admin UI (port 5173)
+npm run --workspace=app/listen dev      # Listen app (port 5174)
+
+# Build @crate/ui:
+npm run --workspace=app/shared/ui build     # → dist/*.js + dist/*.d.ts
+npm run --workspace=app/shared/ui typecheck # Standalone type-check
 ```
 
 Test library: 3 artists (Birds In Row, High Vis, Rival Schools), 122 tracks in `test-music/`.
@@ -188,10 +207,9 @@ Login: admin@cratemusic.app / admin (dev seed user, also used in production).
 - `api<T>(url, method?, body?)` for imperative calls (from `shared/web/api.ts`)
 - `toast` from sonner for user feedback
 - `encPath()` for URL-encoding path segments (from `shared/web/utils.ts`)
-- shadcn/ui components in `components/ui/`
 - Nivo for all new charts (NOT recharts)
 - No emojis in UI text
-- Keep `app/ui` and `app/listen` as separate apps — shared code goes in `app/shared/web/`
+- Keep `app/ui` and `app/listen` as separate apps
 
 #### Auth differences
 - **ui**: Cookie-based sessions, admin-only, no registration
@@ -220,9 +238,11 @@ Login: admin@cratemusic.app / admin (dev seed user, also used in production).
 | `app/crate/metrics.py` | Redis metrics buckets → PostgreSQL rollups |
 | `app/crate/llm/` | LLM provider abstraction (Ollama/Gemini/litellm) |
 | `app/crate/api/__init__.py` | App factory + router registration order (important!) |
+| `app/shared/ui/` | @crate/ui design system (tokens, primitives, shadcn, domain) |
 | `app/shared/web/api.ts` | Shared API client factory |
 | `app/shared/web/use-api.ts` | Shared `useApi` hook factory |
 | `app/shared/web/utils.ts` | Shared utilities (formatDuration, encPath, etc.) |
+| `package.json` | Root workspace config |
 | `app/ui/src/components/layout/Shell.tsx` | Admin layout (sidebar, main) |
 | `app/listen/src/contexts/PlayerContext.tsx` | Full player state (gapless, crossfade, EQ, queue, offline) |
 | `app/listen/src/components/layout/Shell.tsx` | Listen layout (desktop/mobile adaptive) |
