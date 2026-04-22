@@ -1,0 +1,25 @@
+{
+  "name": "@crate/ui",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./tokens/*": "./tokens/*",
+    "./lib/*": "./lib/*.ts",
+    "./primitives/*": "./primitives/*.tsx",
+    "./shadcn/*": "./shadcn/*.tsx",
+    "./composites/*": "./composites/*.tsx",
+    "./domain/*": "./domain/*.tsx",
+    "./charts/*": "./charts/*.ts"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^7.0.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.0.0",
+    "lucide-react": ">=0.400.0",
+    "radix-ui": "^1.0.0",
+    "tailwind-merge": "^3.0.0"
+  }
+}

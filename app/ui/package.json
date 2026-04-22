@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@crate/ui": "*",
     "@nivo/bar": "^0.99.0",
     "@nivo/bump": "^0.99.0",
     "@nivo/chord": "^0.99.0",
