@@ -145,11 +145,10 @@ def flush_to_postgres(period: str = "hour"):
 
     Called by the worker service loop every 5 minutes.
     """
-    from crate.db.tx import transaction_scope
-    from sqlalchemy import text
-
     try:
         from crate.db.cache import _get_redis
+        from crate.db.management import upsert_metric_rollup
+
         r = _get_redis()
         if r is None:
             return
@@ -199,31 +198,17 @@ def flush_to_postgres(period: str = "hour"):
                 hour_ts = bucket_ts - (bucket_ts % 3600)
                 bucket_start = datetime.fromtimestamp(hour_ts, tz=timezone.utc).isoformat()
 
-                with transaction_scope() as session:
-                    session.execute(
-                        text("""
-                            INSERT INTO metric_rollups (name, tags_json, period, bucket_start, count, sum_value, min_value, max_value, avg_value)
-                            VALUES (:name, :tags::jsonb, :period, :bucket_start, :count, :sum, :min, :max, :avg)
-                            ON CONFLICT (name, tags_json, period, bucket_start)
-                            DO UPDATE SET
-                                count = metric_rollups.count + EXCLUDED.count,
-                                sum_value = metric_rollups.sum_value + EXCLUDED.sum_value,
-                                min_value = LEAST(metric_rollups.min_value, EXCLUDED.min_value),
-                                max_value = GREATEST(metric_rollups.max_value, EXCLUDED.max_value),
-                                avg_value = (metric_rollups.sum_value + EXCLUDED.sum_value) / NULLIF(metric_rollups.count + EXCLUDED.count, 0)
-                        """),
-                        {
-                            "name": name,
-                            "tags": tags_json,
-                            "period": "hour",
-                            "bucket_start": bucket_start,
-                            "count": count,
-                            "sum": total,
-                            "min": min_val,
-                            "max": max_val,
-                            "avg": avg_val,
-                        },
-                    )
+                upsert_metric_rollup(
+                    name=name,
+                    tags_json=tags_json,
+                    period=period,
+                    bucket_start=bucket_start,
+                    count=count,
+                    sum_value=total,
+                    min_value=min_val,
+                    max_value=max_val,
+                    avg_value=avg_val,
+                )
                 processed += 1
 
             if cursor == 0:
@@ -238,25 +223,10 @@ def flush_to_postgres(period: str = "hour"):
 
 def query_historical(name: str, period: str = "hour", start: str | None = None, end: str | None = None, limit: int = 168) -> list[dict]:
     """Read rollup data from PostgreSQL."""
-    from crate.db.tx import transaction_scope
-    from sqlalchemy import text
-
-    query = "SELECT * FROM metric_rollups WHERE name = :name AND period = :period"
-    params: dict = {"name": name, "period": period}
-
-    if start:
-        query += " AND bucket_start >= :start"
-        params["start"] = start
-    if end:
-        query += " AND bucket_start <= :end"
-        params["end"] = end
-
-    query += " ORDER BY bucket_start DESC LIMIT :limit"
-    params["limit"] = limit
-
     try:
-        with transaction_scope() as session:
-            rows = session.execute(text(query), params).mappings().all()
+        from crate.db.management import query_metric_rollups
+
+        rows = query_metric_rollups(name=name, period=period, start=start, end=end, limit=limit)
         return [
             {
                 "timestamp": row["bucket_start"].isoformat() if hasattr(row["bucket_start"], "isoformat") else str(row["bucket_start"]),

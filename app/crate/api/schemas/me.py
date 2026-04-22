@@ -475,7 +475,7 @@ class HomeCardResponse(BaseModel):
 class HomeDiscoveryResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    hero: dict[str, Any] | None = None
+    hero: dict[str, Any] | list[dict[str, Any]] | None = None
     recently_played: list[dict[str, Any]] = Field(default_factory=list)
     custom_mixes: list[HomeCardResponse] = Field(default_factory=list)
     suggested_albums: list[dict[str, Any]] = Field(default_factory=list)

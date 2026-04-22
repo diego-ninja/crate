@@ -1026,25 +1026,9 @@ def api_artist(request: Request, name: str):
     album_quality: dict[int, dict] = {}
     album_ids = [a["id"] for a in albums_data if a.get("id")]
     if album_ids:
-        from crate.db.tx import transaction_scope
-        from sqlalchemy import text as sa_text
-        with transaction_scope() as session:
-            qrows = session.execute(
-                sa_text("""
-                SELECT album_id,
-                       MAX(bit_depth) AS bit_depth,
-                       MAX(sample_rate) AS sample_rate
-                FROM library_tracks
-                WHERE album_id = ANY(:ids) AND format IS NOT NULL
-                GROUP BY album_id
-                """),
-                {"ids": album_ids},
-            ).mappings().all()
-            for qr in qrows:
-                album_quality[qr["album_id"]] = {
-                    "bit_depth": qr["bit_depth"],
-                    "sample_rate": qr["sample_rate"],
-                }
+        from crate.db.library import get_album_quality_map
+
+        album_quality = get_album_quality_map(album_ids)
 
     top_genres = get_artist_top_genres(canonical)
     genre_profile = build_genre_profile(get_artist_genre_profile(canonical), limit=8)

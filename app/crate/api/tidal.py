@@ -259,35 +259,14 @@ def tidal_artist_albums(request: Request, tidal_artist_id: str):
     artist_name = albums[0].get("artist", "") if albums else ""
     if artist_name:
         from crate.db import get_library_albums
-        from crate.db.tx import transaction_scope
-        from sqlalchemy import text as sa_text
+        from crate.db.library import get_album_quality_map
         from thefuzz import fuzz
 
         local_albums = get_library_albums(artist_name)
 
         # Get representative quality per album (max bit_depth/sample_rate from tracks)
         album_ids = [a["id"] for a in local_albums if a.get("id")]
-        album_quality: dict[int, dict] = {}
-        if album_ids:
-            with transaction_scope() as session:
-                qrows = session.execute(
-                    sa_text("""
-                    SELECT album_id,
-                           MODE() WITHIN GROUP (ORDER BY format) AS format,
-                           MAX(bit_depth) AS bit_depth,
-                           MAX(sample_rate) AS sample_rate
-                    FROM library_tracks
-                    WHERE album_id = ANY(:ids) AND format IS NOT NULL
-                    GROUP BY album_id
-                    """),
-                    {"ids": album_ids},
-                ).mappings().all()
-                for qr in qrows:
-                    album_quality[qr["album_id"]] = {
-                        "format": qr["format"],
-                        "bit_depth": qr["bit_depth"],
-                        "sample_rate": qr["sample_rate"],
-                    }
+        album_quality = get_album_quality_map(album_ids, include_format=True) if album_ids else {}
 
         # Build lookup: normalized name → (album row, quality)
         local_by_name: dict[str, tuple[dict, dict]] = {}

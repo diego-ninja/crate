@@ -231,40 +231,6 @@ def update_download_policy(request: Request, body: DownloadPolicyUpdate):
 @router.get("/users/map", responses=AUTH_ERROR_RESPONSES, summary="Users with geolocation, online and now-playing status")
 def users_map(request: Request):
     _require_admin(request)
-    from crate.db.tx import transaction_scope
-    from crate.db.cache import get_cache
-    from sqlalchemy import text
+    from crate.db.auth import list_users_map_rows
 
-    with transaction_scope() as session:
-        users = session.execute(text("""
-            SELECT u.id, u.name, u.email, u.avatar, u.city, u.country, u.latitude, u.longitude,
-                   u.created_at,
-                   MAX(s.last_seen_at) AS last_seen_at,
-                   CASE WHEN MAX(s.last_seen_at) > NOW() - interval '5 minutes' THEN TRUE ELSE FALSE END AS online
-            FROM users u
-            LEFT JOIN sessions s ON s.user_id = u.id
-            WHERE u.latitude IS NOT NULL AND u.longitude IS NOT NULL
-            GROUP BY u.id
-        """)).mappings().all()
-
-    result = []
-    for u in users:
-        now_playing = get_cache(f"now_playing:{u['id']}", max_age_seconds=120)
-        result.append({
-            "id": u["id"],
-            "name": u["name"] or u["email"].split("@")[0],
-            "email": u["email"],
-            "avatar": u["avatar"],
-            "city": u["city"],
-            "country": u["country"],
-            "latitude": float(u["latitude"]),
-            "longitude": float(u["longitude"]),
-            "online": bool(u["online"]),
-            "now_playing": {
-                "title": now_playing.get("title"),
-                "artist": now_playing.get("artist"),
-                "album": now_playing.get("album"),
-            } if now_playing else None,
-        })
-
-    return {"users": result}
+    return {"users": list_users_map_rows()}

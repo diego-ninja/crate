@@ -346,6 +346,47 @@ def list_users() -> list[dict]:
     return users
 
 
+def list_users_map_rows() -> list[dict]:
+    from crate.db.cache import get_cache
+
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
+                SELECT u.id, u.name, u.email, u.avatar, u.city, u.country, u.latitude, u.longitude,
+                       u.created_at,
+                       MAX(s.last_seen_at) AS last_seen_at,
+                       CASE WHEN MAX(s.last_seen_at) > NOW() - interval '5 minutes' THEN TRUE ELSE FALSE END AS online
+                FROM users u
+                LEFT JOIN sessions s ON s.user_id = u.id
+                WHERE u.latitude IS NOT NULL AND u.longitude IS NOT NULL
+                GROUP BY u.id
+            """)
+        ).mappings().all()
+
+    result: list[dict] = []
+    for row in rows:
+        now_playing = get_cache(f"now_playing:{row['id']}", max_age_seconds=120)
+        result.append(
+            {
+                "id": row["id"],
+                "name": row["name"] or row["email"].split("@")[0],
+                "email": row["email"],
+                "avatar": row["avatar"],
+                "city": row["city"],
+                "country": row["country"],
+                "latitude": float(row["latitude"]),
+                "longitude": float(row["longitude"]),
+                "online": bool(row["online"]),
+                "now_playing": {
+                    "title": now_playing.get("title"),
+                    "artist": now_playing.get("artist"),
+                    "album": now_playing.get("album"),
+                } if now_playing else None,
+            }
+        )
+    return result
+
+
 _USER_UPDATABLE_FIELDS = frozenset({
     "email", "name", "username", "bio", "role", "password_hash", "google_id", "avatar", "subsonic_token",
 })

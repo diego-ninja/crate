@@ -46,14 +46,9 @@ def _should_pause_for_load() -> bool:
     """
     # Check active streams (users actually listening)
     try:
-        from crate.db.tx import transaction_scope
-        from sqlalchemy import text
-        with transaction_scope() as session:
-            row = session.execute(text(
-                "SELECT COUNT(DISTINCT user_id)::INTEGER AS cnt "
-                "FROM play_history WHERE played_at > now() - interval '5 minutes'"
-            )).mappings().first()
-            active = row["cnt"] if row else 0
+        from crate.db.management import count_recent_active_users
+
+        active = count_recent_active_users(window_minutes=5)
         if active > 0:
             return True
     except Exception:

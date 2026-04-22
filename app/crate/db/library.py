@@ -163,6 +163,36 @@ def get_library_tracks(album_id: int) -> list[dict]:
     return [_row_to_lib_track(r) for r in rows if r]
 
 
+def get_album_quality_map(album_ids: list[int], *, include_format: bool = False) -> dict[int, dict]:
+    cleaned_ids = [int(album_id) for album_id in album_ids if album_id]
+    if not cleaned_ids:
+        return {}
+
+    format_sql = "MODE() WITHIN GROUP (ORDER BY format) AS format," if include_format else "NULL::TEXT AS format,"
+    with read_scope() as session:
+        rows = session.execute(
+            text(f"""
+                SELECT album_id,
+                       {format_sql}
+                       MAX(bit_depth) AS bit_depth,
+                       MAX(sample_rate) AS sample_rate
+                FROM library_tracks
+                WHERE album_id = ANY(:ids) AND format IS NOT NULL
+                GROUP BY album_id
+            """),
+            {"ids": cleaned_ids},
+        ).mappings().all()
+
+    return {
+        int(row["album_id"]): {
+            "format": row.get("format"),
+            "bit_depth": row.get("bit_depth"),
+            "sample_rate": row.get("sample_rate"),
+        }
+        for row in rows
+    }
+
+
 def _allocate_unique_slug(session, table: str, base_slug: str) -> str:
     candidate = base_slug or "item"
     suffix = 2

@@ -252,6 +252,7 @@ def admin_deactivate_system_playlist(request: Request, playlist_id: int):
 
 @router.post(
     "/{playlist_id}/generate",
+    response_model=SystemPlaylistGenerateResponse,
     responses=_SYSTEM_PLAYLIST_RESPONSES,
     summary="Enqueue regeneration of a smart system playlist",
 )

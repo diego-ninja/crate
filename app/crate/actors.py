@@ -268,14 +268,9 @@ def _count_active_users() -> int:
     is actually streaming, which is the real indicator of load.
     """
     try:
-        from crate.db.tx import transaction_scope
-        from sqlalchemy import text
-        with transaction_scope() as session:
-            row = session.execute(text(
-                "SELECT COUNT(DISTINCT user_id)::INTEGER AS cnt "
-                "FROM play_history WHERE played_at > now() - interval '5 minutes'"
-            )).mappings().first()
-            return row["cnt"] if row else 0
+        from crate.db.management import count_recent_active_users
+
+        return count_recent_active_users(window_minutes=5)
     except Exception:
         return 0
 
@@ -288,14 +283,9 @@ def _count_active_streams() -> int:
     not just unique users.
     """
     try:
-        from crate.db.tx import transaction_scope
-        from sqlalchemy import text
-        with transaction_scope() as session:
-            row = session.execute(text(
-                "SELECT COUNT(*)::INTEGER AS cnt "
-                "FROM play_history WHERE played_at > now() - interval '3 minutes'"
-            )).mappings().first()
-            return row["cnt"] if row else 0
+        from crate.db.management import count_recent_streams
+
+        return count_recent_streams(window_minutes=3)
     except Exception:
         return 0
 

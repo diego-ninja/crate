@@ -482,7 +482,7 @@ def _get_home_hero(
 
     rows = [dict(item) for item in rows_result]
     if not rows:
-        return []
+        return None
 
     # Fetch top genres for each hero artist
     artist_names = [r["name"] for r in rows]
