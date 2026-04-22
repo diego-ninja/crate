@@ -133,31 +133,29 @@ def resolve_endpoint_label(endpoint_type: str, value: str) -> str:
 
 
 _MAX_CONSECUTIVE_SAME_ARTIST = 2
-_ARTIST_REPEAT_PENALTY = 1.5
-_CANDIDATE_POOL_SIZE = 8
-
-
-def _euclidean_distance(a: list[float], b: list[float]) -> float:
-    """Euclidean distance between two vectors."""
-    return sum((a[d] - b[d]) ** 2 for d in range(len(a))) ** 0.5
+_ARTIST_REPEAT_PENALTY = 1.8
+_CANDIDATE_POOL_SIZE = 12
 
 
 def compute_path(
+    origin_type: str,
+    origin_value: str,
     origin_vec: list[float],
+    dest_type: str,
+    dest_value: str,
     dest_vec: list[float],
     step_count: int = 20,
     waypoint_vecs: list[list[float]] | None = None,
 ) -> list[dict]:
-    """Compute a music path by interpolating through bliss vector space.
+    """Compute a music path through bliss vector space.
 
-    Improvements over naive lerp + nearest-neighbor:
-    1. Fetches a pool of candidates per step and scores with diversity penalty
-    2. Penalizes repeating the same artist as the previous track(s)
-    3. Caps consecutive same-artist tracks at 2
-    4. Uses the previous track's actual vector (not the interpolation target)
-       as a drift anchor, blending it with the lerp target for smoother transitions
-
-    Returns a list of track dicts with step, progress, distance, and track metadata.
+    Rules:
+    1. First track MUST belong to the origin (artist/album/genre)
+    2. Last track MUST belong to the destination
+    3. No duplicate titles from the same artist (filters live/remix variants)
+    4. Max 2 consecutive tracks from the same artist
+    5. Blends previous track's actual vector with the lerp target for
+       smoother transitions
     """
     chain = [origin_vec]
     if waypoint_vecs:
@@ -165,82 +163,167 @@ def compute_path(
     chain.append(dest_vec)
 
     num_segments = len(chain) - 1
-    steps_per_segment = max(2, step_count // num_segments)
+    # Reserve first and last step for anchored picks
+    inner_steps = max(1, step_count - 2)
+    steps_per_segment = max(1, inner_steps // num_segments)
 
     used_ids: set[int] = set()
-    path_tracks: list[dict] = []
+    used_titles: set[str] = set()  # "artist::title" to block live/remix dupes
     recent_artists: list[str] = []
-    last_actual_vec: list[float] | None = None
-    global_step = 0
 
+    def _make_entry(track: dict, step: int, progress: float) -> dict:
+        title_key = f"{track['artist']}::{track['title']}"
+        used_ids.add(track["id"])
+        used_titles.add(title_key.lower())
+        recent_artists.append(track["artist"])
+        if len(recent_artists) > 3:
+            recent_artists.pop(0)
+        return {
+            "step": step,
+            "progress": round(progress, 4),
+            "track_id": track["id"],
+            "storage_id": str(track["storage_id"]) if track.get("storage_id") else None,
+            "title": track["title"],
+            "artist": track["artist"],
+            "album": track.get("album"),
+            "album_id": track.get("album_id"),
+            "distance": round(track["distance"], 6),
+        }
+
+    path_tracks: list[dict] = []
+
+    # ── Step 0: anchor to origin ──
+    first = _find_anchor_track(origin_type, origin_value, origin_vec, set())
+    if first:
+        path_tracks.append(_make_entry(first, 0, 0.0))
+        last_actual_vec = list(first["bliss_vector"]) if first.get("bliss_vector") else origin_vec
+    else:
+        last_actual_vec = origin_vec
+
+    # ── Steps 1..N-2: interpolation ──
+    global_step = 1
     for seg_idx in range(num_segments):
         seg_start = chain[seg_idx]
         seg_end = chain[seg_idx + 1]
-        seg_steps = steps_per_segment if seg_idx < num_segments - 1 else step_count - global_step
+        seg_steps = steps_per_segment if seg_idx < num_segments - 1 else inner_steps - (global_step - 1)
 
         for local_step in range(seg_steps):
-            t = local_step / max(1, seg_steps - 1)
+            t = (local_step + 1) / (seg_steps + 1)  # avoid 0.0 and 1.0 (those are anchors)
             lerp_target = _lerp(seg_start, seg_end, t)
 
-            # Blend the lerp target with the last actual track vector for smoother
-            # transitions — prevents the path from "jumping" when the nearest
-            # track to an interpolation point is far from the previous track.
-            if last_actual_vec and 0 < t < 1:
-                search_target = _lerp(last_actual_vec, lerp_target, 0.6)
-            else:
-                search_target = lerp_target
-
+            # Blend with last actual vector for smoother flow
+            search_target = _lerp(last_actual_vec, lerp_target, 0.55)
             global_progress = global_step / max(1, step_count - 1)
 
-            track = _find_best_candidate(
-                search_target, used_ids, recent_artists,
-            )
+            track = _find_best_candidate(search_target, used_ids, used_titles, recent_artists)
             if track:
-                used_ids.add(track["id"])
-                recent_artists.append(track["artist"])
-                if len(recent_artists) > 3:
-                    recent_artists.pop(0)
-                last_actual_vec = track.get("bliss_vector")
-
-                path_tracks.append({
-                    "step": global_step,
-                    "progress": round(global_progress, 4),
-                    "track_id": track["id"],
-                    "storage_id": str(track["storage_id"]) if track.get("storage_id") else None,
-                    "title": track["title"],
-                    "artist": track["artist"],
-                    "album": track.get("album"),
-                    "album_id": track.get("album_id"),
-                    "distance": round(track["distance"], 6),
-                })
+                path_tracks.append(_make_entry(track, global_step, global_progress))
+                last_actual_vec = list(track["bliss_vector"]) if track.get("bliss_vector") else last_actual_vec
 
             global_step += 1
+
+    # ── Last step: anchor to destination ──
+    last = _find_anchor_track(dest_type, dest_value, dest_vec, used_ids)
+    if last:
+        path_tracks.append(_make_entry(last, step_count - 1, 1.0))
 
     return path_tracks
 
 
+def _find_anchor_track(
+    endpoint_type: str, endpoint_value: str,
+    target_vec: list[float], exclude: set[int],
+) -> dict | None:
+    """Find the best track that belongs to the endpoint (artist/album/genre).
+
+    For track endpoints, returns that specific track.
+    For artist/album/genre, finds the closest track within that scope.
+    """
+    pg_array = _vector_to_pg_array(target_vec)
+    exclude_clause = "AND t.id != ALL(:exclude)" if exclude else ""
+    params: dict = {"exclude": list(exclude)} if exclude else {}
+
+    with read_scope() as session:
+        if endpoint_type == "track":
+            row = session.execute(
+                text("""
+                    SELECT t.id, t.storage_id, t.title, a.artist, a.name AS album,
+                           t.album_id, t.bliss_vector, 0.0 AS distance
+                    FROM library_tracks t
+                    JOIN library_albums a ON a.id = t.album_id
+                    WHERE t.id = :track_id AND t.bliss_vector IS NOT NULL
+                """),
+                {"track_id": int(endpoint_value)},
+            ).mappings().first()
+            if row:
+                d = dict(row)
+                d["bliss_vector"] = list(d["bliss_vector"]) if d.get("bliss_vector") else None
+                return d
+            return None
+
+        if endpoint_type == "artist":
+            scope_clause = "AND a.artist = (SELECT name FROM library_artists WHERE id = :scope_id)"
+            params["scope_id"] = int(endpoint_value)
+        elif endpoint_type == "album":
+            scope_clause = "AND t.album_id = :scope_id"
+            params["scope_id"] = int(endpoint_value)
+        elif endpoint_type == "genre":
+            scope_clause = """AND a.artist IN (
+                SELECT ag.artist_name FROM artist_genres ag
+                JOIN genres g ON g.id = ag.genre_id
+                WHERE g.slug = :scope_slug
+            )"""
+            params["scope_slug"] = endpoint_value
+        else:
+            scope_clause = ""
+
+        row = session.execute(
+            text(f"""
+                SELECT t.id, t.storage_id, t.title, a.artist, a.name AS album,
+                       t.album_id, t.bliss_vector,
+                       (t.bliss_vector <-> {pg_array}) AS distance
+                FROM library_tracks t
+                JOIN library_albums a ON a.id = t.album_id
+                WHERE t.bliss_vector IS NOT NULL
+                {scope_clause}
+                {exclude_clause}
+                ORDER BY t.bliss_vector <-> {pg_array}
+                LIMIT 1
+            """),
+            params,
+        ).mappings().first()
+
+    if not row:
+        return None
+    d = dict(row)
+    d["bliss_vector"] = list(d["bliss_vector"]) if d.get("bliss_vector") else None
+    return d
+
+
 def _find_best_candidate(
     target: list[float],
-    exclude: set[int],
+    exclude_ids: set[int],
+    exclude_titles: set[str],
     recent_artists: list[str],
 ) -> dict | None:
-    """Find the best track near target, applying diversity scoring.
+    """Find the best track near target with diversity scoring.
 
-    Fetches a pool of candidates and picks the one with the best
-    combined score of acoustic proximity + artist diversity.
+    - Fetches a pool of candidates
+    - Skips tracks whose title+artist already appeared (blocks live/remix dupes)
+    - Penalizes artist repetition
     """
     pg_array = _vector_to_pg_array(target)
 
     exclude_clause = ""
     params: dict = {}
-    if exclude:
+    if exclude_ids:
         exclude_clause = "AND t.id != ALL(:exclude)"
-        params["exclude"] = list(exclude)
+        params["exclude"] = list(exclude_ids)
 
     with read_scope() as session:
         rows = session.execute(
             text(f"""
-                SELECT t.id, t.storage_id, t.title, a.artist AS artist,
+                SELECT t.id, t.storage_id, t.title, a.artist,
                        a.name AS album, t.album_id, t.bliss_vector,
                        (t.bliss_vector <-> {pg_array}) AS distance
                 FROM library_tracks t
@@ -256,22 +339,26 @@ def _find_best_candidate(
     if not rows:
         return None
 
-    # Score each candidate: lower is better
     best: dict | None = None
     best_score = float("inf")
 
     for row in rows:
         candidate = dict(row)
-        distance = candidate["distance"]
-
-        # Penalty for repeating artists from recent history
-        penalty = 1.0
         artist = candidate["artist"]
+        title = candidate["title"]
+        title_key = f"{artist}::{title}".lower()
+
+        # Skip if same title+artist already in the path (live/remix dupe)
+        if title_key in exclude_titles:
+            continue
+
+        distance = candidate["distance"]
+        penalty = 1.0
+
         if recent_artists:
-            # Hard block: don't allow >2 consecutive from same artist
             consecutive = sum(1 for a in reversed(recent_artists) if a == artist)
             if consecutive >= _MAX_CONSECUTIVE_SAME_ARTIST:
-                penalty = 10.0  # effectively skip
+                penalty = 10.0
             elif artist in recent_artists:
                 penalty = _ARTIST_REPEAT_PENALTY
 
@@ -320,7 +407,7 @@ def create_music_path(
                 "label": resolve_endpoint_label(wp["type"], wp["value"]),
             })
 
-    tracks = compute_path(origin_vec, dest_vec, step_count, waypoint_vecs or None)
+    tracks = compute_path(origin_type, origin_value, origin_vec, dest_type, dest_value, dest_vec, step_count, waypoint_vecs or None)
 
     import json
     with transaction_scope() as session:
@@ -444,8 +531,13 @@ def regenerate_music_path(path_id: int, user_id: int) -> dict | None:
     if not path:
         return None
 
-    origin_vec = resolve_bliss_centroid(path["origin"]["type"], path["origin"]["value"])
-    dest_vec = resolve_bliss_centroid(path["destination"]["type"], path["destination"]["value"])
+    origin_type = path["origin"]["type"]
+    origin_value = path["origin"]["value"]
+    dest_type = path["destination"]["type"]
+    dest_value = path["destination"]["value"]
+
+    origin_vec = resolve_bliss_centroid(origin_type, origin_value)
+    dest_vec = resolve_bliss_centroid(dest_type, dest_value)
     if not origin_vec or not dest_vec:
         return None
 
@@ -455,7 +547,7 @@ def regenerate_music_path(path_id: int, user_id: int) -> dict | None:
         if wp_vec:
             waypoint_vecs.append(wp_vec)
 
-    tracks = compute_path(origin_vec, dest_vec, path["step_count"], waypoint_vecs or None)
+    tracks = compute_path(origin_type, origin_value, origin_vec, dest_type, dest_value, dest_vec, path["step_count"], waypoint_vecs or None)
 
     with transaction_scope() as session:
         session.execute(
@@ -504,7 +596,7 @@ def preview_music_path(
                 "label": resolve_endpoint_label(wp["type"], wp["value"]),
             })
 
-    tracks = compute_path(origin_vec, dest_vec, step_count, waypoint_vecs or None)
+    tracks = compute_path(origin_type, origin_value, origin_vec, dest_type, dest_value, dest_vec, step_count, waypoint_vecs or None)
 
     return {
         "name": f"{origin_label} → {dest_label}",
