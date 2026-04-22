@@ -133,8 +133,112 @@ def resolve_endpoint_label(endpoint_type: str, value: str) -> str:
 
 
 _MAX_CONSECUTIVE_SAME_ARTIST = 2
-_ARTIST_REPEAT_PENALTY = 1.8
-_CANDIDATE_POOL_SIZE = 12
+_ARTIST_REPEAT_PENALTY = 2.0
+_CANDIDATE_POOL_SIZE = 15
+
+# Scoring weights for hybrid distance
+_W_BLISS = 0.40
+_W_ARTIST_AFFINITY = 0.35
+_W_GENRE_OVERLAP = 0.25
+
+
+# ── Affinity caches (loaded once per path computation) ─────────
+
+def _load_artist_similarity_graph() -> dict[str, dict[str, float]]:
+    """Load the full artist similarity graph into memory.
+    Returns {artist_name_lower: {similar_name_lower: score}}."""
+    graph: dict[str, dict[str, float]] = {}
+    with read_scope() as session:
+        rows = session.execute(
+            text("SELECT artist_name, similar_name, score FROM artist_similarities")
+        ).mappings().all()
+    for r in rows:
+        a = r["artist_name"].lower()
+        s = r["similar_name"].lower()
+        score = float(r["score"])
+        graph.setdefault(a, {})[s] = score
+        # Make bidirectional (if A→B exists, B→A should too)
+        graph.setdefault(s, {})[a] = score
+    return graph
+
+
+def _load_artist_genres() -> dict[str, dict[str, float]]:
+    """Load genre weights per artist.
+    Returns {artist_name_lower: {genre_name_lower: weight}}."""
+    result: dict[str, dict[str, float]] = {}
+    with read_scope() as session:
+        rows = session.execute(
+            text("""
+                SELECT ag.artist_name, g.name, ag.weight
+                FROM artist_genres ag JOIN genres g ON g.id = ag.genre_id
+            """)
+        ).mappings().all()
+    for r in rows:
+        a = r["artist_name"].lower()
+        g = r["name"].lower()
+        result.setdefault(a, {})[g] = float(r["weight"])
+    return result
+
+
+def _artist_affinity(
+    candidate_artist: str,
+    context_artists: list[str],
+    sim_graph: dict[str, dict[str, float]],
+) -> float:
+    """How connected is candidate_artist to the recent context artists?
+    Returns 0.0 (no connection) to 1.0 (direct strong match).
+    Checks direct similarity + 2nd degree (shared similar)."""
+    c = candidate_artist.lower()
+    if not context_artists:
+        return 0.0
+
+    best = 0.0
+    for ctx in context_artists:
+        ctx_l = ctx.lower()
+        # Direct similarity
+        direct = sim_graph.get(ctx_l, {}).get(c, 0.0)
+        if direct > best:
+            best = direct
+        # 2nd degree: shared similars
+        if best < 0.5:
+            ctx_sims = sim_graph.get(ctx_l, {})
+            cand_sims = sim_graph.get(c, {})
+            shared = set(ctx_sims.keys()) & set(cand_sims.keys())
+            if shared:
+                second = max(
+                    min(ctx_sims[s], cand_sims[s]) for s in shared
+                ) * 0.5  # discount 2nd degree
+                if second > best:
+                    best = second
+    return min(best, 1.0)
+
+
+def _genre_overlap(
+    candidate_artist: str,
+    target_artists: list[str],
+    genre_map: dict[str, dict[str, float]],
+) -> float:
+    """Weighted Jaccard-like genre overlap between candidate and target artists.
+    Returns 0.0 (no overlap) to 1.0 (identical genre profile)."""
+    c_genres = genre_map.get(candidate_artist.lower(), {})
+    if not c_genres or not target_artists:
+        return 0.0
+
+    best = 0.0
+    for ta in target_artists:
+        t_genres = genre_map.get(ta.lower(), {})
+        if not t_genres:
+            continue
+        shared_keys = set(c_genres.keys()) & set(t_genres.keys())
+        if not shared_keys:
+            continue
+        intersection = sum(min(c_genres[k], t_genres[k]) for k in shared_keys)
+        union = sum(max(c_genres.get(k, 0), t_genres.get(k, 0))
+                    for k in set(c_genres.keys()) | set(t_genres.keys()))
+        jaccard = intersection / union if union > 0 else 0.0
+        if jaccard > best:
+            best = jaccard
+    return best
 
 
 def compute_path(
@@ -157,19 +261,27 @@ def compute_path(
     5. Blends previous track's actual vector with the lerp target for
        smoother transitions
     """
+    # Load affinity data once for the entire path computation
+    sim_graph = _load_artist_similarity_graph()
+    genre_map = _load_artist_genres()
+
     chain = [origin_vec]
     if waypoint_vecs:
         chain.extend(waypoint_vecs)
     chain.append(dest_vec)
 
     num_segments = len(chain) - 1
-    # Reserve first and last step for anchored picks
     inner_steps = max(1, step_count - 2)
     steps_per_segment = max(1, inner_steps // num_segments)
 
     used_ids: set[int] = set()
-    used_titles: set[str] = set()  # "artist::title" to block live/remix dupes
+    used_titles: set[str] = set()
     recent_artists: list[str] = []
+
+    # Build target artist list for genre overlap (origin + destination)
+    origin_label = resolve_endpoint_label(origin_type, origin_value)
+    dest_label = resolve_endpoint_label(dest_type, dest_value)
+    segment_target_artists = [origin_label, dest_label]
 
     def _make_entry(track: dict, step: int, progress: float) -> dict:
         title_key = f"{track['artist']}::{track['title']}"
@@ -215,7 +327,10 @@ def compute_path(
             search_target = _lerp(last_actual_vec, lerp_target, 0.55)
             global_progress = global_step / max(1, step_count - 1)
 
-            track = _find_best_candidate(search_target, used_ids, used_titles, recent_artists)
+            track = _find_best_candidate(
+                search_target, used_ids, used_titles, recent_artists,
+                sim_graph, genre_map, segment_target_artists,
+            )
             if track:
                 path_tracks.append(_make_entry(track, global_step, global_progress))
                 last_actual_vec = list(track["bliss_vector"]) if track.get("bliss_vector") else last_actual_vec
@@ -305,12 +420,19 @@ def _find_best_candidate(
     exclude_ids: set[int],
     exclude_titles: set[str],
     recent_artists: list[str],
+    sim_graph: dict[str, dict[str, float]],
+    genre_map: dict[str, dict[str, float]],
+    target_artists: list[str],
 ) -> dict | None:
-    """Find the best track near target with diversity scoring.
+    """Find the best track near target using hybrid scoring.
 
-    - Fetches a pool of candidates
-    - Skips tracks whose title+artist already appeared (blocks live/remix dupes)
-    - Penalizes artist repetition
+    Score = bliss_distance × 0.4 + (1 - artist_affinity) × 0.35 + (1 - genre_overlap) × 0.25
+
+    - Fetches a pool of candidates by bliss proximity
+    - Skips title+artist dupes (live/remix variants)
+    - Hard-blocks >2 consecutive same-artist tracks
+    - Boosts tracks from artists in the similarity graph neighborhood
+    - Boosts tracks from artists sharing genres with the path context
     """
     pg_array = _vector_to_pg_array(target)
 
@@ -339,6 +461,9 @@ def _find_best_candidate(
     if not rows:
         return None
 
+    # Normalize bliss distances to 0-1 range for fair weighting
+    max_dist = max(float(r["distance"]) for r in rows) or 1.0
+
     best: dict | None = None
     best_score = float("inf")
 
@@ -348,21 +473,31 @@ def _find_best_candidate(
         title = candidate["title"]
         title_key = f"{artist}::{title}".lower()
 
-        # Skip if same title+artist already in the path (live/remix dupe)
         if title_key in exclude_titles:
             continue
 
-        distance = candidate["distance"]
-        penalty = 1.0
-
+        # Hard block consecutive same-artist
         if recent_artists:
             consecutive = sum(1 for a in reversed(recent_artists) if a == artist)
             if consecutive >= _MAX_CONSECUTIVE_SAME_ARTIST:
-                penalty = 10.0
-            elif artist in recent_artists:
-                penalty = _ARTIST_REPEAT_PENALTY
+                continue
 
-        score = distance * penalty
+        # Hybrid scoring
+        bliss_norm = float(candidate["distance"]) / max_dist
+
+        affinity = _artist_affinity(artist, recent_artists + target_artists, sim_graph)
+        genre_ov = _genre_overlap(artist, target_artists, genre_map)
+
+        score = (
+            _W_BLISS * bliss_norm
+            + _W_ARTIST_AFFINITY * (1.0 - affinity)
+            + _W_GENRE_OVERLAP * (1.0 - genre_ov)
+        )
+
+        # Additional penalty for recent artist repeat (softer than before)
+        if artist in [a for a in recent_artists[-2:]]:
+            score *= _ARTIST_REPEAT_PENALTY
+
         if score < best_score:
             best_score = score
             best = candidate
