@@ -345,17 +345,19 @@ function GenreList() {
               />
             </div>
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setHideEmpty(!hideEmpty)}
-                className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
-                  hideEmpty
-                    ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200"
-                    : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:text-white"
-                }`}
-              >
-                Non-empty only
-              </button>
+              {viewMode === "tree" && (
+                <button
+                  type="button"
+                  onClick={() => setHideEmpty(!hideEmpty)}
+                  className={`rounded-full border px-3 py-1.5 text-[11px] font-medium transition ${
+                    hideEmpty
+                      ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200"
+                      : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:text-white"
+                  }`}
+                >
+                  Non-empty only
+                </button>
+              )}
               <div className="flex items-center gap-2 rounded-md border border-white/10 bg-black/20 p-1 shadow-[0_12px_28px_rgba(0,0,0,0.16)]">
                 <ActionIconButton
                   variant="card"
