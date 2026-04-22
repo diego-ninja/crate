@@ -70,30 +70,34 @@ export function MusicPaths() {
   const [activePathKey, setActivePathKey] = useState<keyof typeof DEMO_PATHS>("nyhc-crank");
   const [activeStep, setActiveStep] = useState(0);
   const [playing, setPlaying] = useState(true);
-  // Sub-step progress: 0 = just arrived at activeStep, 1 = about to arrive at next
-  const [subProgress, setSubProgress] = useState(0);
+  // Disable transition briefly when resetting to step 0 to avoid backward slide
+  const [animate, setAnimate] = useState(true);
   const path = DEMO_PATHS[activePathKey]!;
   const nodeCount = path.nodes.length;
 
-  // Animate sub-progress from 0→1 between steps
+  const advance = useCallback(() => {
+    setActiveStep((prev) => {
+      const next = prev + 1;
+      if (next >= nodeCount) {
+        // Reset to start — disable transition so it doesn't slide backward
+        setAnimate(false);
+        requestAnimationFrame(() => requestAnimationFrame(() => setAnimate(true)));
+        return 0;
+      }
+      return next;
+    });
+  }, [nodeCount]);
+
   useEffect(() => {
     if (!playing) return;
-    setSubProgress(0);
-    // Small delay before starting the travel animation
-    const startTimer = setTimeout(() => setSubProgress(1), 80);
-    const advanceTimer = setTimeout(() => {
-      setActiveStep((prev) => (prev + 1) % nodeCount);
-    }, 2200);
-    return () => {
-      clearTimeout(startTimer);
-      clearTimeout(advanceTimer);
-    };
-  }, [activeStep, playing, nodeCount]);
+    const interval = setInterval(advance, 2500);
+    return () => clearInterval(interval);
+  }, [playing, advance]);
 
-  // Reset step when switching paths
   useEffect(() => {
+    setAnimate(false);
     setActiveStep(0);
-    setSubProgress(0);
+    requestAnimationFrame(() => requestAnimationFrame(() => setAnimate(true)));
   }, [activePathKey]);
 
   return (
@@ -199,9 +203,9 @@ export function MusicPaths() {
 
             {/* Trail — glowing line behind the traveler */}
             <div
-              className="absolute left-6 top-1/2 h-[2px] -translate-y-1/2 rounded-full transition-[width] duration-[1800ms] ease-in-out"
+              className={`absolute left-6 top-1/2 h-[2px] -translate-y-1/2 rounded-full ${animate ? "transition-[width] duration-[1600ms] ease-out" : ""}`}
               style={{
-                width: `calc(${((activeStep + subProgress * (activeStep < nodeCount - 1 ? 1 : 0)) / (nodeCount - 1)) * 100}% * (100% - 48px) / 100%)`,
+                width: `calc(${(activeStep / (nodeCount - 1)) * 100}% * (100% - 48px) / 100%)`,
                 background: "linear-gradient(90deg, rgba(6,182,212,0.1), rgba(6,182,212,0.5))",
                 boxShadow: "0 0 8px rgba(6,182,212,0.3)",
               }}
@@ -217,7 +221,7 @@ export function MusicPaths() {
                 return (
                   <button
                     key={i}
-                    onClick={() => { setActiveStep(i); setSubProgress(0); }}
+                    onClick={() => setActiveStep(i)}
                     className="group relative flex h-4 w-4 flex-shrink-0 items-center justify-center"
                     title={`${node.track} — ${node.artist}`}
                   >
@@ -244,9 +248,9 @@ export function MusicPaths() {
 
             {/* Traveling dot — moves smoothly between nodes */}
             <div
-              className="pointer-events-none absolute top-1/2 -translate-y-1/2 transition-[left] duration-[1800ms] ease-in-out"
+              className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${animate ? "transition-[left] duration-[1600ms] ease-out" : ""}`}
               style={{
-                left: `calc(24px + ${((activeStep + subProgress * (activeStep < nodeCount - 1 ? 1 : 0)) / (nodeCount - 1)) * 100}% * (100% - 48px) / 100%)`,
+                left: `calc(24px + ${(activeStep / (nodeCount - 1)) * 100}% * (100% - 48px) / 100%)`,
               }}
             >
               {/* Outer glow */}
