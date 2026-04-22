@@ -222,6 +222,11 @@ export async function fetchRadioContinuation(
   const radio = source.radio;
   if (!radio) return [];
 
+  // Shaped radio sessions use their own continuation endpoint
+  if (radio.shapedSessionId) {
+    return fetchShapedRadioNext(radio.shapedSessionId, limit);
+  }
+
   if (radio.seedType === "artist" && radio.seedId) {
     if (typeof radio.seedId !== "number") return [];
     const data = await requestRadio(`/api/artists/${radio.seedId}/radio?limit=${limit}`, options);
