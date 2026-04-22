@@ -197,66 +197,63 @@ export function MusicPaths() {
           </div>
 
           {/* Path visualization — horizontal route with traveling dot */}
-          <div className="relative mb-4 px-3 py-6">
-            {/* Base track line */}
-            <div className="absolute left-6 right-6 top-1/2 h-px -translate-y-1/2 bg-white/8" />
+          <div className="relative mb-4 py-6">
+            {/* Inner container: left edge = first node center, right edge = last node center */}
+            <div className="relative mx-5">
+              {/* Base track line */}
+              <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/8" />
 
-            {/* Trail — glowing line behind the traveler */}
-            <div
-              className={`absolute left-6 top-1/2 h-[2px] -translate-y-1/2 rounded-full ${animate ? "transition-[width] duration-[1600ms] ease-out" : ""}`}
-              style={{
-                width: `calc(${(activeStep / (nodeCount - 1)) * 100}% * (100% - 48px) / 100%)`,
-                background: "linear-gradient(90deg, rgba(6,182,212,0.1), rgba(6,182,212,0.5))",
-                boxShadow: "0 0 8px rgba(6,182,212,0.3)",
-              }}
-            />
+              {/* Trail — glowing line behind the traveler */}
+              <div
+                className={`absolute left-0 top-1/2 h-[2px] -translate-y-1/2 rounded-full ${animate ? "transition-[width] duration-[1600ms] ease-out" : ""}`}
+                style={{
+                  width: `${(activeStep / (nodeCount - 1)) * 100}%`,
+                  background: "linear-gradient(90deg, rgba(6,182,212,0.1), rgba(6,182,212,0.5))",
+                  boxShadow: "0 0 8px rgba(6,182,212,0.3)",
+                }}
+              />
 
-            {/* Static node markers */}
-            <div className="relative flex items-center justify-between">
-              {path.nodes.map((node, i) => {
-                const isPast = i < activeStep;
-                const isActive = i === activeStep;
-                const showGenre = i === 0 || i === path.nodes.length - 1 || (i > 0 && node.genre !== path.nodes[i - 1]!.genre);
+              {/* Static node markers */}
+              <div className="relative flex items-center justify-between">
+                {path.nodes.map((node, i) => {
+                  const isPast = i < activeStep;
+                  const isActive = i === activeStep;
+                  const showGenre = i === 0 || i === path.nodes.length - 1 || (i > 0 && node.genre !== path.nodes[i - 1]!.genre);
 
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setActiveStep(i)}
-                    className="group relative flex h-4 w-4 flex-shrink-0 items-center justify-center"
-                    title={`${node.track} — ${node.artist}`}
-                  >
-                    <div
-                      className={`rounded-full transition-all duration-300 ${
-                        isPast
-                          ? "h-2 w-2 bg-cyan-400/70"
-                          : isActive
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setActiveStep(i)}
+                      className="group relative flex h-4 w-4 flex-shrink-0 items-center justify-center"
+                      title={`${node.track} — ${node.artist}`}
+                    >
+                      <div
+                        className={`rounded-full transition-all duration-300 ${
+                          isPast || isActive
                             ? "h-2 w-2 bg-cyan-400/70"
                             : "h-1.5 w-1.5 bg-white/20 group-hover:bg-white/40"
-                      }`}
-                    />
-                    {showGenre && (
-                      <span className={`pointer-events-none absolute top-full mt-1.5 whitespace-nowrap text-[8px] transition-colors duration-300 ${
-                        isActive || isPast ? "text-cyan-300/60" : "text-white/20"
-                      }`}>
-                        {node.genre}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+                        }`}
+                      />
+                      {showGenre && (
+                        <span className={`pointer-events-none absolute top-full mt-1.5 whitespace-nowrap text-[8px] transition-colors duration-300 ${
+                          isActive || isPast ? "text-cyan-300/60" : "text-white/20"
+                        }`}>
+                          {node.genre}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
 
-            {/* Traveling dot — moves smoothly between nodes */}
-            <div
-              className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${animate ? "transition-[left] duration-[1600ms] ease-out" : ""}`}
-              style={{
-                left: `calc(24px + ${(activeStep / (nodeCount - 1)) * 100}% * (100% - 48px) / 100%)`,
-              }}
-            >
-              {/* Outer glow */}
-              <div className="absolute -inset-3 rounded-full bg-cyan-400/20 blur-md" />
-              {/* Core dot */}
-              <div className="relative h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.8)]" />
+              {/* Traveling dot — positioned as simple percentage of container width */}
+              <div
+                className={`pointer-events-none absolute top-1/2 ${animate ? "transition-[left] duration-[1600ms] ease-out" : ""}`}
+                style={{ left: `${(activeStep / (nodeCount - 1)) * 100}%` }}
+              >
+                <div className="absolute -inset-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400/20 blur-md" />
+                <div className="h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400 shadow-[0_0_20px_rgba(6,182,212,0.8)]" />
+              </div>
             </div>
           </div>
 
