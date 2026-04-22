@@ -48,6 +48,7 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@echo "$(GREEN)Backend levantado (Postgres, Redis, API, Worker, Caddy)$(NC)"
 	@echo ""
 	@echo "Arrancando frontends..."
+	@rm -rf app/ui/node_modules/.vite app/listen/node_modules/.vite node_modules/.vite 2>/dev/null || true
 	@npm install --silent 2>/dev/null
 	@cd app/docs && npm install --silent 2>/dev/null; cd ../..
 	@cd app/site && npm install --silent 2>/dev/null; cd ../..
