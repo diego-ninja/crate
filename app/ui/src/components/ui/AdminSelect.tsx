@@ -28,7 +28,7 @@ interface AdminSelectProps {
 }
 
 const DEFAULT_TRIGGER_CLASS =
-  "flex h-11 min-w-[140px] max-w-[220px] items-center gap-2 rounded-md border border-white/10 bg-black/25 px-4 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] hover:border-white/20 hover:bg-black/35";
+  "flex h-11 min-w-[140px] max-w-[220px] items-center gap-2 rounded-md border border-[var(--idle-border)] bg-black/25 px-4 text-sm text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-sm transition-[background-color,border-color,box-shadow] hover:border-[var(--hover-border)] hover:bg-black/35";
 
 export function AdminSelect({
   value,
@@ -107,7 +107,7 @@ export function AdminSelect({
             </div>
           ) : null}
 
-          <div className="max-h-[220px] overflow-y-auto p-1">
+          <div className="max-h-[220px] space-y-1 overflow-y-auto p-1">
             {allowClear ? (
               <button
                 type="button"
@@ -117,8 +117,10 @@ export function AdminSelect({
                   setSearch("");
                 }}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white",
-                  !value && "bg-primary/10 text-primary",
+                  "flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                  !value
+                    ? "border-[var(--active-border)] bg-[var(--active-bg)] text-primary"
+                    : "border-transparent text-[var(--idle-text)] hover:border-[var(--hover-border)] hover:bg-[var(--hover-bg)] hover:text-foreground",
                 )}
               >
                 <span>{placeholder}</span>
@@ -137,8 +139,10 @@ export function AdminSelect({
                     setSearch("");
                   }}
                   className={cn(
-                    "flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white",
-                    value === option.value && "bg-primary/10 text-primary",
+                    "flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                    value === option.value
+                      ? "border-[var(--active-border)] bg-[var(--active-bg)] text-primary"
+                      : "border-transparent text-[var(--idle-text)] hover:border-[var(--hover-border)] hover:bg-[var(--hover-bg)] hover:text-foreground",
                   )}
                 >
                   <span className="truncate">{option.label}</span>
@@ -146,7 +150,7 @@ export function AdminSelect({
                 </button>
               ))
             ) : (
-              <div className="px-2 py-4 text-center text-sm text-white/40">{noMatchesLabel}</div>
+              <div className="px-2 py-4 text-center text-sm text-[var(--idle-text-subtle)]">{noMatchesLabel}</div>
             )}
           </div>
       </PopoverContent>
