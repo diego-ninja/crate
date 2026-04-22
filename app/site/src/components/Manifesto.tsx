@@ -198,7 +198,7 @@ export function Manifesto() {
         </p>
 
         <div className="mt-8 text-right text-sm text-white/40">
-          — Diego Rin Martin
+          — The Crate Squad
         </div>
       </div>
     </article>
