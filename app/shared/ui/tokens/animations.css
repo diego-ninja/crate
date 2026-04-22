@@ -1,0 +1,105 @@
+/* crate-ui — Shared keyframes and animation utilities */
+
+/* Page entrance */
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-page-in { animation: pageIn 0.2s ease-out; }
+
+/* Popover / menu entrance */
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes popOut {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.92); }
+}
+.animate-pop-in { animation: popIn 0.15s ease-out forwards; }
+.animate-pop-out { animation: popOut 0.12s ease-in forwards; }
+
+/* Bottom sheet slide-up (modals on mobile) */
+@keyframes sheetUp {
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sheetDown {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(100%); }
+}
+.animate-sheet-up { animation: sheetUp 0.3s cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+
+/* Fade / slide */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fadeIn 0.18s ease-out forwards; }
+.animate-fade-slide-up { animation: fadeSlideUp 0.2s ease-out forwards; }
+
+/* Submenu expand (sidebar collection) */
+@keyframes submenuIn {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.animate-submenu-in { animation: submenuIn 0.15s ease-out forwards; }
+
+/* Hero fade-in */
+@keyframes heroFadeIn {
+  from { opacity: 0; transform: scale(1.02); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-hero-fade-in { animation: heroFadeIn 400ms ease forwards; }
+
+/* Track info crossfade (player bar) */
+@keyframes trackFade {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-track-in { animation: trackFade 0.25s ease-out; }
+
+/* Upcoming shows expand */
+@keyframes upcomingExpand {
+  from { opacity: 0.82; transform: translateY(-6px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.animate-upcoming-expand { animation: upcomingExpand 0.22s ease-out; }
+
+/* Equalizer bars */
+@keyframes equalize {
+  0%, 100% { height: 3px; }
+  50% { height: 12px; }
+}
+.equalizer-bar { height: 3px; animation: equalize 0.6s ease-in-out infinite; }
+
+/* Tidal glow pulse */
+@keyframes pulse-subtle {
+  0%, 100% { box-shadow: 0 0 8px rgba(6, 182, 212, 0.1); }
+  50% { box-shadow: 0 0 16px rgba(6, 182, 212, 0.25); }
+}
+.animate-pulse-subtle { animation: pulse-subtle 3s ease-in-out infinite; }
+
+/* AI button glow (admin) */
+@keyframes aiGlow {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.02); }
+}
+
+/* View Transitions API */
+::view-transition-old(root) {
+  animation: 0.2s ease both vt-out;
+}
+::view-transition-new(root) {
+  animation: 0.2s ease both vt-in;
+}
+@keyframes vt-out {
+  to { opacity: 0; transform: translateY(-6px); }
+}
+@keyframes vt-in {
+  from { opacity: 0; transform: translateY(6px); }
+}

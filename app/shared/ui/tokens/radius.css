@@ -1,0 +1,9 @@
+/* crate-ui — Border radius scale
+   One step down from previous listen values. */
+
+@theme inline {
+  --radius-sm: 0.125rem;   /* 2px */
+  --radius-md: 0.25rem;    /* 4px */
+  --radius-lg: 0.375rem;   /* 6px */
+  --radius-xl: 0.5rem;     /* 8px */
+}

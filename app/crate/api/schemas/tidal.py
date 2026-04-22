@@ -77,6 +77,7 @@ class DownloadRequest(BaseModel):
     quality: str = "max"
     source: str = "search"
     title: str = ""
+    upgrade_album_id: int | None = None
 
 
 class BatchDownloadItemRequest(BaseModel):
@@ -130,8 +131,8 @@ class TidalQueueItemResponse(BaseModel):
     task_id: str | None = None
     error: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
-    created_at: str | None = None
-    completed_at: str | None = None
+    created_at: Any = None
+    completed_at: Any = None
 
 
 class WishlistRequest(BaseModel):

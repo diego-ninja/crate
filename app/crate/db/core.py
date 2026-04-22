@@ -2035,5 +2035,4 @@ _MIGRATIONS = [
     (27, "add_track_sample_rate_and_bit_depth", _m27_add_track_sample_rate_and_bit_depth),
     (28, "add_user_location_fields", _m28_add_user_location_fields),
     (29, "add_shows_lastfm_fields", _m29_add_shows_lastfm_fields),
-
 ]

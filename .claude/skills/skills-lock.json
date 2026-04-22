@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "skills": {
+    "composition-patterns": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "localPath": ".agents/skills/composition-patterns",
+      "computedHash": "575757e3e25761c8c562d6e395d29f0b76c98b1273c0bd72d88e6ab1bc9c7d42"
+    },
+    "react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "localPath": ".agents/skills/react-best-practices",
+      "computedHash": "ca7b0c0c6e5f2750043f7f0cd72d16ac4e2abc48f9b5500d047a4b77a2506212"
+    },
+    "react-view-transitions": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "localPath": ".agents/skills/react-view-transitions",
+      "computedHash": "c8952fc9127fa0564d0cb71dccb4215a5608ac933b5831104f09173a97a46f85"
+    },
+    "web-design-guidelines": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "localPath": ".agents/skills/web-design-guidelines",
+      "computedHash": "f3bc47f890f42a44db1007ab390709ec368e4b8c089baee6b0007182236ac474"
+    }
+  }
+}

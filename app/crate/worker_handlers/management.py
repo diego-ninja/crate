@@ -1,7 +1,10 @@
-import json
 import logging
 import shutil
 from pathlib import Path
+
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
+
+
 def _escape_like(value: str) -> str:
     """Escape SQL LIKE metacharacters and prepend wildcard for year-prefix matching."""
     escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -14,7 +17,6 @@ from crate.db import (
     get_cache,
     get_task,
     set_cache,
-    update_task,
 )
 from crate.db.jobs.management import (
     apply_mbid_to_album,
@@ -48,9 +50,17 @@ def _unmark_processing(artist_name: str):
 def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
     from crate.health_check import LibraryHealthCheck
 
+    p_hc = TaskProgress(phase="health_check", phase_count=1)
+
+    def _hc_progress(data):
+        p_hc.done = data.get("done", p_hc.done)
+        p_hc.total = data.get("total", p_hc.total)
+        p_hc.item = data.get("check", p_hc.item)
+        emit_progress(task_id, p_hc)
+
     checker = LibraryHealthCheck(config)
     report = checker.run(
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data))
+        progress_callback=_hc_progress
     )
     set_cache("health_report", report, ttl=3600)
     issue_count = len(report.get("issues", []))
@@ -104,13 +114,21 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
             _mark_processing(artist)
 
     try:
+        p_repair = TaskProgress(phase="repair", phase_count=1)
+
+        def _repair_progress(data):
+            p_repair.done = data.get("done", p_repair.done)
+            p_repair.total = data.get("total", p_repair.total)
+            p_repair.item = data.get("action", p_repair.item)
+            emit_progress(task_id, p_repair)
+
         repairer = LibraryRepair(config)
         result = repairer.repair(
             report,
             dry_run=dry_run,
             auto_only=auto_only,
             task_id=task_id,
-            progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+            progress_callback=_repair_progress,
         )
 
         action_count = len(result.get("actions", []))
@@ -183,49 +201,66 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     from crate.db import get_library_artists
     from crate.library_sync import LibrarySync
 
+    p_pipe = TaskProgress(phase="health_check", phase_count=3)
+
     emit_task_event(task_id, "info", {"message": "Pipeline: running health check..."})
-    update_task(task_id, progress=json.dumps({"phase": "health_check"}))
+    emit_progress(task_id, p_pipe, force=True)
     if is_cancelled(task_id):
         return {"status": "cancelled"}
 
+    def _pipe_hc_progress(data):
+        p_pipe.done = data.get("done", p_pipe.done)
+        p_pipe.total = data.get("total", p_pipe.total)
+        p_pipe.item = data.get("check", p_pipe.item)
+        emit_progress(task_id, p_pipe)
+
     checker = LibraryHealthCheck(config)
-    report = checker.run(
-        progress_callback=lambda data: update_task(
-            task_id,
-            progress=json.dumps({**data, "phase": "health_check"}),
-        )
-    )
+    report = checker.run(progress_callback=_pipe_hc_progress)
     set_cache("health_report", report, ttl=3600)
 
     if is_cancelled(task_id):
         return {"status": "cancelled"}
 
     emit_task_event(task_id, "info", {"message": "Pipeline: running repair..."})
-    update_task(task_id, progress=json.dumps({"phase": "repair"}))
+    p_pipe.phase = "repair"
+    p_pipe.phase_index = 1
+    p_pipe.done = 0
+    p_pipe.total = 0
+    emit_progress(task_id, p_pipe, force=True)
+
+    def _pipe_repair_progress(data):
+        p_pipe.done = data.get("done", p_pipe.done)
+        p_pipe.total = data.get("total", p_pipe.total)
+        p_pipe.item = data.get("action", p_pipe.item)
+        emit_progress(task_id, p_pipe)
+
     repairer = LibraryRepair(config)
     repair_result = repairer.repair(
         report,
         dry_run=False,
         auto_only=True,
         task_id=task_id,
-        progress_callback=lambda data: update_task(
-            task_id,
-            progress=json.dumps({**data, "phase": "repair"}),
-        ),
+        progress_callback=_pipe_repair_progress,
     )
 
     if is_cancelled(task_id):
         return {"status": "cancelled"}
 
     emit_task_event(task_id, "info", {"message": "Pipeline: running sync..."})
-    update_task(task_id, progress=json.dumps({"phase": "sync"}))
+    p_pipe.phase = "sync"
+    p_pipe.phase_index = 2
+    p_pipe.done = 0
+    p_pipe.total = 0
+    emit_progress(task_id, p_pipe, force=True)
+
+    def _pipe_sync_progress(data):
+        p_pipe.done = data.get("done", p_pipe.done)
+        p_pipe.total = data.get("total", p_pipe.total)
+        p_pipe.item = data.get("artist", p_pipe.item)
+        emit_progress(task_id, p_pipe)
+
     sync = LibrarySync(config)
-    sync_result = sync.full_sync(
-        progress_callback=lambda data: update_task(
-            task_id,
-            progress=json.dumps({**data, "phase": "sync"}),
-        )
-    )
+    sync_result = sync.full_sync(progress_callback=_pipe_sync_progress)
 
     if repair_result.get("fs_changed"):
         start_scan()
@@ -411,7 +446,8 @@ def _handle_wipe_library(task_id: str, params: dict, config: dict) -> dict:
 def _handle_rebuild_library(task_id: str, params: dict, config: dict) -> dict:
     from crate.db import log_audit, wipe_library_tables
 
-    update_task(task_id, progress=json.dumps({"phase": "wipe"}))
+    p_rebuild = TaskProgress(phase="wipe", phase_count=2)
+    emit_progress(task_id, p_rebuild, force=True)
     wipe_library_tables()
     emit_task_event(
         task_id,
@@ -563,6 +599,131 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
     return result
 
 
+def _handle_generate_system_playlist(task_id: str, params: dict, config: dict) -> dict:
+    """Generate or regenerate a smart system playlist."""
+    from crate.db import emit_task_event
+    from crate.db.playlists import (
+        get_playlist, execute_smart_rules, replace_playlist_tracks,
+        set_generation_status, log_generation_start, log_generation_complete, log_generation_failed,
+    )
+
+    playlist_id = int(params.get("playlist_id", 0))
+    triggered_by = params.get("triggered_by", "manual")
+
+    playlist = get_playlist(playlist_id)
+    if not playlist:
+        return {"error": "Playlist not found"}
+
+    rules = playlist.get("smart_rules")
+    if not rules:
+        return {"error": "No smart rules configured"}
+
+    name = playlist.get("name", f"Playlist {playlist_id}")
+    emit_task_event(task_id, "info", {"message": f"Generating: {name}"})
+
+    set_generation_status(playlist_id, "running")
+    log_id = log_generation_start(playlist_id, rules, triggered_by)
+
+    try:
+        tracks = execute_smart_rules(rules)
+        track_dicts = [
+            {"track_path": t.get("path", ""), "track_id": t.get("id"),
+             "track_storage_id": t.get("storage_id"),
+             "title": t.get("title", ""), "artist": t.get("artist", ""),
+             "album": t.get("album", ""), "duration": t.get("duration")}
+            for t in tracks
+        ]
+        replace_playlist_tracks(playlist_id, track_dicts)
+        total_duration = sum(t.get("duration") or 0 for t in tracks)
+
+        set_generation_status(playlist_id, "idle")
+        log_generation_complete(log_id, len(tracks), total_duration)
+        emit_task_event(task_id, "info", {
+            "message": f"Generated {name}: {len(tracks)} tracks, {total_duration // 60}m",
+        })
+
+        try:
+            from crate.telegram import send_message
+            send_message(
+                f"\U0001f3b6 Smart Playlist <b>{name}</b> regenerated\n"
+                f"{len(tracks)} tracks \u00b7 {total_duration // 60}m\n"
+                f"Triggered by: {triggered_by}"
+            )
+        except Exception:
+            pass
+
+        return {"track_count": len(tracks), "duration_sec": total_duration}
+
+    except Exception as e:
+        set_generation_status(playlist_id, "failed", str(e))
+        log_generation_failed(log_id, str(e))
+        emit_task_event(task_id, "error", {"message": f"Generation failed for {name}: {str(e)[:200]}"})
+        raise
+
+
+def _handle_refresh_system_smart_playlists(task_id: str, params: dict, config: dict) -> dict:
+    """Scheduled daily refresh of eligible smart system playlists."""
+    from crate.db import emit_task_event
+    from crate.db.playlists import get_smart_playlists_for_refresh
+    from crate.db.tasks import create_task
+
+    playlists = get_smart_playlists_for_refresh()
+    emit_task_event(task_id, "info", {"message": f"Found {len(playlists)} playlists eligible for refresh"})
+
+    enqueued = 0
+    for pl in playlists:
+        create_task("generate_system_playlist", {
+            "playlist_id": pl["id"],
+            "triggered_by": "scheduler",
+        })
+        enqueued += 1
+
+    emit_task_event(task_id, "info", {"message": f"Enqueued {enqueued} playlist generation tasks"})
+    return {"eligible": len(playlists), "enqueued": enqueued}
+
+
+def _handle_persist_playlist_cover(task_id: str, params: dict, config: dict) -> dict:
+    """Read cover base64 from Redis and write to disk."""
+    import base64
+    from crate.db import emit_task_event
+    from crate.db.playlists import update_playlist
+    from crate.db.cache import _get_redis
+
+    playlist_id = int(params.get("playlist_id", 0))
+    redis_key = f"cover:staging:{playlist_id}"
+
+    r = _get_redis()
+    if not r:
+        return {"error": "Redis unavailable"}
+
+    raw = r.get(redis_key)
+    if not raw:
+        return {"error": "Cover data expired or missing from Redis"}
+
+    try:
+        b64_str = raw.decode() if isinstance(raw, bytes) else raw
+        # Strip data URL prefix if present
+        if "," in b64_str:
+            b64_str = b64_str.split(",", 1)[1]
+        image_data = base64.b64decode(b64_str)
+    except Exception as e:
+        return {"error": f"Failed to decode cover: {str(e)[:200]}"}
+
+    from crate.playlist_covers import playlist_covers_root
+
+    cover_dir = playlist_covers_root()
+    filename = f"{playlist_id}.jpg"
+    cover_path = cover_dir / filename
+
+    cover_path.write_bytes(image_data)
+    r.delete(redis_key)
+
+    # Store the relative filename, not the absolute path — playlist_cover_abspath() resolves it
+    update_playlist(playlist_id, cover_path=filename)
+    emit_task_event(task_id, "info", {"message": f"Cover saved for playlist {playlist_id}"})
+    return {"cover_path": str(cover_path)}
+
+
 MANAGEMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "health_check": _handle_health_check,
     "repair": _handle_repair,
@@ -576,4 +737,7 @@ MANAGEMENT_TASK_HANDLERS: dict[str, TaskHandler] = {
     "update_album_tags": _handle_update_album_tags,
     "update_track_tags": _handle_update_track_tags,
     "resolve_duplicates": _handle_resolve_duplicates,
+    "generate_system_playlist": _handle_generate_system_playlist,
+    "refresh_system_smart_playlists": _handle_refresh_system_smart_playlists,
+    "persist_playlist_cover": _handle_persist_playlist_cover,
 }

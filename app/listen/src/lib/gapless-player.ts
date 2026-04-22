@@ -325,8 +325,21 @@ export function replaceTrack(index: number, url: string): void {
   // replaceTrack swaps in-place, no shuffledIndices change needed.
 }
 
+/**
+ * Resume the AudioContext if it's suspended. Mobile browsers require
+ * a user gesture to activate the context — we call this from every
+ * user-initiated play path so the first tap always unlocks audio.
+ */
+function ensureContextResumed(): void {
+  const ctx = (instance as any)?.context as AudioContext | undefined;
+  if (ctx?.state === "suspended") {
+    void ctx.resume();
+  }
+}
+
 export function play(): void {
   stopFade();
+  ensureContextResumed();
   instance?.play();
 }
 
@@ -361,6 +374,7 @@ export function prev(): void {
  * for sequential skips that should respect the crossfade setting.
  */
 export function gotoTrack(indexOrUrl: number | string, forcePlay = false): void {
+  if (forcePlay) ensureContextResumed();
   instance?.gotoTrack(indexOrUrl, forcePlay);
 }
 
@@ -431,6 +445,7 @@ export function fadeOutAndPause(durationMs = DEFAULT_FADE_MS): Promise<void> {
 export function fadeInAndPlay(durationMs = DEFAULT_FADE_MS): Promise<void> {
   if (!instance) return Promise.resolve();
   stopFade();
+  ensureContextResumed();
   applyVolume(0);
   instance.play();
   return new Promise((resolve) => {

@@ -78,6 +78,22 @@ def get_album_genres_list(album_id: int) -> list[str]:
         return [row["name"] for row in rows]
 
 
+def get_album_genre_profile(album_id: int, limit: int = 8) -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
+                SELECT g.name, g.slug, ag.weight, ag.source
+                FROM album_genres ag
+                JOIN genres g ON ag.genre_id = g.id
+                WHERE ag.album_id = :album_id
+                ORDER BY ag.weight DESC NULLS LAST, g.name ASC
+                LIMIT :limit
+            """),
+            {"album_id": album_id, "limit": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
+
 import re as _re
 
 _YEAR_PREFIX_RE = _re.compile(r"^\d{4}\s*[-–]\s*")

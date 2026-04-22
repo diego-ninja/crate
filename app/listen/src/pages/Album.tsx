@@ -3,11 +3,12 @@ import { useParams, useNavigate } from "react-router";
 import { AlertCircle, ArrowDownToLine, CheckCircle2, Clock, Disc, Heart, ListPlus, Loader2, MoreHorizontal, Play, Radio, Share2, Shuffle, User } from "lucide-react";
 import { toast } from "sonner";
 
-import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
-import { AppModal, ModalBody } from "@/components/ui/AppModal";
-import { useIsDesktop } from "@/hooks/use-breakpoint";
+import { AppMenuButton, AppPopover, AppPopoverDivider } from "@crate/ui/primitives/AppPopover";
+import { AppModal, ModalBody } from "@crate/ui/primitives/AppModal";
+import { GenrePillRow, type GenreProfileItem } from "@crate/ui/domain/genres/GenrePill";
+import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useApi } from "@/hooks/use-api";
-import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
+import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { api } from "@/lib/api";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { useOffline } from "@/contexts/OfflineContext";
@@ -19,6 +20,14 @@ import { isOfflineBusy } from "@/lib/offline";
 import { fetchAlbumRadio } from "@/lib/radio";
 import { formatBadgeClass, shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+
+function albumGenreSlug(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/[\s-]+/g, "-");
+}
 
 interface AlbumTrack {
   id: number;
@@ -67,6 +76,7 @@ interface AlbumData {
     musicbrainz_albumid: string | null;
   };
   genres: string[];
+  genre_profile?: GenreProfileItem[];
 }
 
 interface Playlist {
@@ -398,7 +408,7 @@ export function Album() {
 
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground justify-center sm:justify-start">
               {year && <span>{year}</span>}
-              {genre && <span>{genre}</span>}
+              {!data.genre_profile?.length && genre ? <span>{genre}</span> : null}
               {data.track_count > 0 && (
                 <span>{data.track_count} tracks</span>
               )}
@@ -412,6 +422,15 @@ export function Album() {
                 <span key={f} className={`${formatBadgeClass(f)} text-[11px] px-2.5 py-0.5`}>{f}</span>
               ))}
             </div>
+
+            {data.genre_profile && data.genre_profile.length > 0 ? (
+              <GenrePillRow
+                items={data.genre_profile}
+                max={6}
+                className="mt-3 justify-center sm:justify-start"
+                onSelect={(item) => navigate(`/explore?genre=${encodeURIComponent(item.slug || albumGenreSlug(item.name))}`)}
+              />
+            ) : null}
           </div>
         </div>
       </div>

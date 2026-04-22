@@ -9,6 +9,7 @@ Supports single-track and batch analysis for throughput optimization.
 """
 
 import logging
+import warnings
 from pathlib import Path
 from typing import Union
 
@@ -734,7 +735,44 @@ def _analyze_librosa(filepath: str) -> dict:
 
     result = _empty_result()
     try:
-        y, sr = librosa.load(filepath, sr=22050, mono=True, duration=SIGNAL_DURATION)
+        if not Path(filepath).is_file():
+            return result
+
+        try:
+            import soundfile as sf
+
+            y, sr = sf.read(filepath, dtype="float32", always_2d=False)
+            if getattr(y, "ndim", 1) > 1:
+                y = np.mean(y, axis=1)
+            if sr != 22050:
+                y = librosa.resample(y, orig_sr=sr, target_sr=22050)
+                sr = 22050
+            max_samples = int(sr * SIGNAL_DURATION)
+            if len(y) > max_samples:
+                y = y[:max_samples]
+        except Exception:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*PySoundFile failed\. Trying audioread instead\..*",
+                    category=UserWarning,
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*__audioread_load.*",
+                    category=FutureWarning,
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*aifc was removed in Python 3\.13.*",
+                    category=DeprecationWarning,
+                )
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r".*sunau was removed in Python 3\.13.*",
+                    category=DeprecationWarning,
+                )
+                y, sr = librosa.load(filepath, sr=22050, mono=True, duration=SIGNAL_DURATION)
         if len(y) < sr * 2:
             return result
 

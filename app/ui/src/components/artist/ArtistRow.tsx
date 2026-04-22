@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Badge } from "@/components/ui/badge";
-import { formatSize, formatCompact } from "@/lib/utils";
+import { Check, Users, Wrench } from "lucide-react";
+
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
+import { formatCompact, formatSize } from "@/lib/utils";
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
-import { Users, Wrench, Check } from "lucide-react";
 
 interface ArtistRowProps {
   name: string;
@@ -50,66 +51,61 @@ export function ArtistRow({
   return (
     <div
       onClick={handleClick}
-      className={`flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors ${
-        isSelected ? "bg-primary/10" : ""
+      className={`flex cursor-pointer items-center gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-white/5 ${
+        isSelected ? "bg-white/[0.06]" : ""
       }`}
     >
-      {selectMode && (
+      {selectMode ? (
         <div className="flex-shrink-0">
-          <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-            isSelected ? "bg-primary border-primary" : "border-muted-foreground/40 bg-transparent"
+          <div className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
+            isSelected ? "border-primary bg-primary" : "border-white/35 bg-transparent"
           }`}>
-            {isSelected && <Check size={12} className="text-white" />}
+            {isSelected ? <Check size={11} className="text-primary-foreground" /> : null}
           </div>
         </div>
-      )}
-      <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 relative">
+      ) : null}
+
+      <div className="relative h-11 w-11 flex-shrink-0 overflow-hidden rounded-md bg-white/5">
         {!imgError ? (
           <img
             src={artistPhotoApiUrl({ artistId, artistSlug, artistName: name })}
             alt={name}
             loading="lazy"
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover"
             onError={() => setImgError(true)}
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/25 to-primary/5">
             <span className="text-sm font-bold text-primary/70">{letter}</span>
           </div>
         )}
-        {hasIssues && (
-          <div className="absolute -top-0.5 -right-0.5 z-10">
-            <Wrench size={10} className="text-amber-400/70" />
+        {hasIssues ? (
+          <div className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/12 text-amber-300">
+            <Wrench size={10} />
           </div>
-        )}
+        ) : null}
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-sm truncate">{name}</div>
-        {genres && genres.length > 0 && (
-          <div className="flex gap-1 mt-0.5 flex-wrap">
-            {genres.slice(0, 4).map((g) => (
-              <Badge key={g} variant="outline" className="text-[9px] px-1.5 py-0 text-muted-foreground">
-                {g.toLowerCase()}
-              </Badge>
+
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-foreground">{name}</div>
+        {genres && genres.length > 0 ? (
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {genres.slice(0, 3).map((genre) => (
+              <CrateChip key={genre}>{genre.toLowerCase()}</CrateChip>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
-      <div className="text-xs text-muted-foreground whitespace-nowrap">
-        {albums} album{albums !== 1 ? "s" : ""}
-      </div>
-      <div className="hidden sm:block text-xs text-muted-foreground whitespace-nowrap w-16 text-right">
-        {tracks} tracks
-      </div>
-      <div className="hidden sm:block text-xs text-muted-foreground whitespace-nowrap w-16 text-right">
-        {formatSize(total_size_mb)}
-      </div>
-      {listeners != null && listeners > 0 && (
-        <div className="hidden md:flex text-xs text-muted-foreground whitespace-nowrap w-16 text-right items-center justify-end gap-1">
+
+      <div className="hidden text-xs text-muted-foreground sm:block">{albums} albums</div>
+      <div className="hidden w-20 text-right text-xs text-muted-foreground sm:block">{tracks} tracks</div>
+      <div className="hidden w-16 text-right text-xs text-muted-foreground lg:block">{formatSize(total_size_mb)}</div>
+      {listeners != null && listeners > 0 ? (
+        <div className="hidden w-20 items-center justify-end gap-1 text-xs text-muted-foreground md:flex">
           <Users size={12} />
           {formatCompact(listeners)}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

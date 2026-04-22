@@ -203,14 +203,15 @@ def _get_genre_summary_by_slug(session, slug: str) -> dict | None:
             tn.musicbrainz_mbid,
             tn.wikidata_entity_id,
             tn.wikidata_url,
-            tn.eq_gains AS canonical_eq_gains
+            tn.eq_gains AS canonical_eq_gains,
+            tn.eq_reasoning
         FROM genres g
         LEFT JOIN artist_genres ag ON g.id = ag.genre_id
         LEFT JOIN album_genres alg ON g.id = alg.genre_id
         LEFT JOIN genre_taxonomy_aliases gta ON gta.alias_slug = g.slug
         LEFT JOIN genre_taxonomy_nodes tn ON tn.id = gta.genre_id
         WHERE g.slug = :slug
-        GROUP BY g.id, g.name, g.slug, tn.slug, tn.name, tn.description, tn.external_description, tn.external_description_source, tn.musicbrainz_mbid, tn.wikidata_entity_id, tn.wikidata_url, tn.eq_gains
+        GROUP BY g.id, g.name, g.slug, tn.slug, tn.name, tn.description, tn.external_description, tn.external_description_source, tn.musicbrainz_mbid, tn.wikidata_entity_id, tn.wikidata_url, tn.eq_gains, tn.eq_reasoning
         """),
         {"slug": slug},
     ).mappings().first()
@@ -942,15 +943,21 @@ def get_genre_taxonomy_node_id(slug: str) -> int | None:
     return row["id"] if row else None
 
 
-def set_genre_eq_gains(slug: str, gains: list[float] | None, *, session=None) -> None:
-    """Set eq_gains for a genre taxonomy node by slug."""
+def set_genre_eq_gains(slug: str, gains: list[float] | None, *, reasoning: str | None = None, session=None) -> None:
+    """Set eq_gains (and optionally eq_reasoning) for a genre taxonomy node."""
     if session is None:
         with transaction_scope() as s:
-            return set_genre_eq_gains(slug, gains, session=s)
-    session.execute(
-        text("UPDATE genre_taxonomy_nodes SET eq_gains = :gains WHERE slug = :slug"),
-        {"gains": gains, "slug": slug},
-    )
+            return set_genre_eq_gains(slug, gains, reasoning=reasoning, session=s)
+    if reasoning is not None:
+        session.execute(
+            text("UPDATE genre_taxonomy_nodes SET eq_gains = :gains, eq_reasoning = :reasoning WHERE slug = :slug"),
+            {"gains": gains, "reasoning": reasoning, "slug": slug},
+        )
+    else:
+        session.execute(
+            text("UPDATE genre_taxonomy_nodes SET eq_gains = :gains WHERE slug = :slug"),
+            {"gains": gains, "slug": slug},
+        )
 
 
 def update_genre_external_metadata(
@@ -1046,13 +1053,13 @@ def get_artists_missing_genre_mapping() -> list[str]:
 def get_artist_album_genres(artist_name: str) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(text("""
-            SELECT g.name, COUNT(*) AS cnt
+            SELECT g.name, COALESCE(SUM(ag.weight), 0)::FLOAT AS score
             FROM album_genres ag
             JOIN genres g ON ag.genre_id = g.id
             JOIN library_albums a ON ag.album_id = a.id
             WHERE a.artist = :artist
             GROUP BY g.name
-            ORDER BY cnt DESC
+            ORDER BY score DESC, g.name ASC
         """), {"artist": artist_name}).mappings().all()
     return [dict(r) for r in rows]
 

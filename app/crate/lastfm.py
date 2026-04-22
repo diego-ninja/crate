@@ -108,7 +108,7 @@ def _get_similar_artists(artist_name: str, limit: int = 30) -> list[dict]:
 
 def get_top_tracks(artist_name: str, limit: int = 20) -> list[dict] | None:
     """Get top tracks from Last.fm."""
-    cache_key = f"lastfm:toptracks:{artist_name.lower()}"
+    cache_key = f"lastfm:toptracks:{artist_name.lower()}:{limit}"
     cached = get_cache(cache_key, max_age_seconds=86400)
     if cached:
         return cached.get("tracks")

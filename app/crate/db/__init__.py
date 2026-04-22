@@ -27,7 +27,7 @@ from crate.db.core import (
 from crate.db.tasks import (
     create_task, create_task_dedup, update_task, get_task, list_tasks, claim_next_task,
     list_child_tasks, heartbeat_task, cleanup_zombie_tasks, cleanup_orphaned_tasks,
-    save_scan_result, get_latest_scan,
+    save_scan_result, get_latest_scan, check_siblings_complete,
     delete_tasks_by_status, delete_old_finished_tasks,
 )
 
@@ -45,8 +45,9 @@ from crate.db.library import (
     get_library_artists, get_library_artist, get_library_albums,
     get_library_artist_by_id, get_library_album,
     get_library_album_by_id, get_library_track_by_id, get_library_track_by_storage_id, get_library_track_by_path,
+    quarantine_album, unquarantine_album, delete_quarantined_album,
     get_library_tracks_by_storage_ids,
-    get_library_tracks, get_library_stats,
+    get_library_tracks, get_library_stats, get_album_quality_map,
     get_library_track_count,
     upsert_artist, upsert_album, upsert_track,
     update_track_analysis, update_artist_enrichment,
@@ -65,6 +66,7 @@ from crate.db.auth import (
     count_users, create_user, get_user_by_email, get_user_by_google_id,
     get_user_by_external_identity, get_user_by_id, update_user_last_login, update_user, list_users, delete_user,
     create_session, get_session, list_sessions, touch_session, revoke_session, revoke_other_sessions, delete_session,
+    get_user_presence, get_users_presence, list_users_map_rows,
     suggest_username, get_user_external_identity, upsert_user_external_identity,
     list_user_external_identities, unlink_user_external_identity,
     create_auth_invite, get_auth_invite, list_auth_invites, consume_auth_invite,
@@ -87,6 +89,9 @@ from crate.db.playlists import (
     execute_smart_rules,
     generate_by_genre, generate_by_decade, generate_by_artist,
     generate_similar_artists, generate_random,
+    log_generation_start, log_generation_complete, log_generation_failed,
+    get_generation_history, set_generation_status, get_smart_playlists_for_refresh,
+    duplicate_playlist,
 )
 
 # Tidal
@@ -128,6 +133,11 @@ from crate.db.health import (
     get_artist_issues, get_artist_issue_count, get_all_artist_issue_counts,
 )
 
+# Serialization helpers
+from crate.db.serialize import (
+    serialize_row, serialize_rows,
+)
+
 # Home
 from crate.db.home import (
     get_home_mix, get_home_playlist, get_home_discovery, get_home_section,
@@ -146,6 +156,8 @@ from crate.db.jam import (
 # Management
 from crate.db.management import (
     get_last_analyzed_track, get_last_bliss_track, get_storage_v2_status,
+    count_recent_active_users, count_recent_streams,
+    upsert_metric_rollup, query_metric_rollups,
 )
 
 # New Releases
@@ -195,4 +207,9 @@ from crate.db.social import (
     get_followers, get_following, search_users,
     get_public_user_profile, get_public_user_profile_by_username,
     get_public_playlists_for_user, get_me_social, get_affinity,
+)
+
+# Worker logs
+from crate.db.worker_logs import (
+    insert_log, query_logs, list_known_workers, cleanup_old_logs,
 )

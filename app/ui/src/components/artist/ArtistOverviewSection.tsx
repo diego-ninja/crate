@@ -1,7 +1,7 @@
 import { StatCard } from "@/components/artist/ArtistPageBits";
 import type { ArtistExternalLink, LastfmData, MusicBrainzData, SpotifyData } from "@/components/artist/artistPageTypes";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@crate/ui/shadcn/skeleton";
 import type { TopTrack } from "@/hooks/use-artist-data";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 import { formatCompact, formatDuration } from "@/lib/utils";
@@ -14,8 +14,6 @@ import {
   Headphones,
   MapPin,
   Music,
-  Pause,
-  Play,
   Users,
 } from "lucide-react";
 
@@ -24,11 +22,6 @@ interface ArtistOverviewSectionProps {
   bioExpanded: boolean;
   onToggleBioExpanded: () => void;
   topTracks: TopTrack[];
-  currentTrackId?: string;
-  trackPlaying: boolean;
-  onPause: () => void;
-  onResume: () => void;
-  onPlayTopTrack: (track: TopTrack, index: number) => void;
   musicbrainz?: MusicBrainzData;
   activeMembersCount: number;
   lastfm?: LastfmData;
@@ -42,11 +35,6 @@ export function ArtistOverviewSection({
   bioExpanded,
   onToggleBioExpanded,
   topTracks,
-  currentTrackId,
-  trackPlaying,
-  onPause,
-  onResume,
-  onPlayTopTrack,
   musicbrainz,
   activeMembersCount,
   lastfm,
@@ -77,10 +65,8 @@ export function ArtistOverviewSection({
       {topTracks.length > 0 && (
         <div className="max-w-2xl">
           <h3 className="text-sm font-semibold text-white/70 mb-2">Top Tracks</h3>
-              <div className="space-y-0.5">
+            <div className="space-y-0.5">
             {topTracks.slice(0, 5).map((track, i) => {
-              const isCurrent = currentTrackId === track.id;
-              const isCurrentPlaying = isCurrent && trackPlaying;
               const coverUrl = albumCoverApiUrl({
                 albumId: track.album_id,
                 albumSlug: track.album_slug,
@@ -101,25 +87,11 @@ export function ArtistOverviewSection({
                   trackTitle={track.title}
                   albumCover={coverUrl}
                 >
-                  <button
-                    onClick={() => {
-                      if (isCurrentPlaying) onPause();
-                      else if (isCurrent) onResume();
-                      else onPlayTopTrack(track, i);
-                    }}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors group text-left ${isCurrent ? "bg-white/[0.03]" : ""}`}
-                  >
-                    {isCurrent ? (
-                      isCurrentPlaying ? <Pause size={13} className="text-primary w-5 fill-current" /> : <Play size={13} className="text-primary w-5 fill-current" />
-                    ) : (
-                      <>
-                        <span className="w-5 text-right text-xs text-white/30 group-hover:hidden">{i + 1}</span>
-                        <Play size={13} className="text-primary hidden group-hover:block w-5 fill-current" />
-                      </>
-                    )}
-                    <span className={`flex-1 text-sm truncate ${isCurrent ? "text-primary" : "text-white/80"}`}>{track.title}</span>
+                  <div className="w-full flex items-center gap-3 px-3 py-2 rounded-md hover:bg-white/5 transition-colors group text-left">
+                    <span className="w-5 text-right text-xs text-white/30">{i + 1}</span>
+                    <span className="flex-1 text-sm truncate text-white/80">{track.title}</span>
                     <span className="text-xs text-white/30">{formatDuration(track.duration)}</span>
-                  </button>
+                  </div>
                 </MusicContextMenu>
               );
             })}
@@ -151,7 +123,7 @@ export function ArtistOverviewSection({
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-white/10 hover:border-white/20 hover:bg-white/5 transition-colors ${link.color}`}
+                className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-white/10 hover:border-white/20 hover:bg-white/5 transition-colors ${link.color}`}
               >
                 <Globe size={12} /> {link.label}
               </a>

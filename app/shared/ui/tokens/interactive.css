@@ -1,0 +1,72 @@
+/* crate-ui — Interactive state tokens
+   Semantic tokens for active, hover, selected, and disabled states.
+   All derived from --color-primary so changing the accent color
+   propagates everywhere. */
+
+:root {
+  /* ── Active / Selected ── */
+  --active-border: color-mix(in srgb, var(--color-primary) 40%, transparent);
+  --active-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --active-bg-strong: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  --active-text: color-mix(in srgb, var(--color-primary) 100%, white 20%);
+  --active-dot: var(--color-primary);
+  --active-glow: color-mix(in srgb, var(--color-primary) 60%, transparent);
+
+  /* ── Default / Idle interactive ── */
+  --idle-border: rgba(255, 255, 255, 0.06);
+  --idle-bg: rgba(255, 255, 255, 0.02);
+  --idle-text: rgba(255, 255, 255, 0.60);
+  --idle-text-muted: rgba(255, 255, 255, 0.45);
+  --idle-text-subtle: rgba(255, 255, 255, 0.35);
+
+  /* ── Hover ── */
+  --hover-border: rgba(255, 255, 255, 0.20);
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --hover-bg-strong: rgba(255, 255, 255, 0.10);
+
+  /* ── Disabled ── */
+  --disabled-opacity: 0.40;
+
+  /* ── Pill (rounded-full interactive badges) ── */
+  --pill-border: rgba(255, 255, 255, 0.10);
+  --pill-bg: rgba(255, 255, 255, 0.05);
+  --pill-active-border: color-mix(in srgb, var(--color-primary) 50%, transparent);
+  --pill-active-bg: color-mix(in srgb, var(--color-primary) 15%, transparent);
+
+  /* ── Chip (compact read-only badges) ── */
+  --chip-border: rgba(255, 255, 255, 0.10);
+  --chip-bg: rgba(255, 255, 255, 0.03);
+  --chip-active-border: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  --chip-active-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+
+  /* ── Status colors (derived from semantic colors) ── */
+  --status-ready-border: color-mix(in srgb, var(--color-primary) 25%, transparent);
+  --status-ready-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --status-ready-text: color-mix(in srgb, var(--color-primary) 100%, white 30%);
+
+  --status-error-border: color-mix(in srgb, var(--color-warning) 25%, transparent);
+  --status-error-bg: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  --status-error-text: color-mix(in srgb, var(--color-warning) 100%, white 20%);
+
+  --status-danger-border: color-mix(in srgb, var(--color-destructive) 25%, transparent);
+  --status-danger-bg: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  --status-danger-text: color-mix(in srgb, var(--color-destructive) 100%, white 20%);
+}
+
+/* ── Utility classes for common interactive patterns ── */
+
+/* Row: interactive list item (taxonomy row, settings row, etc.) */
+.interactive-row {
+  border: 1px solid var(--idle-border);
+  background: var(--idle-bg);
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.interactive-row:hover {
+  border-color: var(--hover-border);
+  background: var(--hover-bg);
+}
+.interactive-row[data-active="true"],
+.interactive-row.active {
+  border-color: var(--active-border);
+  background: var(--active-bg);
+}

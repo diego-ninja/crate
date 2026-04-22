@@ -1,5 +1,6 @@
 from datetime import date, datetime
 
+from crate.db.serialize import serialize_rows
 from crate.db.tx import transaction_scope
 from sqlalchemy import text
 
@@ -17,7 +18,7 @@ def get_feed_new_albums(followed_names: list[str], cutoff: str, limit: int) -> l
             ORDER BY la.updated_at DESC
             LIMIT :limit
         """), {"followed_names": list(followed_names), "cutoff": cutoff, "limit": limit}).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def get_feed_shows(followed_names: list[str], today: date, limit: int) -> list[dict]:
@@ -33,7 +34,7 @@ def get_feed_shows(followed_names: list[str], today: date, limit: int) -> list[d
             ORDER BY s.date
             LIMIT :limit
         """), {"followed_names": list(followed_names), "today": today, "limit": limit}).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def get_feed_new_releases(limit: int) -> list[dict]:
@@ -46,7 +47,7 @@ def get_feed_new_releases(limit: int) -> list[dict]:
             ORDER BY nr.detected_at DESC
             LIMIT :limit
         """), {"limit": limit}).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def get_upcoming_releases(
@@ -80,7 +81,7 @@ def get_upcoming_releases(
             """),
             {"followed_names": followed_names, "today": today, "recent_cutoff": recent_cutoff, "limit": limit},
         ).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def get_upcoming_shows(
@@ -129,7 +130,7 @@ def get_upcoming_shows(
             """),
             params,
         ).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def get_artist_genres_for_names(artist_names: list[str]) -> dict[str, list[str]]:
@@ -159,7 +160,7 @@ def get_scrobble_identities(user_id: int) -> list[dict]:
             FROM user_external_identities
             WHERE user_id = :user_id AND provider IN ('lastfm', 'listenbrainz')
         """), {"user_id": user_id}).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def get_user_scrobble_identities(user_id: int) -> list[dict]:
@@ -170,7 +171,7 @@ def get_user_scrobble_identities(user_id: int) -> list[dict]:
             WHERE user_id = :user_id AND provider IN ('lastfm', 'listenbrainz')
               AND status = 'linked'
         """), {"user_id": user_id}).mappings().all()
-        return [dict(r) for r in rows]
+        return serialize_rows(rows)
 
 
 def update_user_location(user_id: int, fields: list[str], values: list) -> None:

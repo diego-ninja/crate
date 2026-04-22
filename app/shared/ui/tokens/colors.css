@@ -1,0 +1,15 @@
+/* crate-ui — Core semantic color tokens
+   Single source of truth for all apps. */
+
+@theme inline {
+  --color-background: #0a0a0f;
+  --color-foreground: #f1f5f9;
+  --color-primary: #06b6d4;
+  --color-primary-foreground: #0a0a0f;
+  --color-muted-foreground: #64748b;
+  --color-destructive: #ef4444;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-info: #3b82f6;
+  --color-ring: #06b6d4;
+}

@@ -169,8 +169,8 @@ export function Explore() {
                       `${playlist.track_count} tracks`,
                       playlist.follower_count > 0 ? `${playlist.follower_count} followers` : null,
                     ].filter(Boolean).join(" · ")}
-                    badge={playlist.is_smart ? "Smart" : "Curated"}
                     systemPlaylist
+                    crateManaged
                     isFollowed={playlist.is_followed}
                     href={`/curation/playlist/${playlist.id}`}
                     onPlay={() => handlePlayPlaylist(playlist.id, playlist.name)}

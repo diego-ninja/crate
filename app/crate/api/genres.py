@@ -9,6 +9,7 @@ from crate.api.schemas.genres import (
     GenreGraphResponse,
     GenreSummaryResponse,
     GenreTaxonomyInvalidStatusResponse,
+    GenreTaxonomyTreeResponse,
 )
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.db.genres import (
@@ -120,6 +121,66 @@ def get_invalid_taxonomy_nodes(request: Request, limit: int = Query(8, ge=1, le=
         "edge_count": sum(int(item.get("edge_count") or 0) for item in items),
         "items": items[:limit],
     }
+
+
+@router.get(
+    "/taxonomy/tree",
+    response_model=GenreTaxonomyTreeResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Full taxonomy tree with parent/children refs, EQ preset status, and counts",
+)
+def taxonomy_tree(request: Request):
+    _require_auth(request)
+    from crate.genre_taxonomy import get_genre_catalog, resolve_genre_eq_preset
+    from crate.db.genres import get_all_genres
+
+    catalog = get_genre_catalog()
+    genre_list = get_all_genres()
+    counts: dict[str, dict[str, int]] = {}
+    mbids: dict[str, str | None] = {}
+    wikidata_urls: dict[str, str | None] = {}
+    for g in genre_list:
+        cs = g.get("canonical_slug")
+        if cs:
+            existing = counts.get(cs, {"artist_count": 0, "album_count": 0})
+            existing["artist_count"] += g.get("artist_count") or 0
+            existing["album_count"] += g.get("album_count") or 0
+            counts[cs] = existing
+            if g.get("musicbrainz_mbid"):
+                mbids[cs] = g["musicbrainz_mbid"]
+            if g.get("wikidata_url"):
+                wikidata_urls[cs] = g["wikidata_url"]
+
+    nodes = []
+    top_level_slugs = []
+    for slug, meta in catalog.items():
+        preset = resolve_genre_eq_preset(slug)
+        c = counts.get(slug, {"artist_count": 0, "album_count": 0})
+        children = sorted(
+            s for s, m in catalog.items()
+            if slug in m.get("parents", [])
+        )
+        node = {
+            "slug": slug,
+            "name": meta["name"],
+            "description": meta.get("description") or None,
+            "musicbrainz_mbid": mbids.get(slug),
+            "wikidata_url": wikidata_urls.get(slug),
+            "top_level": meta.get("top_level", False),
+            "parent_slugs": meta.get("parents", []),
+            "children_slugs": children,
+            "alias_names": meta.get("aliases", []),
+            "artist_count": c["artist_count"],
+            "album_count": c["album_count"],
+            "eq_gains": list(preset["gains"]) if preset else None,
+            "eq_preset_source": preset["source"] if preset else None,
+            "eq_preset_inherited_from": preset.get("slug") if preset and preset["source"] == "inherited" else None,
+        }
+        nodes.append(node)
+        if meta.get("top_level", False):
+            top_level_slugs.append(slug)
+
+    return {"nodes": nodes, "top_level_slugs": sorted(top_level_slugs)}
 
 
 @router.get(
@@ -274,4 +335,50 @@ def update_genre_eq_preset(request: Request, slug: str, body: EqPresetBody):
         "slug": canonical_slug,
         "eq_gains": gains_param,
         "eq_preset_resolved": resolved,
+    }
+
+
+@router.post(
+    "/{slug}/generate-eq",
+    responses=_GENRE_RESPONSES,
+    summary="Generate an EQ preset for a genre using AI",
+)
+def generate_genre_eq(request: Request, slug: str, apply: bool = Query(False, description="Auto-apply the generated preset")):
+    """Use the configured LLM to generate a 10-band EQ preset for a genre."""
+    _require_admin(request)
+
+    canonical_slug = (slug or "").strip().lower()
+    if not canonical_slug:
+        raise HTTPException(status_code=400, detail="Slug is required")
+
+    node_id = get_genre_taxonomy_node_id(canonical_slug)
+    if not node_id:
+        raise HTTPException(status_code=404, detail="Genre not found in taxonomy")
+
+    # Get genre detail for context
+    detail = get_genre_detail(canonical_slug)
+    description = detail.get("description") if detail else None
+    parent_slugs = detail.get("parent_slugs", []) if detail else []
+
+    try:
+        from crate.llm.prompts.eq_preset import generate_eq_preset
+        result = generate_eq_preset(
+            genre_name=canonical_slug.replace("-", " ").title(),
+            description=description,
+            parent_genres=[s.replace("-", " ").title() for s in parent_slugs[:3]],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    gains = [max(-12.0, min(12.0, round(g, 1))) for g in result.gains]
+
+    if apply:
+        set_genre_eq_gains(canonical_slug, gains, reasoning=result.reasoning)
+        invalidate_runtime_taxonomy_cache(broadcast=True)
+
+    return {
+        "slug": canonical_slug,
+        "gains": gains,
+        "reasoning": result.reasoning,
+        "applied": apply,
     }

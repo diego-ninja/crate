@@ -5,7 +5,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } 
 import { CSS } from "@dnd-kit/utilities";
 
 import { PlaylistArtwork } from "@/components/playlists/PlaylistArtwork";
-import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from "@/components/ui/AppModal";
+import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from "@crate/ui/primitives/AppModal";
 import { api } from "@/lib/api";
 import { formatDuration } from "@/lib/utils";
 

@@ -53,6 +53,9 @@ class ArtistRow(BaseModel):
     enriched_at: datetime | None = None
     discogs_id: str | None = None
     lastfm_playcount: int | None = None
+    popularity: int | None = None
+    popularity_score: float | None = None
+    popularity_confidence: float | None = None
     discogs_profile: str | None = None
     discogs_members_json: Any | None = None
     latest_release_date: str | None = None
@@ -89,6 +92,8 @@ class AlbumRow(BaseModel):
     lastfm_listeners: int | None = None
     lastfm_playcount: int | None = None
     popularity: int | None = None
+    popularity_score: float | None = None
+    popularity_confidence: float | None = None
 
 
 class TrackRow(BaseModel):
@@ -143,6 +148,11 @@ class TrackRow(BaseModel):
     # Popularity
     lastfm_listeners: int | None = None
     lastfm_playcount: int | None = None
+    lastfm_top_rank: int | None = None
+    spotify_track_popularity: int | None = None
+    spotify_top_rank: int | None = None
+    popularity_score: float | None = None
+    popularity_confidence: float | None = None
     popularity: int | None = None
     rating: int = 0
 

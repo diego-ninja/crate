@@ -56,6 +56,7 @@ import { useSoftInterruption } from "@/contexts/use-soft-interruption";
 import { usePlayerShortcuts } from "@/contexts/use-player-shortcuts";
 import { useMediaSession } from "@/contexts/use-media-session";
 import { isOnline as isRuntimeOnline } from "@/lib/capacitor";
+import { api } from "@/lib/api";
 import { flushQueue as flushPlayEventQueue, postWithRetry } from "@/lib/play-event-queue";
 import {
   getCrossfadeDurationPreference,
@@ -441,6 +442,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   });
 
   const { user: authUser } = useAuth();
+  const nowPlayingTrackKeyRef = useRef<string | null>(null);
+  const nowPlayingStartedAtRef = useRef<string | null>(null);
 
   // Flush the pending play-event/history queue only while authenticated.
   // Without this gate we'd burn through retry attempts during the
@@ -467,6 +470,52 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       window.clearInterval(interval);
     };
   }, [authUser]);
+
+  useEffect(() => {
+    if (!authUser) {
+      nowPlayingTrackKeyRef.current = null;
+      return;
+    }
+
+    const activeTrack = isPlaying ? currentTrack : undefined;
+    const activeTrackKey = activeTrack ? getTrackCacheKey(activeTrack) : null;
+
+    if (nowPlayingTrackKeyRef.current && nowPlayingTrackKeyRef.current !== activeTrackKey) {
+      void api("/api/me/now-playing", "POST", { playing: false }).catch(() => {});
+      nowPlayingTrackKeyRef.current = null;
+      nowPlayingStartedAtRef.current = null;
+    }
+
+    if (!activeTrack) return;
+
+    if (nowPlayingTrackKeyRef.current !== activeTrackKey || !nowPlayingStartedAtRef.current) {
+      nowPlayingStartedAtRef.current = new Date().toISOString();
+    }
+
+    const sendNowPlaying = () => {
+      void api("/api/me/now-playing", "POST", {
+        playing: true,
+        track_id: activeTrack.libraryTrackId ?? null,
+        track_storage_id: activeTrack.storageId ?? null,
+        track_path: activeTrack.path || activeTrack.id,
+        title: activeTrack.title,
+        artist: activeTrack.artist,
+        album: activeTrack.album || "",
+        started_at: nowPlayingStartedAtRef.current,
+        device_type: "web",
+        app_platform: "listen-web",
+      }).catch(() => {});
+    };
+
+    nowPlayingTrackKeyRef.current = activeTrackKey;
+    sendNowPlaying();
+    const interval = window.setInterval(sendNowPlaying, 30_000);
+    return () => window.clearInterval(interval);
+  }, [
+    authUser,
+    currentTrack,
+    isPlaying,
+  ]);
 
   const addToRecentlyPlayed = useCallback((track: Track) => {
     setRecentlyPlayed((prev) => {

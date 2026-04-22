@@ -41,7 +41,7 @@ import type {
   PaginatedArtistsResponse,
   ReplayMix,
 } from "@/components/home/home-model";
-import { PullIndicator } from "@/components/ui/PullIndicator";
+import { PullIndicator } from "@crate/ui/primitives/PullIndicator";
 import { useArtistFollows } from "@/contexts/ArtistFollowsContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
@@ -93,8 +93,10 @@ export function Home() {
   const { play, playAll } = usePlayerActions();
   const { isFollowing, toggleArtistFollow } = useArtistFollows();
 
-  const { data: hero, refetch: refetchHero } =
-    useApi<HomeHeroArtist | null>("/api/me/home/hero");
+  const { data: heroRaw, refetch: refetchHero } =
+    useApi<HomeHeroArtist[] | HomeHeroArtist | null>("/api/me/home/hero");
+  // Normalize: backend now returns array, old cache may still return single object
+  const heroes: HomeHeroArtist[] = Array.isArray(heroRaw) ? heroRaw : heroRaw ? [heroRaw] : [];
   const { data: recentData, refetch: refetchRecent } =
     useApi<{ items: HomeRecentItem[] }>("/api/me/home/recently-played");
   const { data: mixesData, refetch: refetchMixes } =
@@ -163,13 +165,12 @@ export function Home() {
     navigate(homeSectionPath(sectionId));
   }
 
-  async function playHeroArtist() {
-    if (!hero) return;
+  async function playHeroArtist(artist: HomeHeroArtist) {
     try {
       const queue = await fetchArtistTopTracks({
-        artistId: hero.id,
-        artistSlug: hero.slug,
-        name: hero.name,
+        artistId: artist.id,
+        artistSlug: artist.slug,
+        name: artist.name,
       });
       if (!queue.length) {
         toast.info("No top tracks available yet");
@@ -177,23 +178,23 @@ export function Home() {
       }
       playAll(queue, 0, {
         type: "playlist",
-        name: `${hero.name} Top Tracks`,
-        radio: { seedType: "artist", seedId: hero.id },
+        name: `${artist.name} Top Tracks`,
+        radio: { seedType: "artist", seedId: artist.id },
       });
     } catch {
       toast.error("Failed to load artist tracks");
     }
   }
 
-  async function toggleHeroFollow() {
-    if (!hero?.id) return;
+  async function toggleHeroFollow(artist: HomeHeroArtist) {
     try {
-      await toggleArtistFollow(hero.id);
+      await toggleArtistFollow(artist.id);
+      // Refetch to replace followed artist with a new one
       refetchHero();
       toast.success(
-        isFollowing(hero.id)
-          ? `Unfollowed ${hero.name}`
-          : `Following ${hero.name}`,
+        isFollowing(artist.id)
+          ? `Unfollowed ${artist.name}`
+          : `Following ${artist.name}`,
       );
     } catch {
       toast.error("Failed to update follow status");
@@ -346,20 +347,28 @@ export function Home() {
         </div>
 
         <HomeTasteHero
-          hero={hero || null}
-          following={isFollowing(hero?.id)}
-          onOpenArtist={() => {
-            if (!hero) return;
+          heroes={heroes}
+          isFollowing={isFollowing}
+          onOpenArtist={(artist) => {
             navigate(
               artistPagePath({
-                artistId: hero.id,
-                artistSlug: hero.slug,
-                artistName: hero.name,
+                artistId: artist.id,
+                artistSlug: artist.slug,
+                artistName: artist.name,
               }),
             );
           }}
-          onPlay={() => void playHeroArtist()}
-          onToggleFollow={() => void toggleHeroFollow()}
+          onPlay={(artist) => void playHeroArtist(artist)}
+          onToggleFollow={(artist) => void toggleHeroFollow(artist)}
+          onInfo={(artist) => {
+            navigate(
+              artistPagePath({
+                artistId: artist.id,
+                artistSlug: artist.slug,
+                artistName: artist.name,
+              }),
+            );
+          }}
         />
       </div>
 

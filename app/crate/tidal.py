@@ -41,6 +41,25 @@ def is_authenticated() -> bool:
     return get_auth_token() is not None
 
 
+def ensure_auth() -> bool:
+    """Verify Tidal auth is valid, refreshing if needed. Returns True if authenticated."""
+    token = get_auth_token()
+    if not token:
+        return False
+    try:
+        resp = requests.get(
+            "https://api.tidal.com/v2/search",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"query": "test", "type": "ARTISTS", "limit": 1, "countryCode": "US"},
+            timeout=5,
+        )
+        if resp.status_code == 401:
+            return refresh_token()
+        return resp.status_code == 200
+    except Exception:
+        return True  # network error, don't block — tiddl will handle it
+
+
 def refresh_token() -> bool:
     """Refresh Tidal auth token."""
     try:
@@ -93,6 +112,123 @@ def logout() -> bool:
         return result.returncode == 0
     except (subprocess.SubprocessError, OSError):
         return False
+
+
+def get_album_track_count(album_id: str) -> int | None:
+    """Get expected track count for a Tidal album."""
+    token = get_auth_token()
+    if not token:
+        return None
+    try:
+        resp = requests.get(
+            f"https://api.tidal.com/v2/albums/{album_id}",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            params={"countryCode": get_setting("tidal_country", "US")},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("numberOfTracks")
+    except Exception:
+        pass
+    return None
+
+
+def get_artist_albums(artist_id: str, limit: int = 50, _retried: bool = False) -> list[dict]:
+    """Get albums for a Tidal artist by ID (uses v1 API)."""
+    token = get_auth_token()
+    if not token:
+        return []
+    try:
+        resp = requests.get(
+            f"https://api.tidal.com/v1/artists/{artist_id}/albums",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"countryCode": get_setting("tidal_country", "US"), "limit": limit, "offset": 0},
+            timeout=10,
+        )
+        if resp.status_code == 401:
+            if not _retried and refresh_token():
+                return get_artist_albums(artist_id, limit, _retried=True)
+            return []
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        items = data.get("items", []) if isinstance(data, dict) else data if isinstance(data, list) else []
+
+        def _artist_name(a: dict) -> str:
+            artist = a.get("artist")
+            if isinstance(artist, dict):
+                return artist.get("name", "")
+            artists = a.get("artists")
+            if isinstance(artists, list) and artists:
+                return artists[0].get("name", "")
+            return ""
+
+        return [
+            {
+                "id": str(a.get("id", "")),
+                "title": a.get("title", ""),
+                "artist": _artist_name(a),
+                "year": (a.get("releaseDate") or "")[:4],
+                "tracks": a.get("numberOfTracks", 0),
+                "cover": _tidal_cover(a.get("cover")),
+                "url": f"https://tidal.com/album/{a.get('id', '')}",
+                "quality": a.get("mediaMetadata", {}).get("tags", []),
+                "duration": a.get("duration", 0),
+                "release_date": a.get("releaseDate", ""),
+                "type": a.get("type", "ALBUM"),
+            }
+            for a in items
+        ]
+    except Exception as e:
+        log.warning("Failed to fetch artist albums: %s", e)
+        return []
+
+
+def get_album_tracks(album_id: str, _retried: bool = False) -> list[dict]:
+    """Get tracks for a Tidal album by ID (uses v1 API)."""
+    token = get_auth_token()
+    if not token:
+        return []
+    try:
+        resp = requests.get(
+            f"https://api.tidal.com/v1/albums/{album_id}/tracks",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"countryCode": get_setting("tidal_country", "US"), "limit": 100, "offset": 0},
+            timeout=10,
+        )
+        if resp.status_code == 401:
+            if not _retried and refresh_token():
+                return get_album_tracks(album_id, _retried=True)
+            return []
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        items = data.get("items", []) if isinstance(data, dict) else data if isinstance(data, list) else []
+
+        def _artist_name(t: dict) -> str:
+            artist = t.get("artist")
+            if isinstance(artist, dict):
+                return artist.get("name", "")
+            artists = t.get("artists")
+            if isinstance(artists, list) and artists:
+                return artists[0].get("name", "")
+            return ""
+
+        return [
+            {
+                "id": str(t.get("id", "")),
+                "title": t.get("title", ""),
+                "artist": _artist_name(t),
+                "track_number": t.get("trackNumber", 0),
+                "duration": t.get("duration", 0),
+                "url": f"https://tidal.com/track/{t.get('id', '')}",
+                "quality": t.get("mediaMetadata", {}).get("tags", []),
+            }
+            for t in items
+        ]
+    except Exception as e:
+        log.warning("Failed to fetch album tracks: %s", e)
+        return []
 
 
 # ── Search ───────────────────────────────────────────────────────
@@ -272,20 +408,47 @@ def download(url: str, quality: str = "max", task_id: str = "",
         )
 
         output_lines = []
+        tracks_downloaded = 0
+        total_tracks = 0
         for line in proc.stdout:
             line = line.rstrip()
             output_lines.append(line)
             if progress_callback:
-                match = re.search(r"(\d+)/(\d+)", line)
-                if match:
+                # tiddl outputs: "Downloaded <TrackName>  <quality> <path>"
+                dl_match = re.match(r"Downloaded\s+(.+?)\s{2,}\d+", line)
+                if dl_match:
+                    tracks_downloaded += 1
+                    track_name = dl_match.group(1).strip()
                     progress_callback({
                         "phase": "downloading",
-                        "done": int(match.group(1)),
-                        "total": int(match.group(2)),
+                        "done": tracks_downloaded,
+                        "total": total_tracks or None,
+                        "track": track_name,
                         "line": line,
                     })
+                # "Total downloads: N"
+                elif line.startswith("Total downloads:"):
+                    total_match = re.search(r"Total downloads:\s*(\d+)", line)
+                    if total_match:
+                        total_tracks = int(total_match.group(1))
+                        progress_callback({
+                            "phase": "downloading",
+                            "done": tracks_downloaded,
+                            "total": total_tracks,
+                            "line": line,
+                        })
+                # N/M pattern (older tiddl versions)
                 else:
-                    progress_callback({"phase": "downloading", "line": line})
+                    nm_match = re.search(r"(\d+)/(\d+)", line)
+                    if nm_match:
+                        progress_callback({
+                            "phase": "downloading",
+                            "done": int(nm_match.group(1)),
+                            "total": int(nm_match.group(2)),
+                            "line": line,
+                        })
+                    elif line and not line.startswith("Auth token"):
+                        progress_callback({"phase": "downloading", "line": line})
 
         proc.wait(timeout=3600)
 
@@ -293,6 +456,9 @@ def download(url: str, quality: str = "max", task_id: str = "",
         for f in processing_dir.rglob("*"):
             if f.is_file():
                 files.append(str(f.relative_to(processing_dir)))
+
+        audio_exts = {'.flac', '.mp3', '.m4a', '.ogg', '.opus', '.wav', '.aac'}
+        audio_files = [f for f in files if Path(f).suffix.lower() in audio_exts]
 
         if proc.returncode != 0:
             error_tail = "\n".join(output_lines[-10:])
@@ -308,6 +474,7 @@ def download(url: str, quality: str = "max", task_id: str = "",
                     "path": str(processing_dir),
                     "files": files,
                     "file_count": len(files),
+                    "audio_file_count": len(audio_files),
                     "partial": True,
                     "warning": error_tail,
                 }
@@ -323,6 +490,7 @@ def download(url: str, quality: str = "max", task_id: str = "",
             "path": str(processing_dir),
             "files": files,
             "file_count": len(files),
+            "audio_file_count": len(audio_files),
         }
 
     except subprocess.TimeoutExpired:

@@ -132,10 +132,34 @@ export function getStreamUrl(track: Track): string {
  *  that don't inherit browser cookies, so always include token. */
 function _tokenSuffix(): string {
   try {
-    const token = localStorage.getItem("crate-auth-token");
+    // Import would be circular, so read directly. Native Capacitor
+    // stores the token in the server store; web keeps it here.
+    const { isNative } = _capacitorRuntime();
+    let token: string | null = null;
+    if (isNative) {
+      // getCurrentServer() is cheap (localStorage read)
+      const raw = localStorage.getItem("crate-servers");
+      const currentId = localStorage.getItem("crate-current-server");
+      if (raw && currentId) {
+        const servers = JSON.parse(raw) as Array<{ id: string; token: string | null }>;
+        token = servers.find((s) => s.id === currentId)?.token ?? null;
+      }
+    }
+    if (!token) {
+      token = localStorage.getItem("listen-auth-token") || localStorage.getItem("crate-auth-token");
+    }
     return token ? `?token=${encodeURIComponent(token)}` : "";
   } catch {
     return "";
+  }
+}
+
+function _capacitorRuntime(): { isNative: boolean } {
+  try {
+    const w = window as any;
+    return { isNative: w?.Capacitor?.isNativePlatform?.() ?? false };
+  } catch {
+    return { isNative: false };
   }
 }
 

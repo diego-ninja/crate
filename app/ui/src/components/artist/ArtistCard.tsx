@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Badge } from "@/components/ui/badge";
+import { Check, Wrench } from "lucide-react";
+
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
 import { formatSize } from "@/lib/utils";
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
-import { Wrench, Check } from "lucide-react";
 
 interface ArtistCardProps {
   name: string;
@@ -34,7 +35,6 @@ export function ArtistCard({
 }: ArtistCardProps) {
   const navigate = useNavigate();
   const [imgError, setImgError] = useState(false);
-
   const letter = name.charAt(0).toUpperCase();
 
   function handleClick() {
@@ -48,51 +48,49 @@ export function ArtistCard({
   return (
     <div
       onClick={handleClick}
-      className={`bg-card border rounded-lg p-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 ${
-        isSelected ? "border-primary ring-2 ring-primary/40" : "border-border hover:border-primary"
+      className={`group cursor-pointer rounded-md p-2 text-left transition-colors hover:bg-white/5 ${
+        isSelected ? "bg-white/[0.06]" : ""
       }`}
     >
-      <div className="relative w-full aspect-square rounded-lg mb-2 overflow-hidden">
-        {selectMode && (
-          <div className="absolute top-2 left-2 z-10">
-            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
-              isSelected ? "bg-primary border-primary" : "border-white/50 bg-black/30"
+      <div className="relative mx-auto mb-3 aspect-square w-full overflow-hidden rounded-md bg-white/5">
+        {selectMode ? (
+          <div className="absolute left-2 top-2 z-10">
+            <div className={`flex h-5 w-5 items-center justify-center rounded-md border transition-colors ${
+              isSelected ? "border-primary bg-primary" : "border-white/40 bg-black/40"
             }`}>
-              {isSelected && <Check size={12} className="text-white" />}
+              {isSelected ? <Check size={11} className="text-primary-foreground" /> : null}
             </div>
           </div>
-        )}
-        {hasIssues && (
-          <div className="absolute top-2 right-2 z-10">
-            <Wrench size={14} className="text-amber-400/70" />
+        ) : null}
+        {hasIssues ? (
+          <div className="absolute right-2 top-2 z-10">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md border border-amber-400/20 bg-amber-500/12 text-amber-300">
+              <Wrench size={13} />
+            </div>
           </div>
-        )}
+        ) : null}
+
         {!imgError ? (
           <img
             src={artistPhotoApiUrl({ artistId, artistSlug, artistName: name })}
             alt={name}
             loading="lazy"
-            className="w-full h-full object-cover"
+            className="h-full w-full object-cover"
             onError={() => setImgError(true)}
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-            <span className="text-4xl font-bold text-primary/70">{letter}</span>
+          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/25 to-primary/5">
+            <span className="text-4xl font-bold text-primary/60">{letter}</span>
           </div>
         )}
       </div>
-      <div className="font-semibold text-sm truncate">{name}</div>
-      <div className="text-xs text-muted-foreground flex items-center gap-1 flex-wrap mt-1">
-        <span>{albums} album{albums !== 1 ? "s" : ""}</span>
-        <span>&middot;</span>
-        <span>{tracks} tracks</span>
-        <span>&middot;</span>
-        <span>{formatSize(size_mb)}</span>
-        {primary_format && (
-          <Badge variant="outline" className="text-[10px] px-1 py-0 ml-1">
-            {primary_format.replace(".", "").toUpperCase()}
-          </Badge>
-        )}
+
+      <div className="truncate text-center text-sm font-medium text-foreground">{name}</div>
+      <div className="mt-2 flex flex-wrap items-center justify-center gap-1.5">
+        {primary_format ? <CrateChip>{primary_format.replace(".", "").toUpperCase()}</CrateChip> : null}
+        <CrateChip>{albums} {albums === 1 ? "album" : "albums"}</CrateChip>
+        <CrateChip>{tracks} tracks</CrateChip>
+        <CrateChip>{formatSize(size_mb)}</CrateChip>
       </div>
     </div>
   );

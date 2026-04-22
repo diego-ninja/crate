@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
-import { VtNavLink as NavLink } from "@/components/ui/VtNavLink";
+import { VtNavLink as NavLink } from "@crate/ui/primitives/VtNavLink";
 import {
   Home, Compass, Rss, Library, Music, Disc, Heart, Users, User,
   ListMusic, PanelLeftClose, PanelLeftOpen, ChevronRight, BarChart3,
 } from "lucide-react";
-import { useIsDesktop } from "@/hooks/use-breakpoint";
+import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { PlayerBar } from "@/components/player/PlayerBar";
 import { TopBar } from "@/components/layout/TopBar";

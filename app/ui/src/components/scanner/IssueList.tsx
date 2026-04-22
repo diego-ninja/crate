@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@crate/ui/shadcn/badge";
 
 interface Issue {
   type: string;
@@ -53,7 +53,7 @@ export function IssueList({ issues }: IssueListProps) {
           {items.map((issue, i) => (
             <div
               key={i}
-              className="bg-card border border-border rounded-lg p-4 mb-2"
+              className="bg-card border border-border rounded-md p-4 mb-2"
             >
               <div className="flex justify-between items-start">
                 <div>

@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { timeAgo } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+import { Button } from "@crate/ui/shadcn/button";
+import { Card } from "@crate/ui/shadcn/card";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -11,7 +13,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { ErrorState } from "@/components/ui/error-state";
+import { ErrorState } from "@crate/ui/primitives/ErrorState";
 
 interface HealthIssue {
   id: number;
@@ -205,42 +207,55 @@ export function Health() {
   if (error) return <ErrorState message={error} onRetry={fetchIssues} />;
 
   return (
-    <div>
+    <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Stethoscope size={24} className="text-primary" />
-          <h1 className="text-2xl font-bold">Library Health</h1>
-          {totalOpen > 0 && (
-            <Badge variant="outline" className="text-yellow-500 border-yellow-500/30">{totalOpen} open</Badge>
-          )}
-          {totalOpen === 0 && !loading && (
-            <Badge variant="outline" className="text-green-500 border-green-500/30">Healthy</Badge>
-          )}
-          {lastScan && (
-            <span className="text-xs text-muted-foreground">Last scan: {timeAgo(lastScan)}</span>
+      <section className="rounded-md border border-white/10 bg-panel-surface/95 p-5 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-md border border-cyan-400/20 bg-cyan-400/12 text-primary shadow-[0_18px_40px_rgba(6,182,212,0.14)]">
+                <Stethoscope size={22} />
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-white">Library Health</h1>
+                <p className="text-sm text-white/55">
+                  Repair queue for structural mismatches, stale records, and metadata drift across the library.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {totalOpen > 0 ? (
+                <CrateChip className="border-yellow-500/25 bg-yellow-500/10 text-yellow-200">{totalOpen} open issues</CrateChip>
+              ) : !loading ? (
+                <CrateChip className="border-green-500/25 bg-green-500/10 text-green-300">Healthy</CrateChip>
+              ) : null}
+              {lastScan && <CrateChip>Last scan {timeAgo(lastScan)}</CrateChip>}
+              {Object.keys(counts).length > 0 && <CrateChip>{Object.keys(counts).length} check types</CrateChip>}
+            </div>
+          </div>
+          {isAdmin && (
+            <Button onClick={runScan} disabled={scanning}>
+              {scanning ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Stethoscope size={14} className="mr-2" />}
+              {scanning ? "Scanning..." : "Run scan"}
+            </Button>
           )}
         </div>
-        {isAdmin && (
-          <Button onClick={runScan} disabled={scanning} size="sm">
-            {scanning ? <Loader2 size={14} className="animate-spin mr-1" /> : <Stethoscope size={14} className="mr-1" />}
-            {scanning ? "Scanning..." : "Run Scan"}
-          </Button>
-        )}
-      </div>
+      </section>
 
       {/* Filter pills */}
       {Object.keys(counts).length > 0 && (
-        <div className="flex gap-2 flex-wrap mb-6">
-          <Button size="sm" variant={filter === null ? "default" : "outline"} onClick={() => setFilter(null)}>
-            All <Badge variant="secondary" className="ml-1.5">{totalOpen}</Badge>
-          </Button>
+        <div className="flex flex-wrap gap-2">
+          <CratePill active={filter === null} onClick={() => setFilter(null)}>
+            All
+            <span className="ml-1 text-white/40">{totalOpen}</span>
+          </CratePill>
           {Object.entries(counts)
             .sort(([, a], [, b]) => b - a)
             .map(([check, count]) => (
-              <Button key={check} size="sm" variant={filter === check ? "default" : "outline"} onClick={() => setFilter(check)}>
-                {CHECK_LABELS[check] || check.replace(/_/g, " ")} <Badge variant="secondary" className="ml-1.5">{count}</Badge>
-              </Button>
+              <CratePill key={check} active={filter === check} onClick={() => setFilter(check)}>
+                {CHECK_LABELS[check] || check.replace(/_/g, " ")}
+                <span className="ml-1 text-white/40">{count}</span>
+              </CratePill>
             ))}
         </div>
       )}
@@ -254,7 +269,7 @@ export function Health() {
 
       {/* Empty state */}
       {!loading && issues.length === 0 && (
-        <div className="text-center py-24">
+        <div className="rounded-md border border-white/10 bg-panel-surface px-6 py-24 text-center shadow-[0_28px_80px_rgba(0,0,0,0.24)]">
           <CheckCircle2 size={48} className="text-green-500 mx-auto mb-3 opacity-50" />
           <div className="text-lg font-semibold text-green-500">Library is healthy</div>
           <div className="text-sm text-muted-foreground mt-1">
@@ -274,55 +289,63 @@ export function Health() {
         const isFixing = fixing === check;
 
         return (
-          <Card key={check} className={`mb-3 border ${colors.border}`}>
+          <Card
+            key={check}
+            className={`mb-3 overflow-hidden border ${colors.border} bg-panel-surface shadow-[0_20px_52px_rgba(0,0,0,0.18)]`}
+          >
             {/* Group header */}
             <button
-              className="w-full flex items-center gap-3 p-4 text-left hover:bg-white/5 transition-colors"
+              className={cn(
+                "w-full text-left transition-colors",
+                "bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.05),transparent_46%)] hover:bg-white/[0.04]"
+              )}
               onClick={() => toggleGroup(check)}
             >
-              <Icon size={16} className={colors.text} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{label}</span>
-                  <Badge variant="outline" className="text-xs">{items.length}</Badge>
-                  <Badge variant="secondary" className={`text-[10px] ${colors.text}`}>{severity}</Badge>
+              <div className="flex items-start gap-3 p-4">
+                <div className={`mt-0.5 flex h-10 w-10 items-center justify-center rounded-md border shadow-[0_16px_36px_rgba(0,0,0,0.18)] ${colors.border} ${colors.bg}`}>
+                  <Icon size={16} className={colors.text} />
                 </div>
-                {description && !isExpanded && (
-                  <div className="text-xs text-muted-foreground mt-0.5 truncate">{description}</div>
-                )}
-              </div>
-              {/* Group action buttons */}
-              <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
-                {fixableCount > 0 && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs border-green-500/30 text-green-500 hover:bg-green-500/10"
-                    onClick={() => handleFixType(check)}
-                    disabled={isFixing}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-white">{label}</span>
+                    <CrateChip>{items.length}</CrateChip>
+                    <CrateChip className={`${colors.border} ${colors.bg} ${colors.text}`}>{severity}</CrateChip>
+                  </div>
+                  {description && !isExpanded && (
+                    <div className="mt-1 truncate text-xs text-white/45">{description}</div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  {fixableCount > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-9 rounded-md border-green-500/30 px-3 text-xs text-green-300 hover:bg-green-500/10"
+                      onClick={() => handleFixType(check)}
+                      disabled={isFixing}
+                    >
+                      {isFixing ? <Loader2 size={12} className="mr-1 animate-spin" /> : <Wrench size={12} className="mr-1" />}
+                      Fix all ({fixableCount})
+                    </Button>
+                  )}
+                  <ActionIconButton
+                    onClick={() => handleDismissType(check)}
+                    title="Dismiss all issues of this type"
                   >
-                    {isFixing ? <Loader2 size={12} className="animate-spin mr-1" /> : <Wrench size={12} className="mr-1" />}
-                    Fix All ({fixableCount})
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => handleDismissType(check)}
-                  title="Dismiss all issues of this type"
-                >
-                  <EyeOff size={12} />
-                </Button>
+                    <EyeOff size={14} />
+                  </ActionIconButton>
+                  <ActionIconButton title={isExpanded ? "Collapse" : "Expand"}>
+                    {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </ActionIconButton>
+                </div>
               </div>
-              {isExpanded ? <ChevronUp size={14} className="text-muted-foreground" /> : <ChevronDown size={14} className="text-muted-foreground" />}
             </button>
 
             {/* Expanded issue list */}
             {isExpanded && (
-              <div className="border-t border-border/50">
+              <div className="border-t border-white/8">
                 {description && (
-                  <div className="px-4 pt-3 pb-1 text-xs text-muted-foreground">{description}</div>
+                  <div className="px-4 pb-1 pt-3 text-xs text-white/45">{description}</div>
                 )}
                 <div className="px-2 pb-2">
                   {items.map((issue) => (
@@ -353,9 +376,9 @@ function IssueRow({ issue, onResolve, onDismiss }: {
   const path = details.path as string | undefined;
 
   return (
-    <div className="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/5 group transition-colors">
+    <div className="group flex items-center gap-3 rounded-md border border-white/6 bg-white/[0.04] px-3 py-3 transition-colors hover:bg-white/[0.06]">
       {/* Severity dot */}
-      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+      <span className={`w-1.5 h-1.5 rounded-md flex-shrink-0 ${
         issue.severity === "critical" ? "bg-red-500" :
         issue.severity === "high" ? "bg-orange-500" :
         issue.severity === "medium" ? "bg-yellow-500" : "bg-muted-foreground/50"
@@ -363,45 +386,44 @@ function IssueRow({ issue, onResolve, onDismiss }: {
 
       {/* Description */}
       <div className="flex-1 min-w-0">
-        <div className="text-xs truncate">{issue.description}</div>
+        <div className="truncate text-xs text-white">{issue.description}</div>
         {path && (
-          <div className="text-[10px] text-muted-foreground truncate font-mono mt-0.5">{path}</div>
+          <div className="mt-0.5 truncate font-mono text-[10px] text-white/35">{path}</div>
         )}
       </div>
 
       {/* Age */}
-      <span className="text-[10px] text-muted-foreground flex-shrink-0 hidden sm:block">
+      <CrateChip className="hidden sm:inline-flex">{timeAgo(issue.created_at)}</CrateChip>
+      <span className="sr-only">
         {timeAgo(issue.created_at)}
       </span>
 
       {/* Actions — always visible */}
-      <div className="flex gap-0.5 flex-shrink-0">
+      <div className="flex flex-shrink-0 gap-1">
         {issue.auto_fixable && (
-          <button
+          <ActionIconButton
             onClick={(e) => { e.stopPropagation(); onResolve(); }}
-            className="p-1.5 rounded-md text-green-500 hover:bg-green-500/10 transition-colors"
+            className="text-green-300 hover:bg-green-500/10 hover:text-green-300"
             title="Auto-fix this issue"
           >
             <Wrench size={13} />
-          </button>
+          </ActionIconButton>
         )}
-        <button
+        <ActionIconButton
           onClick={(e) => { e.stopPropagation(); onResolve(); }}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-green-500 hover:bg-green-500/10 transition-colors"
+          className="hover:bg-green-500/10 hover:text-green-300"
           title="Mark as resolved"
         >
           <CheckCircle2 size={13} />
-        </button>
-        <button
+        </ActionIconButton>
+        <ActionIconButton
           onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-          className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+          className="hover:bg-white/10 hover:text-white"
           title="Dismiss (won't show again until next scan finds it)"
         >
           <EyeOff size={13} />
-        </button>
+        </ActionIconButton>
       </div>
     </div>
   );
 }
-
-

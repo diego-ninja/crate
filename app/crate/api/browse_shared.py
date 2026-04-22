@@ -18,6 +18,62 @@ def display_name(folder_name: str) -> str:
     return _YEAR_PREFIX_RE.sub("", folder_name)
 
 
+def build_genre_profile(items: list[dict] | list[str], limit: int | None = None) -> list[dict]:
+    prepared: list[dict] = []
+
+    for item in items:
+        if isinstance(item, str):
+            name = item.strip()
+            if not name:
+                continue
+            prepared.append({"name": name, "slug": None, "weight": 1.0})
+            continue
+
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        weight = float(item.get("weight") or 0.0)
+        prepared.append(
+            {
+                "name": name,
+                "slug": item.get("slug"),
+                "source": item.get("source"),
+                "weight": max(weight, 0.0),
+            }
+        )
+
+    if limit is not None:
+        prepared = prepared[:limit]
+    if not prepared:
+        return []
+
+    total_weight = sum(item["weight"] for item in prepared)
+    if total_weight <= 0:
+        total_weight = float(len(prepared))
+        for item in prepared:
+            item["weight"] = 1.0
+
+    max_weight = max(item["weight"] for item in prepared)
+    if max_weight <= 0:
+        max_weight = 1.0
+
+    result: list[dict] = []
+    for item in prepared:
+        share = item["weight"] / total_weight if total_weight else 0.0
+        relative_percent = int(round((item["weight"] / max_weight) * 100)) if max_weight else 0
+        result.append(
+            {
+                "name": item["name"],
+                "slug": item.get("slug"),
+                "source": item.get("source"),
+                "weight": round(item["weight"], 4),
+                "share": round(share, 4),
+                "percent": max(1, relative_percent) if item["weight"] > 0 else 0,
+            }
+        )
+    return result
+
+
 def has_library_data() -> bool:
     return get_library_track_count() > 0
 
@@ -111,6 +167,7 @@ def fs_artist_detail(name: str) -> dict | None:
 
     primary_format = max(all_fmt_counts, key=all_fmt_counts.get) if all_fmt_counts else None
     top_genres = [genre for genre, _count in sorted(genre_counts.items(), key=lambda item: item[1], reverse=True)[:5]]
+    genre_profile = build_genre_profile(top_genres, limit=5)
 
     return {
         "name": name,
@@ -119,6 +176,7 @@ def fs_artist_detail(name: str) -> dict | None:
         "total_size_mb": round(total_size / (1024**2)),
         "primary_format": primary_format,
         "genres": top_genres,
+        "genre_profile": genre_profile,
     }
 
 
@@ -167,6 +225,10 @@ def fs_album_detail(artist: str, album: str) -> dict | None:
     total_size = sum(track.stat().st_size for track in tracks)
     total_length = sum(track["length_sec"] for track in track_list)
 
+    album_genres = []
+    if album_tags.get("genre"):
+        album_genres = [genre.strip() for genre in album_tags["genre"].split(",") if genre.strip()]
+
     return {
         "artist": artist,
         "name": album,
@@ -178,6 +240,8 @@ def fs_album_detail(artist: str, album: str) -> dict | None:
         "cover_file": cover_file,
         "tracks": track_list,
         "album_tags": album_tags,
+        "genres": album_genres,
+        "genre_profile": build_genre_profile(album_genres, limit=6),
     }
 
 

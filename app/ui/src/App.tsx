@@ -2,10 +2,8 @@ import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { api } from "@/lib/api";
 import { Toaster } from "sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { PlayerProvider } from "@/contexts/PlayerContext";
+import { TooltipProvider } from "@crate/ui/shadcn/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { NotificationProvider } from "@/contexts/NotificationContext";
 import { Shell } from "@/components/layout/Shell";
 import { Loader2 } from "lucide-react";
 
@@ -32,6 +30,9 @@ const NewReleases = lazy(() => import("@/pages/NewReleases").then(m => ({ defaul
 const Upcoming = lazy(() => import("@/pages/Upcoming").then(m => ({ default: m.Upcoming })));
 const Setup = lazy(() => import("@/pages/Setup").then(m => ({ default: m.Setup })));
 const Analysis = lazy(() => import("@/pages/Analysis").then(m => ({ default: m.Analysis })));
+const SystemHealth = lazy(() => import("@/pages/SystemHealth").then(m => ({ default: m.SystemHealth })));
+const Logs = lazy(() => import("@/pages/Logs").then(m => ({ default: m.Logs })));
+const PlaylistEditor = lazy(() => import("@/pages/PlaylistEditor").then(m => ({ default: m.PlaylistEditor })));
 
 function PageSpinner() {
   return (
@@ -50,7 +51,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background text-foreground">
         <p className="text-lg font-medium">Admin access required</p>
         <p className="text-sm text-muted-foreground">Your account ({user.email}) does not have admin privileges.</p>
-        <button onClick={() => window.location.href = "/login"} className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm text-white">
+        <button onClick={() => window.location.href = "/login"} className="mt-2 rounded-md bg-primary px-4 py-2 text-sm text-white">
           Switch account
         </button>
       </div>
@@ -76,50 +77,49 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <PlayerProvider>
-          <NotificationProvider>
-          <TooltipProvider>
-            <SetupGuard />
-            <Suspense fallback={<PageSpinner />}>
-              <Routes>
-                <Route path="setup" element={<Setup />} />
-                <Route path="login" element={<Login />} />
-                <Route
-                  element={
-                    <ProtectedRoute>
-                      <Shell />
-                    </ProtectedRoute>
-                  }
-                >
-                  <Route index element={<Dashboard />} />
-                  <Route path="browse" element={<Browse />} />
-                  <Route path="artists/:artistId/:slug" element={<Artist />} />
-                  <Route path="albums/:albumId/:slug" element={<Album />} />
-                  <Route path="health" element={<Health />} />
-                  <Route path="download" element={<DownloadPage />} />
-                  <Route path="insights" element={<Insights />} />
-                  <Route path="missing-albums" element={<MissingAlbums />} />
-                  <Route path="quality" element={<Quality />} />
-                  <Route path="analysis" element={<Analysis />} />
-                  <Route path="tasks" element={<Tasks />} />
-                  <Route path="playlists" element={<Playlists />} />
-                  <Route path="stack" element={<Stack />} />
-                  <Route path="genres" element={<Genres />} />
-                  <Route path="genres/:slug" element={<Genres />} />
-                  <Route path="timeline" element={<Timeline />} />
-                  <Route path="users" element={<Users />} />
-                  <Route path="discover" element={<Discover />} />
-                  <Route path="settings" element={<Settings />} />
-                  <Route path="profile" element={<Profile />} />
-                  <Route path="new-releases" element={<NewReleases />} />
-                  <Route path="upcoming" element={<Upcoming />} />
-                </Route>
-              </Routes>
-            </Suspense>
-          </TooltipProvider>
-          </NotificationProvider>
-          <Toaster theme="dark" position="bottom-right" richColors />
-        </PlayerProvider>
+        <TooltipProvider>
+          <SetupGuard />
+          <Suspense fallback={<PageSpinner />}>
+            <Routes>
+              <Route path="setup" element={<Setup />} />
+              <Route path="login" element={<Login />} />
+              <Route
+                element={
+                  <ProtectedRoute>
+                    <Shell />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<Dashboard />} />
+                <Route path="browse" element={<Browse />} />
+                <Route path="artists/:artistId/:slug" element={<Artist />} />
+                <Route path="albums/:albumId/:slug" element={<Album />} />
+                <Route path="health" element={<Health />} />
+                <Route path="download" element={<DownloadPage />} />
+                <Route path="insights" element={<Insights />} />
+                <Route path="missing-albums" element={<MissingAlbums />} />
+                <Route path="quality" element={<Quality />} />
+                <Route path="analysis" element={<Analysis />} />
+                <Route path="system" element={<SystemHealth />} />
+                <Route path="logs" element={<Logs />} />
+                <Route path="tasks" element={<Tasks />} />
+                <Route path="playlists" element={<Playlists />} />
+                <Route path="playlists/:playlistId" element={<PlaylistEditor />} />
+                <Route path="stack" element={<Stack />} />
+                <Route path="genres" element={<Genres />} />
+                <Route path="genres/:slug" element={<Genres />} />
+                <Route path="timeline" element={<Timeline />} />
+                <Route path="users" element={<Users />} />
+                <Route path="discover" element={<Discover />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="profile" element={<Profile />} />
+                <Route path="new-releases" element={<NewReleases />} />
+                <Route path="upcoming" element={<Upcoming />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </TooltipProvider>
+        <Toaster theme="dark" position="bottom-right" richColors />
       </AuthProvider>
     </BrowserRouter>
   );

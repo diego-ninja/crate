@@ -1,0 +1,9 @@
+{
+  "name": "crate",
+  "private": true,
+  "workspaces": [
+    "app/shared/ui",
+    "app/ui",
+    "app/listen"
+  ]
+}

@@ -1,24 +1,33 @@
 """Tests for library health checks."""
 
-from unittest.mock import patch, MagicMock
 from pathlib import Path
 import tempfile
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 class TestDuplicateFolders:
+    @staticmethod
+    def _fake_dir(name: str) -> MagicMock:
+        entry = MagicMock()
+        entry.name = name
+        entry.is_dir.return_value = True
+        return entry
+
     def test_detects_case_duplicates(self):
         """'Shame' and 'shame' should be detected as duplicates."""
         from crate.health_check import LibraryHealthCheck
 
-        with tempfile.TemporaryDirectory() as lib:
-            (Path(lib) / "Shame").mkdir()
-            (Path(lib) / "shame").mkdir()
-            (Path(lib) / "Unique Band").mkdir()
-
-            config = {"library_path": lib}
-            hc = LibraryHealthCheck(config)
-            issues = hc._check_duplicate_folders()
+        config = {"library_path": "/tmp/fake-library"}
+        hc = LibraryHealthCheck(config)
+        hc.library_path = MagicMock()
+        hc.library_path.is_dir.return_value = True
+        hc.library_path.iterdir.return_value = [
+            self._fake_dir("Shame"),
+            self._fake_dir("shame"),
+            self._fake_dir("Unique Band"),
+        ]
+        issues = hc._check_duplicate_folders()
 
         assert len(issues) == 1
         assert issues[0]["check"] == "duplicate_folders"

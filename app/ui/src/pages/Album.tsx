@@ -6,13 +6,14 @@ import { AudioProfileCard } from "@/components/album/AudioProfileCard";
 import { TrackTable, type AudioAnalysisTrack } from "@/components/album/TrackTable";
 import { TagEditor } from "@/components/album/TagEditor";
 import { RelatedAlbums } from "@/components/album/RelatedAlbums";
+import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
 import { MatchCard } from "@/components/scanner/MatchCard";
-import { Button } from "@/components/ui/button";
+import { Button } from "@crate/ui/shadcn/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@crate/ui/shadcn/skeleton";
 import { api } from "@/lib/api";
 import { albumApiPath, albumCoverApiUrl, artistPagePath } from "@/lib/library-routes";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@crate/ui/shadcn/badge";
 import { AudioWaveform, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
@@ -32,6 +33,9 @@ interface AlbumData {
   total_length_sec: number;
   has_cover: boolean;
   cover_file: string | null;
+  popularity?: number | null;
+  popularity_score?: number | null;
+  popularity_confidence?: number | null;
   tracks: {
     id?: number;
     filename: string;
@@ -39,6 +43,9 @@ interface AlbumData {
     size_mb: number;
     bitrate: number | null;
     length_sec: number;
+    popularity?: number | null;
+    popularity_score?: number | null;
+    popularity_confidence?: number | null;
     rating?: number;
     tags: Record<string, string>;
   }[];
@@ -50,6 +57,7 @@ interface AlbumData {
     musicbrainz_albumid?: string | null;
   };
   genres?: string[];
+  genre_profile?: GenreProfileItem[];
 }
 
 interface MatchResult {
@@ -131,10 +139,10 @@ export function Album() {
 
   if (loading) {
     return (
-      <div className="-mx-8 -mt-8">
-        <div className="h-[300px] bg-card animate-pulse" />
-        <div className="px-8 pt-6">
-          <Skeleton className="h-6 w-48 mb-4" />
+      <div className="-mt-16 md:-mt-[6.5rem]">
+        <div className="-mx-4 h-[420px] animate-pulse bg-card md:-mx-8 md:h-[560px]" />
+        <div className="mx-auto w-full max-w-[1160px] px-4 pt-6 md:px-8">
+          <Skeleton className="mb-4 h-6 w-48" />
           <div className="space-y-2">
             {Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-10 w-full" />)}
           </div>
@@ -146,8 +154,7 @@ export function Album() {
   if (!data) return <div className="text-center py-12 text-muted-foreground">Not found</div>;
 
   return (
-    <div className="-mx-8 -mt-8">
-      <div className="px-8 pt-8">
+    <div className="-mt-16 md:-mt-[6.5rem]">
         <AlbumHeader
           albumId={data.id}
           albumSlug={data.slug}
@@ -161,9 +168,13 @@ export function Album() {
           totalLengthSec={data.total_length_sec}
           totalSizeMb={data.total_size_mb}
           hasCover={data.has_cover}
-          tracks={data.tracks}
+          popularity={data.popularity}
+          popularityScore={data.popularity_score}
+          popularityConfidence={data.popularity_confidence}
           genres={data.genres}
+          genreProfile={data.genre_profile}
           hasAnalysis={analysisData != null && Object.values(analysisData).some((t) => t.tempo != null)}
+          isAdmin={isAdmin}
           onAnalysisComplete={() => {
             if (data?.artist_id == null) return;
             api<Record<string, AudioAnalysisTrack>>(`/api/artists/${data.artist_id}/analysis-data`)
@@ -221,9 +232,8 @@ export function Album() {
             </Button>
           )}
         </AlbumHeader>
-      </div>
 
-      <div className="px-8 pb-12">
+      <div className="mx-auto w-full max-w-[1160px] px-4 pb-12 pt-6 md:px-8">
         {showTags && data.id != null && (
           <TagEditor
             albumId={data.id}
@@ -272,7 +282,15 @@ export function Album() {
           </div>
         )}
 
-        {data.genres && data.genres.length > 0 && (
+        {data.genre_profile && data.genre_profile.length > 0 ? (
+          <div className="mb-4">
+            <GenrePillRow
+              items={data.genre_profile}
+              max={8}
+              onSelect={(genre) => navigate(`/browse?genre=${encodeURIComponent(genre.name.toLowerCase())}`)}
+            />
+          </div>
+        ) : data.genres && data.genres.length > 0 && (
           <div className="mb-4 flex gap-1.5 flex-wrap">
             {data.genres.map(g => (
               <Badge key={g} variant="secondary" className="text-xs cursor-pointer hover:bg-primary/20"

@@ -1,8 +1,8 @@
-import json
 import logging
 import time
 from pathlib import Path
-from crate.db import create_task, emit_task_event, get_task, save_scan_result, update_task
+from crate.db import create_task, emit_task_event, get_task, save_scan_result
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.library_sync import LibrarySync
 from crate.matcher import apply_match, match_album
 from crate.report import save_report
@@ -32,10 +32,11 @@ def _handle_scan(task_id: str, params: dict, config: dict) -> dict:
     }
     total_issues = 0
     current_scanner_index = 0
-    last_write = 0.0
+
+    p = TaskProgress(phase="scanning", phase_count=len(scanner_names))
 
     def _progress_callback(data: dict):
-        nonlocal current_scanner_index, last_write
+        nonlocal current_scanner_index
 
         scanner_name = data["scanner"]
         if scanner_name in scanner_names:
@@ -43,24 +44,12 @@ def _handle_scan(task_id: str, params: dict, config: dict) -> dict:
             if scanner_index > current_scanner_index:
                 current_scanner_index = scanner_index
 
-        progress = json.dumps(
-            {
-                "scanner": scanner_name,
-                "artist": data.get("artist", ""),
-                "artists_done": data.get("artists_done", 0),
-                "artists_total": data.get("artists_total", 0),
-                "issues_found": total_issues + data.get("issues_found", 0),
-                "issues_by_type": issues_by_type,
-                "scanners_done": scanners_done,
-                "scanners_total": len(scanner_names),
-                "current_scanner_index": current_scanner_index,
-            }
-        )
-
-        now = time.monotonic()
-        if now - last_write >= 1.0:
-            update_task(task_id, progress=progress)
-            last_write = now
+        p.phase = scanner_name
+        p.phase_index = current_scanner_index
+        p.done = data.get("artists_done", p.done)
+        p.total = data.get("artists_total", p.total)
+        p.item = entity_label(artist=data.get("artist", ""))
+        emit_progress(task_id, p)
 
     def _scanner_done_callback(name: str, found_issues):
         nonlocal total_issues
@@ -105,12 +94,16 @@ def _handle_batch_retag(task_id: str, params: dict, config: dict) -> dict:
     albums = params.get("albums", [])
     results = []
 
+    p = TaskProgress(phase="retagging", phase_count=1, total=len(albums))
+
     for index, item in enumerate(albums):
         if is_cancelled(task_id):
             break
         artist = item.get("artist")
         album_name = item.get("album")
-        update_task(task_id, progress=f"Retagging {index+1}/{len(albums)}: {artist}/{album_name}")
+        p.done = index + 1
+        p.item = entity_label(artist=artist or "", album=album_name or "")
+        emit_progress(task_id, p)
 
         album_dir = lib / artist / album_name
         if not album_dir.is_dir():
@@ -135,13 +128,24 @@ def _handle_batch_retag(task_id: str, params: dict, config: dict) -> dict:
         result["match_score"] = best["match_score"]
         results.append(result)
 
+    retagged = sum(1 for r in results if "error" not in r)
+    emit_task_event(task_id, "info", {"message": f"Batch retag complete: {retagged}/{len(albums)} albums retagged"})
     return {"results": results}
 
 
 def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
     sync = LibrarySync(config)
     emit_task_event(task_id, "info", {"message": "Starting library sync..."})
-    return sync.full_sync(progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)))
+
+    p = TaskProgress(phase="syncing", phase_count=1)
+
+    def _sync_progress(data):
+        p.done = data.get("done", p.done)
+        p.total = data.get("total", p.total)
+        p.item = data.get("artist", p.item)
+        emit_progress(task_id, p)
+
+    return sync.full_sync(progress_callback=_sync_progress)
 
 
 def _handle_fix_issues(task_id: str, params: dict, config: dict) -> dict:
@@ -169,7 +173,8 @@ def _handle_fix_issues(task_id: str, params: dict, config: dict) -> dict:
             )
         )
 
-    update_task(task_id, progress=json.dumps({"phase": "fixing", "total": len(issue_objs)}))
+    p = TaskProgress(phase="fixing", phase_count=1, total=len(issue_objs))
+    emit_progress(task_id, p, force=True)
     fixer = LibraryFixer(config)
     emit_task_event(task_id, "info", {"message": f"Fixing {len(issue_objs)} issues..."})
     fixer.fix(issue_objs, dry_run=False)

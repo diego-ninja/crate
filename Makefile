@@ -48,13 +48,12 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@echo "$(GREEN)Backend levantado (Postgres, Redis, API, Worker, Caddy)$(NC)"
 	@echo ""
 	@echo "Arrancando frontends..."
-	@cd app/ui && npm install --silent 2>/dev/null; cd ../..
-	@cd app/listen && npm install --silent 2>/dev/null; cd ../..
+	@npm install --silent 2>/dev/null
 	@cd app/docs && npm install --silent 2>/dev/null; cd ../..
 	@cd app/site && npm install --silent 2>/dev/null; cd ../..
 	@cd app/reference && npm install --silent 2>/dev/null; cd ../..
-	@(cd app/ui && npx vite --port 5173 --strictPort --host > /dev/null 2>&1 &)
-	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
+	@(npm run --workspace=app/ui dev -- --port 5173 --strictPort --host > /dev/null 2>&1 &)
+	@(npm run --workspace=app/listen dev -- --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/docs && npx vite --port 5175 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/site && npx vite --port 5176 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/reference && npx vite --port 5177 --strictPort --host > /dev/null 2>&1 &)
@@ -79,11 +78,11 @@ dev-back: ## Solo backend (Postgres + Redis + API + Worker) sin frontends
 
 .PHONY: dev-admin
 dev-admin: ## Arrancar solo Admin UI dev server (:5173)
-	@cd app/ui && npx vite --port 5173 --host
+	@npm run --workspace=app/ui dev -- --port 5173 --host
 
 .PHONY: dev-listen
 dev-listen: ## Arrancar solo Listen dev server (:5174)
-	@cd app/listen && npx vite --port 5174 --host
+	@npm run --workspace=app/listen dev -- --port 5174 --host
 
 .PHONY: dev-docs
 dev-docs: ## Arrancar solo Docs dev server (:5175)
@@ -127,8 +126,8 @@ dev-rebuild: ## Rebuild y restart todo
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build --force-recreate
-	@(cd app/ui && npx vite --port 5173 --strictPort --host > /dev/null 2>&1 &)
-	@(cd app/listen && npx vite --port 5174 --strictPort --host > /dev/null 2>&1 &)
+	@(npm run --workspace=app/ui dev -- --port 5173 --strictPort --host > /dev/null 2>&1 &)
+	@(npm run --workspace=app/listen dev -- --port 5174 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/docs && npx vite --port 5175 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/site && npx vite --port 5176 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/reference && npx vite --port 5177 --strictPort --host > /dev/null 2>&1 &)

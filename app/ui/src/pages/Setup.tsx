@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@crate/ui/shadcn/button";
+import { Input } from "@crate/ui/shadcn/input";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -75,7 +75,7 @@ export function Setup() {
         <div className="flex items-center justify-center gap-2 mb-8">
           {STEPS.map((s, i) => (
             <div key={s} className="flex items-center gap-2">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
+              <div className={`w-8 h-8 rounded-md flex items-center justify-center text-xs font-bold transition-colors ${
                 i < step ? "bg-primary text-primary-foreground" :
                 i === step ? "bg-primary/20 text-primary border border-primary" :
                 "bg-muted text-muted-foreground"
@@ -89,7 +89,7 @@ export function Setup() {
           ))}
         </div>
 
-        <div className="bg-card border border-border rounded-xl p-8 shadow-xl">
+        <div className="bg-card border border-border rounded-md p-8 shadow-xl">
           {/* Step 0: Admin Account */}
           {step === 0 && (
             <div>
@@ -190,7 +190,7 @@ export function Setup() {
           {/* Step 3: Done */}
           {step === 3 && (
             <div className="text-center">
-              <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto mb-4">
+              <div className="w-16 h-16 rounded-md bg-green-500/10 flex items-center justify-center mx-auto mb-4">
                 <Check size={32} className="text-green-500" />
               </div>
               <h2 className="text-lg font-bold mb-2">You're all set!</h2>

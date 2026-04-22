@@ -3,7 +3,9 @@ import { Activity, SlidersHorizontal, Sparkles, Sun, Tag, Volume2, X, Zap } from
 import type { EqFeatures } from "@/hooks/use-eq-features";
 import { useEqualizer } from "@/hooks/use-equalizer";
 import type { TrackGenre } from "@/hooks/use-track-genre";
-import { EQ_BANDS, EQ_GAIN_MAX, EQ_GAIN_MIN, type EqPresetName } from "@/lib/equalizer";
+import { type EqPresetName } from "@/lib/equalizer";
+import { EqBands } from "@crate/ui/domain/player/EqBands";
+import { CratePill, CrateChip } from "@crate/ui/primitives/CrateBadge";
 
 const PRESET_LABELS: Record<EqPresetName, string> = {
   flat: "Flat",
@@ -49,17 +51,9 @@ function FeatureChip({
   zone: "neutral" | "active";
 }) {
   return (
-    <div
-      className={`flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${
-        zone === "active"
-          ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-200"
-          : "border-white/10 bg-white/[0.03] text-white/60"
-      }`}
-      title={label}
-    >
-      <Icon size={10} />
-      <span className="font-mono tabular-nums">{value}</span>
-    </div>
+    <CrateChip active={zone === "active"} icon={Icon} className="font-mono tabular-nums">
+      <span title={label}>{value}</span>
+    </CrateChip>
   );
 }
 
@@ -257,7 +251,6 @@ export function EqualizerPanel({ onClose }: EqualizerPanelProps) {
     resetToFlat,
   } = useEqualizer();
 
-  const range = EQ_GAIN_MAX - EQ_GAIN_MIN;
   // Either adaptive mode takes over the band gains, so manual controls
   // (presets, sliders, reset) become read-only to avoid fighting the
   // automatic curve.
@@ -275,44 +268,28 @@ export function EqualizerPanel({ onClose }: EqualizerPanelProps) {
           {/* Genre toggle — picks a preset from the track's primary
               genre. Mutually exclusive with Adaptive (the hook enforces
               this). Disabled when the EQ itself is off. */}
-          <button
-            type="button"
+          <CratePill
+            active={genreAdaptive}
             disabled={!enabled}
             onClick={() => toggleGenreAdaptive(!genreAdaptive)}
-            aria-pressed={genreAdaptive}
-            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
-              genreAdaptive
-                ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300"
-                : "border-white/10 bg-white/[0.03] text-white/70 hover:border-white/20 hover:text-foreground"
-            } ${!enabled ? "cursor-not-allowed opacity-40" : ""}`}
-            title="Auto-select a preset from the track's primary genre"
+            icon={Tag}
           >
-            <Tag size={10} />
             Genre
             {genreAdaptive && genreAdaptiveStatus === "loading" ? (
               <span className="ml-1 text-[9px] opacity-60">…</span>
             ) : null}
-          </button>
-          {/* Adaptive toggle — derives gains from track analysis in
-              real time. Disabled when the EQ itself is off. */}
-          <button
-            type="button"
+          </CratePill>
+          <CratePill
+            active={adaptive}
             disabled={!enabled}
             onClick={() => toggleAdaptive(!adaptive)}
-            aria-pressed={adaptive}
-            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
-              adaptive
-                ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300"
-                : "border-white/10 bg-white/[0.03] text-white/70 hover:border-white/20 hover:text-foreground"
-            } ${!enabled ? "cursor-not-allowed opacity-40" : ""}`}
-            title="Adjust gains automatically using the track's analysis features"
+            icon={Sparkles}
           >
-            <Sparkles size={10} />
             Adaptive
             {adaptive && adaptiveStatus === "loading" ? (
               <span className="ml-1 text-[9px] opacity-60">…</span>
             ) : null}
-          </button>
+          </CratePill>
           <label className="flex items-center gap-1.5 text-xs font-medium text-foreground">
             <input
               type="checkbox"
@@ -337,24 +314,16 @@ export function EqualizerPanel({ onClose }: EqualizerPanelProps) {
 
       {/* Preset picker — compact pill scroller */}
       <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-        {(Object.keys(PRESET_LABELS) as EqPresetName[]).map((name) => {
-          const isActive = preset === name && !adaptive && !genreAdaptive;
-          return (
-            <button
-              key={name}
-              type="button"
-              disabled={!manualControlsEnabled}
-              onClick={() => applyPreset(name)}
-              className={`rounded-full border px-2 py-0.5 text-[10px] transition-colors ${
-                isActive
-                  ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300"
-                  : "border-white/10 bg-white/[0.03] text-white/70 hover:border-white/20 hover:text-foreground"
-              } ${!manualControlsEnabled ? "cursor-not-allowed opacity-40" : ""}`}
-            >
-              {PRESET_LABELS[name]}
-            </button>
-          );
-        })}
+        {(Object.keys(PRESET_LABELS) as EqPresetName[]).map((name) => (
+          <CratePill
+            key={name}
+            active={preset === name && !adaptive && !genreAdaptive}
+            disabled={!manualControlsEnabled}
+            onClick={() => applyPreset(name)}
+          >
+            {PRESET_LABELS[name]}
+          </CratePill>
+        ))}
       </div>
 
       <div className="flex items-center justify-between">
@@ -405,39 +374,12 @@ export function EqualizerPanel({ onClose }: EqualizerPanelProps) {
       ) : null}
 
       {/* Band sliders */}
-      <div
-        className={`grid grid-cols-10 gap-1.5 rounded-xl border border-white/10 bg-black/30 p-3 ${
-          !enabled ? "pointer-events-none opacity-40" : ""
-        } ${adaptive || genreAdaptive ? "pointer-events-none" : ""}`}
-      >
-        {EQ_BANDS.map((band, index) => {
-          const gainDb = gains[index] ?? 0;
-          const pct = ((gainDb - EQ_GAIN_MIN) / range) * 100;
-          return (
-            <div key={band.freq} className="flex flex-col items-center gap-1">
-              <span className="font-mono text-[9px] tabular-nums text-muted-foreground">
-                {gainDb > 0 ? `+${gainDb.toFixed(0)}` : gainDb.toFixed(0)}
-              </span>
-              <div className="relative h-24 w-full">
-                <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/20" />
-                <input
-                  type="range"
-                  min={EQ_GAIN_MIN}
-                  max={EQ_GAIN_MAX}
-                  step={0.5}
-                  value={gainDb}
-                  aria-label={`${band.label} Hz`}
-                  onChange={(event) => updateBand(index, Number(event.target.value))}
-                  className="absolute left-1/2 top-1/2 h-1.5 w-24 -translate-x-1/2 -translate-y-1/2 -rotate-90 cursor-pointer accent-cyan-400"
-                  style={{
-                    background: `linear-gradient(to right, rgba(34,211,238,0.3) ${pct}%, rgba(255,255,255,0.05) ${pct}%)`,
-                  }}
-                />
-              </div>
-              <span className="font-mono text-[9px] text-muted-foreground">{band.label}</span>
-            </div>
-          );
-        })}
+      <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+        <EqBands
+          gains={gains}
+          onBandChange={manualControlsEnabled ? updateBand : undefined}
+          disabled={!enabled}
+        />
       </div>
     </div>
   );

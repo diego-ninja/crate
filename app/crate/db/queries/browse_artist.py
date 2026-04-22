@@ -49,17 +49,46 @@ def get_similar_artist_refs(names: list[str]) -> dict[str, dict]:
         }
 
 
-def get_browse_filter_genres() -> list[dict]:
+def get_browse_filter_genres(country: str = "", decade: str = "", format: str = "") -> list[dict]:
+    where_clauses = ["1=1"]
+    params: dict[str, str | int] = {}
+
+    if country:
+        where_clauses.append("la.country = :country")
+        params["country"] = country
+
+    if decade:
+        try:
+            decade_start = int(decade.rstrip("s"))
+            where_clauses.append("la.formed IS NOT NULL AND length(la.formed) >= 4")
+            where_clauses.append("CAST(substring(la.formed, 1, 4) AS INTEGER) BETWEEN :decade_start AND :decade_end")
+            params["decade_start"] = decade_start
+            params["decade_end"] = decade_start + 9
+        except (ValueError, TypeError):
+            pass
+
+    if format:
+        where_clauses.append("la.primary_format = :format")
+        params["format"] = format
+
+    where_sql = " AND ".join(where_clauses)
+
     with transaction_scope() as session:
         rows = session.execute(
-            text("""
-            SELECT g.name, COUNT(DISTINCT ag.artist_name) AS cnt
-            FROM genres g JOIN artist_genres ag ON g.id = ag.genre_id
-            GROUP BY g.name HAVING COUNT(DISTINCT ag.artist_name) >= 1
-            ORDER BY cnt DESC LIMIT 50
-            """)
+            text(f"""
+            SELECT g.name, COUNT(DISTINCT la.name) AS cnt
+            FROM library_artists la
+            JOIN artist_genres ag ON la.name = ag.artist_name
+            JOIN genres g ON g.id = ag.genre_id
+            WHERE {where_sql}
+            GROUP BY g.name
+            HAVING COUNT(DISTINCT la.name) >= 1
+            ORDER BY cnt DESC, g.name ASC
+            LIMIT 200
+            """),
+            params,
         ).mappings().all()
-        return [{"name": row["name"], "count": row["cnt"]} for row in rows]
+        return [{"name": row["name"], "cnt": row["cnt"]} for row in rows]
 
 
 def get_browse_filter_countries() -> list[dict]:
@@ -217,6 +246,22 @@ def get_artist_top_genres(artist_name: str) -> list[str]:
             {"artist_name": artist_name},
         ).mappings().all()
         return [row["name"] for row in rows]
+
+
+def get_artist_genre_profile(artist_name: str, limit: int = 8) -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
+                SELECT g.name, g.slug, ag.weight, ag.source
+                FROM artist_genres ag
+                JOIN genres g ON g.id = ag.genre_id
+                WHERE ag.artist_name = :artist_name
+                ORDER BY ag.weight DESC NULLS LAST, g.name ASC
+                LIMIT :limit
+            """),
+            {"artist_name": artist_name, "limit": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
 
 
 def get_all_artist_genre_map() -> dict[str, list[str]]:

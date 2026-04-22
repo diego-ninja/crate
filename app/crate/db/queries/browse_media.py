@@ -156,10 +156,25 @@ def get_track_artist_genres(track_id: int) -> list[dict]:
         return [dict(row) for row in rows]
 
 
+_track_path_cache: dict[int, str] = {}
+_TRACK_PATH_CACHE_MAX = 4096
+
+
 def get_track_path(track_id: int) -> str | None:
+    cached = _track_path_cache.get(track_id)
+    if cached is not None:
+        return cached
     with transaction_scope() as session:
         row = session.execute(text("SELECT path FROM library_tracks WHERE id = :track_id"), {"track_id": track_id}).mappings().first()
-        return row["path"] if row else None
+        path = row["path"] if row else None
+    if path and len(_track_path_cache) < _TRACK_PATH_CACHE_MAX:
+        _track_path_cache[track_id] = path
+    return path
+
+
+def clear_track_path_cache():
+    """Called after library sync to invalidate stale paths."""
+    _track_path_cache.clear()
 
 
 def get_track_path_by_storage_id(storage_id: str) -> str | None:

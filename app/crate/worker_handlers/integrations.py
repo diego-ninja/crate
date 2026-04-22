@@ -2,6 +2,7 @@ import json
 import logging
 from crate.db import emit_task_event, update_task
 from crate.db.jobs.integrations import get_artists_with_similar_json
+from crate.task_progress import TaskProgress, emit_progress, entity_label
 from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
@@ -21,15 +22,16 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
     synced = 0
     shows_found = 0
 
+    p = TaskProgress(phase="fetching", phase_count=2, total=total)
+
     for index, artist in enumerate(artists):
         if is_cancelled(task_id):
             break
         name = artist["name"]
+        p.done = index
+        p.item = name
         if index % 10 == 0:
-            update_task(
-                task_id,
-                progress=json.dumps({"phase": "fetching", "artist": name, "done": index, "total": total}),
-            )
+            emit_progress(task_id, p)
 
         try:
             events = tm_get_shows(name, limit=20)
@@ -59,10 +61,22 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
                 )
                 shows_found += 1
             synced += 1
+            if events:
+                emit_task_event(task_id, "info", {
+                    "message": f"Found {len(events)} shows for {name}",
+                    "artist": name,
+                    "count": len(events),
+                })
         except Exception:
             log.debug("Failed to sync shows for %s", name, exc_info=True)
 
+    p.phase = "cleanup"
+    p.phase_index = 1
+    emit_progress(task_id, p, force=True)
     deleted = delete_past_shows(days_old=30)
+    emit_task_event(task_id, "info", {
+        "message": f"Sync complete: {synced} artists checked, {shows_found} shows found, {deleted} old shows removed",
+    })
     return {"artists_checked": synced, "shows_found": shows_found, "old_deleted": deleted}
 
 
@@ -92,7 +106,8 @@ def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> d
         except Exception:
             log.warning("backfill_similarities: failed for %s", row["name"], exc_info=True)
         if index % 50 == 0:
-            update_task(task_id, progress=json.dumps({"phase": "backfill", "done": index + 1, "total": total}))
+            p_bf = TaskProgress(phase="backfill", done=index + 1, total=total, item=row.get("name", ""))
+            emit_progress(task_id, p_bf)
 
     try:
         updated = mark_library_status()
@@ -100,6 +115,7 @@ def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> d
     except Exception:
         log.warning("backfill_similarities: mark_library_status failed", exc_info=True)
 
+    emit_task_event(task_id, "info", {"message": f"Backfill similarities complete: {total} artists, {upserted} rows upserted"})
     return {"artists_processed": total, "rows_upserted": upserted}
 
 
@@ -129,7 +145,7 @@ def _handle_sync_shows_lastfm(task_id: str, params: dict, config: dict) -> dict:
         from_date=date.today(),
         to_date=date.today() + timedelta(days=180),
         fetch_details=False,
-        progress_callback=lambda data: update_task(task_id, progress=json.dumps(data)),
+        progress_callback=lambda data: emit_progress(task_id, TaskProgress(phase="scraping", done=data.get("done", 0), total=data.get("total", 0), item=data.get("page", ""))),
     )
 
     # Write JSON intermediate for debugging
@@ -153,9 +169,8 @@ def _handle_sync_shows_lastfm(task_id: str, params: dict, config: dict) -> dict:
         if is_cancelled(task_id):
             break
         if i % 10 == 0:
-            update_task(task_id, progress=json.dumps({
-                "phase": "consolidating", "done": i, "total": len(events),
-            }))
+            p_cons = TaskProgress(phase="consolidating", done=i, total=len(events))
+            emit_progress(task_id, p_cons)
         try:
             result = consolidate_show(event)
             if result == "inserted":

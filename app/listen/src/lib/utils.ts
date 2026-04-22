@@ -1,11 +1,5 @@
-import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
-
 export * from "../../../shared/web/utils";
-
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+export { cn } from "@crate/ui/lib/cn";
 
 export function formatTotalDuration(seconds: number): string {
   if (!seconds) return "";

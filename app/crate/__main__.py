@@ -44,7 +44,7 @@ def main():
     api_cmd.add_argument("--host", default="0.0.0.0")
 
     worker_cmd = sub.add_parser("worker", help="Run Dramatiq workers + scheduler/watcher")
-    worker_cmd.add_argument("--processes", type=int, default=6, help="Number of Dramatiq worker processes (default: 6)")
+    worker_cmd.add_argument("--processes", type=int, default=3, help="Number of Dramatiq worker processes (default: 3)")
     worker_cmd.add_argument("--legacy", action="store_true", help="Use legacy orchestrator (pre-Dramatiq)")
 
     args = parser.parse_args()
@@ -78,9 +78,14 @@ def main():
 
     elif args.command in ("web", "api"):
         import uvicorn
-        from crate.api import create_app
-        app = create_app()
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        uvicorn.run(
+            "crate.api:create_app",
+            factory=True,
+            host=args.host,
+            port=args.port,
+            log_level="info",
+            workers=2,
+        )
 
     elif args.command == "worker":
         if args.legacy:

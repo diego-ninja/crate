@@ -1,26 +1,25 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { ImageLightbox } from "@/components/ui/image-lightbox";
 import {
-  Play,
-  Music,
-  HardDrive,
-  Clock,
-  Disc3,
   BrainCircuit,
-  Loader2,
+  Disc3,
   Download,
-  Heart,
+  HardDrive,
+  Loader2,
+  Music,
+  Clock,
+  TrendingUp,
 } from "lucide-react";
-import { albumCoverApiUrl, artistBackgroundApiUrl, artistPagePath } from "@/lib/library-routes";
-import { formatDuration, formatSize } from "@/lib/utils";
-import { usePlayer, type Track } from "@/contexts/PlayerContext";
-import { useFavorites } from "@/hooks/use-favorites";
+import { toast } from "sonner";
+
+import { ImageLightbox } from "@crate/ui/primitives/ImageLightbox";
+import { Button } from "@crate/ui/shadcn/button";
+import { CratePill } from "@crate/ui/primitives/CrateBadge";
+import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
 import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { api } from "@/lib/api";
-import { toast } from "sonner";
+import { albumCoverApiUrl, artistBackgroundApiUrl, artistPagePath } from "@/lib/library-routes";
+import { formatDuration, formatSize } from "@/lib/utils";
 
 interface AlbumHeaderProps {
   albumId?: number;
@@ -41,11 +40,15 @@ interface AlbumHeaderProps {
   totalLengthSec: number;
   totalSizeMb: number;
   hasCover: boolean;
+  popularity?: number | null;
+  popularityScore?: number | null;
+  popularityConfidence?: number | null;
   genres?: string[];
+  genreProfile?: GenreProfileItem[];
   hasAnalysis?: boolean;
   onAnalysisComplete?: () => void;
+  isAdmin?: boolean;
   children?: React.ReactNode;
-  tracks?: { filename: string; path?: string; title?: string }[];
 }
 
 export function AlbumHeader({
@@ -61,21 +64,31 @@ export function AlbumHeader({
   totalLengthSec,
   totalSizeMb,
   hasCover,
-  genres: _genres,
-  hasAnalysis: _hasAnalysis,
+  popularity,
+  popularityScore,
+  genreProfile,
   onAnalysisComplete,
+  isAdmin = false,
   children,
-  tracks: trackList,
 }: AlbumHeaderProps) {
-  const { playAll } = usePlayer();
-  const { isFavorite, toggleFavorite } = useFavorites();
   const [coverCacheBust, setCoverCacheBust] = useState("");
-  const baseCoverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
-  const coverUrl = `${baseCoverUrl}${coverCacheBust ? `${baseCoverUrl.includes("?") ? "&" : "?"}t=${coverCacheBust}` : ""}`;
-  const albumFavId = `${artist}/${album}`;
   const [coverLoaded, setCoverLoaded] = useState(false);
   const [coverError, setCoverError] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [bgLoaded, setBgLoaded] = useState(false);
+
+  const baseCoverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
+  const coverUrl = `${baseCoverUrl}${coverCacheBust ? `${baseCoverUrl.includes("?") ? "&" : "?"}t=${coverCacheBust}` : ""}`;
+  const bgUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName: artist });
+  const resolvedDisplayName = albumTags.album || explicitDisplayName || album;
+  const displayArtist = albumTags.artist || artist;
+  const letter = resolvedDisplayName.charAt(0).toUpperCase();
+  const popularityPercent =
+    popularityScore != null
+      ? Math.round(popularityScore * 100)
+      : typeof popularity === "number" && popularity > 0
+        ? popularity
+        : 0;
 
   async function handleEnrich() {
     if (albumId == null) {
@@ -84,13 +97,11 @@ export function AlbumHeader({
     }
     setAnalyzing(true);
     try {
-      const res = await api<{ task_id: string }>(`/api/albums/${albumId}/enrich`, "POST");
-      toast.success("Enriching album (MBID, covers, analysis, bliss)...");
-      const taskId = res.task_id;
+      const response = await api<{ task_id: string }>(`/api/albums/${albumId}/enrich`, "POST");
+      toast.success("Enriching album...");
       const poll = setInterval(async () => {
         try {
-          onAnalysisComplete?.();
-          const task = await api<{ status: string }>(`/api/tasks/${taskId}`);
+          const task = await api<{ status: string }>(`/api/tasks/${response.task_id}`);
           if (task.status === "completed") {
             clearInterval(poll);
             setAnalyzing(false);
@@ -101,102 +112,95 @@ export function AlbumHeader({
             setAnalyzing(false);
             toast.error("Enrichment failed");
           }
-        } catch { /* keep polling */ }
+        } catch {
+          // keep polling while the task is alive
+        }
       }, 4000);
-      setTimeout(() => { clearInterval(poll); setAnalyzing(false); }, 120000);
+      setTimeout(() => {
+        clearInterval(poll);
+        setAnalyzing(false);
+      }, 120000);
     } catch {
       setAnalyzing(false);
       toast.error("Failed to start enrichment");
     }
   }
-  const resolvedDisplayName = albumTags.album || explicitDisplayName || album;
-  const displayArtist = albumTags.artist || artist;
-  const letter = resolvedDisplayName.charAt(0).toUpperCase();
-
-  function handlePlayAll() {
-    if (trackList?.length) {
-      const tracks: Track[] = trackList.map((t) => ({
-        id: (t.path || "").replace(/^\/music\//, ""),
-        title: t.title || t.filename.replace(/\.\w+$/, ""),
-        artist: displayArtist,
-        artistId,
-        artistSlug,
-        album,
-        albumId,
-        albumSlug,
-        albumCover: coverUrl,
-      }));
-      playAll(tracks);
-    }
-  }
-
-  const [bgLoaded, setBgLoaded] = useState(false);
-  const bgUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName: artist });
 
   return (
     <div
-      className="relative h-[360px] md:h-[420px] overflow-hidden -ml-4 -mr-4 md:-ml-8 md:-mr-8 -mt-16 md:-mt-[6.5rem] mb-6"
-      style={{ width: "calc(100vw - var(--sidebar-w, 0px))" }}
+      className="relative mb-6 h-[420px] overflow-hidden -mx-4 md:-mx-8 md:h-[560px]"
     >
-      {/* Artist background image */}
       <img
         src={bgUrl}
         alt=""
-        className={`absolute inset-0 w-full h-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-60" : "opacity-0"}`}
+        className={`absolute inset-0 h-full w-full object-cover object-[right_20%] transition-opacity duration-1000 ${bgLoaded ? "opacity-55" : "opacity-0"}`}
         onLoad={() => setBgLoaded(true)}
-        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        onError={(event) => {
+          (event.target as HTMLImageElement).style.display = "none";
+        }}
       />
 
-      {/* Gradient overlays */}
-      <div className="absolute inset-0" style={{
-        background: "linear-gradient(to right, var(--gradient-bg) 0%, var(--gradient-bg-85) 25%, var(--gradient-bg-40) 50%, transparent 75%)",
-      }} />
-      <div className="absolute inset-0" style={{
-        background: "linear-gradient(to top, var(--gradient-bg) 0%, var(--gradient-bg-90) 15%, var(--gradient-bg-40) 40%, transparent 70%)",
-      }} />
-      <div className="absolute inset-0" style={{
-        background: "linear-gradient(to bottom, var(--gradient-bg-50) 0%, transparent 30%)",
-      }} />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: "linear-gradient(to right, var(--gradient-bg) 0%, var(--gradient-bg-85) 28%, var(--gradient-bg-40) 52%, transparent 78%)",
+        }}
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: "linear-gradient(to top, var(--gradient-bg) 0%, var(--gradient-bg-90) 18%, var(--gradient-bg-40) 42%, transparent 72%)",
+        }}
+      />
+      <div
+        className="absolute inset-0"
+        style={{
+          background: "linear-gradient(to bottom, var(--gradient-bg-50) 0%, transparent 28%)",
+        }}
+      />
 
-      {/* Content */}
       <div className="absolute inset-0 flex items-end">
-        <div className="flex items-end gap-4 md:gap-6 w-full max-w-[1100px] px-4 md:px-8 pb-6 md:pb-8">
-          {/* Cover art with upload overlay */}
+        <div className="mx-auto flex w-full max-w-[1160px] items-end gap-4 px-4 pb-6 md:gap-6 md:px-8 md:pb-8">
           <div className="relative group/cover flex-shrink-0">
             <ImageLightbox src={coverUrl} alt={`${resolvedDisplayName} cover art`}>
-              <div className="w-[150px] h-[150px] md:w-[200px] md:h-[200px] rounded-lg overflow-hidden ring-2 ring-white/10 shadow-2xl shadow-black/50">
+              <div className="h-[150px] w-[150px] overflow-hidden rounded-md ring-2 ring-white/10 shadow-2xl shadow-black/50 md:h-[200px] md:w-[200px]">
                 {!coverError ? (
                   <img
                     src={coverUrl}
                     alt={resolvedDisplayName}
-                    className={`w-full h-full object-cover transition-opacity duration-500 ${coverLoaded ? "opacity-100" : "opacity-0"}`}
+                    className={`h-full w-full object-cover transition-opacity duration-500 ${coverLoaded ? "opacity-100" : "opacity-0"}`}
                     onLoad={() => setCoverLoaded(true)}
                     onError={() => setCoverError(true)}
                   />
                 ) : null}
-                {(coverError || !coverLoaded) && (
-                  <div className={`absolute inset-0 bg-gradient-to-br from-primary/40 to-primary/20 flex items-center justify-center transition-opacity duration-500 ${coverLoaded && !coverError ? "opacity-0" : "opacity-100"}`}>
+                {(coverError || !coverLoaded) ? (
+                  <div className={`absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary/40 to-primary/20 transition-opacity duration-500 ${coverLoaded && !coverError ? "opacity-0" : "opacity-100"}`}>
                     <span className="text-5xl font-black text-white/40">{letter}</span>
                   </div>
-                )}
+                ) : null}
               </div>
             </ImageLightbox>
-            <ImageCropUpload
-              endpoint={albumId != null ? `/api/artwork/albums/${albumId}/upload-cover` : ""}
-              aspect={1}
-              onUploaded={() => { setCoverError(false); setCoverLoaded(false); setCoverCacheBust(String(Date.now())); }}
-            />
+            {isAdmin ? (
+              <ImageCropUpload
+                endpoint={albumId != null ? `/api/artwork/albums/${albumId}/upload-cover` : ""}
+                aspect={1}
+                onUploaded={() => {
+                  setCoverError(false);
+                  setCoverLoaded(false);
+                  setCoverCacheBust(String(Date.now()));
+                }}
+                className="absolute bottom-2 right-2 z-20 inline-flex items-center gap-1 rounded-md border border-white/15 bg-black/60 px-2 py-1.5 text-xs font-medium text-white/75 opacity-0 shadow-lg shadow-black/30 transition-all duration-200 group-hover/cover:translate-y-0 group-hover/cover:opacity-100 hover:bg-black/80 hover:text-white"
+              />
+            ) : null}
           </div>
 
-          {/* Album info */}
-          <div className="flex-1 min-w-0 pb-1">
-            {/* Breadcrumb */}
-            <div className="text-xs text-white/40 mb-2">
-              <Link to="/browse" className="hover:text-white/70 transition-colors">Browse</Link>
+          <div className="min-w-0 flex-1 pb-1">
+            <div className="mb-2 text-xs text-white/40">
+              <Link to="/browse" className="transition-colors hover:text-white/70">Browse</Link>
               <span className="mx-1.5">/</span>
               <Link
                 to={artistPagePath({ artistId, artistSlug, artistName: artist })}
-                className="hover:text-white/70 transition-colors"
+                className="transition-colors hover:text-white/70"
               >
                 {artist}
               </Link>
@@ -204,89 +208,80 @@ export function AlbumHeader({
               <span className="text-white/60">{resolvedDisplayName}</span>
             </div>
 
-            {/* Album title */}
-            <h1 className="text-xl md:text-4xl font-black tracking-tight text-white leading-none mb-1.5 truncate">
+            <h1 className="mb-1.5 truncate text-xl font-black leading-none tracking-tight text-white md:text-4xl">
               {resolvedDisplayName}
             </h1>
-
-            {/* Artist link */}
             <Link
               to={artistPagePath({ artistId, artistSlug, artistName: artist })}
-              className="text-base text-white/60 hover:text-white transition-colors"
+              className="text-base text-white/60 transition-colors hover:text-white"
             >
               {displayArtist}
             </Link>
 
-            {/* Stats row */}
-            <div className="flex items-center gap-4 text-sm text-white/50 mt-3 mb-3 flex-wrap">
-              {albumTags.year && (
-                <span className="text-white/70 font-medium">{albumTags.year}</span>
-              )}
+            <div className="mb-3 mt-3 flex flex-wrap items-center gap-4 text-sm text-white/50">
+              {albumTags.year ? <span className="font-medium text-white/72">{albumTags.year}</span> : null}
               <span className="flex items-center gap-1.5"><Disc3 size={14} />{trackCount} tracks</span>
               <span className="flex items-center gap-1.5"><Clock size={14} />{formatDuration(totalLengthSec)}</span>
               <span className="flex items-center gap-1.5"><HardDrive size={14} />{formatSize(totalSizeMb)}</span>
+            </div>
+
+            {popularityPercent > 0 ? (
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex items-center gap-1.5 text-xs text-white/40">
+                  <TrendingUp size={13} />
+                  Popularity
+                </span>
+                <div className="h-1.5 w-[72px] overflow-hidden rounded-sm bg-white/10">
+                  <div
+                    className="h-full rounded-sm"
+                    style={{ width: `${popularityPercent}%`, background: "linear-gradient(90deg, #06b6d433, #06b6d4)" }}
+                  />
+                </div>
+                <span className="text-xs text-white/40">{popularityPercent}%</span>
+              </div>
+            ) : null}
+
+            {genreProfile && genreProfile.length > 0 ? (
+              <GenrePillRow items={genreProfile} max={6} className="mb-3" />
+            ) : null}
+
+            <div className="mb-4 flex flex-wrap gap-2">
               {hasCover ? (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                  <Music size={10} className="mr-0.5" /> Cover
-                </Badge>
+                <CratePill icon={Music}>Cover</CratePill>
               ) : (
-                <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/30 text-[10px] px-1.5 py-0">
-                  No cover
-                </Badge>
+                <CratePill active>No cover</CratePill>
               )}
               {albumTags.musicbrainz_albumid ? (
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                  MBID {albumTags.musicbrainz_albumid.slice(0, 8)}
-                </Badge>
+                <CratePill>MBID {albumTags.musicbrainz_albumid.slice(0, 8)}</CratePill>
               ) : (
-                <Badge className="bg-yellow-500/10 text-yellow-500 border-yellow-500/30 text-[10px] px-1.5 py-0">
-                  No MBID
-                </Badge>
+                <CratePill active>No MBID</CratePill>
               )}
             </div>
 
-            {/* Action buttons */}
-            <div className="flex gap-2 flex-wrap">
-              {trackList?.length ? (
-                <Button
-                  size="sm"
-                  className="bg-primary hover:bg-primary/80 text-white"
-                  onClick={handlePlayAll}
-                >
-                  <Play size={14} className="mr-1 fill-current" /> Play All
-                </Button>
-              ) : null}
+            <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
-                variant="outline"
-                className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                variant="default"
                 onClick={handleEnrich}
                 disabled={analyzing}
               >
                 {analyzing ? (
-                  <><Loader2 size={14} className="animate-spin mr-1" /> Enriching...</>
+                  <>
+                    <Loader2 size={14} className="mr-1 animate-spin" />
+                    Enriching...
+                  </>
                 ) : (
-                  <><BrainCircuit size={14} className="mr-1" /> Enrich</>
+                  <>
+                    <BrainCircuit size={14} className="mr-1" />
+                    Enrich
+                  </>
                 )}
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-white/20 text-white/70 hover:text-white hover:bg-white/10"
-                asChild
-              >
+              <Button size="sm" variant="outline" asChild>
                 <a href={albumId != null ? `/api/albums/${albumId}/download` : "#"} download>
-                  <Download size={14} className="mr-1" /> Download
+                  <Download size={14} className="mr-1" />
+                  Download
                 </a>
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className={`border-white/20 hover:bg-white/10 ${isFavorite(albumFavId) ? "text-red-500 border-red-500/30" : "text-white/70 hover:text-white"}`}
-                onClick={() => toggleFavorite(albumFavId, "album")}
-              >
-                <Heart size={14} className={`mr-1 ${isFavorite(albumFavId) ? "fill-red-500" : ""}`} />
-                {isFavorite(albumFavId) ? "Favorited" : "Favorite"}
               </Button>
               {children}
             </div>

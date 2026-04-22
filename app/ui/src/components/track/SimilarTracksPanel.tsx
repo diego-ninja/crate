@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { X, Loader2, Play } from "lucide-react";
+import { useNavigate } from "react-router";
+import { X, Loader2, ArrowUpRight } from "lucide-react";
 import { api } from "@/lib/api";
-import { albumCoverApiUrl } from "@/lib/library-routes";
-import { usePlayerActions } from "@/contexts/PlayerContext";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 
 interface SimilarTrack {
   track_id?: number;
@@ -36,7 +36,7 @@ export function SimilarTracksPanel({
 }: SimilarTracksPanelProps) {
   const [tracks, setTracks] = useState<SimilarTrack[]>([]);
   const [loading, setLoading] = useState(false);
-  const { play } = usePlayerActions();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!open || !trackPath) return;
@@ -57,7 +57,7 @@ export function SimilarTracksPanel({
       onClick={onClose}
     >
       <div
-        className="bg-card border border-border rounded-xl w-[500px] max-h-[600px] shadow-2xl overflow-hidden"
+        className="bg-card border border-border rounded-md w-[500px] max-h-[600px] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -88,24 +88,25 @@ export function SimilarTracksPanel({
               key={t.path || i}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/5 transition-colors text-left group"
               onClick={() => {
-                play({
-                  id: t.path,
-                  title: t.title || "Unknown",
-                  artist: t.artist || artist,
-                  artistId: t.artist_id,
-                  artistSlug: t.artist_slug,
-                  album: t.album,
-                  albumId: t.album_id,
-                  albumSlug: t.album_slug,
-                  albumCover: t.album
-                    ? albumCoverApiUrl({
-                        albumId: t.album_id,
-                        albumSlug: t.album_slug,
-                        artistName: t.artist,
-                        albumName: t.album,
-                      })
-                    : undefined,
-                });
+                if (t.album) {
+                  navigate(
+                    albumPagePath({
+                      albumId: t.album_id,
+                      albumSlug: t.album_slug,
+                      artistName: t.artist,
+                      albumName: t.album,
+                    }),
+                  );
+                } else if (t.artist) {
+                  navigate(
+                    artistPagePath({
+                      artistId: t.artist_id,
+                      artistSlug: t.artist_slug,
+                      artistName: t.artist,
+                    }),
+                  );
+                }
+                onClose();
               }}
             >
               <div className="w-8 text-center text-xs text-muted-foreground/40">
@@ -119,9 +120,9 @@ export function SimilarTracksPanel({
               </div>
               {t.score != null && (
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <div className="w-16 h-1.5 bg-primary/10 rounded-full overflow-hidden">
+                  <div className="w-16 h-1.5 bg-primary/10 rounded-md overflow-hidden">
                     <div
-                      className="h-full bg-primary rounded-full"
+                      className="h-full bg-primary rounded-md"
                       style={{ width: `${Math.round(t.score * 100)}%` }}
                     />
                   </div>
@@ -130,7 +131,7 @@ export function SimilarTracksPanel({
                   </span>
                 </div>
               )}
-              <Play
+              <ArrowUpRight
                 size={14}
                 className="text-muted-foreground/30 group-hover:text-primary flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
               />

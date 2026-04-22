@@ -41,7 +41,7 @@ export function ArtistStats({ artistId }: { artistId?: number }) {
   return (
     <div className="space-y-6">
       {data.albums_timeline.length > 0 && (
-        <div className="bg-card border border-border rounded-lg p-4">
+        <div className="bg-card border border-border rounded-md p-4">
           <h4 className="text-sm font-semibold mb-3">Discography Timeline</h4>
           <div className="h-[200px]">
             <ResponsiveBar
@@ -75,7 +75,7 @@ export function ArtistStats({ artistId }: { artistId?: number }) {
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {data.formats.length > 0 && (
-          <div className="bg-card border border-border rounded-lg p-4">
+          <div className="bg-card border border-border rounded-md p-4">
             <h4 className="text-sm font-semibold mb-3">Formats</h4>
             <div className="h-[180px]">
               <ResponsivePie
@@ -92,7 +92,7 @@ export function ArtistStats({ artistId }: { artistId?: number }) {
           </div>
         )}
         {data.genres.length > 0 && (
-          <div className="bg-card border border-border rounded-lg p-4">
+          <div className="bg-card border border-border rounded-md p-4">
             <h4 className="text-sm font-semibold mb-3">Genre Profile</h4>
             <div className="h-[180px]">
               <ResponsiveBar
@@ -109,7 +109,7 @@ export function ArtistStats({ artistId }: { artistId?: number }) {
       </div>
 
       {data.top_tracks_by_popularity.length > 0 && (
-        <div className="bg-card border border-border rounded-lg p-4">
+        <div className="bg-card border border-border rounded-md p-4">
           <h4 className="text-sm font-semibold mb-3">Most Popular Tracks</h4>
           <div className="h-[250px]">
             <ResponsiveBar
@@ -128,7 +128,7 @@ export function ArtistStats({ artistId }: { artistId?: number }) {
       )}
 
       {radarData.length > 0 && (
-        <div className="bg-card border border-border rounded-lg p-4">
+        <div className="bg-card border border-border rounded-md p-4">
           <h4 className="text-sm font-semibold mb-3">Audio Profile by Album</h4>
           <div className="h-[300px]">
             <ResponsiveRadar
@@ -158,7 +158,7 @@ export function ArtistStats({ artistId }: { artistId?: number }) {
           .slice(0, 8);
         if (!albumPop.length) return null;
         return (
-          <div className="bg-card border border-border rounded-lg p-4">
+          <div className="bg-card border border-border rounded-md p-4">
             <h4 className="text-sm font-semibold mb-3">Top Albums</h4>
             <div className="h-[200px]">
               <ResponsiveBar

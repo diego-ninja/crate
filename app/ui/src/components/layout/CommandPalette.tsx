@@ -92,7 +92,7 @@ export function CommandPalette() {
     >
       <div className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
         <Command
-          className="bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+          className="bg-card border border-border rounded-md shadow-2xl overflow-hidden"
           shouldFilter={false}
         >
           <div className="flex items-center border-b border-border px-3">
@@ -125,7 +125,7 @@ export function CommandPalette() {
                   { label: "Health", path: "/health", icon: HeartPulse },
                   { label: "Acquisition", path: "/download", icon: Download },
                   { label: "System Playlists", path: "/playlists", icon: ListMusic },
-                  { label: "Discover", path: "/discover", icon: Compass },
+                  { label: "Discovery", path: "/discover", icon: Compass },
                   { label: "Settings", path: "/settings", icon: Settings },
                 ].map((item) => (
                   <Command.Item
@@ -185,13 +185,13 @@ export function CommandPalette() {
                   onSelect={() =>
                     action(
                       () => api("/api/manage/compute-bliss", "POST"),
-                      "Compute Bliss",
+                      "Compute Bliss vectors",
                     )
                   }
                   className="flex items-center gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-accent data-[selected=true]:bg-accent"
                 >
                   <Radio size={14} className="text-muted-foreground" />
-                  Compute Bliss Vectors (Artist Radio)
+                  Compute Bliss Vectors
                 </Command.Item>
                 <Command.Item
                   onSelect={() =>

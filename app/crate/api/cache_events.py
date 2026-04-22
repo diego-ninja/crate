@@ -75,15 +75,19 @@ def _get_redis():
 
 
 def broadcast_invalidation(*scopes: str):
-    """Broadcast one or more cache invalidation scopes.
+    """Broadcast cache invalidation in a background thread.
 
-    Writes to Redis (shared across workers) and also clears the
-    backend's own cache for the affected scopes so that refetch
-    requests don't receive stale data.
-
-    Failures are logged but never propagate — mutations must succeed
-    even if cache invalidation is temporarily unavailable.
+    Non-blocking: the HTTP response returns immediately. Redis writes
+    and backend cache clearing happen asynchronously. Failures are
+    logged but never propagate.
     """
+    import threading
+    threading.Thread(
+        target=_do_broadcast, args=(scopes,), daemon=True
+    ).start()
+
+
+def _do_broadcast(scopes: tuple[str, ...] | list[str]):
     try:
         r = _get_redis()
         for scope in scopes:
@@ -95,8 +99,6 @@ def broadcast_invalidation(*scopes: str):
     except Exception as exc:
         log.warning("Failed to broadcast cache invalidation for %s: %s", scopes, exc)
 
-    # Clear backend cache for the affected scopes so refetch gets
-    # fresh data, not stale L1/L2/L3 responses.
     _clear_backend_cache_for_scopes(scopes)
 
 
@@ -248,8 +250,11 @@ _INVALIDATION_RULES: list[tuple[re.Pattern[str], list[str]]] = [
     (re.compile(r"^/api/me/likes"), ["likes"]),
     (re.compile(r"^/api/me/follows"), ["follows", "home", "upcoming"]),
     (re.compile(r"^/api/me/albums"), ["saved_albums", "home"]),
-    (re.compile(r"^/api/me/history$"), ["history", "home"]),
-    (re.compile(r"^/api/me/play-events$"), ["history", "home"]),
+    # history and play-events do NOT invalidate home — the home cache
+    # has its own TTL and recomputing 200+ queries on every track play
+    # kills the server. Home data updates on its own schedule.
+    (re.compile(r"^/api/me/history$"), ["history"]),
+    (re.compile(r"^/api/me/play-events$"), ["history"]),
     (re.compile(r"^/api/me/shows"), ["shows", "upcoming"]),
     (re.compile(r"^/api/me/location$"), ["shows", "upcoming"]),
     (re.compile(r"^/api/playlists$"), ["playlists"]),
