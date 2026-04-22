@@ -1,10 +1,14 @@
-import { Database, Sparkles, Activity, SlidersHorizontal, Users, Terminal } from "lucide-react";
-
-/**
- * Bento-ish grid of six core value propositions. Deliberately asymmetric
- * so the page doesn't read as "stock 3×2 feature grid"; the two lead
- * cards (library ownership and the listening app) get wider tiles.
- */
+import {
+  Activity,
+  Calendar,
+  Database,
+  Mic2,
+  Radio,
+  SlidersHorizontal,
+  Sparkles,
+  Terminal,
+  Users,
+} from "lucide-react";
 
 interface Prop {
   icon: typeof Database;
@@ -17,34 +21,49 @@ const PROPS: Prop[] = [
   {
     icon: Database,
     title: "Your library, end to end",
-    body: "Crate indexes your /music directory into PostgreSQL, tracks its own canonical identity per artist, album, and file, and never writes to the filesystem from the public-facing API. Two containers with asymmetric mounts (read-only + read-write) keep the boundary honest.",
+    body: "Crate indexes your /music directory into PostgreSQL, builds a canonical identity per artist, album, and file, and never writes to the filesystem from the API. Two containers with asymmetric mounts (read-only + read-write) keep the boundary honest.",
     className: "md:col-span-2",
   },
   {
     icon: Sparkles,
     title: "Enrichment from 8+ sources",
-    body: "MusicBrainz, Last.fm, Discogs, Fanart.tv, Cover Art Archive, Setlist.fm, Spotify popularity, Deezer / iTunes fallbacks. Biographies, photos, discographies, similar artists, and a canonical genre taxonomy — merged and deduplicated server-side.",
+    body: "MusicBrainz, Last.fm, Discogs, Fanart.tv, Cover Art Archive, Setlist.fm, Ticketmaster, Spotify popularity, Deezer / iTunes fallbacks. Biographies, photos, discographies, similar artists, upcoming shows, and a canonical genre taxonomy — merged and deduplicated server-side.",
   },
   {
     icon: Activity,
     title: "Audio intelligence",
-    body: "Essentia plus PANNs extract BPM, key, loudness (LUFS), dynamic range, spectral complexity, mood, danceability, valence, acousticness. Bliss-rs computes a 20-float song-DNA vector for nearest-neighbour discovery. Used by radio, smart playlists, and the adaptive equalizer.",
+    body: "Essentia plus PANNs extract BPM, key, loudness (LUFS), dynamic range, spectral complexity, mood, danceability, valence, acousticness. Bliss-rs computes a 20-float song-DNA vector per track. Used by radio, smart playlists, and the adaptive equalizer.",
   },
   {
     icon: SlidersHorizontal,
     title: "A listening app that plays",
-    body: "Gapless transitions. Equal-power crossfade. A 10-band equalizer that can adapt to per-track features or follow the taxonomy-resolved preset for the genre. WebGL visualiser driven by the real audio analyser. PWA and Capacitor targets. Offline-resilient buffering — pull the wifi mid-track and the music keeps going.",
+    body: "Gapless transitions. Equal-power crossfade. A 10-band EQ that adapts to per-track analysis or follows the genre taxonomy preset. Synced lyrics with seek-by-line. WebGL visualiser. PWA and Capacitor targets. Offline mirror — download albums for playback without a network.",
     className: "md:col-span-2",
+  },
+  {
+    icon: Radio,
+    title: "Radio & smart playlists",
+    body: "Seed a track and Crate builds an infinite radio queue using bliss similarity vectors — songs that sound alike, not just share a tag. Smart playlists combine genre, energy, BPM, year, format, and popularity rules with live re-generation.",
+  },
+  {
+    icon: Calendar,
+    title: "Shows & events",
+    body: "Ticketmaster integration surfaces upcoming shows for artists in your library. Mark attendance, see probable setlists from Setlist.fm, play the setlist before you go. Upcoming events feed across all followed artists.",
+  },
+  {
+    icon: Mic2,
+    title: "AI-assisted curation",
+    body: "Local LLM integration (Ollama, Gemini, or any litellm provider) generates EQ presets per genre, enriches taxonomy descriptions, and powers intelligent playlist suggestions. Runs on your hardware, no data leaves your server.",
   },
   {
     icon: Users,
     title: "Social, not surveillance",
-    body: "Follow people, share collaborative playlists, listen together in jam rooms with room-scoped websockets. Affinity scores with reasons, not a black-box recommender. No anonymous telemetry leaves your server.",
+    body: "Follow people, share collaborative playlists, listen together in jam rooms with room-scoped websockets. OAuth sign-in. Affinity scores with reasons, not a black-box recommender. No anonymous telemetry leaves your server.",
   },
   {
     icon: Terminal,
     title: "Hackable by design",
-    body: "FastAPI + Dramatiq + PostgreSQL + Redis on the backend. React 19 + Tailwind 4 + shadcn on the frontends. Open Subsonic API for third-party clients. Dramatiq tasks with live SSE status. One repo, one compose file, honest README.",
+    body: "FastAPI + Dramatiq + PostgreSQL + Redis backend. React 19 + Tailwind 4 + @crate/ui shared design system. Open Subsonic API for third-party clients. Real-time SSE for task progress and cache invalidation. One repo, one compose file.",
   },
 ];
 
@@ -59,9 +78,10 @@ export function ValueProps() {
           A full platform, not a file browser with a play button.
         </h2>
         <p className="mt-4 text-base leading-7 text-white/60 sm:text-lg">
-          Crate is the combination of an indexed library, a background pipeline for
-          enrichment and analysis, a streaming backend with Subsonic compatibility,
-          and two real frontends. Each piece is built to stand on its own.
+          Crate combines an indexed library, a background pipeline for enrichment
+          and analysis, a streaming backend with Subsonic compatibility, and two
+          real frontends — an admin app for library management and a listening
+          app built for the phone.
         </p>
       </div>
 
@@ -76,7 +96,6 @@ export function ValueProps() {
             </div>
             <h3 className="mb-2 text-lg font-semibold tracking-tight text-white">{title}</h3>
             <p className="text-[14.5px] leading-[1.65] text-white/60">{body}</p>
-            {/* Hover flourish — cyan beam sweeping across the top edge */}
             <div className="pointer-events-none absolute inset-x-0 top-0 h-px scale-x-0 bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-0 transition-all duration-500 group-hover:scale-x-100 group-hover:opacity-100" />
           </article>
         ))}
