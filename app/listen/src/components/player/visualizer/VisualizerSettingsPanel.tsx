@@ -16,6 +16,7 @@ const SLIDERS = [
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
     <button
+      type="button"
       onClick={onToggle}
       className={`h-5 w-9 rounded-full transition-colors ${on ? "bg-primary" : "bg-white/20"}`}
     >
@@ -43,21 +44,28 @@ export function VisualizerSettingsPanel({ config, className }: VisualizerSetting
 
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-muted-foreground">Enabled</span>
-        <Toggle on={vizEnabled} onToggle={toggleEnabled} />
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] font-medium uppercase tracking-[0.16em] ${vizEnabled ? "text-primary" : "text-white/35"}`}>
+            {vizEnabled ? "On" : "Off"}
+          </span>
+          <Toggle on={vizEnabled} onToggle={toggleEnabled} />
+        </div>
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className={`flex items-center justify-between transition-opacity ${vizEnabled ? "" : "opacity-45"}`}>
         <span className="text-[11px] text-muted-foreground">Album palette</span>
         <Toggle on={useAlbumPalette} onToggle={toggleAlbumPalette} />
       </div>
 
-      <div className="flex items-center justify-between">
+      <div className={`flex items-center justify-between transition-opacity ${vizEnabled ? "" : "opacity-45"}`}>
         <span className="text-[11px] text-muted-foreground">Track adaptive</span>
         <Toggle on={trackAdaptiveViz} onToggle={toggleTrackAdaptive} />
       </div>
 
       <div className="rounded-md border border-white/8 bg-white/[0.03] px-2.5 py-2 text-[10px] text-muted-foreground">
-        {trackAdaptiveViz
+        {!vizEnabled
+          ? "Visualizer disabled"
+          : trackAdaptiveViz
           ? trackVizProfile.hasAnalysis
             ? `Using track analysis${trackVizProfile.summary ? ` · ${trackVizProfile.summary}` : ""}`
             : "Adaptive on, waiting for track analysis"
@@ -65,7 +73,7 @@ export function VisualizerSettingsPanel({ config, className }: VisualizerSetting
       </div>
 
       {SLIDERS.map(({ key, label, min, max, step }) => (
-        <div key={key}>
+        <div key={key} className={`transition-opacity ${vizEnabled ? "" : "opacity-45"}`}>
           <div className="mb-1 flex justify-between text-[10px]">
             <span className="text-white/40">{label}</span>
             <div className="flex items-center gap-2 font-mono">
@@ -85,6 +93,7 @@ export function VisualizerSettingsPanel({ config, className }: VisualizerSetting
             max={max}
             step={step}
             value={vizConfig[key]}
+            disabled={!vizEnabled}
             onChange={(event) =>
               updateConfig({ ...vizConfig, [key]: parseFloat(event.target.value) })
             }

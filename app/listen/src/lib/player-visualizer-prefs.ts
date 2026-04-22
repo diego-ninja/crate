@@ -41,9 +41,9 @@ export function setUseAlbumPalettePreference(value: boolean) {
 export function getVisualizerEnabledPreference(): boolean {
   try {
     const raw = localStorage.getItem(VISUALIZER_ENABLED_KEY);
-    return raw == null ? true : raw === "true";
+    return raw == null ? false : raw === "true";
   } catch {
-    return true;
+    return false;
   }
 }
 

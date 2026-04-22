@@ -33,8 +33,16 @@ _CURATION_RESPONSES = merge_responses(
 
 def _serialize_playlist(playlist: dict, *, user_id: int, include_tracks: bool = False) -> dict:
     item = dict(playlist)
-    item["follower_count"] = get_playlist_followers_count(item["id"])
-    item["is_followed"] = bool(item.get("is_followed")) or is_playlist_followed(user_id, item["id"])
+    follower_count = item.get("follower_count")
+    if follower_count is None:
+        follower_count = get_playlist_followers_count(item["id"])
+    item["follower_count"] = int(follower_count or 0)
+
+    if "is_followed" in item:
+        item["is_followed"] = bool(item.get("is_followed"))
+    else:
+        item["is_followed"] = is_playlist_followed(user_id, item["id"])
+
     if include_tracks:
         item["tracks"] = get_playlist_tracks(item["id"])
     return item

@@ -1,9 +1,9 @@
 .vite/
 tsconfig.tsbuildinfo
 
-# iOS project (Capacitor). Not tracked until we ship iOS; today it's only
-# local. Revisit this when the iOS build joins CI.
-ios/
+# iOS project (Capacitor). We track the project shell; build artefacts,
+# generated web assets, and user-local Xcode state are excluded by
+# ios/.gitignore inside the native project.
 
 # Android project (Capacitor). We DO track the project shell — manifest,
 # gradle config, resources, icons — so CI can build a debug APK and the

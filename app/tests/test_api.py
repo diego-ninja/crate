@@ -123,6 +123,7 @@ class TestArtistDetailAPI:
              patch("crate.db.get_library_artist_by_id", return_value={"id": 7, "name": "Tool", "slug": "tool"}), \
              patch("crate.api.browse_artist.get_library_artist", return_value=mock_artist), \
              patch("crate.api.browse_artist.get_library_albums", return_value=mock_albums), \
+             patch("crate.db.library.get_album_quality_map", return_value={1: {"format": "flac", "bit_depth": 16, "sample_rate": 44100}}), \
              patch("crate.api.browse_artist.get_artist_issue_count", return_value=0), \
              patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
 
@@ -495,3 +496,116 @@ class TestTasksAPI:
             resp = test_app.post("/api/tasks/t1/cancel")
             assert resp.status_code == 200
             mock_update.assert_called_once_with("t1", status="cancelled")
+
+
+class TestPlaylistCurationAPI:
+    def test_curated_playlists_reuse_preloaded_engagement(self, test_app):
+        playlist = {
+            "id": 11,
+            "name": "Metalcore Essentials",
+            "description": "Test",
+            "scope": "system",
+            "generation_mode": "smart",
+            "is_curated": True,
+            "is_active": True,
+            "artwork_tracks": [],
+            "follower_count": 7,
+            "is_followed": True,
+        }
+
+        with patch("crate.api.curation.list_system_playlists", return_value=[playlist]), \
+             patch("crate.api.curation.get_playlist_followers_count", side_effect=AssertionError("unexpected follower count lookup")), \
+             patch("crate.api.curation.is_playlist_followed", side_effect=AssertionError("unexpected follow lookup")):
+            resp = test_app.get("/api/curation/playlists")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["follower_count"] == 7
+        assert data[0]["is_followed"] is True
+
+    def test_my_followed_playlists_reuse_preloaded_follower_count(self, test_app):
+        playlist = {
+            "id": 19,
+            "name": "Post-Hardcore Radar",
+            "description": "Test",
+            "scope": "system",
+            "generation_mode": "smart",
+            "is_curated": True,
+            "is_active": True,
+            "artwork_tracks": [],
+            "follower_count": 5,
+        }
+
+        with patch("crate.db.get_followed_system_playlists", return_value=[playlist]), \
+             patch("crate.db.get_playlist_followers_count", side_effect=AssertionError("unexpected follower count lookup")):
+            resp = test_app.get("/api/me/followed-playlists")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["follower_count"] == 5
+        assert data[0]["is_followed"] is True
+
+    def test_admin_system_playlists_reuse_preloaded_follower_count(self, test_app):
+        playlist = {
+            "id": 23,
+            "name": "Curated Mix",
+            "description": "Test",
+            "scope": "system",
+            "generation_mode": "static",
+            "is_curated": True,
+            "is_active": True,
+            "artwork_tracks": [],
+            "follower_count": 9,
+        }
+
+        with patch("crate.api.system_playlists.list_system_playlists", return_value=[playlist]), \
+             patch("crate.api.system_playlists.get_playlist_followers_count", side_effect=AssertionError("unexpected follower count lookup")):
+            resp = test_app.get("/api/admin/system-playlists")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["follower_count"] == 9
+
+
+class TestHomeEndpointCaching:
+    def test_home_mix_detail_uses_cache(self, test_app):
+        cached_mix = {
+            "id": "daily-discovery",
+            "name": "Daily Discovery",
+            "description": "Cached",
+            "badge": "Mix",
+            "kind": "mix",
+            "track_count": 3,
+            "artwork_tracks": [],
+            "artwork_artists": [],
+            "tracks": [],
+        }
+
+        with patch("crate.db.get_cache", return_value=cached_mix), \
+             patch("crate.db.home.get_home_playlist", side_effect=AssertionError("unexpected playlist rebuild")):
+            resp = test_app.get("/api/me/home/mixes/daily-discovery")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "daily-discovery"
+        assert data["name"] == "Daily Discovery"
+
+    def test_home_section_detail_uses_cache(self, test_app):
+        cached_section = {
+            "id": "custom-mixes",
+            "title": "Custom mixes",
+            "subtitle": "Cached",
+            "items": [],
+        }
+
+        with patch("crate.db.get_cache", return_value=cached_section), \
+             patch("crate.db.home.get_home_section", side_effect=AssertionError("unexpected section rebuild")):
+            resp = test_app.get("/api/me/home/sections/custom-mixes")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "custom-mixes"
+        assert data["title"] == "Custom mixes"

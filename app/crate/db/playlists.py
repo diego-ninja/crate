@@ -3,7 +3,7 @@ import secrets
 from datetime import datetime, timezone
 
 from crate.db.tx import transaction_scope
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 
 # ── Playlists ────────────────────────────────────────────────────
 
@@ -29,39 +29,94 @@ def _normalize_playlist_row(row: dict) -> dict:
 
 
 def _fetch_artwork_tracks(session, playlist_id: int) -> list[dict]:
+    return _fetch_artwork_tracks_for_playlists(session, [playlist_id]).get(playlist_id, [])
+
+
+def _fetch_artwork_tracks_for_playlists(session, playlist_ids: list[int]) -> dict[int, list[dict]]:
+    if not playlist_ids:
+        return {}
     rows = session.execute(
         text("""
+        WITH artwork_groups AS (
+            SELECT
+                pt.playlist_id,
+                COALESCE(lt.artist, pt.artist) AS artist,
+                ar.id AS artist_id,
+                ar.slug AS artist_slug,
+                COALESCE(lt.album, pt.album) AS album,
+                alb.id AS album_id,
+                alb.slug AS album_slug
+            FROM playlist_tracks pt
+            LEFT JOIN LATERAL (
+                SELECT id, storage_id::text, path, artist, album, album_id
+                FROM library_tracks lt
+                WHERE lt.id = pt.track_id
+                   OR lt.path = pt.track_path
+                   OR lt.path LIKE ('%/' || pt.track_path)
+                ORDER BY CASE WHEN lt.id = pt.track_id THEN 0 WHEN lt.path = pt.track_path THEN 1 ELSE 2 END
+                LIMIT 1
+            ) lt ON TRUE
+            LEFT JOIN library_albums alb
+              ON alb.id = lt.album_id
+              OR (lt.album_id IS NULL AND alb.artist = COALESCE(lt.artist, pt.artist) AND alb.name = COALESCE(lt.album, pt.album))
+            LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, pt.artist)
+            WHERE pt.playlist_id IN :playlist_ids
+              AND COALESCE(lt.artist, pt.artist, '') != ''
+              AND COALESCE(lt.album, pt.album, '') != ''
+            GROUP BY
+                pt.playlist_id,
+                COALESCE(lt.artist, pt.artist),
+                ar.id,
+                ar.slug,
+                COALESCE(lt.album, pt.album),
+                alb.id,
+                alb.slug
+        ),
+        ranked_artwork AS (
+            SELECT
+                playlist_id,
+                artist,
+                artist_id,
+                artist_slug,
+                album,
+                album_id,
+                album_slug,
+                ROW_NUMBER() OVER (
+                    PARTITION BY playlist_id
+                    ORDER BY album, artist
+                ) AS artwork_rank
+            FROM artwork_groups
+        )
         SELECT
-            COALESCE(lt.artist, pt.artist) AS artist,
-            ar.id AS artist_id,
-            ar.slug AS artist_slug,
-            COALESCE(lt.album, pt.album) AS album,
-            alb.id AS album_id,
-            alb.slug AS album_slug
-        FROM playlist_tracks pt
-        LEFT JOIN LATERAL (
-            SELECT id, storage_id::text, path, artist, album, album_id
-            FROM library_tracks lt
-            WHERE lt.id = pt.track_id
-               OR lt.path = pt.track_path
-               OR lt.path LIKE ('%/' || pt.track_path)
-            ORDER BY CASE WHEN lt.id = pt.track_id THEN 0 WHEN lt.path = pt.track_path THEN 1 ELSE 2 END
-            LIMIT 1
-        ) lt ON TRUE
-        LEFT JOIN library_albums alb
-          ON alb.id = lt.album_id
-          OR (lt.album_id IS NULL AND alb.artist = COALESCE(lt.artist, pt.artist) AND alb.name = COALESCE(lt.album, pt.album))
-        LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, pt.artist)
-        WHERE pt.playlist_id = :playlist_id
-          AND COALESCE(lt.artist, pt.artist, '') != ''
-          AND COALESCE(lt.album, pt.album, '') != ''
-        GROUP BY COALESCE(lt.artist, pt.artist), ar.id, ar.slug, COALESCE(lt.album, pt.album), alb.id, alb.slug
-        ORDER BY COALESCE(lt.album, pt.album)
-        LIMIT 4
-        """),
-        {"playlist_id": playlist_id},
+            playlist_id,
+            artist,
+            artist_id,
+            artist_slug,
+            album,
+            album_id,
+            album_slug
+        FROM ranked_artwork
+        WHERE artwork_rank <= 4
+        ORDER BY playlist_id, artwork_rank
+        """).bindparams(bindparam("playlist_ids", expanding=True)),
+        {"playlist_ids": playlist_ids},
     ).mappings().all()
-    return [dict(row) for row in rows]
+    artwork_by_playlist = {playlist_id: [] for playlist_id in playlist_ids}
+    for row in rows:
+        item = dict(row)
+        playlist_id = int(item.pop("playlist_id"))
+        artwork_by_playlist.setdefault(playlist_id, []).append(item)
+    return artwork_by_playlist
+
+
+def _attach_artwork_tracks(session, playlists: list[dict]) -> list[dict]:
+    artwork_by_playlist = _fetch_artwork_tracks_for_playlists(
+        session,
+        [int(item["id"]) for item in playlists if item.get("id") is not None],
+    )
+    for item in playlists:
+        item["artwork_tracks"] = artwork_by_playlist.get(int(item["id"]), [])
+    return playlists
 
 
 def create_playlist(name: str, description: str = "", user_id: int | None = None,
@@ -153,12 +208,8 @@ def get_playlists(user_id: int | None = None) -> list[dict]:
             ).mappings().all()
         else:
             rows = session.execute(text("SELECT * FROM playlists ORDER BY updated_at DESC")).mappings().all()
-        results = []
-        for r in rows:
-            d = _normalize_playlist_row(r)
-            d["artwork_tracks"] = _fetch_artwork_tracks(session, d["id"])
-            results.append(d)
-    return results
+        results = [_normalize_playlist_row(r) for r in rows]
+        return _attach_artwork_tracks(session, results)
 
 
 def get_playlist(playlist_id: int) -> dict | None:
@@ -174,7 +225,11 @@ def get_playlist(playlist_id: int) -> dict | None:
 def list_system_playlists(*, only_curated: bool = False, only_active: bool = True,
                           category: str | None = None, user_id: int | None = None) -> list[dict]:
     query_parts = [
-        "SELECT p.*"
+        """
+        SELECT
+            p.*,
+            COALESCE(followers.follower_count, 0)::int AS follower_count
+        """
     ]
     params: dict = {}
     if user_id is not None:
@@ -188,7 +243,17 @@ def list_system_playlists(*, only_curated: bool = False, only_active: bool = Tru
             """
         )
         params["follow_user_id"] = user_id
-    query_parts.append("FROM playlists p WHERE p.scope = 'system'")
+    query_parts.append(
+        """
+        FROM playlists p
+        LEFT JOIN (
+            SELECT playlist_id, COUNT(*)::int AS follower_count
+            FROM user_followed_playlists
+            GROUP BY playlist_id
+        ) followers ON followers.playlist_id = p.id
+        WHERE p.scope = 'system'
+        """
+    )
     if only_curated:
         query_parts.append("AND p.is_curated = TRUE")
     if only_active:
@@ -199,12 +264,8 @@ def list_system_playlists(*, only_curated: bool = False, only_active: bool = Tru
     query_parts.append("ORDER BY p.featured_rank NULLS LAST, p.updated_at DESC")
     with transaction_scope() as session:
         rows = session.execute(text("\n".join(query_parts)), params).mappings().all()
-        results = []
-        for row in rows:
-            item = _normalize_playlist_row(row)
-            item["artwork_tracks"] = _fetch_artwork_tracks(session, item["id"])
-            results.append(item)
-    return results
+        results = [_normalize_playlist_row(row) for row in rows]
+        return _attach_artwork_tracks(session, results)
 
 
 def update_playlist(playlist_id: int, *, session=None, **kwargs):
@@ -441,9 +502,18 @@ def get_followed_system_playlists(user_id: int) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(
             text("""
-            SELECT p.*, TRUE AS is_followed, ufp.followed_at
+            SELECT
+                p.*,
+                TRUE AS is_followed,
+                ufp.followed_at,
+                COALESCE(followers.follower_count, 0)::int AS follower_count
             FROM user_followed_playlists ufp
             JOIN playlists p ON p.id = ufp.playlist_id
+            LEFT JOIN (
+                SELECT playlist_id, COUNT(*)::int AS follower_count
+                FROM user_followed_playlists
+                GROUP BY playlist_id
+            ) followers ON followers.playlist_id = p.id
             WHERE ufp.user_id = :user_id
               AND p.scope = 'system'
               AND p.is_active = TRUE
@@ -451,12 +521,8 @@ def get_followed_system_playlists(user_id: int) -> list[dict]:
             """),
             {"user_id": user_id},
         ).mappings().all()
-        results = []
-        for row in rows:
-            item = _normalize_playlist_row(row)
-            item["artwork_tracks"] = _fetch_artwork_tracks(session, item["id"])
-            results.append(item)
-    return results
+        results = [_normalize_playlist_row(row) for row in rows]
+        return _attach_artwork_tracks(session, results)
 
 
 def get_playlist_members(playlist_id: int) -> list[dict]:

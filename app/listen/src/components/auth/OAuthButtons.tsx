@@ -17,7 +17,9 @@ export function OAuthButtons({ returnTo = "/", inviteToken }: OAuthButtonsProps)
     const target = new URL(loginUrl, base);
     if (invite) target.searchParams.set("invite", invite);
     if (isNative) {
-      target.searchParams.set("return_to", "cratemusic://oauth/callback");
+      const callbackUrl = new URL("cratemusic://oauth/callback");
+      if (rt && rt !== "/") callbackUrl.searchParams.set("next", rt);
+      target.searchParams.set("return_to", callbackUrl.toString());
       import("@capacitor/browser").then(({ Browser }) => {
         Browser.open({ url: target.toString() });
       });

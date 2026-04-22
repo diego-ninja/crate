@@ -29,12 +29,11 @@ export function GenrePill({
   className?: string;
 }) {
   const percent = resolveGenrePercent(item);
-  const emphasis = percent != null ? Math.max(0.18, Math.min(0.5, percent / 100)) : 0.18;
   const content = (
     <>
       <span className="truncate">{item.name.toLowerCase()}</span>
       {percent != null ? (
-        <span className="rounded-sm bg-black/25 px-1 py-0.5 text-[10px] font-semibold text-white/78">
+        <span className="rounded-sm border border-[var(--active-border)] bg-[var(--active-bg-strong)] px-1 py-0.5 text-[10px] font-semibold text-[var(--active-text)]">
           {percent}%
         </span>
       ) : null}
@@ -53,13 +52,9 @@ export function GenrePill({
         onClick={onClick}
         title={title}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] text-white/80 transition-colors hover:border-white/25 hover:text-white",
+          "inline-flex items-center gap-1.5 rounded-md border border-[var(--chip-active-border)] bg-[var(--chip-active-bg)] px-2 py-1 text-[11px] text-[var(--active-text)] transition-colors hover:border-[var(--pill-active-border)] hover:bg-[var(--pill-active-bg)]",
           className,
         )}
-        style={{
-          borderColor: `rgba(255,255,255,${0.1 + emphasis * 0.45})`,
-          backgroundColor: `rgba(255,255,255,${0.02 + emphasis * 0.14})`,
-        }}
       >
         {content}
       </button>
@@ -70,13 +65,9 @@ export function GenrePill({
     <span
       title={title}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] text-white/80",
+        "inline-flex items-center gap-1.5 rounded-md border border-[var(--chip-active-border)] bg-[var(--chip-active-bg)] px-2 py-1 text-[11px] text-[var(--active-text)]",
         className,
       )}
-      style={{
-        borderColor: `rgba(255,255,255,${0.1 + emphasis * 0.45})`,
-        backgroundColor: `rgba(255,255,255,${0.02 + emphasis * 0.14})`,
-      }}
     >
       {content}
     </span>

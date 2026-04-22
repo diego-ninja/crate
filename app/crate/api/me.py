@@ -217,13 +217,13 @@ def my_sync_status(request: Request):
 )
 def my_followed_playlists(request: Request):
     user = _require_auth(request)
-    from crate.db import get_followed_system_playlists, get_playlist_followers_count
+    from crate.db import get_followed_system_playlists
 
     playlists = get_followed_system_playlists(user["id"])
     results = []
     for playlist in playlists:
         item = dict(playlist)
-        item["follower_count"] = get_playlist_followers_count(item["id"])
+        item["follower_count"] = int(item.get("follower_count") or 0)
         item["is_followed"] = True
         results.append(item)
     return results
@@ -751,41 +751,10 @@ def home_essentials(request: Request):
 )
 def home_discovery(request: Request):
     user = _require_auth(request)
-    from crate.db import get_cache, set_cache
-    from crate.db.home import get_home_discovery
-    import logging
+    from crate.db.home import get_cached_home_discovery
 
-    cache_key = f"home:discovery:{user['id']}"
-
-    # The discovery payload is the most expensive endpoint in the whole
-    # API (~10 heavy queries, JOINs across genres + similarities + follows).
-    # A 60 s cache prevents hammering the DB on quick navigations (open
-    # home → go to album → come back → home). Pull-to-refresh bypasses
-    # this via the `?fresh=1` param.
     fresh = request.query_params.get("fresh") == "1"
-    if not fresh:
-        cached = get_cache(cache_key, max_age_seconds=600)
-        if cached is not None:
-            return cached
-
-    try:
-        result = get_home_discovery(user["id"])
-        set_cache(cache_key, result, ttl=600)
-        return result
-    except Exception as exc:
-        # If the heavy computation fails (timeout, data edge case, pool
-        # exhaustion), return the last successful payload rather than a
-        # blank 500 that hides the entire home. Stale-but-visible is
-        # strictly better than broken-and-empty.
-        logging.getLogger(__name__).warning(
-            "home/discovery failed for user %s, falling back to cache: %s",
-            user["id"],
-            exc,
-        )
-        stale = get_cache(cache_key, max_age_seconds=3600)
-        if stale is not None:
-            return stale
-        raise
+    return get_cached_home_discovery(user["id"], fresh=fresh)
 
 
 @router.get(
@@ -796,11 +765,18 @@ def home_discovery(request: Request):
 )
 def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_playlist
+
+    cache_key = f"home_mix:{user['id']}:{mix_id}:{limit}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached:
+        return cached
 
     mix = get_home_playlist(user["id"], mix_id, limit=limit)
     if not mix:
         raise HTTPException(status_code=404, detail="Mix not found")
+    set_cache(cache_key, mix, ttl=300)
     return mix
 
 
@@ -836,11 +812,18 @@ def home_playlist_detail(request: Request, playlist_id: str, limit: int = Query(
 )
 def home_section_detail(request: Request, section_id: str, limit: int = Query(42, ge=1, le=120)):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_section
+
+    cache_key = f"home_section:{user['id']}:{section_id}:{limit}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached:
+        return cached
 
     section = get_home_section(user["id"], section_id, limit=limit)
     if not section:
         raise HTTPException(status_code=404, detail="Section not found")
+    set_cache(cache_key, section, ttl=300)
     return section
 
 

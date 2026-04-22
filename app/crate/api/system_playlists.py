@@ -37,7 +37,10 @@ _SYSTEM_PLAYLIST_RESPONSES = merge_responses(
 
 def _serialize_admin_playlist(playlist: dict, *, include_tracks: bool = False) -> dict:
     item = dict(playlist)
-    item["follower_count"] = get_playlist_followers_count(item["id"])
+    follower_count = item.get("follower_count")
+    if follower_count is None:
+        follower_count = get_playlist_followers_count(item["id"])
+    item["follower_count"] = int(follower_count or 0)
     if include_tracks:
         item["tracks"] = get_playlist_tracks(item["id"])
     return item

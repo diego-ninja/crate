@@ -209,10 +209,18 @@ class TestAnalysisJobsIntegration:
 
         with transaction_scope() as session:
             row = session.execute(
-                text("SELECT analysis_state, bliss_state, bliss_vector FROM library_tracks WHERE id = :id"),
+                text(
+                    """
+                    SELECT analysis_state, bliss_state, bliss_vector,
+                           bliss_embedding IS NOT NULL AS has_bliss_embedding
+                    FROM library_tracks
+                    WHERE id = :id
+                    """
+                ),
                 {"id": track["id"]},
             ).mappings().first()
 
         assert row["analysis_state"] == "pending"
         assert row["bliss_state"] == "done"
         assert row["bliss_vector"] == vector
+        assert row["has_bliss_embedding"] is True

@@ -1,13 +1,10 @@
-"""Database queries for bliss similarity/radio features.
-
-Encapsulates all SQL used by crate.bliss — complex similarity queries
-with float8[] vectors, composite scoring, and multi-seed aggregation.
-"""
+"""Database queries for bliss similarity/radio features."""
 
 import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
+from crate.db.bliss_vectors import to_pgvector_literal
 from crate.db.tx import transaction_scope
 from sqlalchemy import text
 
@@ -19,8 +16,13 @@ def store_bliss_vectors(vectors: dict[str, list[float]]):
     with transaction_scope() as session:
         for path, features in vectors.items():
             session.execute(
-                text("UPDATE library_tracks SET bliss_vector = :features WHERE path = :path AND bliss_vector IS NULL"),
-                {"features": features, "path": path},
+                text(
+                    "UPDATE library_tracks "
+                    "SET bliss_vector = :features, "
+                    "    bliss_embedding = CAST(:vector_literal AS vector(20)) "
+                    "WHERE path = :path AND bliss_vector IS NULL"
+                ),
+                {"features": features, "vector_literal": to_pgvector_literal(features), "path": path},
             )
 
 
@@ -343,20 +345,18 @@ def get_bliss_candidates(
 ) -> list[dict]:
     if not bliss_vector:
         return []
+    probe_vector = to_pgvector_literal(bliss_vector)
     with _bliss_session_scope(session) as active_session:
         result = active_session.execute(text("""
             SELECT t.id AS track_id, t.path, t.title, t.artist, a.artist AS album_artist, a.name AS album, a.year, t.duration,
                    t.bliss_vector, t.bpm, t.audio_key, t.audio_scale, t.energy, t.rating,
-                   SQRT(
-                       (SELECT SUM(POW(x - y, 2))
-                        FROM UNNEST(t.bliss_vector, CAST(:bliss_vector AS float8[])) AS v(x, y))
-                   ) AS bliss_dist
+                   (t.bliss_embedding <-> CAST(:probe_vector AS vector(20))) AS bliss_dist
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
-            WHERE t.bliss_vector IS NOT NULL AND t.path != :exclude_path
+            WHERE t.bliss_embedding IS NOT NULL AND t.path != :exclude_path
             ORDER BY bliss_dist ASC
             LIMIT :limit
-        """), {"bliss_vector": bliss_vector, "exclude_path": exclude_path, "limit": limit}).mappings().all()
+        """), {"probe_vector": probe_vector, "exclude_path": exclude_path, "limit": limit}).mappings().all()
         return [dict(r) for r in result]
 
 
@@ -561,9 +561,9 @@ def get_multi_seed_bliss_candidates(
             WITH seeds AS (
                 SELECT
                     t.path AS seed_path,
-                    t.bliss_vector AS seed_bliss_vector
+                    t.bliss_embedding AS seed_bliss_embedding
                 FROM library_tracks t
-                WHERE t.path = ANY(:bliss_seed_paths) AND t.bliss_vector IS NOT NULL
+                WHERE t.path = ANY(:bliss_seed_paths) AND t.bliss_embedding IS NOT NULL
             ),
             ranked AS (
                 SELECT
@@ -584,16 +584,11 @@ def get_multi_seed_bliss_candidates(
                     t.rating,
                     ROW_NUMBER() OVER (
                         PARTITION BY s.seed_path
-                        ORDER BY SQRT(
-                            (
-                                SELECT SUM(POW(x - y, 2))
-                                FROM UNNEST(t.bliss_vector, s.seed_bliss_vector) AS v(x, y)
-                            )
-                        ) ASC
+                        ORDER BY t.bliss_embedding <-> s.seed_bliss_embedding ASC
                     ) AS seed_rank
                 FROM seeds s
                 JOIN library_tracks t
-                  ON t.bliss_vector IS NOT NULL
+                  ON t.bliss_embedding IS NOT NULL
                  AND t.path <> s.seed_path
                  AND t.path <> ALL(:all_seed_paths)
                 JOIN library_albums a ON t.album_id = a.id

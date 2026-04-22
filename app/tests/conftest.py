@@ -122,7 +122,7 @@ def _try_testcontainers() -> bool:
         return False
     try:
         container = PostgresContainer(
-            image="postgres:15-alpine",
+            image="pgvector/pgvector:pg15",
             username="crate",
             password="crate",
             dbname=TEST_DB_NAME,

@@ -5,6 +5,7 @@ Uses FOR UPDATE SKIP LOCKED for atomic claim queries — keep exactly as-is.
 
 from datetime import datetime, timezone
 
+from crate.db.bliss_vectors import to_pgvector_literal
 from crate.db.tx import transaction_scope
 from sqlalchemy import text
 
@@ -88,9 +89,14 @@ def store_bliss_vector(track_id: int, vector: list[float]):
     """Store a bliss vector and mark as done in one update."""
     with transaction_scope() as session:
         session.execute(
-            text("UPDATE library_tracks SET bliss_vector = :vector, bliss_state = 'done' "
-                 "WHERE id = :id"),
-            {"vector": vector, "id": track_id},
+            text(
+                "UPDATE library_tracks "
+                "SET bliss_vector = :vector, "
+                "    bliss_embedding = CAST(:vector_literal AS vector(20)), "
+                "    bliss_state = 'done' "
+                "WHERE id = :id"
+            ),
+            {"vector": vector, "vector_literal": to_pgvector_literal(vector), "id": track_id},
         )
 
 

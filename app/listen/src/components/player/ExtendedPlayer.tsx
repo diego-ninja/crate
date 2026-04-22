@@ -255,7 +255,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
               </>
             )}
           </div>
-          {vizCfg.trackAdaptiveViz && vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
+          {vizCfg.vizEnabled && vizCfg.trackAdaptiveViz && vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
             <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.22em] text-white/40">
               spheres · {vizCfg.trackVizProfile.summary}
             </p>

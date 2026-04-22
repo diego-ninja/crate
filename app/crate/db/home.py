@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
+import secrets
+import time
+from collections.abc import Callable
 from datetime import date, datetime, timedelta, timezone
+from threading import Event, Lock
 
 from sqlalchemy import text
 
@@ -22,6 +27,29 @@ from crate.genre_taxonomy import (
     get_related_genre_terms,
     summarize_taste_genres,
 )
+
+log = logging.getLogger(__name__)
+
+_home_cache_singleflight_guard = Lock()
+_home_cache_singleflight_events: dict[str, Event] = {}
+
+
+def _home_cache_scope(cache_key: str) -> str:
+    parts = cache_key.split(":")
+    return parts[1] if len(parts) > 1 else cache_key
+
+
+def _record_home_metric(name: str, *, cache_key: str, value: float = 1.0):
+    try:
+        from crate.metrics import record, record_counter
+
+        tags = {"scope": _home_cache_scope(cache_key)}
+        if name.endswith(".ms"):
+            record(name, value, tags)
+        else:
+            record_counter(name, tags)
+    except Exception:
+        return
 
 
 def _coerce_datetime(value: object) -> datetime | None:
@@ -85,6 +113,124 @@ def _derive_home_genres(top_genres: list[dict], fallback_names: list[str], limit
         summarize_taste_genres(fallback_rows, limit=limit),
         choose_mix_seed_genres(fallback_rows, limit=limit),
     )
+
+
+def _get_or_compute_home_cache(
+    cache_key: str,
+    *,
+    max_age_seconds: int,
+    ttl: int,
+    compute: Callable[[], dict],
+    fresh: bool = False,
+    allow_stale_on_error: bool = False,
+    stale_max_age_seconds: int | None = None,
+    wait_timeout_seconds: float = 10.0,
+) -> dict:
+    from crate.db.cache import get_cache, set_cache
+
+    def _wait_for_cached_value() -> dict | None:
+        deadline = time.time() + wait_timeout_seconds
+        while time.time() < deadline:
+            cached_value = get_cache(cache_key, max_age_seconds=max_age_seconds)
+            if cached_value is not None:
+                return cached_value
+            time.sleep(0.1)
+        return None
+
+    def _acquire_distributed_lock() -> tuple[object, str, str] | None | bool:
+        from crate.db.cache import _get_redis
+
+        redis_client = _get_redis()
+        if not redis_client:
+            return None
+        lock_key = f"lock:{cache_key}"
+        token = secrets.token_urlsafe(12)
+        try:
+            acquired = redis_client.set(lock_key, token, ex=max(int(wait_timeout_seconds) + 5, 15), nx=True)
+        except Exception:
+            return None
+        if acquired:
+            return redis_client, lock_key, token
+        return False
+
+    def _release_distributed_lock(lock_state: tuple[object, str, str] | None):
+        if not lock_state:
+            return
+        redis_client, lock_key, token = lock_state
+        try:
+            redis_client.eval(
+                """
+                if redis.call('get', KEYS[1]) == ARGV[1] then
+                    return redis.call('del', KEYS[1])
+                end
+                return 0
+                """,
+                1,
+                lock_key,
+                token,
+            )
+        except Exception:
+            return
+
+    if not fresh:
+        cached = get_cache(cache_key, max_age_seconds=max_age_seconds)
+        if cached is not None:
+            _record_home_metric("home.cache.hit", cache_key=cache_key)
+            return cached
+    _record_home_metric("home.cache.miss", cache_key=cache_key)
+
+    is_owner = False
+    wait_event: Event
+    with _home_cache_singleflight_guard:
+        wait_event = _home_cache_singleflight_events.get(cache_key)
+        if wait_event is None:
+            wait_event = Event()
+            _home_cache_singleflight_events[cache_key] = wait_event
+            is_owner = True
+
+    if not is_owner:
+        if wait_event.wait(wait_timeout_seconds):
+            cached = get_cache(cache_key, max_age_seconds=max_age_seconds)
+            if cached is not None:
+                _record_home_metric("home.cache.coalesced", cache_key=cache_key)
+                return cached
+        waited = _wait_for_cached_value()
+        if waited is not None:
+            _record_home_metric("home.cache.waited", cache_key=cache_key)
+            return waited
+        # The owner likely failed or timed out; fall through and compute locally.
+
+    distributed_lock = _acquire_distributed_lock()
+    if distributed_lock is False:
+        waited = _wait_for_cached_value()
+        if waited is not None:
+            _record_home_metric("home.cache.waited", cache_key=cache_key)
+            return waited
+        distributed_lock = None
+
+    try:
+        started = time.monotonic()
+        value = compute()
+        elapsed_ms = (time.monotonic() - started) * 1000
+        _record_home_metric("home.compute.ms", cache_key=cache_key, value=elapsed_ms)
+        if elapsed_ms >= 1000:
+            log.info("Slow home cache compute for %s: %.1fms", cache_key, elapsed_ms)
+        set_cache(cache_key, value, ttl=ttl)
+        return value
+    except Exception:
+        if allow_stale_on_error and stale_max_age_seconds is not None:
+            stale = get_cache(cache_key, max_age_seconds=stale_max_age_seconds)
+            if stale is not None:
+                _record_home_metric("home.cache.stale_fallback", cache_key=cache_key)
+                return stale
+        raise
+    finally:
+        _release_distributed_lock(distributed_lock if isinstance(distributed_lock, tuple) else None)
+        if is_owner:
+            with _home_cache_singleflight_guard:
+                current = _home_cache_singleflight_events.pop(cache_key, None)
+                if current is not None:
+                    current.set()
 
 
 def _artist_identity(row: dict) -> object | None:
@@ -697,6 +843,7 @@ def _build_mix_rows(
     top_genres_lower: list[str],
     mix_id: str,
     limit: int,
+    recent_releases: list[dict] | None = None,
 ) -> tuple[str, str, list[dict]]:
     if mix_id == "daily-discovery":
         primary_rows = _query_discovery_tracks(
@@ -729,7 +876,7 @@ def _build_mix_rows(
         )
 
     if mix_id == "my-new-arrivals":
-        releases = _filter_interesting_releases(
+        releases = recent_releases if recent_releases is not None else _filter_interesting_releases(
             get_new_releases(limit=250),
             interest_artists_lower=set(interest_artists_lower),
             saved_album_ids=set(),
@@ -873,8 +1020,8 @@ def _get_home_context(
     top_artist_names_lower = [(row.get("artist_name") or "").lower() for row in top_artists if row.get("artist_name")]
     interest_artists_lower = list(dict.fromkeys(top_artist_names_lower + followed_names_lower))
     saved_album_ids = list({row["id"] for row in saved_albums if row.get("id") is not None})
-    fallback_genre_names: list[str] = []
-    if followed_names_lower:
+    top_genres_lower, mix_seed_genres = _derive_home_genres(top_genres, [], top_genre_limit)
+    if not top_genres_lower and not mix_seed_genres and followed_names_lower:
         with transaction_scope() as session:
             rows = session.execute(
                 text("""SELECT g.name, COUNT(*) AS cnt
@@ -884,7 +1031,7 @@ def _get_home_context(
                 {"names": followed_names_lower, "lim": top_genre_limit},
             ).mappings().all()
             fallback_genre_names = [row["name"].lower() for row in rows]
-    top_genres_lower, mix_seed_genres = _derive_home_genres(top_genres, fallback_genre_names, top_genre_limit)
+        top_genres_lower, mix_seed_genres = _derive_home_genres(top_genres, fallback_genre_names, top_genre_limit)
 
     return {
         "followed": followed,
@@ -928,6 +1075,7 @@ def _build_recommended_tracks(
     recent_releases: list[dict],
     interest_artists_lower: list[str],
     limit: int,
+    fallback_tracks: list[dict] | None = None,
 ) -> list[dict]:
     fresh_release_album_ids = [
         row["album_id"]
@@ -950,8 +1098,7 @@ def _build_recommended_tracks(
         if not row.get("user_play_count") and not row.get("is_liked")
     ]
     if len(recommended_track_rows) < limit:
-        fallback_mix = get_home_mix(user_id, "my-new-arrivals", limit=max(limit, 18))
-        fallback_rows = [dict(track) for track in (fallback_mix or {}).get("tracks", [])]
+        fallback_rows = [dict(track) for track in (fallback_tracks or [])]
         recommended_track_rows = _merge_track_rows(recommended_track_rows, fallback_rows)
     return _select_diverse_tracks_with_backfill(recommended_track_rows, limit=limit, max_per_artist=2, max_per_album=2)
 
@@ -964,6 +1111,8 @@ def _build_custom_mix_summaries(
     top_genres_lower: list[str],
     mix_count: int,
     summary_track_limit: int = 8,
+    recent_releases: list[dict] | None = None,
+    precomputed_mixes: dict[str, tuple[str, str, list[dict]]] | None = None,
 ) -> list[dict]:
     """Build mix summaries using pre-computed context (no redundant DB calls).
 
@@ -980,13 +1129,18 @@ def _build_custom_mix_summaries(
     )
     mixes: list[dict] = []
     for mix_id in dict.fromkeys(custom_mix_ids):
-        name, description, rows = _build_mix_rows(
-            user_id,
-            interest_artists_lower=interest_artists_lower,
-            top_genres_lower=top_genres_lower,
-            mix_id=mix_id,
-            limit=summary_track_limit,
-        )
+        precomputed = (precomputed_mixes or {}).get(mix_id)
+        if precomputed is not None:
+            name, description, rows = precomputed
+        else:
+            name, description, rows = _build_mix_rows(
+                user_id,
+                interest_artists_lower=interest_artists_lower,
+                top_genres_lower=top_genres_lower,
+                mix_id=mix_id,
+                limit=summary_track_limit,
+                recent_releases=recent_releases,
+            )
         if not name or not rows:
             continue
         mixes.append({
@@ -1107,32 +1261,16 @@ def _build_core_playlists(user_id: int, top_artists: list[dict], limit: int, tra
 
 
 def get_home_mix(user_id: int, mix_id: str, limit: int = 40) -> dict | None:
-    followed = get_followed_artists(user_id)
-    top_artists = get_top_artists(user_id, window="90d", limit=24)
-    top_genres = get_top_genres(user_id, window="90d", limit=8)
-    interest_artists_lower = [
-        *(row["artist_name"].lower() for row in top_artists if row.get("artist_name")),
-        *(row["artist_name"].lower() for row in followed if row.get("artist_name")),
-    ]
-    followed_lower = [r["artist_name"].lower() for r in followed if r.get("artist_name")]
-    fallback_genre_names: list[str] = []
-    if followed_lower:
-        with transaction_scope() as session:
-            rows = session.execute(
-                text("""SELECT g.name FROM artist_genres ag JOIN genres g ON g.id = ag.genre_id
-                    WHERE LOWER(ag.artist_name) = ANY(:names)
-                    GROUP BY g.name ORDER BY COUNT(*) DESC LIMIT 8"""),
-                {"names": followed_lower},
-            ).mappings().all()
-            fallback_genre_names = [row["name"].lower() for row in rows]
-    top_genres_lower, _ = _derive_home_genres(top_genres, fallback_genre_names, 8)
+    context = _get_cached_home_context(user_id, top_artist_limit=28, top_album_limit=12, top_genre_limit=8)
+    recent_releases = _recent_releases_from_context(context)
 
     name, description, rows = _build_mix_rows(
         user_id,
-        interest_artists_lower=interest_artists_lower,
-        top_genres_lower=top_genres_lower,
+        interest_artists_lower=context["interest_artists_lower"],
+        top_genres_lower=context["top_genres_lower"],
         mix_id=mix_id,
         limit=limit,
+        recent_releases=recent_releases,
     )
     if not name or not rows:
         return None
@@ -1199,19 +1337,18 @@ def _get_cached_home_context(
     top_album_limit: int = 12,
     top_genre_limit: int = 8,
 ) -> dict:
-    cache_key = f"home:context:{user_id}"
-    from crate.db.cache import get_cache, set_cache
-    cached = get_cache(cache_key, max_age_seconds=600)
-    if cached:
-        return cached
-    ctx = _get_home_context(
-        user_id,
-        top_artist_limit=top_artist_limit,
-        top_album_limit=top_album_limit,
-        top_genre_limit=top_genre_limit,
+    cache_key = f"home:context:{user_id}:{top_artist_limit}:{top_album_limit}:{top_genre_limit}"
+    return _get_or_compute_home_cache(
+        cache_key,
+        max_age_seconds=600,
+        ttl=600,
+        compute=lambda: _get_home_context(
+            user_id,
+            top_artist_limit=top_artist_limit,
+            top_album_limit=top_album_limit,
+            top_genre_limit=top_genre_limit,
+        ),
     )
-    set_cache(cache_key, ctx, ttl=600)
-    return ctx
 
 
 def _merged_artists_from_context(context: dict) -> list[dict]:
@@ -1258,12 +1395,14 @@ def get_home_recently_played(user_id: int) -> list[dict]:
 
 def get_home_mixes(user_id: int) -> list[dict]:
     ctx = _get_cached_home_context(user_id)
+    recent_releases = _recent_releases_from_context(ctx)
     return _build_custom_mix_summaries(
         user_id,
         mix_seed_genres=ctx["mix_seed_genres"],
         interest_artists_lower=ctx["interest_artists_lower"],
         top_genres_lower=ctx["top_genres_lower"],
         mix_count=8,
+        recent_releases=recent_releases,
     )
 
 
@@ -1303,6 +1442,19 @@ def get_home_essentials(user_id: int) -> list[dict]:
     return _build_core_playlists(user_id, merged, 6)
 
 
+def get_cached_home_discovery(user_id: int, *, fresh: bool = False) -> dict:
+    cache_key = f"home:discovery:{user_id}"
+    return _get_or_compute_home_cache(
+        cache_key,
+        max_age_seconds=600,
+        ttl=600,
+        fresh=fresh,
+        allow_stale_on_error=True,
+        stale_max_age_seconds=3600,
+        compute=lambda: get_home_discovery(user_id),
+    )
+
+
 def get_home_discovery(user_id: int) -> dict:
     context = _get_cached_home_context(user_id, top_artist_limit=28, top_album_limit=12, top_genre_limit=8)
     top_artists = context["top_artists"]
@@ -1322,12 +1474,25 @@ def get_home_discovery(user_id: int) -> dict:
         days=240,
     )
 
+    precomputed_mixes: dict[str, tuple[str, str, list[dict]]] = {}
+    my_new_arrivals_mix = _build_mix_rows(
+        user_id,
+        interest_artists_lower=interest_artists_lower,
+        top_genres_lower=top_genres_lower,
+        mix_id="my-new-arrivals",
+        limit=max(18, 8),
+        recent_releases=recent_releases,
+    )
+    if my_new_arrivals_mix[0] and my_new_arrivals_mix[2]:
+        precomputed_mixes["my-new-arrivals"] = my_new_arrivals_mix
+
     suggested_albums = _build_suggested_albums(recent_releases, 14)
     recommended_tracks = _build_recommended_tracks(
         user_id,
         recent_releases=recent_releases,
         interest_artists_lower=interest_artists_lower,
         limit=18,
+        fallback_tracks=precomputed_mixes.get("my-new-arrivals", ("", "", []))[2],
     )
     custom_mixes = _build_custom_mix_summaries(
         user_id,
@@ -1335,6 +1500,8 @@ def get_home_discovery(user_id: int) -> dict:
         interest_artists_lower=interest_artists_lower,
         top_genres_lower=top_genres_lower,
         mix_count=8,
+        recent_releases=recent_releases,
+        precomputed_mixes=precomputed_mixes,
     )
     merged_artists = _merged_artists_from_context(context)
 
@@ -1355,7 +1522,7 @@ def get_home_discovery(user_id: int) -> dict:
 
 
 def get_home_section(user_id: int, section_id: str, limit: int = 42) -> dict | None:
-    context = _get_home_context(
+    context = _get_cached_home_context(
         user_id,
         top_artist_limit=max(limit * 2, 28),
         top_album_limit=max(limit, 12),
@@ -1392,6 +1559,7 @@ def get_home_section(user_id: int, section_id: str, limit: int = 42) -> dict | N
                 interest_artists_lower=interest_artists_lower,
                 top_genres_lower=top_genres_lower,
                 mix_count=limit,
+                recent_releases=recent_releases,
             ),
         }
 

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from crate.db.bliss_vectors import to_pgvector_literal
 from crate.db.tx import transaction_scope, read_scope
 
 log = logging.getLogger(__name__)
@@ -25,11 +26,6 @@ def _centroid(vectors: list[list[float]]) -> list[float]:
 def _lerp(a: list[float], b: list[float], t: float) -> list[float]:
     """Linear interpolation between two vectors. t=0 → a, t=1 → b."""
     return [a[d] + (b[d] - a[d]) * t for d in range(len(a))]
-
-
-def _vector_to_pg_array(vec: list[float]) -> str:
-    """Format a float list as a PostgreSQL array literal."""
-    return "ARRAY[" + ",".join(f"{v:.8f}" for v in vec) + "]::float8[]"
 
 
 # ── Resolve endpoints to bliss centroids ──────────────────────────
@@ -404,9 +400,11 @@ def _find_anchor_track(
     For track endpoints, returns that specific track.
     For artist/album/genre, finds the closest track within that scope.
     """
-    pg_array = _vector_to_pg_array(target_vec)
+    probe_vector = to_pgvector_literal(target_vec)
     exclude_clause = "AND t.id != ALL(:exclude)" if exclude else ""
-    params: dict = {"exclude": list(exclude)} if exclude else {}
+    params: dict = {"probe_vector": probe_vector}
+    if exclude:
+        params["exclude"] = list(exclude)
 
     with read_scope() as session:
         if endpoint_type == "track":
@@ -446,13 +444,13 @@ def _find_anchor_track(
             text(f"""
                 SELECT t.id, t.storage_id, t.title, a.artist, a.name AS album,
                        t.album_id, t.bliss_vector,
-                       (t.bliss_vector <-> {pg_array}) AS distance
+                       (t.bliss_embedding <-> CAST(:probe_vector AS vector(20))) AS distance
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
-                WHERE t.bliss_vector IS NOT NULL
+                WHERE t.bliss_embedding IS NOT NULL
                 {scope_clause}
                 {exclude_clause}
-                ORDER BY t.bliss_vector <-> {pg_array}
+                ORDER BY t.bliss_embedding <-> CAST(:probe_vector AS vector(20))
                 LIMIT 1
             """),
             params,
@@ -485,10 +483,10 @@ def _find_best_candidate(
     - Boosts tracks from artists in the similarity graph neighborhood
     - Boosts tracks from artists sharing genres with the path context
     """
-    pg_array = _vector_to_pg_array(target)
+    probe_vector = to_pgvector_literal(target)
 
     exclude_clause = ""
-    params: dict = {}
+    params: dict = {"probe_vector": probe_vector}
     if exclude_ids:
         exclude_clause = "AND t.id != ALL(:exclude)"
         params["exclude"] = list(exclude_ids)
@@ -498,12 +496,12 @@ def _find_best_candidate(
             text(f"""
                 SELECT t.id, t.storage_id, t.title, a.artist,
                        a.name AS album, t.album_id, t.bliss_vector,
-                       (t.bliss_vector <-> {pg_array}) AS distance
+                       (t.bliss_embedding <-> CAST(:probe_vector AS vector(20))) AS distance
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
-                WHERE t.bliss_vector IS NOT NULL
+                WHERE t.bliss_embedding IS NOT NULL
                 {exclude_clause}
-                ORDER BY t.bliss_vector <-> {pg_array}
+                ORDER BY t.bliss_embedding <-> CAST(:probe_vector AS vector(20))
                 LIMIT {_CANDIDATE_POOL_SIZE}
             """),
             params,
