@@ -77,7 +77,7 @@ def resolve_discovery_seed(user_id: int) -> tuple[list[float], str] | None:
         liked = session.execute(
             text("""
                 SELECT t.bliss_vector
-                FROM liked_tracks lt
+                FROM user_liked_tracks lt
                 JOIN library_tracks t ON t.id = lt.track_id
                 WHERE lt.user_id = :user_id
                   AND t.bliss_vector IS NOT NULL
@@ -95,7 +95,7 @@ def resolve_discovery_seed(user_id: int) -> tuple[list[float], str] | None:
         follows = session.execute(
             text("""
                 SELECT DISTINCT t.bliss_vector
-                FROM artist_follows af
+                FROM user_follows af
                 JOIN library_albums a ON LOWER(a.artist) = LOWER(af.artist_name)
                 JOIN library_tracks t ON t.album_id = a.id
                 WHERE af.user_id = :user_id
@@ -113,7 +113,7 @@ def resolve_discovery_seed(user_id: int) -> tuple[list[float], str] | None:
         saved = session.execute(
             text("""
                 SELECT t.bliss_vector
-                FROM saved_albums sa
+                FROM user_saved_albums sa
                 JOIN library_tracks t ON t.album_id = sa.album_id
                 WHERE sa.user_id = :user_id
                   AND t.bliss_vector IS NOT NULL
@@ -170,9 +170,9 @@ def has_enough_data(user_id: int) -> bool:
         row = session.execute(
             text("""
                 SELECT
-                    (SELECT count(*) FROM liked_tracks WHERE user_id = :uid) AS likes,
-                    (SELECT count(*) FROM artist_follows WHERE user_id = :uid) AS follows,
-                    (SELECT count(*) FROM saved_albums WHERE user_id = :uid) AS saved_albums
+                    (SELECT count(*) FROM user_liked_tracks WHERE user_id = :uid) AS likes,
+                    (SELECT count(*) FROM user_follows WHERE user_id = :uid) AS follows,
+                    (SELECT count(*) FROM user_saved_albums WHERE user_id = :uid) AS saved_albums
             """),
             {"uid": user_id},
         ).mappings().first()
