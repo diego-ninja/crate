@@ -10,7 +10,7 @@ export function Footer() {
           <div>
             <div className="text-sm font-semibold text-white">Crate</div>
             <div className="text-[12px] text-white/40">
-              A home for the music you actually own.
+              Own your music. Support your artists. Refuse the middleman.
             </div>
           </div>
         </div>
@@ -31,7 +31,7 @@ export function Footer() {
             <GithubIcon size={13} />
             GitHub
           </a>
-          <span className="text-white/30">© {year} Diego Rin Martín</span>
+          <span className="text-white/30">© {year} The Crate Squad</span>
         </div>
       </div>
     </footer>

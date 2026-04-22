@@ -534,18 +534,18 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           {!lyrics ? (
             <p className="text-center text-white/40 text-sm mt-20">Loading lyrics...</p>
           ) : lyrics.synced ? (
-            <div className="flex flex-col items-center gap-2 py-8">
+            <div className="flex flex-col items-center gap-1 py-8">
               {lyrics.synced.map((line, i) => (
                 <button
                   key={i}
                   ref={i === activeLyricIndex ? activeLyricRef : null}
                   onClick={() => seek(line.time)}
-                  className={`text-center text-lg font-medium transition-all duration-300 ${
+                  className={`w-full max-w-md rounded-md px-3 py-1 text-center transition-all duration-500 ${
                     i === activeLyricIndex
-                      ? "text-white scale-105"
+                      ? "bg-primary/10 text-lg font-semibold text-primary"
                       : i < activeLyricIndex
-                        ? "text-white/40"
-                        : "text-white/40"
+                        ? "text-[15px] text-white/25"
+                        : "text-[15px] text-white/50"
                   }`}
                 >
                   {line.text || "♪"}

@@ -140,7 +140,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
 
   return (
     <div
-      className="z-app-player-drawer fixed right-0 top-0 bottom-[72px] flex w-[360px] flex-col overflow-hidden border-l border-white/5 shadow-2xl"
+      className="z-app-player-drawer fixed right-0 top-0 bottom-[72px] flex w-[480px] flex-col overflow-hidden border-l border-white/5 shadow-2xl"
       style={{
         background: `linear-gradient(180deg, ${cssColor(primary, useAlbumPalette ? 0.2 : 0.12)} 0%, rgba(12,12,20,0.96) 22%, var(--surface-panel) 100%)`,
       }}
@@ -181,7 +181,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
 
         {/* Synced lyrics */}
         {lyrics?.synced && (
-          <div className="space-y-1 px-4" style={{ paddingTop: "38vh", paddingBottom: "38vh" }}>
+          <div className="space-y-1 px-3" style={{ paddingTop: "38vh", paddingBottom: "38vh" }}>
             {lyrics.synced.map((line, i) => {
               const isActive = i === activeIndex;
               const isPast = i < activeIndex;
@@ -190,15 +190,15 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
                   key={i}
                   ref={isActive ? activeRef : null}
                   onClick={() => seek(line.time)}
-                  className={`relative z-20 flex min-h-[72px] w-full items-center rounded-xl px-3 py-1.5 text-left transition-all duration-300 ${
+                  className={`relative z-20 w-full rounded-md px-2 py-1 text-left transition-all duration-500 ${
                     isActive
-                      ? "text-white text-[18px] font-bold"
-                    : isPast
-                        ? "text-white/20 text-[14px]"
-                        : "text-white/40 text-[14px] hover:text-white/60"
+                      ? "bg-primary/10 text-[17px] font-semibold"
+                      : isPast
+                        ? "text-[14px] text-white/25"
+                        : "text-[14px] text-white/50"
                   }`}
                   style={isActive ? {
-                    textShadow: `0 0 24px ${cssColor(primary, 0.3)}`,
+                    textShadow: `0 0 20px ${cssColor(primary, 0.25)}`,
                     color: cssColor(secondary, 1),
                   } : undefined}
                 >

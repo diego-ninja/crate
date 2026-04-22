@@ -21,13 +21,14 @@ export interface Track {
 
 export type RepeatMode = "off" | "one" | "all";
 
-type RadioSeedType = "track" | "album" | "artist" | "playlist";
+type RadioSeedType = "track" | "album" | "artist" | "playlist" | "discovery";
 
 interface RadioSession {
   seedType: RadioSeedType;
   seedId?: string | number | null;
   seedStorageId?: string | null;
   seedPath?: string | null;
+  shapedSessionId?: string | null;
 }
 
 export interface PlaySource {

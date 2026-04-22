@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { Search, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, Radio, Route, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -204,6 +204,40 @@ export function Explore() {
             <ExploreLoadingState />
           ) : filters ? (
             <>
+              {/* Radio + Paths */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  onClick={() => navigate("/radio")}
+                  className="group flex items-center gap-4 rounded-xl border border-primary/15 bg-primary/5 p-4 text-left transition hover:border-primary/30 hover:bg-primary/10"
+                >
+                  <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary">
+                    <Radio size={19} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-foreground">Radio</div>
+                    <div className="mt-0.5 text-[12px] text-white/50">
+                      Infinite music shaped by your likes and dislikes
+                    </div>
+                  </div>
+                  <ArrowRight size={16} className="flex-shrink-0 text-primary/40 transition group-hover:translate-x-0.5 group-hover:text-primary" />
+                </button>
+                <button
+                  onClick={() => navigate("/paths")}
+                  className="group flex items-center gap-4 rounded-xl border border-primary/15 bg-primary/5 p-4 text-left transition hover:border-primary/30 hover:bg-primary/10"
+                >
+                  <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary">
+                    <Route size={19} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-foreground">Music Paths</div>
+                    <div className="mt-0.5 text-[12px] text-white/50">
+                      Trace a route between artists, genres, or tracks
+                    </div>
+                  </div>
+                  <ArrowRight size={16} className="flex-shrink-0 text-primary/40 transition group-hover:translate-x-0.5 group-hover:text-primary" />
+                </button>
+              </div>
+
               {/* Genres — top 10 by artist count */}
               <div className="space-y-3">
                 <h2 className="text-lg font-bold px-1">Genres</h2>

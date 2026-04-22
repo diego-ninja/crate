@@ -215,7 +215,9 @@ Login: admin@cratemusic.app / admin (dev seed user, also used in production).
 - Type hints on function signatures (Python 3.12 union syntax `str | None`)
 - `log = logging.getLogger(__name__)` per module
 - Imports: stdlib → third-party → local, separated by blank lines
-- DB functions in `db/` modules, not scattered across routers
+- **DB boundary**: ALL database access (`session.execute`, `transaction_scope`, `read_scope`) MUST live inside `crate/db/` modules. Code outside `db/` must call functions from `crate.db.*`, never use SQLAlchemy directly. Tests enforce this.\
+- **DB facade**: Every public function in `crate/db/*.py` must be re-exported in `crate/db/__init__.py`. Tests enforce this.\
+- **Run tests before committing**: `docker compose -f docker-compose.dev.yaml exec worker pytest tests/ -v`
 - Worker handlers in `worker_handlers/`, registered via Dramatiq actors
 - ORM models in `db/orm/` (SQLAlchemy 2.0 Mapped style), complex queries in `db/queries/` and `db/jobs/`
 - Pydantic v2 schemas in `api/schemas/`, data models in `db/models/`
