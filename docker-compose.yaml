@@ -202,7 +202,7 @@ services:
   # These MUST match an existing role in the volume, or the init script
   # must create one. See app/scripts/init-postgres.sh for provisioning.
   crate-postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: crate-postgres
     restart: unless-stopped
     mem_limit: 1g
