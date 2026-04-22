@@ -206,7 +206,7 @@ def compute_path(
                     "step": global_step,
                     "progress": round(global_progress, 4),
                     "track_id": track["id"],
-                    "storage_id": track.get("storage_id"),
+                    "storage_id": str(track["storage_id"]) if track.get("storage_id") else None,
                     "title": track["title"],
                     "artist": track["artist"],
                     "album": track.get("album"),
@@ -331,7 +331,7 @@ def create_music_path(
                      dest_type, dest_value, dest_label, waypoints, step_count, tracks)
                 VALUES
                     (:user_id, :name, :origin_type, :origin_value, :origin_label,
-                     :dest_type, :dest_value, :dest_label, :waypoints::jsonb, :step_count, :tracks::jsonb)
+                     :dest_type, :dest_value, :dest_label, CAST(:waypoints AS jsonb), :step_count, CAST(:tracks AS jsonb))
                 RETURNING id, created_at
             """),
             {
@@ -461,7 +461,7 @@ def regenerate_music_path(path_id: int, user_id: int) -> dict | None:
         session.execute(
             text("""
                 UPDATE music_paths
-                SET tracks = :tracks::jsonb, updated_at = :now
+                SET tracks = CAST(:tracks AS jsonb), updated_at = :now
                 WHERE id = :id AND user_id = :user_id
             """),
             {
