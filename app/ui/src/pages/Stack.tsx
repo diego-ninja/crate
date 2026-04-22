@@ -49,10 +49,8 @@ interface ContainerLogs {
 type ServiceFilter = "all" | "running" | "stopped";
 
 const SERVICE_URLS: Record<string, string> = {
-  lidarr: "https://collection.lespedants.org",
   tidarr: "https://search.lespedants.org",
   traefik: "https://traefik.lespedants.org",
-  authelia: "https://auth.lespedants.org",
 };
 
 const STATE_STYLES: Record<string, { chip: string; dot: string; tone: "default" | "success" | "warning" | "danger" }> = {

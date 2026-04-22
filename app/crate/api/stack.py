@@ -91,8 +91,8 @@ def stack_restart_container(request: Request, name: str):
     _require_admin(request)
     # Safety: only allow restarting crate containers
     allowed_prefixes = [
-        "librarian-", "lidarr", "tidarr", "tidalrr",
-        "slskd", "soulsync", "traefik", "authelia", "nginx",
+        "librarian-", "tidarr", "tidalrr",
+        "slskd", "soulsync", "traefik", "nginx",
     ]
     if not any(name.startswith(p) for p in allowed_prefixes):
         raise HTTPException(status_code=403, detail=f"Cannot restart '{name}': not a managed container")
@@ -104,8 +104,8 @@ def stack_restart_container(request: Request, name: str):
 
 
 ALLOWED_PREFIXES = [
-    "librarian-", "lidarr", "tidarr", "tidalrr",
-    "slskd", "soulsync", "traefik", "authelia", "nginx",
+    "librarian-", "tidarr", "tidalrr",
+    "slskd", "soulsync", "traefik", "nginx",
 ]
 
 

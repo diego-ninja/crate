@@ -29,57 +29,6 @@ services:
       traefik.http.routers.traefik-secure.rule: Host(`traefik.${DOMAIN}`)
       traefik.http.routers.traefik-secure.entryPoints: websecure
       traefik.http.routers.traefik-secure.service: api@internal
-      # traefik.http.routers.traefik-secure.middlewares: authelia@docker  # Enable after creating users
-    depends_on:
-      - authelia
-
-  authelia:
-    image: authelia/authelia:latest
-    container_name: authelia
-    environment:
-      - TZ=${TZ}
-      - X_AUTHELIA_CONFIG_FILTERS=template
-    volumes:
-      - '${DATA_DIR}/authelia/secrets:/secrets:ro'
-      - '${DATA_DIR}/authelia/config:/config'
-      - '${DATA_DIR}/authelia/logs:/var/log/authelia/'
-    networks:
-      - crate
-    ports:
-      - "${AUTHELIA_PORT}:9091"
-    labels:
-      traefik.enable: true
-      traefik.docker.network: crate
-      traefik.http.routers.authelia.rule: Host(`auth.${DOMAIN}`)
-      traefik.http.routers.authelia.entryPoints: websecure
-      # Forward-auth middleware for protected services
-      traefik.http.middlewares.authelia.forwardAuth.address: http://authelia:9091/api/authz/forward-auth
-      traefik.http.middlewares.authelia.forwardAuth.trustForwardHeader: true
-      traefik.http.middlewares.authelia.forwardAuth.authResponseHeaders: Remote-User,Remote-Groups,Remote-Email,Remote-Name
-
-  lidarr:
-    image: lscr.io/linuxserver/lidarr:latest
-    container_name: lidarr
-    restart: unless-stopped
-    volumes:
-      - ${DATA_DIR}/lidarr:/config
-      - ${MEDIA_DIR}:/data
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-      - DOCKER_MODS=ghcr.io/themepark-dev/theme.park:lidarr
-      - TP_THEME=nord
-    ports:
-      - "${LIDARR_PORT}:8686"
-    networks:
-      - crate
-    labels:
-      traefik.enable: true
-      traefik.docker.network: crate
-      traefik.http.routers.lidarr.rule: Host(`collection.${DOMAIN}`)
-      traefik.http.routers.lidarr.entryPoints: websecure
-      traefik.http.services.lidarr.loadbalancer.server.port: 8686
 
   tidarr:
     image: cstaelen/tidarr:latest
@@ -399,7 +348,6 @@ services:
       traefik.http.middlewares.crate-auth-soft.forwardAuth.address: http://crate-api:8585/api/auth/verify-soft
       traefik.http.middlewares.crate-auth-soft.forwardAuth.trustForwardHeader: true
       traefik.http.middlewares.crate-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
-      # traefik.http.routers.admin.middlewares: authelia@docker  # Enable after creating users
 
 volumes:
   crate_redis:
