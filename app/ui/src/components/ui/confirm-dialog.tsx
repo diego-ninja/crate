@@ -7,7 +7,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@crate-ui/shadcn/alert-dialog";
+} from "@crate/ui/shadcn/alert-dialog";
 
 interface ConfirmDialogProps {
   open: boolean;

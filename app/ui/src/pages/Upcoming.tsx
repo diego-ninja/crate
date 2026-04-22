@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { Link } from "react-router";
-import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { AdminSelect } from "@/components/ui/AdminSelect";
-import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
-import { Button } from "@crate-ui/shadcn/button";
-import { Input } from "@crate-ui/shadcn/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@crate-ui/shadcn/popover";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
+import { Button } from "@crate/ui/shadcn/button";
+import { Input } from "@crate/ui/shadcn/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@crate/ui/shadcn/popover";
 import { ShowCard } from "@/components/shows/ShowCard";
 import { api } from "@/lib/api";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";

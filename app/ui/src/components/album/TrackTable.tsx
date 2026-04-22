@@ -3,9 +3,9 @@ import { BarChart3, Download } from "lucide-react";
 import { ResponsiveRadar } from "@nivo/radar";
 
 import { SimilarTracksPanel } from "@/components/track/SimilarTracksPanel";
-import { StarRating } from "@crate-ui/primitives/StarRating";
-import { Badge } from "@crate-ui/shadcn/badge";
-import { Button } from "@crate-ui/shadcn/button";
+import { StarRating } from "@crate/ui/primitives/StarRating";
+import { Badge } from "@crate/ui/shadcn/badge";
+import { Button } from "@crate/ui/shadcn/button";
 
 import {
   Table,
@@ -14,13 +14,13 @@ import {
   TableHead,
   TableBody,
   TableCell,
-} from "@crate-ui/shadcn/table";
+} from "@crate/ui/shadcn/table";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
-} from "@crate-ui/shadcn/tooltip";
+} from "@crate/ui/shadcn/tooltip";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { api } from "@/lib/api";
 import { formatDuration, formatBitrate } from "@/lib/utils";

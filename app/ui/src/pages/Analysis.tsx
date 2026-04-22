@@ -13,9 +13,9 @@ import {
 import { toast } from "sonner";
 
 import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
-import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
-import { Button } from "@crate-ui/shadcn/button";
-import { ErrorState } from "@crate-ui/primitives/ErrorState";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
+import { Button } from "@crate/ui/shadcn/button";
+import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 

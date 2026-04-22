@@ -8,7 +8,6 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      "@crate-ui": path.resolve(__dirname, "../shared/ui"),
     },
   },
   server: {

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router";
 import { AdminSelect, type AdminSelectOption } from "@/components/ui/AdminSelect";
-import { Button } from "@crate-ui/shadcn/button";
-import { Skeleton } from "@crate-ui/shadcn/skeleton";
+import { Button } from "@crate/ui/shadcn/button";
+import { Skeleton } from "@crate/ui/shadcn/skeleton";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { api } from "@/lib/api";
 import { artistPagePath } from "@/lib/library-routes";

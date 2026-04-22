@@ -1,4 +1,4 @@
-import { Button } from "@crate-ui/shadcn/button";
+import { Button } from "@crate/ui/shadcn/button";
 import {
   Table,
   TableHeader,
@@ -6,7 +6,7 @@ import {
   TableHead,
   TableBody,
   TableCell,
-} from "@crate-ui/shadcn/table";
+} from "@crate/ui/shadcn/table";
 
 interface TagPreview {
   current_title: string;

@@ -18,8 +18,7 @@
     "noUncheckedIndexedAccess": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@crate-ui/*": ["../shared/ui/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src", "../shared/**/*.ts", "../shared/**/*.tsx"]

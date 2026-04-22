@@ -20,9 +20,9 @@ import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { useTaskPoll } from "@/hooks/use-task-poll";
 import { api } from "@/lib/api";
-import { EqBands } from "@crate-ui/domain/player/EqBands";
-import { Badge } from "@crate-ui/shadcn/badge";
-import { Button } from "@crate-ui/shadcn/button";
+import { EqBands } from "@crate/ui/domain/player/EqBands";
+import { Badge } from "@crate/ui/shadcn/badge";
+import { Button } from "@crate/ui/shadcn/button";
 
 interface TaxonomyNode {
   slug: string;

@@ -1,5 +1,5 @@
 import { AlertTriangle, RefreshCw } from "lucide-react";
-import { Button } from "@crate-ui/shadcn/button";
+import { Button } from "@crate/ui/shadcn/button";
 
 interface ErrorStateProps {
   message?: string;

@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 import { api } from "@/lib/api";
 import { Toaster } from "sonner";
-import { TooltipProvider } from "@crate-ui/shadcn/tooltip";
+import { TooltipProvider } from "@crate/ui/shadcn/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { Shell } from "@/components/layout/Shell";
 import { Loader2 } from "lucide-react";

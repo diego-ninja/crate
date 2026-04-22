@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 
 import { api } from "@/lib/api";
-import { OAuthButtons as OAuthButtonsBase } from "@crate-ui/domain/auth/OAuthButtons";
+import { OAuthButtons as OAuthButtonsBase } from "@crate/ui/domain/auth/OAuthButtons";
 
 interface OAuthButtonsProps {
   returnTo?: string | null;

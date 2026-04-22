@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { Input } from "@crate-ui/shadcn/input";
-import { Button } from "@crate-ui/shadcn/button";
-import { Badge } from "@crate-ui/shadcn/badge";
+import { Input } from "@crate/ui/shadcn/input";
+import { Button } from "@crate/ui/shadcn/button";
+import { Badge } from "@crate/ui/shadcn/badge";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp, X } from "lucide-react";

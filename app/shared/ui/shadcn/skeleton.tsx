@@ -1,4 +1,4 @@
-import { cn } from "@crate-ui/lib/cn"
+import { cn } from "@crate/ui/lib/cn"
 
 function Skeleton({ className, ...props }: React.ComponentProps<"div">) {
   return (

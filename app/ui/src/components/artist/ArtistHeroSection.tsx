@@ -2,8 +2,8 @@ import { Link } from "react-router";
 
 import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
-import { Button } from "@crate-ui/shadcn/button";
-import { CratePill } from "@crate-ui/primitives/CrateBadge";
+import { Button } from "@crate/ui/shadcn/button";
+import { CratePill } from "@crate/ui/primitives/CrateBadge";
 import { artistBackgroundApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
 import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
 import {

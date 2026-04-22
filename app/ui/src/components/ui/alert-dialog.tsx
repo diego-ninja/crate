@@ -1,1 +1,1 @@
-export * from "@crate-ui/shadcn/alert-dialog";
+export * from "@crate/ui/shadcn/alert-dialog";

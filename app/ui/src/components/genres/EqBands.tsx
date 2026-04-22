@@ -1,1 +1,1 @@
-export { EqBands, type EqBandsProps } from "@crate-ui/domain/player/EqBands";
+export { EqBands, type EqBandsProps } from "@crate/ui/domain/player/EqBands";

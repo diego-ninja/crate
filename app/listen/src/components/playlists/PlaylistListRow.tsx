@@ -9,7 +9,7 @@ import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { api } from "@/lib/api";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
-import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
 import { cn, shuffleArray } from "@/lib/utils";

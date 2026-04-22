@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { Link } from "react-router";
 import { ExternalLink, MapPin, Ticket, X } from "lucide-react";
 
-import { cn } from "@crate-ui/lib/cn";
+import { cn } from "@crate/ui/lib/cn";
 import { type NormalizedShow, formatShowDateParts } from "./show-types";
 
 const COLLAPSED_HEIGHT = 88;

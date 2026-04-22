@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 
-import { AppPopover } from "@crate-ui/primitives/AppPopover";
-import { useDismissibleLayer } from "@crate-ui/lib/use-dismissible-layer";
+import { AppPopover } from "@crate/ui/primitives/AppPopover";
+import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 
 interface PlayerVolumeControlProps {
   volume: number;

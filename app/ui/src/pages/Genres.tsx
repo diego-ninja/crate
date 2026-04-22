@@ -1,11 +1,11 @@
 import { useState, useMemo, useCallback } from "react";
 import { useNavigate, useParams } from "react-router";
 import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
-import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
-import { CrateChip } from "@crate-ui/primitives/CrateBadge";
-import { Input } from "@crate-ui/shadcn/input";
-import { Button } from "@crate-ui/shadcn/button";
-import { Badge } from "@crate-ui/shadcn/badge";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
+import { Input } from "@crate/ui/shadcn/input";
+import { Button } from "@crate/ui/shadcn/button";
+import { Badge } from "@crate/ui/shadcn/badge";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { GenreNetworkGraph } from "@/components/genres/GenreNetworkGraph";
 import { GenreEqEditor } from "@/components/genres/GenreEqEditor";
@@ -17,7 +17,7 @@ import { formatNumber } from "@/lib/utils";
 import { albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { Search, Sparkles, Tag, Disc3, Users, ArrowLeft, Loader2, AlertTriangle, LayoutGrid, ListMusic, Network, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { ErrorState } from "@crate-ui/primitives/ErrorState";
+import { ErrorState } from "@crate/ui/primitives/ErrorState";
 
 interface Genre {
   id: number;

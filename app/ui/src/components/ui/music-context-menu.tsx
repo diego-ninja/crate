@@ -9,7 +9,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@crate-ui/shadcn/context-menu";
+} from "@crate/ui/shadcn/context-menu";
 
 interface MusicContextMenuProps {
   children: React.ReactNode;

@@ -12,9 +12,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ImageLightbox } from "@crate-ui/primitives/ImageLightbox";
-import { Button } from "@crate-ui/shadcn/button";
-import { CratePill } from "@crate-ui/primitives/CrateBadge";
+import { ImageLightbox } from "@crate/ui/primitives/ImageLightbox";
+import { Button } from "@crate/ui/shadcn/button";
+import { CratePill } from "@crate/ui/primitives/CrateBadge";
 import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
 import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { api } from "@/lib/api";

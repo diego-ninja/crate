@@ -3,7 +3,7 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from "lucide-react"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
 import { APP_DROPDOWN_SURFACE } from "../primitives/AppPopover"
-import { cn } from "@crate-ui/lib/cn"
+import { cn } from "@crate/ui/lib/cn"
 
 function DropdownMenu({
   ...props

@@ -1,1 +1,1 @@
-export * from "@crate-ui/shadcn/tooltip";
+export * from "@crate/ui/shadcn/tooltip";

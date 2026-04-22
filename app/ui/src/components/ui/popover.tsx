@@ -1,1 +1,1 @@
-export * from "@crate-ui/shadcn/popover";
+export * from "@crate/ui/shadcn/popover";

@@ -16,8 +16,8 @@ import {
 } from "lucide-react";
 
 import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
-import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
-import { CrateChip } from "@crate-ui/primitives/CrateBadge";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
 import { useApi } from "@/hooks/use-api";
 import { taskLabel } from "@/lib/task-labels";
 

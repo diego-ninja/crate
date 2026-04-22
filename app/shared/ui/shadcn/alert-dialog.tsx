@@ -1,7 +1,7 @@
 import * as React from "react"
 import { AlertDialog as AlertDialogPrimitive } from "radix-ui"
 
-import { cn } from "@crate-ui/lib/cn"
+import { cn } from "@crate/ui/lib/cn"
 import { Button } from "./button"
 
 function AlertDialog({

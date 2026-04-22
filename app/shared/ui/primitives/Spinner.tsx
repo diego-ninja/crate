@@ -1,5 +1,5 @@
 import { Loader2 } from "lucide-react";
-import { cn } from "@crate-ui/lib/cn";
+import { cn } from "@crate/ui/lib/cn";
 
 interface SpinnerProps {
   className?: string;

@@ -18,14 +18,14 @@ import {
 const UserMap = lazy(() => import("@/components/users/UserMap").then((m) => ({ default: m.UserMap })));
 import { toast } from "sonner";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@crate-ui/shadcn/card";
-import { Button } from "@crate-ui/shadcn/button";
-import { Input } from "@crate-ui/shadcn/input";
-import { Badge } from "@crate-ui/shadcn/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@crate-ui/shadcn/dialog";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@crate/ui/shadcn/card";
+import { Button } from "@crate/ui/shadcn/button";
+import { Input } from "@crate/ui/shadcn/input";
+import { Badge } from "@crate/ui/shadcn/badge";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@crate/ui/shadcn/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AdminSelect } from "@/components/ui/AdminSelect";
-import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { api, ApiError } from "@/lib/api";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { timeAgo } from "@/lib/utils";

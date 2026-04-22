@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@crate-ui/shadcn/card";
-import { Button } from "@crate-ui/shadcn/button";
-import { Badge } from "@crate-ui/shadcn/badge";
-import { Input } from "@crate-ui/shadcn/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@crate/ui/shadcn/card";
+import { Button } from "@crate/ui/shadcn/button";
+import { Badge } from "@crate/ui/shadcn/badge";
+import { Input } from "@crate/ui/shadcn/input";
 import { AdminSelect } from "@/components/ui/AdminSelect";
-import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import {
   Table,
   TableHeader,
@@ -12,7 +12,7 @@ import {
   TableHead,
   TableBody,
   TableCell,
-} from "@crate-ui/shadcn/table";
+} from "@crate/ui/shadcn/table";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { cn, formatNumber } from "@/lib/utils";

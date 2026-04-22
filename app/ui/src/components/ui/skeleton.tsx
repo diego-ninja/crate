@@ -1,1 +1,1 @@
-export * from "@crate-ui/shadcn/skeleton";
+export * from "@crate/ui/shadcn/skeleton";

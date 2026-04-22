@@ -1,1 +1,1 @@
-export * from "@crate-ui/shadcn/separator";
+export * from "@crate/ui/shadcn/separator";

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type HTMLAttributes, type ReactNode } from "react";
 import { X } from "lucide-react";
 
-import { cn } from "@crate-ui/lib/cn";
+import { cn } from "@crate/ui/lib/cn";
 
 interface AppModalProps {
   open: boolean;

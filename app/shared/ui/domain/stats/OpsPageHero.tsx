@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 
-import { cn } from "@crate-ui/lib/cn";
+import { cn } from "@crate/ui/lib/cn";
 
 export function OpsPageHero({
   icon: Icon,

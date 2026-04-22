@@ -1,6 +1,6 @@
 import { forwardRef, type ButtonHTMLAttributes, type ComponentPropsWithoutRef } from "react";
 
-import { cn } from "@crate-ui/lib/cn";
+import { cn } from "@crate/ui/lib/cn";
 
 export const APP_FLOATING_SURFACE_BASE =
   "rounded-md border border-white/10 bg-popover-surface shadow-[0_24px_64px_rgba(0,0,0,0.42)] backdrop-blur-xl animate-pop-in";

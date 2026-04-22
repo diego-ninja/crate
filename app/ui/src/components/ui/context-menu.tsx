@@ -1,1 +1,1 @@
-export * from "@crate-ui/shadcn/context-menu";
+export * from "@crate/ui/shadcn/context-menu";

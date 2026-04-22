@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from "react";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
-import { Button } from "@crate-ui/shadcn/button";
+import { Button } from "@crate/ui/shadcn/button";
 import { toast } from "sonner";
 import { Camera, Loader2, X } from "lucide-react";
 

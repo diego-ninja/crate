@@ -3,8 +3,8 @@ import { useNavigate } from "react-router";
 import { ImageDown, Loader2, Music } from "lucide-react";
 import { toast } from "sonner";
 
-import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
-import { CrateChip } from "@crate-ui/primitives/CrateBadge";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";

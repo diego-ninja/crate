@@ -2,7 +2,7 @@ import * as React from "react"
 import { Popover as PopoverPrimitive } from "radix-ui"
 
 import { APP_DROPDOWN_SURFACE, APP_POPOVER_SURFACE } from "../primitives/AppPopover"
-import { cn } from "@crate-ui/lib/cn"
+import { cn } from "@crate/ui/lib/cn"
 
 function Popover({
   ...props

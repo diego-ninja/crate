@@ -10,12 +10,12 @@ import { SuggestedTab } from "@/components/player/extended/SuggestedTab";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { useVisualizerConfig } from "@/components/player/visualizer/useVisualizerConfig";
 import { VisualizerSettingsPanel } from "@/components/player/visualizer/VisualizerSettingsPanel";
-import { AppPopover } from "@crate-ui/primitives/AppPopover";
+import { AppPopover } from "@crate/ui/primitives/AppPopover";
 import { usePlayer } from "@/contexts/PlayerContext";
 import { useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
-import { useIsDesktop } from "@crate-ui/lib/use-breakpoint";
-import { useDismissibleLayer } from "@crate-ui/lib/use-dismissible-layer";
-import { useEscapeKey } from "@crate-ui/lib/use-escape-key";
+import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
+import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
+import { useEscapeKey } from "@crate/ui/lib/use-escape-key";
 
 type TabId = "queue" | "suggested" | "lyrics" | "info";
 

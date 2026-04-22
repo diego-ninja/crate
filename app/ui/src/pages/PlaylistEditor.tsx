@@ -17,14 +17,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { AdminSelect } from "@/components/ui/AdminSelect";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
-import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
-import { Button } from "@crate-ui/shadcn/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@crate-ui/shadcn/card";
-import { Input } from "@crate-ui/shadcn/input";
-import { Textarea } from "@crate-ui/shadcn/textarea";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
+import { Button } from "@crate/ui/shadcn/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@crate/ui/shadcn/card";
+import { Input } from "@crate/ui/shadcn/input";
+import { Textarea } from "@crate/ui/shadcn/textarea";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";

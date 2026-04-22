@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AppModal, ModalBody, ModalCloseButton, ModalHeader } from "@crate-ui/primitives/AppModal";
-import { QrCodeImage } from "@crate-ui/primitives/QrCodeImage";
+import { AppModal, ModalBody, ModalCloseButton, ModalHeader } from "@crate/ui/primitives/AppModal";
+import { QrCodeImage } from "@crate/ui/primitives/QrCodeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { type Track, usePlayer } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";

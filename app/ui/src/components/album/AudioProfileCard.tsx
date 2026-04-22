@@ -1,6 +1,6 @@
 import { ResponsiveRadar } from "@nivo/radar";
 import { ResponsiveBar } from "@nivo/bar";
-import { Badge } from "@crate-ui/shadcn/badge";
+import { Badge } from "@crate/ui/shadcn/badge";
 import { Music, Gauge, Key, Volume2 } from "lucide-react";
 import type { AudioAnalysisTrack } from "@/components/album/TrackTable";
 

@@ -2,7 +2,7 @@ import { useCallback } from "react";
 
 import { api, getApiBase } from "@/lib/api";
 import { isNative } from "@/lib/capacitor";
-import { OAuthButtons as OAuthButtonsBase } from "@crate-ui/domain/auth/OAuthButtons";
+import { OAuthButtons as OAuthButtonsBase } from "@crate/ui/domain/auth/OAuthButtons";
 
 interface OAuthButtonsProps {
   returnTo?: string;

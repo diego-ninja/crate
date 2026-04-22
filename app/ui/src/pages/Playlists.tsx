@@ -15,15 +15,15 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { AdminSelect } from "@/components/ui/AdminSelect";
-import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
-import { Button } from "@crate-ui/shadcn/button";
-import { Card } from "@crate-ui/shadcn/card";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
+import { Button } from "@crate/ui/shadcn/button";
+import { Card } from "@crate/ui/shadcn/card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Input } from "@crate-ui/shadcn/input";
-import { Textarea } from "@crate-ui/shadcn/textarea";
+import { Input } from "@crate/ui/shadcn/input";
+import { Textarea } from "@crate/ui/shadcn/textarea";
 import { api } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
 

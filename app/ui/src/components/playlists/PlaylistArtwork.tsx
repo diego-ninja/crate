@@ -2,7 +2,7 @@ import { albumCoverApiUrl } from "@/lib/library-routes";
 import {
   PlaylistArtwork as PlaylistArtworkBase,
   type PlaylistArtworkTrack,
-} from "@crate-ui/domain/playlists/PlaylistArtwork";
+} from "@crate/ui/domain/playlists/PlaylistArtwork";
 
 export type { PlaylistArtworkTrack };
 

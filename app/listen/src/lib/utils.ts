@@ -1,5 +1,5 @@
 export * from "../../../shared/web/utils";
-export { cn } from "@crate-ui/lib/cn";
+export { cn } from "@crate/ui/lib/cn";
 
 export function formatTotalDuration(seconds: number): string {
   if (!seconds) return "";

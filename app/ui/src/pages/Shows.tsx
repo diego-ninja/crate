@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Button } from "@crate-ui/shadcn/button";
+import { Button } from "@crate/ui/shadcn/button";
 import { ShowCard, type ShowEvent, getGenreColor } from "@/components/shows/ShowCard";
 import { Loader2, MapPin, Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 

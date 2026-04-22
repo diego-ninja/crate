@@ -3,11 +3,11 @@ import { useParams, useNavigate } from "react-router";
 import { AlertCircle, ArrowDownToLine, CheckCircle2, Clock, Disc, Heart, ListPlus, Loader2, MoreHorizontal, Play, Radio, Share2, Shuffle, User } from "lucide-react";
 import { toast } from "sonner";
 
-import { AppMenuButton, AppPopover, AppPopoverDivider } from "@crate-ui/primitives/AppPopover";
-import { AppModal, ModalBody } from "@crate-ui/primitives/AppModal";
-import { useIsDesktop } from "@crate-ui/lib/use-breakpoint";
+import { AppMenuButton, AppPopover, AppPopoverDivider } from "@crate/ui/primitives/AppPopover";
+import { AppModal, ModalBody } from "@crate/ui/primitives/AppModal";
+import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useApi } from "@/hooks/use-api";
-import { useDismissibleLayer } from "@crate-ui/lib/use-dismissible-layer";
+import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { api } from "@/lib/api";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { useOffline } from "@/contexts/OfflineContext";

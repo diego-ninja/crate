@@ -1,6 +1,6 @@
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 
-import { ActionIconButton, ActionIconLink } from "@crate-ui/primitives/ActionIconButton";
+import { ActionIconButton, ActionIconLink } from "@crate/ui/primitives/ActionIconButton";
 
 export function UpcomingActionButton({
   title,

@@ -1,1 +1,1 @@
-export * from "@crate-ui/shadcn/textarea";
+export * from "@crate/ui/shadcn/textarea";

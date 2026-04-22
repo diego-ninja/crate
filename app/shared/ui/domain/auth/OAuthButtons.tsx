@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { cn } from "@crate-ui/lib/cn";
+import { cn } from "@crate/ui/lib/cn";
 
 interface ProviderConfig {
   enabled: boolean;

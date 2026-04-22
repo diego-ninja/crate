@@ -3,10 +3,10 @@ import { SlidersHorizontal, Save, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { AIButton } from "@/components/ui/AIButton";
-import { Button } from "@crate-ui/shadcn/button";
+import { Button } from "@crate/ui/shadcn/button";
 import { api } from "@/lib/api";
-import { EqBands } from "@crate-ui/domain/player/EqBands";
-import { Badge } from "@crate-ui/shadcn/badge";
+import { EqBands } from "@crate/ui/domain/player/EqBands";
+import { Badge } from "@crate/ui/shadcn/badge";
 import { useLLMAvailable } from "@/hooks/use-llm";
 
 const EQ_BAND_COUNT = 10;

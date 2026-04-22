@@ -12,7 +12,7 @@
     "allowImportingTsExtensions": true,
     "baseUrl": ".",
     "paths": {
-      "@crate-ui/*": ["./*"]
+      "@crate/ui/*": ["./*"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],

@@ -3,4 +3,4 @@ export {
   AppPopoverDivider,
   AppMenuButton,
   APP_POPOVER_SURFACE,
-} from "@crate-ui/primitives/AppPopover";
+} from "@crate/ui/primitives/AppPopover";

@@ -1,23 +1,23 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
-import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
-import { Button } from "@crate-ui/shadcn/button";
-import { Input } from "@crate-ui/shadcn/input";
-import { Badge } from "@crate-ui/shadcn/badge";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@crate-ui/shadcn/tabs";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
+import { Button } from "@crate/ui/shadcn/button";
+import { Input } from "@crate/ui/shadcn/input";
+import { Badge } from "@crate/ui/shadcn/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@crate/ui/shadcn/tabs";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@crate-ui/shadcn/dialog";
+} from "@crate/ui/shadcn/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@crate-ui/shadcn/select";
+} from "@crate/ui/shadcn/select";
 import { api } from "@/lib/api";
 import { useApi } from "@/hooks/use-api";
 import { toast } from "sonner";

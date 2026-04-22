@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Check, Users, Wrench } from "lucide-react";
 
-import { CrateChip } from "@crate-ui/primitives/CrateBadge";
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
 import { formatCompact, formatSize } from "@/lib/utils";
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 

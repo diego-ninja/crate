@@ -11,8 +11,8 @@ import {
   PlaylistCreateModal,
   type PlaylistComposerTrack,
 } from "@/components/playlists/PlaylistCreateModal";
-import { AppModal, ModalBody, ModalFooter, ModalHeader, ModalCloseButton } from "@crate-ui/primitives/AppModal";
-import { QrCodeImage } from "@crate-ui/primitives/QrCodeImage";
+import { AppModal, ModalBody, ModalFooter, ModalHeader, ModalCloseButton } from "@crate/ui/primitives/AppModal";
+import { QrCodeImage } from "@crate/ui/primitives/QrCodeImage";
 import { useAuth } from "@/contexts/AuthContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";

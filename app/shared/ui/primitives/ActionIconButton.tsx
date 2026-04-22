@@ -5,7 +5,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { cn } from "@crate-ui/lib/cn";
+import { cn } from "@crate/ui/lib/cn";
 
 type ActionTone = "default" | "primary" | "danger";
 type ActionVariant = "row" | "card";

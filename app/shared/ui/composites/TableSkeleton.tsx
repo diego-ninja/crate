@@ -1,4 +1,4 @@
-import { Skeleton } from "@crate-ui/shadcn/skeleton";
+import { Skeleton } from "@crate/ui/shadcn/skeleton";
 
 interface TableSkeletonProps {
   rows?: number;

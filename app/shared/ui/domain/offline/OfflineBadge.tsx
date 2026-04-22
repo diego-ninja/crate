@@ -1,7 +1,7 @@
 import { AlertCircle, CheckCircle2, Download, Loader2 } from "lucide-react";
 
-import { getOfflineStateLabel, type OfflineItemState } from "@crate-ui/lib/offline";
-import { cn } from "@crate-ui/lib/cn";
+import { getOfflineStateLabel, type OfflineItemState } from "@crate/ui/lib/offline";
+import { cn } from "@crate/ui/lib/cn";
 
 interface OfflineBadgeProps {
   state: OfflineItemState;

@@ -1,1 +1,1 @@
-export * from "@crate-ui/shadcn/scroll-area";
+export * from "@crate/ui/shadcn/scroll-area";

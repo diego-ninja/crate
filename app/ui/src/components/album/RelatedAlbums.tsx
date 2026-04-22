@@ -2,7 +2,7 @@ import { useApi } from "@/hooks/use-api";
 import { useNavigate } from "react-router";
 import { ArrowUpRight, Music } from "lucide-react";
 
-import { CrateChip } from "@crate-ui/primitives/CrateBadge";
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
 import { albumCoverApiUrl, albumPagePath, albumRelatedApiPath } from "@/lib/library-routes";
 
 interface RelatedAlbum {

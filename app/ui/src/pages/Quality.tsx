@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Button } from "@crate-ui/shadcn/button";
-import { Card, CardContent } from "@crate-ui/shadcn/card";
-import { Badge } from "@crate-ui/shadcn/badge";
+import { Button } from "@crate/ui/shadcn/button";
+import { Card, CardContent } from "@crate/ui/shadcn/card";
+import { Badge } from "@crate/ui/shadcn/badge";
 import {
   Table,
   TableHeader,
@@ -9,7 +9,7 @@ import {
   TableHead,
   TableBody,
   TableCell,
-} from "@crate-ui/shadcn/table";
+} from "@crate/ui/shadcn/table";
 import { api } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 

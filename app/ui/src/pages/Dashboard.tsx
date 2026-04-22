@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router";
-import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
-import { Card, CardContent, CardHeader, CardTitle } from "@crate-ui/shadcn/card";
-import { Button } from "@crate-ui/shadcn/button";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
+import { Card, CardContent, CardHeader, CardTitle } from "@crate/ui/shadcn/card";
+import { Button } from "@crate/ui/shadcn/button";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
-import { ErrorState } from "@crate-ui/primitives/ErrorState";
+import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 interface Stats {

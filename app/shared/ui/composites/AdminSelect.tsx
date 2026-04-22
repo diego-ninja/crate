@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, Search } from "lucide-react";
 
-import { CrateChip } from "@crate-ui/primitives/CrateBadge";
-import { Input } from "@crate-ui/shadcn/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@crate-ui/shadcn/popover";
-import { cn } from "@crate-ui/lib/cn";
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
+import { Input } from "@crate/ui/shadcn/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@crate/ui/shadcn/popover";
+import { cn } from "@crate/ui/lib/cn";
 
 export interface AdminSelectOption {
   value: string;

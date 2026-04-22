@@ -1,1 +1,1 @@
-export * from "@crate-ui/shadcn/progress";
+export * from "@crate/ui/shadcn/progress";
