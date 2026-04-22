@@ -43,8 +43,8 @@ const PROPS: Prop[] = [
   },
   {
     icon: Radio,
-    title: "Radio & smart playlists",
-    body: "Seed a track and Crate builds an infinite radio queue using bliss similarity vectors — songs that sound alike, not just share a tag. Smart playlists combine genre, energy, BPM, year, format, and popularity rules with live re-generation.",
+    title: "Shaped Radio",
+    body: "Seed any artist, genre, or track and Crate builds an infinite radio using a hybrid algorithm: bliss acoustic similarity, Last.fm artist connections, shared band members, and genre overlap. Like or dislike tracks to steer the sound in real time — Pandora-style shaping with your own library. Discovery Radio auto-seeds from your likes and follows.",
   },
   {
     icon: Route,

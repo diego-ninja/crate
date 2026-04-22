@@ -484,21 +484,21 @@ export function FeatureShowcase() {
       <div className="mt-28 grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,580px)]">
         <div>
           <h3 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-            Radio that understands sound, not just tags.
+            Radio that learns what you want to hear.
           </h3>
           <p className="mt-4 text-[15px] leading-7 text-white/60">
-            Seed any track and Crate builds an infinite queue using bliss
-            similarity vectors — 20 acoustic features per track that capture
-            timbre, rhythm, and energy. The result is a radio that finds songs
-            that genuinely sound alike, not just share a genre label.
+            Seed any artist, genre, or track and Crate builds an infinite queue
+            using four signals: bliss acoustic similarity, Last.fm artist connections,
+            shared band members (MusicBrainz), and genre overlap. Then shape it —
+            like or dislike tracks and the radio adapts in real time. Discovery Radio auto-seeds from your follows and listening history.
           </p>
           <ul className="mt-6 space-y-3 text-[14.5px] text-white/75">
-            <Bullet>Bliss-rs (Rust) computes the 20-float song-DNA vector per
-              track at analysis time.</Bullet>
-            <Bullet>Smart playlists combine genre, energy, BPM, year, format,
-              and popularity rules with live re-generation.</Bullet>
-            <Bullet>Queue regenerates as you skip — no finite playlist, just
-              an infinite stream of acoustically similar music.</Bullet>
+            <Bullet>Hybrid scoring: 40% acoustic DNA, 35% artist affinity (including
+              shared band members), 25% genre overlap.</Bullet>
+            <Bullet>Pandora-style shaping — thumbs up shifts the sound toward what you
+              liked, thumbs down creates exclusion zones.</Bullet>
+            <Bullet>Feedback persists across sessions — your preferences carry over to
+              future radios with temporal decay.</Bullet>
           </ul>
         </div>
         <RadioMock />

@@ -11,7 +11,7 @@ import { Manifesto } from "@/components/Manifesto";
 
 function WhyTeaser() {
   return (
-    <section className="relative mx-auto max-w-[1400px] px-5 py-16 sm:px-8 sm:py-24">
+    <section className="relative mx-auto max-w-[1400px] px-5 py-10 sm:px-8 sm:py-16">
       <div className="mx-auto max-w-3xl text-center">
         <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-300">
           Why Crate?
