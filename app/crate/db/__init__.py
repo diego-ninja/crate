@@ -213,3 +213,19 @@ from crate.db.social import (
 from crate.db.worker_logs import (
     insert_log, query_logs, list_known_workers, cleanup_old_logs,
 )
+
+# Music Paths
+from crate.db.paths import (
+    resolve_bliss_centroid, resolve_endpoint_label, compute_path,
+    create_music_path, get_music_path, list_music_paths,
+    delete_music_path, regenerate_music_path, preview_music_path,
+)
+
+# Radio
+from crate.db.radio import (
+    get_recent_liked_vectors, get_followed_artist_vectors,
+    get_saved_album_vectors, get_recent_play_vectors,
+    get_random_library_vectors, count_user_radio_signals,
+    get_track_bliss_vector, persist_radio_feedback,
+    load_feedback_history,
+)

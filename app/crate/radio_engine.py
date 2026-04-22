@@ -21,7 +21,17 @@ from crate.db.paths import (
     resolve_bliss_centroid,
     resolve_endpoint_label,
 )
-from crate.db.tx import read_scope
+from crate.db.radio import (
+    count_user_radio_signals,
+    get_followed_artist_vectors,
+    get_random_library_vectors,
+    get_recent_liked_vectors,
+    get_recent_play_vectors,
+    get_saved_album_vectors,
+    get_track_bliss_vector,
+    load_feedback_history,
+    persist_radio_feedback,
+)
 
 log = logging.getLogger(__name__)
 
@@ -65,123 +75,41 @@ def _delete_session(session_id: str) -> bool:
 
 
 def resolve_discovery_seed(user_id: int) -> tuple[list[float], str] | None:
-    """Resolve a seed for discovery radio from user behavior.
+    """Resolve a seed for discovery radio from user behavior."""
+    # 1. Recent liked tracks
+    liked = get_recent_liked_vectors(user_id, limit=10)
+    if len(liked) >= 5:
+        return _centroid(liked), "Your recent likes"
 
-    Returns (bliss_vector, label) or None if not enough data.
-    Priority: recent likes → followed artists → recent plays → trending.
-    """
-    from sqlalchemy import text
+    # 2. Followed artists
+    follows = get_followed_artist_vectors(user_id, limit=30)
+    if len(follows) >= 5:
+        return _centroid(follows), "Artists you follow"
 
-    with read_scope() as session:
-        # 1. Recent liked tracks (last 30 days)
-        liked = session.execute(
-            text("""
-                SELECT t.bliss_vector
-                FROM user_liked_tracks lt
-                JOIN library_tracks t ON t.id = lt.track_id
-                WHERE lt.user_id = :user_id
-                  AND t.bliss_vector IS NOT NULL
-                ORDER BY lt.created_at DESC
-                LIMIT 10
-            """),
-            {"user_id": user_id},
-        ).mappings().all()
+    # 2b. Saved albums
+    saved = get_saved_album_vectors(user_id, limit=30)
+    if len(saved) >= 5:
+        return _centroid(saved), "Your saved albums"
 
-        if len(liked) >= 5:
-            vectors = [list(r["bliss_vector"]) for r in liked]
-            return _centroid(vectors), "Your recent likes"
+    # 3. Recent plays
+    plays = get_recent_play_vectors(user_id, limit=20)
+    if len(plays) >= 10:
+        return _centroid(plays), "Your recent plays"
 
-        # 2. Followed artists
-        follows = session.execute(
-            text("""
-                SELECT DISTINCT t.bliss_vector
-                FROM user_follows af
-                JOIN library_albums a ON LOWER(a.artist) = LOWER(af.artist_name)
-                JOIN library_tracks t ON t.album_id = a.id
-                WHERE af.user_id = :user_id
-                  AND t.bliss_vector IS NOT NULL
-                LIMIT 30
-            """),
-            {"user_id": user_id},
-        ).mappings().all()
-
-        if len(follows) >= 5:
-            vectors = [list(r["bliss_vector"]) for r in follows]
-            return _centroid(vectors), "Artists you follow"
-
-        # 2b. Saved albums
-        saved = session.execute(
-            text("""
-                SELECT t.bliss_vector
-                FROM user_saved_albums sa
-                JOIN library_tracks t ON t.album_id = sa.album_id
-                WHERE sa.user_id = :user_id
-                  AND t.bliss_vector IS NOT NULL
-                LIMIT 30
-            """),
-            {"user_id": user_id},
-        ).mappings().all()
-
-        if len(saved) >= 5:
-            vectors = [list(r["bliss_vector"]) for r in saved]
-            return _centroid(vectors), "Your saved albums"
-
-        # 3. Recent plays
-        plays = session.execute(
-            text("""
-                SELECT t.bliss_vector
-                FROM play_events pe
-                JOIN library_tracks t ON t.storage_id = pe.storage_id
-                WHERE pe.user_id = :user_id
-                  AND t.bliss_vector IS NOT NULL
-                ORDER BY pe.played_at DESC
-                LIMIT 20
-            """),
-            {"user_id": user_id},
-        ).mappings().all()
-
-        if len(plays) >= 10:
-            vectors = [list(r["bliss_vector"]) for r in plays]
-            return _centroid(vectors), "Your recent plays"
-
-        # 4. Instance trending (most played overall)
-        trending = session.execute(
-            text("""
-                SELECT t.bliss_vector
-                FROM library_tracks t
-                WHERE t.bliss_vector IS NOT NULL
-                ORDER BY RANDOM()
-                LIMIT 30
-            """),
-        ).mappings().all()
-
-        if trending:
-            vectors = [list(r["bliss_vector"]) for r in trending]
-            return _centroid(vectors), "Library mix"
+    # 4. Library mix (fallback)
+    trending = get_random_library_vectors(limit=30)
+    if trending:
+        return _centroid(trending), "Library mix"
 
     return None
 
 
 def has_enough_data(user_id: int) -> bool:
-    """Check if a user has enough data for discovery radio.
-    Any signal is enough: 1 follow, 1 saved album, 3 liked tracks, or 5 plays."""
-    from sqlalchemy import text
-    with read_scope() as session:
-        row = session.execute(
-            text("""
-                SELECT
-                    (SELECT count(*) FROM user_liked_tracks WHERE user_id = :uid) AS likes,
-                    (SELECT count(*) FROM user_follows WHERE user_id = :uid) AS follows,
-                    (SELECT count(*) FROM user_saved_albums WHERE user_id = :uid) AS saved_albums
-            """),
-            {"uid": user_id},
-        ).mappings().first()
-
-    if not row:
-        return False
-    return (int(row["likes"]) >= 3
-            or int(row["follows"]) >= 1
-            or int(row["saved_albums"]) >= 1)
+    """Check if a user has enough data for discovery radio."""
+    counts = count_user_radio_signals(user_id)
+    return (int(counts["likes"]) >= 3
+            or int(counts["follows"]) >= 1
+            or int(counts["saved_albums"]) >= 1)
 
 
 # ── Radio start ───────────────────────────────────────────────────
@@ -211,16 +139,14 @@ def start_radio(
     else:
         return None
 
-    # Pre-seed with historical feedback (persisted likes/dislikes from past sessions)
-    hist_liked, hist_disliked = _load_feedback_history(user_id)
+    # Pre-seed with historical feedback
+    hist_liked, hist_disliked = load_feedback_history(user_id)
     log.info("Radio start: %d historical likes, %d dislikes for user %d",
              len(hist_liked), len(hist_disliked), user_id)
 
-    # Blend historical likes into the initial target for warm start
     initial_target = seed_vec
     if hist_liked:
         hist_centroid = _centroid(hist_liked)
-        # Historical influence: 15% max — gentle nudge, not takeover
         blend = min(0.15, 0.03 * len(hist_liked))
         initial_target = _lerp(seed_vec, hist_centroid, blend)
 
@@ -235,7 +161,7 @@ def start_radio(
         "initial_target": initial_target,
         "current_target": initial_target,
         "liked_vectors": [],
-        "disliked_vectors": hist_disliked[:10],  # pre-load recent dislikes as exclusions
+        "disliked_vectors": hist_disliked[:10],
         "used_track_ids": [],
         "used_titles": [],
         "recent_artists": [],
@@ -280,17 +206,9 @@ def radio_feedback(session_id: str, track_id: int, action: str) -> dict | None:
     if not session:
         return None
 
-    from sqlalchemy import text
-    with read_scope() as db:
-        row = db.execute(
-            text("SELECT bliss_vector FROM library_tracks WHERE id = :id AND bliss_vector IS NOT NULL"),
-            {"id": track_id},
-        ).mappings().first()
-
-    if not row:
+    vec = get_track_bliss_vector(track_id)
+    if not vec:
         return {"status": "ok", "effect": "none"}
-
-    vec = list(row["bliss_vector"])
 
     if action == "like":
         session["liked_vectors"].append(vec)
@@ -307,8 +225,7 @@ def radio_feedback(session_id: str, track_id: int, action: str) -> dict | None:
 
     _save_session(session)
 
-    # Persist to DB for future sessions
-    _persist_feedback(
+    persist_radio_feedback(
         user_id=session["user_id"],
         track_id=track_id,
         action=action,
@@ -322,97 +239,6 @@ def radio_feedback(session_id: str, track_id: int, action: str) -> dict | None:
         "liked_count": len(session["liked_vectors"]),
         "disliked_count": len(session["disliked_vectors"]),
     }
-
-
-def _persist_feedback(
-    user_id: int, track_id: int, action: str,
-    bliss_vector: list[float], session_seed: str,
-) -> None:
-    """Save feedback to the radio_feedback table for long-term learning."""
-    from sqlalchemy import text
-    from crate.db.tx import transaction_scope
-    try:
-        with transaction_scope() as db:
-            # Upsert: if same user+track exists, update the action
-            db.execute(
-                text("""
-                    INSERT INTO radio_feedback (user_id, track_id, action, bliss_vector, session_seed)
-                    VALUES (:user_id, :track_id, :action, :bliss_vector, :session_seed)
-                    ON CONFLICT (user_id, track_id) DO UPDATE
-                    SET action = :action, bliss_vector = :bliss_vector,
-                        session_seed = :session_seed, created_at = now()
-                """),
-                {
-                    "user_id": user_id,
-                    "track_id": track_id,
-                    "action": action,
-                    "bliss_vector": bliss_vector,
-                    "session_seed": session_seed,
-                },
-            )
-    except Exception:
-        # ON CONFLICT needs a unique constraint — fall back to simple insert
-        try:
-            with transaction_scope() as db:
-                db.execute(
-                    text("""
-                        INSERT INTO radio_feedback (user_id, track_id, action, bliss_vector, session_seed)
-                        VALUES (:user_id, :track_id, :action, :bliss_vector, :session_seed)
-                    """),
-                    {
-                        "user_id": user_id,
-                        "track_id": track_id,
-                        "action": action,
-                        "bliss_vector": bliss_vector,
-                        "session_seed": session_seed,
-                    },
-                )
-        except Exception:
-            log.debug("Failed to persist radio feedback", exc_info=True)
-
-
-def _load_feedback_history(user_id: int, max_age_days: int = 90) -> tuple[list[list[float]], list[list[float]]]:
-    """Load recent radio feedback vectors for a user.
-
-    Returns (liked_vectors, disliked_vectors) with temporal decay:
-    recent feedback is included as-is, older feedback is downweighted
-    by including fewer vectors.
-    """
-    from sqlalchemy import text
-    with read_scope() as db:
-        rows = db.execute(
-            text("""
-                SELECT action, bliss_vector, created_at,
-                       EXTRACT(EPOCH FROM (now() - created_at)) / 86400.0 AS age_days
-                FROM radio_feedback
-                WHERE user_id = :user_id
-                  AND bliss_vector IS NOT NULL
-                  AND created_at > now() - INTERVAL ':max_age days'
-                ORDER BY created_at DESC
-            """.replace(":max_age", str(max_age_days))),
-            {"user_id": user_id},
-        ).mappings().all()
-
-    liked: list[list[float]] = []
-    disliked: list[list[float]] = []
-
-    for r in rows:
-        vec = list(r["bliss_vector"])
-        age = float(r["age_days"])
-        # Temporal decay: include all from last 7 days,
-        # 50% chance for 7-30 days, 25% for 30-90 days
-        import random
-        if age > 30 and random.random() > 0.25:
-            continue
-        if age > 7 and random.random() > 0.5:
-            continue
-
-        if r["action"] == "like":
-            liked.append(vec)
-        elif r["action"] == "dislike":
-            disliked.append(vec)
-
-    return liked, disliked
 
 
 # ── Track generation ──────────────────────────────────────────────
@@ -430,13 +256,11 @@ def _generate_batch(session: dict, count: int = _BATCH_SIZE) -> list[dict]:
     recent_artists = list(session["recent_artists"])
     disliked_vecs = session["disliked_vectors"]
 
-    # Target artists for genre overlap scoring
     target_artists = [session["seed_label"]]
 
     tracks: list[dict] = []
 
     for _ in range(count):
-        # Add small random drift to target so we don't get stuck
         import random
         drift = [target[d] + random.gauss(0, 0.02) for d in range(len(target))]
 
@@ -448,23 +272,18 @@ def _generate_batch(session: dict, count: int = _BATCH_SIZE) -> list[dict]:
         if not candidate:
             break
 
-        # Apply dislike penalty: skip if too close to any disliked track
+        # Dislike exclusion
         if disliked_vecs:
-            from crate.db.paths import _vector_to_pg_array
             cand_vec = candidate.get("bliss_vector", [])
             if cand_vec:
-                too_close = False
-                for dv in disliked_vecs:
-                    dist = sum((cand_vec[d] - dv[d]) ** 2 for d in range(len(cand_vec))) ** 0.5
-                    if dist < _DISLIKE_PENALTY_RADIUS:
-                        too_close = True
-                        break
+                too_close = any(
+                    sum((cand_vec[d] - dv[d]) ** 2 for d in range(len(cand_vec))) ** 0.5 < _DISLIKE_PENALTY_RADIUS
+                    for dv in disliked_vecs
+                )
                 if too_close:
-                    # Try to skip this one — mark as used and continue
                     used_ids.add(candidate["id"])
                     continue
 
-        # Accept the track
         track_id = candidate["id"]
         artist = candidate["artist"]
         title = candidate["title"]
@@ -476,7 +295,6 @@ def _generate_batch(session: dict, count: int = _BATCH_SIZE) -> list[dict]:
         if len(recent_artists) > 3:
             recent_artists.pop(0)
 
-        # Blend target toward accepted track for organic drift
         cand_vec = candidate.get("bliss_vector")
         if cand_vec:
             target = _lerp(target, cand_vec, 0.15)
