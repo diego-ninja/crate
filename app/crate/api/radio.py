@@ -1,3 +1,4 @@
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
@@ -274,3 +275,97 @@ def api_home_playlist_radio(request: Request, playlist_id: str, limit: int = Que
     }
     set_cache(cache_key, result, ttl=_RADIO_CACHE_TTL)
     return result
+
+
+# ── Shaped Radio (v2) — sessions with like/dislike feedback ────────
+
+
+class RadioStartRequest(BaseModel):
+    mode: str = Field(default="seeded", description="seeded | discovery")
+    seed_type: str | None = None
+    seed_value: str | None = None
+
+
+class RadioNextRequest(BaseModel):
+    session_id: str
+    count: int = Field(default=5, ge=1, le=20)
+
+
+class RadioFeedbackRequest(BaseModel):
+    session_id: str
+    track_id: int
+    action: str = Field(description="like | dislike")
+
+
+@router.post(
+    "/api/radio/start",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Start a shaped radio session",
+)
+def api_radio_start(request: Request, body: RadioStartRequest):
+    user = _require_auth(request)
+    from crate.radio_engine import start_radio
+    result = start_radio(
+        user_id=user["id"],
+        mode=body.mode,
+        seed_type=body.seed_type,
+        seed_value=body.seed_value,
+    )
+    if not result:
+        return JSONResponse(
+            {"error": "Could not start radio — seed may lack bliss vectors or not enough user data"},
+            status_code=422,
+        )
+    return result
+
+
+@router.post(
+    "/api/radio/next",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get next batch of radio tracks",
+)
+def api_radio_next(request: Request, body: RadioNextRequest):
+    _require_auth(request)
+    from crate.radio_engine import next_tracks
+    result = next_tracks(body.session_id, body.count)
+    if not result:
+        return JSONResponse({"error": "Session not found or expired"}, status_code=404)
+    return result
+
+
+@router.post(
+    "/api/radio/feedback",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Like or dislike a radio track to shape the session",
+)
+def api_radio_feedback(request: Request, body: RadioFeedbackRequest):
+    _require_auth(request)
+    from crate.radio_engine import radio_feedback
+    result = radio_feedback(body.session_id, body.track_id, body.action)
+    if not result:
+        return JSONResponse({"error": "Session not found or expired"}, status_code=404)
+    return result
+
+
+@router.get(
+    "/api/radio/can-discover",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Check if user has enough data for discovery radio",
+)
+def api_radio_can_discover(request: Request):
+    user = _require_auth(request)
+    from crate.radio_engine import has_enough_data
+    return {"available": has_enough_data(user["id"])}
+
+
+@router.delete(
+    "/api/radio/session/{session_id}",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="End a radio session",
+)
+def api_radio_end_session(request: Request, session_id: str):
+    _require_auth(request)
+    from crate.radio_engine import _delete_session
+    if _delete_session(session_id):
+        return {"status": "ended"}
+    return JSONResponse({"error": "Session not found"}, status_code=404)
