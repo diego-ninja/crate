@@ -107,10 +107,10 @@ def resolve_endpoint_label(endpoint_type: str, value: str) -> str:
 
         if endpoint_type == "album":
             row = session.execute(
-                text("SELECT name, artist_name FROM library_albums WHERE id = :id"),
+                text("SELECT name, artist FROM library_albums WHERE id = :id"),
                 {"id": int(value)},
             ).mappings().first()
-            return f"{row['name']} — {row['artist_name']}" if row else value
+            return f"{row['name']} — {row['artist']}" if row else value
 
         if endpoint_type == "artist":
             row = session.execute(
@@ -132,6 +132,16 @@ def resolve_endpoint_label(endpoint_type: str, value: str) -> str:
 # ── Path computation ──────────────────────────────────────────────
 
 
+_MAX_CONSECUTIVE_SAME_ARTIST = 2
+_ARTIST_REPEAT_PENALTY = 1.5
+_CANDIDATE_POOL_SIZE = 8
+
+
+def _euclidean_distance(a: list[float], b: list[float]) -> float:
+    """Euclidean distance between two vectors."""
+    return sum((a[d] - b[d]) ** 2 for d in range(len(a))) ** 0.5
+
+
 def compute_path(
     origin_vec: list[float],
     dest_vec: list[float],
@@ -140,9 +150,15 @@ def compute_path(
 ) -> list[dict]:
     """Compute a music path by interpolating through bliss vector space.
 
+    Improvements over naive lerp + nearest-neighbor:
+    1. Fetches a pool of candidates per step and scores with diversity penalty
+    2. Penalizes repeating the same artist as the previous track(s)
+    3. Caps consecutive same-artist tracks at 2
+    4. Uses the previous track's actual vector (not the interpolation target)
+       as a drift anchor, blending it with the lerp target for smoother transitions
+
     Returns a list of track dicts with step, progress, distance, and track metadata.
     """
-    # Build segment chain: origin → wp1 → wp2 → ... → dest
     chain = [origin_vec]
     if waypoint_vecs:
         chain.extend(waypoint_vecs)
@@ -153,6 +169,8 @@ def compute_path(
 
     used_ids: set[int] = set()
     path_tracks: list[dict] = []
+    recent_artists: list[str] = []
+    last_actual_vec: list[float] | None = None
     global_step = 0
 
     for seg_idx in range(num_segments):
@@ -162,12 +180,28 @@ def compute_path(
 
         for local_step in range(seg_steps):
             t = local_step / max(1, seg_steps - 1)
-            target = _lerp(seg_start, seg_end, t)
+            lerp_target = _lerp(seg_start, seg_end, t)
+
+            # Blend the lerp target with the last actual track vector for smoother
+            # transitions — prevents the path from "jumping" when the nearest
+            # track to an interpolation point is far from the previous track.
+            if last_actual_vec and 0 < t < 1:
+                search_target = _lerp(last_actual_vec, lerp_target, 0.6)
+            else:
+                search_target = lerp_target
+
             global_progress = global_step / max(1, step_count - 1)
 
-            track = _find_nearest_track(target, used_ids)
+            track = _find_best_candidate(
+                search_target, used_ids, recent_artists,
+            )
             if track:
                 used_ids.add(track["id"])
+                recent_artists.append(track["artist"])
+                if len(recent_artists) > 3:
+                    recent_artists.pop(0)
+                last_actual_vec = track.get("bliss_vector")
+
                 path_tracks.append({
                     "step": global_step,
                     "progress": round(global_progress, 4),
@@ -185,10 +219,16 @@ def compute_path(
     return path_tracks
 
 
-def _find_nearest_track(target: list[float], exclude: set[int]) -> dict | None:
-    """Find the track with the closest bliss vector to target, excluding already-used tracks."""
-    pg_array = _vector_to_pg_array(target)
+def _find_best_candidate(
+    target: list[float],
+    exclude: set[int],
+    recent_artists: list[str],
+) -> dict | None:
+    """Find the best track near target, applying diversity scoring.
 
+    Fetches a pool of candidates and picks the one with the best
+    combined score of acoustic proximity + artist diversity.
+    """
     pg_array = _vector_to_pg_array(target)
 
     exclude_clause = ""
@@ -198,24 +238,52 @@ def _find_nearest_track(target: list[float], exclude: set[int]) -> dict | None:
         params["exclude"] = list(exclude)
 
     with read_scope() as session:
-        row = session.execute(
+        rows = session.execute(
             text(f"""
                 SELECT t.id, t.storage_id, t.title, a.artist AS artist,
-                       a.name AS album, t.album_id,
+                       a.name AS album, t.album_id, t.bliss_vector,
                        (t.bliss_vector <-> {pg_array}) AS distance
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
                 WHERE t.bliss_vector IS NOT NULL
                 {exclude_clause}
                 ORDER BY t.bliss_vector <-> {pg_array}
-                LIMIT 1
+                LIMIT {_CANDIDATE_POOL_SIZE}
             """),
             params,
-        ).mappings().first()
+        ).mappings().all()
 
-    if not row:
+    if not rows:
         return None
-    return dict(row)
+
+    # Score each candidate: lower is better
+    best: dict | None = None
+    best_score = float("inf")
+
+    for row in rows:
+        candidate = dict(row)
+        distance = candidate["distance"]
+
+        # Penalty for repeating artists from recent history
+        penalty = 1.0
+        artist = candidate["artist"]
+        if recent_artists:
+            # Hard block: don't allow >2 consecutive from same artist
+            consecutive = sum(1 for a in reversed(recent_artists) if a == artist)
+            if consecutive >= _MAX_CONSECUTIVE_SAME_ARTIST:
+                penalty = 10.0  # effectively skip
+            elif artist in recent_artists:
+                penalty = _ARTIST_REPEAT_PENALTY
+
+        score = distance * penalty
+        if score < best_score:
+            best_score = score
+            best = candidate
+
+    if best:
+        best["bliss_vector"] = list(best["bliss_vector"]) if best.get("bliss_vector") else None
+
+    return best
 
 
 # ── CRUD ──────────────────────────────────────────────────────────
