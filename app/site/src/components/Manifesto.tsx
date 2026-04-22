@@ -47,7 +47,7 @@ export function Manifesto() {
 
         <p>
           Let's be honest about what the streaming economy actually does to
-          music. An artist needs roughly 250 streams on Spotify to earn what a
+          music. An artist needs roughly 25,000 streams on Spotify to earn what a
           single concert ticket costs. A band touring in a van, sleeping on
           floors, pouring everything into their art, gets fractions of a cent
           while a platform's shareholders collect billions. The model isn't
