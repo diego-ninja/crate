@@ -248,6 +248,22 @@ def get_artist_top_genres(artist_name: str) -> list[str]:
         return [row["name"] for row in rows]
 
 
+def get_artist_genre_profile(artist_name: str, limit: int = 8) -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text("""
+                SELECT g.name, g.slug, ag.weight, ag.source
+                FROM artist_genres ag
+                JOIN genres g ON g.id = ag.genre_id
+                WHERE ag.artist_name = :artist_name
+                ORDER BY ag.weight DESC NULLS LAST, g.name ASC
+                LIMIT :limit
+            """),
+            {"artist_name": artist_name, "limit": limit},
+        ).mappings().all()
+        return [dict(row) for row in rows]
+
+
 def get_all_artist_genre_map() -> dict[str, list[str]]:
     genre_map: dict[str, list[str]] = {}
     with transaction_scope() as session:

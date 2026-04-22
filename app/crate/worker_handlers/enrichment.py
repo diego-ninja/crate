@@ -501,6 +501,8 @@ def _process_new_content_album_genres(
     p: TaskProgress,
 ) -> list[dict]:
     from crate.db import get_library_albums, get_library_tracks, set_album_genres
+    from crate.db.queries.browse_artist import get_artist_genre_profile
+    from crate.genre_indexer import derive_album_genres
 
     albums = []
     p.phase = "album_genres"
@@ -509,24 +511,17 @@ def _process_new_content_album_genres(
     emit_progress(task_id, p, force=True)
     try:
         albums = get_library_albums(artist_name)
+        artist_profile = get_artist_genre_profile(artist_name, limit=8)
         for album in albums:
             if album_folder and album["name"] != album_folder:
                 continue
             tracks = get_library_tracks(album["id"])
-            album_genres_raw = set()
-            if album.get("genre"):
-                for genre in album["genre"].split(","):
-                    genre = genre.strip()
-                    if genre:
-                        album_genres_raw.add(genre)
-            for track in tracks:
-                if track.get("genre"):
-                    for genre in track["genre"].split(","):
-                        genre = genre.strip()
-                        if genre:
-                            album_genres_raw.add(genre)
-            if album_genres_raw:
-                genres = [(genre, 1.0, "tags") for genre in album_genres_raw]
+            genres = derive_album_genres(
+                album.get("genre"),
+                [track.get("genre") for track in tracks if track.get("genre")],
+                artist_profile=artist_profile,
+            )
+            if genres:
                 set_album_genres(album["id"], genres)
         result["steps"]["album_genres"] = True
     except Exception:

@@ -1053,13 +1053,13 @@ def get_artists_missing_genre_mapping() -> list[str]:
 def get_artist_album_genres(artist_name: str) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(text("""
-            SELECT g.name, COUNT(*) AS cnt
+            SELECT g.name, COALESCE(SUM(ag.weight), 0)::FLOAT AS score
             FROM album_genres ag
             JOIN genres g ON ag.genre_id = g.id
             JOIN library_albums a ON ag.album_id = a.id
             WHERE a.artist = :artist
             GROUP BY g.name
-            ORDER BY cnt DESC
+            ORDER BY score DESC, g.name ASC
         """), {"artist": artist_name}).mappings().all()
     return [dict(r) for r in rows]
 

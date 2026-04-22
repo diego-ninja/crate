@@ -242,7 +242,7 @@ export function ArtistHeroSection({
             )}
 
             {genreProfile && genreProfile.length > 0 ? (
-              <GenrePillRow items={genreProfile} max={6} className="hidden md:flex mb-3" />
+              <GenrePillRow items={genreProfile} max={6} className="mb-3" />
             ) : tags.length > 0 ? (
               <div className="hidden md:flex gap-1.5 flex-wrap mb-3">
                 {tags.slice(0, 8).map((tag) => (

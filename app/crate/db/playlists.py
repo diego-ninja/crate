@@ -684,6 +684,54 @@ _SORT_MAP: dict[str, str] = {
 }
 
 
+def _combine_sql_extrema(expressions: list[str], mode: str = "greatest") -> str:
+    if not expressions:
+        return "0.0"
+    if len(expressions) == 1:
+        return expressions[0]
+    fn = "LEAST" if mode == "least" else "GREATEST"
+    return f"{fn}({', '.join(expressions)})"
+
+
+def _build_genre_relevance_expression(values: list[str], params: dict, next_param) -> str:
+    per_value_scores: list[str] = []
+
+    for raw_value in values:
+        value = raw_value.strip()
+        if not value:
+            continue
+
+        p_track = next_param("g")
+        p_album = next_param("g")
+        p_artist = next_param("g")
+        pattern = f"%{value}%"
+        params[p_track] = pattern
+        params[p_album] = pattern
+        params[p_artist] = pattern
+
+        per_value_scores.append(
+            f"""GREATEST(
+                CASE WHEN t.genre ILIKE :{p_track} THEN 1.0 ELSE 0.0 END,
+                COALESCE((
+                    SELECT MAX(ag.weight)
+                    FROM album_genres ag
+                    JOIN genres g ON g.id = ag.genre_id
+                    WHERE ag.album_id = a.id
+                      AND (g.name ILIKE :{p_album} OR g.slug ILIKE :{p_album})
+                ), 0.0),
+                COALESCE((
+                    SELECT MAX(arg.weight)
+                    FROM artist_genres arg
+                    JOIN genres g ON g.id = arg.genre_id
+                    WHERE arg.artist_name = t.artist
+                      AND (g.name ILIKE :{p_artist} OR g.slug ILIKE :{p_artist})
+                ), 0.0)
+            )"""
+        )
+
+    return _combine_sql_extrema(per_value_scores, mode="greatest")
+
+
 def execute_smart_rules(rules: dict, *, count_only: bool = False) -> list[dict] | int:
     """Execute smart playlist rules against the library DB.
 
@@ -698,6 +746,7 @@ def execute_smart_rules(rules: dict, *, count_only: bool = False) -> list[dict] 
     max_per_artist = rules.get("max_per_artist", 3)
 
     conditions: list[str] = []
+    genre_score_exprs: list[str] = []
     params: dict = {}
     param_idx = 0
 
@@ -717,16 +766,13 @@ def execute_smart_rules(rules: dict, *, count_only: bool = False) -> list[dict] 
         if not col:
             continue
 
-        # Special case: genre contains searches both track genre and artist tags
+        # Special case: genre contains uses album/artist weighted genre profiles
+        # and direct track tags to compute a relevance score.
         if field == "genre" and op == "contains":
             vals = _split_pipe(value) if isinstance(value, str) and "|" in value else [str(value)]
-            or_parts = []
-            for gv in vals:
-                p1, p2 = _next("g"), _next("g")
-                or_parts.append(f"({col} ILIKE :{p1} OR a_artist.tags_json::text ILIKE :{p2})")
-                params[p1] = f"%{gv}%"
-                params[p2] = f"%{gv}%"
-            conditions.append(f"({' OR '.join(or_parts)})")
+            score_expr = _build_genre_relevance_expression(vals, params, _next)
+            conditions.append(f"({score_expr}) > 0")
+            genre_score_exprs.append(score_expr)
             continue
 
         # Pipe-delimited multi-value → IN
@@ -799,6 +845,12 @@ def execute_smart_rules(rules: dict, *, count_only: bool = False) -> list[dict] 
         return row["cnt"] if row else 0
 
     sort_clause = _SORT_MAP.get(sort, "RANDOM()")
+    if genre_score_exprs:
+        genre_relevance = _combine_sql_extrema(
+            genre_score_exprs,
+            mode="least" if match_mode == "all" else "greatest",
+        )
+        sort_clause = f"{genre_relevance} DESC, {sort_clause}"
     fetch_limit = limit * 3 if deduplicate_artist else limit
     params["lim"] = fetch_limit
 
@@ -839,16 +891,45 @@ def execute_smart_rules(rules: dict, *, count_only: bool = False) -> list[dict] 
 # ── Smart playlist generators ─────────────────────────────────────
 
 def generate_by_genre(genre: str, limit: int = 50) -> list[int]:
+    params = {"genre": f"%{genre.strip()}%", "lim": limit}
+    genre_relevance = """GREATEST(
+        CASE WHEN g.name ILIKE :genre OR g.slug ILIKE :genre THEN COALESCE(ag.weight, 0.0) ELSE 0.0 END,
+        COALESCE((
+            SELECT MAX(arg.weight)
+            FROM artist_genres arg
+            JOIN genres g2 ON g2.id = arg.genre_id
+            WHERE arg.artist_name = t.artist
+              AND (g2.name ILIKE :genre OR g2.slug ILIKE :genre)
+        ), 0.0),
+        CASE WHEN t.genre ILIKE :genre THEN 1.0 ELSE 0.0 END
+    )"""
     with transaction_scope() as session:
         rows = session.execute(text("""
-            SELECT t.id FROM library_tracks t
+            SELECT
+                t.id,
+                MAX(""" + genre_relevance + """) AS genre_relevance,
+                MAX(COALESCE(t.popularity_score, -1)) AS popularity_score
+            FROM library_tracks t
             JOIN library_albums a ON a.id = t.album_id
-            JOIN album_genres ag ON ag.album_id = a.id
-            JOIN genres g ON g.id = ag.genre_id
-            WHERE g.name ILIKE :genre
-            ORDER BY RANDOM()
+            LEFT JOIN album_genres ag ON ag.album_id = a.id
+            LEFT JOIN genres g ON g.id = ag.genre_id
+            WHERE (
+                (g.name ILIKE :genre OR g.slug ILIKE :genre)
+                OR t.genre ILIKE :genre
+                OR EXISTS (
+                    SELECT 1
+                    FROM artist_genres arg
+                    JOIN genres g2 ON g2.id = arg.genre_id
+                    WHERE arg.artist_name = t.artist
+                      AND (g2.name ILIKE :genre OR g2.slug ILIKE :genre)
+                )
+            )
+            GROUP BY t.id
+            ORDER BY genre_relevance DESC,
+                     popularity_score DESC,
+                     RANDOM()
             LIMIT :lim
-        """), {"genre": genre, "lim": limit}).mappings().all()
+        """), params).mappings().all()
         return [r["id"] for r in rows]
 
 

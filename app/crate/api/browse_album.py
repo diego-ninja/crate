@@ -6,13 +6,13 @@ from fastapi.responses import JSONResponse, Response
 
 from crate.api._deps import COVER_NAMES, extensions, library_path
 from crate.api.auth import _require_auth
-from crate.api.browse_shared import display_name, find_album_dir, find_album_row, fs_album_detail, has_library_data
+from crate.api.browse_shared import build_genre_profile, display_name, find_album_dir, find_album_row, fs_album_detail, has_library_data
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.browse import AlbumDetailResponse, RelatedAlbumResponse
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
 from crate.db import get_library_album_by_id, get_library_artist, get_library_tracks
-from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list
+from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list, get_album_genre_profile
 from crate.storage_layout import resolve_album_dir
 
 router = APIRouter(tags=["browse"])
@@ -171,6 +171,7 @@ def api_album(request: Request, artist: str, album: str):
     total_length = sum(track["length_sec"] for track in track_list)
 
     album_genres = get_album_genres_list(album_data["id"])
+    genre_profile = build_genre_profile(get_album_genre_profile(album_data["id"]), limit=6)
 
     if album_genres:
         album_tags["genre"] = ", ".join(album_genres)
@@ -198,6 +199,7 @@ def api_album(request: Request, artist: str, album: str):
         "album_tags": album_tags,
         "musicbrainz_albumid": db_mbid,
         "genres": album_genres,
+        "genre_profile": genre_profile,
         "popularity": album_data.get("popularity"),
         "popularity_score": album_data.get("popularity_score"),
         "popularity_confidence": album_data.get("popularity_confidence"),
