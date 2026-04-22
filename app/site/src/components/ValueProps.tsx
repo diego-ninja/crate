@@ -4,6 +4,7 @@ import {
   Database,
   Mic2,
   Radio,
+  Route,
   SlidersHorizontal,
   Sparkles,
   Terminal,
@@ -44,6 +45,11 @@ const PROPS: Prop[] = [
     icon: Radio,
     title: "Radio & smart playlists",
     body: "Seed a track and Crate builds an infinite radio queue using bliss similarity vectors — songs that sound alike, not just share a tag. Smart playlists combine genre, energy, BPM, year, format, and popularity rules with live re-generation.",
+  },
+  {
+    icon: Route,
+    title: "Music Paths",
+    body: "Pick an origin and destination — a genre, artist, or track — and Crate traces a listening route through the acoustic space between them. Add waypoints to steer the journey. Each step sounds like it belongs in the transition.",
   },
   {
     icon: Calendar,
