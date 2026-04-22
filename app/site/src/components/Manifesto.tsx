@@ -46,6 +46,48 @@ export function Manifesto() {
         <hr className="my-10 border-white/8" />
 
         <p>
+          Let's be honest about what the streaming economy actually does to
+          music. An artist needs roughly 250 streams on Spotify to earn what a
+          single concert ticket costs. A band touring in a van, sleeping on
+          floors, pouring everything into their art, gets fractions of a cent
+          while a platform's shareholders collect billions. The model isn't
+          broken — it's working exactly as designed. It's just not designed for
+          artists. It's designed to extract value from their work and
+          redistribute it upward.
+        </p>
+
+        <p className="text-[18px] font-medium leading-[1.7] text-white/85">
+          In a system like this, piracy is not theft. It's self-defense.
+        </p>
+
+        <p>
+          The real theft happens every day, in plain sight, with terms of
+          service and quarterly earnings reports. It happens when a platform
+          pays an artist $0.003 per stream and calls it "democratizing music."
+          It happens when algorithms bury the work of independent musicians
+          under an endless sea of AI-generated filler and major-label playlist
+          placements. It happens when the entire relationship between a
+          listener and a musician is mediated by a corporation whose only
+          incentive is to keep you scrolling.
+        </p>
+
+        <p>
+          So yes: download the music. Build your library. Own your files. And
+          then take the money you would have given to a streaming platform and
+          spend it where it actually matters.
+        </p>
+
+        <p className="text-[18px] font-medium leading-[1.7] text-white/85">
+          Buy the concert ticket. Buy the record at the merch table. Buy the
+          t-shirt. Send the band a message telling them their album changed
+          your week. Show up. That is how you support music. Not by adding
+          another passive stream to a pool that pays artists less than minimum
+          wage.
+        </p>
+
+        <hr className="my-10 border-white/8" />
+
+        <p>
           That was when I started looking seriously at self-hosted software. I
           wanted to recover something simple and valuable: the feeling that my
           music library belonged to me again. I tried excellent tools, and
@@ -149,6 +191,10 @@ export function Manifesto() {
           question it, challenge it, improve it, and help push it forward.
           Crate is not being built to replicate what already exists. It is
           being built to imagine something better.
+        </p>
+
+        <p className="text-[18px] font-medium leading-[1.7] text-white/85">
+          Own your music. Support your artists. Refuse the middleman.
         </p>
 
         <div className="mt-8 text-right text-sm text-white/40">

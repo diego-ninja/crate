@@ -17,16 +17,14 @@ function WhyTeaser() {
           Why Crate?
         </div>
         <blockquote className="text-xl font-medium leading-relaxed text-white/80 sm:text-2xl sm:leading-relaxed">
-          "Music has always meant a great deal to me. Not as background noise,
-          not as functional ambience. For me, music is still discovery, context,
-          obsession, memory, identity, community."
+          "In a system where artists earn $0.003 per stream while platforms
+          collect billions, piracy is not theft. It's self-defense."
         </blockquote>
         <p className="mt-6 text-[15px] leading-7 text-white/50">
-          Crate is built on a simple belief: music deserves better than the
-          dominant platforms. It deserves tools built with respect for artists,
-          with love for collections, and with the conviction that listening
-          should not require surrendering yourself to the rules of a handful
-          of giant companies.
+          Buy the concert ticket. Buy the record at the merch table. Send the
+          band a message. That is how you support music. Not by feeding a
+          system designed to extract value from artists and redistribute it
+          upward.
         </p>
         <a
           href="/why"
