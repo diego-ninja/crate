@@ -107,7 +107,8 @@ export function AdminSelect({
             </div>
           ) : null}
 
-          <div className="max-h-[220px] space-y-1 overflow-y-auto p-1">
+          <div className="max-h-[220px] overflow-y-auto p-1">
+            <div className="flex flex-col gap-1">
             {allowClear ? (
               <button
                 type="button"
@@ -117,10 +118,10 @@ export function AdminSelect({
                   setSearch("");
                 }}
                 className={cn(
-                  "flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                  "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors",
                   !value
-                    ? "border-[var(--active-border)] bg-[var(--active-bg)] text-primary"
-                    : "border-transparent text-[var(--idle-text)] hover:border-[var(--hover-border)] hover:bg-[var(--hover-bg)] hover:text-foreground",
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-transparent text-white/60 hover:border-white/15 hover:bg-white/[0.04] hover:text-white",
                 )}
               >
                 <span>{placeholder}</span>
@@ -139,10 +140,10 @@ export function AdminSelect({
                     setSearch("");
                   }}
                   className={cn(
-                    "flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                    "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors",
                     value === option.value
-                      ? "border-[var(--active-border)] bg-[var(--active-bg)] text-primary"
-                      : "border-transparent text-[var(--idle-text)] hover:border-[var(--hover-border)] hover:bg-[var(--hover-bg)] hover:text-foreground",
+                      ? "border-primary/40 bg-primary/10 text-primary"
+                      : "border-transparent text-white/60 hover:border-white/15 hover:bg-white/[0.04] hover:text-white",
                   )}
                 >
                   <span className="truncate">{option.label}</span>
@@ -150,8 +151,9 @@ export function AdminSelect({
                 </button>
               ))
             ) : (
-              <div className="px-2 py-4 text-center text-sm text-[var(--idle-text-subtle)]">{noMatchesLabel}</div>
+              <div className="px-2 py-4 text-center text-sm text-white/40">{noMatchesLabel}</div>
             )}
+            </div>
           </div>
       </PopoverContent>
     </Popover>
