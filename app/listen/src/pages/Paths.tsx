@@ -68,20 +68,29 @@ function EndpointPicker({
     if (q.length < 2) { setResults([]); return; }
     setSearching(true);
     try {
-      const data = await api<{
-        artists?: { id: number; name: string; slug?: string }[];
-        albums?: { id: number; name: string; artist: string; slug?: string }[];
-        tracks?: { id: number; title: string; artist: string }[];
-      }>(`/api/search?q=${encodeURIComponent(q)}&limit=5`);
+      const [searchData, genresData] = await Promise.all([
+        api<{
+          artists?: { id: number; name: string; slug?: string }[];
+          albums?: { id: number; name: string; artist: string; slug?: string }[];
+          tracks?: { id: number; title: string; artist: string }[];
+        }>(`/api/search?q=${encodeURIComponent(q)}&limit=5`),
+        api<{ slug: string; name: string }[]>("/api/genres"),
+      ]);
 
       const items: SearchResult[] = [];
-      for (const a of data.artists?.slice(0, 3) ?? []) {
+
+      // Genres first — filter client-side
+      const qLower = q.toLowerCase();
+      for (const g of genresData.filter((g) => g.name.toLowerCase().includes(qLower)).slice(0, 3)) {
+        items.push({ type: "genre", value: g.slug, label: g.name });
+      }
+      for (const a of searchData.artists?.slice(0, 3) ?? []) {
         items.push({ type: "artist", value: String(a.id), label: a.name });
       }
-      for (const a of data.albums?.slice(0, 3) ?? []) {
+      for (const a of searchData.albums?.slice(0, 3) ?? []) {
         items.push({ type: "album", value: String(a.id), label: `${a.name} — ${a.artist}` });
       }
-      for (const t of data.tracks?.slice(0, 3) ?? []) {
+      for (const t of searchData.tracks?.slice(0, 2) ?? []) {
         items.push({ type: "track", value: String(t.id), label: `${t.title} — ${t.artist}` });
       }
       setResults(items);
