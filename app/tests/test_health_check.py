@@ -11,14 +11,22 @@ class TestDuplicateFolders:
         """'Shame' and 'shame' should be detected as duplicates."""
         from crate.health_check import LibraryHealthCheck
 
-        with tempfile.TemporaryDirectory() as lib:
-            (Path(lib) / "Shame").mkdir()
-            (Path(lib) / "shame").mkdir()
-            (Path(lib) / "Unique Band").mkdir()
+        def _fake_dir(name: str):
+            item = MagicMock()
+            item.name = name
+            item.is_dir.return_value = True
+            return item
 
-            config = {"library_path": lib}
-            hc = LibraryHealthCheck(config)
-            issues = hc._check_duplicate_folders()
+        config = {"library_path": "/tmp/fake-library"}
+        hc = LibraryHealthCheck(config)
+        hc.library_path = MagicMock()
+        hc.library_path.is_dir.return_value = True
+        hc.library_path.iterdir.return_value = [
+            _fake_dir("Shame"),
+            _fake_dir("shame"),
+            _fake_dir("Unique Band"),
+        ]
+        issues = hc._check_duplicate_folders()
 
         assert len(issues) == 1
         assert issues[0]["check"] == "duplicate_folders"
