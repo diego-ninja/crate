@@ -13,6 +13,7 @@ import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-cro
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { toast } from "sonner";
+import { RadioFeedback } from "@/components/player/RadioFeedback";
 import { QueuePanel } from "@/components/player/QueuePanel";
 import { LyricsPanel } from "@/components/player/LyricsPanel";
 import { EqualizerPopover } from "@/components/player/EqualizerPopover";
@@ -365,6 +366,14 @@ export function PlayerBar() {
               <button onClick={(e) => { e.stopPropagation(); toggleLike(); }} className="shrink-0 rounded-md p-1.5 transition-colors hover:bg-white/5">
               <Heart size={16} className={liked ? "text-primary fill-primary" : "text-white/30 hover:text-white/60"} />
               </button>
+
+            {/* Radio shaping — thumbs up/down when shaped radio is active */}
+            {playSource?.radio?.shapedSessionId && currentTrack?.libraryTrackId && (
+              <RadioFeedback
+                sessionId={playSource.radio.shapedSessionId}
+                trackId={currentTrack.libraryTrackId}
+              />
+            )}
 
             </div>
             <div onClick={(e) => e.stopPropagation()}>

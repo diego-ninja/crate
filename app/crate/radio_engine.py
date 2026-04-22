@@ -105,9 +105,26 @@ def resolve_discovery_seed(user_id: int) -> tuple[list[float], str] | None:
             {"user_id": user_id},
         ).mappings().all()
 
-        if len(follows) >= 10:
+        if len(follows) >= 5:
             vectors = [list(r["bliss_vector"]) for r in follows]
             return _centroid(vectors), "Artists you follow"
+
+        # 2b. Saved albums
+        saved = session.execute(
+            text("""
+                SELECT t.bliss_vector
+                FROM saved_albums sa
+                JOIN library_tracks t ON t.album_id = sa.album_id
+                WHERE sa.user_id = :user_id
+                  AND t.bliss_vector IS NOT NULL
+                LIMIT 30
+            """),
+            {"user_id": user_id},
+        ).mappings().all()
+
+        if len(saved) >= 5:
+            vectors = [list(r["bliss_vector"]) for r in saved]
+            return _centroid(vectors), "Your saved albums"
 
         # 3. Recent plays
         plays = session.execute(
@@ -146,21 +163,25 @@ def resolve_discovery_seed(user_id: int) -> tuple[list[float], str] | None:
 
 
 def has_enough_data(user_id: int) -> bool:
-    """Check if a user has enough data for discovery radio."""
+    """Check if a user has enough data for discovery radio.
+    Any signal is enough: 1 follow, 1 saved album, 3 liked tracks, or 5 plays."""
     from sqlalchemy import text
     with read_scope() as session:
         row = session.execute(
             text("""
                 SELECT
                     (SELECT count(*) FROM liked_tracks WHERE user_id = :uid) AS likes,
-                    (SELECT count(*) FROM artist_follows WHERE user_id = :uid) AS follows
+                    (SELECT count(*) FROM artist_follows WHERE user_id = :uid) AS follows,
+                    (SELECT count(*) FROM saved_albums WHERE user_id = :uid) AS saved_albums
             """),
             {"uid": user_id},
         ).mappings().first()
 
     if not row:
         return False
-    return int(row["likes"]) >= 5 or int(row["follows"]) >= 3
+    return (int(row["likes"]) >= 3
+            or int(row["follows"]) >= 1
+            or int(row["saved_albums"]) >= 1)
 
 
 # ── Radio start ───────────────────────────────────────────────────

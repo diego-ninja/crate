@@ -112,24 +112,25 @@ export function RadioPage() {
         </div>
       </div>
 
-      {/* Discovery Radio — prominent card */}
-      {discoveryAvailable && (
-        <button
-          onClick={startDiscovery}
-          disabled={starting}
-          className="group flex w-full items-center gap-4 rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-5 text-left transition hover:border-primary/35 hover:from-primary/15 disabled:opacity-50"
-        >
-          <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary shadow-[0_0_20px_rgba(6,182,212,0.2)] transition group-hover:shadow-[0_0_30px_rgba(6,182,212,0.3)]">
-            {starting ? <Loader2 size={24} className="animate-spin" /> : <Sparkles size={24} />}
+      {/* Discovery Radio — always visible */}
+      <button
+        onClick={startDiscovery}
+        disabled={starting || !discoveryAvailable}
+        className="group flex w-full items-center gap-4 rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-5 text-left transition hover:border-primary/35 hover:from-primary/15 disabled:opacity-40"
+      >
+        <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary shadow-[0_0_20px_rgba(6,182,212,0.2)] transition group-hover:shadow-[0_0_30px_rgba(6,182,212,0.3)]">
+          {starting ? <Loader2 size={24} className="animate-spin" /> : <Sparkles size={24} />}
+        </div>
+        <div>
+          <div className="text-base font-semibold text-foreground">Discovery Radio</div>
+          <div className="mt-0.5 text-[13px] text-white/45">
+            {discoveryAvailable
+              ? "Based on your likes, follows, and saved albums. Like or dislike tracks to shape the sound."
+              : "Follow an artist or save an album to unlock Discovery Radio."
+            }
           </div>
-          <div>
-            <div className="text-base font-semibold text-foreground">Discovery Radio</div>
-            <div className="mt-0.5 text-[13px] text-white/45">
-              Based on your likes, follows, and listening history. Like or dislike tracks to shape the sound.
-            </div>
-          </div>
-        </button>
-      )}
+        </div>
+      </button>
 
       {/* Seeded Radio — search to start */}
       <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-5">
