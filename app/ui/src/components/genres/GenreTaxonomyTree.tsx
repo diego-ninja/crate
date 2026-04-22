@@ -341,7 +341,10 @@ export function GenreTaxonomyTree({ filter = "", hideEmpty = false }: { filter?:
   const nonEmptySlugs = useMemo(() => {
     if (!hideEmpty || !data) return null;
     const set = new Set<string>();
+    const visited = new Set<string>();
     function mark(slug: string): boolean {
+      if (visited.has(slug)) return set.has(slug);
+      visited.add(slug);
       const node = nodeMap.get(slug);
       if (!node) return false;
       const selfHasContent = node.artist_count > 0 || node.album_count > 0;
@@ -351,11 +354,19 @@ export function GenreTaxonomyTree({ filter = "", hideEmpty = false }: { filter?:
       }
       if (selfHasContent || childHasContent) {
         set.add(slug);
+        // Also mark all ancestors so parent chain is visible
+        for (const parent of node.parent_slugs) {
+          const p = nodeMap.get(parent);
+          if (p && !set.has(parent)) {
+            set.add(parent);
+          }
+        }
         return true;
       }
       return false;
     }
-    for (const slug of data.top_level_slugs) mark(slug);
+    // Walk ALL nodes, not just top-level roots
+    for (const node of data.nodes) mark(node.slug);
     return set;
   }, [hideEmpty, data, nodeMap]);
 
@@ -446,7 +457,9 @@ export function GenreTaxonomyTree({ filter = "", hideEmpty = false }: { filter?:
     if (visibleSlugs && !visibleSlugs.has(slug)) return null;
     if (nonEmptySlugs && !nonEmptySlugs.has(slug)) return null;
 
-    const hasChildren = node.children_slugs.length > 0;
+    const hasChildren = nonEmptySlugs
+      ? node.children_slugs.some((c) => nonEmptySlugs.has(c))
+      : node.children_slugs.length > 0;
     const open = isExpanded(slug);
     const isSelected = selectedSlug === slug;
     const hasPreset = node.eq_gains !== null;
