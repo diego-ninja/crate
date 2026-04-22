@@ -540,12 +540,12 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
                   key={i}
                   ref={i === activeLyricIndex ? activeLyricRef : null}
                   onClick={() => seek(line.time)}
-                  className={`w-full max-w-md rounded-lg border px-4 py-2.5 text-center transition-all duration-300 ${
+                  className={`w-full max-w-md rounded-md px-3 py-1 text-center transition-all duration-500 ${
                     i === activeLyricIndex
-                      ? "border-primary/30 bg-primary/10 text-lg font-bold text-primary"
+                      ? "bg-primary/10 text-lg font-semibold text-primary"
                       : i < activeLyricIndex
-                        ? "border-transparent text-[15px] text-white/25"
-                        : "border-transparent text-[15px] text-white/45 hover:bg-white/[0.03] hover:text-white/60"
+                        ? "text-[15px] text-white/25"
+                        : "text-[15px] text-white/50"
                   }`}
                 >
                   {line.text || "♪"}

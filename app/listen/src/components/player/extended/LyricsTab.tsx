@@ -153,12 +153,12 @@ export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
                 key={`${line.time}-${index}`}
                 ref={isActive ? activeRef : null}
                 onClick={() => seek(line.time)}
-                className={`relative z-20 w-full rounded-lg border px-3 py-2.5 text-left transition-all duration-300 ${
+                className={`relative z-20 w-full rounded-md px-2 py-1 text-left transition-all duration-500 ${
                   isActive
-                    ? "border-primary/30 bg-primary/10 text-[17px] font-bold"
+                    ? "bg-primary/10 text-[17px] font-semibold"
                     : isPast
-                      ? "border-transparent text-[14px] text-white/25"
-                      : "border-transparent text-[14px] text-white/45 hover:bg-white/[0.03] hover:text-white/60"
+                      ? "text-[14px] text-white/25"
+                      : "text-[14px] text-white/50"
                 }`}
                 style={
                   isActive

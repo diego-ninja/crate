@@ -140,7 +140,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
 
   return (
     <div
-      className="z-app-player-drawer fixed right-0 top-0 bottom-[72px] flex w-[360px] flex-col overflow-hidden border-l border-white/5 shadow-2xl"
+      className="z-app-player-drawer fixed right-0 top-0 bottom-[72px] flex w-[480px] flex-col overflow-hidden border-l border-white/5 shadow-2xl"
       style={{
         background: `linear-gradient(180deg, ${cssColor(primary, useAlbumPalette ? 0.2 : 0.12)} 0%, rgba(12,12,20,0.96) 22%, var(--surface-panel) 100%)`,
       }}
@@ -190,12 +190,12 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
                   key={i}
                   ref={isActive ? activeRef : null}
                   onClick={() => seek(line.time)}
-                  className={`relative z-20 w-full rounded-lg border px-3 py-2.5 text-left transition-all duration-300 ${
+                  className={`relative z-20 w-full rounded-md px-2 py-1 text-left transition-all duration-500 ${
                     isActive
-                      ? "border-primary/30 bg-primary/10 text-[17px] font-bold"
+                      ? "bg-primary/10 text-[17px] font-semibold"
                       : isPast
-                        ? "border-transparent text-[14px] text-white/25"
-                        : "border-transparent text-[14px] text-white/45 hover:bg-white/[0.03] hover:text-white/60"
+                        ? "text-[14px] text-white/25"
+                        : "text-[14px] text-white/50"
                   }`}
                   style={isActive ? {
                     textShadow: `0 0 20px ${cssColor(primary, 0.25)}`,
