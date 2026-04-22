@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@crate/ui/shadcn/button";
 import {
   Table,
   TableHeader,
@@ -6,7 +6,7 @@ import {
   TableHead,
   TableBody,
   TableCell,
-} from "@/components/ui/table";
+} from "@crate/ui/shadcn/table";
 
 interface TagPreview {
   current_title: string;
@@ -36,7 +36,7 @@ export function MatchCard({ match, onApply }: MatchCardProps) {
     sc >= 70 ? "text-green-500" : sc >= 40 ? "text-yellow-500" : "text-red-500";
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 mb-3 hover:border-primary transition-colors">
+    <div className="bg-card border border-border rounded-md p-4 mb-3 hover:border-primary transition-colors">
       <div className="flex items-center gap-4 mb-3">
         <div className={`text-2xl font-bold w-12 text-center flex-shrink-0 ${scoreColor}`}>
           {sc}

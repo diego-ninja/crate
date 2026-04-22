@@ -166,9 +166,11 @@ def get_artist_network(artist_name: str, depth: int = 2, limit_per_level: int = 
                 seen_links.add(lk)
                 links.append({"source": nodes[sk]["id"], "target": dst, "value": score})
 
-    library_names = [node["id"] for node in nodes.values() if node.get("in_library")]
+    # Live lookup: check ALL nodes against library_artists (the static
+    # in_library flag in artist_similarities can be stale)
+    all_node_names = [node["id"].lower() for node in nodes.values()]
     refs_by_name: dict[str, dict] = {}
-    if library_names:
+    if all_node_names:
         with transaction_scope() as session:
             rows = session.execute(
                 text("""
@@ -176,7 +178,7 @@ def get_artist_network(artist_name: str, depth: int = 2, limit_per_level: int = 
                 FROM library_artists
                 WHERE LOWER(name) = ANY(:names)
                 """),
-                {"names": [name.lower() for name in library_names]},
+                {"names": all_node_names},
             ).mappings().all()
             refs_by_name = {
                 row["name"].lower(): {"artist_id": row["id"], "artist_slug": row["slug"]}
@@ -184,6 +186,9 @@ def get_artist_network(artist_name: str, depth: int = 2, limit_per_level: int = 
             }
 
     for node in nodes.values():
+        # Override stale in_library flag with live data
+        if node["id"].lower() in refs_by_name:
+            node["in_library"] = True
         ref = refs_by_name.get(node["id"].lower())
         if ref:
             node.update(ref)

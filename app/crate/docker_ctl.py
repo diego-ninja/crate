@@ -89,9 +89,28 @@ def is_available() -> bool:
         return False
 
 
+def _detect_project_name() -> str:
+    """Detect the compose project name from this container's own labels."""
+    data = _request("GET", "/containers/json?filters=%7B%22label%22%3A%5B%22com.docker.compose.service%22%5D%7D")
+    if isinstance(data, list):
+        import os
+        hostname = os.environ.get("HOSTNAME", "")
+        for c in data:
+            cid = c.get("Id", "")
+            if hostname and cid.startswith(hostname):
+                labels = c.get("Labels", {})
+                return labels.get("com.docker.compose.project", "")
+    return ""
+
+
 def list_containers(all_containers: bool = False) -> list[dict]:
-    """List Docker containers with status info."""
-    path = "/containers/json?all=true" if all_containers else "/containers/json"
+    """List Docker containers from the same compose project."""
+    project = _detect_project_name()
+    if project:
+        label_filter = quote(json.dumps({"label": [f"com.docker.compose.project={project}"]}), safe="")
+        path = f"/containers/json?all=true&filters={label_filter}" if all_containers else f"/containers/json?filters={label_filter}"
+    else:
+        path = "/containers/json?all=true" if all_containers else "/containers/json"
     data = _request("GET", path)
     if not isinstance(data, list):
         return []

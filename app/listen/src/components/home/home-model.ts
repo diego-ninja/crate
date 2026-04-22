@@ -49,6 +49,7 @@ export interface CuratedPlaylist {
   name: string;
   description?: string;
   category?: string | null;
+  cover_data_url?: string | null;
   artwork_tracks?: PlaylistArtworkTrack[];
   track_count: number;
   follower_count: number;
@@ -280,7 +281,7 @@ export interface HomeFavoriteArtist {
 }
 
 export interface HomeDiscoveryPayload {
-  hero: HomeHeroArtist | null;
+  hero: HomeHeroArtist | HomeHeroArtist[] | null;
   recently_played: HomeRecentItem[];
   custom_mixes: HomeGeneratedPlaylistSummary[];
   suggested_albums: HomeSuggestedAlbum[];

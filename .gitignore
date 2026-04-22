@@ -36,3 +36,4 @@ worktrees/
 # metadata is personal editor state. Kept on local disk, never in repo.
 docs/plans/
 docs/technical/.obsidian/
+app/shared/web/node_modules

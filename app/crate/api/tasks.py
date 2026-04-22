@@ -380,7 +380,7 @@ def api_cancel_task(request: Request, task_id: str):
     if not task:
         return JSONResponse({"error": "Task not found"}, status_code=404)
 
-    if task["status"] not in ("pending", "running"):
+    if task["status"] not in ("pending", "running", "delegated"):
         return JSONResponse({"error": f"Cannot cancel task in '{task['status']}' status"}, status_code=400)
 
     update_task(task_id, status="cancelled")

@@ -11,11 +11,11 @@ import {
 import { Check, MoreHorizontal, type LucideIcon } from "lucide-react";
 import { createPortal } from "react-dom";
 
-import { useIsDesktop } from "@/hooks/use-breakpoint";
-import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
-import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
-import { ActionIconButton } from "@/components/ui/ActionIconButton";
-import { AppModal, ModalBody } from "@/components/ui/AppModal";
+import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
+import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
+import { AppMenuButton, AppPopover, AppPopoverDivider } from "@crate/ui/primitives/AppPopover";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
+import { AppModal, ModalBody } from "@crate/ui/primitives/AppModal";
 import { cn } from "@/lib/utils";
 
 export type ItemActionMenuEntry =

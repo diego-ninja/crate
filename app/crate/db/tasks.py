@@ -188,13 +188,17 @@ def list_tasks(status: str | None = None, task_type: str | None = None, limit: i
     query = "SELECT * FROM tasks WHERE 1=1"
     params: dict = {}
     if status:
-        query += " AND status = :status"
-        params["status"] = status
+        if status == "running":
+            # Include delegated tasks (coordinators waiting for chunks)
+            query += " AND status IN ('running', 'delegated', 'completing')"
+        else:
+            query += " AND status = :status"
+            params["status"] = status
     if task_type:
         query += " AND type = :task_type"
         params["task_type"] = task_type
-    query += (" ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,"
-              " CASE WHEN status IN ('running','pending') THEN priority ELSE 999 END ASC,"
+    query += (" ORDER BY CASE status WHEN 'running' THEN 0 WHEN 'delegated' THEN 0 WHEN 'completing' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,"
+              " CASE WHEN status IN ('running','pending','delegated','completing') THEN priority ELSE 999 END ASC,"
               " updated_at DESC LIMIT :lim")
     params["lim"] = limit
 
@@ -211,6 +215,52 @@ def list_child_tasks(parent_task_id: str) -> list[dict]:
             {"parent_id": parent_task_id},
         ).mappings().all()
     return [_row_to_task(r) for r in rows]
+
+
+def check_siblings_complete(parent_task_id: str) -> dict:
+    """Atomically check if all children of a parent task are done AND claim finalization.
+
+    Returns {"all_done": bool, "total": int, "completed": int, "failed": int}.
+    A child counts as done if its status is completed, failed, or cancelled.
+
+    When all_done is True, the parent status is atomically set to 'completing'
+    (via UPDATE ... WHERE status != 'completing') to ensure exactly one caller
+    wins the race and runs finalization. Losers get all_done=False.
+    """
+    with transaction_scope() as session:
+        row = session.execute(
+            text("""
+            SELECT
+                COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE status IN ('completed','failed','cancelled'))::int AS done,
+                COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+                COUNT(*) FILTER (WHERE status IN ('failed','cancelled'))::int AS failed
+            FROM tasks WHERE parent_task_id = :pid
+            """),
+            {"pid": parent_task_id},
+        ).mappings().first()
+        total = row["total"] if row else 0
+        done = row["done"] if row else 0
+        all_done = total > 0 and done == total
+
+        if all_done:
+            # Atomic claim: only one concurrent caller can transition to 'completing'
+            claimed = session.execute(
+                text("""
+                UPDATE tasks SET status = 'completing'
+                WHERE id = :pid AND status IN ('running', 'delegated')
+                """),
+                {"pid": parent_task_id},
+            )
+            if claimed.rowcount == 0:
+                all_done = False  # Another chunk already claimed finalization
+
+    return {
+        "all_done": all_done,
+        "total": total,
+        "completed": row["completed"] if row else 0,
+        "failed": row["failed"] if row else 0,
+    }
 
 
 # ── Zombie detection ──────────────────────────────────────────────
@@ -340,11 +390,15 @@ def claim_next_task(max_running: int = 5) -> dict | None:
 # ── Helpers ───────────────────────────────────────────────────────
 
 def _row_to_task(row: dict) -> dict:
+    from crate.task_registry import task_label, task_icon
+
     d = dict(row)
     params_raw = d.pop("params_json", {})
     d["params"] = params_raw if isinstance(params_raw, dict) else json.loads(params_raw or "{}")
     result_raw = d.pop("result_json", None)
     d["result"] = result_raw if isinstance(result_raw, (dict, list)) else (json.loads(result_raw) if result_raw else None)
+    d["label"] = task_label(d.get("type", ""))
+    d["icon"] = task_icon(d.get("type", ""))
     return d
 
 

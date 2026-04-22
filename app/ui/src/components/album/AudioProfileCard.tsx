@@ -1,6 +1,6 @@
 import { ResponsiveRadar } from "@nivo/radar";
 import { ResponsiveBar } from "@nivo/bar";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@crate/ui/shadcn/badge";
 import { Music, Gauge, Key, Volume2 } from "lucide-react";
 import type { AudioAnalysisTrack } from "@/components/album/TrackTable";
 
@@ -82,7 +82,7 @@ export function AudioProfileCard({ analysisData }: AudioProfileCardProps) {
     : [];
 
   return (
-    <div className="mb-8 rounded-xl border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
+    <div className="mb-8 rounded-md border border-border bg-card/50 backdrop-blur-sm overflow-hidden">
       <div className="px-5 py-3 border-b border-border flex items-center justify-between">
         <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
           <Music size={14} className="text-primary" />
@@ -151,9 +151,9 @@ export function AudioProfileCard({ analysisData }: AudioProfileCardProps) {
               {barData.map((d) => (
                 <div key={d.name} className="flex items-center gap-2">
                   <span className="text-[11px] text-muted-foreground w-[70px] shrink-0">{d.name}</span>
-                  <div className="h-2 flex-1 bg-secondary rounded-full overflow-hidden">
+                  <div className="h-2 flex-1 bg-secondary rounded-md overflow-hidden">
                     <div
-                      className="h-full rounded-full transition-all duration-500 bg-primary"
+                      className="h-full rounded-md transition-all duration-500 bg-primary"
                       style={{ width: `${d.value}%` }}
                     />
                   </div>
@@ -183,7 +183,7 @@ export function AudioProfileCard({ analysisData }: AudioProfileCardProps) {
 
 function StatBox({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: string; color: string }) {
   return (
-    <div className="bg-secondary/50 rounded-lg p-3">
+    <div className="bg-secondary/50 rounded-md p-3">
       <div className={`flex items-center gap-1.5 mb-1 ${color}`}>
         {icon}
         <span className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</span>

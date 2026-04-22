@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router";
-import { formatBadgeClass } from "@/lib/utils";
-import { Music, Play, Heart, ImageDown, ListPlus, Loader2 } from "lucide-react";
+import { ImageDown, Loader2, Music } from "lucide-react";
 import { toast } from "sonner";
-import { useFavorites } from "@/hooks/use-favorites";
+
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
@@ -19,19 +20,37 @@ interface AlbumCardProps {
   year?: string;
   tracks: number;
   formats: string[];
+  bitDepth?: number | null;
+  sampleRate?: number | null;
   hasCover?: boolean;
-  showHeart?: boolean;
-  showQueue?: boolean;
 }
 
-function hashColor(str: string): string {
+function hashColor(value: string): string {
   let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  const h = Math.abs(hash) % 360;
-  return `hsl(${h}, 30%, 15%)`;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = value.charCodeAt(index) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 30%, 15%)`;
 }
 
+function qualityLabel(formats: string[], bitDepth?: number | null, sampleRate?: number | null): { label: string; tier: "hi-res" | "lossless" | "lossy" } | null {
+  if (!formats.length) return null;
+  const fmt = (formats[0] ?? "").replace(".", "").toLowerCase();
+  const fmtUp = fmt.toUpperCase();
+  const isLossless = ["flac", "alac", "wav", "aiff"].includes(fmt);
+  const depth = bitDepth || 16;
+  const rateKhz = sampleRate ? (sampleRate / 1000) : 44.1;
+  const rateStr = `${rateKhz % 1 ? rateKhz.toFixed(1) : rateKhz}kHz`;
 
+  if (isLossless && (depth > 16 || rateKhz > 48)) {
+    return { label: `${fmtUp} ${depth}/${rateStr}`, tier: "hi-res" };
+  }
+  if (isLossless) {
+    return { label: `${fmtUp} ${depth}/${rateStr}`, tier: "lossless" };
+  }
+  return { label: fmtUp, tier: "lossy" };
+}
 
 export const AlbumCard = React.memo(function AlbumCard({
   albumId,
@@ -44,26 +63,22 @@ export const AlbumCard = React.memo(function AlbumCard({
   year,
   tracks,
   formats,
-  showHeart = true,
-  showQueue = true,
+  bitDepth,
+  sampleRate,
 }: AlbumCardProps) {
   const navigate = useNavigate();
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
-  
-  const { isFavorite, toggleFavorite } = useFavorites();
   const [fetchingCover, setFetchingCover] = useState(false);
   const coverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: name });
-  const favId = `${artist}/${name}`;
 
-  async function handleFetchCover(e: React.MouseEvent) {
-    e.stopPropagation();
+  async function handleFetchCover(event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
     if (!albumId || fetchingCover) return;
     setFetchingCover(true);
     try {
       await api(`/api/albums/${albumId}/fetch-cover`, "POST");
       toast.success("Searching for cover...");
-      // Poll for completion then reload image
       setTimeout(() => {
         setImgError(false);
         setImgLoaded(false);
@@ -73,11 +88,6 @@ export const AlbumCard = React.memo(function AlbumCard({
       toast.error("Failed to search for cover");
       setFetchingCover(false);
     }
-  }
-
-  function handlePlay(e: React.MouseEvent) {
-    e.stopPropagation();
-    navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: name }));
   }
 
   return (
@@ -92,85 +102,62 @@ export const AlbumCard = React.memo(function AlbumCard({
     >
       <div
         onClick={() => navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: name }))}
-        className="bg-card border border-border rounded-lg p-3 cursor-pointer transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/5 hover:border-primary text-center group"
+        className="group cursor-pointer rounded-md p-2 text-left transition-colors hover:bg-white/5"
       >
-        <div className="w-full aspect-square rounded-lg bg-secondary overflow-hidden mb-2 relative">
+        <div className="relative mb-3 aspect-square overflow-hidden rounded-md bg-white/5">
           {!imgError ? (
             <img
               src={coverUrl}
               alt={name}
               loading="lazy"
-              className={`w-full h-full object-cover transition-opacity duration-300 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
+              className={`h-full w-full object-cover transition-opacity duration-300 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
               onLoad={() => setImgLoaded(true)}
               onError={() => setImgError(true)}
             />
           ) : null}
-          {(imgError || !imgLoaded) && (
+          {(imgError || !imgLoaded) ? (
             <div
               className={`absolute inset-0 flex items-center justify-center transition-opacity duration-300 ${imgLoaded && !imgError ? "opacity-0" : "opacity-100"}`}
               style={{ background: `linear-gradient(135deg, ${hashColor(name)}, ${hashColor(name + name)})` }}
             >
               <span className="text-3xl font-bold text-white/25">{name.charAt(0).toUpperCase()}</span>
-              {imgError && albumId && (
-                <button
-                  onClick={handleFetchCover}
-                  disabled={fetchingCover}
-                  className="absolute bottom-2 right-2 w-7 h-7 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center transition-colors"
-                  title="Search for cover"
-                >
-                  {fetchingCover ? <Loader2 size={13} className="text-white/50 animate-spin" /> : <ImageDown size={13} className="text-white/40" />}
-                </button>
-              )}
-              {!imgError && <Music size={16} className="text-white/10 absolute bottom-2 right-2" />}
+              {!imgError ? <Music size={16} className="absolute bottom-2 right-2 text-white/10" /> : null}
             </div>
-          )}
-          {/* Hover overlay */}
-          <div className="absolute inset-0 bg-black/50 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <button
-              onClick={handlePlay}
-              className="w-11 h-11 rounded-full bg-primary flex items-center justify-center shadow-lg shadow-black/40 hover:bg-primary/80 transition-colors hover:scale-110"
+          ) : null}
+
+          {imgError && albumId ? (
+            <ActionIconButton
+              variant="card"
+              className="absolute right-2 top-2 opacity-100 md:opacity-0 md:group-hover:opacity-100"
+              onClick={handleFetchCover}
+              disabled={fetchingCover}
+              title="Search for cover"
             >
-              <Play size={20} className="text-white fill-white ml-0.5" />
-            </button>
-            {showHeart && (
-              <button
-                onClick={(e) => { e.stopPropagation(); toggleFavorite(favId, "album"); }}
-                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
-              >
-                <Heart size={15} className={isFavorite(favId) ? "fill-red-500 text-red-500" : "text-white"} />
-              </button>
-            )}
-            {showQueue && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handlePlay(e);
-                }}
-                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors"
-                title="Add to queue"
-              >
-                <ListPlus size={15} className="text-white" />
-              </button>
-            )}
+              {fetchingCover ? <Loader2 size={15} className="animate-spin" /> : <ImageDown size={15} />}
+            </ActionIconButton>
+          ) : null}
+        </div>
+
+        <div className="truncate text-sm font-medium text-foreground">{displayName || name}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          {year ? `${year} · ${artist}` : artist}
+          <span className="ml-1.5 text-white/35">· {tracks} tracks</span>
+        </div>
+        {formats.length ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {(() => {
+              const q = qualityLabel(formats, bitDepth, sampleRate);
+              if (!q) return formats.map((f) => <CrateChip key={f}>{f.replace(".", "").toUpperCase()}</CrateChip>);
+              return (
+                <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none ${
+                  q.tier === "hi-res" ? "border-amber-400/50 text-amber-300 bg-amber-400/10" :
+                  q.tier === "lossless" ? "border-cyan-400/40 text-cyan-300 bg-cyan-400/8" :
+                  "border-white/15 text-muted-foreground"
+                }`}>{q.label}</span>
+              );
+            })()}
           </div>
-          {/* Favorite indicator (always visible if favorited) */}
-          {isFavorite(favId) && (
-            <div className="absolute top-2 right-2 z-10">
-              <Heart size={14} className="fill-red-500 text-red-500 drop-shadow-md" />
-            </div>
-          )}
-        </div>
-        <div className="font-semibold text-sm text-left truncate">{displayName || name}</div>
-        <div className="text-xs text-muted-foreground text-left flex items-center gap-1 flex-wrap mt-0.5">
-          <span>{year || "?"}</span>
-          <span>&middot;</span>
-          <span>{tracks}t</span>
-          {formats.map((f) => (
-            <span key={f} className={formatBadgeClass(f)}>
-              {f.replace(".", "").toUpperCase()}
-            </span>
-          ))}
-        </div>
+        ) : null}
       </div>
     </MusicContextMenu>
   );

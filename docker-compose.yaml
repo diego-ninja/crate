@@ -231,6 +231,7 @@ services:
       - "${DOCKER_GID:-988}"
     environment:
       - TZ=${TZ}
+      - CRATE_RUNTIME=api
       - CRATE_CONFIG=/app/config.yaml
       - DATA_DIR=/data
       - LASTFM_APIKEY=${LASTFM_APIKEY}
@@ -291,6 +292,7 @@ services:
     user: ${PUID}:${PGID}
     environment:
       - TZ=${TZ}
+      - CRATE_RUNTIME=worker
       - CRATE_CONFIG=/app/config.yaml
       - DATA_DIR=/data
       - LASTFM_APIKEY=${LASTFM_APIKEY}

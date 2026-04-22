@@ -239,6 +239,104 @@ def tidal_search(request: Request, q: str = "", type: str = "all", limit: int = 
     return result
 
 
+# ── Artist Browse ────────────────────────────────────────────────
+
+@router.get(
+    "/artists/{tidal_artist_id}/albums",
+    responses=_TIDAL_RESPONSES,
+    summary="Get all albums for a Tidal artist",
+)
+def tidal_artist_albums(request: Request, tidal_artist_id: str):
+    """Browse albums for a Tidal artist. Marks local status and quality upgrades."""
+    _require_auth(request)
+    if not tidal.is_authenticated():
+        raise HTTPException(status_code=401, detail="Not authenticated with Tidal")
+
+    albums = tidal.get_artist_albums(tidal_artist_id)
+    if not albums:
+        return {"albums": [], "artist_id": tidal_artist_id}
+
+    artist_name = albums[0].get("artist", "") if albums else ""
+    if artist_name:
+        from crate.db import get_library_albums
+        from crate.db.library import get_album_quality_map
+        from thefuzz import fuzz
+
+        local_albums = get_library_albums(artist_name)
+
+        # Get representative quality per album (max bit_depth/sample_rate from tracks)
+        album_ids = [a["id"] for a in local_albums if a.get("id")]
+        album_quality = get_album_quality_map(album_ids, include_format=True) if album_ids else {}
+
+        # Build lookup: normalized name → (album row, quality)
+        local_by_name: dict[str, tuple[dict, dict]] = {}
+        for la in local_albums:
+            q = album_quality.get(la["id"], {})
+            local_by_name[la["name"].lower()] = (la, q)
+            tag = (la.get("tag_album") or "").lower()
+            if tag:
+                local_by_name[tag] = (la, q)
+
+        for album in albums:
+            title_lower = album["title"].lower()
+            local_match = local_by_name.get(title_lower)
+            if not local_match:
+                for ln, pair in local_by_name.items():
+                    if fuzz.ratio(title_lower, ln) > 85:
+                        local_match = pair
+                        break
+
+            if local_match:
+                la, lq = local_match
+                album["status"] = "local"
+                album["local_quality"] = lq
+                album["local_album_id"] = la["id"]
+            else:
+                album["status"] = "available"
+    else:
+        for album in albums:
+            album["status"] = "available"
+
+    return {"albums": albums, "artist_id": tidal_artist_id, "artist_name": artist_name}
+
+
+@router.get(
+    "/artists/{tidal_artist_id}",
+    responses=_TIDAL_RESPONSES,
+    summary="Get Tidal artist info",
+)
+def tidal_artist_info(request: Request, tidal_artist_id: str):
+    """Get basic info for a Tidal artist."""
+    _require_auth(request)
+    if not tidal.is_authenticated():
+        raise HTTPException(status_code=401, detail="Not authenticated with Tidal")
+
+    albums = tidal.get_artist_albums(tidal_artist_id, limit=1)
+    if not albums:
+        raise HTTPException(status_code=404, detail="Artist not found on Tidal")
+
+    artist_name = albums[0].get("artist", "")
+    return {
+        "id": tidal_artist_id,
+        "name": artist_name,
+    }
+
+
+@router.get(
+    "/albums/{tidal_album_id}/tracks",
+    responses=_TIDAL_RESPONSES,
+    summary="Get tracks for a Tidal album",
+)
+def tidal_album_tracks(request: Request, tidal_album_id: str):
+    """List tracks in a Tidal album."""
+    _require_auth(request)
+    if not tidal.is_authenticated():
+        raise HTTPException(status_code=401, detail="Not authenticated with Tidal")
+
+    tracks = tidal.get_album_tracks(tidal_album_id)
+    return {"tracks": tracks, "album_id": tidal_album_id}
+
+
 # ── Download ─────────────────────────────────────────────────────
 
 @router.post(
@@ -280,14 +378,17 @@ def tidal_download(request: Request, body: DownloadRequest):
         source=body.source,
     )
 
-    task_id = create_task("tidal_download", {
+    task_params = {
         "url": clean_url,
         "quality": body.quality,
         "download_id": dl_id,
         "content_type": content_type,
         "artist": artist_hint,
         "album": album_hint,
-    })
+    }
+    if body.upgrade_album_id:
+        task_params["upgrade_album_id"] = body.upgrade_album_id
+    task_id = create_task("tidal_download", task_params)
     update_tidal_download(dl_id, task_id=task_id)
     return {"task_id": task_id, "download_id": dl_id}
 

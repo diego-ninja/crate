@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback } from "react";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
-import { Button } from "@/components/ui/button";
+import { Button } from "@crate/ui/shadcn/button";
 import { toast } from "sonner";
 import { Camera, Loader2, X } from "lucide-react";
 
@@ -10,9 +10,10 @@ interface ImageCropUploadProps {
   aspect: number;
   onUploaded?: () => void;
   className?: string;
+  label?: string;
 }
 
-export function ImageCropUpload({ endpoint, aspect, onUploaded, className }: ImageCropUploadProps) {
+export function ImageCropUpload({ endpoint, aspect, onUploaded, className, label }: ImageCropUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -81,12 +82,13 @@ export function ImageCropUpload({ endpoint, aspect, onUploaded, className }: Ima
         title="Upload image"
       >
         <Camera size={14} />
+        {label ? <span>{label}</span> : null}
       </button>
 
       {/* Crop modal */}
       {imageSrc && (
         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80" onClick={cancel}>
-          <div className="bg-card rounded-xl shadow-2xl w-[90vw] max-w-[600px] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-card rounded-md shadow-2xl w-[90vw] max-w-[600px] overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <span className="text-sm font-medium">Crop Image</span>
               <button onClick={cancel} className="text-muted-foreground hover:text-foreground"><X size={16} /></button>

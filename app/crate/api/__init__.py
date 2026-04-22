@@ -142,8 +142,10 @@ def create_app() -> FastAPI:
 
     from crate.api.auth import AuthMiddleware
     from crate.api.cache_events import CacheInvalidationMiddleware
+    from crate.api.metrics_middleware import MetricsMiddleware
     app.add_middleware(AuthMiddleware)
     app.add_middleware(CacheInvalidationMiddleware)
+    app.add_middleware(MetricsMiddleware)
 
     from crate.api.setup import router as setup_router
     from crate.api.auth import router as auth_router, admin_router as admin_auth_router
@@ -212,6 +214,8 @@ def create_app() -> FastAPI:
     app.include_router(cache_events_router)
     app.include_router(tasks_router)
     app.include_router(stack_router)
+    from crate.api.admin_metrics import router as admin_metrics_router
+    app.include_router(admin_metrics_router)
 
     # Static files
     base = Path(__file__).resolve().parent.parent

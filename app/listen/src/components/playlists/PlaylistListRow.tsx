@@ -9,7 +9,7 @@ import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { api } from "@/lib/api";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
-import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
 import { cn, shuffleArray } from "@/lib/utils";
@@ -44,6 +44,7 @@ interface PlaylistListRowProps {
   href: string;
   detailEndpoint: string;
   badge?: "smart" | "curated" | "personal";
+  crateManaged?: boolean;
   followState?: {
     isFollowed: boolean;
     onToggle: () => Promise<void>;
@@ -90,6 +91,7 @@ export function PlaylistListRow({
   href,
   detailEndpoint,
   badge,
+  crateManaged = false,
   followState,
   extraActions,
 }: PlaylistListRowProps) {
@@ -170,6 +172,9 @@ export function PlaylistListRow({
   }
 
   const badgeLabel =
+    crateManaged
+      ? null
+      :
     badge === "smart" ? "Smart" : badge === "curated" ? "Curated" : null;
 
   return (
@@ -199,6 +204,7 @@ export function PlaylistListRow({
         name={name}
         coverDataUrl={coverDataUrl}
         tracks={artworkTracks}
+        showCrateMark={crateManaged}
         className="h-12 w-12 flex-shrink-0 rounded-md"
       />
 

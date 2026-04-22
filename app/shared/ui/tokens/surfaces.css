@@ -1,0 +1,52 @@
+/* crate-ui — Surface variants
+   Set data-surface="solid" or data-surface="glass" on any ancestor.
+   Default (no attribute) is solid. */
+
+:root, [data-surface="solid"] {
+  --color-card: #16161e;
+  --color-card-foreground: #f1f5f9;
+  --color-secondary: #1c1c28;
+  --color-secondary-foreground: #f1f5f9;
+  --color-muted: #16161e;
+  --color-accent: #1c1c28;
+  --color-accent-foreground: #f1f5f9;
+  --color-popover: #16161e;
+  --color-popover-foreground: #f1f5f9;
+  --color-border: #252535;
+  --color-input: #141419;
+  --surface-app: #0a0a0f;
+  --surface-panel: #0c0c14;
+  --surface-raised: #12121a;
+  --surface-modal: rgba(16, 16, 24, 0.95);
+  --surface-popover: rgba(18, 18, 26, 0.95);
+  --scrollbar-thumb: #252535;
+  --scrollbar-hover: #353545;
+}
+
+[data-surface="glass"] {
+  --color-card: rgba(18, 18, 26, 0.78);
+  --color-card-foreground: #f1f5f9;
+  --color-secondary: rgba(28, 28, 40, 0.88);
+  --color-secondary-foreground: #f1f5f9;
+  --color-muted: rgba(22, 22, 30, 0.72);
+  --color-accent: rgba(255, 255, 255, 0.06);
+  --color-accent-foreground: #f1f5f9;
+  --color-popover: rgba(18, 18, 26, 0.95);
+  --color-popover-foreground: #f1f5f9;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-input: rgba(20, 20, 25, 0.72);
+  --surface-app: #0a0a0f;
+  --surface-panel: #0c0c14;
+  --surface-raised: rgba(18, 18, 26, 0.92);
+  --surface-modal: rgba(16, 16, 24, 0.95);
+  --surface-popover: rgba(18, 18, 26, 0.95);
+  --scrollbar-thumb: #252535;
+  --scrollbar-hover: #353545;
+}
+
+/* Surface utility classes */
+.bg-app-surface { background-color: var(--surface-app); }
+.bg-panel-surface { background-color: var(--surface-panel); }
+.bg-raised-surface { background-color: var(--surface-raised); }
+.bg-modal-surface { background-color: var(--surface-modal); }
+.bg-popover-surface { background-color: var(--surface-popover); }

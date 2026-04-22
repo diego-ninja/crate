@@ -5,7 +5,7 @@ import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export function StatCard({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) {
   return (
-    <div className="bg-white/[0.03] border border-white/5 rounded-lg px-3 py-2.5">
+    <div className="bg-white/[0.03] border border-white/5 rounded-md px-3 py-2.5">
       <div className="flex items-center gap-1.5 text-white/40 mb-1">
         {icon}
         <span className="text-[11px]">{label}</span>
@@ -18,9 +18,9 @@ export function StatCard({ label, value, icon }: { label: string; value: string;
 export function PopularityBar({ value }: { value: number }) {
   return (
     <div className="flex items-center gap-1">
-      <div className="w-[40px] h-1 bg-white/10 rounded-full overflow-hidden">
+      <div className="w-[40px] h-1 bg-white/10 rounded-md overflow-hidden">
         <div
-          className="h-full rounded-full"
+          className="h-full rounded-md"
           style={{
             width: `${value}%`,
             background: "linear-gradient(90deg, #06b6d433, #06b6d4)",
@@ -55,7 +55,7 @@ export function SimilarArtistCard({
 
   const content = (
     <>
-      <div className="w-full aspect-square rounded-xl overflow-hidden mb-2 ring-1 ring-white/5 group-hover:ring-primary/30 transition-all duration-300 group-hover:scale-[1.03]">
+      <div className="w-full aspect-square rounded-md overflow-hidden mb-2 ring-1 ring-white/5 group-hover:ring-primary/30 transition-all duration-300 group-hover:scale-[1.03]">
         {!imgError && imageUrl ? (
           <img
             src={imageUrl}

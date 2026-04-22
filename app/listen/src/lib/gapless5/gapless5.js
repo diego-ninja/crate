@@ -362,6 +362,11 @@ function Gapless5Source(parentPlayer, parentLog, inAudioPath) {
       audio.playbackRate = player.playbackRate;
 
       setState(Gapless5State.Starting);
+      // Resume the AudioContext before HTML5 play — mobile browsers
+      // require this to happen inside a user-gesture call stack.
+      if (player.context && player.context.state === 'suspended') {
+        player.context.resume();
+      }
       audio.play().then(() => {
         if (state === Gapless5State.Starting) {
           log.debug(`Playing HTML5 Audio${looped ? ' (looped)' : ''}: ${this.audioPath} at ${offsetSec.toFixed(2)} sec`);
@@ -377,9 +382,11 @@ function Gapless5Source(parentPlayer, parentLog, inAudioPath) {
           audio.pause();
         }
       }).catch((e) => {
-        if (e.name !== 'AbortError') {
-          // Known HTML5 Audio issue on iOS Safari: user must interact separately for loading vs playing
-          log.warn(`Failed to play ${this.audioPath}: ${e.message}`);
+        if (e.name === 'AbortError') return;
+        log.warn(`Failed to play ${this.audioPath}: ${e.message}`);
+        // Notify the player so the UI can react (e.g. show retry)
+        if (e.name === 'NotAllowedError') {
+          player.onerror(this.audioPath, e);
         }
       });
     }

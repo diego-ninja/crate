@@ -84,7 +84,7 @@ def get_followers(user_id: int, *, limit: int = 100) -> list[dict]:
             """),
             {"user_id": user_id, "lim": limit},
         ).mappings().all()
-        return [dict(row) for row in rows]
+        return [dict(r) for r in rows]
 
 
 def get_following(user_id: int, *, limit: int = 100) -> list[dict]:
@@ -105,7 +105,7 @@ def get_following(user_id: int, *, limit: int = 100) -> list[dict]:
             """),
             {"user_id": user_id, "lim": limit},
         ).mappings().all()
-        return [dict(row) for row in rows]
+        return [dict(r) for r in rows]
 
 
 def search_users(query: str, *, limit: int = 20) -> list[dict]:
@@ -132,7 +132,7 @@ def search_users(query: str, *, limit: int = 20) -> list[dict]:
             """),
             {"pattern": pattern, "lim": limit},
         ).mappings().all()
-        return [dict(row) for row in rows]
+        return [dict(r) for r in rows]
 
 
 def get_public_user_profile(user_id: int) -> dict | None:
@@ -208,7 +208,7 @@ def get_public_playlists_for_user(user_id: int) -> list[dict]:
             """),
             {"user_id": user_id},
         ).mappings().all()
-        return [dict(row) for row in rows]
+        return [dict(r) for r in rows]
 
 
 def get_me_social(user_id: int) -> dict:

@@ -33,7 +33,6 @@ services:
   slskd:
     image: slskd/slskd:latest
     container_name: crate-dev-slskd
-    entrypoint: ["/bin/sh", "-c", "mkdir -p /downloads/complete /downloads/incomplete && exec /usr/bin/tini -- ./start.sh"]
     environment:
       - SLSKD_REMOTE_CONFIGURATION=true
       - SLSKD_NO_AUTH=true
@@ -62,6 +61,7 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
+      - CRATE_RUNTIME=api
       - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
@@ -78,10 +78,17 @@ services:
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - OLLAMA_URL=http://ollama:11434
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini/gemini-2.5-flash}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${AUDIOMUSE_GEMINI_API_KEY:-}
     volumes:
+      - ./app/crate:/app/crate:ro
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music:ro
       - dev_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     ports:
       - "8585:8585"
     networks:
@@ -103,6 +110,7 @@ services:
       - CRATE_POSTGRES_PASSWORD=crate
       - CRATE_POSTGRES_DB=crate
       - CRATE_POSTGRES_HOST=postgres
+      - CRATE_RUNTIME=worker
       - DOMAIN=${DEV_DOMAIN:-dev.lespedants.org}
       - JWT_SECRET=dev-secret-not-for-production
       - DEFAULT_ADMIN_PASSWORD=admin
@@ -119,6 +127,7 @@ services:
       - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
       # SCRAPE_PROXY_URL not set in dev — VPN image is x86_64 only, scrapes go direct
     volumes:
+      - ./app/crate:/app/crate:ro
       - ./app/config.yaml:/app/config.yaml:ro
       - ./test-music:/music
       - dev_slskd_downloads:/downloads/soulseek
@@ -148,6 +157,16 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: crate-dev-ollama
+    volumes:
+      - dev_ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - crate-dev
+
 volumes:
   dev_postgres:
   dev_data:
@@ -155,3 +174,4 @@ volumes:
   dev_slskd_downloads:
   dev_caddy_data:
   dev_caddy_config:
+  dev_ollama:

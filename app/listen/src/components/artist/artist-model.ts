@@ -1,5 +1,6 @@
 import { type Track } from "@/contexts/PlayerContext";
 import { albumCoverApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
+import type { GenreProfileItem } from "@crate/ui/domain/genres/GenrePill";
 
 import { artistShowToUpcomingItem, type ArtistShowEvent } from "@/components/upcoming/UpcomingRows";
 
@@ -24,6 +25,7 @@ export interface ArtistData {
   total_size_mb: number;
   primary_format: string | null;
   genres: string[];
+  genre_profile?: GenreProfileItem[];
   issue_count: number;
 }
 

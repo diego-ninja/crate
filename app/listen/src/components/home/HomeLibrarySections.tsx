@@ -35,9 +35,9 @@ export function FromCrateSection({
               name={playlist.name}
               isSmart={playlist.is_smart}
               description={playlist.description}
+              coverDataUrl={playlist.cover_data_url}
               tracks={playlist.artwork_tracks}
               meta={`${playlist.track_count} tracks${playlist.category ? ` · ${playlist.category}` : ""}`}
-              badge={playlist.is_smart ? "Smart" : "Curated"}
               href={`/curation/playlist/${playlist.id}`}
               isFollowed={playlist.is_followed}
               onPlay={() => onPlayPlaylist(playlist.id, playlist.name)}
@@ -106,8 +106,9 @@ export function HomeLibrarySection({
                   coverDataUrl={item.playlist_cover_data_url}
                   meta={playlistMeta}
                   systemPlaylist={isSystem}
+                  crateManaged={isSystem}
                   isFollowed={isSystem}
-                  badge={item.playlist_badge}
+                  badge={isSystem ? undefined : item.playlist_badge}
                   href={isSystem ? `/curation/playlist/${item.playlist_id}` : `/playlist/${item.playlist_id}`}
                   onPlay={() => onPlayPlaylist(item.playlist_id!, isSystem, item.playlist_name!)}
                   onToggleFollow={

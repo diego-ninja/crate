@@ -20,7 +20,7 @@ import {
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { usePlayer, type Track } from "@/contexts/PlayerContext";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
-import { useEscapeKey } from "@/hooks/use-escape-key";
+import { useEscapeKey } from "@crate/ui/lib/use-escape-key";
 import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
 

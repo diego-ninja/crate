@@ -14,10 +14,11 @@ import {
 import { useNavigate } from "react-router";
 
 import { artistGenreSlug, type ArtistData, type ArtistInfo } from "@/components/artist/artist-model";
-import { AppMenuButton, AppPopover } from "@/components/ui/AppPopover";
-import { AppModal, ModalBody } from "@/components/ui/AppModal";
-import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
-import { useIsDesktop } from "@/hooks/use-breakpoint";
+import { AppMenuButton, AppPopover } from "@crate/ui/primitives/AppPopover";
+import { AppModal, ModalBody } from "@crate/ui/primitives/AppModal";
+import { GenrePillRow } from "@crate/ui/domain/genres/GenrePill";
+import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
+import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { formatCompact } from "@/lib/utils";
 
 interface ArtistHeroSectionProps {
@@ -166,7 +167,14 @@ export function ArtistHeroSection({
                 </div>
               ) : null}
 
-              {tags.length > 0 ? (
+              {artist.genre_profile && artist.genre_profile.length > 0 ? (
+                <GenrePillRow
+                  items={artist.genre_profile}
+                  max={6}
+                  className="mt-4"
+                  onSelect={(item) => navigate(`/explore?genre=${encodeURIComponent(item.slug || artistGenreSlug(item.name))}`)}
+                />
+              ) : tags.length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-1.5">
                   {tags.slice(0, 8).map((tag) => (
                     <button

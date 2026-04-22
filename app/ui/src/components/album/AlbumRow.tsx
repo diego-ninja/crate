@@ -1,8 +1,9 @@
 import { Link } from "react-router";
-import { formatBadgeClass } from "@/lib/utils";
-import { albumCoverApiUrl, albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { Music } from "lucide-react";
 import { useState } from "react";
+
+import { CrateChip } from "@crate/ui/primitives/CrateBadge";
+import { albumCoverApiUrl, albumPagePath, artistPagePath } from "@/lib/library-routes";
 
 interface AlbumRowProps {
   artist: string;
@@ -43,70 +44,47 @@ export function AlbumRow({
   const src = coverUrl ?? albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors group">
-      {/* Cover thumbnail */}
-      <div className="w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-secondary relative">
+    <div className="group flex items-center gap-3 rounded-md px-3 py-2.5 transition-colors hover:bg-white/5">
+      <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-md bg-white/5">
         {!placeholder && !imgError ? (
           <img
             src={src}
             alt={album}
             loading="lazy"
-            className={`w-full h-full object-cover transition-opacity duration-300 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
+            className={`h-full w-full object-cover transition-opacity duration-300 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
             onLoad={() => setImgLoaded(true)}
             onError={() => setImgError(true)}
           />
         ) : null}
-        {(placeholder || imgError || !imgLoaded) && (
-          <div className={`absolute inset-0 bg-secondary flex items-center justify-center ${imgLoaded && !imgError && !placeholder ? "opacity-0" : "opacity-100"}`}>
+        {(placeholder || imgError || !imgLoaded) ? (
+          <div className={`absolute inset-0 flex items-center justify-center bg-white/5 ${imgLoaded && !imgError && !placeholder ? "opacity-0" : "opacity-100"}`}>
             <Music size={18} className="text-muted-foreground/30" />
           </div>
-        )}
+        ) : null}
       </div>
 
-      {/* Title + Artist */}
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <Link
-          to={albumPagePath({ albumId, albumSlug, albumName: album })}
-          className="text-sm font-medium text-white/90 hover:text-white truncate block transition-colors"
+          to={albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album })}
+          className="block truncate text-sm font-medium text-white/90 transition-colors hover:text-white"
         >
           {album}
         </Link>
-        {showArtist && (
+        {showArtist ? (
           <Link
             to={artistPagePath({ artistId, artistSlug, artistName: artist })}
-            className="text-xs text-white/40 hover:text-white/60 truncate block transition-colors"
+            className="block truncate text-xs text-white/40 transition-colors hover:text-white/65"
           >
             {artist}
           </Link>
-        )}
+        ) : null}
       </div>
 
-      {/* Year */}
-      {year && (
-        <span className="text-xs text-white/30 hidden sm:block w-12 text-center">{year}</span>
-      )}
-
-      {/* Track count */}
-      {tracks !== undefined && (
-        <span className="text-xs text-white/30 hidden md:block w-12 text-center">{tracks}t</span>
-      )}
-
-      {/* Format */}
-      {format && (
-        <span className={formatBadgeClass(format)}>
-          {format.replace(".", "").toUpperCase()}
-        </span>
-      )}
-
-      {/* Size */}
-      {size_mb !== undefined && (
-        <span className="text-xs text-white/30 hidden lg:block w-16 text-right">{size_mb} MB</span>
-      )}
-
-      {/* Actions slot */}
-      {actions && (
-        <div className="flex-shrink-0">{actions}</div>
-      )}
+      {year ? <span className="hidden w-12 text-center text-xs text-white/30 sm:block">{year}</span> : null}
+      {tracks !== undefined ? <span className="hidden w-14 text-center text-xs text-white/30 md:block">{tracks}t</span> : null}
+      {format ? <CrateChip>{format.replace(".", "").toUpperCase()}</CrateChip> : null}
+      {size_mb !== undefined ? <span className="hidden w-16 text-right text-xs text-white/30 lg:block">{size_mb} MB</span> : null}
+      {actions ? <div className="flex-shrink-0">{actions}</div> : null}
     </div>
   );
 }

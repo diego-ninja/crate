@@ -101,6 +101,19 @@ class AuthSessionResponse(BaseModel):
     revoked_at: datetime | None = None
 
 
+class AdminUserCurrentTrackResponse(BaseModel):
+    track_id: int | None = None
+    track_storage_id: str | None = None
+    title: str | None = None
+    artist: str | None = None
+    artist_id: int | None = None
+    artist_slug: str | None = None
+    album: str | None = None
+    album_id: int | None = None
+    album_slug: str | None = None
+    played_at: datetime | None = None
+
+
 class AuthCurrentSessionResponse(BaseModel):
     id: str
     expires_at: datetime | None = None
@@ -179,9 +192,21 @@ class AdminUserSummaryResponse(AuthUserPublicResponse):
     created_at: datetime | None = None
     last_login: datetime | None = None
     last_seen_at: datetime | None = None
+    active_devices: int | None = None
+    online_now: bool = False
+    listening_now: bool = False
+    last_played_at: datetime | None = None
+    current_track: AdminUserCurrentTrackResponse | None = None
 
 
 class AdminUserDetailResponse(AuthMeResponse):
     created_at: datetime | None = None
     last_login: datetime | None = None
+    last_seen_at: datetime | None = None
+    active_sessions: int | None = None
+    active_devices: int | None = None
+    online_now: bool = False
+    listening_now: bool = False
+    last_played_at: datetime | None = None
+    current_track: AdminUserCurrentTrackResponse | None = None
     sessions: list[AuthSessionResponse] = Field(default_factory=list)

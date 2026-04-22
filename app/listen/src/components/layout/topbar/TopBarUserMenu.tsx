@@ -3,11 +3,11 @@ import { createPortal } from "react-dom";
 import { BarChart3, LogOut, Radio, Settings, Upload, User, Users } from "lucide-react";
 import { useNavigate } from "react-router";
 
-import { AppMenuButton, AppPopover, AppPopoverDivider } from "@/components/ui/AppPopover";
-import { AppModal, ModalBody } from "@/components/ui/AppModal";
+import { AppMenuButton, AppPopover, AppPopoverDivider } from "@crate/ui/primitives/AppPopover";
+import { AppModal, ModalBody } from "@crate/ui/primitives/AppModal";
 import { useAuth } from "@/contexts/AuthContext";
-import { useIsDesktop } from "@/hooks/use-breakpoint";
-import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
+import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
+import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 
 export function TopBarUserMenu() {
   const navigate = useNavigate();

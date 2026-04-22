@@ -34,7 +34,7 @@ class TestPasswordHashing:
 
 
 class TestJWT:
-    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234")
+    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234-12345678901234")
     def test_create_and_verify(self, _mock_secret):
         from crate.auth import create_jwt, verify_jwt
         token = create_jwt(42, "user@test.com", "admin", username="testuser", name="Test")
@@ -46,7 +46,7 @@ class TestJWT:
         assert payload["username"] == "testuser"
         assert payload["name"] == "Test"
 
-    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234")
+    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234-12345678901234")
     def test_expired_token_returns_none(self, _mock_secret):
         import jwt as pyjwt
         from crate.auth import verify_jwt, JWT_ALGORITHM
@@ -57,10 +57,10 @@ class TestJWT:
             "iat": datetime.now(timezone.utc) - timedelta(hours=48),
             "exp": datetime.now(timezone.utc) - timedelta(hours=24),
         }
-        token = pyjwt.encode(payload, "test-secret-key-1234", algorithm=JWT_ALGORITHM)
+        token = pyjwt.encode(payload, "test-secret-key-1234-12345678901234", algorithm=JWT_ALGORITHM)
         assert verify_jwt(token) is None
 
-    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234")
+    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234-12345678901234")
     def test_tampered_token_returns_none(self, _mock_secret):
         from crate.auth import create_jwt, verify_jwt
         token = create_jwt(1, "a@b.com", "user")
@@ -69,7 +69,7 @@ class TestJWT:
         tampered = ".".join([header, payload, tampered_signature])
         assert verify_jwt(tampered) is None
 
-    @patch("crate.auth._get_jwt_secret", return_value="key-A")
+    @patch("crate.auth._get_jwt_secret", return_value="key-A-1234567890123456789012345678")
     def test_wrong_secret_returns_none(self, _mock_secret):
         import jwt as pyjwt
         from crate.auth import verify_jwt, JWT_ALGORITHM
@@ -78,15 +78,15 @@ class TestJWT:
             "iat": datetime.now(timezone.utc),
             "exp": datetime.now(timezone.utc) + timedelta(hours=1),
         }
-        token = pyjwt.encode(payload, "key-B", algorithm=JWT_ALGORITHM)
+        token = pyjwt.encode(payload, "key-B-1234567890123456789012345678", algorithm=JWT_ALGORITHM)
         assert verify_jwt(token) is None
 
 
 class TestGetJwtSecret:
-    @patch.dict("os.environ", {"JWT_SECRET": "env-secret"})
+    @patch.dict("os.environ", {"JWT_SECRET": "env-secret-123456789012345678901234"})
     def test_env_var_takes_precedence(self):
         from crate.auth import _get_jwt_secret
-        assert _get_jwt_secret() == "env-secret"
+        assert _get_jwt_secret() == "env-secret-123456789012345678901234"
 
     @patch.dict("os.environ", {}, clear=True)
     @patch("crate.auth.get_setting", return_value="stored-secret")
@@ -123,6 +123,7 @@ class TestLoginEndpoint:
             "expires_at": datetime.now(timezone.utc).isoformat(),
         }
         with patch("crate.api.auth.get_user_by_email", return_value=fake_user), \
+             patch("crate.api.auth.get_setting", return_value=None), \
              patch("crate.api.auth.verify_password", return_value=True), \
              patch("crate.api.auth.update_user_last_login"), \
              patch("crate.api.auth._create_login_session", return_value=("fake-jwt", fake_session)):
@@ -142,12 +143,14 @@ class TestLoginEndpoint:
             "avatar": None, "role": "admin", "password_hash": "somehash",
         }
         with patch("crate.api.auth.get_user_by_email", return_value=fake_user), \
+             patch("crate.api.auth.get_setting", return_value=None), \
              patch("crate.api.auth.verify_password", return_value=False):
             resp = test_app.post("/api/auth/login", json={"email": "test@test.com", "password": "wrong"})
             assert resp.status_code == 401
 
     def test_login_unknown_email(self, test_app):
-        with patch("crate.api.auth.get_user_by_email", return_value=None):
+        with patch("crate.api.auth.get_user_by_email", return_value=None), \
+             patch("crate.api.auth.get_setting", return_value=None):
             resp = test_app.post("/api/auth/login", json={"email": "nobody@x.com", "password": "x"})
             assert resp.status_code == 401
 

@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@crate/ui/shadcn/badge";
 import { artistPhotoApiUrl } from "@/lib/library-routes";
 import { ExternalLink, MapPin } from "lucide-react";
 
@@ -47,9 +47,9 @@ export function ArtistShowsSection({ artistName, artistId, artistSlug, shows }: 
             href={show.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-4 p-3 rounded-xl border border-amber-500/10 hover:border-amber-500/20 transition-all hover:bg-card/80 group"
+            className="flex items-center gap-4 p-3 rounded-md border border-amber-500/10 hover:border-amber-500/20 transition-all hover:bg-card/80 group"
           >
-            <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-secondary">
+            <div className="w-12 h-12 rounded-md overflow-hidden flex-shrink-0 bg-secondary">
               <img
                 src={artistPhotoApiUrl({ artistId, artistSlug, artistName })}
                 alt=""

@@ -8,7 +8,7 @@ import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerState, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
-import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { TrackCoverThumb } from "@/components/cards/TrackCoverThumb";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
 import { cn, formatDuration } from "@/lib/utils";

@@ -1,4 +1,4 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@crate/ui/shadcn/skeleton";
 
 export function ArtistLoadingState() {
   return (
@@ -10,7 +10,7 @@ export function ArtistLoadingState() {
         </div>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
           {Array.from({ length: 8 }, (_, i) => (
-            <div key={i} className="bg-card border border-border rounded-lg p-3">
+            <div key={i} className="bg-card border border-border rounded-md p-3">
               <Skeleton className="w-full aspect-square rounded-md mb-2" />
               <Skeleton className="h-4 w-3/4 mb-1" />
               <Skeleton className="h-3 w-1/2" />

@@ -100,6 +100,11 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
 
     # Library completeness check
     "compute_completeness": ("fast",    3, 3600, 0),
+
+    # Playlist generation
+    "generate_system_playlist":         ("fast", 1, 600, 0),
+    "refresh_system_smart_playlists":   ("fast", 3, 1800, 0),
+    "persist_playlist_cover":           ("fast", 0, 120, 1),
 }
 
 # DB-heavy tasks — only one at a time via Redis mutex
@@ -196,6 +201,164 @@ def _release_db_heavy_lock(task_id: str):
 # workers via a Redis-based counting semaphore.
 
 DOWNLOAD_TASK_TYPES = frozenset({"tidal_download", "soulseek_download"})
+
+
+def _is_download_allowed() -> bool:
+    """Check if downloads should run right now.
+
+    Three conditions, all must pass (when enabled):
+    1. Time window: current time is within download_window_start/end
+    2. Active users: fewer than download_max_active_users are using the app
+    3. Active streams: fewer than download_max_active_streams are streaming
+
+    Each condition is independently toggleable. If all are disabled,
+    downloads run immediately (default behavior).
+    """
+    from crate.db.cache import get_setting
+
+    # Time window check
+    if get_setting("download_window_enabled", "false") == "true":
+        if not _is_in_time_window():
+            return False
+
+    # Active users check
+    max_users_str = get_setting("download_max_active_users", "0")
+    max_users = int(max_users_str) if max_users_str.isdigit() else 0
+    if max_users > 0:
+        active = _count_active_users()
+        if active >= max_users:
+            return False
+
+    # Active streams check
+    max_streams_str = get_setting("download_max_active_streams", "0")
+    max_streams = int(max_streams_str) if max_streams_str.isdigit() else 0
+    if max_streams > 0:
+        streams = _count_active_streams()
+        if streams >= max_streams:
+            return False
+
+    return True
+
+
+def _is_in_time_window() -> bool:
+    from crate.db.cache import get_setting
+    start_str = get_setting("download_window_start", "02:00")
+    end_str = get_setting("download_window_end", "07:00")
+    try:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        hour, minute = map(int, start_str.split(":"))
+        start_minutes = hour * 60 + minute
+        hour, minute = map(int, end_str.split(":"))
+        end_minutes = hour * 60 + minute
+        current_minutes = now.hour * 60 + now.minute
+        if start_minutes <= end_minutes:
+            return start_minutes <= current_minutes < end_minutes
+        else:
+            return current_minutes >= start_minutes or current_minutes < end_minutes
+    except Exception:
+        return True
+
+
+def _count_active_users() -> int:
+    """Count users actually listening (play events in the last 5 minutes).
+
+    NOT based on session last_seen_at — that fires on every heartbeat
+    even for idle tabs. Play history only gets written when audio
+    is actually streaming, which is the real indicator of load.
+    """
+    try:
+        from crate.db.management import count_recent_active_users
+
+        return count_recent_active_users(window_minutes=5)
+    except Exception:
+        return 0
+
+
+def _count_active_streams() -> int:
+    """Count distinct streams in the last 3 minutes (tracks being played).
+
+    Uses play_history which only gets entries when audio actually plays.
+    More granular than _count_active_users — counts concurrent streams,
+    not just unique users.
+    """
+    try:
+        from crate.db.management import count_recent_streams
+
+        return count_recent_streams(window_minutes=3)
+    except Exception:
+        return 0
+
+
+def _ms_until_download_window() -> int:
+    """Milliseconds until the next download window opens (or 5 min if user-gated)."""
+    from crate.db.cache import get_setting
+    if get_setting("download_window_enabled", "false") == "true":
+        start_str = get_setting("download_window_start", "02:00")
+        try:
+            from datetime import datetime, timezone, timedelta
+            now = datetime.now(timezone.utc)
+            hour, minute = map(int, start_str.split(":"))
+            target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if target <= now:
+                target += timedelta(days=1)
+            delta = target - now
+            return int(delta.total_seconds() * 1000)
+        except Exception:
+            pass
+    # If deferred by active users/streams, retry in 5 minutes
+    return 300_000
+
+
+def get_suggested_download_limits() -> dict:
+    """Suggest download concurrency limits based on server hardware.
+
+    Returns recommended settings that can be shown in the admin UI
+    as defaults or hints.
+    """
+    import os
+    import shutil
+
+    cpu_count = os.cpu_count() or 2
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    ram_gb = int(line.split()[1]) / (1024 * 1024)
+                    break
+            else:
+                ram_gb = 4
+    except Exception:
+        ram_gb = 4
+
+    try:
+        disk = shutil.disk_usage("/music")
+        disk_free_gb = disk.free / (1024 ** 3)
+    except Exception:
+        disk_free_gb = 100
+
+    # Heuristics:
+    # - Active users threshold: ~1 per GB of RAM (min 2)
+    # - Active streams threshold: ~1 per CPU core (min 1)
+    # - Download slots: 1 for <=4GB RAM, 2 for >4GB
+    suggested_max_users = max(2, int(ram_gb * 0.8))
+    suggested_max_streams = max(1, cpu_count - 1)
+    suggested_download_slots = 1 if ram_gb <= 4 else 2
+
+    return {
+        "cpu_cores": cpu_count,
+        "ram_gb": round(ram_gb, 1),
+        "disk_free_gb": round(disk_free_gb, 0),
+        "suggested_max_active_users": suggested_max_users,
+        "suggested_max_active_streams": suggested_max_streams,
+        "suggested_download_slots": suggested_download_slots,
+        "explanation": (
+            f"Server has {cpu_count} cores, {ram_gb:.1f} GB RAM, {disk_free_gb:.0f} GB free disk. "
+            f"Recommended: defer downloads when {suggested_max_users}+ users or "
+            f"{suggested_max_streams}+ streams are active. "
+            f"Max {suggested_download_slots} concurrent download(s)."
+        ),
+    }
 _DOWNLOAD_SEM_KEY = "crate:download_semaphore"
 _DOWNLOAD_SEM_MAX = 2
 _DOWNLOAD_SEM_TTL = 14400  # 4h — matches tidal_download timeout
@@ -273,8 +436,29 @@ def _execute_task(task_type: str, task_id: str):
                 actor.send_with_options(args=(task_id,), delay=30_000)
             return
 
-    # Download concurrency limiter
+    # Download deferral: time window + active user/stream limits
     is_download = task_type in DOWNLOAD_TASK_TYPES
+    if is_download and not _is_download_allowed():
+        delay_ms = _ms_until_download_window()
+        active_users = _count_active_users()
+        active_streams = _count_active_streams()
+        reason = []
+        from crate.db.cache import get_setting
+        if get_setting("download_window_enabled", "false") == "true" and not _is_in_time_window():
+            reason.append("outside download window")
+        if active_users > 0:
+            reason.append(f"{active_users} active user(s)")
+        if active_streams > 0:
+            reason.append(f"{active_streams} active stream(s)")
+        reason_str = ", ".join(reason) or "conditions not met"
+        log.info("Task %s (%s) deferred: %s. Retrying in %dmin", task_id, task_type, reason_str, delay_ms // 60000)
+        update_task(task_id, progress=f"Deferred: {reason_str}")
+        actor = _actors.get(task_type)
+        if actor:
+            actor.send_with_options(args=(task_id,), delay=min(delay_ms, 3600_000))
+        return
+
+    # Download concurrency limiter
     if is_download:
         if not _acquire_download_slot(task_id):
             log.info("Task %s (%s) waiting for download slot, re-enqueueing in 30s", task_id, task_type)
@@ -284,10 +468,23 @@ def _execute_task(task_type: str, task_id: str):
             return
 
     # Mark running + start heartbeat
+    import time as _time
+    _task_start = _time.monotonic()
+
     update_task(task_id, status="running")
     hb_stop = threading.Event()
     hb_thread = threading.Thread(target=_heartbeat_loop, args=(task_id, hb_stop), daemon=True)
     hb_thread.start()
+
+    # Record queue wait time (created → running)
+    try:
+        from crate.metrics import record
+        created = task.get("created_at")
+        if created and hasattr(created, "timestamp"):
+            wait_sec = _time.time() - created.timestamp()
+            record("worker.queue.wait", wait_sec, {"type": task_type})
+    except Exception:
+        pass
 
     try:
         config = load_config()
@@ -295,17 +492,47 @@ def _execute_task(task_type: str, task_id: str):
 
         if _is_cancelled(task_id):
             log.info("Task %s was cancelled during execution", task_id)
+        elif isinstance(result, dict) and result.get("_delegated"):
+            # Coordinator dispatched sub-tasks — don't mark completed yet.
+            # The last child to finish will complete this task.
+            # Set status to 'delegated' so zombie cleanup doesn't kill it.
+            update_task(task_id, status="delegated", result={"chunks": result.get("chunks", 0), "artists": result.get("artists", 0)})
+            log.info("Task %s (%s) delegated to %d chunks", task_id, task_type, result.get("chunks", 0))
         else:
             update_task(task_id, status="completed", result=result or {})
             log.info("Task %s (%s) completed", task_id, task_type)
+            try:
+                from crate.metrics import record as _record
+                _record("worker.task.duration", _time.monotonic() - _task_start, {"type": task_type, "status": "completed"})
+            except Exception:
+                pass
             try:
                 from crate.telegram import notify_task_completed
                 notify_task_completed(task_type, task_id, result)
             except Exception:
                 pass
+            try:
+                from crate.db.events import _publish_to_redis
+                _publish_to_redis(task_id, "task_done", {"type": "task_done", "status": "completed", "task_type": task_type}, "")
+            except Exception:
+                pass
+
+            # Fan-in: if this task has a parent, check if all siblings are done
+            parent_id = task.get("parent_task_id")
+            if parent_id:
+                try:
+                    from crate.worker_handlers.analysis import _try_complete_parent
+                    _try_complete_parent(parent_id, task_type)
+                except Exception:
+                    log.warning("Fan-in check failed for parent %s", parent_id, exc_info=True)
 
     except Exception as e:
         log.exception("Task %s (%s) failed", task_id, task_type)
+        try:
+            from crate.metrics import record as _record
+            _record("worker.task.duration", _time.monotonic() - _task_start, {"type": task_type, "status": "failed"})
+        except Exception:
+            pass
         try:
             update_task(task_id, status="failed", error=str(e)[:500])
         except Exception:
@@ -313,6 +540,11 @@ def _execute_task(task_type: str, task_id: str):
         try:
             from crate.telegram import notify_task_failed
             notify_task_failed(task_type, task_id, str(e)[:300])
+        except Exception:
+            pass
+        try:
+            from crate.db.events import _publish_to_redis
+            _publish_to_redis(task_id, "task_done", {"type": "task_done", "status": "failed", "task_type": task_type, "error": str(e)[:200]}, "")
         except Exception:
             pass
         raise  # let dramatiq handle retry logic

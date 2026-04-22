@@ -43,6 +43,13 @@ const PANEL = "rgba(2, 6, 23, 0.9)";
 const PANEL_SOFT = "rgba(15, 23, 42, 0.84)";
 const TEXT = "rgba(241, 245, 249, 0.95)";
 const TEXT_MUTED = "rgba(148, 163, 184, 0.88)";
+const INACTIVE_STROKE = "rgba(100, 116, 139, 0.35)";
+const INACTIVE_FILL = "rgba(30, 41, 59, 0.5)";
+const INACTIVE_TEXT = "rgba(148, 163, 184, 0.4)";
+
+function isEmptyNode(node: GenreGraphNode): boolean {
+  return node.artist_count === 0 && node.album_count === 0;
+}
 
 const RELATION_STYLES: Record<GenreGraphLink["relation_type"], { dash: number[]; width: number; opacity: number; label: string }> = {
   alias: { dash: [2, 5], width: 2.5, opacity: 0.96, label: "alias / mapped" },
@@ -107,6 +114,7 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(undefined);
   const [width, setWidth] = useState(0);
+  const graphHeight = Math.min(600, Math.round(window.innerHeight * 0.55));
   const { data, loading } = useApi<GenreGraphData>(`/api/genres/${slug}/graph`);
 
   useEffect(() => {
@@ -116,8 +124,8 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
     });
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const nextWidth = Math.floor(entry.contentRect.width);
-        if (nextWidth > 0) setWidth(nextWidth);
+        const w = Math.floor(entry.contentRect.width);
+        if (w > 0) setWidth(w);
       }
     });
     resizeObserver.observe(containerRef.current);
@@ -142,26 +150,18 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
     [data?.nodes],
   );
 
-  if (loading) {
+  if (loading || width === 0 || !data?.nodes?.length) {
     return (
-      <div className="flex h-[520px] items-center justify-center rounded-2xl border border-border bg-card text-sm text-muted-foreground">
-        Loading genre graph...
+      <div className="rounded-md border border-border bg-card/70 p-4">
+        <div ref={containerRef} style={{ height: graphHeight }} className="flex w-full items-center justify-center text-sm text-muted-foreground">
+          {loading || width === 0 ? "Loading genre graph..." : "No genre graph available."}
+        </div>
       </div>
     );
   }
-
-  if (!data?.nodes?.length) {
-    return (
-      <div className="flex h-[520px] items-center justify-center rounded-2xl border border-border bg-card text-sm text-muted-foreground">
-        No genre graph available.
-      </div>
-    );
-  }
-
-  const graphWidth = width || 900;
 
   return (
-    <div className="rounded-2xl border border-border bg-card/70 p-4">
+    <div className="rounded-md border border-border bg-card/70 p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="text-sm font-medium text-foreground">Genre map</div>
@@ -175,7 +175,7 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
           ).map(([relationType, style]) => (
             <span
               key={relationType}
-              className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1"
+              className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1"
               style={{ borderColor: ACCENT_SOFT, backgroundColor: ACCENT_FAINT, color: TEXT_MUTED }}
             >
               <span
@@ -186,27 +186,27 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
             </span>
           ))}
           <span
-            className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1"
+            className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1"
             style={{ borderColor: ACCENT_SOFT, backgroundColor: ACCENT_FAINT, color: TEXT_MUTED }}
           >
             <span className="block h-3 w-3 border" style={{ borderColor: ACCENT, backgroundColor: ACCENT_SOFT }} />
             main genre
           </span>
           <span
-            className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1"
+            className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1"
             style={{ borderColor: ACCENT_SOFT, backgroundColor: ACCENT_FAINT, color: TEXT_MUTED }}
           >
-            <span className="block h-3 w-3 rounded-full border" style={{ borderColor: ACCENT, backgroundColor: PANEL_SOFT }} />
+            <span className="block h-3 w-3 rounded-md border" style={{ borderColor: ACCENT, backgroundColor: PANEL_SOFT }} />
             scene / subgenre
           </span>
         </div>
       </div>
 
-      <div ref={containerRef} style={{ width: "100%", height: 520 }}>
+      <div ref={containerRef} style={{ height: graphHeight }} className="w-full overflow-hidden">
         <ForceGraph2D
           ref={fgRef}
-          width={graphWidth}
-          height={520}
+          width={width}
+          height={graphHeight}
           graphData={data}
           backgroundColor="transparent"
           linkColor={() => "rgba(0,0,0,0)"}
@@ -218,9 +218,13 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
             const target = typeof link.target === "object" ? link.target : null;
             if (!source || !target) return;
 
+            const sourceNode = nodeSet.get(source.id);
+            const targetNode = nodeSet.get(target.id);
+            const inactive = (sourceNode && isEmptyNode(sourceNode)) || (targetNode && isEmptyNode(targetNode));
+
             const relationType = (link.relation_type || "related") as GenreGraphLink["relation_type"];
             ctx.save();
-            ctx.strokeStyle = relationStroke(relationType);
+            ctx.strokeStyle = inactive ? INACTIVE_STROKE : relationStroke(relationType);
             ctx.lineWidth = relationWidth(relationType, globalScale);
             ctx.setLineDash(relationDash(relationType, globalScale));
             ctx.beginPath();
@@ -242,11 +246,14 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
 
             const x = node.x ?? 0;
             const y = node.y ?? 0;
+            const empty = isEmptyNode(currentNode);
             const baseSize = currentNode.is_center ? 18 : currentNode.is_top_level ? 14 : currentNode.kind === "library" ? 12 : 11;
-            const size = Math.max(baseSize, baseSize + Math.min(currentNode.artist_count, 120) / 12);
+            const size = empty
+              ? baseSize * 0.75
+              : Math.max(baseSize, baseSize + Math.min(currentNode.artist_count, 120) / 12);
             const strokeWidth = (currentNode.is_center ? 2.3 : currentNode.is_top_level ? 1.8 : 1.35) / Math.max(globalScale, 0.8);
 
-            if (currentNode.is_center) {
+            if (currentNode.is_center && !empty) {
               ctx.beginPath();
               ctx.arc(x, y, size + 7, 0, Math.PI * 2);
               ctx.fillStyle = accent(0.12);
@@ -267,7 +274,9 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
               ctx.arc(x, y, size, 0, Math.PI * 2);
             }
 
-            if (currentNode.kind === "unmapped") {
+            if (empty) {
+              ctx.fillStyle = INACTIVE_FILL;
+            } else if (currentNode.kind === "unmapped") {
               ctx.fillStyle = PANEL;
             } else if (currentNode.is_top_level) {
               ctx.fillStyle = currentNode.is_center ? accent(0.28) : ACCENT_SOFT;
@@ -278,33 +287,36 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
             }
             ctx.fill();
 
-            ctx.strokeStyle = ACCENT;
+            ctx.strokeStyle = empty ? INACTIVE_STROKE : ACCENT;
             ctx.lineWidth = strokeWidth;
             ctx.setLineDash(currentNode.kind === "unmapped" ? [5 / Math.max(globalScale, 0.9), 4 / Math.max(globalScale, 0.9)] : []);
             ctx.stroke();
             ctx.restore();
 
-            const countLabel = `${currentNode.artist_count}`;
-            const badgeFontSize = Math.max(9, 11 / globalScale);
-            ctx.font = `600 ${badgeFontSize}px ui-sans-serif, system-ui`;
-            const badgeWidth = ctx.measureText(countLabel).width + 14;
-            const badgeHeight = 16 / globalScale;
-            const badgeX = x - badgeWidth / 2;
-            const badgeY = y - size - badgeHeight - 4;
-            roundRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 8 / globalScale);
-            ctx.fillStyle = PANEL;
-            ctx.fill();
-            ctx.strokeStyle = ACCENT;
-            ctx.lineWidth = 1 / Math.max(globalScale, 0.9);
-            ctx.stroke();
-            ctx.fillStyle = TEXT;
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(countLabel, x, badgeY + badgeHeight / 2 + 0.5);
+            // Badge — skip for empty nodes
+            if (!empty) {
+              const countLabel = `${currentNode.artist_count}`;
+              const badgeFontSize = Math.max(9, 11 / globalScale);
+              ctx.font = `600 ${badgeFontSize}px ui-sans-serif, system-ui`;
+              const badgeWidth = ctx.measureText(countLabel).width + 14;
+              const badgeHeight = 16 / globalScale;
+              const badgeX = x - badgeWidth / 2;
+              const badgeY = y - size - badgeHeight - 4;
+              roundRect(ctx, badgeX, badgeY, badgeWidth, badgeHeight, 8 / globalScale);
+              ctx.fillStyle = PANEL;
+              ctx.fill();
+              ctx.strokeStyle = ACCENT;
+              ctx.lineWidth = 1 / Math.max(globalScale, 0.9);
+              ctx.stroke();
+              ctx.fillStyle = TEXT;
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(countLabel, x, badgeY + badgeHeight / 2 + 0.5);
+            }
 
             const labelFontSize = Math.max(9, 12 / globalScale);
             ctx.font = `${currentNode.is_center ? "700" : currentNode.is_top_level ? "600" : "500"} ${labelFontSize}px ui-sans-serif, system-ui`;
-            ctx.fillStyle = TEXT;
+            ctx.fillStyle = empty ? INACTIVE_TEXT : TEXT;
             ctx.textAlign = "center";
             ctx.textBaseline = "top";
             ctx.fillText(currentNode.label, x, y + size + 6);

@@ -218,7 +218,6 @@ export function FeaturedPlaylistCard({
   onClick,
   onPlay,
   onToggleFollow,
-  badge,
 }: {
   playlistId?: number;
   name: string;
@@ -229,7 +228,6 @@ export function FeaturedPlaylistCard({
   meta: string;
   href?: string;
   isFollowed?: boolean;
-  badge?: string;
   onClick: () => void;
   onPlay?: () => Promise<void> | void;
   onToggleFollow?: () => Promise<void> | void;
@@ -267,13 +265,9 @@ export function FeaturedPlaylistCard({
           name={name}
           coverDataUrl={coverDataUrl}
           tracks={tracks}
+          showCrateMark
           className="aspect-square rounded-3xl shadow-xl transition-transform group-hover:scale-[1.02]"
         />
-        {badge ? (
-          <div className="absolute left-3 top-3 rounded-full border border-primary/25 bg-[var(--gradient-bg-85)] px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-primary backdrop-blur-md">
-            {badge}
-          </div>
-        ) : null}
       </div>
       <div className="px-1 pt-3">
         <div className="truncate text-sm font-bold text-foreground">{name}</div>

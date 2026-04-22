@@ -285,7 +285,7 @@ def get_unique_user_cities() -> list[dict]:
             WHERE city IS NOT NULL AND latitude IS NOT NULL
             ORDER BY LOWER(city), id
         """)).mappings().all()
-        return [dict(row) for row in rows]
+        return [dict(r) for r in rows]
 
 
 def get_upcoming_shows(artist_name: str | None = None, city: str | None = None,
@@ -470,7 +470,7 @@ def get_show_reminders(user_id: int, show_ids: list[int] | None = None) -> list[
                 """),
                 {"user_id": user_id},
             ).mappings().all()
-        return [dict(row) for row in rows]
+        return [dict(r) for r in rows]
 
 
 def create_show_reminder(user_id: int, show_id: int, reminder_type: str) -> bool:

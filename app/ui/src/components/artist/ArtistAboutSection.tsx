@@ -125,7 +125,7 @@ export function ArtistAboutSection({
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-white/10 hover:border-white/20 hover:bg-white/5 transition-colors ${link.color}`}
+                className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-white/10 hover:border-white/20 hover:bg-white/5 transition-colors ${link.color}`}
               >
                 <Globe size={12} /> {link.label}
               </a>

@@ -75,6 +75,7 @@ class AcquisitionDownloadRequest(BaseModel):
     username: str = ""
     files: list[Any] = Field(default_factory=list)
     find_alternate: bool = False
+    upgrade_album_id: int | None = None
 
 
 class AcquisitionDownloadResponse(BaseModel):

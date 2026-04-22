@@ -27,7 +27,7 @@ export function ArtistAvatar({ name, artistId, artistSlug, size = 36, linked = f
 
   const wrapper = (
     <div
-      className="rounded-full ring-2 ring-card overflow-hidden bg-secondary flex items-center justify-center flex-shrink-0"
+      className="rounded-md ring-2 ring-card overflow-hidden bg-secondary flex items-center justify-center flex-shrink-0"
       style={{ width: size, height: size }}
       title={name}
     >
@@ -37,7 +37,7 @@ export function ArtistAvatar({ name, artistId, artistSlug, size = 36, linked = f
 
   if (linked && artistId != null) {
     return (
-      <Link to={artistPagePath({ artistId, artistSlug, artistName: name })} className="hover:ring-primary/50 rounded-full transition-all">
+      <Link to={artistPagePath({ artistId, artistSlug, artistName: name })} className="hover:ring-primary/50 rounded-md transition-all">
         {wrapper}
       </Link>
     );

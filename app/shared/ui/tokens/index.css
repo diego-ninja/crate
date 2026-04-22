@@ -1,0 +1,9 @@
+/* crate-ui — Design tokens barrel */
+
+@import "./colors.css";
+@import "./surfaces.css";
+@import "./interactive.css";
+@import "./radius.css";
+@import "./z-index.css";
+@import "./typography.css";
+@import "./animations.css";

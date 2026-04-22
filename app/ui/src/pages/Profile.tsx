@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, ApiError } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@crate/ui/shadcn/button";
+import { Input } from "@crate/ui/shadcn/input";
+import { Badge } from "@crate/ui/shadcn/badge";
 import { toast } from "sonner";
 import { User, Lock, Link2, Unlink } from "lucide-react";
 
@@ -84,12 +84,12 @@ export function Profile() {
       <h1 className="text-2xl font-bold mb-6">Profile</h1>
 
       {/* Profile info */}
-      <div className="bg-card border border-border rounded-lg p-6 mb-6">
+      <div className="bg-card border border-border rounded-md p-6 mb-6">
         <div className="flex items-center gap-4 mb-6">
           {user.avatar ? (
-            <img src={user.avatar} alt="" className="w-16 h-16 rounded-full" />
+            <img src={user.avatar} alt="" className="w-16 h-16 rounded-md" />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+            <div className="w-16 h-16 rounded-md bg-primary/10 flex items-center justify-center">
               <User size={24} className="text-primary" />
             </div>
           )}
@@ -120,7 +120,7 @@ export function Profile() {
       </div>
 
       {/* Change password */}
-      <div className="bg-card border border-border rounded-lg p-6 mb-6">
+      <div className="bg-card border border-border rounded-md p-6 mb-6">
         <h2 className="font-semibold mb-4 flex items-center gap-2">
           <Lock size={16} /> Change Password
         </h2>
@@ -154,7 +154,7 @@ export function Profile() {
       </div>
 
       {/* Connected accounts */}
-      <div className="bg-card border border-border rounded-lg p-6">
+      <div className="bg-card border border-border rounded-md p-6">
         <h2 className="font-semibold mb-4 flex items-center gap-2">
           <Link2 size={16} /> Connected Accounts
         </h2>

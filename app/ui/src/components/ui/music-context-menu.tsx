@@ -1,7 +1,6 @@
 import { useNavigate } from "react-router";
-import { usePlayer } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
-import { albumCoverApiUrl, albumPagePath, artistPagePath } from "@/lib/library-routes";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { toast } from "sonner";
 import { Radar } from "lucide-react";
 import {
@@ -10,7 +9,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+} from "@crate/ui/shadcn/context-menu";
 
 interface MusicContextMenuProps {
   children: React.ReactNode;
@@ -38,92 +37,14 @@ export function MusicContextMenu({
   album,
   albumId,
   albumSlug,
-  trackId,
-  trackTitle,
-  albumCover,
   onFindSimilar,
 }: MusicContextMenuProps) {
   const navigate = useNavigate();
-  const { play, playNext, addToQueue } = usePlayer();
-  const resolvedAlbumCover = albumCover || albumCoverApiUrl({
-    albumId,
-    albumSlug,
-    artistName: artist,
-    albumName: album,
-  }) || undefined;
-
-  async function handlePlay() {
-    if (type === "track" && trackId) {
-      play({
-        id: trackId,
-        title: trackTitle || "",
-        artist,
-        artistId,
-        artistSlug,
-        album,
-        albumId,
-        albumSlug,
-        albumCover: resolvedAlbumCover,
-      });
-      return;
-    }
-    if (type === "album" && album) {
-      navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }));
-    }
-  }
-
-  function handlePlayNext() {
-    if (type === "track" && trackId) {
-      playNext({
-        id: trackId,
-        title: trackTitle || "",
-        artist,
-        artistId,
-        artistSlug,
-        album,
-        albumId,
-        albumSlug,
-        albumCover: resolvedAlbumCover,
-      });
-      toast.success("Playing next");
-    }
-  }
-
-  function handleAddToQueue() {
-    if (type === "track" && trackId) {
-      addToQueue({
-        id: trackId,
-        title: trackTitle || "",
-        artist,
-        artistId,
-        artistSlug,
-        album,
-        albumId,
-        albumSlug,
-        albumCover: resolvedAlbumCover,
-      });
-      toast.success("Added to queue");
-    }
-  }
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent className="w-48 bg-card border-border">
-        {(type === "track" || type === "album") && (
-          <>
-            <ContextMenuItem onClick={handlePlay} className="text-sm">
-              Play
-            </ContextMenuItem>
-            <ContextMenuItem onClick={handlePlayNext} className="text-sm">
-              Play Next
-            </ContextMenuItem>
-            <ContextMenuItem onClick={handleAddToQueue} className="text-sm">
-              Add to Queue
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-          </>
-        )}
         {type !== "artist" && (
           <ContextMenuItem
             onClick={() => navigate(artistPagePath({ artistId, artistSlug, artistName: artist }))}
@@ -137,7 +58,7 @@ export function MusicContextMenu({
             onClick={() => navigate(albumPagePath({ albumId, albumSlug, artistName: artist, albumName: album }))}
             className="text-sm"
           >
-            Go to Album
+            Open Album
           </ContextMenuItem>
         )}
         {type === "album" && album && (

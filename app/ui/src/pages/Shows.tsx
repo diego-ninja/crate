@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Button } from "@/components/ui/button";
+import { Button } from "@crate/ui/shadcn/button";
 import { ShowCard, type ShowEvent, getGenreColor } from "@/components/shows/ShowCard";
 import { Loader2, MapPin, Calendar as CalendarIcon, List, ChevronLeft, ChevronRight, Filter } from "lucide-react";
 
@@ -166,7 +166,7 @@ export function Shows() {
             <Filter size={14} />
           </button>
         )}
-        <div className={`flex border rounded-lg overflow-hidden ${isMap ? "border-border/50 bg-card/90 backdrop-blur" : "border-border"}`}>
+        <div className={`flex border rounded-md overflow-hidden ${isMap ? "border-border/50 bg-card/90 backdrop-blur" : "border-border"}`}>
           {(["map", "calendar", "list"] as ViewMode[]).map((m) => (
             <button
               key={m}
@@ -199,7 +199,7 @@ export function Shows() {
             {controls}
             {/* Genre filter panel */}
             {showFilters && availableGenres.length > 0 && (
-              <div className="absolute top-14 right-4 z-[1000] bg-card/95 backdrop-blur rounded-lg border border-border p-3 w-[200px] max-h-[300px] overflow-y-auto">
+              <div className="absolute top-14 right-4 z-[1000] bg-card/95 backdrop-blur rounded-md border border-border p-3 w-[200px] max-h-[300px] overflow-y-auto">
                 <div className="text-xs font-medium mb-2">Filter by genre</div>
                 <button
                   className={`block w-full text-left text-xs px-2 py-1 rounded mb-1 ${!genreFilter ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"}`}
@@ -211,7 +211,7 @@ export function Shows() {
                     className={`flex items-center gap-2 w-full text-left text-xs px-2 py-1 rounded ${genreFilter === genre ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"}`}
                     onClick={() => setGenreFilter(genreFilter === genre ? "" : genre)}
                   >
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: getGenreColor([genre]) }} />
+                    <span className="w-2 h-2 rounded-md flex-shrink-0" style={{ backgroundColor: getGenreColor([genre]) }} />
                     <span className="flex-1 truncate">{genre}</span>
                     <span className="text-[10px]">{count}</span>
                   </button>
@@ -382,7 +382,7 @@ function CalendarGrid({
   while (cells.length % 7 !== 0) cells.push(null);
 
   return (
-    <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden">
+    <div className="grid grid-cols-7 gap-px bg-border rounded-md overflow-hidden">
       {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
         <div key={d} className="bg-card px-2 py-1.5 text-[10px] text-center text-muted-foreground uppercase">{d}</div>
       ))}
@@ -421,7 +421,7 @@ function ShowListItem({ show, onClick }: { show: ShowEvent; onClick: () => void 
   const location = [show.city, show.country].filter(Boolean).join(", ");
 
   return (
-    <button className="flex items-center gap-4 p-3 bg-card border border-border rounded-lg hover:bg-white/5 transition-colors w-full text-left" onClick={onClick}>
+    <button className="flex items-center gap-4 p-3 bg-card border border-border rounded-md hover:bg-white/5 transition-colors w-full text-left" onClick={onClick}>
       {d && (
         <div className="w-10 text-center flex-shrink-0">
           <div className="text-lg font-bold text-primary leading-none">{d.getDate()}</div>

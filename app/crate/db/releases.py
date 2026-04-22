@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from crate.db.serialize import serialize_row
 from crate.db.tx import transaction_scope
 
 
@@ -88,7 +89,7 @@ def get_new_releases(status: str = "", upcoming: bool = False, limit: int = 200)
                 ),
                 {"lim": limit},
             ).mappings().all()
-        return [dict(r) for r in rows]
+        return [serialize_row(r) for r in rows]
 
 
 def mark_release_downloading(release_id: int, *, session=None):

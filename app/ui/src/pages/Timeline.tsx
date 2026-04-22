@@ -4,7 +4,7 @@ import { useApi } from "@/hooks/use-api";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 import { Calendar, Disc3, Trophy, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
-import { ErrorState } from "@/components/ui/error-state";
+import { ErrorState } from "@crate/ui/primitives/ErrorState";
 
 interface TimelineAlbum {
   id?: number;
@@ -24,7 +24,7 @@ function stripYearPrefix(name: string): string {
 
 function StatCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string | number }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-card px-4 py-3">
+    <div className="flex items-center gap-3 rounded-md border border-border/50 bg-card px-4 py-3">
       <Icon size={18} className="text-primary/70 flex-shrink-0" />
       <div>
         <div className="text-[11px] text-muted-foreground uppercase tracking-wide">{label}</div>
@@ -135,7 +135,7 @@ export function Timeline() {
 
       {/* Expanded year detail */}
       {expandedYear && expandedData.length > 0 && (
-        <div className="mb-8 rounded-lg border border-border/50 bg-card p-4">
+        <div className="mb-8 rounded-md border border-border/50 bg-card p-4">
           <h3 className="text-lg font-semibold mb-4">
             {expandedYear} — {expandedData.length} album{expandedData.length !== 1 ? "s" : ""}
           </h3>
@@ -146,7 +146,7 @@ export function Timeline() {
                 onClick={() => navigate(albumPagePath({ albumId: album.id, albumSlug: album.slug }))}
                 className="flex-shrink-0 w-[140px] group text-left"
               >
-                <div className="relative w-[140px] h-[140px] rounded-lg overflow-hidden bg-secondary mb-2">
+                <div className="relative w-[140px] h-[140px] rounded-md overflow-hidden bg-secondary mb-2">
                   <img
                     src={albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.album })}
                     alt={album.album}

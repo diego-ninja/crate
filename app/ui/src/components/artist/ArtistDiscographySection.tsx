@@ -2,14 +2,14 @@ import { AlbumCard } from "@/components/album/AlbumCard";
 import { MissingAlbumCard } from "@/components/album/MissingAlbumCard";
 import { TidalAlbumCard } from "@/components/album/TidalAlbumCard";
 import type { ArtistAlbumSummary } from "@/components/artist/artistPageTypes";
-import { Button } from "@/components/ui/button";
+import { Button } from "@crate/ui/shadcn/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@crate/ui/shadcn/select";
 import { Disc3, Eye, EyeOff, Loader2 } from "lucide-react";
 
 interface MissingAlbum {
@@ -149,6 +149,8 @@ export function ArtistDiscographySection({
                 year={item.album.year}
                 tracks={item.album.tracks}
                 formats={item.album.formats}
+                bitDepth={item.album.bit_depth}
+                sampleRate={item.album.sample_rate}
                 hasCover={item.album.has_cover}
               />
             ) : item.kind === "tidal" ? (

@@ -317,11 +317,13 @@ class TestDuplicateFoldersRepair:
 
         with tempfile.TemporaryDirectory() as lib:
             primary_name = "Band - Name"
-            duplicate_name = "Band – Name"
-            (Path(lib) / primary_name).mkdir()
-            (Path(lib) / duplicate_name).mkdir()
-            (Path(lib) / primary_name / "album1").mkdir()
-            (Path(lib) / duplicate_name / "album2").mkdir()
+            duplicate_name = "Band \u2013 Name"
+            primary = Path(lib) / primary_name
+            duplicate = Path(lib) / duplicate_name
+            primary.mkdir()
+            duplicate.mkdir()
+            (primary / "album1").mkdir()
+            (duplicate / "album2").mkdir()
 
             config = {"library_path": lib}
             repair = LibraryRepair(config)
@@ -337,8 +339,9 @@ class TestDuplicateFoldersRepair:
 
             assert result is not None
             assert result["applied"]
-            assert (Path(lib) / primary_name / "album1").is_dir()
-            assert (Path(lib) / primary_name / "album2").is_dir()
+            assert (primary / "album1").is_dir()
+            assert (primary / "album2").is_dir()
+            assert not duplicate.exists()
 
     def test_dry_run_returns_plan(self):
         from crate.repair import LibraryRepair

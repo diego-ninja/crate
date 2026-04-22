@@ -6,7 +6,7 @@ import { usePlaylistActionEntries } from "@/components/actions/playlist-actions"
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
-import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,7 @@ interface PlaylistCardProps {
   meta: string;
   badge?: string;
   systemPlaylist?: boolean;
+  crateManaged?: boolean;
   isFollowed?: boolean;
   href?: string;
   layout?: "rail" | "grid";
@@ -40,6 +41,7 @@ export function PlaylistCard({
   meta,
   badge,
   systemPlaylist = false,
+  crateManaged = false,
   isFollowed = false,
   href,
   layout = "rail",
@@ -107,6 +109,7 @@ export function PlaylistCard({
           name={name}
           coverDataUrl={coverDataUrl}
           tracks={tracks}
+          showCrateMark={crateManaged}
           className="aspect-square rounded-lg transition-transform group-hover:scale-[1.02]"
         />
         {systemPlaylist && onToggleFollow ? (
@@ -153,12 +156,16 @@ export function PlaylistCard({
             </button>
           </div>
         ) : null}
-        {badge ? (
+        {badge && !crateManaged ? (
           <div className="absolute left-2 top-2 rounded-full border border-primary/20 bg-[var(--gradient-bg-85)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary backdrop-blur-md">
             {badge}
           </div>
         ) : null}
-        <OfflineBadge state={offlineState} compact className={badge ? "absolute left-2 top-8" : "absolute left-2 top-2"} />
+        <OfflineBadge
+          state={offlineState}
+          compact
+          className={badge && !crateManaged ? "absolute left-2 top-8" : "absolute left-2 top-2"}
+        />
       </div>
       <div className="truncate text-sm font-medium text-foreground">{name}</div>
       <div className="truncate text-xs text-muted-foreground">

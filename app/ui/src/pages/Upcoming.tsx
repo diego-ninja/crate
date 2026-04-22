@@ -1,19 +1,21 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { Link } from "react-router";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
+import { AdminSelect } from "@/components/ui/AdminSelect";
+import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
+import { Button } from "@crate/ui/shadcn/button";
+import { Input } from "@crate/ui/shadcn/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@crate/ui/shadcn/popover";
+import { ShowCard } from "@/components/shows/ShowCard";
 import { api } from "@/lib/api";
-import { albumPagePath, artistBackgroundApiUrl, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { cn } from "@/lib/utils";
-import { ArtistAvatar } from "@/components/artist/ArtistAvatar";
 import { toast } from "sonner";
 import {
-  Loader2, Download, X, RefreshCw, Disc3, MapPin, Calendar,
-  Ticket, ExternalLink, Sparkles, List, CalendarDays,
-  ChevronLeft, ChevronRight, ChevronDown, Clock, Search, Trash2, Check,
+  Loader2, Download, X, RefreshCw, Disc3, Calendar,
+  Ticket, Sparkles, List, CalendarDays,
+  ChevronLeft, ChevronRight, Check, Clock, Search, Trash2,
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -78,38 +80,9 @@ function getPrimaryArtist(item: UpcomingItem): UpcomingArtistRef | null {
   return buildArtistRef(item.artist, item.artist_id, item.artist_slug);
 }
 
-function getLineupArtists(item: UpcomingItem): UpcomingArtistRef[] {
-  if (Array.isArray(item.lineup_artists) && item.lineup_artists.length > 0) {
-    return item.lineup_artists.filter((artist) => artist?.name);
-  }
-  if (Array.isArray(item.lineup) && item.lineup.length > 0) {
-    return item.lineup.filter(Boolean).map((name) => ({ name }));
-  }
-  const primaryArtist = getPrimaryArtist(item);
-  return primaryArtist ? [primaryArtist] : [];
-}
-
 function getArtistHref(artist: UpcomingArtistRef | null | undefined) {
   if (!artist || artist.id == null) return undefined;
   return artistPagePath({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name });
-}
-
-function getArtistPhotoUrl(artist: UpcomingArtistRef | null | undefined) {
-  if (!artist || artist.id == null) return "";
-  return artistPhotoApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name });
-}
-
-function getArtistBackgroundUrl(artist: UpcomingArtistRef | null | undefined) {
-  if (!artist || artist.id == null) return "";
-  return artistBackgroundApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name });
-}
-
-function getShowLocation(item: UpcomingItem) {
-  return [item.city, item.country].filter(Boolean).join(", ");
-}
-
-function getShowAddress(item: UpcomingItem) {
-  return [item.address_line1, item.city, item.region, item.postal_code, item.country].filter(Boolean).join(", ");
 }
 
 function ArtistTextLink({
@@ -127,84 +100,6 @@ function ArtistTextLink({
     return <Link to={href} className={className}>{content}</Link>;
   }
   return <span className={className}>{content}</span>;
-}
-
-// ── Searchable dropdown ──
-
-function SearchableSelect({ value, onChange, options, placeholder }: {
-  value: string;
-  onChange: (v: string) => void;
-  options: [string, number][];
-  placeholder: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  const filtered = search
-    ? options.filter(([name]) => name.toLowerCase().includes(search.toLowerCase()))
-    : options;
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className={cn(
-          "h-8 rounded-md border border-border bg-background px-2.5 text-xs flex items-center gap-1.5 min-w-[120px] max-w-[200px]",
-          value ? "text-foreground" : "text-muted-foreground"
-        )}
-      >
-        <span className="truncate">{value || placeholder}</span>
-        <ChevronDown size={12} className="flex-shrink-0 text-muted-foreground/50" />
-      </button>
-      {open && (
-        <div className="absolute top-full mt-1 left-0 z-50 w-[220px] bg-card border border-border rounded-lg shadow-xl overflow-hidden">
-          <div className="p-1.5 border-b border-border">
-            <input
-              type="text"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search..."
-              autoFocus
-              className="w-full h-7 px-2 text-xs bg-background border border-border rounded-md focus:outline-none focus:border-primary/50"
-            />
-          </div>
-          <div className="max-h-[200px] overflow-y-auto p-1">
-            <button
-              onClick={() => { onChange(""); setOpen(false); setSearch(""); }}
-              className={cn("w-full text-left px-2 py-1.5 text-xs rounded-md hover:bg-primary/10", !value && "text-primary")}
-            >
-              {placeholder}
-            </button>
-            {filtered.map(([name, count]) => (
-              <button
-                key={name}
-                onClick={() => { onChange(name); setOpen(false); setSearch(""); }}
-                className={cn(
-                  "w-full text-left px-2 py-1.5 text-xs rounded-md hover:bg-primary/10 flex items-center justify-between",
-                  value === name && "text-primary bg-primary/5"
-                )}
-              >
-                <span className="truncate">{name}</span>
-                <span className="text-muted-foreground/40 text-[10px] ml-2">{count}</span>
-              </button>
-            ))}
-            {filtered.length === 0 && (
-              <div className="px-2 py-3 text-xs text-muted-foreground/40 text-center">No matches</div>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function Upcoming() {
@@ -325,84 +220,104 @@ export function Upcoming() {
   const showCount = items.filter((i) => i.type === "show").length;
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Calendar size={24} className="text-primary" />
-          <h1 className="text-2xl font-bold">Upcoming</h1>
-          {releaseCount > 0 && (
-            <Badge variant="outline" className="border-primary/30 text-primary">
-              {releaseCount} releases
-            </Badge>
-          )}
-          {showCount > 0 && (
-            <Badge variant="outline" className="border-amber-500/30 text-amber-400">
-              {showCount} shows
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-0.5 bg-card rounded-lg p-0.5 border border-border">
-            <Button size="sm" variant={view === "list" ? "default" : "ghost"} className="h-7 px-2"
-              onClick={() => setView("list")}>
-              <List size={14} />
-            </Button>
-            <Button size="sm" variant={view === "calendar" ? "default" : "ghost"} className="h-7 px-2"
-              onClick={() => setView("calendar")}>
-              <CalendarDays size={14} />
-            </Button>
+    <div className="space-y-6">
+      <section className="rounded-md border border-white/10 bg-panel-surface/95 p-4 shadow-[0_28px_80px_rgba(0,0,0,0.28)] backdrop-blur-xl md:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-md border border-cyan-400/20 bg-cyan-400/12 text-primary shadow-[0_18px_40px_rgba(6,182,212,0.14)]">
+                <Calendar size={22} />
+              </div>
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight text-white">Upcoming</h1>
+                <p className="text-sm text-white/55">
+                  Release radar and live dates, with quick triage for what lands next in Crate.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <CrateChip active>{releaseCount} releases</CrateChip>
+              <CrateChip className="border-amber-500/25 bg-amber-500/10 text-amber-200">{showCount} shows</CrateChip>
+              <CrateChip icon={Clock}>{upcoming.length} upcoming</CrateChip>
+              {past.length > 0 && <CrateChip>{past.length} archived</CrateChip>}
+            </div>
           </div>
-          <Button size="sm" onClick={syncShows} disabled={syncing}>
-            <RefreshCw size={14} className={cn("mr-1", syncing && "animate-spin")} />
-            Sync
-          </Button>
-          <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={clearCaches}>
-            <Trash2 size={14} />
-          </Button>
-        </div>
-      </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 mb-6">
-        <div className="relative">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
-          <input
-            type="text"
-            placeholder="Filter by artist..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="h-8 pl-8 pr-3 text-sm bg-card border border-border rounded-lg w-48 focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/30"
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] p-1">
+              <CratePill active={view === "list"} onClick={() => setView("list")} icon={List}>
+                List
+              </CratePill>
+              <CratePill active={view === "calendar"} onClick={() => setView("calendar")} icon={CalendarDays}>
+                Calendar
+              </CratePill>
+            </div>
+            <Button size="sm" onClick={syncShows} disabled={syncing}>
+              <RefreshCw size={14} className={cn("mr-1", syncing && "animate-spin")} />
+              Sync shows
+            </Button>
+            <ActionIconButton onClick={clearCaches} title="Clear caches">
+              <Trash2 size={15} />
+            </ActionIconButton>
+          </div>
         </div>
 
-        {(["all", "releases", "shows"] as const).map((f) => (
-          <Button key={f} size="sm" variant={filter === f ? "default" : "outline"}
-            onClick={() => { setFilter(f); if (f !== "shows") { setGenreFilter(""); setCityFilter(""); } }}>
-            {f === "all" && "All"}
-            {f === "releases" && <><Disc3 size={12} className="mr-1" /> Releases</>}
-            {f === "shows" && <><Ticket size={12} className="mr-1" /> Shows</>}
-          </Button>
-        ))}
+        <div className="mt-5 rounded-md border border-white/8 bg-white/[0.03] p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[240px] flex-1">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/35" />
+              <Input
+                type="text"
+                placeholder="Filter by artist..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="h-10 rounded-md border-white/10 bg-white/[0.04] pl-9"
+              />
+            </div>
 
-        {availableGenres.length > 0 && (
-          <SearchableSelect
-            value={genreFilter}
-            onChange={setGenreFilter}
-            options={availableGenres}
-            placeholder="All genres"
-          />
-        )}
+            {availableGenres.length > 0 && (
+              <AdminSelect
+                value={genreFilter}
+                onChange={setGenreFilter}
+                options={availableGenres.map(([name, count]) => ({ value: name, label: name, count }))}
+                placeholder="All genres"
+                searchable
+                searchPlaceholder="Search genres..."
+              />
+            )}
 
-        {availableCities.length > 0 && (
-          <SearchableSelect
-            value={cityFilter}
-            onChange={setCityFilter}
-            options={availableCities}
-            placeholder="All cities"
-          />
-        )}
-      </div>
+            {availableCities.length > 0 && (
+              <AdminSelect
+                value={cityFilter}
+                onChange={setCityFilter}
+                options={availableCities.map(([name, count]) => ({ value: name, label: name, count }))}
+                placeholder="All cities"
+                searchable
+                searchPlaceholder="Search cities..."
+              />
+            )}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {(["all", "releases", "shows"] as const).map((f) => (
+              <CratePill
+                key={f}
+                active={filter === f}
+                icon={f === "releases" ? Disc3 : f === "shows" ? Ticket : undefined}
+                onClick={() => {
+                  setFilter(f);
+                  if (f !== "shows") {
+                    setGenreFilter("");
+                    setCityFilter("");
+                  }
+                }}
+              >
+                {f === "all" ? "All items" : f}
+              </CratePill>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {loading && (
         <div className="flex items-center justify-center py-24">
@@ -411,7 +326,7 @@ export function Upcoming() {
       )}
 
       {!loading && items.length === 0 && (
-        <div className="text-center py-24">
+        <div className="rounded-md border border-white/10 bg-panel-surface px-6 py-24 text-center shadow-[0_28px_80px_rgba(0,0,0,0.24)]">
           <Calendar size={48} className="text-primary mx-auto mb-3 opacity-30" />
           <div className="text-lg font-semibold">Nothing upcoming</div>
           <div className="text-sm text-muted-foreground mt-1">
@@ -425,7 +340,7 @@ export function Upcoming() {
         <div className="space-y-8">
           {upcoming.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-primary uppercase tracking-wider mb-4 flex items-center gap-2">
+              <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.24em] text-primary/90">
                 <Sparkles size={14} /> Coming Up
               </h2>
               {groupByMonth(upcoming).map(([month, monthItems]) => (
@@ -437,7 +352,7 @@ export function Upcoming() {
           )}
           {past.length > 0 && (
             <section>
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
+              <h2 className="mb-4 text-sm font-semibold uppercase tracking-[0.24em] text-white/45">
                 Recently Released
               </h2>
               {groupByMonth(past).map(([month, monthItems]) => (
@@ -483,23 +398,29 @@ function MonthGroup({ month, items, onDownload, onDismiss, expandedId, onToggleE
 
   return (
     <div className="mb-6">
-      <div className="text-xs font-medium text-muted-foreground/50 uppercase tracking-wider mb-2 border-b border-border/30 pb-1">
-        {label}
+      <div className="mb-3 flex items-center gap-2 border-b border-white/8 pb-2">
+        <div className="text-xs font-medium uppercase tracking-[0.22em] text-white/35">
+          {label}
+        </div>
+        <CrateChip>{items.length} items</CrateChip>
       </div>
-      <div className="space-y-1">
+      <div className="space-y-2">
         {items.map((item, i) => {
           const key = itemKey(item, i);
           const isExpanded = expandedId === key;
           return (
             <div key={key}>
-              {isExpanded && item.type === "show" ? (
-                <ShowDetailPanel item={item} onClose={() => onToggleExpand(null)} />
+              {item.type === "show" ? (
+                <ShowCard
+                  show={item}
+                  expanded={isExpanded}
+                  onToggle={() => onToggleExpand(isExpanded ? null : key)}
+                />
               ) : (
                 <EventCard
                   item={item}
                   onDownload={onDownload}
                   onDismiss={onDismiss}
-                  onClick={item.type === "show" ? () => onToggleExpand(key) : undefined}
                 />
               )}
             </div>
@@ -518,11 +439,7 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
   onDismiss?: (id: number) => void;
   onClick?: () => void;
 }) {
-  const isShow = item.type === "show";
-  const isRelease = item.type === "release";
   const primaryArtist = getPrimaryArtist(item);
-  const artistPhotoUrl = getArtistPhotoUrl(primaryArtist);
-
   const dateObj = item.date ? new Date(item.date + "T12:00:00") : null;
   const dateStr = dateObj ? dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
   const timeStr = item.time ? item.time.slice(0, 5) : "";
@@ -530,41 +447,30 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
   return (
     <div
       className={cn(
-        "flex items-center gap-4 p-3 rounded-xl border transition-all hover:bg-card/80 group",
-        isShow ? "border-amber-500/10 hover:border-amber-500/20" :
-          item.tidal_url ? "border-primary/30 shadow-[0_0_12px_rgba(6,182,212,0.15)] animate-pulse-subtle" : "border-primary/10 hover:border-primary/20",
-        isShow && "cursor-pointer"
+        "group relative overflow-hidden rounded-md border p-3.5 transition-all duration-200",
+        "bg-white/[0.04] shadow-[0_18px_48px_rgba(0,0,0,0.22)] backdrop-blur-xl hover:bg-white/[0.07]",
+        item.tidal_url ? "border-primary/25 shadow-[0_0_22px_rgba(6,182,212,0.15)]" : "border-white/10 hover:border-white/20",
       )}
       onClick={onClick}
     >
-      {/* Thumbnail */}
-      <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0 bg-secondary relative group/thumb">
-        {isShow && artistPhotoUrl ? (
-          <img src={artistPhotoUrl} alt=""
-            className="w-full h-full object-cover"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-        ) : item.cover_url ? (
-          <img src={item.cover_url} alt="" className="w-full h-full object-cover" />
-        ) : artistPhotoUrl ? (
-          <img src={artistPhotoUrl} alt=""
-            className="w-full h-full object-cover opacity-60"
-            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-        ) : null}
-        {/* Download overlay on thumbnail for releases */}
-        {isRelease && item.status === "detected" && item.tidal_url && onDownload && item.release_id && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onDownload(item.release_id!); }}
-            className="absolute inset-0 bg-black/60 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center"
-          >
-            <Download size={16} className="text-primary" />
-          </button>
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-0 opacity-70 transition-opacity group-hover:opacity-100",
+          "bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.14),transparent_48%)]"
         )}
-        {isRelease && item.status === "downloading" && (
+      />
+      <div className="relative flex items-center gap-4">
+      {/* Thumbnail */}
+      <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-md bg-secondary/60 shadow-[0_16px_36px_rgba(0,0,0,0.22)]">
+        {item.cover_url ? (
+          <img src={item.cover_url} alt="" className="w-full h-full object-cover" />
+        ) : null}
+        {item.status === "downloading" && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
             <Loader2 size={16} className="text-primary animate-spin" />
           </div>
         )}
-        {isRelease && item.status === "downloaded" && (
+        {item.status === "downloaded" && (
           <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
             <Check size={16} className="text-green-400" />
           </div>
@@ -573,182 +479,68 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
 
       {/* Content */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-sm truncate">
-            {isShow ? item.artist : item.title}
-          </span>
-          {isShow && item.genres?.slice(0, 2).map((g) => (
-            <Badge key={g} variant="outline" className="text-[9px] px-1 py-0 hidden sm:inline-flex">{g}</Badge>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="truncate text-sm font-medium text-white">{item.title}</span>
+          {item.tidal_url && <CrateChip active>Lossless</CrateChip>}
         </div>
-        <div className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
-          {isShow ? (
-            <>
-              <MapPin size={10} className="text-amber-400/60 flex-shrink-0" />
-              <span>{item.venue}</span>
-              <span className="text-muted-foreground/40">&middot;</span>
-              <span>{item.city}, {item.country}</span>
-            </>
-          ) : (
-            <>
-              <ArtistTextLink
-                artist={primaryArtist}
-                className="hover:text-foreground transition-colors"
-              >
-                {item.artist}
-              </ArtistTextLink>
-              <span className="text-muted-foreground/40">&middot;</span>
-              <span>{item.subtitle}</span>
-            </>
-          )}
+        <div className="mt-1 flex items-center gap-1.5 truncate text-xs text-white/55">
+          <ArtistTextLink
+            artist={primaryArtist}
+            className="hover:text-foreground transition-colors"
+          >
+            {item.artist}
+          </ArtistTextLink>
+          <span className="text-muted-foreground/40">&middot;</span>
+          <span>{item.subtitle}</span>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <CrateChip>{item.status}</CrateChip>
+          {item.is_upcoming && <CrateChip active>Upcoming</CrateChip>}
+          {timeStr && <CrateChip icon={Clock}>{timeStr}</CrateChip>}
         </div>
       </div>
 
       {/* Date */}
-      <div className={cn("text-right flex-shrink-0", isShow ? "text-amber-400" : "text-primary")}>
+      <div className={cn(
+        "flex-shrink-0 rounded-md border px-3 py-2 text-right shadow-[0_14px_34px_rgba(0,0,0,0.18)]",
+        "border-primary/20 bg-primary/10 text-primary"
+      )}>
         <div className="text-xs font-semibold">{dateStr}</div>
-        {timeStr && <div className="text-[10px] text-muted-foreground">{timeStr}</div>}
+        {timeStr && <div className="text-[10px] text-white/45">{timeStr}</div>}
       </div>
 
-      {/* Actions — shows only (release actions are on thumbnail) */}
-      <div className="flex items-center gap-1 flex-shrink-0">
-        {isShow && item.url && (
-          <a href={item.url} target="_blank" rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-amber-500/10">
-            <ExternalLink size={14} className="text-amber-400" />
-          </a>
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {item.status === "detected" && item.tidal_url && onDownload && item.release_id && (
+          <ActionIconButton
+            tone="primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownload(item.release_id!);
+            }}
+            title="Download release"
+          >
+            <Download size={16} />
+          </ActionIconButton>
         )}
-        {isRelease && onDismiss && item.release_id && item.status === "detected" && (
-          <button onClick={() => onDismiss(item.release_id!)}
-            className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-white/5">
-            <X size={12} className="text-muted-foreground/50" />
-          </button>
+        {onDismiss && item.release_id && item.status === "detected" && (
+          <ActionIconButton
+            tone="danger"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDismiss(item.release_id!);
+            }}
+            title="Dismiss release"
+          >
+            <X size={14} />
+          </ActionIconButton>
         )}
+      </div>
       </div>
     </div>
   );
 }
 
 // ── Show Detail Panel (inline expansion) ──
-
-function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () => void }) {
-  const hasCoords = item.latitude && item.longitude;
-  const primaryArtist = getPrimaryArtist(item);
-  const lineupArtists = getLineupArtists(item);
-  const artistPhotoUrl = getArtistPhotoUrl(primaryArtist);
-  const dateStr = item.date ? new Date(item.date + "T12:00:00").toLocaleDateString("en-US", {
-    weekday: "long", month: "long", day: "numeric", year: "numeric"
-  }) : "";
-  const timeStr = item.time ? item.time.slice(0, 5) : "";
-  const location = getShowLocation(item);
-  const address = getShowAddress(item);
-
-  return (
-    <div className="relative h-[320px] rounded-xl overflow-hidden border border-amber-500/20 mb-1">
-      {/* Full-bleed map background */}
-      {hasCoords ? (
-        <div className="absolute inset-0">
-          <MapContainer
-            center={[item.latitude!, item.longitude!]}
-            zoom={14}
-            style={{ width: "100%", height: "100%" }}
-            zoomControl={false}
-            attributionControl={false}
-            dragging={false}
-            scrollWheelZoom={false}
-          >
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-            <Marker position={[item.latitude!, item.longitude!]} />
-          </MapContainer>
-        </div>
-      ) : (
-        <div className="absolute inset-0 bg-card/80" />
-      )}
-
-      {/* Close button */}
-      <button onClick={onClose}
-        className="absolute top-3 right-3 z-[1000] p-1.5 rounded-full bg-black/60 hover:bg-black/80 transition-colors">
-        <X size={14} className="text-white" />
-      </button>
-
-      {/* Venue card overlay (top-left) */}
-      {item.venue && (
-        <div className="absolute top-3 left-3 z-[1000] bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 max-w-[220px]">
-          <div className="flex items-center gap-1.5">
-            <MapPin size={12} className="text-amber-400 flex-shrink-0" />
-            <div className="text-xs font-semibold text-white truncate">{item.venue}</div>
-          </div>
-          <div className="text-[10px] text-white/50 ml-[18px]">{address || location}</div>
-        </div>
-      )}
-
-      {/* Info overlay (bottom) */}
-      <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-gradient-to-t from-black/90 via-black/70 to-transparent pt-16 pb-4 px-4">
-        <div className="flex items-end gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2.5 mb-1">
-              {artistPhotoUrl ? (
-                <img src={artistPhotoUrl} alt=""
-                className="w-10 h-10 rounded-full object-cover ring-2 ring-amber-500/30 flex-shrink-0"
-                onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              ) : null}
-              <ArtistTextLink
-                artist={primaryArtist}
-                className="text-xl font-bold text-white hover:text-amber-400 transition-colors"
-              >
-                {item.artist}
-              </ArtistTextLink>
-            </div>
-            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-              {item.genres?.slice(0, 3).map(g => (
-                <Badge key={g} variant="outline" className="text-[9px] px-1 py-0 border-white/20 text-white/70">{g}</Badge>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-4 mt-2 text-xs text-white/70">
-              <span className="flex items-center gap-1">
-                <Calendar size={12} className="text-amber-400" /> {dateStr}
-              </span>
-              {timeStr && (
-                <span className="flex items-center gap-1">
-                  <Clock size={12} className="text-amber-400" /> {timeStr}
-                </span>
-              )}
-            </div>
-
-            {lineupArtists.length > 1 && (
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                <span className="text-[10px] text-white/40">Lineup:</span>
-                {lineupArtists.slice(0, 5).map((artist) => (
-                  <ArtistTextLink
-                    key={`${artist.name}-${artist.id ?? "external"}`}
-                    artist={artist}
-                    className="flex items-center gap-1 text-[11px] text-white/80 hover:text-amber-400 transition-colors"
-                  >
-                    {getArtistPhotoUrl(artist) ? (
-                    <img src={getArtistPhotoUrl(artist)} alt=""
-                      className="w-4 h-4 rounded-full object-cover"
-                      onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    ) : null}
-                    {artist.name}
-                  </ArtistTextLink>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {item.url && (
-            <a href={item.url} target="_blank" rel="noopener noreferrer"
-              className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-amber-500 text-black font-semibold text-sm hover:bg-amber-400 transition-colors shadow-lg">
-              <Ticket size={14} /> Tickets
-            </a>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ── Calendar View ──
 
@@ -786,31 +578,31 @@ function CalendarView({ items, month, onMonthChange, onDownload, onDismiss, onSh
   }, [items, year, m]);
 
   return (
-    <div>
+    <div className="rounded-md border border-white/10 bg-panel-surface p-4 shadow-[0_28px_80px_rgba(0,0,0,0.24)]">
       {/* Month navigation */}
       <div className="flex items-center justify-between mb-4">
-        <Button variant="ghost" size="sm" onClick={() => onMonthChange(-1)}>
+        <ActionIconButton onClick={() => onMonthChange(-1)} title="Previous month">
           <ChevronLeft size={16} />
-        </Button>
-        <span className="text-sm font-semibold">
+        </ActionIconButton>
+        <span className="text-sm font-semibold text-white/85">
           {month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
         </span>
-        <Button variant="ghost" size="sm" onClick={() => onMonthChange(1)}>
+        <ActionIconButton onClick={() => onMonthChange(1)} title="Next month">
           <ChevronRight size={16} />
-        </Button>
+        </ActionIconButton>
       </div>
 
       {/* Day headers */}
       <div className="grid grid-cols-7 gap-px mb-1">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} className="text-center text-[10px] text-muted-foreground/50 py-1">{d}</div>
+          <div key={d} className="py-1 text-center text-[10px] uppercase tracking-[0.2em] text-white/30">{d}</div>
         ))}
       </div>
 
       {/* Calendar grid */}
       <div className="grid grid-cols-7 gap-px">
         {Array.from({ length: startOffset }, (_, i) => (
-          <div key={`empty-${i}`} className="min-h-[80px] bg-card/30 rounded-md" />
+          <div key={`empty-${i}`} className="min-h-[92px] rounded-md border border-white/5 bg-white/[0.02]" />
         ))}
         {Array.from({ length: daysInMonth }, (_, i) => {
           const day = i + 1;
@@ -818,11 +610,11 @@ function CalendarView({ items, month, onMonthChange, onDownload, onDismiss, onSh
           const isToday = day === todayDay;
           return (
             <div key={day} className={cn(
-              "min-h-[80px] p-1 rounded-md border border-transparent",
-              isToday && "border-primary/30 bg-primary/5",
-              dayItems.length > 0 && "bg-card/50"
+              "min-h-[92px] rounded-md border p-2 shadow-[0_12px_32px_rgba(0,0,0,0.16)]",
+              isToday ? "border-primary/30 bg-primary/8" : "border-white/6 bg-white/[0.03]",
+              dayItems.length > 0 && "bg-white/[0.05]"
             )}>
-              <div className="text-[10px] text-muted-foreground/50 mb-0.5">{day}</div>
+              <div className={cn("mb-1 text-[10px]", isToday ? "text-primary" : "text-white/35")}>{day}</div>
               <div className="space-y-0.5">
                 {dayItems.slice(0, 3).map((item, idx) => (
                   <CalendarPill key={idx} item={item} onDownload={onDownload} onDismiss={onDismiss}
@@ -854,10 +646,10 @@ function CalendarPill({ item, onDownload, onDismiss, onShowClick }: {
     <Popover>
       <PopoverTrigger asChild>
         <button className={cn(
-          "w-full text-left text-[9px] px-1 py-0.5 rounded truncate",
+          "w-full truncate rounded-md px-2 py-1 text-left text-[10px] transition-colors",
           isShow
-            ? "bg-amber-500/15 text-amber-400 hover:bg-amber-500/25"
-            : "bg-primary/15 text-primary hover:bg-primary/25"
+            ? "bg-amber-500/15 text-amber-200 hover:bg-amber-500/25"
+            : "bg-primary/15 text-cyan-200 hover:bg-primary/25"
         )}>
           {item.artist}
         </button>
@@ -865,11 +657,13 @@ function CalendarPill({ item, onDownload, onDismiss, onShowClick }: {
       <PopoverContent className="w-[340px] p-0" align="start">
         {isShow ? (
           <div>
-            <ShowPopoverContent item={item} />
+            <div className="p-3">
+              <ShowCard show={item} className="w-full" />
+            </div>
             <div className="px-3 pb-3">
               <button
                 onClick={onShowClick}
-                className="w-full text-center text-xs text-amber-400 hover:text-amber-300 transition-colors py-1.5 rounded-lg bg-amber-500/5 hover:bg-amber-500/10"
+                className="w-full text-center text-xs text-amber-400 hover:text-amber-300 transition-colors py-1.5 rounded-md bg-amber-500/5 hover:bg-amber-500/10"
               >
                 View full details
               </button>
@@ -880,93 +674,6 @@ function CalendarPill({ item, onDownload, onDismiss, onShowClick }: {
         )}
       </PopoverContent>
     </Popover>
-  );
-}
-
-// ── Show Popover Content ──
-
-function ShowPopoverContent({ item }: { item: UpcomingItem }) {
-  const dateObj = item.date ? new Date(item.date + "T12:00:00") : null;
-  const primaryArtist = getPrimaryArtist(item);
-  const lineupArtists = getLineupArtists(item);
-  const dateStr = dateObj
-    ? dateObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
-    : "";
-  const timeStr = item.time ? item.time.slice(0, 5) : "";
-  const location = getShowLocation(item);
-  const address = getShowAddress(item);
-  const headlinerArtist = lineupArtists[0] ?? primaryArtist;
-  const supportArtists = lineupArtists.slice(1);
-  const backgroundUrl = getArtistBackgroundUrl(headlinerArtist);
-
-  return (
-    <div className="bg-card rounded-md overflow-hidden">
-      {/* Header image */}
-      <div className="relative h-[80px] bg-secondary">
-        {backgroundUrl ? (
-        <img
-          src={backgroundUrl}
-          alt=""
-          className="w-full h-full object-cover opacity-60"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-        />
-        ) : null}
-        <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
-        <div className="absolute -bottom-3 left-3 flex -space-x-2">
-          {lineupArtists.slice(0, 3).map((artist) => (
-            <ArtistAvatar key={`${artist.name}-${artist.id ?? "external"}`} name={artist.name} artistId={artist.id} artistSlug={artist.slug} size={28} linked />
-          ))}
-        </div>
-      </div>
-
-      <div className="p-3 pt-5">
-        <ArtistTextLink
-          artist={headlinerArtist}
-          className="block font-bold text-sm text-foreground hover:text-primary transition-colors truncate mb-0.5">
-          {headlinerArtist?.name || item.artist}
-        </ArtistTextLink>
-
-        {supportArtists.length > 0 && (
-          <div className="text-[11px] text-muted-foreground mb-1 truncate">
-            {supportArtists.slice(0, 3).map((artist, i) => (
-              <span key={`${artist.name}-${artist.id ?? "external"}`}>
-                {i > 0 && <span> &middot; </span>}
-                <ArtistTextLink artist={artist} className="hover:text-foreground transition-colors">{artist.name}</ArtistTextLink>
-              </span>
-            ))}
-            {supportArtists.length > 3 && <span> +{supportArtists.length - 3} more</span>}
-          </div>
-        )}
-
-        <div className="flex items-start gap-2 text-xs text-muted-foreground mb-1.5">
-          <MapPin size={12} className="flex-shrink-0 mt-0.5 text-amber-400/60" />
-          <div>
-            <div className="text-foreground font-medium">{item.venue}</div>
-            <div>{address || location}</div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 text-xs text-muted-foreground mb-1.5">
-          <span className="flex items-center gap-1"><Calendar size={12} />{dateStr}</span>
-          {timeStr && <span className="flex items-center gap-1"><Clock size={12} />{timeStr}</span>}
-        </div>
-
-        {item.genres && item.genres.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-2">
-            {item.genres.slice(0, 4).map((g) => (
-              <Badge key={g} variant="outline" className="text-[9px] px-1.5 py-0">{g}</Badge>
-            ))}
-          </div>
-        )}
-
-        {item.url && (
-          <a href={item.url} target="_blank" rel="noopener noreferrer"
-            className="flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors text-xs font-medium">
-            <Ticket size={12} /> Tickets
-          </a>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -983,7 +690,7 @@ function ReleasePopoverContent({ item, onDownload, onDismiss }: {
     : "";
 
   return (
-    <div className="bg-card rounded-md overflow-hidden">
+    <div className="overflow-hidden rounded-md bg-transparent">
       <div className="flex gap-3 p-3">
         {/* Album cover */}
         <div className="w-16 h-16 rounded-md overflow-hidden flex-shrink-0 bg-secondary">
@@ -1013,10 +720,10 @@ function ReleasePopoverContent({ item, onDownload, onDismiss }: {
           </ArtistTextLink>
           <div className="flex items-center gap-1.5 mt-1">
             {item.subtitle && (
-              <Badge variant="outline" className="text-[9px] px-1 py-0">{item.subtitle}</Badge>
+              <CrateChip>{item.subtitle}</CrateChip>
             )}
             {item.tidal_url && (
-              <Badge className="bg-primary/15 text-primary border-primary/30 text-[9px] px-1 py-0">LOSSLESS</Badge>
+              <CrateChip active>LOSSLESS</CrateChip>
             )}
           </div>
         </div>
@@ -1031,18 +738,18 @@ function ReleasePopoverContent({ item, onDownload, onDismiss }: {
           <div className="flex gap-2">
             {item.tidal_url && (
               <button onClick={() => onDownload(item.release_id!)}
-                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors text-xs font-medium">
+                className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors text-xs font-medium">
                 <Download size={12} /> Download
               </button>
             )}
             <button onClick={() => onDismiss(item.release_id!)}
-              className="px-3 py-1.5 rounded-lg bg-white/5 text-muted-foreground hover:bg-white/10 transition-colors text-xs">
+              className="px-3 py-1.5 rounded-md bg-white/5 text-muted-foreground hover:bg-white/10 transition-colors text-xs">
               Dismiss
             </button>
           </div>
         )}
         {item.status === "downloaded" && (
-          <Badge className="bg-green-500/15 text-green-400 border-green-500/30 text-[10px]">Downloaded</Badge>
+          <CrateChip className="border-green-500/25 bg-green-500/10 text-green-300">Downloaded</CrateChip>
         )}
         {item.status === "downloading" && (
           <div className="flex items-center gap-1.5 text-xs text-primary">
