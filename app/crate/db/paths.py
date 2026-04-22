@@ -162,6 +162,41 @@ def _load_artist_similarity_graph() -> dict[str, dict[str, float]]:
     return graph
 
 
+def _load_shared_members_graph() -> dict[str, set[str]]:
+    """Build a graph of artists connected by shared band members.
+    Returns {artist_name_lower: {connected_artist_name_lower, ...}}."""
+    # First, build member→bands mapping
+    member_to_bands: dict[str, list[str]] = {}
+    with read_scope() as session:
+        rows = session.execute(
+            text("""
+                SELECT a.name AS artist, m->>'name' AS member
+                FROM library_artists a, jsonb_array_elements(a.members_json) AS m
+                WHERE a.members_json IS NOT NULL
+                  AND a.members_json != 'null'
+                  AND a.members_json != '[]'
+            """)
+        ).mappings().all()
+    for r in rows:
+        member = r["member"].lower().strip()
+        artist = r["artist"].lower().strip()
+        member_to_bands.setdefault(member, []).append(artist)
+
+    # Now build artist→artist connections via shared members
+    graph: dict[str, set[str]] = {}
+    for member, bands in member_to_bands.items():
+        if len(bands) < 2:
+            continue
+        for i, a in enumerate(bands):
+            for b in bands[i + 1:]:
+                if a != b:
+                    graph.setdefault(a, set()).add(b)
+                    graph.setdefault(b, set()).add(a)
+
+    log.info("Shared members graph: %d artists connected", len(graph))
+    return graph
+
+
 def _load_artist_genres() -> dict[str, dict[str, float]]:
     """Load genre weights per artist.
     Returns {artist_name_lower: {genre_name_lower: weight}}."""
@@ -184,10 +219,16 @@ def _artist_affinity(
     candidate_artist: str,
     context_artists: list[str],
     sim_graph: dict[str, dict[str, float]],
+    member_graph: dict[str, set[str]],
 ) -> float:
     """How connected is candidate_artist to the recent context artists?
     Returns 0.0 (no connection) to 1.0 (direct strong match).
-    Checks direct similarity + 2nd degree (shared similar)."""
+
+    Signals (strongest first):
+    1. Shared band member (0.95) — same person played in both bands
+    2. Direct Last.fm similarity (up to 1.0)
+    3. 2nd degree similarity (shared similar artists, discounted 50%)
+    """
     c = candidate_artist.lower()
     if not context_artists:
         return 0.0
@@ -195,11 +236,18 @@ def _artist_affinity(
     best = 0.0
     for ctx in context_artists:
         ctx_l = ctx.lower()
-        # Direct similarity
+
+        # Shared band member — strongest signal
+        member_connections = member_graph.get(ctx_l, set())
+        if c in member_connections:
+            return 0.95  # almost certain match, return immediately
+
+        # Direct Last.fm similarity
         direct = sim_graph.get(ctx_l, {}).get(c, 0.0)
         if direct > best:
             best = direct
-        # 2nd degree: shared similars
+
+        # 2nd degree: shared similar artists
         if best < 0.5:
             ctx_sims = sim_graph.get(ctx_l, {})
             cand_sims = sim_graph.get(c, {})
@@ -207,9 +255,10 @@ def _artist_affinity(
             if shared:
                 second = max(
                     min(ctx_sims[s], cand_sims[s]) for s in shared
-                ) * 0.5  # discount 2nd degree
+                ) * 0.5
                 if second > best:
                     best = second
+
     return min(best, 1.0)
 
 
@@ -264,6 +313,7 @@ def compute_path(
     # Load affinity data once for the entire path computation
     sim_graph = _load_artist_similarity_graph()
     genre_map = _load_artist_genres()
+    member_graph = _load_shared_members_graph()
 
     chain = [origin_vec]
     if waypoint_vecs:
@@ -329,7 +379,7 @@ def compute_path(
 
             track = _find_best_candidate(
                 search_target, used_ids, used_titles, recent_artists,
-                sim_graph, genre_map, segment_target_artists,
+                sim_graph, genre_map, member_graph, segment_target_artists,
             )
             if track:
                 path_tracks.append(_make_entry(track, global_step, global_progress))
@@ -422,6 +472,7 @@ def _find_best_candidate(
     recent_artists: list[str],
     sim_graph: dict[str, dict[str, float]],
     genre_map: dict[str, dict[str, float]],
+    member_graph: dict[str, set[str]],
     target_artists: list[str],
 ) -> dict | None:
     """Find the best track near target using hybrid scoring.
@@ -485,7 +536,7 @@ def _find_best_candidate(
         # Hybrid scoring
         bliss_norm = float(candidate["distance"]) / max_dist
 
-        affinity = _artist_affinity(artist, recent_artists + target_artists, sim_graph)
+        affinity = _artist_affinity(artist, recent_artists + target_artists, sim_graph, member_graph)
         genre_ov = _genre_overlap(artist, target_artists, genre_map)
 
         score = (
