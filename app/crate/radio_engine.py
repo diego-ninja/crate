@@ -190,6 +190,19 @@ def start_radio(
     else:
         return None
 
+    # Pre-seed with historical feedback (persisted likes/dislikes from past sessions)
+    hist_liked, hist_disliked = _load_feedback_history(user_id)
+    log.info("Radio start: %d historical likes, %d dislikes for user %d",
+             len(hist_liked), len(hist_disliked), user_id)
+
+    # Blend historical likes into the initial target for warm start
+    initial_target = seed_vec
+    if hist_liked:
+        hist_centroid = _centroid(hist_liked)
+        # Historical influence: 15% max — gentle nudge, not takeover
+        blend = min(0.15, 0.03 * len(hist_liked))
+        initial_target = _lerp(seed_vec, hist_centroid, blend)
+
     session_id = str(uuid.uuid4())
     session = {
         "id": session_id,
@@ -198,10 +211,10 @@ def start_radio(
         "seed_type": seed_type,
         "seed_value": seed_value,
         "seed_label": seed_label,
-        "initial_target": seed_vec,
-        "current_target": seed_vec,
+        "initial_target": initial_target,
+        "current_target": initial_target,
         "liked_vectors": [],
-        "disliked_vectors": [],
+        "disliked_vectors": hist_disliked[:10],  # pre-load recent dislikes as exclusions
         "used_track_ids": [],
         "used_titles": [],
         "recent_artists": [],
@@ -241,12 +254,11 @@ def next_tracks(session_id: str, count: int = _BATCH_SIZE) -> dict | None:
 
 
 def radio_feedback(session_id: str, track_id: int, action: str) -> dict | None:
-    """Process like/dislike feedback for a radio track."""
+    """Process like/dislike feedback — updates session AND persists to DB."""
     session = _load_session(session_id)
     if not session:
         return None
 
-    # Get the track's bliss vector
     from sqlalchemy import text
     with read_scope() as db:
         row = db.execute(
@@ -261,10 +273,9 @@ def radio_feedback(session_id: str, track_id: int, action: str) -> dict | None:
 
     if action == "like":
         session["liked_vectors"].append(vec)
-        # Recompute current target: blend initial seed with liked centroid
         liked = session["liked_vectors"]
         like_centroid = _centroid(liked)
-        blend = min(0.4, 0.08 * len(liked))  # grows with likes, caps at 40%
+        blend = min(0.4, 0.08 * len(liked))
         session["current_target"] = _lerp(session["initial_target"], like_centroid, blend)
         effect = "target_shifted"
     elif action == "dislike":
@@ -274,7 +285,113 @@ def radio_feedback(session_id: str, track_id: int, action: str) -> dict | None:
         return {"status": "ok", "effect": "none"}
 
     _save_session(session)
-    return {"status": "ok", "effect": effect, "liked_count": len(session["liked_vectors"]), "disliked_count": len(session["disliked_vectors"])}
+
+    # Persist to DB for future sessions
+    _persist_feedback(
+        user_id=session["user_id"],
+        track_id=track_id,
+        action=action,
+        bliss_vector=vec,
+        session_seed=session.get("seed_label", ""),
+    )
+
+    return {
+        "status": "ok",
+        "effect": effect,
+        "liked_count": len(session["liked_vectors"]),
+        "disliked_count": len(session["disliked_vectors"]),
+    }
+
+
+def _persist_feedback(
+    user_id: int, track_id: int, action: str,
+    bliss_vector: list[float], session_seed: str,
+) -> None:
+    """Save feedback to the radio_feedback table for long-term learning."""
+    from sqlalchemy import text
+    from crate.db.tx import transaction_scope
+    try:
+        with transaction_scope() as db:
+            # Upsert: if same user+track exists, update the action
+            db.execute(
+                text("""
+                    INSERT INTO radio_feedback (user_id, track_id, action, bliss_vector, session_seed)
+                    VALUES (:user_id, :track_id, :action, :bliss_vector, :session_seed)
+                    ON CONFLICT (user_id, track_id) DO UPDATE
+                    SET action = :action, bliss_vector = :bliss_vector,
+                        session_seed = :session_seed, created_at = now()
+                """),
+                {
+                    "user_id": user_id,
+                    "track_id": track_id,
+                    "action": action,
+                    "bliss_vector": bliss_vector,
+                    "session_seed": session_seed,
+                },
+            )
+    except Exception:
+        # ON CONFLICT needs a unique constraint — fall back to simple insert
+        try:
+            with transaction_scope() as db:
+                db.execute(
+                    text("""
+                        INSERT INTO radio_feedback (user_id, track_id, action, bliss_vector, session_seed)
+                        VALUES (:user_id, :track_id, :action, :bliss_vector, :session_seed)
+                    """),
+                    {
+                        "user_id": user_id,
+                        "track_id": track_id,
+                        "action": action,
+                        "bliss_vector": bliss_vector,
+                        "session_seed": session_seed,
+                    },
+                )
+        except Exception:
+            log.debug("Failed to persist radio feedback", exc_info=True)
+
+
+def _load_feedback_history(user_id: int, max_age_days: int = 90) -> tuple[list[list[float]], list[list[float]]]:
+    """Load recent radio feedback vectors for a user.
+
+    Returns (liked_vectors, disliked_vectors) with temporal decay:
+    recent feedback is included as-is, older feedback is downweighted
+    by including fewer vectors.
+    """
+    from sqlalchemy import text
+    with read_scope() as db:
+        rows = db.execute(
+            text("""
+                SELECT action, bliss_vector, created_at,
+                       EXTRACT(EPOCH FROM (now() - created_at)) / 86400.0 AS age_days
+                FROM radio_feedback
+                WHERE user_id = :user_id
+                  AND bliss_vector IS NOT NULL
+                  AND created_at > now() - INTERVAL ':max_age days'
+                ORDER BY created_at DESC
+            """.replace(":max_age", str(max_age_days))),
+            {"user_id": user_id},
+        ).mappings().all()
+
+    liked: list[list[float]] = []
+    disliked: list[list[float]] = []
+
+    for r in rows:
+        vec = list(r["bliss_vector"])
+        age = float(r["age_days"])
+        # Temporal decay: include all from last 7 days,
+        # 50% chance for 7-30 days, 25% for 30-90 days
+        import random
+        if age > 30 and random.random() > 0.25:
+            continue
+        if age > 7 and random.random() > 0.5:
+            continue
+
+        if r["action"] == "like":
+            liked.append(vec)
+        elif r["action"] == "dislike":
+            disliked.append(vec)
+
+    return liked, disliked
 
 
 # ── Track generation ──────────────────────────────────────────────
