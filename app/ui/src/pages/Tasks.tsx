@@ -1,34 +1,39 @@
-import { useState, useEffect, useMemo } from "react";
-import { timeAgo, cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Activity,
+  Ban,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Cpu,
+  Filter,
+  Loader2,
+  Minus,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Trash2,
+  Zap,
+  XCircle,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
+import { AdminSelect } from "@/components/ui/AdminSelect";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
+import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { useApi } from "@/hooks/use-api";
 import { useTaskEvents } from "@/hooks/use-task-events";
 import { api } from "@/lib/api";
-import { toast } from "sonner";
-import {
-  Loader2, CheckCircle2, XCircle, Clock, Ban, RefreshCw,
-  ChevronDown, ChevronUp, RotateCcw, Trash2, Activity,
-  Filter, Zap, Cpu, Minus, Plus,
-} from "lucide-react";
-
-// ── Types ────────────────────────────────────────────────────────
+import { cn, timeAgo } from "@/lib/utils";
+import { taskLabel } from "@/lib/task-labels";
 
 interface TaskProgress {
   phase?: string;
@@ -42,7 +47,6 @@ interface TaskProgress {
   eta_sec?: number;
   errors?: number;
   warnings?: number;
-  // Legacy fields for backwards compat with old progress payloads
   artist?: string;
   album?: string;
   step?: string;
@@ -56,200 +60,200 @@ interface Task {
   type: string;
   status: string;
   label?: string;
-  icon?: string;
   progress: TaskProgress | string;
   error: string | null;
   params: Record<string, string> | null;
   result: Record<string, unknown> | null;
+  priority?: number | null;
+  pool?: string | null;
   created_at: string;
   started_at: string | null;
   updated_at: string;
 }
 
-// ── Constants ────────────────────────────────────────────────────
-
-const STATUS_CONFIG = {
-  running: { icon: Loader2, color: "text-blue-500", label: "Running", bg: "bg-blue-500/10 border-blue-500/20" },
-  pending: { icon: Clock, color: "text-yellow-500", label: "Pending", bg: "bg-yellow-500/10 border-yellow-500/20" },
-  completed: { icon: CheckCircle2, color: "text-green-500", label: "Completed", bg: "" },
-  failed: { icon: XCircle, color: "text-red-500", label: "Failed", bg: "bg-red-500/5" },
-  cancelled: { icon: Ban, color: "text-muted-foreground", label: "Cancelled", bg: "" },
-} as const;
-
-function getStatus(status: string) {
-  return STATUS_CONFIG[status as keyof typeof STATUS_CONFIG] ?? { icon: Clock, color: "text-muted-foreground", label: status, bg: "" };
+interface WorkerStatusResponse {
+  engine: string;
+  running: number;
+  pending: number;
+  running_tasks: { id: string; type: string; pool?: string | null }[];
+  pending_tasks: { id: string; type: string; pool?: string | null }[];
 }
 
-import { taskLabel } from "@/lib/task-labels";
+interface SettingsSnapshot {
+  worker?: {
+    max_workers: number;
+  };
+}
+
+const STATUS_META: Record<string, { icon: typeof Clock; label: string; pill: string; iconClass: string; cardClass: string }> = {
+  running: {
+    icon: Loader2,
+    label: "Running",
+    pill: "border-cyan-400/25 bg-cyan-400/10 text-cyan-100",
+    iconClass: "text-primary",
+    cardClass: "border-cyan-400/12 bg-cyan-400/[0.04]",
+  },
+  pending: {
+    icon: Clock,
+    label: "Pending",
+    pill: "border-amber-500/25 bg-amber-500/10 text-amber-100",
+    iconClass: "text-amber-200",
+    cardClass: "border-amber-500/12 bg-amber-500/[0.04]",
+  },
+  completed: {
+    icon: CheckCircle2,
+    label: "Completed",
+    pill: "border-emerald-500/25 bg-emerald-500/10 text-emerald-200",
+    iconClass: "text-emerald-200",
+    cardClass: "border-white/8 bg-black/15",
+  },
+  failed: {
+    icon: XCircle,
+    label: "Failed",
+    pill: "border-red-500/25 bg-red-500/10 text-red-100",
+    iconClass: "text-red-200",
+    cardClass: "border-red-500/12 bg-red-500/[0.04]",
+  },
+  cancelled: {
+    icon: Ban,
+    label: "Cancelled",
+    pill: "border-white/10 bg-white/[0.04] text-white/55",
+    iconClass: "text-white/45",
+    cardClass: "border-white/8 bg-black/15",
+  },
+};
+
+function getStatusMeta(status: string) {
+  return STATUS_META[status] ?? {
+    icon: Clock,
+    label: status,
+    pill: "border-white/10 bg-white/[0.04] text-white/60",
+    iconClass: "text-white/50",
+    cardClass: "border-white/8 bg-black/15",
+  };
+}
 
 function getTaskLabel(task: Task): string {
   const base = task.label || taskLabel(task.type);
-  const p = task.params;
-  if (!p) return base;
-  if (p.artist && p.album) return `${base}: ${p.artist} / ${p.album}`;
-  if (p.artist) return `${base}: ${p.artist}`;
-  if (p.name) return `${base}: ${p.name}`;
-  if (p.artist_folder && p.album_folder) return `${base}: ${p.artist_folder} / ${p.album_folder}`;
+  const params = task.params;
+  if (!params) return base;
+  if (params.artist && params.album) return `${base}: ${params.artist} / ${params.album}`;
+  if (params.artist) return `${base}: ${params.artist}`;
+  if (params.name) return `${base}: ${params.name}`;
+  if (params.artist_folder && params.album_folder) return `${base}: ${params.artist_folder} / ${params.album_folder}`;
   return base;
 }
 
-// ── Human-readable result summaries ──────────────────────────────
-
 function describeResult(task: Task): string {
-  if (task.error) return task.error.length > 100 ? task.error.slice(0, 100) + "..." : task.error;
-  const r = task.result;
-  if (!r) return task.status === "completed" ? "Completed" : "";
+  if (task.error) return task.error.length > 120 ? `${task.error.slice(0, 120)}…` : task.error;
+  const result = task.result;
+  if (!result) return task.status === "completed" ? "Completed" : "";
 
   const type = task.type;
 
-  // Process new content
   if (type === "process_new_content") {
-    const steps = r.steps as Record<string, unknown> | undefined;
+    const steps = result.steps as Record<string, unknown> | undefined;
     if (steps) {
-      const done = Object.entries(steps).filter(([, v]) => v !== "failed" && v !== false).length;
-      const failed = Object.entries(steps).filter(([, v]) => v === "failed").length;
+      const done = Object.entries(steps).filter(([, value]) => value !== "failed" && value !== false).length;
+      const failed = Object.entries(steps).filter(([, value]) => value === "failed").length;
       return `${done} steps done${failed ? `, ${failed} failed` : ""}`;
     }
   }
 
-  // Enrichment
   if (type === "enrich_artist") {
-    if (r.skipped) return "Skipped (recently enriched)";
+    if (result.skipped) return "Skipped (recently enriched)";
     return "Artist enriched";
   }
+
   if (type === "enrich_artists" || type === "enrich_mbids") {
     const parts: string[] = [];
-    if (r.enriched) parts.push(`${r.enriched} enriched`);
-    if (r.skipped) parts.push(`${r.skipped} skipped`);
-    if (r.failed) parts.push(`${r.failed} failed`);
+    if (result.enriched) parts.push(`${result.enriched} enriched`);
+    if (result.skipped) parts.push(`${result.skipped} skipped`);
+    if (result.failed) parts.push(`${result.failed} failed`);
     return parts.join(", ") || "Done";
   }
 
-  // Analysis
   if (type === "analyze_tracks" || type === "analyze_all") {
-    return `${r.analyzed ?? 0} tracks analyzed${r.failed ? `, ${r.failed} failed` : ""} of ${r.total ?? "?"}`;
+    return `${result.analyzed ?? 0} tracks analyzed${result.failed ? `, ${result.failed} failed` : ""}`;
   }
+
   if (type === "compute_bliss") {
-    return `${r.analyzed ?? 0} tracks vectorized${r.failed ? `, ${r.failed} failed` : ""}`;
+    return `${result.analyzed ?? 0} tracks vectorized${result.failed ? `, ${result.failed} failed` : ""}`;
   }
 
-  // Health & repair
-  if (type === "health_check") return `${r.issue_count ?? 0} issues found`;
+  if (type === "compute_popularity") {
+    const parts: string[] = [];
+    if (result.albums) parts.push(`${result.albums} albums`);
+    if (result.tracks) parts.push(`${result.tracks} tracks`);
+    return parts.join(", ") || "Done";
+  }
+
+  if (type === "health_check") return `${result.issue_count ?? 0} issues found`;
   if (type === "repair") {
-    const actions = (r.actions as unknown[])?.length ?? 0;
-    return `${actions} actions${r.fs_changed ? " (filesystem modified)" : ""}`;
+    const actions = (result.actions as unknown[])?.length ?? 0;
+    return `${actions} actions${result.fs_changed ? " (filesystem modified)" : ""}`;
   }
 
-  // Sync
   if (type === "library_sync" || type === "library_pipeline") {
     const parts: string[] = [];
-    if (r.artists_added) parts.push(`+${r.artists_added} artists`);
-    if (r.tracks_total) parts.push(`${r.tracks_total} tracks`);
+    if (result.artists_added) parts.push(`+${result.artists_added} artists`);
+    if (result.tracks_total) parts.push(`${result.tracks_total} tracks`);
     return parts.join(", ") || "Synced";
   }
 
-  // Match apply
-  if (type === "match_apply") return `${r.updated ?? 0}/${r.total ?? "?"} tracks tagged`;
-
-  // Delete
+  if (type === "match_apply") return `${result.updated ?? 0}/${result.total ?? "?"} tracks tagged`;
   if (type === "delete_artist" || type === "delete_album") return "Deleted";
-
-  // Popularity
-  if (type === "compute_popularity") {
-    const parts: string[] = [];
-    if (r.albums) parts.push(`${r.albums} albums`);
-    if (r.tracks) parts.push(`${r.tracks} tracks`);
-    return parts.join(", ") || "Done";
-  }
-  if (type === "cleanup_invalid_genre_taxonomy") {
-    const deleted = Number(r.deleted_count ?? 0);
-    const edges = Number(r.edge_count ?? 0);
-    const aliases = Number(r.alias_count ?? 0);
-    const parts: string[] = [`${deleted} invalid nodes removed`];
-    if (aliases) parts.push(`${aliases} aliases deleted`);
-    if (edges) parts.push(`${edges} edges deleted`);
-    return parts.join(", ");
-  }
-
-  // Analytics
   if (type === "compute_analytics") return "Analytics computed";
+  if (type === "tidal_download") return result.error ? String(result.error) : "Downloaded";
 
-  // Tidal
-  if (type === "tidal_download") return r.error ? String(r.error) : "Downloaded";
-
-  // Covers
-  if (type === "scan_missing_covers" || type === "fetch_artwork_all") {
-    return `${r.found ?? r.fetched ?? 0} covers`;
-  }
-
-  // Generic
-  const keys = Object.keys(r);
+  const keys = Object.keys(result);
   if (keys.length === 0) return "Done";
-  if (keys.length <= 3) return keys.map((k) => `${k}: ${JSON.stringify(r[k])}`).join(", ");
+  if (keys.length <= 3) return keys.map((key) => `${key}: ${JSON.stringify(result[key])}`).join(", ");
   return `${keys.length} fields`;
 }
 
-// ── Formatters ───────────────────────────────────────────────────
-
-function fmtDuration(start: string, end: string): string {
+function formatDuration(start: string, end: string) {
   const ms = new Date(end).getTime() - new Date(start).getTime();
-  const sec = Math.floor(ms / 1000);
+  const sec = Math.max(0, Math.floor(ms / 1000));
   if (sec < 60) return `${sec}s`;
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min}m ${sec % 60}s`;
   return `${Math.floor(min / 60)}h ${min % 60}m`;
 }
 
-
-// ── Progress Display ─────────────────────────────────────────────
-
-function TaskProgressBar({ progress }: { progress: TaskProgress | string }) {
+function ProgressSummary({ progress }: { progress: TaskProgress | string }) {
   if (typeof progress === "string") {
-    return progress ? <span className="text-xs text-muted-foreground">{progress}</span> : null;
+    return progress ? <div className="text-xs text-white/40">{progress}</div> : null;
   }
 
   const done = Number(progress.done ?? 0);
   const total = Number(progress.total ?? 0);
-  const pct = progress.percent != null ? Number(progress.percent) : (total > 0 ? Math.round((done / total) * 100) : 0);
+  const percent = progress.percent != null ? Number(progress.percent) : total > 0 ? Math.round((done / total) * 100) : 0;
 
   if (total > 0) {
     return (
-      <div className="space-y-1">
-        <Progress value={pct} className="h-1.5" />
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>
-            {progress.phase && (
-              <Badge variant="outline" className="text-[10px] px-1 py-0 mr-1">
-                {progress.phase_count ? `${(progress.phase_index ?? 0) + 1}/${progress.phase_count} ` : ""}{String(progress.phase)}
-              </Badge>
-            )}
-            {progress.item && <span className="text-foreground">{String(progress.item)}</span>}
-            {!progress.item && progress.artist && <span className="text-foreground">{String(progress.artist)}</span>}
-          </span>
-          <span className="tabular-nums">
-            {done}/{total} ({pct}%)
-            {progress.rate != null && Number(progress.rate) > 0 && (
-              <span className="ml-1 text-white/40">{Number(progress.rate).toFixed(1)}/s</span>
-            )}
-            {progress.eta_sec != null && Number(progress.eta_sec) > 0 && (
-              <span className="ml-1 text-white/40">ETA {Number(progress.eta_sec)}s</span>
-            )}
-          </span>
+      <div className="space-y-2">
+        <Progress value={percent} className="h-1.5" />
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-white/40">
+          <div className="flex flex-wrap items-center gap-2">
+            {progress.phase ? <CrateChip>{String(progress.phase)}</CrateChip> : null}
+            {progress.item ? <span className="text-white/65">{String(progress.item)}</span> : null}
+            {!progress.item && progress.artist ? <span className="text-white/65">{String(progress.artist)}</span> : null}
+          </div>
+          <div className="tabular-nums">
+            {done}/{total} ({percent}%)
+            {progress.rate != null && Number(progress.rate) > 0 ? <span className="ml-2 text-white/25">{Number(progress.rate).toFixed(1)}/s</span> : null}
+            {progress.eta_sec != null && Number(progress.eta_sec) > 0 ? <span className="ml-2 text-white/25">ETA {Number(progress.eta_sec)}s</span> : null}
+          </div>
         </div>
       </div>
     );
   }
 
-  if (progress.step) {
-    return <span className="text-xs text-muted-foreground">Step: {progress.step.replace(/_/g, " ")}{progress.artist ? ` — ${progress.artist}` : ""}</span>;
-  }
-  if (progress.message) {
-    return <span className="text-xs text-muted-foreground">{String(progress.message)}</span>;
-  }
+  if (progress.step) return <div className="text-xs text-white/40">Step: {String(progress.step).replace(/_/g, " ")}</div>;
+  if (progress.message) return <div className="text-xs text-white/40">{String(progress.message)}</div>;
   return null;
 }
-
-// ── Live Events for Running Task ─────────────────────────────────
 
 const EVENT_BADGE_COLORS: Record<string, string> = {
   info: "bg-blue-500/10 text-blue-400 border-blue-500/30",
@@ -265,545 +269,641 @@ const EVENT_BADGE_COLORS: Record<string, string> = {
   step_done: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
 };
 
-function eventMessage(e: { type: string; data?: Record<string, unknown> }): string {
-  if (e.data?.message) return String(e.data.message);
-  if (e.data?.step) return String(e.data.step).replace(/_/g, " ");
-  if (e.data) {
-    const keys = Object.keys(e.data);
-    if (keys.length <= 3) return keys.map((k) => `${k}: ${e.data![k]}`).join(", ");
+function eventMessage(event: { type: string; data?: Record<string, unknown> }) {
+  if (event.data?.message) return String(event.data.message);
+  if (event.data?.step) return String(event.data.step).replace(/_/g, " ");
+  if (event.data) {
+    const keys = Object.keys(event.data);
+    if (keys.length <= 3) return keys.map((key) => `${key}: ${event.data![key]}`).join(", ");
   }
-  return e.type.replace(/_/g, " ");
+  return event.type.replace(/_/g, " ");
 }
 
 function LiveTaskEvents({ taskId }: { taskId: string }) {
   const { events, connected } = useTaskEvents(taskId);
 
   if (events.length === 0) {
-    return <div className="text-xs text-muted-foreground py-2">{connected ? "Waiting for events..." : "Connecting..."}</div>;
+    return <div className="py-3 text-xs text-white/40">{connected ? "Waiting for live events…" : "Connecting to task stream…"}</div>;
   }
 
   return (
-    <div className="max-h-[300px] overflow-y-auto space-y-0.5 py-2 font-mono">
-      {events.map((e, i) => (
-        <div key={i} className="flex items-start gap-2 text-xs">
-          <span className="text-[10px] text-muted-foreground flex-shrink-0 w-14">
-            {new Date(e.timestamp || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+    <div className="max-h-[280px] space-y-1 overflow-y-auto py-3 font-mono">
+      {events.map((event, index) => (
+        <div key={`${taskId}-${index}`} className="flex items-start gap-2 text-xs">
+          <span className="w-16 shrink-0 text-[10px] text-white/20">
+            {new Date(event.timestamp || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
           </span>
-          <Badge className={`text-[9px] px-1 py-0 flex-shrink-0 border ${EVENT_BADGE_COLORS[e.type] || "bg-zinc-500/10 text-zinc-400 border-zinc-500/30"}`}>
-            {e.type.replace(/_/g, " ")}
-          </Badge>
-          <span className="text-foreground/80">
-            {eventMessage(e)}
-          </span>
+          <CrateChip className={EVENT_BADGE_COLORS[event.type] || "border-white/10 bg-white/[0.04] text-white/60"}>{event.type.replace(/_/g, " ")}</CrateChip>
+          <span className="text-white/70">{eventMessage(event)}</span>
         </div>
       ))}
     </div>
   );
 }
 
-// ── Main Component ───────────────────────────────────────────────
-
-export function Tasks() {
-  const { data: tasks, loading, refetch } = useApi<Task[]>("/api/tasks?limit=100");
-  const [cancelId, setCancelId] = useState<string | null>(null);
-  const [filterType, setFilterType] = useState<string>("all");
-  const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  // Auto-refresh: 2s if running tasks, 5s otherwise (catches new tasks)
-  useEffect(() => {
-    const hasActive = tasks?.some((t) => t.status === "running" || t.status === "pending");
-    const interval = hasActive ? 2000 : 5000;
-    const timer = setInterval(refetch, interval);
-    return () => clearInterval(timer);
-  }, [tasks, refetch]);
-
-  const handleCancel = async (id: string) => {
-    try {
-      await api(`/api/tasks/${id}/cancel`, "POST");
-      toast.success("Task cancelled");
-      refetch();
-    } catch { toast.error("Failed to cancel"); }
-    setCancelId(null);
-  };
-
-  const handleRetry = async (task: Task) => {
-    try {
-      await api("/api/tasks/retry", "POST", { task_id: task.id });
-      toast.success(`Retrying: ${getTaskLabel(task)}`);
-      refetch();
-    } catch {
-      toast.error("Failed to retry task");
-    }
-  };
-
-  const handleCleanup = async () => {
-    try {
-      const res = await api<{ deleted: number }>("/api/tasks/cleanup", "POST", { older_than_days: 7 });
-      toast.success(`Cleaned up ${res.deleted} old tasks`);
-      refetch();
-    } catch { toast.error("Cleanup failed"); }
-  };
-
-  const running = tasks?.filter((t) => t.status === "running") ?? [];
-  const pending = tasks?.filter((t) => t.status === "pending") ?? [];
-  const completed = tasks?.filter((t) => !["running", "pending"].includes(t.status)) ?? [];
-
-  // Available task types for filter
-  const taskTypes = useMemo(() => {
-    if (!tasks) return [];
-    const types = new Set(tasks.map((t) => t.type));
-    return Array.from(types).sort();
-  }, [tasks]);
-
-  // Filtered history
-  const filteredHistory = useMemo(() => {
-    let filtered = completed;
-    if (filterType !== "all") filtered = filtered.filter((t) => t.type === filterType);
-    if (filterStatus !== "all") filtered = filtered.filter((t) => t.status === filterStatus);
-    return filtered;
-  }, [completed, filterType, filterStatus]);
-
-  // Stats
-  const stats = useMemo(() => {
-    if (!tasks) return null;
-    const today = new Date().toDateString();
-    const todayTasks = tasks.filter((t) => new Date(t.created_at).toDateString() === today);
-    const completedToday = todayTasks.filter((t) => t.status === "completed").length;
-    const failedToday = todayTasks.filter((t) => t.status === "failed").length;
-    const avgDuration = tasks
-      .filter((t) => t.status === "completed")
-      .slice(0, 20)
-      .reduce((sum, t) => sum + (new Date(t.updated_at).getTime() - new Date(t.started_at || t.created_at).getTime()), 0);
-    const avgCount = Math.min(20, tasks.filter((t) => t.status === "completed").length);
-    return {
-      todayTotal: todayTasks.length,
-      todayCompleted: completedToday,
-      todayFailed: failedToday,
-      successRate: todayTasks.length > 0 ? Math.round((completedToday / (completedToday + failedToday || 1)) * 100) : 100,
-      avgDuration: avgCount > 0 ? Math.round(avgDuration / avgCount / 1000) : 0,
-    };
-  }, [tasks]);
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold flex items-center gap-3">
-          Tasks
-          <Button variant="ghost" size="sm" onClick={refetch}><RefreshCw size={14} /></Button>
-        </h1>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={handleCleanup} className="text-xs text-muted-foreground">
-            <Trash2 size={12} className="mr-1" /> Cleanup old
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Trash2 size={14} className="mr-1" /> Clean
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={async () => {
-                const res = await api<{deleted: number}>("/api/tasks/clean/completed", "POST");
-                toast.success(`Cleaned ${res.deleted} completed tasks`);
-                refetch();
-              }}>
-                Completed tasks
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={async () => {
-                const res = await api<{deleted: number}>("/api/tasks/clean/failed", "POST");
-                toast.success(`Cleaned ${res.deleted} failed tasks`);
-                refetch();
-              }}>
-                Failed tasks
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={async () => {
-                const res = await api<{deleted: number}>("/api/tasks/clean/cancelled", "POST");
-                toast.success(`Cleaned ${res.deleted} cancelled tasks`);
-                refetch();
-              }}>
-                Cancelled tasks
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {/* Stats row */}
-      {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <div className="bg-card border border-border rounded-md p-3">
-            <div className="text-lg font-bold">{stats.todayTotal}</div>
-            <div className="text-[11px] text-muted-foreground">Today</div>
-          </div>
-          <div className="bg-card border border-border rounded-md p-3">
-            <div className="text-lg font-bold text-green-500">{stats.todayCompleted}</div>
-            <div className="text-[11px] text-muted-foreground">Completed</div>
-          </div>
-          <div className="bg-card border border-border rounded-md p-3">
-            <div className="text-lg font-bold text-red-500">{stats.todayFailed}</div>
-            <div className="text-[11px] text-muted-foreground">Failed</div>
-          </div>
-          <div className="bg-card border border-border rounded-md p-3">
-            <div className="text-lg font-bold">{stats.successRate}%</div>
-            <div className="text-[11px] text-muted-foreground">Success Rate</div>
-          </div>
-          <div className="bg-card border border-border rounded-md p-3">
-            <div className="text-lg font-bold">{stats.avgDuration}s</div>
-            <div className="text-[11px] text-muted-foreground">Avg Duration</div>
-          </div>
-        </div>
-      )}
-
-      {/* Worker Status */}
-      <WorkerStatus running={running.length} pending={pending.length} />
-
-      {/* Active tasks */}
-      {(running.length > 0 || pending.length > 0) && (
-        <Card className="bg-card">
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Activity size={14} className="text-blue-500" />
-              Active Tasks ({running.length + pending.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {[...running, ...pending].map((task) => {
-              const cfg = getStatus(task.status);
-              const Icon = cfg.icon;
-              const isExpanded = expandedId === task.id;
-              return (
-                <div key={task.id} className={`border rounded-md overflow-hidden ${cfg.bg}`}>
-                  <div className="p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <Icon size={16} className={`${cfg.color} ${task.status === "running" ? "animate-spin" : ""}`} />
-                        <div>
-                          <div className="font-medium text-sm">{getTaskLabel(task)}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {task.status === "running" && task.started_at
-                              ? <>Running for {fmtDuration(task.started_at, new Date().toISOString())}</>
-                              : <>Queued {timeAgo(task.created_at)}</>}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex gap-1">
-                        {task.status === "running" && (
-                          <Button variant="ghost" size="sm" className="text-xs h-7" onClick={() => setExpandedId(isExpanded ? null : task.id)}>
-                            <Zap size={11} className="mr-1" /> {isExpanded ? "Hide" : "Live"}
-                          </Button>
-                        )}
-                        <Button variant="outline" size="sm" className="text-red-500 border-red-500/30 hover:bg-red-500/10 h-7"
-                          onClick={() => setCancelId(task.id)}>
-                          <Ban size={11} className="mr-1" /> Cancel
-                        </Button>
-                      </div>
-                    </div>
-                    <TaskProgressBar progress={task.progress} />
-                  </div>
-                  {isExpanded && task.status === "running" && (
-                    <div className="border-t border-border px-4 bg-black/20">
-                      <LiveTaskEvents taskId={task.id} />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* History with filters */}
-      <Card className="bg-card">
-        <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <CardTitle className="text-sm">Task History ({filteredHistory.length})</CardTitle>
-            <div className="flex items-center gap-2">
-              <Filter size={13} className="text-muted-foreground" />
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="h-7 w-[180px] text-xs bg-input border-border">
-                  <SelectValue placeholder="All types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All types</SelectItem>
-                  {taskTypes.map((t) => (
-                    <SelectItem key={t} value={t}>{taskLabel(t)}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="h-7 w-[130px] text-xs bg-input border-border">
-                  <SelectValue placeholder="All status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All status</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
-              <Loader2 size={18} className="animate-spin" />
-            </div>
-          ) : filteredHistory.length === 0 ? (
-            <div className="text-center py-8 text-sm text-muted-foreground">No tasks match filters</div>
-          ) : (
-            <div className="space-y-1">
-              {filteredHistory.map((task) => (
-                <TaskRow key={task.id} task={task} expanded={expandedId === task.id}
-                  onToggle={() => setExpandedId(expandedId === task.id ? null : task.id)}
-                  onRetry={() => handleRetry(task)} />
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <ConfirmDialog
-        open={cancelId !== null}
-        onOpenChange={(open) => { if (!open) setCancelId(null); }}
-        title="Cancel Task"
-        description="Are you sure you want to cancel this task?"
-        confirmLabel="Cancel Task"
-        variant="destructive"
-        onConfirm={() => { if (cancelId) handleCancel(cancelId); }}
-      />
-    </div>
-  );
-}
-
-// ── Task Row ─────────────────────────────────────────────────────
-
-function TaskRow({ task, expanded, onToggle, onRetry }: {
-  task: Task; expanded: boolean; onToggle: () => void; onRetry: () => void;
-}) {
-  const cfg = getStatus(task.status);
-  const Icon = cfg.icon;
-  const summary = describeResult(task);
-
-  return (
-    <div className={`border border-border rounded-md overflow-hidden ${cfg.bg}`}>
-      <div className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-secondary/20 transition-colors" onClick={onToggle}>
-        <Icon size={14} className={cfg.color} />
-        <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium">{getTaskLabel(task)}</span>
-          <span className="text-xs text-muted-foreground ml-2">{summary}</span>
-        </div>
-        <span className="text-xs text-muted-foreground flex-shrink-0">
-          {fmtDuration(task.started_at || task.created_at, task.updated_at)}
-        </span>
-        <span className="text-[11px] text-muted-foreground flex-shrink-0 w-[80px] text-right hidden sm:block">
-          {timeAgo(task.updated_at)}
-        </span>
-        {task.status === "failed" && (
-          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground flex-shrink-0"
-            onClick={(e) => { e.stopPropagation(); onRetry(); }} title="Retry">
-            <RotateCcw size={12} />
-          </Button>
-        )}
-        {expanded ? <ChevronUp size={14} className="text-muted-foreground flex-shrink-0" /> : <ChevronDown size={14} className="text-muted-foreground flex-shrink-0" />}
-      </div>
-      {expanded && (
-        <div className="px-4 py-3 border-t border-border bg-secondary/10 space-y-3">
-          {/* Task metadata */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-            <div>
-              <span className="text-muted-foreground">ID:</span>{" "}
-              <span className="font-mono">{task.id}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Type:</span>{" "}
-              <span className="font-mono">{task.type}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Created:</span>{" "}
-              {new Date(task.created_at).toLocaleString()}
-            </div>
-            <div>
-              <span className="text-muted-foreground">Duration:</span>{" "}
-              {fmtDuration(task.started_at || task.created_at, task.updated_at)}
-            </div>
-          </div>
-
-          {/* Params */}
-          {task.params && Object.keys(task.params).length > 0 && (
-            <div>
-              <span className="text-xs font-semibold text-muted-foreground">Params:</span>
-              <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-all bg-secondary/30 p-2 rounded font-mono">
-                {JSON.stringify(task.params, null, 2)}
-              </pre>
-            </div>
-          )}
-
-          {/* Error */}
-          {task.error && (
-            <div>
-              <span className="text-xs font-semibold text-red-500">Error:</span>
-              <pre className="text-xs text-red-400 mt-1 whitespace-pre-wrap break-all bg-red-500/5 p-2 rounded font-mono">
-                {task.error}
-              </pre>
-            </div>
-          )}
-
-          {/* Result */}
-          {task.result && (
-            <div>
-              <span className="text-xs font-semibold text-muted-foreground">Result:</span>
-              <pre className="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-all bg-secondary/30 p-2 rounded font-mono max-h-[300px] overflow-y-auto">
-                {JSON.stringify(task.result, null, 2)}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Worker Status ────────────────────────────────────────────────
-
-interface WorkerInfo {
-  max_slots: number;
+function WorkerControlPanel({
+  running,
+  pending,
+}: {
   running: number;
   pending: number;
-  running_tasks: { id: string; type: string; params?: Record<string, string> }[];
-  pending_tasks: { id: string; type: string }[];
-}
-
-function WorkerStatus({ running, pending }: { running: number; pending: number }) {
-  const [workerInfo, setWorkerInfo] = useState<WorkerInfo | null>(null);
+}) {
+  const [workerInfo, setWorkerInfo] = useState<WorkerStatusResponse | null>(null);
+  const [slotLimit, setSlotLimit] = useState(3);
   const [restarting, setRestarting] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
 
   useEffect(() => {
-    api<WorkerInfo>("/api/worker/status").then(setWorkerInfo).catch(() => {});
-    const timer = setInterval(() => { api<WorkerInfo>("/api/worker/status").then(setWorkerInfo).catch(() => {}); }, 5000);
-    return () => clearInterval(timer);
+    let cancelled = false;
+
+    async function fetchWorker() {
+      try {
+        const [status, settings] = await Promise.all([
+          api<WorkerStatusResponse>("/api/worker/status"),
+          api<SettingsSnapshot>("/api/settings").catch(() => ({} as SettingsSnapshot)),
+        ]);
+        if (cancelled) return;
+        setWorkerInfo(status);
+        if (settings.worker?.max_workers) setSlotLimit(settings.worker.max_workers);
+      } catch {
+        // ignore transient worker polling failures
+      }
+    }
+
+    fetchWorker();
+    const timer = setInterval(fetchWorker, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, []);
 
-  const maxSlots = workerInfo?.max_slots ?? 3;
-  const runningTasks = workerInfo?.running_tasks ?? [];
-
-  async function incrementSlots() {
-    const next = maxSlots + 1;
-    if (next > 5) return;
+  async function setSlots(next: number) {
     try {
       await api("/api/worker/slots", "POST", { slots: next });
-      setWorkerInfo((prev) => prev ? { ...prev, max_slots: next } : prev);
+      setSlotLimit(next);
       toast.success(`Worker slots set to ${next}`);
-    } catch { toast.error("Failed to set slots"); }
-  }
-
-  async function decrementSlots() {
-    const next = maxSlots - 1;
-    if (next < 1) return;
-    try {
-      await api("/api/worker/slots", "POST", { slots: next });
-      setWorkerInfo((prev) => prev ? { ...prev, max_slots: next } : prev);
-      toast.success(`Worker slots set to ${next}`);
-    } catch { toast.error("Failed to set slots"); }
+    } catch {
+      toast.error("Failed to update worker slots");
+    }
   }
 
   async function restartWorker() {
     setRestarting(true);
-    try { await api("/api/worker/restart", "POST"); toast.success("Worker restarting..."); }
-    catch { toast.error("Restart failed"); }
-    finally { setTimeout(() => setRestarting(false), 5000); }
+    try {
+      await api("/api/worker/restart", "POST");
+      toast.success("Worker restarting…");
+    } catch {
+      toast.error("Worker restart failed");
+    } finally {
+      setTimeout(() => setRestarting(false), 5000);
+    }
   }
 
   async function cancelAll() {
     try {
-      const res = await api<{ cancelled: number }>("/api/worker/cancel-all", "POST");
-      toast.success(`Cancelled ${res.cancelled} tasks`);
-    } catch { toast.error("Failed to cancel tasks"); }
+      const response = await api<{ cancelled: number }>("/api/worker/cancel-all", "POST");
+      toast.success(`Cancelled ${response.cancelled} tasks`);
+    } catch {
+      toast.error("Failed to cancel tasks");
+    }
   }
 
   async function toggleLogs() {
-    if (showLogs) { setShowLogs(false); return; }
+    if (showLogs) {
+      setShowLogs(false);
+      return;
+    }
     setShowLogs(true);
     setLogsLoading(true);
     try {
-      const d = await api<{ name: string; logs: string }>("/api/stack/container/crate-worker/logs?tail=40");
-      setLogs(d.logs);
-    } catch { setLogs("Failed to load logs"); }
-    finally { setLogsLoading(false); }
+      const response = await api<{ name: string; logs: string }>("/api/stack/container/crate-worker/logs?tail=40");
+      setLogs(response.logs);
+    } catch {
+      setLogs("Failed to load worker logs");
+    } finally {
+      setLogsLoading(false);
+    }
+  }
+
+  const activeTasks = workerInfo?.running_tasks ?? [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <CrateChip active>{workerInfo?.engine || "dramatiq"}</CrateChip>
+          <CrateChip>{running} running</CrateChip>
+          <CrateChip>{pending} pending</CrateChip>
+          <CrateChip>{slotLimit} slots</CrateChip>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-md border border-white/10 bg-black/20 p-1">
+            <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setSlots(Math.max(1, slotLimit - 1))} disabled={slotLimit <= 1}>
+              <Minus size={12} />
+            </Button>
+            <span className="w-8 text-center text-sm font-medium text-white/80">{slotLimit}</span>
+            <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => setSlots(Math.min(10, slotLimit + 1))} disabled={slotLimit >= 10}>
+              <Plus size={12} />
+            </Button>
+          </div>
+          <Button size="sm" variant="outline" className="gap-2" onClick={toggleLogs}>
+            <Cpu size={14} />
+            {showLogs ? "Hide logs" : "Worker logs"}
+          </Button>
+          <Button size="sm" variant="outline" className="gap-2 text-red-200" onClick={cancelAll}>
+            <Ban size={14} />
+            Cancel all
+          </Button>
+          <Button size="sm" variant="outline" className="gap-2" onClick={restartWorker} disabled={restarting}>
+            {restarting ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />}
+            Restart
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex gap-1">
+        {Array.from({ length: slotLimit }, (_, index) => {
+          const task = activeTasks[index];
+          return (
+            <div
+              key={`slot-${index}`}
+              className={cn(
+                "flex h-9 flex-1 items-center justify-center rounded-sm border px-2 text-[11px] transition-colors",
+                task
+                  ? "border-primary/25 bg-primary/10 text-primary"
+                  : "border-white/8 bg-black/15 text-white/30",
+              )}
+              title={task ? `${taskLabel(task.type)}${task.pool ? ` · ${task.pool}` : ""}` : "Idle slot"}
+            >
+              <span className="truncate">{task ? taskLabel(task.type) : "idle"}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {showLogs ? (
+        <div className="rounded-md border border-white/8 bg-[#06080c] px-4 py-4">
+          {logsLoading ? (
+            <div className="flex items-center gap-2 text-sm text-white/45">
+              <Loader2 size={14} className="animate-spin text-primary" />
+              Loading worker logs…
+            </div>
+          ) : (
+            <pre className="max-h-[260px] overflow-y-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-white/55">
+              {logs || "No logs available"}
+            </pre>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ActiveTaskCard({
+  task,
+  expanded,
+  onExpand,
+  onCancel,
+}: {
+  task: Task;
+  expanded: boolean;
+  onExpand: () => void;
+  onCancel: () => void;
+}) {
+  const status = getStatusMeta(task.status);
+  const Icon = status.icon;
+
+  return (
+    <div className={cn("overflow-hidden rounded-md border p-4", status.cardClass)}>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04]">
+              <Icon size={16} className={cn(status.iconClass, task.status === "running" && "animate-spin")} />
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold text-white">{getTaskLabel(task)}</div>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/40">
+                <CrateChip className={status.pill}>{status.label}</CrateChip>
+                {task.pool ? <CrateChip>{task.pool}</CrateChip> : null}
+                <span>{task.status === "running" && task.started_at ? `Running for ${formatDuration(task.started_at, new Date().toISOString())}` : `Queued ${timeAgo(task.created_at)}`}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {task.status === "running" ? (
+              <Button size="sm" variant="outline" className="gap-2" onClick={onExpand}>
+                <Zap size={13} />
+                {expanded ? "Hide live" : "Live events"}
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" className="gap-2 text-red-200" onClick={onCancel}>
+              <Ban size={13} />
+              Cancel
+            </Button>
+          </div>
+        </div>
+
+        <ProgressSummary progress={task.progress} />
+      </div>
+
+      {expanded && task.status === "running" ? (
+        <div className="mt-4 border-t border-white/8 pt-3">
+          <LiveTaskEvents taskId={task.id} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function HistoryTaskRow({
+  task,
+  expanded,
+  onToggle,
+  onRetry,
+}: {
+  task: Task;
+  expanded: boolean;
+  onToggle: () => void;
+  onRetry: () => void;
+}) {
+  const status = getStatusMeta(task.status);
+  const Icon = status.icon;
+  const summary = describeResult(task);
+
+  return (
+    <div className={cn("overflow-hidden rounded-md border", status.cardClass)}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.03]"
+      >
+        <Icon size={14} className={status.iconClass} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-medium text-white">{getTaskLabel(task)}</span>
+            <CrateChip className={status.pill}>{status.label}</CrateChip>
+          </div>
+          <div className="mt-1 truncate text-xs text-white/40">{summary || "No summary available"}</div>
+        </div>
+        <div className="hidden text-xs text-white/35 sm:block">
+          {formatDuration(task.started_at || task.created_at, task.updated_at)}
+        </div>
+        <div className="hidden text-xs text-white/35 xl:block">{timeAgo(task.updated_at)}</div>
+        {task.status === "failed" ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-white/45 hover:text-white"
+            onClick={(event) => {
+              event.stopPropagation();
+              onRetry();
+            }}
+            title="Retry task"
+          >
+            <RotateCcw size={12} />
+          </Button>
+        ) : null}
+        {expanded ? <ChevronUp size={14} className="text-white/35" /> : <ChevronDown size={14} className="text-white/35" />}
+      </button>
+
+      {expanded ? (
+        <div className="space-y-3 border-t border-white/8 bg-black/15 px-4 py-4">
+          <div className="grid gap-2 text-xs text-white/45 sm:grid-cols-2 xl:grid-cols-4">
+            <div><span className="text-white/28">ID:</span> <span className="font-mono text-white/70">{task.id}</span></div>
+            <div><span className="text-white/28">Type:</span> <span className="font-mono text-white/70">{task.type}</span></div>
+            <div><span className="text-white/28">Created:</span> <span className="text-white/70">{new Date(task.created_at).toLocaleString()}</span></div>
+            <div><span className="text-white/28">Duration:</span> <span className="text-white/70">{formatDuration(task.started_at || task.created_at, task.updated_at)}</span></div>
+          </div>
+
+          {task.params && Object.keys(task.params).length > 0 ? (
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-white/35">Params</div>
+              <pre className="overflow-x-auto rounded-sm border border-white/6 bg-black/20 p-3 text-xs text-white/60">{JSON.stringify(task.params, null, 2)}</pre>
+            </div>
+          ) : null}
+
+          {task.error ? (
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-red-200">Error</div>
+              <pre className="overflow-x-auto rounded-sm border border-red-500/12 bg-red-500/[0.05] p-3 text-xs text-red-100">{task.error}</pre>
+            </div>
+          ) : null}
+
+          {task.result ? (
+            <div>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-white/35">Result</div>
+              <pre className="max-h-[320px] overflow-auto rounded-sm border border-white/6 bg-black/20 p-3 text-xs text-white/60">{JSON.stringify(task.result, null, 2)}</pre>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function Tasks() {
+  const { data: tasks, loading, error, refetch } = useApi<Task[]>("/api/tasks?limit=100");
+  const [searchParams] = useSearchParams();
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState("all");
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [search, setSearch] = useState("");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const hasActive = tasks?.some((task) => task.status === "running" || task.status === "pending");
+    const interval = hasActive ? 2000 : 5000;
+    const timer = setInterval(refetch, interval);
+    return () => clearInterval(timer);
+  }, [tasks, refetch]);
+
+  useEffect(() => {
+    const highlightedTask = searchParams.get("task");
+    if (highlightedTask && tasks?.some((task) => task.id === highlightedTask)) {
+      setExpandedId(highlightedTask);
+      setFilterStatus("all");
+    }
+  }, [searchParams, tasks]);
+
+  async function handleCancel(id: string) {
+    try {
+      await api(`/api/tasks/${id}/cancel`, "POST");
+      toast.success("Task cancelled");
+      refetch();
+    } catch {
+      toast.error("Failed to cancel task");
+    } finally {
+      setCancelId(null);
+    }
+  }
+
+  async function handleRetry(task: Task) {
+    try {
+      await api("/api/tasks/retry", "POST", { task_id: task.id });
+      toast.success(`Retrying ${getTaskLabel(task)}`);
+      refetch();
+    } catch {
+      toast.error("Failed to retry task");
+    }
+  }
+
+  async function cleanupOlder() {
+    try {
+      const response = await api<{ deleted: number }>("/api/tasks/cleanup", "POST", { older_than_days: 7 });
+      toast.success(`Cleaned up ${response.deleted} old tasks`);
+      refetch();
+    } catch {
+      toast.error("Cleanup failed");
+    }
+  }
+
+  async function cleanStatus(status: "completed" | "failed" | "cancelled") {
+    try {
+      const response = await api<{ deleted: number }>(`/api/tasks/clean/${status}`, "POST");
+      toast.success(`Cleaned ${response.deleted} ${status} tasks`);
+      refetch();
+    } catch {
+      toast.error(`Failed to clean ${status} tasks`);
+    }
+  }
+
+  const taskTypes = useMemo(() => {
+    if (!tasks) return [];
+    return Array.from(new Set(tasks.map((task) => task.type))).sort().map((type) => ({
+      value: type,
+      label: taskLabel(type),
+    }));
+  }, [tasks]);
+
+  const activeTasks = useMemo(
+    () => (tasks ?? []).filter((task) => task.status === "running" || task.status === "pending"),
+    [tasks],
+  );
+
+  const completedTasks = useMemo(
+    () => (tasks ?? []).filter((task) => task.status !== "running" && task.status !== "pending"),
+    [tasks],
+  );
+
+  const filteredHistory = useMemo(() => {
+    const normalized = search.trim().toLowerCase();
+    return completedTasks.filter((task) => {
+      if (filterType !== "all" && task.type !== filterType) return false;
+      if (filterStatus !== "all" && task.status !== filterStatus) return false;
+      if (!normalized) return true;
+      const haystack = `${getTaskLabel(task)} ${task.id} ${task.type} ${JSON.stringify(task.params || {})}`.toLowerCase();
+      return haystack.includes(normalized);
+    });
+  }, [completedTasks, filterStatus, filterType, search]);
+
+  const visibleActive = useMemo(() => {
+    const normalized = search.trim().toLowerCase();
+    return activeTasks.filter((task) => {
+      if (filterType !== "all" && task.type !== filterType) return false;
+      if (!normalized) return true;
+      const haystack = `${getTaskLabel(task)} ${task.id} ${task.type} ${JSON.stringify(task.params || {})}`.toLowerCase();
+      return haystack.includes(normalized);
+    });
+  }, [activeTasks, filterType, search]);
+
+  const stats = useMemo(() => {
+    if (!tasks) return null;
+    const today = new Date().toDateString();
+    const todayTasks = tasks.filter((task) => new Date(task.created_at).toDateString() === today);
+    const todayCompleted = todayTasks.filter((task) => task.status === "completed").length;
+    const todayFailed = todayTasks.filter((task) => task.status === "failed").length;
+    const completed = tasks.filter((task) => task.status === "completed").slice(0, 20);
+    const avgDurationMs = completed.reduce((sum, task) => (
+      sum + (new Date(task.updated_at).getTime() - new Date(task.started_at || task.created_at).getTime())
+    ), 0);
+
+    return {
+      todayTotal: todayTasks.length,
+      todayCompleted,
+      todayFailed,
+      successRate: todayTasks.length > 0 ? Math.round((todayCompleted / Math.max(todayCompleted + todayFailed, 1)) * 100) : 100,
+      avgDurationSec: completed.length > 0 ? Math.round(avgDurationMs / completed.length / 1000) : 0,
+    };
+  }, [tasks]);
+
+  if (loading && !tasks) {
+    return (
+      <div className="flex justify-center py-16 text-white/45">
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error && !tasks) {
+    return <ErrorState message="Failed to load task orchestration" onRetry={refetch} />;
   }
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Cpu size={16} />
-            Workers
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" className="h-7 px-2" onClick={decrementSlots} disabled={maxSlots <= 1}>
-              <Minus size={12} />
+    <div className="space-y-6">
+      <OpsPageHero
+        icon={Activity}
+        title="Tasks"
+        description="Background orchestration for enrichment, analysis, sync, repair and acquisition jobs across the whole stack."
+        actions={
+          <>
+            <Button variant="outline" size="sm" className="gap-2" onClick={cleanupOlder}>
+              <Trash2 size={14} />
+              Cleanup old
             </Button>
-            <span className="text-sm font-mono w-6 text-center">{maxSlots}</span>
-            <Button size="sm" variant="outline" className="h-7 px-2" onClick={incrementSlots} disabled={maxSlots >= 5}>
-              <Plus size={12} />
+            <Button variant="outline" size="sm" className="gap-2" onClick={refetch}>
+              <RefreshCw size={14} />
+              Refresh
             </Button>
-            <Button size="sm" variant="ghost" className="h-7 px-2 text-red-400" onClick={restartWorker} disabled={restarting} title="Restart workers">
-              {restarting ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+          </>
+        }
+      >
+        <CratePill active icon={Activity}>{tasks?.length ?? 0} tasks</CratePill>
+        <CratePill icon={Loader2}>{activeTasks.length} active</CratePill>
+        <CratePill icon={Clock}>{activeTasks.filter((task) => task.status === "pending").length} queued</CratePill>
+        <CratePill icon={CheckCircle2}>{tasks?.filter((task) => task.status === "completed").length ?? 0} completed</CratePill>
+        <CratePill className="border-red-500/25 bg-red-500/10 text-red-100">{tasks?.filter((task) => task.status === "failed").length ?? 0} failed</CratePill>
+      </OpsPageHero>
+
+      {stats ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <OpsStatTile icon={Activity} label="Today" value={stats.todayTotal.toLocaleString()} caption="Tasks created today" />
+          <OpsStatTile icon={CheckCircle2} label="Completed today" value={stats.todayCompleted.toLocaleString()} caption="Successful jobs in the current day" tone={stats.todayCompleted > 0 ? "success" : "default"} />
+          <OpsStatTile icon={XCircle} label="Failed today" value={stats.todayFailed.toLocaleString()} caption="Tasks that need operator attention" tone={stats.todayFailed > 0 ? "danger" : "default"} />
+          <OpsStatTile icon={Zap} label="Success rate" value={`${stats.successRate}%`} caption="Completed vs failed, same-day only" tone={stats.successRate >= 90 ? "success" : "warning"} />
+          <OpsStatTile icon={Clock} label="Avg duration" value={`${stats.avgDurationSec}s`} caption="Last 20 completed tasks" />
+        </div>
+      ) : null}
+
+      <OpsPanel
+        icon={Filter}
+        title="Task filters"
+        description="Slice active and historical tasks by type, final status or free-text search on labels, ids and params."
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" className="gap-2" onClick={() => cleanStatus("completed")}>
+              <Trash2 size={13} />
+              Clean completed
             </Button>
-            <Button variant="ghost" size="sm" onClick={cancelAll} className="text-xs text-red-500 hover:text-red-400 h-7">
-              <Ban size={12} className="mr-1" /> Cancel all
+            <Button size="sm" variant="outline" className="gap-2" onClick={() => cleanStatus("failed")}>
+              <Trash2 size={13} />
+              Clean failed
             </Button>
-            <Button variant="ghost" size="sm" onClick={toggleLogs} className="text-xs text-muted-foreground h-7">
-              {showLogs ? "Hide logs" : "Logs"}
+            <Button size="sm" variant="outline" className="gap-2" onClick={() => cleanStatus("cancelled")}>
+              <Trash2 size={13} />
+              Clean cancelled
             </Button>
           </div>
+        }
+      >
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="relative min-w-[260px] flex-1">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search labels, ids or params..."
+              className="pl-9"
+            />
+          </div>
+          <AdminSelect
+            value={filterType === "all" ? "" : filterType}
+            onChange={(value) => setFilterType(value || "all")}
+            options={taskTypes}
+            placeholder="All task types"
+            searchable
+            searchPlaceholder="Filter task types..."
+            triggerClassName="min-w-[200px]"
+          />
+          <AdminSelect
+            value={filterStatus === "all" ? "" : filterStatus}
+            onChange={(value) => setFilterStatus(value || "all")}
+            options={[
+              { value: "completed", label: "Completed" },
+              { value: "failed", label: "Failed" },
+              { value: "cancelled", label: "Cancelled" },
+            ]}
+            placeholder="All final states"
+            triggerClassName="min-w-[170px]"
+          />
         </div>
-      </CardHeader>
-      <CardContent>
-        {/* Slot bar visualization */}
-        <div className="flex gap-1 mb-3">
-          {Array.from({ length: maxSlots }, (_, i) => {
-            const task = runningTasks[i];
-            return (
-              <div
-                key={i}
-                className={cn(
-                  "h-8 flex-1 rounded-md flex items-center justify-center text-[10px] truncate px-1 transition-colors",
-                  task
-                    ? "bg-primary/20 border border-primary/30 text-primary"
-                    : "bg-muted/30 border border-border text-muted-foreground/40"
-                )}
-                title={task ? `${task.type}: ${task.params?.artist || task.id}` : "Idle"}
-              >
-                {task ? (task.params?.artist || task.type.replace(/_/g, " ")) : "idle"}
-              </div>
-            );
-          })}
-        </div>
+      </OpsPanel>
 
-        {/* Stats row */}
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span>{running} running</span>
-          <span>{pending} pending</span>
-          <span>{maxSlots} slots</span>
-        </div>
+      <OpsPanel
+        icon={Cpu}
+        title="Worker control"
+        description="Queue depth, concurrency slots and quick access to worker logs when orchestration starts to stall."
+      >
+        <WorkerControlPanel
+          running={activeTasks.filter((task) => task.status === "running").length}
+          pending={activeTasks.filter((task) => task.status === "pending").length}
+        />
+      </OpsPanel>
 
-        {/* Logs */}
-        {showLogs && (
-          <div className="bg-[#060608] rounded-md p-3 max-h-[250px] overflow-auto mt-3">
-            {logsLoading ? (
-              <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 size={12} className="animate-spin" /> Loading...</div>
-            ) : (
-              <pre className="text-[11px] font-mono text-muted-foreground whitespace-pre-wrap leading-relaxed">{logs || "No logs"}</pre>
-            )}
+      <OpsPanel
+        icon={Zap}
+        title="Running and queued"
+        description="Current work in flight, with live event streams for long-running tasks."
+      >
+        {visibleActive.length > 0 ? (
+          <div className="space-y-3">
+            {visibleActive.map((task) => (
+              <ActiveTaskCard
+                key={task.id}
+                task={task}
+                expanded={expandedId === task.id}
+                onExpand={() => setExpandedId((current) => current === task.id ? null : task.id)}
+                onCancel={() => setCancelId(task.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-12 text-center text-sm text-white/35">
+            No active tasks match the current filters.
           </div>
         )}
-      </CardContent>
-    </Card>
+      </OpsPanel>
+
+      <OpsPanel
+        icon={Clock}
+        title="Task history"
+        description="Recent finished jobs, with drill-down access to payloads, results and failure traces."
+      >
+        {filteredHistory.length > 0 ? (
+          <div className="space-y-2">
+            {filteredHistory.map((task) => (
+              <HistoryTaskRow
+                key={task.id}
+                task={task}
+                expanded={expandedId === task.id}
+                onToggle={() => setExpandedId((current) => current === task.id ? null : task.id)}
+                onRetry={() => handleRetry(task)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-12 text-center text-sm text-white/35">
+            No historical tasks match the current filters.
+          </div>
+        )}
+      </OpsPanel>
+
+      <ConfirmDialog
+        open={cancelId !== null}
+        onOpenChange={(open) => {
+          if (!open) setCancelId(null);
+        }}
+        title="Cancel task"
+        description="Cancel this background task? Running jobs may stop mid-operation depending on the worker handler."
+        confirmLabel="Cancel task"
+        variant="destructive"
+        onConfirm={() => cancelId && handleCancel(cancelId)}
+      />
+    </div>
   );
 }

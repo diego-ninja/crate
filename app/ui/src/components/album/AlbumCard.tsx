@@ -20,6 +20,8 @@ interface AlbumCardProps {
   year?: string;
   tracks: number;
   formats: string[];
+  bitDepth?: number | null;
+  sampleRate?: number | null;
   hasCover?: boolean;
 }
 
@@ -30,6 +32,24 @@ function hashColor(value: string): string {
   }
   const hue = Math.abs(hash) % 360;
   return `hsl(${hue}, 30%, 15%)`;
+}
+
+function qualityLabel(formats: string[], bitDepth?: number | null, sampleRate?: number | null): { label: string; tier: "hi-res" | "lossless" | "lossy" } | null {
+  if (!formats.length) return null;
+  const fmt = (formats[0] ?? "").replace(".", "").toLowerCase();
+  const fmtUp = fmt.toUpperCase();
+  const isLossless = ["flac", "alac", "wav", "aiff"].includes(fmt);
+  const depth = bitDepth || 16;
+  const rateKhz = sampleRate ? (sampleRate / 1000) : 44.1;
+  const rateStr = `${rateKhz % 1 ? rateKhz.toFixed(1) : rateKhz}kHz`;
+
+  if (isLossless && (depth > 16 || rateKhz > 48)) {
+    return { label: `${fmtUp} ${depth}/${rateStr}`, tier: "hi-res" };
+  }
+  if (isLossless) {
+    return { label: `${fmtUp} ${depth}/${rateStr}`, tier: "lossless" };
+  }
+  return { label: fmtUp, tier: "lossy" };
 }
 
 export const AlbumCard = React.memo(function AlbumCard({
@@ -43,6 +63,8 @@ export const AlbumCard = React.memo(function AlbumCard({
   year,
   tracks,
   formats,
+  bitDepth,
+  sampleRate,
 }: AlbumCardProps) {
   const navigate = useNavigate();
   const [imgLoaded, setImgLoaded] = useState(false);
@@ -123,9 +145,17 @@ export const AlbumCard = React.memo(function AlbumCard({
         </div>
         {formats.length ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {formats.map((format) => (
-              <CrateChip key={format}>{format.replace(".", "").toUpperCase()}</CrateChip>
-            ))}
+            {(() => {
+              const q = qualityLabel(formats, bitDepth, sampleRate);
+              if (!q) return formats.map((f) => <CrateChip key={f}>{f.replace(".", "").toUpperCase()}</CrateChip>);
+              return (
+                <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none ${
+                  q.tier === "hi-res" ? "border-amber-400/50 text-amber-300 bg-amber-400/10" :
+                  q.tier === "lossless" ? "border-cyan-400/40 text-cyan-300 bg-cyan-400/8" :
+                  "border-white/15 text-muted-foreground"
+                }`}>{q.label}</span>
+              );
+            })()}
           </div>
         ) : null}
       </div>

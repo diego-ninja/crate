@@ -32,6 +32,7 @@ from crate.api.schemas.me import (
     PlayEventRecordedResponse,
     PlayHistoryEntryResponse,
     PlayStatsResponse,
+    NowPlayingRequest,
     RecordPlayEventRequest,
     RecordPlayRequest,
     ReplayMixResponse,
@@ -443,6 +444,37 @@ def record(request: Request, body: RecordPlayRequest):
     )
     return {"ok": True}
 
+
+@router.post(
+    "/now-playing",
+    response_model=OkResponse,
+    responses=_ME_RESPONSES,
+    summary="Update ephemeral now-playing state for the current user",
+)
+def update_now_playing(request: Request, body: NowPlayingRequest):
+    user = _require_auth(request)
+    from crate.db import delete_cache, set_cache
+
+    cache_key = f"now_playing:{user['id']}"
+    if not body.playing:
+        delete_cache(cache_key)
+        return {"ok": True}
+
+    payload = {
+        "track_id": body.track_id,
+        "track_storage_id": body.track_storage_id,
+        "track_path": body.track_path,
+        "title": body.title,
+        "artist": body.artist,
+        "album": body.album,
+        "started_at": (body.started_at or datetime.now(timezone.utc)).isoformat(),
+        "heartbeat_at": datetime.now(timezone.utc).isoformat(),
+        "device_type": body.device_type,
+        "app_platform": body.app_platform,
+    }
+    set_cache(cache_key, payload, ttl=90)
+    return {"ok": True}
+
 @router.get(
     "/stats",
     response_model=PlayStatsResponse,
@@ -574,8 +606,15 @@ def stats_replay(request: Request, window: str = Query("30d"), limit: int = Quer
 )
 def home_hero(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_hero
-    return get_home_hero(user["id"])
+    cache_key = f"home:hero:{user['id']}"
+    cached = get_cache(cache_key, max_age_seconds=600)
+    if cached is not None:
+        return cached
+    result = get_home_hero(user["id"])
+    set_cache(cache_key, result, ttl=600)
+    return result
 
 
 @router.get(
@@ -585,8 +624,15 @@ def home_hero(request: Request):
 )
 def home_recently_played(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_recently_played
-    return {"items": get_home_recently_played(user["id"])}
+    cache_key = f"home:recently_played:{user['id']}"
+    cached = get_cache(cache_key, max_age_seconds=60)
+    if cached is not None:
+        return cached
+    result = {"items": get_home_recently_played(user["id"])}
+    set_cache(cache_key, result, ttl=60)
+    return result
 
 
 @router.get(
@@ -596,8 +642,15 @@ def home_recently_played(request: Request):
 )
 def home_mixes(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_mixes
-    return {"items": get_home_mixes(user["id"])}
+    cache_key = f"home:mixes:{user['id']}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached is not None:
+        return cached
+    result = {"items": get_home_mixes(user["id"])}
+    set_cache(cache_key, result, ttl=300)
+    return result
 
 
 @router.get(
@@ -607,8 +660,15 @@ def home_mixes(request: Request):
 )
 def home_suggested_albums(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_suggested_albums
-    return {"items": get_home_suggested_albums(user["id"])}
+    cache_key = f"home:suggested_albums:{user['id']}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached is not None:
+        return cached
+    result = {"items": get_home_suggested_albums(user["id"])}
+    set_cache(cache_key, result, ttl=300)
+    return result
 
 
 @router.get(
@@ -618,8 +678,15 @@ def home_suggested_albums(request: Request):
 )
 def home_recommended_tracks(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_recommended_tracks
-    return {"items": get_home_recommended_tracks(user["id"])}
+    cache_key = f"home:recommended_tracks:{user['id']}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached is not None:
+        return cached
+    result = {"items": get_home_recommended_tracks(user["id"])}
+    set_cache(cache_key, result, ttl=300)
+    return result
 
 
 @router.get(
@@ -629,8 +696,15 @@ def home_recommended_tracks(request: Request):
 )
 def home_radio_stations(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_radio_stations
-    return {"items": get_home_radio_stations(user["id"])}
+    cache_key = f"home:radio_stations:{user['id']}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached is not None:
+        return cached
+    result = {"items": get_home_radio_stations(user["id"])}
+    set_cache(cache_key, result, ttl=300)
+    return result
 
 
 @router.get(
@@ -640,8 +714,15 @@ def home_radio_stations(request: Request):
 )
 def home_favorite_artists(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_favorite_artists
-    return {"items": get_home_favorite_artists(user["id"])}
+    cache_key = f"home:favorite_artists:{user['id']}"
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached is not None:
+        return cached
+    result = {"items": get_home_favorite_artists(user["id"])}
+    set_cache(cache_key, result, ttl=300)
+    return result
 
 
 @router.get(
@@ -651,8 +732,15 @@ def home_favorite_artists(request: Request):
 )
 def home_essentials(request: Request):
     user = _require_auth(request)
+    from crate.db import get_cache, set_cache
     from crate.db.home import get_home_essentials
-    return {"items": get_home_essentials(user["id"])}
+    cache_key = f"home:essentials:{user['id']}"
+    cached = get_cache(cache_key, max_age_seconds=600)
+    if cached is not None:
+        return cached
+    result = {"items": get_home_essentials(user["id"])}
+    set_cache(cache_key, result, ttl=600)
+    return result
 
 
 @router.get(
@@ -676,13 +764,13 @@ def home_discovery(request: Request):
     # this via the `?fresh=1` param.
     fresh = request.query_params.get("fresh") == "1"
     if not fresh:
-        cached = get_cache(cache_key, max_age_seconds=60)
+        cached = get_cache(cache_key, max_age_seconds=600)
         if cached is not None:
             return cached
 
     try:
         result = get_home_discovery(user["id"])
-        set_cache(cache_key, result, ttl=60)
+        set_cache(cache_key, result, ttl=600)
         return result
     except Exception as exc:
         # If the heavy computation fails (timeout, data edge case, pool

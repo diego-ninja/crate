@@ -160,15 +160,18 @@ def acquisition_download(request: Request, body: AcquisitionDownloadRequest):
         file_names = [f.get("filename", "") if isinstance(f, dict) else f for f in files]
 
         # If explicitly asked to find alternate, skip original peer entirely
+        upgrade_id = body.upgrade_album_id
+
+        def _slsk_params(**extra) -> dict:
+            p = {"username": username or "unknown", "artist": artist, "album": album, **extra}
+            if upgrade_id:
+                p["upgrade_album_id"] = upgrade_id
+            return p
+
         if find_alternate or not username:
-            task_id = create_task("soulseek_download", {
-                "username": username or "unknown",
-                "artist": artist,
-                "album": album,
-                "files": file_names,
-                "file_count": len(files),
-                "find_alternate": True,
-            })
+            task_id = create_task("soulseek_download", _slsk_params(
+                files=file_names, file_count=len(files), find_alternate=True,
+            ))
             return {"task_id": task_id, "source": "soulseek", "finding_alternate": True}
 
         # Try original peer
@@ -176,24 +179,15 @@ def acquisition_download(request: Request, body: AcquisitionDownloadRequest):
         enqueued = result.get("enqueued", [])
 
         if enqueued:
-            task_id = create_task("soulseek_download", {
-                "username": username,
-                "artist": artist,
-                "album": album,
-                "files": [f.get("filename", "") for f in enqueued],
-                "file_count": len(enqueued),
-            })
+            task_id = create_task("soulseek_download", _slsk_params(
+                username=username, files=[f.get("filename", "") for f in enqueued], file_count=len(enqueued),
+            ))
             return {"task_id": task_id, "source": "soulseek", "enqueued": len(enqueued)}
 
         # Peer rejected — go straight to alternate search
-        task_id = create_task("soulseek_download", {
-            "username": username,
-            "artist": artist,
-            "album": album,
-            "files": file_names,
-            "file_count": len(files),
-            "find_alternate": True,
-        })
+        task_id = create_task("soulseek_download", _slsk_params(
+            files=file_names, file_count=len(files), find_alternate=True,
+        ))
         return {"task_id": task_id, "source": "soulseek", "finding_alternate": True}
 
     raise HTTPException(status_code=400, detail="source must be 'tidal' or 'soulseek'")

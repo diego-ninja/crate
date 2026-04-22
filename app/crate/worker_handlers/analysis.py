@@ -10,16 +10,19 @@ from crate.db.jobs.analysis import (
     get_albums_needing_popularity,
     get_artists_needing_analysis,
     get_artists_needing_bliss,
-    get_tracks_needing_popularity,
     requeue_tracks,
     update_album_popularity as _db_update_album_popularity,
-    update_track_popularity as _db_update_track_popularity,
 )
 from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
 
 CHUNK_SIZE = 10
+
+# Registry of post-processing functions for fan-out coordinators.
+# Keyed by the child task_type. Called once by the last chunk to complete.
+# Lazy-populated after handler functions are defined (see bottom of module).
+_PARENT_FINALIZERS: dict[str, Callable[[], dict | None]] = {}
 
 
 def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
@@ -189,7 +192,7 @@ def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
                 "info",
                 {"message": f"Splitting {len(need_analysis)} artists into chunks..."},
             )
-            return _chunk_coordinator(task_id, params, config, "analyze_all")
+            return _chunk_coordinator(task_id, params, config, "analyze_all", _handle_analyze_tracks)
 
         for artist_row in need_analysis:
             albums = get_library_albums(artist_row["name"])
@@ -272,9 +275,21 @@ def _chunk_coordinator(
     params: dict,
     config: dict,
     chunk_task_type: str,
+    chunk_handler: Callable[[str, dict, dict], dict],
     filter_fn: Callable[[dict], bool] | None = None,
 ) -> dict:
-    """Split artists into chunks, create sub-tasks, and monitor progress."""
+    """Fan-out: split artists into chunks, dispatch as parallel sub-tasks, return immediately.
+
+    The coordinator does NOT block waiting for chunks. It dispatches them
+    and returns `_delegated=True` so the actor wrapper keeps the parent task
+    alive without occupying a worker slot.
+
+    Each chunk, on completion, calls `_try_complete_parent()` to check if
+    all siblings are done. The last one to finish runs the post-processing
+    callback and marks the parent task as completed.
+
+    This avoids deadlocks regardless of how many Dramatiq workers are available.
+    """
     from crate.db import get_library_artists
 
     all_artists, total = get_library_artists(per_page=10000)
@@ -291,50 +306,65 @@ def _chunk_coordinator(
         chunk_artists = [artist["name"] for artist in all_artists[index : index + CHUNK_SIZE]]
         chunks.append(chunk_artists)
 
-    emit_task_event(task_id, "info", {"message": f"Split {total} artists into {len(chunks)} chunks"})
+    emit_task_event(task_id, "info", {"message": f"Dispatching {total} artists in {len(chunks)} parallel chunks"})
 
-    chunk_task_ids = []
     for index, chunk in enumerate(chunks):
-        sub_id = create_task(
+        create_task(
             chunk_task_type,
             {"artists": chunk, "chunk_index": index, "total_chunks": len(chunks)},
+            parent_task_id=task_id,
         )
-        chunk_task_ids.append(sub_id)
 
-    completed = 0
-    coordinator_start = time.time()
-    coordinator_timeout = 3600 * 6
-    p = TaskProgress(phase="coordinating", phase_count=1, total=len(chunks))
-    while completed < len(chunk_task_ids):
-        if is_cancelled(task_id):
-            return {"status": "cancelled", "completed_chunks": completed}
-        if time.time() - coordinator_start > coordinator_timeout:
-            log.warning("Coordinator %s timed out after %ds", task_id, coordinator_timeout)
-            return {
-                "status": "timeout",
-                "completed_chunks": completed,
-                "total_chunks": len(chunks),
-            }
-        time.sleep(5)
-        completed = 0
-        failed = 0
-        for sub_id in chunk_task_ids:
-            task = get_task(sub_id)
-            if task and task["status"] == "completed":
-                completed += 1
-            elif task and task["status"] == "failed":
-                failed += 1
-                completed += 1
-        p.done = completed
-        p.errors = failed
-        p.item = f"{completed}/{len(chunks)} chunks"
-        emit_progress(task_id, p)
+    p = TaskProgress(phase="dispatched", phase_count=1, total=len(chunks), done=0)
+    p.item = f"0/{len(chunks)} chunks"
+    emit_progress(task_id, p)
 
-    return {"chunks": len(chunks), "artists": total, "completed": completed}
+    return {"_delegated": True, "chunks": len(chunks), "artists": total}
+
+
+def _try_complete_parent(parent_task_id: str, child_task_type: str = "") -> None:
+    """Called by the actor wrapper after a chunk is marked completed.
+
+    Atomically checks if all siblings are done. The last one wins the
+    race (via DB-level claim) and runs any post-processing finalization.
+    """
+    from crate.db.tasks import check_siblings_complete, update_task
+
+    status = check_siblings_complete(parent_task_id)
+    if not status["all_done"]:
+        p = TaskProgress(
+            phase="processing", phase_count=1,
+            total=status["total"],
+            done=status["completed"] + status["failed"],
+            errors=status["failed"],
+        )
+        p.item = f"{p.done}/{status['total']} chunks"
+        emit_progress(parent_task_id, p)
+        return
+
+    # All chunks done — run type-specific finalization
+    result: dict = {
+        "chunks": status["total"],
+        "completed": status["completed"],
+        "failed": status["failed"],
+    }
+
+    finalize_fn = _PARENT_FINALIZERS.get(child_task_type)
+    if finalize_fn:
+        try:
+            extra = finalize_fn()
+            if extra:
+                result.update(extra)
+        except Exception:
+            log.warning("Finalization failed for parent %s", parent_task_id, exc_info=True)
+            result["finalization_error"] = True
+
+    update_task(parent_task_id, status="completed", result=result)
+    emit_task_event(parent_task_id, "info", {"message": f"All {status['total']} chunks complete ({status['failed']} failed)"})
 
 
 def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
-    """Coordinator: splits into chunks for parallel bliss computation."""
+    """Fan-out coordinator for bliss computation."""
     from crate.bliss import is_available
 
     if not is_available():
@@ -350,6 +380,7 @@ def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
         params,
         config,
         "compute_bliss",
+        _handle_bliss_chunk,
         filter_fn=lambda artist: artist["name"] in need_bliss_names,
     )
 
@@ -386,24 +417,40 @@ def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:
     return {"analyzed": analyzed, "artists": len(artists)}
 
 
+def _popularity_finalize() -> dict | None:
+    """Post-processing after all popularity chunks complete."""
+    from crate.popularity import recompute_track_popularity_scores
+    scored = recompute_track_popularity_scores()
+    return {"tracks_scored": scored.get("tracks_scored", 0)}
+
+
 def _handle_compute_popularity(task_id: str, params: dict, config: dict) -> dict:
-    """Coordinator: splits into chunks for parallel popularity fetching."""
+    """Fan-out coordinator for popularity fetching.
+
+    Without artists param: dispatches chunks and returns immediately.
+    With artists param: processes a single chunk (fan-in handled by actor wrapper).
+    """
     if params.get("artists"):
         return _handle_popularity_chunk(task_id, params, config)
 
-    return _chunk_coordinator(task_id, params, config, "compute_popularity")
+    return _chunk_coordinator(task_id, params, config, "compute_popularity", _handle_popularity_chunk)
 
 
 def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
     """Process a chunk of artists for popularity data using threads."""
     import re
-    from concurrent.futures import ThreadPoolExecutor
 
-    from crate.popularity import _lastfm_get, _normalize_popularity, _parse_int
+    from crate.popularity import (
+        _lastfm_get,
+        _normalize_popularity,
+        _parse_int,
+        refresh_artist_track_popularity_signals,
+    )
 
     artists = params.get("artists", [])
     albums_fetched = 0
-    tracks_fetched = 0
+    lastfm_track_matches = 0
+    spotify_track_matches = 0
 
     p = TaskProgress(phase="popularity", phase_count=1, total=len(artists))
 
@@ -429,32 +476,28 @@ def _handle_popularity_chunk(task_id: str, params: dict, config: dict) -> dict:
                     albums_fetched += 1
             time.sleep(0.25)
 
-        tracks = get_tracks_needing_popularity(artist_name)
-
-        def fetch_track_pop(track):
-            data = _lastfm_get("track.getinfo", artist=artist_name, track=track["title"], autocorrect="1")
-            if data and "track" in data:
-                info = data["track"]
-                listeners = _parse_int(info.get("listeners", 0))
-                playcount = _parse_int(info.get("playcount", 0))
-                if listeners > 0:
-                    _db_update_track_popularity(track["id"], listeners, playcount)
-                    return True
-            return False
-
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            results = list(pool.map(fetch_track_pop, tracks))
-            tracks_fetched += sum(1 for result in results if result)
+        refresh_result = refresh_artist_track_popularity_signals(artist_name)
+        lastfm_track_matches += int(refresh_result.get("lastfm_matches", 0))
+        spotify_track_matches += int(refresh_result.get("spotify_matches", 0))
 
     try:
-        _normalize_popularity()
+        _normalize_popularity(artists)
     except Exception:
         log.debug("Failed to normalize popularity scores", exc_info=True)
 
     emit_task_event(task_id, "info", {
-        "message": f"Popularity chunk complete: {albums_fetched} albums, {tracks_fetched} tracks from {len(artists)} artists",
+        "message": (
+            f"Popularity chunk complete: {albums_fetched} albums, "
+            f"{lastfm_track_matches} Last.fm track matches, "
+            f"{spotify_track_matches} Spotify matches from {len(artists)} artists"
+        ),
     })
-    return {"albums_fetched": albums_fetched, "tracks_fetched": tracks_fetched, "artists": len(artists)}
+    return {
+        "albums_fetched": albums_fetched,
+        "lastfm_track_matches": lastfm_track_matches,
+        "spotify_track_matches": spotify_track_matches,
+        "artists": len(artists),
+    }
 
 
 def _handle_index_genres(task_id: str, params: dict, config: dict) -> dict:
@@ -674,6 +717,9 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
     emit_task_event(task_id, "info", {"message": f"Requeued {count} tracks for {what}"})
     return {"requeued": count, "what": what}
 
+
+# Populate finalizers now that handler functions are defined
+_PARENT_FINALIZERS["compute_popularity"] = _popularity_finalize
 
 ANALYSIS_TASK_HANDLERS: dict[str, TaskHandler] = {
     "compute_analytics": _handle_compute_analytics,

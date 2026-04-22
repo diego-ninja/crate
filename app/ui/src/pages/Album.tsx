@@ -32,6 +32,9 @@ interface AlbumData {
   total_length_sec: number;
   has_cover: boolean;
   cover_file: string | null;
+  popularity?: number | null;
+  popularity_score?: number | null;
+  popularity_confidence?: number | null;
   tracks: {
     id?: number;
     filename: string;
@@ -39,6 +42,9 @@ interface AlbumData {
     size_mb: number;
     bitrate: number | null;
     length_sec: number;
+    popularity?: number | null;
+    popularity_score?: number | null;
+    popularity_confidence?: number | null;
     rating?: number;
     tags: Record<string, string>;
   }[];
@@ -160,6 +166,9 @@ export function Album() {
           totalLengthSec={data.total_length_sec}
           totalSizeMb={data.total_size_mb}
           hasCover={data.has_cover}
+          popularity={data.popularity}
+          popularityScore={data.popularity_score}
+          popularityConfidence={data.popularity_confidence}
           genres={data.genres}
           hasAnalysis={analysisData != null && Object.values(analysisData).some((t) => t.tempo != null)}
           isAdmin={isAdmin}

@@ -250,8 +250,11 @@ _INVALIDATION_RULES: list[tuple[re.Pattern[str], list[str]]] = [
     (re.compile(r"^/api/me/likes"), ["likes"]),
     (re.compile(r"^/api/me/follows"), ["follows", "home", "upcoming"]),
     (re.compile(r"^/api/me/albums"), ["saved_albums", "home"]),
-    (re.compile(r"^/api/me/history$"), ["history", "home"]),
-    (re.compile(r"^/api/me/play-events$"), ["history", "home"]),
+    # history and play-events do NOT invalidate home — the home cache
+    # has its own TTL and recomputing 200+ queries on every track play
+    # kills the server. Home data updates on its own schedule.
+    (re.compile(r"^/api/me/history$"), ["history"]),
+    (re.compile(r"^/api/me/play-events$"), ["history"]),
     (re.compile(r"^/api/me/shows"), ["shows", "upcoming"]),
     (re.compile(r"^/api/me/location$"), ["shows", "upcoming"]),
     (re.compile(r"^/api/playlists$"), ["playlists"]),

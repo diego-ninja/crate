@@ -10,7 +10,6 @@ import { useKeyboard } from "@/hooks/use-keyboard";
 import { useNotifications } from "@/hooks/use-notifications";
 
 import { CommandPalette } from "./CommandPalette";
-import { NotificationBell } from "./NotificationBell";
 import { SearchBar } from "./SearchBar";
 import {
   Sidebar,
@@ -85,9 +84,6 @@ export function Shell() {
           <Menu size={20} />
         </Button>
         <div className="text-sm font-bold text-white">Crate Admin</div>
-        <div className="ml-auto">
-          <NotificationBell />
-        </div>
       </div>
 
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -126,13 +122,12 @@ export function Shell() {
 
           <div className="pointer-events-auto flex min-w-0 flex-1 items-center gap-3 md:flex-none md:gap-4">
             <SearchBar inputRef={searchInputRef} />
-            <NotificationBell />
           </div>
         </div>
       </div>
 
       <main className={`overflow-x-hidden transition-all duration-200 ${sidebarWidthClass}`}>
-        <div className={`mx-auto w-full max-w-[1440px] px-4 py-4 pt-20 md:py-6 ${overlayHeader ? "md:px-0" : sidebarExpanded ? "md:px-6" : "md:px-10"} ${desktopHeaderOffsetClass}`}>
+        <div className={`mx-auto w-full max-w-[1536px] px-4 py-4 pt-20 md:py-6 ${overlayHeader ? "md:px-0" : sidebarExpanded ? "md:px-6" : "md:px-10"} ${desktopHeaderOffsetClass}`}>
           <div key={location.pathname} className="animate-page-in">
             <Outlet />
           </div>

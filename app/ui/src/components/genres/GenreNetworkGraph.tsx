@@ -114,6 +114,7 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(undefined);
   const [width, setWidth] = useState(0);
+  const graphHeight = Math.min(600, Math.round(window.innerHeight * 0.55));
   const { data, loading } = useApi<GenreGraphData>(`/api/genres/${slug}/graph`);
 
   useEffect(() => {
@@ -123,8 +124,8 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
     });
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const nextWidth = Math.floor(entry.contentRect.width);
-        if (nextWidth > 0) setWidth(nextWidth);
+        const w = Math.floor(entry.contentRect.width);
+        if (w > 0) setWidth(w);
       }
     });
     resizeObserver.observe(containerRef.current);
@@ -149,23 +150,15 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
     [data?.nodes],
   );
 
-  if (loading) {
+  if (loading || width === 0 || !data?.nodes?.length) {
     return (
-      <div className="flex h-[520px] items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground">
-        Loading genre graph...
+      <div className="rounded-md border border-border bg-card/70 p-4">
+        <div ref={containerRef} style={{ height: graphHeight }} className="flex w-full items-center justify-center text-sm text-muted-foreground">
+          {loading || width === 0 ? "Loading genre graph..." : "No genre graph available."}
+        </div>
       </div>
     );
   }
-
-  if (!data?.nodes?.length) {
-    return (
-      <div className="flex h-[520px] items-center justify-center rounded-md border border-border bg-card text-sm text-muted-foreground">
-        No genre graph available.
-      </div>
-    );
-  }
-
-  const graphWidth = width || 900;
 
   return (
     <div className="rounded-md border border-border bg-card/70 p-4">
@@ -209,11 +202,11 @@ export function GenreNetworkGraph({ slug }: { slug: string }) {
         </div>
       </div>
 
-      <div ref={containerRef} style={{ width: "100%", height: 520 }}>
+      <div ref={containerRef} style={{ height: graphHeight }} className="w-full overflow-hidden">
         <ForceGraph2D
           ref={fgRef}
-          width={graphWidth}
-          height={520}
+          width={width}
+          height={graphHeight}
           graphData={data}
           backgroundColor="transparent"
           linkColor={() => "rgba(0,0,0,0)"}

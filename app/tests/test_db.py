@@ -17,13 +17,22 @@ pytestmark = pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not availab
 
 class TestBootstrapBridge:
     def test_init_db_stamps_alembic_baseline(self, pg_db):
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
         from crate.db.tx import transaction_scope
 
         with transaction_scope() as session:
             row = session.execute(text("SELECT version_num FROM alembic_version")).mappings().first()
 
+        cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+        cfg.set_main_option(
+            "script_location",
+            os.path.join(os.path.dirname(__file__), "..", "crate", "db", "migrations"),
+        )
+        script = ScriptDirectory.from_config(cfg)
+
         assert row is not None
-        assert row["version_num"] == "001"
+        assert row["version_num"] == script.get_current_head()
 
     def test_init_db_marks_legacy_bridge_versions_applied(self, pg_db):
         import crate.db.core as db_core

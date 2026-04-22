@@ -125,7 +125,7 @@ export function CommandPalette() {
                   { label: "Health", path: "/health", icon: HeartPulse },
                   { label: "Acquisition", path: "/download", icon: Download },
                   { label: "System Playlists", path: "/playlists", icon: ListMusic },
-                  { label: "Discover", path: "/discover", icon: Compass },
+                  { label: "Discovery", path: "/discover", icon: Compass },
                   { label: "Settings", path: "/settings", icon: Settings },
                 ].map((item) => (
                   <Command.Item

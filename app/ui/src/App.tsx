@@ -4,7 +4,6 @@ import { api } from "@/lib/api";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { NotificationProvider } from "@/contexts/NotificationContext";
 import { Shell } from "@/components/layout/Shell";
 import { Loader2 } from "lucide-react";
 
@@ -78,51 +77,49 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <NotificationProvider>
-          <TooltipProvider>
-            <SetupGuard />
-            <Suspense fallback={<PageSpinner />}>
-              <Routes>
-                <Route path="setup" element={<Setup />} />
-                <Route path="login" element={<Login />} />
-                <Route
-                  element={
-                    <ProtectedRoute>
-                      <Shell />
-                    </ProtectedRoute>
-                  }
-                >
-                  <Route index element={<Dashboard />} />
-                  <Route path="browse" element={<Browse />} />
-                  <Route path="artists/:artistId/:slug" element={<Artist />} />
-                  <Route path="albums/:albumId/:slug" element={<Album />} />
-                  <Route path="health" element={<Health />} />
-                  <Route path="download" element={<DownloadPage />} />
-                  <Route path="insights" element={<Insights />} />
-                  <Route path="missing-albums" element={<MissingAlbums />} />
-                  <Route path="quality" element={<Quality />} />
-                  <Route path="analysis" element={<Analysis />} />
-                  <Route path="system" element={<SystemHealth />} />
-                  <Route path="logs" element={<Logs />} />
-                  <Route path="tasks" element={<Tasks />} />
-                  <Route path="playlists" element={<Playlists />} />
-                  <Route path="playlists/:playlistId" element={<PlaylistEditor />} />
-                  <Route path="stack" element={<Stack />} />
-                  <Route path="genres" element={<Genres />} />
-                  <Route path="genres/:slug" element={<Genres />} />
-                  <Route path="timeline" element={<Timeline />} />
-                  <Route path="users" element={<Users />} />
-                  <Route path="discover" element={<Discover />} />
-                  <Route path="settings" element={<Settings />} />
-                  <Route path="profile" element={<Profile />} />
-                  <Route path="new-releases" element={<NewReleases />} />
-                  <Route path="upcoming" element={<Upcoming />} />
-                </Route>
-              </Routes>
-            </Suspense>
-          </TooltipProvider>
-        </NotificationProvider>
-          <Toaster theme="dark" position="bottom-right" richColors />
+        <TooltipProvider>
+          <SetupGuard />
+          <Suspense fallback={<PageSpinner />}>
+            <Routes>
+              <Route path="setup" element={<Setup />} />
+              <Route path="login" element={<Login />} />
+              <Route
+                element={
+                  <ProtectedRoute>
+                    <Shell />
+                  </ProtectedRoute>
+                }
+              >
+                <Route index element={<Dashboard />} />
+                <Route path="browse" element={<Browse />} />
+                <Route path="artists/:artistId/:slug" element={<Artist />} />
+                <Route path="albums/:albumId/:slug" element={<Album />} />
+                <Route path="health" element={<Health />} />
+                <Route path="download" element={<DownloadPage />} />
+                <Route path="insights" element={<Insights />} />
+                <Route path="missing-albums" element={<MissingAlbums />} />
+                <Route path="quality" element={<Quality />} />
+                <Route path="analysis" element={<Analysis />} />
+                <Route path="system" element={<SystemHealth />} />
+                <Route path="logs" element={<Logs />} />
+                <Route path="tasks" element={<Tasks />} />
+                <Route path="playlists" element={<Playlists />} />
+                <Route path="playlists/:playlistId" element={<PlaylistEditor />} />
+                <Route path="stack" element={<Stack />} />
+                <Route path="genres" element={<Genres />} />
+                <Route path="genres/:slug" element={<Genres />} />
+                <Route path="timeline" element={<Timeline />} />
+                <Route path="users" element={<Users />} />
+                <Route path="discover" element={<Discover />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="profile" element={<Profile />} />
+                <Route path="new-releases" element={<NewReleases />} />
+                <Route path="upcoming" element={<Upcoming />} />
+              </Route>
+            </Routes>
+          </Suspense>
+        </TooltipProvider>
+        <Toaster theme="dark" position="bottom-right" richColors />
       </AuthProvider>
     </BrowserRouter>
   );

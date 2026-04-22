@@ -50,7 +50,7 @@ from crate.db import (
     get_user_external_identity, upsert_user_external_identity, list_user_external_identities,
     unlink_user_external_identity, create_session, list_sessions, touch_session, revoke_session,
     revoke_other_sessions, get_session, get_setting, set_setting,
-    create_auth_invite, list_auth_invites, consume_auth_invite,
+    create_auth_invite, list_auth_invites, consume_auth_invite, get_user_presence,
 )
 
 log = logging.getLogger(__name__)
@@ -59,6 +59,19 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 admin_router = APIRouter(prefix="/api/admin/auth", tags=["admin-auth"])
 
 COOKIE_NAME = "crate_session"
+COOKIE_NAME_LISTEN = "crate_session_listen"
+
+
+def _cookie_name_for_request(request) -> str:
+    """Return the appropriate cookie name based on the app making the request."""
+    app_header = (request.headers.get("x-crate-app") or "").lower()
+    if app_header in ("listen", "listen-web", "listen-mobile"):
+        return COOKIE_NAME_LISTEN
+    # Check referer/origin for listen subdomain
+    origin = request.headers.get("origin", "") or request.headers.get("referer", "")
+    if "listen." in origin:
+        return COOKIE_NAME_LISTEN
+    return COOKIE_NAME
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
@@ -79,11 +92,9 @@ def _is_secure() -> bool:
     return domain != "localhost"
 
 
-def _set_auth_cookie(response: Response, token: str):
-    # SameSite=None allows cross-origin requests (Capacitor native app).
-    # Requires Secure=True always.
+def _set_auth_cookie(response: Response, token: str, cookie_name: str = COOKIE_NAME):
     response.set_cookie(
-        key=COOKIE_NAME,
+        key=cookie_name,
         value=token,
         httponly=True,
         secure=True,
@@ -94,9 +105,9 @@ def _set_auth_cookie(response: Response, token: str):
     )
 
 
-def _clear_auth_cookie(response: Response):
+def _clear_auth_cookie(response: Response, cookie_name: str = COOKIE_NAME):
     response.delete_cookie(
-        key=COOKIE_NAME,
+        key=cookie_name,
         httponly=True,
         secure=True,
         samesite="none",
@@ -369,7 +380,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # 2. Query param token (audio/image streams where headers can't be set)
         if not token:
             token = request.query_params.get("token")
-        # 3. Cookie auth (legacy fallback)
+        # 3. Cookie auth — try app-specific cookie first, then default
+        if not token:
+            token = request.cookies.get(_cookie_name_for_request(request))
         if not token:
             token = request.cookies.get(COOKIE_NAME)
 
@@ -461,7 +474,7 @@ async def login(request: Request, body: LoginRequest):
     body = {**_user_public(user), "token": token}
     body["session"] = {"id": session["id"], "expires_at": _iso_datetime(session["expires_at"])}
     response = JSONResponse(content=body)
-    _set_auth_cookie(response, token)
+    _set_auth_cookie(response, token, _cookie_name_for_request(request))
     return response
 
 
@@ -499,7 +512,7 @@ async def register(request: Request, body: RegisterRequest):
     update_user_last_login(user["id"])
     token, _ = _create_login_session(user, request)
     response = JSONResponse(content={**_user_public(user), "token": token}, status_code=201)
-    _set_auth_cookie(response, token)
+    _set_auth_cookie(response, token, _cookie_name_for_request(request))
     return response
 
 
@@ -516,7 +529,7 @@ async def logout(request: Request):
         from crate.api.auth_cache import invalidate_session
         invalidate_session(user["session_id"])
     response = JSONResponse(content={"ok": True})
-    _clear_auth_cookie(response)
+    _clear_auth_cookie(response, _cookie_name_for_request(request))
     return response
 
 
@@ -649,7 +662,7 @@ async def auth_revoke_session(request: Request, session_id: str):
     revoke_session(session_id)
     response = JSONResponse({"ok": True})
     if user.get("session_id") == session_id:
-        _clear_auth_cookie(response)
+        _clear_auth_cookie(response, _cookie_name_for_request(request))
     return response
 
 
@@ -697,7 +710,7 @@ async def update_profile(request: Request, body: UpdateProfileRequest):
     token = create_jwt(updated["id"], updated["email"], updated["role"],
                        username=updated.get("username"), name=updated.get("name"), session_id=user.get("session_id"))
     response = JSONResponse(content=_user_public(updated))
-    _set_auth_cookie(response, token)
+    _set_auth_cookie(response, token, _cookie_name_for_request(request))
     return response
 
 
@@ -965,11 +978,11 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
         parsed = urlparse(safe_return)
         callback_url = f"{parsed.scheme}://{parsed.netloc}/auth/callback?token={token}"
         response = RedirectResponse(url=callback_url)
-        _set_auth_cookie(response, token)
+        _set_auth_cookie(response, token, _cookie_name_for_request(request))
         return response
 
     response = RedirectResponse(url=f"/auth/callback?token={token}")
-    _set_auth_cookie(response, token)
+    _set_auth_cookie(response, token, _cookie_name_for_request(request))
     return response
 
 
@@ -1160,6 +1173,7 @@ async def admin_get_user_detail(request: Request, user_id: int):
     payload["last_login"] = _iso_datetime(user.get("last_login"))
     payload["connected_accounts"] = list_user_external_identities(user_id)
     payload["sessions"] = list_sessions(user_id, include_revoked=True)
+    payload.update(get_user_presence(user_id))
     return payload
 
 

@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { SlidersHorizontal, Save, RotateCcw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { AIButton } from "@/components/ui/AIButton";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { EqBands } from "@/components/genres/EqBands";
 import { Badge } from "@/components/ui/badge";
+import { useLLMAvailable } from "@/hooks/use-llm";
 
 const EQ_BAND_COUNT = 10;
 const FLAT_GAINS: number[] = new Array(EQ_BAND_COUNT).fill(0);
@@ -22,6 +24,7 @@ interface Props {
   canonicalName: string;
   initialGains: number[] | null;
   initialResolved: ResolvedPreset | null;
+  eqReasoning?: string | null;
   onSaved?: () => void;
 }
 
@@ -38,6 +41,7 @@ export function GenreEqEditor({
   canonicalName,
   initialGains,
   initialResolved,
+  eqReasoning,
   onSaved,
 }: Props) {
   const seeded = useMemo<number[]>(() => {
@@ -49,6 +53,9 @@ export function GenreEqEditor({
   const [gains, setGains] = useState<number[]>(seeded);
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [reasoning, setReasoning] = useState(eqReasoning || "");
+  const llmAvailable = useLLMAvailable();
 
   useEffect(() => { setGains(seeded); }, [seeded]);
 
@@ -92,6 +99,22 @@ export function GenreEqEditor({
     }
   };
 
+  const generateWithAI = async () => {
+    if (generating) return;
+    setGenerating(true);
+    try {
+      const result = await api<{ gains: number[]; reasoning: string }>(`/api/genres/${canonicalSlug}/generate-eq?apply=true`, "POST");
+      setGains(result.gains);
+      setReasoning(result.reasoning);
+      toast.success(`AI generated EQ for ${canonicalName}`);
+      onSaved?.();
+    } catch {
+      toast.error("AI generation failed");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="rounded-md border border-white/12 bg-black/15 p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -109,9 +132,7 @@ export function GenreEqEditor({
       </div>
 
       <p className="mb-4 text-xs leading-5 text-white/55">
-        Curve applied when a track in this genre plays with "Genre Adaptive" on.
-        Saving stores gains on this taxonomy node directly. Clearing drops back
-        to the first ancestor that has a preset.
+        {reasoning || "Curve applied when a track in this genre plays with \"Genre Adaptive\" on. Saving stores gains on this taxonomy node directly. Clearing drops back to the first ancestor that has a preset."}
       </p>
 
       <div className="rounded-md border border-white/10 bg-black/30 p-3">
@@ -136,11 +157,20 @@ export function GenreEqEditor({
           >
             Reset sliders to flat
           </Button>
+          {llmAvailable && (
+            <AIButton
+              onClick={generateWithAI}
+              loading={generating}
+              disabled={saving || clearing}
+            >
+              Generate with AI
+            </AIButton>
+          )}
           <Button
             size="sm"
             variant="outline"
             onClick={clearPreset}
-            disabled={saving || clearing || !hasOwnPreset}
+            disabled={saving || clearing || generating || !hasOwnPreset}
             className="text-xs"
           >
             {clearing ? <Loader2 size={13} className="mr-1 animate-spin" /> : <RotateCcw size={13} className="mr-1" />}
@@ -149,7 +179,7 @@ export function GenreEqEditor({
           <Button
             size="sm"
             onClick={save}
-            disabled={saving || clearing || !dirty}
+            disabled={saving || clearing || generating || !dirty}
             className="text-xs"
           >
             {saving ? <Loader2 size={13} className="mr-1 animate-spin" /> : <Save size={13} className="mr-1" />}

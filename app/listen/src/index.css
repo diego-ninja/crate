@@ -173,6 +173,12 @@ input, textarea { -webkit-user-select: auto; user-select: auto; }
 .animate-pop-in { animation: popIn 0.15s ease-out forwards; }
 .animate-pop-out { animation: popOut 0.12s ease-in forwards; }
 
+@keyframes heroFadeIn {
+  from { opacity: 0; transform: scale(1.02); }
+  to { opacity: 1; transform: scale(1); }
+}
+.animate-hero-fade-in { animation: heroFadeIn 400ms ease forwards; }
+
 /* Bottom sheet slide-up (modals on mobile) */
 @keyframes sheetUp {
   from { opacity: 0; transform: translateY(100%); }

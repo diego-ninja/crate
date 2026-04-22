@@ -19,8 +19,8 @@ interface ArtistSimilarSectionProps {
 export function ArtistSimilarSection({ artistName, artistId, artists }: ArtistSimilarSectionProps) {
   return (
     <div>
-      <div className="bg-card border border-border rounded-md p-4 mb-6">
-        <h4 className="text-sm font-semibold mb-3">Artist Network</h4>
+      <div className="bg-card border border-border rounded-md overflow-hidden mb-6">
+        <h4 className="text-sm font-semibold px-4 pt-4 pb-2">Artist Network</h4>
         <ArtistNetworkGraph centerArtist={artistName} centerArtistId={artistId} />
       </div>
       {artists.length > 0 && (

@@ -665,13 +665,16 @@ _TEXT_FIELDS = {"genre", "artist", "album", "title", "format", "audio_key"}
 
 _SORT_MAP: dict[str, str] = {
     "random": "RANDOM()",
-    # Use raw Last.fm metrics first; normalized popularity is too coarse (1-100)
-    # and creates large tie groups that often surface as album-sized blocks.
+    # Use the consolidated floating score first; fall back to the raw signals
+    # and add a light random tie-breaker to avoid album-sized blocks.
     "popularity": (
-        "CASE WHEN t.lastfm_playcount IS NULL AND t.lastfm_listeners IS NULL AND t.popularity IS NULL "
+        "CASE WHEN t.popularity_score IS NULL AND t.lastfm_playcount IS NULL "
+        "AND t.lastfm_listeners IS NULL AND t.popularity IS NULL "
         "THEN 1 ELSE 0 END ASC, "
+        "COALESCE(t.popularity_score, -1) DESC, "
         "COALESCE(t.lastfm_playcount, 0) DESC, "
         "COALESCE(t.lastfm_listeners, 0) DESC, "
+        "COALESCE(t.lastfm_top_rank, 999999) ASC, "
         "COALESCE(t.popularity, 0) DESC, "
         "RANDOM()"
     ),

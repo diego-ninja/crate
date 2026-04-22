@@ -1,19 +1,29 @@
-import { useState, useEffect, useCallback } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { api } from "@/lib/api";
-import { toast } from "sonner";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Server,
-  RefreshCw,
-  ChevronUp,
-  ScrollText,
+  ExternalLink,
   Loader2,
   Play,
+  RefreshCw,
+  Server,
   Square,
+  ScrollText,
+  Search,
+  RotateCcw,
+  Wifi,
+  AlertTriangle,
+  Package,
 } from "lucide-react";
+import { toast } from "sonner";
+
+import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Input } from "@/components/ui/input";
+import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { Button } from "@/components/ui/button";
+import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
+import { ErrorState } from "@/components/ui/error-state";
+import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface Container {
   id: string;
@@ -36,6 +46,8 @@ interface ContainerLogs {
   logs: string;
 }
 
+type ServiceFilter = "all" | "running" | "stopped";
+
 const SERVICE_URLS: Record<string, string> = {
   lidarr: "https://collection.lespedants.org",
   tidarr: "https://search.lespedants.org",
@@ -43,33 +55,236 @@ const SERVICE_URLS: Record<string, string> = {
   authelia: "https://auth.lespedants.org",
 };
 
-function stateColor(state: string): string {
-  if (state === "running") return "text-green-500";
-  if (state === "restarting") return "text-yellow-500";
-  if (state === "exited" || state === "dead") return "text-red-500";
-  return "text-muted-foreground";
+const STATE_STYLES: Record<string, { chip: string; dot: string; tone: "default" | "success" | "warning" | "danger" }> = {
+  running: {
+    chip: "border-emerald-500/25 bg-emerald-500/10 text-emerald-200",
+    dot: "bg-emerald-400",
+    tone: "success",
+  },
+  restarting: {
+    chip: "border-amber-500/25 bg-amber-500/10 text-amber-100",
+    dot: "bg-amber-400",
+    tone: "warning",
+  },
+  exited: {
+    chip: "border-red-500/25 bg-red-500/10 text-red-100",
+    dot: "bg-red-400",
+    tone: "danger",
+  },
+  dead: {
+    chip: "border-red-500/25 bg-red-500/10 text-red-100",
+    dot: "bg-red-400",
+    tone: "danger",
+  },
+};
+
+function getServiceUrl(name: string) {
+  return SERVICE_URLS[name];
 }
 
-function stateBg(state: string): string {
-  if (state === "running") return "bg-green-500";
-  if (state === "restarting") return "bg-yellow-500";
-  return "bg-red-500";
+function serviceHostname(name: string) {
+  const url = getServiceUrl(name);
+  if (!url) return null;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
+function displayImage(image: string) {
+  return image.split("@")[0] || image;
+}
+
+function formatLogTimestamp(line: string) {
+  const tsMatch = line.match(/^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^ ]*)\s*/);
+  if (tsMatch?.[1]) {
+    const date = new Date(tsMatch[1]);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    }
+    return tsMatch[1];
+  }
+
+  const goTsMatch = line.match(/time="([^"]+)"/);
+  if (goTsMatch?.[1]) {
+    const date = new Date(goTsMatch[1]);
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      });
+    }
+    return goTsMatch[1];
+  }
+
+  return "";
+}
+
+function stateMeta(state: string) {
+  return STATE_STYLES[state] ?? {
+    chip: "border-white/10 bg-white/[0.04] text-white/60",
+    dot: "bg-white/35",
+    tone: "default" as const,
+  };
+}
+
+function StackLogLine({ line }: { line: string }) {
+  const timestamp = formatLogTimestamp(line);
+
+  return (
+    <div className="flex gap-3 rounded-sm px-2 py-1 font-mono text-[11px] text-white/60 hover:bg-white/[0.03]">
+      {timestamp ? <span className="w-[78px] shrink-0 text-white/20 tabular-nums">{timestamp}</span> : null}
+      <span className="min-w-0 flex-1 break-all">{line}</span>
+    </div>
+  );
+}
+
+function ServiceCard({
+  container,
+  expanded,
+  logs,
+  logsLoading,
+  busy,
+  onToggleLogs,
+  onRestart,
+  onToggleState,
+}: {
+  container: Container;
+  expanded: boolean;
+  logs: ContainerLogs | null;
+  logsLoading: boolean;
+  busy: boolean;
+  onToggleLogs: () => void;
+  onRestart: () => void;
+  onToggleState: () => void;
+}) {
+  const isRunning = container.state === "running";
+  const serviceUrl = getServiceUrl(container.name);
+  const hostname = serviceHostname(container.name);
+  const state = stateMeta(container.state);
+
+  return (
+    <div className="overflow-hidden rounded-md border border-white/8 bg-black/20 shadow-[0_16px_36px_rgba(0,0,0,0.16)]">
+      <div className="space-y-4 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-base font-semibold tracking-tight text-white">{container.name}</span>
+              <CrateChip className={state.chip}>
+                <span className={cn("h-2 w-2 rounded-full", state.dot)} />
+                {container.state}
+              </CrateChip>
+              {hostname ? <CrateChip>{hostname}</CrateChip> : null}
+            </div>
+            <div className="text-sm text-white/40">{displayImage(container.image)}</div>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <ActionIconButton variant="card" onClick={onToggleLogs} title={expanded ? "Hide logs" : "Show logs"}>
+              <ScrollText size={15} />
+            </ActionIconButton>
+            <ActionIconButton
+              variant="card"
+              tone={isRunning ? "danger" : "primary"}
+              onClick={onToggleState}
+              disabled={busy}
+              title={isRunning ? "Stop service" : "Start service"}
+            >
+              {busy ? <Loader2 size={15} className="animate-spin" /> : isRunning ? <Square size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+            </ActionIconButton>
+            <ActionIconButton
+              variant="card"
+              tone="default"
+              onClick={onRestart}
+              disabled={busy || !isRunning}
+              title="Restart service"
+            >
+              <RotateCcw size={15} />
+            </ActionIconButton>
+            {serviceUrl ? (
+              <a
+                href={serviceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 bg-black/55 text-white/45 shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md transition-colors hover:bg-black/70 hover:text-white"
+                title="Open service"
+              >
+                <ExternalLink size={15} />
+              </a>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-sm border border-white/6 bg-black/15 p-3">
+            <div className="text-[10px] uppercase tracking-[0.12em] text-white/30">Status</div>
+            <div className="mt-1 text-sm font-medium text-white/85">{container.status}</div>
+          </div>
+          <div className="rounded-sm border border-white/6 bg-black/15 p-3">
+            <div className="text-[10px] uppercase tracking-[0.12em] text-white/30">Ports</div>
+            <div className="mt-1 text-sm font-medium text-white/85">{container.ports.length > 0 ? container.ports.join(", ") : "No exposed ports"}</div>
+          </div>
+          <div className="rounded-sm border border-white/6 bg-black/15 p-3">
+            <div className="text-[10px] uppercase tracking-[0.12em] text-white/30">Public route</div>
+            <div className="mt-1 text-sm font-medium text-white/85">{hostname ?? "Internal only"}</div>
+          </div>
+        </div>
+      </div>
+
+      {expanded ? (
+        <div className="border-t border-white/8 bg-[#06080c] px-4 py-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-medium text-white">Recent logs</div>
+            <CrateChip>{container.name}</CrateChip>
+          </div>
+          {logsLoading ? (
+            <div className="flex items-center gap-2 py-6 text-sm text-white/45">
+              <Loader2 size={14} className="animate-spin text-primary" />
+              Loading service logs…
+            </div>
+          ) : logs?.logs ? (
+            <div className="max-h-[320px] overflow-y-auto rounded-sm border border-white/6 bg-black/20 py-2">
+              {logs.logs.split("\n").filter(Boolean).map((line, index) => (
+                <StackLogLine key={`${container.name}-${index}`} line={line} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-6 text-sm text-white/35">
+              No logs available for this service.
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function Stack() {
   const [data, setData] = useState<StackStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<ServiceFilter>("all");
   const [restartTarget, setRestartTarget] = useState<string | null>(null);
   const [restarting, setRestarting] = useState<Set<string>>(new Set());
   const [expandedLogs, setExpandedLogs] = useState<string | null>(null);
   const [logs, setLogs] = useState<ContainerLogs | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
 
-  const fetchStatus = useCallback(async () => {
+  const fetchStatus = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const d = await api<StackStatus>("/api/stack/status");
-      setData(d);
+      const response = await api<StackStatus>("/api/stack/status");
+      setData(response);
+      setError(null);
     } catch {
+      setError("Failed to load Docker stack status");
       setData({ available: false, total: 0, running: 0, containers: [] });
     } finally {
       setLoading(false);
@@ -78,40 +293,40 @@ export function Stack() {
 
   useEffect(() => {
     fetchStatus();
-    const timer = setInterval(fetchStatus, 15000);
+    const timer = setInterval(() => fetchStatus(true), 15000);
     return () => clearInterval(timer);
   }, [fetchStatus]);
 
   async function handleRestart(name: string) {
     setRestartTarget(null);
-    setRestarting((s) => new Set(s).add(name));
+    setRestarting((current) => new Set(current).add(name));
     try {
       await api(`/api/stack/container/${name}/restart`, "POST");
-      toast.success(`Restarting ${name}...`);
-      setTimeout(fetchStatus, 3000);
+      toast.success(`Restarting ${name}…`);
+      setTimeout(() => fetchStatus(true), 2500);
     } catch {
       toast.error(`Failed to restart ${name}`);
     } finally {
-      setRestarting((s) => {
-        const next = new Set(s);
+      setRestarting((current) => {
+        const next = new Set(current);
         next.delete(name);
         return next;
       });
     }
   }
 
-  async function handleToggle(name: string, currentState: string) {
-    setRestarting((s) => new Set(s).add(name));
+  async function handleToggleState(name: string, currentState: string) {
     const action = currentState === "running" ? "stop" : "start";
+    setRestarting((current) => new Set(current).add(name));
     try {
       await api(`/api/stack/container/${name}/${action}`, "POST");
-      toast.success(`${action === "stop" ? "Stopping" : "Starting"} ${name}...`);
-      setTimeout(fetchStatus, 2000);
+      toast.success(`${action === "stop" ? "Stopping" : "Starting"} ${name}…`);
+      setTimeout(() => fetchStatus(true), 2000);
     } catch {
       toast.error(`Failed to ${action} ${name}`);
     } finally {
-      setRestarting((s) => {
-        const next = new Set(s);
+      setRestarting((current) => {
+        const next = new Set(current);
         next.delete(name);
         return next;
       });
@@ -124,311 +339,154 @@ export function Stack() {
       setLogs(null);
       return;
     }
+
     setExpandedLogs(name);
     setLogsLoading(true);
     try {
-      const d = await api<ContainerLogs>(`/api/stack/container/${name}/logs?tail=30`);
-      setLogs(d);
+      const response = await api<ContainerLogs>(`/api/stack/container/${name}/logs?tail=30`);
+      setLogs(response);
     } catch {
-      setLogs({ name, logs: "Failed to load logs" });
+      setLogs({ name, logs: "" });
     } finally {
       setLogsLoading(false);
     }
   }
 
-  const running = data?.containers.filter((c) => c.state === "running") ?? [];
-  const stopped = data?.containers.filter((c) => c.state !== "running") ?? [];
+  const filteredContainers = useMemo(() => {
+    const containers = data?.containers ?? [];
+    const normalized = search.trim().toLowerCase();
+
+    return containers.filter((container) => {
+      if (filter === "running" && container.state !== "running") return false;
+      if (filter === "stopped" && container.state === "running") return false;
+      if (!normalized) return true;
+      const haystack = `${container.name} ${container.image} ${container.status} ${container.ports.join(" ")}`.toLowerCase();
+      return haystack.includes(normalized);
+    }).sort((a, b) => {
+      if (a.state === "running" && b.state !== "running") return -1;
+      if (a.state !== "running" && b.state === "running") return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [data?.containers, filter, search]);
+
+  const publicRoutes = useMemo(
+    () => (data?.containers ?? []).filter((container) => Boolean(getServiceUrl(container.name))).length,
+    [data?.containers],
+  );
+
+  if (loading && !data) {
+    return (
+      <div className="flex justify-center py-16 text-white/45">
+        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error && !data) {
+    return <ErrorState message={error} onRetry={() => fetchStatus()} />;
+  }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <Server size={24} className="text-primary" />
-          <h1 className="text-2xl font-bold">Crate Stack</h1>
-        </div>
-        <Button variant="outline" size="sm" onClick={fetchStatus}>
-          <RefreshCw size={14} className="mr-1" /> Refresh
-        </Button>
-      </div>
+    <div className="space-y-6">
+      <OpsPageHero
+        icon={Server}
+        title="Stack"
+        description="Managed Docker services, their runtime state, and the quickest path to logs or restart when the platform starts wobbling."
+        actions={
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchStatus()}>
+            <RefreshCw size={14} />
+            Refresh
+          </Button>
+        }
+      >
+        <CratePill active icon={Server}>{data?.running ?? 0}/{data?.total ?? 0} running</CratePill>
+        <CratePill icon={Wifi}>{publicRoutes} public routes</CratePill>
+        <CratePill>{data?.available ? "Docker available" : "Docker unavailable"}</CratePill>
+      </OpsPageHero>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-16 text-muted-foreground">
-          <Loader2 className="animate-spin mr-2" /> Loading stack status...
-        </div>
-      ) : !data?.available ? (
-        <Card className="bg-card">
-          <CardContent className="py-8 text-center text-muted-foreground">
-            Docker socket not available. Mount /var/run/docker.sock in the API container.
-          </CardContent>
-        </Card>
+      {!data?.available ? (
+        <OpsPanel
+          icon={AlertTriangle}
+          title="Docker not available"
+          description="The API container cannot see the Docker socket, so stack inspection and service controls are disabled."
+        >
+          <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-8 text-center text-sm text-white/35">
+            Mount <code className="rounded-sm bg-white/[0.05] px-1.5 py-0.5 text-white/65">/var/run/docker.sock</code> into the API container to restore stack operations.
+          </div>
+        </OpsPanel>
       ) : (
         <>
-          {/* Summary */}
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <Card className="bg-card border-l-4 border-l-green-500">
-              <CardContent className="pt-6">
-                <div className="text-2xl font-bold">{data.running}</div>
-                <div className="text-xs text-muted-foreground">Running</div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card border-l-4 border-l-red-500">
-              <CardContent className="pt-6">
-                <div className="text-2xl font-bold">{data.total - data.running}</div>
-                <div className="text-xs text-muted-foreground">Stopped</div>
-              </CardContent>
-            </Card>
-            <Card className="bg-card border-l-4 border-l-blue-500">
-              <CardContent className="pt-6">
-                <div className="text-2xl font-bold">{data.total}</div>
-                <div className="text-xs text-muted-foreground">Total</div>
-              </CardContent>
-            </Card>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <OpsStatTile icon={Server} label="Running services" value={(data?.running ?? 0).toLocaleString()} caption={`${data?.total ?? 0} managed containers`} tone={(data?.running ?? 0) > 0 ? "success" : "default"} />
+            <OpsStatTile icon={Square} label="Stopped services" value={((data?.total ?? 0) - (data?.running ?? 0)).toLocaleString()} caption="Exited or unavailable containers" tone={((data?.total ?? 0) - (data?.running ?? 0)) > 0 ? "warning" : "default"} />
+            <OpsStatTile icon={ExternalLink} label="Public routes" value={publicRoutes.toLocaleString()} caption="Services with an external URL shortcut" />
+            <OpsStatTile icon={Package} label="Visible services" value={filteredContainers.length.toLocaleString()} caption="Current filtered result set" />
           </div>
 
-          {/* Running containers */}
-          <div className="space-y-2 mb-8">
-            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-              Running ({running.length})
-            </h2>
-            {running.map((c) => (
-              <ContainerRow
-                key={c.id}
-                container={c}
-                isRestarting={restarting.has(c.name)}
-                isLogsExpanded={expandedLogs === c.name}
-                logs={expandedLogs === c.name ? logs : null}
-                logsLoading={expandedLogs === c.name && logsLoading}
-                onRestart={() => setRestartTarget(c.name)}
-                onToggleState={() => handleToggle(c.name, c.state)}
-                onToggleLogs={() => toggleLogs(c.name)}
-              />
-            ))}
-          </div>
-
-          {/* Stopped containers */}
-          {stopped.length > 0 && (
-            <div className="space-y-2">
-              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                Stopped ({stopped.length})
-              </h2>
-              {stopped.map((c) => (
-                <ContainerRow
-                  key={c.id}
-                  container={c}
-                  isRestarting={restarting.has(c.name)}
-                  isLogsExpanded={expandedLogs === c.name}
-                  logs={expandedLogs === c.name ? logs : null}
-                  logsLoading={expandedLogs === c.name && logsLoading}
-                  onRestart={() => setRestartTarget(c.name)}
-                  onToggleState={() => handleToggle(c.name, c.state)}
-                  onToggleLogs={() => toggleLogs(c.name)}
+          <OpsPanel
+            icon={Search}
+            title="Service filters"
+            description="Trim the board by runtime state or by service name, image and port text."
+          >
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="relative flex-1 min-w-[240px]">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search services, images or ports..."
+                  className="pl-9"
                 />
-              ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <CratePill active={filter === "all"} onClick={() => setFilter("all")}>All</CratePill>
+                <CratePill active={filter === "running"} onClick={() => setFilter("running")}>Running</CratePill>
+                <CratePill active={filter === "stopped"} onClick={() => setFilter("stopped")}>Stopped</CratePill>
+              </div>
             </div>
-          )}
+          </OpsPanel>
+
+          <OpsPanel
+            icon={Server}
+            title="Services"
+            description="Service cards keep control actions close to state, while logs expand inline only when you need more detail."
+          >
+            {filteredContainers.length > 0 ? (
+              <div className="grid gap-4 xl:grid-cols-2">
+                {filteredContainers.map((container) => (
+                  <ServiceCard
+                    key={container.id}
+                    container={container}
+                    expanded={expandedLogs === container.name}
+                    logs={expandedLogs === container.name ? logs : null}
+                    logsLoading={expandedLogs === container.name && logsLoading}
+                    busy={restarting.has(container.name)}
+                    onToggleLogs={() => toggleLogs(container.name)}
+                    onRestart={() => setRestartTarget(container.name)}
+                    onToggleState={() => handleToggleState(container.name, container.state)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-sm border border-dashed border-white/10 bg-black/15 px-4 py-8 text-center text-sm text-white/35">
+                No services match the current filters.
+              </div>
+            )}
+          </OpsPanel>
         </>
       )}
 
       <ConfirmDialog
         open={restartTarget !== null}
-        onOpenChange={(open) => { if (!open) setRestartTarget(null); }}
-        title="Restart Container"
-        description={`Are you sure you want to restart ${restartTarget}?`}
+        onOpenChange={(open) => {
+          if (!open) setRestartTarget(null);
+        }}
+        title="Restart service"
+        description={`Restart ${restartTarget}? This interrupts the container and may briefly affect admin or listener traffic.`}
         confirmLabel="Restart"
         variant="destructive"
         onConfirm={() => restartTarget && handleRestart(restartTarget)}
       />
     </div>
   );
-}
-
-function ContainerRow({
-  container: c,
-  isRestarting,
-  isLogsExpanded,
-  logs,
-  logsLoading,
-  onRestart,
-  onToggleState,
-  onToggleLogs,
-}: {
-  container: Container;
-  isRestarting: boolean;
-  isLogsExpanded: boolean;
-  logs: ContainerLogs | null;
-  logsLoading: boolean;
-  onRestart: () => void;
-  onToggleState: () => void;
-  onToggleLogs: () => void;
-}) {
-  const isRunning = c.state === "running";
-  const serviceUrl = SERVICE_URLS[c.name];
-
-  return (
-    <div className="border border-border rounded-md bg-card overflow-hidden">
-      <div className="flex items-center gap-4 px-4 py-3">
-        {/* Status dot */}
-        <div className={`w-2.5 h-2.5 rounded-md ${stateBg(c.state)} flex-shrink-0`} />
-
-        {/* Name + image */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm">{c.name}</span>
-            {serviceUrl && (
-              <a
-                href={serviceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] text-primary hover:underline"
-              >
-                {new URL(serviceUrl).hostname}
-              </a>
-            )}
-          </div>
-          <div className="text-xs text-muted-foreground truncate">
-            {c.image.split("@")[0]}
-          </div>
-        </div>
-
-        {/* Status */}
-        <div className="text-right flex-shrink-0">
-          <Badge variant="outline" className={`text-[10px] ${stateColor(c.state)}`}>
-            {c.status}
-          </Badge>
-        </div>
-
-        {/* Ports */}
-        {c.ports.length > 0 && (
-          <div className="text-xs text-muted-foreground flex-shrink-0 hidden sm:block">
-            {c.ports.join(", ")}
-          </div>
-        )}
-
-        {/* Actions */}
-        <div className="flex gap-1 flex-shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onToggleLogs}
-            title="Logs"
-          >
-            {isLogsExpanded ? <ChevronUp size={14} /> : <ScrollText size={14} />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={`h-7 w-7 ${isRunning ? "text-muted-foreground hover:text-red-500" : "text-muted-foreground hover:text-green-500"}`}
-            onClick={onToggleState}
-            disabled={isRestarting}
-            title={isRunning ? "Stop" : "Start"}
-          >
-            {isRestarting ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : isRunning ? (
-              <Square size={14} fill="currentColor" />
-            ) : (
-              <Play size={14} fill="currentColor" />
-            )}
-          </Button>
-          {isRunning && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-yellow-500"
-              onClick={onRestart}
-              disabled={isRestarting}
-              title="Restart"
-            >
-              <RefreshCw size={14} />
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Expanded logs */}
-      {isLogsExpanded && (
-        <div className="border-t border-border bg-[#060608] px-4 py-3 max-h-[350px] overflow-auto scroll-smooth">
-          {logsLoading ? (
-            <div className="text-xs text-muted-foreground flex items-center gap-2 py-4">
-              <Loader2 size={12} className="animate-spin" /> Loading logs...
-            </div>
-          ) : logs?.logs ? (
-            <div className="font-mono text-[11px] leading-[1.7] space-y-px">
-              {logs.logs.split("\n").filter(Boolean).map((line, i) => (
-                <LogLine key={i} line={line} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-xs text-muted-foreground py-4">No logs available</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const LOG_LEVEL_COLORS: Record<string, string> = {
-  error: "text-red-400",
-  fatal: "text-red-400",
-  warn: "text-yellow-400",
-  warning: "text-yellow-400",
-  info: "text-blue-400",
-  debug: "text-white/30",
-  trace: "text-white/20",
-};
-
-function LogLine({ line }: { line: string }) {
-  const tsMatch = line.match(/^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^ ]*)\s*/);
-  const goTsMatch = !tsMatch ? line.match(/^(time="[^"]+")/) : null;
-
-  const levelMatch = line.match(/\b(?:level=|\[)(error|fatal|warn(?:ing)?|info|debug|trace)\b/i);
-  const level = levelMatch?.[1]?.toLowerCase() ?? null;
-  const levelColor = (level && LOG_LEVEL_COLORS[level]) || "text-white/50";
-
-  let timestamp = "";
-  let rest = line;
-
-  if (tsMatch) {
-    timestamp = tsMatch[1] ?? "";
-    rest = line.slice(tsMatch[0]?.length ?? 0);
-  } else if (goTsMatch) {
-    const inner = goTsMatch[1]?.match(/time="([^"]+)"/);
-    timestamp = inner?.[1] ?? goTsMatch[1] ?? "";
-    rest = line.slice(goTsMatch[0]?.length ?? 0);
-  }
-
-  const parts = rest.split(/((?:msg|method|status|path|elapsed|count|error|client|username|requestId)="[^"]*"|(?:msg|method|status|path|elapsed|count|error)=[^\s]+)/g);
-
-  return (
-    <div className={`flex gap-0 py-px hover:bg-white/[0.02] rounded px-1 ${level === "error" || level === "fatal" ? "bg-red-500/5" : ""}`}>
-      {timestamp && (
-        <span className="text-white/20 flex-shrink-0 w-[80px] mr-3 select-none tabular-nums">{formatLogTs(timestamp)}</span>
-      )}
-      {level && (
-        <span className={`flex-shrink-0 w-[40px] mr-2 font-semibold uppercase text-[10px] leading-[1.7] ${levelColor}`}>
-          {level.slice(0, 5)}
-        </span>
-      )}
-      <span className={`flex-1 break-all ${level === "debug" || level === "trace" ? "text-white/30" : "text-white/60"}`}>
-        {parts.map((part, i) =>
-          i % 2 === 1 ? (
-            <span key={i} className="text-primary/60">{part}</span>
-          ) : (
-            <span key={i}>{part}</span>
-          )
-        )}
-      </span>
-    </div>
-  );
-}
-
-function formatLogTs(ts: string): string {
-  try {
-    const d = new Date(ts);
-    if (isNaN(d.getTime())) return ts.slice(11, 19);
-    return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  } catch {
-    return ts;
-  }
 }

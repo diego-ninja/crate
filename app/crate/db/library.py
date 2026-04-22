@@ -55,12 +55,13 @@ def get_library_artist_by_id(artist_id: int) -> dict | None:
     return _row_to_lib_artist(row) if row else None
 
 
-def get_library_albums(artist: str) -> list[dict]:
+def get_library_albums(artist: str, include_quarantined: bool = False) -> list[dict]:
+    q = "SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(:artist)"
+    if not include_quarantined:
+        q += " AND quarantined_at IS NULL"
+    q += " ORDER BY year, name"
     with transaction_scope() as session:
-        rows = session.execute(
-            text("SELECT * FROM library_albums WHERE LOWER(artist) = LOWER(:artist) ORDER BY year, name"),
-            {"artist": artist},
-        ).mappings().all()
+        rows = session.execute(text(q), {"artist": artist}).mappings().all()
     return [_row_to_lib_album(r) for r in rows]
 
 
@@ -77,6 +78,46 @@ def get_library_album_by_id(album_id: int) -> dict | None:
     with transaction_scope() as session:
         row = session.execute(text("SELECT * FROM library_albums WHERE id = :album_id"), {"album_id": album_id}).mappings().first()
     return _row_to_lib_album(row) if row else None
+
+
+def quarantine_album(album_id: int, task_id: str) -> bool:
+    """Mark an album as quarantined (hidden from browse, pending upgrade replacement)."""
+    with transaction_scope() as session:
+        result = session.execute(
+            text("UPDATE library_albums SET quarantined_at = NOW(), quarantine_task_id = :task_id WHERE id = :id AND quarantined_at IS NULL"),
+            {"id": album_id, "task_id": task_id},
+        )
+    return result.rowcount > 0
+
+
+def unquarantine_album(album_id: int) -> bool:
+    """Restore a quarantined album (e.g. if upgrade failed)."""
+    with transaction_scope() as session:
+        result = session.execute(
+            text("UPDATE library_albums SET quarantined_at = NULL, quarantine_task_id = NULL WHERE id = :id"),
+            {"id": album_id},
+        )
+    return result.rowcount > 0
+
+
+def delete_quarantined_album(album_id: int) -> dict | None:
+    """Delete a quarantined album's DB records. Returns album info.
+
+    Does NOT delete files — the new download may have landed in the same
+    directory. File cleanup happens organically via library_sync detecting
+    orphaned directories.
+    """
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT id, path, artist FROM library_albums WHERE id = :id AND quarantined_at IS NOT NULL"),
+            {"id": album_id},
+        ).mappings().first()
+        if not row:
+            return None
+        album = dict(row)
+        session.execute(text("DELETE FROM library_tracks WHERE album_id = :id"), {"id": album_id})
+        session.execute(text("DELETE FROM library_albums WHERE id = :id"), {"id": album_id})
+    return album
 
 
 def get_library_track_by_id(track_id: int) -> dict | None:

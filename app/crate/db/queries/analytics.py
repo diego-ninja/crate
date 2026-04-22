@@ -203,11 +203,19 @@ def get_artist_audio_by_album(artist_name: str) -> list[dict]:
 def get_artist_top_tracks(artist_name: str, limit: int = 10) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(text("""
-            SELECT t.title, t.album, t.duration, t.popularity, t.lastfm_listeners, t.bpm, t.energy
+            SELECT
+                t.title,
+                t.album,
+                t.duration,
+                t.popularity,
+                t.popularity_score,
+                t.lastfm_listeners,
+                t.bpm,
+                t.energy
             FROM library_tracks t
             JOIN library_albums a ON t.album_id = a.id
-            WHERE a.artist = :artist_name AND t.popularity IS NOT NULL
-            ORDER BY t.popularity DESC LIMIT 10
+            WHERE a.artist = :artist_name AND (t.popularity_score IS NOT NULL OR t.popularity IS NOT NULL)
+            ORDER BY t.popularity_score DESC NULLS LAST, t.popularity DESC NULLS LAST LIMIT 10
         """), {"artist_name": artist_name}).mappings().all()
         return [dict(r) for r in rows]
 
@@ -232,14 +240,6 @@ def get_insights_countries() -> dict[str, int]:
             GROUP BY country ORDER BY cnt DESC
         """)).mappings().all()
         return {r["country"]: r["cnt"] for r in rows}
-
-
-def get_insights_formation_years() -> list[dict]:
-    with transaction_scope() as session:
-        rows = session.execute(text("""
-            SELECT formed FROM library_artists WHERE formed IS NOT NULL AND formed != ''
-        """)).mappings().all()
-        return [dict(r) for r in rows]
 
 
 def get_insights_bpm_distribution() -> list[dict]:
@@ -313,46 +313,37 @@ def get_insights_top_genres(limit: int = 20) -> list[dict]:
         return [{"genre": r["name"], "artists": r["artists"], "albums": r["albums"]} for r in rows]
 
 
-def get_insights_similar_network() -> tuple[list[dict], list[dict]]:
-    with transaction_scope() as session:
-        rows = session.execute(text("""
-            SELECT name, similar_json, listeners, spotify_popularity
-            FROM library_artists WHERE similar_json IS NOT NULL
-        """)).mappings().all()
-        network_nodes = []
-        network_links = []
-        artist_set = set()
-        for r in rows:
-            name = r["name"]
-            similar = r["similar_json"]
-            if isinstance(similar, str):
-                similar = json.loads(similar) if similar else []
-            if not similar:
-                continue
-            artist_set.add(name)
-            for s in similar[:10]:
-                s_name = s.get("name", "") if isinstance(s, dict) else str(s)
-                if s_name:
-                    artist_set.add(s_name)
-                    network_links.append({"source": name, "target": s_name})
-        for a in artist_set:
-            network_nodes.append({"id": a})
-        return network_nodes, network_links
-
-
 def get_insights_popularity(limit: int = 20) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(text("""
-            SELECT name, spotify_popularity, listeners
-            FROM library_artists
-            WHERE (spotify_popularity IS NOT NULL AND spotify_popularity > 0)
-               OR (listeners IS NOT NULL AND listeners > 0)
-            ORDER BY COALESCE(spotify_popularity, 0) DESC, COALESCE(listeners, 0) DESC
+            SELECT
+                la.name,
+                la.popularity,
+                la.popularity_score,
+                la.listeners,
+                COUNT(DISTINCT alb.id) AS albums
+            FROM library_artists la
+            LEFT JOIN library_albums alb ON alb.artist = la.name
+            WHERE (la.popularity_score IS NOT NULL AND la.popularity_score > 0)
+               OR (la.popularity IS NOT NULL AND la.popularity > 0)
+               OR (la.listeners IS NOT NULL AND la.listeners > 0)
+            GROUP BY la.id, la.name, la.popularity, la.popularity_score, la.listeners
+            ORDER BY la.popularity_score DESC NULLS LAST, la.popularity DESC NULLS LAST, la.listeners DESC NULLS LAST
             LIMIT 20
         """)).mappings().all()
-        return [{"artist": r["name"],
-                 "popularity": r["spotify_popularity"] or (min(100, (r["listeners"] or 0) // 10000)),
-                 "listeners": r["listeners"] or 0} for r in rows]
+        results = []
+        for row in rows:
+            popularity_score = row.get("popularity_score")
+            popularity = row.get("popularity")
+            listeners = row.get("listeners") or 0
+            results.append({
+                "artist": row["name"],
+                "popularity": popularity if popularity is not None else min(100, listeners // 10000),
+                "popularity_score": round(popularity_score, 4) if popularity_score is not None else None,
+                "listeners": listeners,
+                "albums": row.get("albums") or 0,
+            })
+        return results
 
 
 def get_insights_albums_by_year() -> list[dict]:
@@ -364,21 +355,34 @@ def get_insights_albums_by_year() -> list[dict]:
         return [dict(r) for r in rows]
 
 
-def get_insights_completeness() -> dict:
+def get_insights_feature_coverage() -> list[dict]:
     with transaction_scope() as session:
-        completeness_row = session.execute(text("SELECT COUNT(*) AS total, SUM(CASE WHEN has_photo = 1 THEN 1 ELSE 0 END) AS with_photo, SUM(CASE WHEN enriched_at IS NOT NULL THEN 1 ELSE 0 END) AS enriched FROM library_artists")).mappings().first()
-        cover_row = session.execute(text("SELECT COUNT(*) AS total, SUM(CASE WHEN has_cover = 1 THEN 1 ELSE 0 END) AS with_cover FROM library_albums")).mappings().first()
-        analysis_row = session.execute(text("SELECT COUNT(*) AS total, SUM(CASE WHEN bpm IS NOT NULL THEN 1 ELSE 0 END) AS analyzed FROM library_tracks")).mappings().first()
+        row = session.execute(text("""
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN bpm IS NOT NULL THEN 1 ELSE 0 END) AS bpm,
+                SUM(CASE WHEN audio_key IS NOT NULL AND audio_key != '' THEN 1 ELSE 0 END) AS musical_key,
+                SUM(CASE WHEN energy IS NOT NULL THEN 1 ELSE 0 END) AS energy,
+                SUM(CASE WHEN danceability IS NOT NULL THEN 1 ELSE 0 END) AS danceability,
+                SUM(CASE WHEN acousticness IS NOT NULL THEN 1 ELSE 0 END) AS acousticness,
+                SUM(CASE WHEN instrumentalness IS NOT NULL THEN 1 ELSE 0 END) AS instrumentalness,
+                SUM(CASE WHEN mood_json IS NOT NULL AND mood_json::text != '{}' THEN 1 ELSE 0 END) AS mood,
+                SUM(CASE WHEN bliss_vector IS NOT NULL THEN 1 ELSE 0 END) AS bliss
+            FROM library_tracks
+        """)).mappings().first()
 
-        return {
-            "artists_total": completeness_row["total"],
-            "artists_with_photo": completeness_row["with_photo"],
-            "artists_enriched": completeness_row["enriched"],
-            "albums_total": cover_row["total"],
-            "albums_with_cover": cover_row["with_cover"],
-            "tracks_total": analysis_row["total"],
-            "tracks_analyzed": analysis_row["analyzed"],
-        }
+        total = int((row or {}).get("total") or 0)
+        features = [
+            ("BPM", int((row or {}).get("bpm") or 0)),
+            ("Key", int((row or {}).get("musical_key") or 0)),
+            ("Energy", int((row or {}).get("energy") or 0)),
+            ("Danceability", int((row or {}).get("danceability") or 0)),
+            ("Acousticness", int((row or {}).get("acousticness") or 0)),
+            ("Instrumentalness", int((row or {}).get("instrumentalness") or 0)),
+            ("Mood", int((row or {}).get("mood") or 0)),
+            ("Bliss", int((row or {}).get("bliss") or 0)),
+        ]
+        return [{"feature": feature, "value": value, "total": total} for feature, value in features]
 
 
 def get_insights_mood_distribution() -> list[dict]:
@@ -412,11 +416,13 @@ def get_insights_loudness_distribution() -> list[dict]:
 def get_insights_top_albums(limit: int = 20) -> list[dict]:
     with transaction_scope() as session:
         rows = session.execute(text("""
-            SELECT name, artist, lastfm_listeners, popularity, year
+            SELECT name, artist, lastfm_listeners, popularity, popularity_score, year
             FROM library_albums
-            WHERE lastfm_listeners IS NOT NULL AND lastfm_listeners > 0
-            ORDER BY lastfm_listeners DESC LIMIT 20
-        """)).mappings().all()
+            WHERE (popularity_score IS NOT NULL AND popularity_score > 0)
+               OR (lastfm_listeners IS NOT NULL AND lastfm_listeners > 0)
+            ORDER BY popularity_score DESC NULLS LAST, lastfm_listeners DESC NULLS LAST
+            LIMIT :limit
+        """), {"limit": limit}).mappings().all()
         return [dict(r) for r in rows]
 
 
@@ -430,3 +436,38 @@ def get_insights_acoustic_instrumental(limit: int = 500) -> list[dict]:
         """)).mappings().all()
         return [{"x": round(r["acousticness"], 2), "y": round(r["instrumentalness"], 2),
                  "artist": r["artist"], "title": r["title"]} for r in rows]
+
+
+def get_insights_artist_depth(limit: int = 120) -> list[dict]:
+    with transaction_scope() as session:
+        rows = session.execute(text("""
+            SELECT
+                la.name,
+                la.popularity,
+                la.popularity_score,
+                la.listeners,
+                COUNT(DISTINCT alb.id) AS albums,
+                COUNT(DISTINCT t.id) AS tracks
+            FROM library_artists la
+            LEFT JOIN library_albums alb ON alb.artist = la.name
+            LEFT JOIN library_tracks t ON t.album_id = alb.id
+            GROUP BY la.id, la.name, la.popularity, la.popularity_score, la.listeners
+            HAVING COUNT(DISTINCT alb.id) > 0
+            ORDER BY la.popularity_score DESC NULLS LAST, la.popularity DESC NULLS LAST, la.listeners DESC NULLS LAST
+            LIMIT :limit
+        """), {"limit": limit}).mappings().all()
+
+        results = []
+        for row in rows:
+            popularity_score = row.get("popularity_score")
+            popularity = row.get("popularity")
+            listeners = row.get("listeners") or 0
+            results.append({
+                "artist": row["name"],
+                "popularity": popularity if popularity is not None else min(100, listeners // 10000),
+                "popularity_score": round(popularity_score, 4) if popularity_score is not None else None,
+                "listeners": listeners,
+                "albums": row.get("albums") or 0,
+                "tracks": row.get("tracks") or 0,
+            })
+        return results

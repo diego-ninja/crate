@@ -6,7 +6,7 @@ import { SimilarTracksPanel } from "@/components/track/SimilarTracksPanel";
 import { StarRating } from "@/components/ui/star-rating";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CrateChip } from "@/components/ui/CrateBadge";
+
 import {
   Table,
   TableHeader,
@@ -31,7 +31,12 @@ interface Track {
   format: string;
   size_mb: number;
   bitrate: number | null;
+  sample_rate?: number | null;
+  bit_depth?: number | null;
   length_sec: number;
+  popularity?: number | null;
+  popularity_score?: number | null;
+  popularity_confidence?: number | null;
   rating?: number;
   tags: Record<string, string>;
   path?: string;
@@ -73,6 +78,49 @@ function EnergyBar({ value }: { value: number }) {
       </div>
       <span className="w-7 text-right font-mono text-xs text-muted-foreground">{Math.round(pct * 100)}</span>
     </div>
+  );
+}
+
+function PopularityBar({
+  score,
+  confidence,
+}: {
+  score: number | null | undefined;
+  confidence: number | null | undefined;
+}) {
+  if (score == null || score <= 0) return null;
+  const pct = Math.max(0, Math.min(1, score));
+  const confidencePct = Math.max(0, Math.min(1, confidence ?? 0));
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className="flex min-w-[104px] items-center gap-2">
+            <div className="h-1.5 w-14 overflow-hidden rounded-md bg-primary/10">
+              <div
+                className="h-full rounded-md bg-primary"
+                style={{ width: `${pct * 100}%`, opacity: 0.45 + confidencePct * 0.45 }}
+              />
+            </div>
+            <span className="w-8 text-right font-mono text-xs text-muted-foreground">
+              {Math.round(pct * 100)}
+            </span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent
+          side="top"
+          className="border border-white/10 bg-popover-surface text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.34)] backdrop-blur-xl"
+        >
+          <div className="space-y-1 text-xs">
+            <div>Popularity {Math.round(pct * 100)}%</div>
+            {confidence != null ? (
+              <div className="text-white/60">Confidence {Math.round(confidencePct * 100)}%</div>
+            ) : null}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }
 
@@ -237,6 +285,7 @@ export function TrackTable({
             <TableHead>Format</TableHead>
             <TableHead>Bitrate</TableHead>
             <TableHead>Duration</TableHead>
+            <TableHead>Popularity</TableHead>
             <TableHead className="w-28">Rating</TableHead>
             <TableHead>Size</TableHead>
             {hasAnalysis ? <TableHead>BPM</TableHead> : null}
@@ -280,13 +329,35 @@ export function TrackTable({
                     </div>
                   </TableCell>
                   <TableCell>
-                    <CrateChip>{track.format.replace(".", "").toUpperCase()}</CrateChip>
+                    {(() => {
+                      const fmt = track.format.replace(".", "").toLowerCase();
+                      const fmtUp = fmt.toUpperCase();
+                      const isLossless = ["flac", "alac", "wav", "aiff"].includes(fmt);
+                      const depth = track.bit_depth || 16;
+                      const rateKhz = track.sample_rate ? (track.sample_rate / 1000) : 44.1;
+                      const rateStr = `${rateKhz % 1 ? rateKhz.toFixed(1) : rateKhz}kHz`;
+                      const isHiRes = isLossless && (depth > 16 || rateKhz > 48);
+                      const label = isLossless ? `${fmtUp} ${depth}/${rateStr}` : fmtUp;
+                      return (
+                        <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none whitespace-nowrap ${
+                          isHiRes ? "border-amber-400/50 text-amber-300 bg-amber-400/10" :
+                          isLossless ? "border-cyan-400/40 text-cyan-300 bg-cyan-400/8" :
+                          "border-white/15 text-muted-foreground"
+                        }`}>{label}</span>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     {formatBitrate(track.bitrate)}
                   </TableCell>
                   <TableCell className="font-mono text-sm text-muted-foreground">
                     {formatDuration(track.length_sec)}
+                  </TableCell>
+                  <TableCell>
+                    <PopularityBar
+                      score={track.popularity_score ?? ((track.popularity ?? 0) > 0 ? (track.popularity ?? 0) / 100 : null)}
+                      confidence={track.popularity_confidence}
+                    />
                   </TableCell>
                   <TableCell>
                     <StarRating

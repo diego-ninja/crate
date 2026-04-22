@@ -59,7 +59,7 @@ export function getStoredSidebarExpanded(): boolean {
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/browse", icon: Library, label: "Browse" },
-  { to: "/discover", icon: Compass, label: "Discover" },
+  { to: "/discover", icon: Compass, label: "Discovery" },
   { section: "Tools" },
   { to: "/health", icon: HeartPulse, label: "Library Health", badgeKey: "issue_count" as const },
   { section: "Music" },

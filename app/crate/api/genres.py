@@ -336,3 +336,49 @@ def update_genre_eq_preset(request: Request, slug: str, body: EqPresetBody):
         "eq_gains": gains_param,
         "eq_preset_resolved": resolved,
     }
+
+
+@router.post(
+    "/{slug}/generate-eq",
+    responses=_GENRE_RESPONSES,
+    summary="Generate an EQ preset for a genre using AI",
+)
+def generate_genre_eq(request: Request, slug: str, apply: bool = Query(False, description="Auto-apply the generated preset")):
+    """Use the configured LLM to generate a 10-band EQ preset for a genre."""
+    _require_admin(request)
+
+    canonical_slug = (slug or "").strip().lower()
+    if not canonical_slug:
+        raise HTTPException(status_code=400, detail="Slug is required")
+
+    node_id = get_genre_taxonomy_node_id(canonical_slug)
+    if not node_id:
+        raise HTTPException(status_code=404, detail="Genre not found in taxonomy")
+
+    # Get genre detail for context
+    detail = get_genre_detail(canonical_slug)
+    description = detail.get("description") if detail else None
+    parent_slugs = detail.get("parent_slugs", []) if detail else []
+
+    try:
+        from crate.llm.prompts.eq_preset import generate_eq_preset
+        result = generate_eq_preset(
+            genre_name=canonical_slug.replace("-", " ").title(),
+            description=description,
+            parent_genres=[s.replace("-", " ").title() for s in parent_slugs[:3]],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    gains = [max(-12.0, min(12.0, round(g, 1))) for g in result.gains]
+
+    if apply:
+        set_genre_eq_gains(canonical_slug, gains, reasoning=result.reasoning)
+        invalidate_runtime_taxonomy_cache(broadcast=True)
+
+    return {
+        "slug": canonical_slug,
+        "gains": gains,
+        "reasoning": result.reasoning,
+        "applied": apply,
+    }

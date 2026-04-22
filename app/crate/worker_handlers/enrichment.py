@@ -15,7 +15,6 @@ from crate.db.jobs.enrichment import (
     update_album_path_after_reorganize,
     update_album_popularity,
     update_artist_content_hash,
-    update_track_popularity,
 )
 from crate.storage_layout import looks_like_storage_id, resolve_artist_dir
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
@@ -599,8 +598,12 @@ def _process_new_content_popularity(
     album_folder: str,
     p: TaskProgress,
 ) -> None:
-    from crate.db import get_library_tracks
-    from crate.popularity import _lastfm_get, _normalize_popularity, _parse_int
+    from crate.popularity import (
+        _lastfm_get,
+        _normalize_popularity,
+        _parse_int,
+        refresh_artist_track_popularity_signals,
+    )
 
     p.phase = "popularity"
     p.phase_index += 1
@@ -622,37 +625,16 @@ def _process_new_content_popularity(
                     pop_count += 1
             time.sleep(0.25)
 
-        track_pop = 0
-        tracks_checked = 0
-        max_track_pop = int(get_setting("max_track_popularity", "50"))
-        for album in albums:
-            if tracks_checked >= max_track_pop:
-                break
-            if album_folder and album["name"] != album_folder:
-                continue
-            tracks_db = get_library_tracks(album["id"])
-            for track in tracks_db:
-                if tracks_checked >= max_track_pop:
-                    break
-                title = track.get("title", "")
-                if not title or track.get("lastfm_listeners"):
-                    continue
-                tracks_checked += 1
-                try:
-                    data = _lastfm_get("track.getinfo", artist=artist_name, track=title, autocorrect="1")
-                    if data and "track" in data:
-                        info = data["track"]
-                        listeners = _parse_int(info.get("listeners", 0))
-                        playcount = _parse_int(info.get("playcount", 0))
-                        if listeners > 0:
-                            update_track_popularity(track["id"], listeners, playcount)
-                            track_pop += 1
-                except Exception:
-                    log.debug("Failed to fetch Last.fm popularity for track %s by %s", title, artist_name, exc_info=True)
-                time.sleep(0.2)
+        refresh_result = refresh_artist_track_popularity_signals(artist_name)
+        track_pop = int(refresh_result.get("lastfm_matches", 0))
+        spotify_track_pop = int(refresh_result.get("spotify_matches", 0))
 
-        _normalize_popularity()
-        result["steps"]["popularity"] = {"albums": pop_count, "tracks": track_pop}
+        _normalize_popularity([artist_name])
+        result["steps"]["popularity"] = {
+            "albums": pop_count,
+            "lastfm_track_matches": track_pop,
+            "spotify_track_matches": spotify_track_pop,
+        }
     except Exception:
         log.warning("Popularity failed", exc_info=True)
         result["steps"]["popularity"] = "failed"

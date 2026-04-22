@@ -137,7 +137,10 @@ export function Artist() {
   const externalLinks = buildExternalLinks(enrichment);
   const tabs = buildArtistTabs(upcomingShows.length);
   const activeMembers = mb?.members?.filter((m) => !m.end) ?? [];
-  const popularityScore = computePopularityScore(spotify?.popularity, lastfm?.listeners);
+  const popularityScore =
+    data.popularity_score != null
+      ? Math.round(data.popularity_score * 100)
+      : computePopularityScore(spotify?.popularity, lastfm?.listeners);
 
   async function enrichArtist() {
     setEnriching(true);

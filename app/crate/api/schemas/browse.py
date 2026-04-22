@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel
+from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from crate.api.schemas.common import TaskEnqueueResponse
 
@@ -40,6 +40,15 @@ class BrowseFiltersResponse(BaseModel):
     formats: list[BrowseFormatFilterOptionResponse] = Field(default_factory=list)
 
 
+class GenreProfileResponse(BaseModel):
+    name: str
+    slug: str | None = None
+    source: str | None = None
+    weight: float | None = None
+    share: float | None = None
+    percent: int | None = None
+
+
 class ArtistBrowseItemResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -53,6 +62,9 @@ class ArtistBrowseItemResponse(BaseModel):
     primary_format: str | None = None
     has_photo: bool | int
     has_issues: bool
+    popularity: int | None = None
+    popularity_score: float | None = None
+    popularity_confidence: float | None = None
 
 
 class ArtistBrowseListResponse(BaseModel):
@@ -77,10 +89,15 @@ class ArtistAlbumSummaryResponse(BaseModel):
     display_name: str
     tracks: int
     formats: list[str] = Field(default_factory=list)
+    bit_depth: int | None = None
+    sample_rate: int | None = None
     size_mb: int
     year: str | int | None = None
     has_cover: bool | int
     musicbrainz_albumid: str | None = None
+    popularity: int | None = None
+    popularity_score: float | None = None
+    popularity_confidence: float | None = None
 
 
 class ArtistDetailResponse(BaseModel):
@@ -92,8 +109,12 @@ class ArtistDetailResponse(BaseModel):
     total_size_mb: int
     primary_format: str | None = None
     genres: list[str] = Field(default_factory=list)
+    genre_profile: list[GenreProfileResponse] = Field(default_factory=list)
     issue_count: int
     is_v2: bool
+    popularity: int | None = None
+    popularity_score: float | None = None
+    popularity_confidence: float | None = None
 
 
 class ArtistTopTrackResponse(BaseModel):
@@ -135,6 +156,11 @@ class ArtistShowEventResponse(BaseModel):
     artist_slug: str | None = None
     date: str | None = None
     local_time: str | None = None
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def coerce_date_to_str(cls, v: Any) -> str | None:
+        return str(v) if v is not None else None
     venue: str | None = None
     address_line1: str | None = None
     city: str | None = None
@@ -192,6 +218,11 @@ class UpcomingItemResponse(BaseModel):
 
     type: str
     date: str | None = None
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def coerce_date_to_str(cls, v: Any) -> str | None:
+        return str(v) if v is not None else None
 
 
 class UpcomingResponse(BaseModel):
@@ -269,6 +300,9 @@ class AlbumTrackResponse(BaseModel):
     sample_rate: int | None = None
     bit_depth: int | None = None
     length_sec: int
+    popularity: int | None = None
+    popularity_score: float | None = None
+    popularity_confidence: float | None = None
     rating: int | float = 0
     tags: AlbumTrackTagsResponse
     path: str
@@ -292,3 +326,7 @@ class AlbumDetailResponse(BaseModel):
     album_tags: dict[str, Any] = Field(default_factory=dict)
     musicbrainz_albumid: str | None = None
     genres: list[str] = Field(default_factory=list)
+    genre_profile: list[GenreProfileResponse] = Field(default_factory=list)
+    popularity: int | None = None
+    popularity_score: float | None = None
+    popularity_confidence: float | None = None

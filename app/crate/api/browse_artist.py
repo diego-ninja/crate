@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse, Response
 
 from crate.api._deps import COVER_NAMES, artist_name_from_id, coerce_date, extensions, library_path, safe_path
 from crate.api.auth import _require_auth
-from crate.api.browse_shared import ARTIST_PHOTO_NAMES, display_name, fs_artist_detail, fs_build_artists_list, has_library_data
+from crate.api.browse_shared import ARTIST_PHOTO_NAMES, build_genre_profile, display_name, fs_artist_detail, fs_build_artists_list, has_library_data
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.browse import (
     ArtistsWithShowsResponse,
@@ -39,6 +39,7 @@ from crate.db.queries.browse_artist import (
     get_all_artist_genre_map,
     get_artist_all_tracks,
     get_artist_genres_by_name,
+    get_artist_genre_profile,
     get_artist_list_genres,
     get_artist_refs_by_names_full,
     get_artist_setlist_tracks,
@@ -289,7 +290,7 @@ def api_artists(
     where_sql = " AND ".join(where_clauses)
     sort_map = {
         "name": "la.name ASC",
-        "popularity": "la.listeners DESC NULLS LAST",
+        "popularity": "COALESCE(la.popularity_score, -1) DESC, la.listeners DESC NULLS LAST",
         "albums": "la.album_count DESC",
         "recent": "recent_sort DESC",
         "size": "la.total_size DESC",
@@ -314,6 +315,9 @@ def api_artists(
             "primary_format": row.get("primary_format"),
             "has_photo": bool(row.get("has_photo")),
             "has_issues": bool(issue_counts.get(row["name"], 0)),
+            "popularity": row.get("popularity"),
+            "popularity_score": row.get("popularity_score"),
+            "popularity_confidence": row.get("popularity_confidence"),
         }
         if view == "list":
             item["listeners"] = row.get("listeners") or 0
@@ -1018,7 +1022,32 @@ def api_artist(request: Request, name: str):
     canonical = artist["name"]
     albums_data = get_library_albums(canonical)
 
+    # Fetch quality info per album
+    album_quality: dict[int, dict] = {}
+    album_ids = [a["id"] for a in albums_data if a.get("id")]
+    if album_ids:
+        from crate.db.tx import transaction_scope
+        from sqlalchemy import text as sa_text
+        with transaction_scope() as session:
+            qrows = session.execute(
+                sa_text("""
+                SELECT album_id,
+                       MAX(bit_depth) AS bit_depth,
+                       MAX(sample_rate) AS sample_rate
+                FROM library_tracks
+                WHERE album_id = ANY(:ids) AND format IS NOT NULL
+                GROUP BY album_id
+                """),
+                {"ids": album_ids},
+            ).mappings().all()
+            for qr in qrows:
+                album_quality[qr["album_id"]] = {
+                    "bit_depth": qr["bit_depth"],
+                    "sample_rate": qr["sample_rate"],
+                }
+
     top_genres = get_artist_top_genres(canonical)
+    genre_profile = build_genre_profile(get_artist_genre_profile(canonical), limit=8)
 
     albums = []
     for album in albums_data:
@@ -1030,10 +1059,15 @@ def api_artist(request: Request, name: str):
                 "display_name": display_name(album["name"]),
                 "tracks": album["track_count"],
                 "formats": album.get("formats", []),
+                "bit_depth": album_quality.get(album["id"], {}).get("bit_depth"),
+                "sample_rate": album_quality.get(album["id"], {}).get("sample_rate"),
                 "size_mb": round(album["total_size"] / (1024**2)) if album["total_size"] else 0,
                 "year": album.get("year", ""),
                 "has_cover": bool(album.get("has_cover")),
                 "musicbrainz_albumid": album.get("musicbrainz_albumid"),
+                "popularity": album.get("popularity"),
+                "popularity_score": album.get("popularity_score"),
+                "popularity_confidence": album.get("popularity_confidence"),
             }
         )
 
@@ -1050,6 +1084,10 @@ def api_artist(request: Request, name: str):
         "total_size_mb": round(artist["total_size"] / (1024**2)) if artist["total_size"] else 0,
         "primary_format": artist.get("primary_format"),
         "genres": top_genres,
+        "genre_profile": genre_profile,
         "issue_count": get_artist_issue_count(canonical),
         "is_v2": is_v2,
+        "popularity": artist.get("popularity"),
+        "popularity_score": artist.get("popularity_score"),
+        "popularity_confidence": artist.get("popularity_confidence"),
     }

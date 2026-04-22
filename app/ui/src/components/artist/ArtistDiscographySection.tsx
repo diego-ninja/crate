@@ -149,6 +149,8 @@ export function ArtistDiscographySection({
                 year={item.album.year}
                 tracks={item.album.tracks}
                 formats={item.album.formats}
+                bitDepth={item.album.bit_depth}
+                sampleRate={item.album.sample_rate}
                 hasCover={item.album.has_cover}
               />
             ) : item.kind === "tidal" ? (

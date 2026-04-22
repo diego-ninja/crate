@@ -139,6 +139,9 @@ def api_album(request: Request, artist: str, album: str):
                 "sample_rate": track.get("sample_rate"),
                 "bit_depth": track.get("bit_depth"),
                 "length_sec": round(track["duration"]) if track.get("duration") else 0,
+                "popularity": track.get("popularity"),
+                "popularity_score": track.get("popularity_score"),
+                "popularity_confidence": track.get("popularity_confidence"),
                 "rating": track.get("rating", 0) or 0,
                 "tags": {
                     "title": track.get("title", ""),
@@ -195,6 +198,9 @@ def api_album(request: Request, artist: str, album: str):
         "album_tags": album_tags,
         "musicbrainz_albumid": db_mbid,
         "genres": album_genres,
+        "popularity": album_data.get("popularity"),
+        "popularity_score": album_data.get("popularity_score"),
+        "popularity_confidence": album_data.get("popularity_confidence"),
     }
 
 

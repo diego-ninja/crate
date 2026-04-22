@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Play, Sparkles, Radio, Disc3, UserRound } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Play, Sparkles, Radio, Disc3, UserRound, ChevronLeft, ChevronRight, Info } from "lucide-react";
 
 import { ItemActionMenu, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { usePlaylistActionEntries } from "@/components/actions/playlist-actions";
@@ -93,20 +93,146 @@ function radioArtwork(station: HomeRadioStation): string | null {
 }
 
 export function HomeTasteHero({
+  heroes,
+  isFollowing,
+  onOpenArtist,
+  onPlay,
+  onToggleFollow,
+  onInfo,
+}: {
+  heroes: HomeHeroArtist[];
+  isFollowing: (id?: number) => boolean;
+  onOpenArtist: (artist: HomeHeroArtist) => void;
+  onPlay: (artist: HomeHeroArtist) => void;
+  onToggleFollow: (artist: HomeHeroArtist) => void;
+  onInfo: (artist: HomeHeroArtist) => void;
+}) {
+  const [idx, setIdx] = useState(0);
+  const autoRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchRef = useRef<{ x: number; t: number } | null>(null);
+  const count = heroes.length;
+
+  const go = (to: number) => setIdx(((to % count) + count) % count);
+
+  // Autoplay
+  useEffect(() => {
+    if (count <= 1) return;
+    autoRef.current = setInterval(() => setIdx((p) => (p + 1) % count), 8000);
+    return () => { if (autoRef.current) clearInterval(autoRef.current); };
+  }, [count]);
+
+  const pause = () => { if (autoRef.current) { clearInterval(autoRef.current); autoRef.current = null; } };
+  const resume = () => {
+    pause();
+    if (count <= 1) return;
+    autoRef.current = setInterval(() => setIdx((p) => (p + 1) % count), 8000);
+  };
+
+  // Touch swipe
+  const onTouchStart = (e: React.TouchEvent) => {
+    pause();
+    const touch = e.touches[0];
+    if (touch) touchRef.current = { x: touch.clientX, t: Date.now() };
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = touchRef.current;
+    if (!start) { resume(); return; }
+    const endTouch = e.changedTouches[0];
+    if (!endTouch) { resume(); return; }
+    const dx = endTouch.clientX - start.x;
+    const dt = Date.now() - start.t;
+    if (Math.abs(dx) > 40 && dt < 500) {
+      go(idx + (dx < 0 ? 1 : -1));
+    }
+    touchRef.current = null;
+    resume();
+  };
+
+  if (!count) return null;
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={pause}
+      onMouseLeave={resume}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* Stack all slides — only active one is visible */}
+      {heroes.map((hero, i) => (
+        <div
+          key={hero.id}
+          className={cn(
+            "transition-opacity duration-500 ease-in-out",
+            i === idx ? "relative z-10 opacity-100" : "pointer-events-none absolute inset-0 z-0 opacity-0",
+          )}
+          aria-hidden={i !== idx}
+        >
+          <HeroSlide
+            hero={hero}
+            following={isFollowing(hero.id)}
+            onOpenArtist={() => onOpenArtist(hero)}
+            onPlay={() => onPlay(hero)}
+            onToggleFollow={() => onToggleFollow(hero)}
+            onInfo={() => onInfo(hero)}
+          />
+        </div>
+      ))}
+
+      {/* Nav arrows */}
+      {count > 1 && (
+        <>
+          <button
+            onClick={() => { go(idx - 1); pause(); }}
+            className="absolute left-3 top-1/2 z-20 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/60 backdrop-blur-sm transition hover:bg-black/60 hover:text-white"
+            aria-label="Previous"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button
+            onClick={() => { go(idx + 1); pause(); }}
+            className="absolute right-3 top-1/2 z-20 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full bg-black/40 text-white/60 backdrop-blur-sm transition hover:bg-black/60 hover:text-white"
+            aria-label="Next"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </>
+      )}
+
+      {/* Dots */}
+      {count > 1 && (
+        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">
+          {heroes.map((_, i) => (
+            <button
+              key={i}
+              onClick={() => { setIdx(i); pause(); }}
+              className={cn(
+                "h-1.5 rounded-full transition-all duration-300",
+                i === idx ? "w-6 bg-primary" : "w-1.5 bg-white/25 hover:bg-white/40",
+              )}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeroSlide({
   hero,
   following,
   onOpenArtist,
   onPlay,
   onToggleFollow,
+  onInfo,
 }: {
-  hero: HomeHeroArtist | null;
+  hero: HomeHeroArtist;
   following: boolean;
   onOpenArtist: () => void;
   onPlay: () => void;
   onToggleFollow: () => void;
+  onInfo: () => void;
 }) {
-  if (!hero) return null;
-
   const backgroundUrl = artistBackgroundApiUrl({
     artistId: hero.id,
     artistSlug: hero.slug,
@@ -115,131 +241,93 @@ export function HomeTasteHero({
   const backgroundSrc = backgroundUrl
     ? `${backgroundUrl}${backgroundUrl.includes("?") ? "&" : "?"}v=home-hero-bg-v2`
     : undefined;
-  const [loadedBackgroundSrc, setLoadedBackgroundSrc] = useState<string | undefined>(undefined);
-  const [backgroundVisible, setBackgroundVisible] = useState(false);
+  const [bgLoaded, setBgLoaded] = useState(false);
 
   useEffect(() => {
-    if (!backgroundSrc) {
-      setLoadedBackgroundSrc(undefined);
-      setBackgroundVisible(false);
-      return;
-    }
+    if (!backgroundSrc) return;
+    const img = new Image();
+    img.src = backgroundSrc;
+    img.onload = () => setBgLoaded(true);
+    img.onerror = () => setBgLoaded(false);
+  }, [backgroundSrc]);
 
-    if (loadedBackgroundSrc === backgroundSrc) {
-      setBackgroundVisible(true);
-      return;
-    }
-
-    let cancelled = false;
-    const image = new Image();
-    image.decoding = "async";
-    setBackgroundVisible(false);
-
-    const commit = () => {
-      if (cancelled) return;
-      setLoadedBackgroundSrc(backgroundSrc);
-      setBackgroundVisible(true);
-    };
-
-    image.src = backgroundSrc;
-    if (image.complete) {
-      commit();
-    } else {
-      image.onload = commit;
-      image.onerror = () => {
-        if (cancelled) return;
-        setLoadedBackgroundSrc(undefined);
-        setBackgroundVisible(false);
-      };
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [backgroundSrc, loadedBackgroundSrc]);
+  const genres = (hero as any).genres as string[] | undefined;
 
   return (
     <section
-      className="group relative overflow-hidden rounded-[34px] border border-white/10"
+      className="group relative w-full overflow-hidden rounded-[34px] border border-white/10"
       role="button"
       tabIndex={0}
       onClick={onOpenArtist}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpenArtist();
-        }
-      }}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenArtist(); } }}
     >
       <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(6,10,14,0.98)_0%,rgba(10,16,22,0.96)_52%,rgba(4,9,13,0.98)_100%)]" />
-      {loadedBackgroundSrc ? (
+      {bgLoaded && backgroundSrc ? (
         <img
-          src={loadedBackgroundSrc}
+          src={backgroundSrc}
           alt=""
           aria-hidden="true"
-          className={cn(
-            "absolute inset-0 h-full w-full object-cover object-center transition-opacity duration-500",
-            backgroundVisible ? "opacity-100" : "opacity-0",
-          )}
+          className="absolute inset-0 h-full w-full object-cover object-center"
         />
       ) : null}
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,7,11,0.92)_0%,rgba(5,7,11,0.75)_45%,rgba(5,7,11,0.32)_100%)]" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.26),transparent_42%)]" />
 
-      <div className="relative z-10 px-6 py-7 sm:px-8 sm:py-9 lg:px-10 lg:py-10">
-        <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
-          <Sparkles size={12} />
-          Recommended for you
-        </div>
+      {/* Fixed-height content area */}
+      <div className="relative z-10 flex h-[240px] flex-col justify-between px-6 py-6 sm:h-[280px] sm:px-8 sm:py-8 lg:px-10">
+        <div>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-primary">
+              <Sparkles size={12} />
+              Recommended
+            </div>
+            {genres && genres.length > 0 && (
+              <div className="flex gap-1.5">
+                {genres.slice(0, 2).map((g) => (
+                  <span key={g} className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-0.5 text-[10px] text-white/50">{g}</span>
+                ))}
+              </div>
+            )}
+          </div>
 
-        <div className="mt-5 max-w-[640px]">
-          <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">
+          <h1 className="mt-4 text-4xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">
             {hero.name}
           </h1>
 
-          <div className="mt-4 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
               {statValue(hero.listeners)} listeners
             </div>
             <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
-              {statValue(hero.scrobbles)} scrobbles
-            </div>
-            <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
-              {hero.album_count} albums
-            </div>
-            <div className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1">
-              {hero.track_count} tracks
+              {hero.album_count} albums · {hero.track_count} tracks
             </div>
           </div>
+        </div>
 
-          <p className="mt-5 max-w-[56ch] text-sm leading-7 text-white/72 sm:text-[15px]">
-            {hero.bio}
-          </p>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              onClick={(event) => {
-                event.stopPropagation();
-                onPlay();
-              }}
-            >
-              <Play size={15} fill="currentColor" />
-              Play
-            </button>
-            <button
-              className={cn(
-                "inline-flex items-center rounded-full border border-white/12 bg-white/[0.06] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/[0.12]",
-                following ? "text-primary" : "",
-              )}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleFollow();
-              }}
-            >
-              {following ? "Following" : "Follow"}
-            </button>
-          </div>
+        <div className="flex flex-wrap gap-2.5">
+          <button
+            className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            onClick={(e) => { e.stopPropagation(); onPlay(); }}
+          >
+            <Play size={15} fill="currentColor" />
+            Play
+          </button>
+          <button
+            className={cn(
+              "inline-flex items-center rounded-full border border-white/12 bg-white/[0.06] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/[0.12]",
+              following ? "text-primary" : "",
+            )}
+            onClick={(e) => { e.stopPropagation(); onToggleFollow(); }}
+          >
+            {following ? "Following" : "Follow"}
+          </button>
+          <button
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/[0.06] px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white"
+            onClick={(e) => { e.stopPropagation(); onInfo(); }}
+          >
+            <Info size={14} />
+            About
+          </button>
         </div>
       </div>
     </section>

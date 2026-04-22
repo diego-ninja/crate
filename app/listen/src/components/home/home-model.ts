@@ -281,7 +281,7 @@ export interface HomeFavoriteArtist {
 }
 
 export interface HomeDiscoveryPayload {
-  hero: HomeHeroArtist | null;
+  hero: HomeHeroArtist | HomeHeroArtist[] | null;
   recently_played: HomeRecentItem[];
   custom_mixes: HomeGeneratedPlaylistSummary[];
   suggested_albums: HomeSuggestedAlbum[];

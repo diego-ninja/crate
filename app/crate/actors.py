@@ -502,6 +502,12 @@ def _execute_task(task_type: str, task_id: str):
 
         if _is_cancelled(task_id):
             log.info("Task %s was cancelled during execution", task_id)
+        elif isinstance(result, dict) and result.get("_delegated"):
+            # Coordinator dispatched sub-tasks — don't mark completed yet.
+            # The last child to finish will complete this task.
+            # Set status to 'delegated' so zombie cleanup doesn't kill it.
+            update_task(task_id, status="delegated", result={"chunks": result.get("chunks", 0), "artists": result.get("artists", 0)})
+            log.info("Task %s (%s) delegated to %d chunks", task_id, task_type, result.get("chunks", 0))
         else:
             update_task(task_id, status="completed", result=result or {})
             log.info("Task %s (%s) completed", task_id, task_type)
@@ -520,6 +526,15 @@ def _execute_task(task_type: str, task_id: str):
                 _publish_to_redis(task_id, "task_done", {"type": "task_done", "status": "completed", "task_type": task_type}, "")
             except Exception:
                 pass
+
+            # Fan-in: if this task has a parent, check if all siblings are done
+            parent_id = task.get("parent_task_id")
+            if parent_id:
+                try:
+                    from crate.worker_handlers.analysis import _try_complete_parent
+                    _try_complete_parent(parent_id, task_type)
+                except Exception:
+                    log.warning("Fan-in check failed for parent %s", parent_id, exc_info=True)
 
     except Exception as e:
         log.exception("Task %s (%s) failed", task_id, task_type)

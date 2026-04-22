@@ -8,6 +8,7 @@ import {
   Loader2,
   Music,
   Clock,
+  TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,6 +39,9 @@ interface AlbumHeaderProps {
   totalLengthSec: number;
   totalSizeMb: number;
   hasCover: boolean;
+  popularity?: number | null;
+  popularityScore?: number | null;
+  popularityConfidence?: number | null;
   genres?: string[];
   hasAnalysis?: boolean;
   onAnalysisComplete?: () => void;
@@ -58,6 +62,8 @@ export function AlbumHeader({
   totalLengthSec,
   totalSizeMb,
   hasCover,
+  popularity,
+  popularityScore,
   onAnalysisComplete,
   isAdmin = false,
   children,
@@ -74,6 +80,12 @@ export function AlbumHeader({
   const resolvedDisplayName = albumTags.album || explicitDisplayName || album;
   const displayArtist = albumTags.artist || artist;
   const letter = resolvedDisplayName.charAt(0).toUpperCase();
+  const popularityPercent =
+    popularityScore != null
+      ? Math.round(popularityScore * 100)
+      : typeof popularity === "number" && popularity > 0
+        ? popularity
+        : 0;
 
   async function handleEnrich() {
     if (albumId == null) {
@@ -209,6 +221,22 @@ export function AlbumHeader({
               <span className="flex items-center gap-1.5"><Clock size={14} />{formatDuration(totalLengthSec)}</span>
               <span className="flex items-center gap-1.5"><HardDrive size={14} />{formatSize(totalSizeMb)}</span>
             </div>
+
+            {popularityPercent > 0 ? (
+              <div className="mb-3 flex items-center gap-2">
+                <span className="flex items-center gap-1.5 text-xs text-white/40">
+                  <TrendingUp size={13} />
+                  Popularity
+                </span>
+                <div className="h-1.5 w-[72px] overflow-hidden rounded-sm bg-white/10">
+                  <div
+                    className="h-full rounded-sm"
+                    style={{ width: `${popularityPercent}%`, background: "linear-gradient(90deg, #06b6d433, #06b6d4)" }}
+                  />
+                </div>
+                <span className="text-xs text-white/40">{popularityPercent}%</span>
+              </div>
+            ) : null}
 
             <div className="mb-4 flex flex-wrap gap-2">
               {hasCover ? (

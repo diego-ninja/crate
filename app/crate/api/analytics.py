@@ -45,21 +45,15 @@ from crate.db.queries.analytics import (
     get_artist_top_tracks,
     get_artist_genre_tags,
     get_insights_countries,
-    get_insights_formation_years,
     get_insights_bpm_distribution,
-    get_insights_key_distribution,
     get_insights_energy_danceability,
-    get_insights_format_distribution,
-    get_insights_bitrate_distribution,
     get_insights_top_genres,
-    get_insights_similar_network,
     get_insights_popularity,
     get_insights_albums_by_year,
-    get_insights_completeness,
-    get_insights_mood_distribution,
-    get_insights_loudness_distribution,
+    get_insights_feature_coverage,
     get_insights_top_albums,
     get_insights_acoustic_instrumental,
+    get_insights_artist_depth,
 )
 from crate.importer import ImportQueue
 
@@ -413,71 +407,56 @@ def api_artist_stats_by_id(request: Request, artist_id: int):
     summary="Get advanced insights for charts and dashboards",
 )
 def api_insights(request: Request):
-    """Advanced analytics for the Insights page — all data for Nivo charts."""
+    """High-signal analytics for the Insights page."""
     _require_auth(request)
 
     countries = get_insights_countries()
-
-    # Formation timeline (decade histogram)
-    formation_rows = get_insights_formation_years()
-    formation_decades: dict[str, int] = {}
-    for r in formation_rows:
-        year = r["formed"][:4] if len(r["formed"]) >= 4 else r["formed"]
-        try:
-            decade = f"{int(year) // 10 * 10}s"
-            formation_decades[decade] = formation_decades.get(decade, 0) + 1
-        except (ValueError, TypeError):
-            pass
-
     bpm_dist = get_insights_bpm_distribution()
-    keys = get_insights_key_distribution()
     energy_dance = get_insights_energy_danceability()
-    formats = get_insights_format_distribution()
-    bitrates = get_insights_bitrate_distribution()
     top_genres = get_insights_top_genres()
-    network_nodes, network_links = get_insights_similar_network()
     popularity = get_insights_popularity()
+    feature_coverage = get_insights_feature_coverage()
+    artist_depth = get_insights_artist_depth()
 
     # Albums per decade
     albums_rows = get_insights_albums_by_year()
-    albums_by_year: dict[str, int] = {}
+    albums_by_decade: dict[str, int] = {}
     for r in albums_rows:
         y = r["year"][:4] if r["year"] and len(r["year"]) >= 4 else r["year"]
         try:
             decade = f"{int(y) // 10 * 10}s"
-            albums_by_year[decade] = albums_by_year.get(decade, 0) + r["cnt"]
+            albums_by_decade[decade] = albums_by_decade.get(decade, 0) + r["cnt"]
         except (ValueError, TypeError):
             pass
 
-    completeness = get_insights_completeness()
-    moods = get_insights_mood_distribution()
-    loudness_dist = get_insights_loudness_distribution()
-
-    # Top albums by Last.fm listeners
     raw_top_albums = get_insights_top_albums()
+
     def _strip_year_prefix(name: str) -> str:
         return _year_re.sub("", name)
-    top_albums = [{"album": _strip_year_prefix(r["name"]), "artist": r["artist"],
-                   "listeners": r["lastfm_listeners"] or 0,
-                   "popularity": r["popularity"] or 0, "year": r["year"]} for r in raw_top_albums]
+
+    top_albums = [
+        {
+            "album": _strip_year_prefix(r["name"]),
+            "artist": r["artist"],
+            "listeners": r["lastfm_listeners"] or 0,
+            "popularity": r["popularity"] or (round((r["popularity_score"] or 0) * 100) if r.get("popularity_score") is not None else 0),
+            "popularity_score": round(r["popularity_score"], 4) if r.get("popularity_score") is not None else None,
+            "year": r["year"],
+        }
+        for r in raw_top_albums
+    ]
 
     acoustic_instrumental = get_insights_acoustic_instrumental()
 
     return {
         "countries": countries,
-        "formation_decades": formation_decades,
         "bpm_distribution": bpm_dist,
-        "keys": keys,
         "energy_danceability": energy_dance,
-        "formats": formats,
-        "bitrates": bitrates,
         "top_genres": top_genres,
-        "network": {"nodes": network_nodes, "links": network_links},
         "popularity": popularity,
-        "albums_by_decade": albums_by_year,
-        "completeness": completeness,
-        "moods": moods,
-        "loudness_distribution": loudness_dist,
+        "albums_by_decade": albums_by_decade,
+        "feature_coverage": feature_coverage,
+        "artist_depth": artist_depth,
         "top_albums": top_albums,
         "acoustic_instrumental": acoustic_instrumental,
     }

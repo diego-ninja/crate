@@ -222,6 +222,94 @@ def list_tracks_for_popularity_scoring(artist_names: list[str] | None = None) ->
     return [dict(row) for row in rows]
 
 
+def list_albums_for_popularity_scoring(artist_names: list[str] | None = None) -> list[dict]:
+    params: dict[str, object] = {}
+    where = ""
+    if artist_names:
+        params["artist_names"] = [name.lower() for name in artist_names]
+        where = "WHERE LOWER(a.artist) = ANY(:artist_names)"
+
+    with transaction_scope() as session:
+        rows = session.execute(
+            text(f"""
+                SELECT
+                    a.id,
+                    a.lastfm_listeners,
+                    a.lastfm_playcount,
+                    ar.listeners AS artist_lastfm_listeners,
+                    ar.lastfm_playcount AS artist_lastfm_playcount,
+                    ar.spotify_popularity AS artist_spotify_popularity,
+                    ar.spotify_followers AS artist_spotify_followers,
+                    COUNT(t.id) FILTER (WHERE t.popularity_score IS NOT NULL) AS scored_tracks,
+                    MAX(t.popularity_score) AS max_track_popularity_score,
+                    AVG(t.popularity_score) AS avg_track_popularity_score
+                FROM library_albums a
+                LEFT JOIN library_artists ar ON LOWER(ar.name) = LOWER(a.artist)
+                LEFT JOIN library_tracks t ON t.album_id = a.id
+                {where}
+                GROUP BY
+                    a.id,
+                    a.lastfm_listeners,
+                    a.lastfm_playcount,
+                    ar.listeners,
+                    ar.lastfm_playcount,
+                    ar.spotify_popularity,
+                    ar.spotify_followers
+            """),
+            params,
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
+def list_artists_for_popularity_scoring(artist_names: list[str] | None = None) -> list[dict]:
+    params: dict[str, object] = {}
+    where = ""
+    if artist_names:
+        params["artist_names"] = [name.lower() for name in artist_names]
+        where = "WHERE LOWER(ar.name) = ANY(:artist_names)"
+
+    with transaction_scope() as session:
+        rows = session.execute(
+            text(f"""
+                SELECT
+                    ar.id,
+                    ar.listeners AS artist_lastfm_listeners,
+                    ar.lastfm_playcount AS artist_lastfm_playcount,
+                    ar.spotify_popularity AS artist_spotify_popularity,
+                    ar.spotify_followers AS artist_spotify_followers,
+                    COALESCE(album_stats.scored_albums, 0) AS scored_albums,
+                    COALESCE(track_stats.scored_tracks, 0) AS scored_tracks,
+                    album_stats.max_album_popularity_score,
+                    album_stats.avg_album_popularity_score,
+                    track_stats.max_track_popularity_score,
+                    track_stats.avg_track_popularity_score
+                FROM library_artists ar
+                LEFT JOIN (
+                    SELECT
+                        LOWER(artist) AS artist_key,
+                        COUNT(*) FILTER (WHERE popularity_score IS NOT NULL) AS scored_albums,
+                        MAX(popularity_score) AS max_album_popularity_score,
+                        AVG(popularity_score) AS avg_album_popularity_score
+                    FROM library_albums
+                    GROUP BY LOWER(artist)
+                ) album_stats ON album_stats.artist_key = LOWER(ar.name)
+                LEFT JOIN (
+                    SELECT
+                        LOWER(a.artist) AS artist_key,
+                        COUNT(t.id) FILTER (WHERE t.popularity_score IS NOT NULL) AS scored_tracks,
+                        MAX(t.popularity_score) AS max_track_popularity_score,
+                        AVG(t.popularity_score) AS avg_track_popularity_score
+                    FROM library_tracks t
+                    JOIN library_albums a ON a.id = t.album_id
+                    GROUP BY LOWER(a.artist)
+                ) track_stats ON track_stats.artist_key = LOWER(ar.name)
+                {where}
+            """),
+            params,
+        ).mappings().all()
+    return [dict(row) for row in rows]
+
+
 def bulk_update_track_popularity_scores(updates: list[dict]) -> None:
     if not updates:
         return
@@ -229,6 +317,38 @@ def bulk_update_track_popularity_scores(updates: list[dict]) -> None:
         session.execute(
             text("""
                 UPDATE library_tracks
+                SET popularity_score = :popularity_score,
+                    popularity_confidence = :popularity_confidence,
+                    popularity = :popularity
+                WHERE id = :id
+            """),
+            updates,
+        )
+
+
+def bulk_update_album_popularity_scores(updates: list[dict]) -> None:
+    if not updates:
+        return
+    with transaction_scope() as session:
+        session.execute(
+            text("""
+                UPDATE library_albums
+                SET popularity_score = :popularity_score,
+                    popularity_confidence = :popularity_confidence,
+                    popularity = :popularity
+                WHERE id = :id
+            """),
+            updates,
+        )
+
+
+def bulk_update_artist_popularity_scores(updates: list[dict]) -> None:
+    if not updates:
+        return
+    with transaction_scope() as session:
+        session.execute(
+            text("""
+                UPDATE library_artists
                 SET popularity_score = :popularity_score,
                     popularity_confidence = :popularity_confidence,
                     popularity = :popularity
@@ -256,4 +376,13 @@ def normalize_popularity_scores() -> None:
             text("UPDATE library_tracks SET popularity = LEAST(100, GREATEST(1, (lastfm_listeners::float / :max_track * 100)::int)) "
                  "WHERE lastfm_listeners IS NOT NULL AND lastfm_listeners > 0"),
             {"max_track": max_track},
+        )
+
+        max_artist = session.execute(
+            text("SELECT MAX(listeners) AS m FROM library_artists WHERE listeners IS NOT NULL")
+        ).mappings().first()["m"] or 1
+        session.execute(
+            text("UPDATE library_artists SET popularity = LEAST(100, GREATEST(1, (listeners::float / :max_artist * 100)::int)) "
+                 "WHERE listeners IS NOT NULL AND listeners > 0"),
+            {"max_artist": max_artist},
         )

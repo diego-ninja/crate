@@ -219,6 +219,19 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     from crate.library_sync import LibrarySync
     from crate.tidal import download, move_to_library
 
+    from crate.tidal import ensure_auth
+    if not ensure_auth():
+        if download_id:
+            update_tidal_download(download_id, status="failed", error="Tidal auth expired")
+        return {"error": "Tidal authentication expired — refresh in Settings", "phase": "auth"}
+
+    # Quarantine old album if this is a quality upgrade
+    upgrade_album_id = params.get("upgrade_album_id")
+    if upgrade_album_id:
+        from crate.db import quarantine_album
+        if quarantine_album(int(upgrade_album_id), task_id):
+            emit_task_event(task_id, "info", {"message": f"Quarantined existing album #{upgrade_album_id} for upgrade"})
+
     artist_name = params.get("artist", "")
     album_name = params.get("album", "")
     desc = f"{artist_name} - {album_name}" if artist_name else url
@@ -229,8 +242,12 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
 
     def _dl_progress(data):
         p.done = data.get("done", p.done)
-        p.total = data.get("total", p.total)
-        p.item = data.get("track", p.item)
+        if data.get("total"):
+            p.total = data["total"]
+        track = data.get("track")
+        if track:
+            p.item = track
+            emit_item_event(task_id, message=f"Downloaded: {track}", title=track)
         emit_progress(task_id, p)
 
     result = download(
@@ -244,6 +261,30 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         if download_id:
             update_tidal_download(download_id, status="failed", error=result.get("error", "Download failed"))
         return {"error": result.get("error", "Download failed"), "phase": "download"}
+
+    # Validate track count for album downloads and retry if partial
+    content_type = params.get("content_type", "album")
+    if content_type == "album" and result.get("success"):
+        from crate.tidal import get_album_track_count
+        album_id = url.rstrip("/").split("/")[-1]
+        expected = get_album_track_count(album_id)
+        actual_audio = result.get("audio_file_count", result.get("file_count", 0))
+        if expected and actual_audio < expected:
+            emit_task_event(task_id, "warn", {
+                "message": f"Partial download: got {actual_audio}/{expected} tracks, retrying..."
+            })
+            retry_result = download(url, quality=quality, task_id=f"{task_id}_retry", progress_callback=_dl_progress)
+            if retry_result.get("success"):
+                retry_audio = retry_result.get("audio_file_count", 0)
+                if retry_audio > actual_audio:
+                    result = retry_result
+                    emit_task_event(task_id, "info", {
+                        "message": f"Retry improved: {retry_audio}/{expected} tracks"
+                    })
+                else:
+                    emit_task_event(task_id, "warn", {
+                        "message": f"Retry didn't improve: still {actual_audio}/{expected} tracks"
+                    })
 
     if download_id:
         update_tidal_download(download_id, status="processing")
@@ -412,6 +453,17 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         except Exception:
             log.debug("Failed to mark release %s as downloaded", new_release_id, exc_info=True)
 
+    # Clean up quarantined album DB records after successful upgrade
+    # (files not deleted — new download may share the same directory)
+    if upgrade_album_id:
+        try:
+            from crate.db import delete_quarantined_album
+            deleted = delete_quarantined_album(int(upgrade_album_id))
+            if deleted:
+                emit_task_event(task_id, "info", {"message": f"Replaced old album records (id={upgrade_album_id})"})
+        except Exception:
+            log.warning("Failed to clean up quarantined album %s", upgrade_album_id, exc_info=True)
+
     return {
         "success": True,
         "url": url,
@@ -445,6 +497,15 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
                 update_tidal_download(download_id, status="failed", error=str(exc)[:200])
             except Exception:
                 log.debug("Failed to update tidal_download %s status to failed", download_id, exc_info=True)
+        # Restore quarantined album on failure
+        upgrade_album_id = params.get("upgrade_album_id")
+        if upgrade_album_id:
+            try:
+                from crate.db import unquarantine_album
+                unquarantine_album(int(upgrade_album_id))
+                log.info("Restored quarantined album %s after download failure", upgrade_album_id)
+            except Exception:
+                log.warning("Failed to unquarantine album %s", upgrade_album_id, exc_info=True)
         raise
 
 
@@ -732,6 +793,7 @@ def _poll_soulseek_download_completion(
     completed_files: list[dict] = []
 
     p = TaskProgress(phase="downloading", phase_count=1, total=file_count, item=entity_label(artist=artist))
+    seen_completed: set[str] = set()
 
     while elapsed < max_wait:
         if is_cancelled(task_id):
@@ -747,6 +809,20 @@ def _poll_soulseek_download_completion(
         completed = sum(1 for download in user_downloads if _soulseek_download_completed(download))
         failed = [download for download in user_downloads if _soulseek_download_failed(download)]
         in_progress = sum(1 for download in user_downloads if _soulseek_download_active(download))
+
+        # Emit per-track events for newly completed files
+        for dl in user_downloads:
+            fname = dl.get("filename", "")
+            if _soulseek_download_completed(dl) and fname not in seen_completed:
+                seen_completed.add(fname)
+                emit_item_event(task_id, message=f"Downloaded: {fname}", title=fname)
+            elif _soulseek_download_active(dl) and fname not in seen_completed:
+                pct = dl.get("percentComplete", 0)
+                speed = dl.get("averageSpeed", 0)
+                if pct > 0:
+                    speed_str = f"{speed // 1024} KB/s" if speed < 1048576 else f"{speed / 1048576:.1f} MB/s"
+                    p.item = f"{fname} ({pct}% @ {speed_str})"
+
         p.done = completed
         p.errors = len(failed)
         emit_progress(task_id, p)
@@ -855,6 +931,13 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     find_alternate = params.get("find_alternate", False)
     original_files = params.get("files", [])
 
+    # Quarantine old album if this is a quality upgrade
+    upgrade_album_id = params.get("upgrade_album_id")
+    if upgrade_album_id:
+        from crate.db import quarantine_album
+        if quarantine_album(int(upgrade_album_id), task_id):
+            emit_task_event(task_id, "info", {"message": f"Quarantined existing album #{upgrade_album_id} for upgrade"})
+
     emit_task_event(
         task_id,
         "info",
@@ -922,6 +1005,13 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
                 artist, library_path=config.get("library_path"), force=True
             ):
                 emit_task_event(task_id, "info", {"message": f"Processing partial content for {artist}"})
+        # Incomplete download — restore quarantined album
+        if upgrade_album_id:
+            try:
+                from crate.db import unquarantine_album
+                unquarantine_album(int(upgrade_album_id))
+            except Exception:
+                log.warning("Failed to unquarantine album %s", upgrade_album_id, exc_info=True)
         return {
             "artist": artist,
             "album": album,
@@ -959,6 +1049,23 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
             artist, library_path=config.get("library_path"), force=True
         ):
             emit_task_event(task_id, "info", {"message": f"Processing new content for {artist}"})
+
+    # Clean up quarantined album after successful upgrade
+    if upgrade_album_id and moved > 0:
+        try:
+            from crate.db import delete_quarantined_album
+            deleted = delete_quarantined_album(int(upgrade_album_id))
+            if deleted:
+                emit_task_event(task_id, "info", {"message": f"Replaced old album records (id={upgrade_album_id})"})
+        except Exception:
+            log.warning("Failed to clean up quarantined album %s", upgrade_album_id, exc_info=True)
+    elif upgrade_album_id and moved == 0:
+        # Download produced no files — restore the old album
+        try:
+            from crate.db import unquarantine_album
+            unquarantine_album(int(upgrade_album_id))
+        except Exception:
+            log.warning("Failed to unquarantine album %s", upgrade_album_id, exc_info=True)
 
     return {
         "artist": artist,

@@ -9,6 +9,9 @@ export interface ArtistData {
   primary_format?: string;
   issue_count?: number;
   is_v2?: boolean;
+  popularity?: number | null;
+  popularity_score?: number | null;
+  popularity_confidence?: number | null;
 }
 
 export interface ArtistAlbumSummary {
@@ -18,9 +21,14 @@ export interface ArtistAlbumSummary {
   display_name?: string;
   tracks: number;
   formats: string[];
+  bit_depth?: number | null;
+  sample_rate?: number | null;
   size_mb: number;
   year: string;
   has_cover: boolean;
+  popularity?: number | null;
+  popularity_score?: number | null;
+  popularity_confidence?: number | null;
 }
 
 export type TabKey =
