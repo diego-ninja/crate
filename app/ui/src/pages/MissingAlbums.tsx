@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent } from "@crate-ui/shadcn/card";
+import { Button } from "@crate-ui/shadcn/button";
+import { Input } from "@crate-ui/shadcn/input";
+import { Badge } from "@crate-ui/shadcn/badge";
+import { Skeleton } from "@crate-ui/shadcn/skeleton";
 import { AlbumRow } from "@/components/album/AlbumRow";
 import { api } from "@/lib/api";
 import { encPath } from "@/lib/utils";

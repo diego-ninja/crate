@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { api, ApiError } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@crate-ui/shadcn/button";
+import { Input } from "@crate-ui/shadcn/input";
+import { Badge } from "@crate-ui/shadcn/badge";
 import { toast } from "sonner";
 import { User, Lock, Link2, Unlink } from "lucide-react";
 

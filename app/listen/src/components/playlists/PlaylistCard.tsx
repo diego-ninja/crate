@@ -6,7 +6,7 @@ import { usePlaylistActionEntries } from "@/components/actions/playlist-actions"
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
-import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 

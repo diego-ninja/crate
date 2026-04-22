@@ -1,7 +1,7 @@
 import { StatCard } from "@/components/artist/ArtistPageBits";
 import type { ArtistExternalLink, LastfmData, MusicBrainzData, SpotifyData } from "@/components/artist/artistPageTypes";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@crate-ui/shadcn/skeleton";
 import type { TopTrack } from "@/hooks/use-artist-data";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 import { formatCompact, formatDuration } from "@/lib/utils";

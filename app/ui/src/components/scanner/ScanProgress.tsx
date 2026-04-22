@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Check, Circle, Loader2 } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
+import { Progress } from "@crate-ui/shadcn/progress";
+import { Badge } from "@crate-ui/shadcn/badge";
 import { cn } from "@/lib/utils";
 
 export interface ScanProgressData {

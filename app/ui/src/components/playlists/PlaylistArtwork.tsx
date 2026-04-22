@@ -1,125 +1,21 @@
-import { ListMusic } from "lucide-react";
-
 import { albumCoverApiUrl } from "@/lib/library-routes";
+import {
+  PlaylistArtwork as PlaylistArtworkBase,
+  type PlaylistArtworkTrack,
+} from "@crate-ui/domain/playlists/PlaylistArtwork";
 
-export interface PlaylistArtworkTrack {
-  artist?: string;
-  artist_id?: number;
-  artist_slug?: string;
-  album?: string;
-  album_id?: number;
-  album_slug?: string;
-}
-
-interface PlaylistArtworkProps {
-  name?: string;
-  coverDataUrl?: string | null;
-  tracks?: PlaylistArtworkTrack[];
-  className?: string;
-  showCrateMark?: boolean;
-  crateMarkClassName?: string;
-}
-
-function playlistGradient(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const hue1 = Math.abs(hash) % 360;
-  const hue2 = (hue1 + 44) % 360;
-  return `linear-gradient(145deg, hsl(${hue1}, 42%, 30%), hsl(${hue2}, 55%, 18%))`;
-}
+export type { PlaylistArtworkTrack };
 
 function buildCoverUrl(track: PlaylistArtworkTrack): string | null {
   if (!track.artist || !track.album) return null;
-  return (
-    albumCoverApiUrl({
-      albumId: track.album_id,
-      albumSlug: track.album_slug,
-      artistName: track.artist,
-      albumName: track.album,
-    }) || null
-  );
+  return albumCoverApiUrl({
+    albumId: track.album_id,
+    albumSlug: track.album_slug,
+    artistName: track.artist,
+    albumName: track.album,
+  }) || null;
 }
 
-function CrateMark({ className = "" }: { className?: string }) {
-  return (
-    <div className={`absolute right-2.5 top-2.5 flex items-center justify-center ${className}`}>
-      <img
-        src="/assets/logo.svg"
-        alt=""
-        aria-hidden="true"
-        className="h-4 w-4 opacity-95 drop-shadow-[0_1px_6px_rgba(0,0,0,0.45)]"
-      />
-    </div>
-  );
-}
-
-export function PlaylistArtwork({
-  name = "Playlist",
-  coverDataUrl,
-  tracks = [],
-  className = "",
-  showCrateMark = true,
-  crateMarkClassName,
-}: PlaylistArtworkProps) {
-  const collageSources: string[] = [];
-  for (const track of tracks) {
-    const source = buildCoverUrl(track);
-    if (source && !collageSources.includes(source)) {
-      collageSources.push(source);
-    }
-    if (collageSources.length >= 4) break;
-  }
-
-  const crateMark = showCrateMark ? <CrateMark className={crateMarkClassName} /> : null;
-
-  if (coverDataUrl) {
-    return (
-      <div className={`relative overflow-hidden bg-white/5 ${className}`}>
-        <img src={coverDataUrl} alt={name} className="h-full w-full object-cover" />
-        {crateMark}
-      </div>
-    );
-  }
-
-  if (collageSources.length > 0) {
-    if (collageSources.length === 1) {
-      return (
-        <div className={`relative overflow-hidden bg-white/5 ${className}`}>
-          <img src={collageSources[0]} alt={name} className="h-full w-full object-cover" />
-          {crateMark}
-        </div>
-      );
-    }
-
-    const collageClassName =
-      collageSources.length === 2 ? "grid-cols-2 grid-rows-1" : "grid-cols-2 grid-rows-2";
-
-    return (
-      <div className={`relative overflow-hidden bg-white/5 ${className}`}>
-        <div className={`grid h-full w-full ${collageClassName} gap-[2px]`}>
-          {collageSources.map((source, index) => (
-            <img
-              key={`${source}-${index}`}
-              src={source}
-              alt=""
-              className={`h-full w-full object-cover ${collageSources.length === 3 && index === 2 ? "col-span-2" : ""}`}
-            />
-          ))}
-        </div>
-        {crateMark}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`relative flex items-center justify-center overflow-hidden ${className}`}
-      style={{ background: playlistGradient(name) }}
-    >
-      <ListMusic size={24} className="text-white/60" />
-      {crateMark}
-    </div>
-  );
+export function PlaylistArtwork(props: Omit<React.ComponentProps<typeof PlaylistArtworkBase>, "buildCoverUrl" | "logoSrc">) {
+  return <PlaylistArtworkBase {...props} buildCoverUrl={buildCoverUrl} logoSrc="/assets/logo.svg" showCrateMark={props.showCrateMark ?? true} />;
 }

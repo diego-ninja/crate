@@ -4,8 +4,8 @@ import type { EqFeatures } from "@/hooks/use-eq-features";
 import { useEqualizer } from "@/hooks/use-equalizer";
 import type { TrackGenre } from "@/hooks/use-track-genre";
 import { type EqPresetName } from "@/lib/equalizer";
-import { EqBands } from "@/components/player/EqBands";
-import { CratePill, CrateChip } from "@/components/ui/CrateBadge";
+import { EqBands } from "@crate-ui/domain/player/EqBands";
+import { CratePill, CrateChip } from "@crate-ui/primitives/CrateBadge";
 
 const PRESET_LABELS: Record<EqPresetName, string> = {
   flat: "Flat",

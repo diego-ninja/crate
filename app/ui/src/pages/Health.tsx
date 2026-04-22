@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { ActionIconButton } from "@/components/ui/ActionIconButton";
-import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
+import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
+import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
 import { timeAgo } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Button } from "@crate-ui/shadcn/button";
+import { Card } from "@crate-ui/shadcn/card";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import {
@@ -13,7 +13,7 @@ import {
   EyeOff,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { ErrorState } from "@/components/ui/error-state";
+import { ErrorState } from "@crate-ui/primitives/ErrorState";
 
 interface HealthIssue {
   id: number;

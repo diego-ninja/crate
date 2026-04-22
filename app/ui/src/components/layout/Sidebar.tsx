@@ -27,8 +27,8 @@ import {
   PanelLeftOpen,
 } from "lucide-react";
 
-import { VtNavLink as NavLink } from "@/components/ui/VtNavLink";
-import { Badge } from "@/components/ui/badge";
+import { VtNavLink as NavLink } from "@crate-ui/primitives/VtNavLink";
+import { Badge } from "@crate-ui/shadcn/badge";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";

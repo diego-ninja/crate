@@ -258,6 +258,7 @@ export function Artist() {
         lastfmListeners={lastfm?.listeners}
         upcomingShow={upcomingShows[0]}
         popularityScore={popularityScore}
+        genreProfile={data.genre_profile}
         tags={allTags}
         enriching={enriching}
         isV2={data?.is_v2}

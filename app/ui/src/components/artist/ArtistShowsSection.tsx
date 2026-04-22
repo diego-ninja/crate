@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@crate-ui/shadcn/badge";
 import { artistPhotoApiUrl } from "@/lib/library-routes";
 import { ExternalLink, MapPin } from "lucide-react";
 

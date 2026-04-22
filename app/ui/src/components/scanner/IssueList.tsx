@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@crate-ui/shadcn/badge";
 
 interface Issue {
   type: string;

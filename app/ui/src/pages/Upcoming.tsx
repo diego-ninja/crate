@@ -1,22 +1,21 @@
 import { useState, useEffect, useMemo, type ReactNode } from "react";
 import { Link } from "react-router";
-import { ActionIconButton, ActionIconLink } from "@/components/ui/ActionIconButton";
+import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
 import { AdminSelect } from "@/components/ui/AdminSelect";
-import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
+import { Button } from "@crate-ui/shadcn/button";
+import { Input } from "@crate-ui/shadcn/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@crate-ui/shadcn/popover";
+import { ShowCard } from "@/components/shows/ShowCard";
 import { api } from "@/lib/api";
-import { albumPagePath, artistBackgroundApiUrl, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { cn } from "@/lib/utils";
-import { ArtistAvatar } from "@/components/artist/ArtistAvatar";
 import { toast } from "sonner";
 import {
-  Loader2, Download, X, RefreshCw, Disc3, MapPin, Calendar,
-  Ticket, ExternalLink, Sparkles, List, CalendarDays,
+  Loader2, Download, X, RefreshCw, Disc3, Calendar,
+  Ticket, Sparkles, List, CalendarDays,
   ChevronLeft, ChevronRight, Check, Clock, Search, Trash2,
 } from "lucide-react";
-import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -81,38 +80,9 @@ function getPrimaryArtist(item: UpcomingItem): UpcomingArtistRef | null {
   return buildArtistRef(item.artist, item.artist_id, item.artist_slug);
 }
 
-function getLineupArtists(item: UpcomingItem): UpcomingArtistRef[] {
-  if (Array.isArray(item.lineup_artists) && item.lineup_artists.length > 0) {
-    return item.lineup_artists.filter((artist) => artist?.name);
-  }
-  if (Array.isArray(item.lineup) && item.lineup.length > 0) {
-    return item.lineup.filter(Boolean).map((name) => ({ name }));
-  }
-  const primaryArtist = getPrimaryArtist(item);
-  return primaryArtist ? [primaryArtist] : [];
-}
-
 function getArtistHref(artist: UpcomingArtistRef | null | undefined) {
   if (!artist || artist.id == null) return undefined;
   return artistPagePath({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name });
-}
-
-function getArtistPhotoUrl(artist: UpcomingArtistRef | null | undefined) {
-  if (!artist || artist.id == null) return "";
-  return artistPhotoApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name });
-}
-
-function getArtistBackgroundUrl(artist: UpcomingArtistRef | null | undefined) {
-  if (!artist || artist.id == null) return "";
-  return artistBackgroundApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name });
-}
-
-function getShowLocation(item: UpcomingItem) {
-  return [item.city, item.country].filter(Boolean).join(", ");
-}
-
-function getShowAddress(item: UpcomingItem) {
-  return [item.address_line1, item.city, item.region, item.postal_code, item.country].filter(Boolean).join(", ");
 }
 
 function ArtistTextLink({
@@ -440,14 +410,17 @@ function MonthGroup({ month, items, onDownload, onDismiss, expandedId, onToggleE
           const isExpanded = expandedId === key;
           return (
             <div key={key}>
-              {isExpanded && item.type === "show" ? (
-                <ShowDetailPanel item={item} onClose={() => onToggleExpand(null)} />
+              {item.type === "show" ? (
+                <ShowCard
+                  show={item}
+                  expanded={isExpanded}
+                  onToggle={() => onToggleExpand(isExpanded ? null : key)}
+                />
               ) : (
                 <EventCard
                   item={item}
                   onDownload={onDownload}
                   onDismiss={onDismiss}
-                  onClick={item.type === "show" ? () => onToggleExpand(key) : undefined}
                 />
               )}
             </div>
@@ -466,11 +439,7 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
   onDismiss?: (id: number) => void;
   onClick?: () => void;
 }) {
-  const isShow = item.type === "show";
-  const isRelease = item.type === "release";
   const primaryArtist = getPrimaryArtist(item);
-  const artistPhotoUrl = getArtistPhotoUrl(primaryArtist);
-
   const dateObj = item.date ? new Date(item.date + "T12:00:00") : null;
   const dateStr = dateObj ? dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
   const timeStr = item.time ? item.time.slice(0, 5) : "";
@@ -480,40 +449,28 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
       className={cn(
         "group relative overflow-hidden rounded-md border p-3.5 transition-all duration-200",
         "bg-white/[0.04] shadow-[0_18px_48px_rgba(0,0,0,0.22)] backdrop-blur-xl hover:bg-white/[0.07]",
-        isShow ? "border-amber-500/15 hover:border-amber-400/30" :
-          item.tidal_url ? "border-primary/25 shadow-[0_0_22px_rgba(6,182,212,0.15)]" : "border-white/10 hover:border-white/20",
-        isShow && "cursor-pointer"
+        item.tidal_url ? "border-primary/25 shadow-[0_0_22px_rgba(6,182,212,0.15)]" : "border-white/10 hover:border-white/20",
       )}
       onClick={onClick}
     >
       <div
         className={cn(
           "pointer-events-none absolute inset-0 opacity-70 transition-opacity group-hover:opacity-100",
-          isShow
-            ? "bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.14),transparent_48%)]"
-            : "bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.14),transparent_48%)]"
+          "bg-[radial-gradient(circle_at_top_left,rgba(6,182,212,0.14),transparent_48%)]"
         )}
       />
       <div className="relative flex items-center gap-4">
       {/* Thumbnail */}
       <div className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-md bg-secondary/60 shadow-[0_16px_36px_rgba(0,0,0,0.22)]">
-        {isShow && artistPhotoUrl ? (
-          <img src={artistPhotoUrl} alt=""
-            className="w-full h-full object-cover"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-        ) : item.cover_url ? (
+        {item.cover_url ? (
           <img src={item.cover_url} alt="" className="w-full h-full object-cover" />
-        ) : artistPhotoUrl ? (
-          <img src={artistPhotoUrl} alt=""
-            className="w-full h-full object-cover opacity-60"
-            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
         ) : null}
-        {isRelease && item.status === "downloading" && (
+        {item.status === "downloading" && (
           <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
             <Loader2 size={16} className="text-primary animate-spin" />
           </div>
         )}
-        {isRelease && item.status === "downloaded" && (
+        {item.status === "downloaded" && (
           <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
             <Check size={16} className="text-green-400" />
           </div>
@@ -523,39 +480,21 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="truncate text-sm font-medium text-white">
-            {isShow ? item.artist : item.title}
-          </span>
-          {isShow && item.genres?.slice(0, 2).map((g) => (
-            <CrateChip key={g} className="hidden sm:inline-flex">{g}</CrateChip>
-          ))}
-          {isRelease && item.tidal_url && <CrateChip active>Lossless</CrateChip>}
+          <span className="truncate text-sm font-medium text-white">{item.title}</span>
+          {item.tidal_url && <CrateChip active>Lossless</CrateChip>}
         </div>
         <div className="mt-1 flex items-center gap-1.5 truncate text-xs text-white/55">
-          {isShow ? (
-            <>
-              <MapPin size={10} className="text-amber-400/60 flex-shrink-0" />
-              <span>{item.venue}</span>
-              <span className="text-muted-foreground/40">&middot;</span>
-              <span>{item.city}, {item.country}</span>
-            </>
-          ) : (
-            <>
-              <ArtistTextLink
-                artist={primaryArtist}
-                className="hover:text-foreground transition-colors"
-              >
-                {item.artist}
-              </ArtistTextLink>
-              <span className="text-muted-foreground/40">&middot;</span>
-              <span>{item.subtitle}</span>
-            </>
-          )}
+          <ArtistTextLink
+            artist={primaryArtist}
+            className="hover:text-foreground transition-colors"
+          >
+            {item.artist}
+          </ArtistTextLink>
+          <span className="text-muted-foreground/40">&middot;</span>
+          <span>{item.subtitle}</span>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <CrateChip className={isShow ? "border-amber-500/20 bg-amber-500/10 text-amber-200" : ""}>
-            {isShow ? "Live show" : item.status}
-          </CrateChip>
+          <CrateChip>{item.status}</CrateChip>
           {item.is_upcoming && <CrateChip active>Upcoming</CrateChip>}
           {timeStr && <CrateChip icon={Clock}>{timeStr}</CrateChip>}
         </div>
@@ -564,16 +503,14 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
       {/* Date */}
       <div className={cn(
         "flex-shrink-0 rounded-md border px-3 py-2 text-right shadow-[0_14px_34px_rgba(0,0,0,0.18)]",
-        isShow
-          ? "border-amber-500/20 bg-amber-500/10 text-amber-200"
-          : "border-primary/20 bg-primary/10 text-primary"
+        "border-primary/20 bg-primary/10 text-primary"
       )}>
         <div className="text-xs font-semibold">{dateStr}</div>
         {timeStr && <div className="text-[10px] text-white/45">{timeStr}</div>}
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0">
-        {isRelease && item.status === "detected" && item.tidal_url && onDownload && item.release_id && (
+        {item.status === "detected" && item.tidal_url && onDownload && item.release_id && (
           <ActionIconButton
             tone="primary"
             onClick={(e) => {
@@ -585,16 +522,7 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
             <Download size={16} />
           </ActionIconButton>
         )}
-        {isShow && item.url && (
-          <ActionIconLink href={item.url} target="_blank" rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            tone="primary"
-            title="Open tickets"
-          >
-            <ExternalLink size={14} />
-          </ActionIconLink>
-        )}
-        {isRelease && onDismiss && item.release_id && item.status === "detected" && (
+        {onDismiss && item.release_id && item.status === "detected" && (
           <ActionIconButton
             tone="danger"
             onClick={(e) => {
@@ -613,124 +541,6 @@ function EventCard({ item, onDownload, onDismiss, onClick }: {
 }
 
 // ── Show Detail Panel (inline expansion) ──
-
-function ShowDetailPanel({ item, onClose }: { item: UpcomingItem; onClose: () => void }) {
-  const hasCoords = item.latitude && item.longitude;
-  const primaryArtist = getPrimaryArtist(item);
-  const lineupArtists = getLineupArtists(item);
-  const artistPhotoUrl = getArtistPhotoUrl(primaryArtist);
-  const dateStr = item.date ? new Date(item.date + "T12:00:00").toLocaleDateString("en-US", {
-    weekday: "long", month: "long", day: "numeric", year: "numeric"
-  }) : "";
-  const timeStr = item.time ? item.time.slice(0, 5) : "";
-  const location = getShowLocation(item);
-  const address = getShowAddress(item);
-
-  return (
-    <div className="relative mb-1 h-[320px] overflow-hidden rounded-md border border-amber-500/20 bg-panel-surface shadow-[0_28px_70px_rgba(0,0,0,0.28)]">
-      {/* Full-bleed map background */}
-      {hasCoords ? (
-        <div className="absolute inset-0">
-          <MapContainer
-            center={[item.latitude!, item.longitude!]}
-            zoom={14}
-            style={{ width: "100%", height: "100%" }}
-            zoomControl={false}
-            attributionControl={false}
-            dragging={false}
-            scrollWheelZoom={false}
-          >
-            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" />
-            <Marker position={[item.latitude!, item.longitude!]} />
-          </MapContainer>
-        </div>
-      ) : (
-        <div className="absolute inset-0 bg-card/80" />
-      )}
-
-      {/* Close button */}
-      <button onClick={onClose}
-        className="absolute right-3 top-3 z-[1000] rounded-md border border-white/10 bg-black/60 p-2 shadow-[0_12px_30px_rgba(0,0,0,0.3)] transition-colors hover:bg-black/80">
-        <X size={14} className="text-white" />
-      </button>
-
-      {/* Venue card overlay (top-left) */}
-      {item.venue && (
-        <div className="absolute left-3 top-3 z-[1000] max-w-[240px] rounded-md border border-white/10 bg-black/70 px-3 py-2.5 backdrop-blur-md">
-          <div className="flex items-center gap-1.5">
-            <MapPin size={12} className="text-amber-400 flex-shrink-0" />
-            <div className="text-xs font-semibold text-white truncate">{item.venue}</div>
-          </div>
-          <div className="text-[10px] text-white/50 ml-[18px]">{address || location}</div>
-        </div>
-      )}
-
-      {/* Info overlay (bottom) */}
-      <div className="absolute bottom-0 left-0 right-0 z-[1000] bg-gradient-to-t from-black/90 via-black/70 to-transparent pt-16 pb-4 px-4">
-        <div className="flex items-end gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2.5 mb-1">
-              {artistPhotoUrl ? (
-                <img src={artistPhotoUrl} alt=""
-                className="w-10 h-10 rounded-md object-cover ring-2 ring-amber-500/30 flex-shrink-0"
-                onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              ) : null}
-              <ArtistTextLink
-                artist={primaryArtist}
-                className="text-xl font-bold text-white hover:text-amber-400 transition-colors"
-              >
-                {item.artist}
-              </ArtistTextLink>
-            </div>
-            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-              {item.genres?.slice(0, 3).map(g => (
-                <CrateChip key={g} className="border-white/20 bg-white/10 text-white/75">{g}</CrateChip>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-4 mt-2 text-xs text-white/70">
-              <span className="flex items-center gap-1">
-                <Calendar size={12} className="text-amber-400" /> {dateStr}
-              </span>
-              {timeStr && (
-                <span className="flex items-center gap-1">
-                  <Clock size={12} className="text-amber-400" /> {timeStr}
-                </span>
-              )}
-            </div>
-
-            {lineupArtists.length > 1 && (
-              <div className="flex items-center gap-2 mt-2 flex-wrap">
-                <span className="text-[10px] text-white/40">Lineup:</span>
-                {lineupArtists.slice(0, 5).map((artist) => (
-                  <ArtistTextLink
-                    key={`${artist.name}-${artist.id ?? "external"}`}
-                    artist={artist}
-                    className="flex items-center gap-1 text-[11px] text-white/80 hover:text-amber-400 transition-colors"
-                  >
-                    {getArtistPhotoUrl(artist) ? (
-                    <img src={getArtistPhotoUrl(artist)} alt=""
-                      className="w-4 h-4 rounded-md object-cover"
-                      onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    ) : null}
-                    {artist.name}
-                  </ArtistTextLink>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {item.url && (
-            <a href={item.url} target="_blank" rel="noopener noreferrer"
-              className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-md bg-amber-500 text-black font-semibold text-sm hover:bg-amber-400 transition-colors shadow-lg">
-              <Ticket size={14} /> Tickets
-            </a>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ── Calendar View ──
 
@@ -847,7 +657,9 @@ function CalendarPill({ item, onDownload, onDismiss, onShowClick }: {
       <PopoverContent className="w-[340px] p-0" align="start">
         {isShow ? (
           <div>
-            <ShowPopoverContent item={item} />
+            <div className="p-3">
+              <ShowCard show={item} className="w-full" />
+            </div>
             <div className="px-3 pb-3">
               <button
                 onClick={onShowClick}
@@ -862,93 +674,6 @@ function CalendarPill({ item, onDownload, onDismiss, onShowClick }: {
         )}
       </PopoverContent>
     </Popover>
-  );
-}
-
-// ── Show Popover Content ──
-
-function ShowPopoverContent({ item }: { item: UpcomingItem }) {
-  const dateObj = item.date ? new Date(item.date + "T12:00:00") : null;
-  const primaryArtist = getPrimaryArtist(item);
-  const lineupArtists = getLineupArtists(item);
-  const dateStr = dateObj
-    ? dateObj.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
-    : "";
-  const timeStr = item.time ? item.time.slice(0, 5) : "";
-  const location = getShowLocation(item);
-  const address = getShowAddress(item);
-  const headlinerArtist = lineupArtists[0] ?? primaryArtist;
-  const supportArtists = lineupArtists.slice(1);
-  const backgroundUrl = getArtistBackgroundUrl(headlinerArtist);
-
-  return (
-    <div className="overflow-hidden rounded-md bg-transparent">
-      {/* Header image */}
-      <div className="relative h-[80px] bg-secondary">
-        {backgroundUrl ? (
-        <img
-          src={backgroundUrl}
-          alt=""
-          className="w-full h-full object-cover opacity-60"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-        />
-        ) : null}
-        <div className="absolute inset-0 bg-gradient-to-t from-card to-transparent" />
-        <div className="absolute -bottom-3 left-3 flex -space-x-2">
-          {lineupArtists.slice(0, 3).map((artist) => (
-            <ArtistAvatar key={`${artist.name}-${artist.id ?? "external"}`} name={artist.name} artistId={artist.id} artistSlug={artist.slug} size={28} linked />
-          ))}
-        </div>
-      </div>
-
-      <div className="p-3 pt-5">
-        <ArtistTextLink
-          artist={headlinerArtist}
-          className="block font-bold text-sm text-foreground hover:text-primary transition-colors truncate mb-0.5">
-          {headlinerArtist?.name || item.artist}
-        </ArtistTextLink>
-
-        {supportArtists.length > 0 && (
-          <div className="text-[11px] text-muted-foreground mb-1 truncate">
-            {supportArtists.slice(0, 3).map((artist, i) => (
-              <span key={`${artist.name}-${artist.id ?? "external"}`}>
-                {i > 0 && <span> &middot; </span>}
-                <ArtistTextLink artist={artist} className="hover:text-foreground transition-colors">{artist.name}</ArtistTextLink>
-              </span>
-            ))}
-            {supportArtists.length > 3 && <span> +{supportArtists.length - 3} more</span>}
-          </div>
-        )}
-
-        <div className="flex items-start gap-2 text-xs text-muted-foreground mb-1.5">
-          <MapPin size={12} className="flex-shrink-0 mt-0.5 text-amber-400/60" />
-          <div>
-            <div className="text-foreground font-medium">{item.venue}</div>
-            <div>{address || location}</div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 text-xs text-muted-foreground mb-1.5">
-          <span className="flex items-center gap-1"><Calendar size={12} />{dateStr}</span>
-          {timeStr && <span className="flex items-center gap-1"><Clock size={12} />{timeStr}</span>}
-        </div>
-
-        {item.genres && item.genres.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1">
-            {item.genres.slice(0, 4).map((g) => (
-              <CrateChip key={g}>{g}</CrateChip>
-            ))}
-          </div>
-        )}
-
-        {item.url && (
-          <a href={item.url} target="_blank" rel="noopener noreferrer"
-            className="flex items-center justify-center gap-1.5 w-full py-1.5 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 transition-colors text-xs font-medium">
-            <Ticket size={12} /> Tickets
-          </a>
-        )}
-      </div>
-    </div>
   );
 }
 

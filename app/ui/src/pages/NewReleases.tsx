@@ -17,11 +17,11 @@ import { toast } from "sonner";
 
 import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
 import { AdminSelect } from "@/components/ui/AdminSelect";
-import { ActionIconButton } from "@/components/ui/ActionIconButton";
-import { Button } from "@/components/ui/button";
-import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
-import { ErrorState } from "@/components/ui/error-state";
-import { Input } from "@/components/ui/input";
+import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
+import { Button } from "@crate-ui/shadcn/button";
+import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
+import { ErrorState } from "@crate-ui/primitives/ErrorState";
+import { Input } from "@crate-ui/shadcn/input";
 import { api } from "@/lib/api";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { timeAgo } from "@/lib/utils";

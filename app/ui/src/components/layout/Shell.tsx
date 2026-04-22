@@ -3,9 +3,9 @@ import { Outlet, useLocation, useNavigate } from "react-router";
 import { ChevronLeft, ChevronRight, Menu } from "lucide-react";
 import { VisuallyHidden } from "radix-ui";
 
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@crate-ui/shadcn/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@crate-ui/shadcn/dialog";
+import { Sheet, SheetContent, SheetTitle } from "@crate-ui/shadcn/sheet";
 import { useKeyboard } from "@/hooks/use-keyboard";
 import { useNotifications } from "@/hooks/use-notifications";
 

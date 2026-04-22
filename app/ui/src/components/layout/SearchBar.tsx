@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
 import { Clock, Disc, Library, Loader2, Music, Search, User, X } from "lucide-react";
 
-import { AppPopover } from "@/components/ui/AppPopover";
+import { AppPopover } from "@crate-ui/primitives/AppPopover";
 import { api } from "@/lib/api";
 import {
   albumCoverApiUrl,

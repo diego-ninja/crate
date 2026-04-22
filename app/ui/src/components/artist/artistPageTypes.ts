@@ -1,9 +1,12 @@
+import type { GenreProfileItem } from "@/components/genres/GenrePill";
+
 export interface ArtistData {
   id?: number;
   slug?: string;
   name: string;
   albums: ArtistAlbumSummary[];
   genres?: string[];
+  genre_profile?: GenreProfileItem[];
   total_tracks?: number;
   total_size_mb?: number;
   primary_format?: string;

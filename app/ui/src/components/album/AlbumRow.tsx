@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { Music } from "lucide-react";
 import { useState } from "react";
 
-import { CrateChip } from "@/components/ui/CrateBadge";
+import { CrateChip } from "@crate-ui/primitives/CrateBadge";
 import { albumCoverApiUrl, albumPagePath, artistPagePath } from "@/lib/library-routes";
 
 interface AlbumRowProps {

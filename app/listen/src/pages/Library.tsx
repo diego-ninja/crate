@@ -4,7 +4,7 @@ import { Plus, Heart, Users, Disc, ListMusic, Loader2, Play, Pencil, Trash2, Sea
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
-import { PullIndicator } from "@/components/ui/PullIndicator";
+import { PullIndicator } from "@crate-ui/primitives/PullIndicator";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { ArtistCard } from "@/components/cards/ArtistCard";
@@ -12,7 +12,7 @@ import { AlbumCard } from "@/components/cards/AlbumCard";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { PlaylistListRow } from "@/components/playlists/PlaylistListRow";
 import { PlaylistCreateModal, type PlaylistComposerTrack } from "@/components/playlists/PlaylistCreateModal";
-import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from "@/components/ui/AppModal";
+import { AppModal, ModalBody, ModalCloseButton, ModalFooter, ModalHeader } from "@crate-ui/primitives/AppModal";
 import { type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";

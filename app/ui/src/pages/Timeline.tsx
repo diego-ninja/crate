@@ -4,7 +4,7 @@ import { useApi } from "@/hooks/use-api";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 import { Calendar, Disc3, Trophy, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
-import { ErrorState } from "@/components/ui/error-state";
+import { ErrorState } from "@crate-ui/primitives/ErrorState";
 
 interface TimelineAlbum {
   id?: number;

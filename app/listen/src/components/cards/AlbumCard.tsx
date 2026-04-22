@@ -8,7 +8,7 @@ import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
-import { ActionIconButton } from "@/components/ui/ActionIconButton";
+import { ActionIconButton } from "@crate-ui/primitives/ActionIconButton";
 import { api } from "@/lib/api";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
 import { cn } from "@/lib/utils";

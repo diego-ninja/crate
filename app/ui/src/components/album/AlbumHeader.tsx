@@ -12,9 +12,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ImageLightbox } from "@/components/ui/image-lightbox";
-import { Button } from "@/components/ui/button";
-import { CratePill } from "@/components/ui/CrateBadge";
+import { ImageLightbox } from "@crate-ui/primitives/ImageLightbox";
+import { Button } from "@crate-ui/shadcn/button";
+import { CratePill } from "@crate-ui/primitives/CrateBadge";
+import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
 import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl, artistBackgroundApiUrl, artistPagePath } from "@/lib/library-routes";
@@ -43,6 +44,7 @@ interface AlbumHeaderProps {
   popularityScore?: number | null;
   popularityConfidence?: number | null;
   genres?: string[];
+  genreProfile?: GenreProfileItem[];
   hasAnalysis?: boolean;
   onAnalysisComplete?: () => void;
   isAdmin?: boolean;
@@ -64,6 +66,7 @@ export function AlbumHeader({
   hasCover,
   popularity,
   popularityScore,
+  genreProfile,
   onAnalysisComplete,
   isAdmin = false,
   children,
@@ -236,6 +239,10 @@ export function AlbumHeader({
                 </div>
                 <span className="text-xs text-white/40">{popularityPercent}%</span>
               </div>
+            ) : null}
+
+            {genreProfile && genreProfile.length > 0 ? (
+              <GenrePillRow items={genreProfile} max={6} className="mb-3" />
             ) : null}
 
             <div className="mb-4 flex flex-wrap gap-2">

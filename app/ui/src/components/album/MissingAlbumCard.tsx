@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@crate-ui/shadcn/badge";
 import { Search, Music } from "lucide-react";
 
 interface MissingAlbumCardProps {

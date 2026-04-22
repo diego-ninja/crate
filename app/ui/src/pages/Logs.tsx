@@ -16,10 +16,10 @@ import {
 
 import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
 import { AdminSelect } from "@/components/ui/AdminSelect";
-import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ErrorState } from "@/components/ui/error-state";
+import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
+import { Button } from "@crate-ui/shadcn/button";
+import { Input } from "@crate-ui/shadcn/input";
+import { ErrorState } from "@crate-ui/primitives/ErrorState";
 import { api } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
 

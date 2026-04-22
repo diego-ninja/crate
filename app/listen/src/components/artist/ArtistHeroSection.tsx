@@ -14,10 +14,10 @@ import {
 import { useNavigate } from "react-router";
 
 import { artistGenreSlug, type ArtistData, type ArtistInfo } from "@/components/artist/artist-model";
-import { AppMenuButton, AppPopover } from "@/components/ui/AppPopover";
-import { AppModal, ModalBody } from "@/components/ui/AppModal";
-import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
-import { useIsDesktop } from "@/hooks/use-breakpoint";
+import { AppMenuButton, AppPopover } from "@crate-ui/primitives/AppPopover";
+import { AppModal, ModalBody } from "@crate-ui/primitives/AppModal";
+import { useDismissibleLayer } from "@crate-ui/lib/use-dismissible-layer";
+import { useIsDesktop } from "@crate-ui/lib/use-breakpoint";
 import { formatCompact } from "@/lib/utils";
 
 interface ArtistHeroSectionProps {

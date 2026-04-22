@@ -41,7 +41,7 @@ import type {
   PaginatedArtistsResponse,
   ReplayMix,
 } from "@/components/home/home-model";
-import { PullIndicator } from "@/components/ui/PullIndicator";
+import { PullIndicator } from "@crate-ui/primitives/PullIndicator";
 import { useArtistFollows } from "@/contexts/ArtistFollowsContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";

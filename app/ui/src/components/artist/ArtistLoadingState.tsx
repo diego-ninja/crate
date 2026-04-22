@@ -1,4 +1,4 @@
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@crate-ui/shadcn/skeleton";
 
 export function ArtistLoadingState() {
   return (

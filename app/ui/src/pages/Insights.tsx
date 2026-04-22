@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
-import { ErrorState } from "@/components/ui/error-state";
+import { ErrorState } from "@crate-ui/primitives/ErrorState";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import {
   Card,
@@ -20,7 +20,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@crate-ui/shadcn/card";
 import { useApi } from "@/hooks/use-api";
 import { cn, formatNumber } from "@/lib/utils";
 

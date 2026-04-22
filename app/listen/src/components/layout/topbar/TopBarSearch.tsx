@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Disc, Loader2, Music, Search, User, X } from "lucide-react";
 import { useNavigate } from "react-router";
 
-import { AppPopover } from "@/components/ui/AppPopover";
+import { AppPopover } from "@crate-ui/primitives/AppPopover";
 import { usePlayerActions } from "@/contexts/PlayerContext";
-import { useDismissibleLayer } from "@/hooks/use-dismissible-layer";
+import { useDismissibleLayer } from "@crate-ui/lib/use-dismissible-layer";
 import { api } from "@/lib/api";
 
 import {

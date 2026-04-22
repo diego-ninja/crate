@@ -16,10 +16,10 @@ import {
 import { toast } from "sonner";
 
 import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
-import { Button } from "@/components/ui/button";
-import { CrateChip, CratePill } from "@/components/ui/CrateBadge";
-import { ErrorState } from "@/components/ui/error-state";
-import { Input } from "@/components/ui/input";
+import { Button } from "@crate-ui/shadcn/button";
+import { CrateChip, CratePill } from "@crate-ui/primitives/CrateBadge";
+import { ErrorState } from "@crate-ui/primitives/ErrorState";
+import { Input } from "@crate-ui/shadcn/input";
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { artistPagePath, artistPhotoApiUrl, albumPagePath } from "@/lib/library-routes";

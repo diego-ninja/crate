@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { artistGenreSlug, type ArtistData, type ArtistInfo } from "@/components/artist/artist-model";
-import { AppModal, ModalBody, ModalCloseButton, ModalHeader } from "@/components/ui/AppModal";
+import { AppModal, ModalBody, ModalCloseButton, ModalHeader } from "@crate-ui/primitives/AppModal";
 import { api } from "@/lib/api";
 import { formatCompact } from "@/lib/utils";
 import { Globe, ChevronDown, ChevronUp } from "lucide-react";

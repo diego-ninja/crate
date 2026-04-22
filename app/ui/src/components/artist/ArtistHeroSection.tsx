@@ -1,8 +1,9 @@
 import { Link } from "react-router";
 
 import { ImageCropUpload } from "@/components/ImageCropUpload";
-import { Button } from "@/components/ui/button";
-import { CratePill } from "@/components/ui/CrateBadge";
+import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
+import { Button } from "@crate-ui/shadcn/button";
+import { CratePill } from "@crate-ui/primitives/CrateBadge";
 import { artistBackgroundApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
 import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
 import {
@@ -46,6 +47,7 @@ interface ArtistHeroSectionProps {
   lastfmListeners?: number;
   upcomingShow?: ArtistShowEvent;
   popularityScore: number;
+  genreProfile?: GenreProfileItem[];
   tags: string[];
   enriching: boolean;
   isAdmin: boolean;
@@ -81,6 +83,7 @@ export function ArtistHeroSection({
   lastfmListeners,
   upcomingShow,
   popularityScore,
+  genreProfile,
   tags,
   enriching,
   isAdmin,
@@ -238,7 +241,9 @@ export function ArtistHeroSection({
               </div>
             )}
 
-            {tags.length > 0 && (
+            {genreProfile && genreProfile.length > 0 ? (
+              <GenrePillRow items={genreProfile} max={6} className="hidden md:flex mb-3" />
+            ) : tags.length > 0 ? (
               <div className="hidden md:flex gap-1.5 flex-wrap mb-3">
                 {tags.slice(0, 8).map((tag) => (
                   <CratePill key={tag} className="text-[11px]">
@@ -246,7 +251,7 @@ export function ArtistHeroSection({
                   </CratePill>
                 ))}
               </div>
-            )}
+            ) : null}
 
             <div className="flex gap-2 flex-wrap">
               <Button

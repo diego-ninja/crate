@@ -6,13 +6,14 @@ import { AudioProfileCard } from "@/components/album/AudioProfileCard";
 import { TrackTable, type AudioAnalysisTrack } from "@/components/album/TrackTable";
 import { TagEditor } from "@/components/album/TagEditor";
 import { RelatedAlbums } from "@/components/album/RelatedAlbums";
+import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
 import { MatchCard } from "@/components/scanner/MatchCard";
-import { Button } from "@/components/ui/button";
+import { Button } from "@crate-ui/shadcn/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton } from "@crate-ui/shadcn/skeleton";
 import { api } from "@/lib/api";
 import { albumApiPath, albumCoverApiUrl, artistPagePath } from "@/lib/library-routes";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "@crate-ui/shadcn/badge";
 import { AudioWaveform, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router";
@@ -56,6 +57,7 @@ interface AlbumData {
     musicbrainz_albumid?: string | null;
   };
   genres?: string[];
+  genre_profile?: GenreProfileItem[];
 }
 
 interface MatchResult {
@@ -170,6 +172,7 @@ export function Album() {
           popularityScore={data.popularity_score}
           popularityConfidence={data.popularity_confidence}
           genres={data.genres}
+          genreProfile={data.genre_profile}
           hasAnalysis={analysisData != null && Object.values(analysisData).some((t) => t.tempo != null)}
           isAdmin={isAdmin}
           onAnalysisComplete={() => {
@@ -279,7 +282,15 @@ export function Album() {
           </div>
         )}
 
-        {data.genres && data.genres.length > 0 && (
+        {data.genre_profile && data.genre_profile.length > 0 ? (
+          <div className="mb-4">
+            <GenrePillRow
+              items={data.genre_profile}
+              max={8}
+              onSelect={(genre) => navigate(`/browse?genre=${encodeURIComponent(genre.name.toLowerCase())}`)}
+            />
+          </div>
+        ) : data.genres && data.genres.length > 0 && (
           <div className="mb-4 flex gap-1.5 flex-wrap">
             {data.genres.map(g => (
               <Badge key={g} variant="secondary" className="text-xs cursor-pointer hover:bg-primary/20"
