@@ -10,7 +10,6 @@ import {
   Loader2,
   Music,
   Network,
-  SlidersHorizontal,
   Sparkles,
   Tag,
   Users,
@@ -20,9 +19,9 @@ import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
 import { useTaskPoll } from "@/hooks/use-task-poll";
 import { api } from "@/lib/api";
-import { EqBands } from "@crate/ui/domain/player/EqBands";
 import { Badge } from "@crate/ui/shadcn/badge";
 import { Button } from "@crate/ui/shadcn/button";
+import { GenreEqEditor } from "@/components/genres/GenreEqEditor";
 
 interface TaxonomyNode {
   slug: string;
@@ -71,6 +70,7 @@ function NodeDetailPanel({
   onNavigate,
   onAction,
   actionBusy,
+  onRefetch,
 }: {
   node: TaxonomyNode;
   nodeMap: Map<string, TaxonomyNode>;
@@ -78,6 +78,7 @@ function NodeDetailPanel({
   onNavigate: (slug: string) => void;
   onAction: (key: string) => void;
   actionBusy: (key: string) => boolean;
+  onRefetch?: () => void;
 }) {
   const hasPreset = node.eq_gains !== null;
   const empty = node.artist_count === 0 && node.album_count === 0;
@@ -226,23 +227,20 @@ function NodeDetailPanel({
         </div>
       )}
 
-      {/* EQ Preset */}
-      {node.eq_gains && (
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-white/35">
-            <SlidersHorizontal size={11} />
-            EQ Preset
-            {node.eq_preset_source === "inherited" && node.eq_preset_inherited_from && (
-              <span className="normal-case tracking-normal text-white/45">
-                (inherited from {node.eq_preset_inherited_from})
-              </span>
-            )}
-          </div>
-          <div className="rounded-md border border-white/8 bg-black/20 p-3">
-            <EqBands gains={node.eq_gains} trackHeight={80} />
-          </div>
-        </div>
-      )}
+      {/* EQ Preset — full editor, same as genre detail page */}
+      <GenreEqEditor
+        canonicalSlug={node.slug}
+        canonicalName={node.name}
+        initialGains={node.eq_gains}
+        initialResolved={
+          node.eq_preset_source === "inherited" && node.eq_preset_inherited_from
+            ? { gains: node.eq_gains ?? [], source: "inherited", slug: node.eq_preset_inherited_from, name: node.eq_preset_inherited_from }
+            : node.eq_gains
+              ? { gains: node.eq_gains, source: "direct", slug: node.slug, name: node.name }
+              : null
+        }
+        onSaved={onRefetch}
+      />
 
       {/* Parent chain */}
       {node.parent_slugs.length > 0 && (
@@ -533,6 +531,7 @@ export function GenreTaxonomyTree({ filter = "", hideEmpty = false }: { filter?:
               onNavigate={(slug) => navigate(`/genres/${slug}`)}
               onAction={runAction}
               actionBusy={isBusy}
+              onRefetch={refetch}
             />
           </div>
         ) : (

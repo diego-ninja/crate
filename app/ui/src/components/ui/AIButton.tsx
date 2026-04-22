@@ -9,7 +9,7 @@ interface AIButtonProps extends Omit<ComponentProps<typeof Button>, "variant" | 
 
 export function AIButton({ loading, children, className, disabled, ...props }: AIButtonProps) {
   return (
-    <div className="relative inline-flex">
+    <div className="relative inline-flex self-stretch">
       {/* Glow pulse behind the button */}
       <div className={cn(
         "absolute -inset-[2px] rounded-md bg-gradient-to-r from-primary/40 via-violet-500/40 to-primary/40 opacity-60 blur-sm",
@@ -21,7 +21,7 @@ export function AIButton({ loading, children, className, disabled, ...props }: A
         variant="outline"
         disabled={disabled || loading}
         className={cn(
-          "relative border-primary/40 bg-black/80 text-primary hover:bg-primary/15 hover:text-primary text-xs",
+          "relative h-full border-primary/40 bg-black/80 text-primary hover:bg-primary/15 hover:text-primary text-xs",
           className,
         )}
         {...props}

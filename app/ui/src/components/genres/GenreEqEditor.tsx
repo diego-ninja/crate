@@ -121,6 +121,15 @@ export function GenreEqEditor({
         <div className="flex items-center gap-2">
           <SlidersHorizontal size={14} className="text-primary" />
           <h2 className="text-sm font-semibold">Equalizer preset</h2>
+          <button
+            type="button"
+            onClick={() => setGains([...FLAT_GAINS])}
+            disabled={saving || clearing}
+            title="Reset sliders to flat"
+            className="rounded-md p-1 text-white/30 transition-colors hover:bg-white/5 hover:text-white/60 disabled:opacity-30"
+          >
+            <RotateCcw size={12} />
+          </button>
         </div>
         {hasOwnPreset ? (
           <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary">Direct preset</Badge>
@@ -148,15 +157,6 @@ export function GenreEqEditor({
           {dirty ? "Unsaved changes" : "In sync with database"}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setGains([...FLAT_GAINS])}
-            disabled={saving || clearing}
-            className="text-xs"
-          >
-            Reset sliders to flat
-          </Button>
           {llmAvailable && (
             <AIButton
               onClick={generateWithAI}
