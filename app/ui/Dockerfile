@@ -2,12 +2,14 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
-# Copy shared UI package (workspace dependency)
+# Copy shared UI package first (workspace dependency)
 COPY shared/ui/ /app-shared/shared/ui/
 
-# Install deps
+# Install deps — strip @crate/ui from package.json (it's a local workspace
+# package, not on npm) then install, then symlink it into node_modules.
 COPY ui/package.json ui/package-lock.json* ./
-RUN npm install --install-strategy=nested --ignore-scripts 2>/dev/null || npm install --legacy-peer-deps
+RUN sed -i '/"@crate\/ui"/d' package.json && npm install --ignore-scripts
+RUN mkdir -p node_modules/@crate && ln -s /app-shared/shared/ui node_modules/@crate/ui
 
 # Copy shared code (imported by ui via relative paths)
 COPY shared/ /app-shared/shared/
@@ -17,10 +19,11 @@ COPY ui/ .
 
 # Fix shared imports to work with Docker layout
 RUN ln -s /app-shared/shared ../shared
-# Symlink @crate/ui into node_modules for workspace resolution
-RUN mkdir -p node_modules/@crate && ln -s /app-shared/shared/ui node_modules/@crate/ui
 
-RUN npm run build
+# Symlink node_modules into shared/ui so its imports resolve react etc.
+RUN ln -s /app/node_modules /app-shared/shared/ui/node_modules
+# Skip tsc typecheck in Docker (CI handles it separately).
+RUN npx vite build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
