@@ -91,7 +91,7 @@ function NodeDetailPanel({
           {node.top_level && (
             <Badge variant="outline" className="border-primary/30 bg-primary/10 text-primary">top-level</Badge>
           )}
-          <Badge variant="outline" className={hasPreset ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-200" : "border-white/15 text-white/55"}>
+          <Badge variant="outline" className={hasPreset ? "border-primary/30 bg-primary/10 text-primary" : "border-white/15 text-white/55"}>
             {node.eq_preset_source === "direct" ? "direct preset" : node.eq_preset_source === "inherited" ? `inherits from ${node.eq_preset_inherited_from}` : "no preset"}
           </Badge>
           {empty && (
@@ -123,7 +123,7 @@ function NodeDetailPanel({
                 href={`https://musicbrainz.org/genre/${node.musicbrainz_mbid}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-cyan-300/80 hover:text-cyan-200 transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-primary/80 hover:text-primary transition-colors"
               >
                 <Globe size={12} />
                 MusicBrainz
@@ -150,7 +150,7 @@ function NodeDetailPanel({
                 href={node.wikidata_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-cyan-300/80 hover:text-cyan-200 transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-primary/80 hover:text-primary transition-colors"
               >
                 <Globe size={12} />
                 Wikidata
@@ -434,10 +434,10 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
       <div key={slug}>
         <button
           type="button"
-          className={`flex w-full items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[13px] transition ${
+          className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition ${
             isSelected
-              ? "border-cyan-400/40 bg-cyan-400/10"
-              : "border-transparent hover:border-white/8 hover:bg-white/[0.03]"
+              ? "border-primary/40 bg-primary/10"
+              : "border-white/6 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]"
           }`}
           style={{ paddingLeft: depth * 16 + 10 }}
           onClick={() => setSelectedSlug(isSelected ? null : slug)}
@@ -456,11 +456,11 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
           ) : (
             <span className="w-4 flex-shrink-0" />
           )}
-          <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-md ${hasPreset ? "bg-cyan-400" : "bg-white/20"}`} />
-          <span className={`flex-1 truncate ${
-            isSelected ? "text-cyan-100 font-medium"
+          <span className={`h-1.5 w-1.5 flex-shrink-0 rounded-full ${hasPreset ? "bg-primary" : "bg-white/25"}`} />
+          <span className={`flex-1 truncate font-medium ${
+            isSelected ? "text-primary"
               : empty ? "text-white/40"
-              : node.top_level ? "text-white font-medium"
+              : node.top_level ? "text-white"
               : "text-white/75"
           }`}>
             {node.name}
@@ -478,7 +478,7 @@ export function GenreTaxonomyTree({ filter = "" }: { filter?: string }) {
     <div className="flex gap-6 items-start">
       {/* Left: Tree */}
       <div className="w-80 flex-shrink-0">
-        <div className="max-h-[calc(100vh-220px)] overflow-y-auto space-y-px pr-1">
+        <div className="max-h-[calc(100vh-220px)] overflow-y-auto space-y-1 pr-1">
           {data.top_level_slugs.map((slug) => renderNode(slug, 0))}
         </div>
       </div>
