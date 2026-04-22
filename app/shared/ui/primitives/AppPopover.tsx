@@ -3,7 +3,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ComponentPropsWithoutRef } 
 import { cn } from "@crate/ui/lib/cn";
 
 export const APP_FLOATING_SURFACE_BASE =
-  "rounded-md border border-white/10 bg-popover-surface shadow-[0_24px_64px_rgba(0,0,0,0.42)] backdrop-blur-xl animate-pop-in";
+  "rounded-md border border-[var(--idle-border)] bg-popover-surface shadow-[0_24px_64px_rgba(0,0,0,0.42)] backdrop-blur-xl animate-pop-in";
 export const APP_POPOVER_SURFACE = `z-app-popover ${APP_FLOATING_SURFACE_BASE}`;
 export const APP_DROPDOWN_SURFACE = `z-app-dropdown ${APP_FLOATING_SURFACE_BASE}`;
 
@@ -24,7 +24,7 @@ export const AppPopover = forwardRef<HTMLDivElement, AppPopoverProps>(
 );
 
 export function AppPopoverDivider({ className, ...props }: ComponentPropsWithoutRef<"div">) {
-  return <div className={cn("my-1 border-t border-white/5", className)} {...props} />;
+  return <div className={cn("my-1 border-t border-[var(--idle-border)]", className)} {...props} />;
 }
 
 interface AppMenuButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -38,8 +38,8 @@ export function AppMenuButton({ className, danger = false, type = "button", ...p
       className={cn(
         "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors",
         danger
-          ? "text-red-400/80 hover:bg-white/5 hover:text-red-400"
-          : "text-foreground hover:bg-white/5",
+          ? "text-[var(--status-danger-text)] hover:bg-[var(--hover-bg)]"
+          : "text-foreground hover:bg-[var(--hover-bg)]",
         className,
       )}
       {...props}

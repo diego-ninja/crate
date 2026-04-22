@@ -12,23 +12,23 @@ type ActionVariant = "row" | "card";
 
 function actionToneClassName(tone: ActionTone, disabled: boolean) {
   if (disabled) {
-    return "pointer-events-none text-white/20";
+    return "pointer-events-none text-[var(--idle-text-subtle)]";
   }
 
   if (tone === "primary") {
-    return "text-primary hover:bg-primary/10 hover:text-primary";
+    return "text-primary hover:bg-[var(--active-bg)] hover:text-primary";
   }
 
   if (tone === "danger") {
-    return "text-red-300/80 hover:bg-red-500/10 hover:text-red-300";
+    return "text-[var(--status-danger-text)] hover:bg-[var(--status-danger-bg)] hover:text-[var(--status-danger-text)]";
   }
 
-  return "text-white/45 hover:bg-white/10 hover:text-white";
+  return "text-[var(--idle-text-muted)] hover:bg-[var(--hover-bg-strong)] hover:text-foreground";
 }
 
 function actionVariantClassName(variant: ActionVariant) {
   if (variant === "card") {
-    return "h-9 w-9 border border-white/10 bg-black/55 shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md hover:bg-black/70";
+    return "h-9 w-9 border border-[var(--idle-border)] bg-black/55 shadow-[0_8px_24px_rgba(0,0,0,0.28)] backdrop-blur-md hover:bg-black/70";
   }
 
   return "h-10 w-10";

@@ -14,9 +14,9 @@ export const CratePill = memo(function CratePill({
 }: CratePillProps) {
   const base = `inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition ${className}`;
   const color = active
-    ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-200"
-    : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:text-white";
-  const dis = disabled ? "cursor-not-allowed opacity-40" : "";
+    ? "border-[var(--pill-active-border)] bg-[var(--pill-active-bg)] text-[var(--active-text)]"
+    : "border-[var(--pill-border)] bg-[var(--pill-bg)] text-[var(--idle-text)] hover:border-[var(--hover-border)] hover:text-foreground";
+  const dis = disabled ? "cursor-not-allowed opacity-[var(--disabled-opacity)]" : "";
 
   if (onClick) {
     return (
@@ -45,8 +45,8 @@ export const CrateChip = memo(function CrateChip({
   children, active = false, icon: Icon, className = "",
 }: CrateChipProps) {
   const color = active
-    ? "border-cyan-400/30 bg-cyan-400/10 text-cyan-200"
-    : "border-white/10 bg-white/[0.03] text-white/55";
+    ? "border-[var(--chip-active-border)] bg-[var(--chip-active-bg)] text-[var(--active-text)]"
+    : "border-[var(--chip-border)] bg-[var(--chip-bg)] text-[var(--idle-text-muted)]";
   return (
     <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] ${color} ${className}`}>
       {Icon && <Icon size={10} />}

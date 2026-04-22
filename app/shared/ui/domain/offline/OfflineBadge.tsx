@@ -28,9 +28,9 @@ export function OfflineBadge({ state, compact = false, subtle = false, className
         className={cn(
           "inline-flex items-center gap-1 align-middle",
           state === "ready"
-            ? "text-cyan-300/80"
+            ? "text-[var(--status-ready-text)]"
             : state === "error"
-              ? "text-amber-300/80"
+              ? "text-[var(--status-error-text)]"
               : "text-primary/85",
           className,
         )}
@@ -45,7 +45,8 @@ export function OfflineBadge({ state, compact = false, subtle = false, className
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-1 rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-cyan-200",
+          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+          "border-[var(--status-ready-border)] bg-[var(--status-ready-bg)] text-[var(--status-ready-text)]",
           className,
         )}
       >
@@ -59,7 +60,8 @@ export function OfflineBadge({ state, compact = false, subtle = false, className
     return (
       <span
         className={cn(
-          "inline-flex items-center gap-1 rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-200",
+          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+          "border-[var(--status-error-border)] bg-[var(--status-error-bg)] text-[var(--status-error-text)]",
           className,
         )}
       >
@@ -72,7 +74,8 @@ export function OfflineBadge({ state, compact = false, subtle = false, className
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        "border-[var(--active-border)] bg-[var(--active-bg)] text-primary",
         className,
       )}
     >
