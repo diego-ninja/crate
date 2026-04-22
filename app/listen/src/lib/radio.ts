@@ -282,3 +282,113 @@ export async function fetchInfiniteContinuation(
 
   return [];
 }
+
+
+// ── Shaped Radio (v2) — sessions with like/dislike feedback ────────
+
+export interface ShapedRadioTrack {
+  track_id: number;
+  storage_id?: string | null;
+  title: string;
+  artist: string;
+  album?: string | null;
+  album_id?: number | null;
+  distance: number;
+}
+
+interface ShapedRadioStartResponse {
+  session_id: string;
+  mode: string;
+  seed_label: string;
+  tracks: ShapedRadioTrack[];
+}
+
+interface ShapedRadioNextResponse {
+  session_id: string;
+  tracks: ShapedRadioTrack[];
+}
+
+function shapedToTrack(t: ShapedRadioTrack): Track {
+  return {
+    id: t.storage_id || String(t.track_id),
+    storageId: t.storage_id || undefined,
+    title: t.title,
+    artist: t.artist,
+    album: t.album || undefined,
+    albumId: t.album_id || undefined,
+    albumCover: t.album_id
+      ? albumCoverApiUrl({ albumId: t.album_id }) || undefined
+      : undefined,
+    libraryTrackId: t.track_id,
+  };
+}
+
+export async function startShapedRadio(
+  mode: "seeded" | "discovery",
+  seedType?: string,
+  seedValue?: string,
+): Promise<{ sessionId: string; seedLabel: string; tracks: Track[]; source: PlaySource } | null> {
+  try {
+    const data = await api<ShapedRadioStartResponse>("/api/radio/start", "POST", {
+      mode,
+      seed_type: seedType,
+      seed_value: seedValue,
+    });
+    return {
+      sessionId: data.session_id,
+      seedLabel: data.seed_label,
+      tracks: data.tracks.map(shapedToTrack),
+      source: {
+        type: "radio",
+        name: `${data.seed_label} Radio`,
+        radio: {
+          seedType: (seedType || "discovery") as "track" | "album" | "artist" | "playlist" | "discovery",
+          seedId: seedValue ? (isNaN(Number(seedValue)) ? seedValue : Number(seedValue)) : null,
+          shapedSessionId: data.session_id,
+        },
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchShapedRadioNext(
+  sessionId: string,
+  count = 5,
+): Promise<Track[]> {
+  try {
+    const data = await api<ShapedRadioNextResponse>("/api/radio/next", "POST", {
+      session_id: sessionId,
+      count,
+    });
+    return data.tracks.map(shapedToTrack);
+  } catch {
+    return [];
+  }
+}
+
+export async function sendRadioFeedback(
+  sessionId: string,
+  trackId: number,
+  action: "like" | "dislike",
+): Promise<void> {
+  try {
+    await api("/api/radio/feedback", "POST", {
+      session_id: sessionId,
+      track_id: trackId,
+      action,
+    });
+  } catch {
+    // silent fail — feedback is best-effort
+  }
+}
+
+export async function checkDiscoveryAvailable(): Promise<boolean> {
+  try {
+    const data = await api<{ available: boolean }>("/api/radio/can-discover");
+    return data.available;
+  } catch {
+    return false;
+  }
+}

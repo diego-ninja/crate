@@ -55,6 +55,9 @@ const PathsPage = React.lazy(() =>
 const PathDetailPage = React.lazy(() =>
   import("@/pages/PathDetail").then((m) => ({ default: m.PathDetail })),
 );
+const RadioPage = React.lazy(() =>
+  import("@/pages/Radio").then((m) => ({ default: m.RadioPage })),
+);
 const SearchResults = React.lazy(() =>
   import("@/pages/SearchResults").then((m) => ({ default: m.SearchResults })),
 );
@@ -284,6 +287,14 @@ export function App() {
                       element={
                         <Suspense fallback={<Spinner />}>
                           <PathDetailPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="radio"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <RadioPage />
                         </Suspense>
                       }
                     />
