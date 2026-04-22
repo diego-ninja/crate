@@ -181,7 +181,7 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
 
         {/* Synced lyrics */}
         {lyrics?.synced && (
-          <div className="space-y-1 px-4" style={{ paddingTop: "38vh", paddingBottom: "38vh" }}>
+          <div className="space-y-1 px-3" style={{ paddingTop: "38vh", paddingBottom: "38vh" }}>
             {lyrics.synced.map((line, i) => {
               const isActive = i === activeIndex;
               const isPast = i < activeIndex;
@@ -190,15 +190,15 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
                   key={i}
                   ref={isActive ? activeRef : null}
                   onClick={() => seek(line.time)}
-                  className={`relative z-20 flex min-h-[72px] w-full items-center rounded-xl px-3 py-1.5 text-left transition-all duration-300 ${
+                  className={`relative z-20 w-full rounded-lg border px-3 py-2.5 text-left transition-all duration-300 ${
                     isActive
-                      ? "text-white text-[18px] font-bold"
-                    : isPast
-                        ? "text-white/20 text-[14px]"
-                        : "text-white/40 text-[14px] hover:text-white/60"
+                      ? "border-primary/30 bg-primary/10 text-[17px] font-bold"
+                      : isPast
+                        ? "border-transparent text-[14px] text-white/25"
+                        : "border-transparent text-[14px] text-white/45 hover:bg-white/[0.03] hover:text-white/60"
                   }`}
                   style={isActive ? {
-                    textShadow: `0 0 24px ${cssColor(primary, 0.3)}`,
+                    textShadow: `0 0 20px ${cssColor(primary, 0.25)}`,
                     color: cssColor(secondary, 1),
                   } : undefined}
                 >
