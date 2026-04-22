@@ -49,6 +49,12 @@ const Stats = React.lazy(() =>
 const Shows = React.lazy(() =>
   import("@/pages/Shows").then((m) => ({ default: m.Shows })),
 );
+const PathsPage = React.lazy(() =>
+  import("@/pages/Paths").then((m) => ({ default: m.Paths })),
+);
+const PathDetailPage = React.lazy(() =>
+  import("@/pages/PathDetail").then((m) => ({ default: m.PathDetail })),
+);
 const SearchResults = React.lazy(() =>
   import("@/pages/SearchResults").then((m) => ({ default: m.SearchResults })),
 );
@@ -262,6 +268,22 @@ export function App() {
                       element={
                         <Suspense fallback={<Spinner />}>
                           <Shows />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="paths"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <PathsPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="paths/:id"
+                      element={
+                        <Suspense fallback={<Spinner />}>
+                          <PathDetailPage />
                         </Suspense>
                       }
                     />
