@@ -197,28 +197,26 @@ export function MusicPaths() {
               {path.nodes.map((node, i) => {
                 const isActive = i === activeStep;
                 const isPast = i < activeStep;
-                const size = isActive ? 14 : isPast ? 8 : 6;
+                const showGenre = i === 0 || i === path.nodes.length - 1 || (i > 0 && node.genre !== path.nodes[i - 1]!.genre);
 
                 return (
                   <button
                     key={i}
                     onClick={() => setActiveStep(i)}
-                    className="group relative flex flex-col items-center"
+                    className="group relative flex h-4 w-4 flex-shrink-0 items-center justify-center"
                     title={`${node.track} — ${node.artist}`}
                   >
                     <div
-                      className={`rounded-full transition-all duration-300 ${
+                      className={`rounded-full transition-[background-color,box-shadow,transform] duration-300 ${
                         isActive
-                          ? "bg-cyan-400 shadow-[0_0_16px_rgba(6,182,212,0.7)]"
+                          ? "h-3.5 w-3.5 bg-cyan-400 shadow-[0_0_16px_rgba(6,182,212,0.7)]"
                           : isPast
-                            ? "bg-cyan-400/60"
-                            : "bg-white/20 group-hover:bg-white/40"
+                            ? "h-2 w-2 bg-cyan-400/60"
+                            : "h-1.5 w-1.5 bg-white/20 group-hover:bg-white/40"
                       }`}
-                      style={{ width: size, height: size }}
                     />
-                    {/* Genre label — only on key transitions */}
-                    {(i === 0 || i === path.nodes.length - 1 || (i > 0 && node.genre !== path.nodes[i - 1]!.genre)) && (
-                      <span className={`absolute top-5 whitespace-nowrap text-[8px] transition-colors ${
+                    {showGenre && (
+                      <span className={`pointer-events-none absolute top-full mt-1 whitespace-nowrap text-[8px] transition-colors ${
                         isActive ? "text-cyan-200" : "text-white/25"
                       }`}>
                         {node.genre}
