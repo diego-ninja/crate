@@ -227,6 +227,8 @@ export function PlayerBar() {
   };
   const qualityBadge = getTrackQualityBadge(qualityTrack);
   const transportButtonClass = getTransportButtonToneClass(playSource, isPlaying || isBuffering);
+  const shapedRadioSessionId = playSource?.radio?.shapedSessionId;
+  const isShapedRadioTrack = !!(shapedRadioSessionId && currentTrack?.libraryTrackId);
 
 
   if (!currentTrack) return null;
@@ -418,9 +420,9 @@ export function PlayerBar() {
               </button>
 
             {/* Radio shaping — thumbs up/down when shaped radio is active */}
-            {playSource?.radio?.shapedSessionId && currentTrack?.libraryTrackId && (
+            {isDesktop && isShapedRadioTrack && (
               <RadioFeedback
-                sessionId={playSource.radio.shapedSessionId}
+                sessionId={shapedRadioSessionId!}
                 trackId={currentTrack.libraryTrackId}
                 onDislike={() => next()}
               />
@@ -535,9 +537,18 @@ export function PlayerBar() {
 
           {/* ── Mobile/tablet play controls (md only, no progress) ── */}
           <div className="flex items-center gap-1 md:hidden">
-            <button onClick={prev} aria-label="Previous track" className="w-10 h-10 flex items-center justify-center text-white/50">
-              <SkipBack size={18} fill="currentColor" />
-            </button>
+            {isShapedRadioTrack ? (
+              <RadioFeedback
+                sessionId={shapedRadioSessionId!}
+                trackId={currentTrack.libraryTrackId}
+                onDislike={() => next()}
+                size="sm"
+              />
+            ) : (
+              <button onClick={prev} aria-label="Previous track" className="w-10 h-10 flex items-center justify-center text-white/50">
+                <SkipBack size={18} fill="currentColor" />
+              </button>
+            )}
             <button
               onClick={isPlaying ? pause : resume}
               aria-label={isPlaying ? "Pause" : "Play"}
@@ -554,9 +565,19 @@ export function PlayerBar() {
                 <Play size={16} className="text-black ml-0.5" fill="black" />
               )}
             </button>
-            <button onClick={next} aria-label="Next track" className="w-10 h-10 flex items-center justify-center text-white/50">
-              <SkipForward size={18} fill="currentColor" />
-            </button>
+            {isShapedRadioTrack ? (
+              <button
+                onClick={() => setFsOpen(true)}
+                aria-label="Open fullscreen player"
+                className="w-10 h-10 flex items-center justify-center text-white/35 transition-colors hover:text-white/60"
+              >
+                <Maximize2 size={16} />
+              </button>
+            ) : (
+              <button onClick={next} aria-label="Next track" className="w-10 h-10 flex items-center justify-center text-white/50">
+                <SkipForward size={18} fill="currentColor" />
+              </button>
+            )}
           </div>
 
           {/* ── Block 3: Action Buttons (lg+) ── */}

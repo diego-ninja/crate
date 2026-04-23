@@ -293,7 +293,7 @@ export function InfoTab({ className }: { className?: string }) {
 
   if (loading) {
     return (
-      <div className={cn("flex flex-1 items-center justify-center", className)}>
+      <div className={cn("flex h-full min-h-0 flex-1 items-center justify-center", className)}>
         <Loader2 size={20} className="animate-spin text-primary" />
       </div>
     );
@@ -301,7 +301,7 @@ export function InfoTab({ className }: { className?: string }) {
 
   if (!info || !currentTrack) {
     return (
-      <div className={cn("flex flex-1 items-center justify-center text-sm text-white/20", className)}>
+      <div className={cn("flex h-full min-h-0 flex-1 items-center justify-center text-sm text-white/20", className)}>
         No track info available
       </div>
     );
@@ -319,7 +319,7 @@ export function InfoTab({ className }: { className?: string }) {
   ].some((value) => typeof value === "number");
 
   return (
-    <div className={cn("flex-1 overflow-y-auto pr-1", className)}>
+    <div className={cn("hide-rail-scrollbar h-full min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1", className)}>
       <div className="space-y-4 pb-2">
         <section
           className="relative overflow-hidden rounded-[28px] border border-white/8 px-4 py-4 shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:px-5"

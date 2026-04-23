@@ -24,6 +24,7 @@ import {
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
+import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { useEscapeKey } from "@crate/ui/lib/use-escape-key";
 import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
@@ -161,6 +162,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const coverRef = useRef<HTMLDivElement>(null);
   const fsRootRef = useRef<HTMLDivElement>(null);
+  const equalizerRef = useRef<HTMLDivElement>(null);
+  const equalizerButtonRef = useRef<HTMLButtonElement>(null);
+  const vizSettingsRef = useRef<HTMLDivElement>(null);
+  const vizSettingsButtonRef = useRef<HTMLButtonElement>(null);
   const playbackState = useMemo(() => ({ isPlaying, volume }), [isPlaying, volume]);
   const vizRef = useMusicVisualizer(
     canvasRef,
@@ -354,6 +359,16 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     }
   }, [isVisualizerMode, showVizSettings]);
 
+  useDismissibleLayer({
+    active: visible && (showVizSettings || showEqualizer),
+    refs: [vizSettingsRef, vizSettingsButtonRef, equalizerRef, equalizerButtonRef],
+    onDismiss: () => {
+      setShowVizSettings(false);
+      setShowEqualizer(false);
+    },
+    closeOnEscape: false,
+  });
+
   // Swipe-down to dismiss (only from top 150px)
   const onSwipeStart = useCallback((e: React.TouchEvent) => {
     if (draggingRef.current) return;
@@ -379,6 +394,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
   const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 20);
   const remainingTime = Math.max(0, displayedDuration - displayedTime);
+  const mobileBottomClearance = "calc(10rem + env(safe-area-inset-bottom, 0px))";
 
   const TAB_PILLS: { id: FSTab; icon: typeof Disc3; label: string }[] = [
     { id: "player", icon: Disc3, label: "Player" },
@@ -447,6 +463,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             variant="ghost"
           />
           <button
+            ref={equalizerButtonRef}
             onClick={() => { setShowEqualizer((v) => !v); setShowVizSettings(false); }}
             aria-label="Equalizer"
             className={`w-11 h-11 flex items-center justify-center transition-colors ${showEqualizer ? "text-primary" : "text-white/40 active:text-white/60"}`}
@@ -454,6 +471,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             <SlidersHorizontal size={18} />
           </button>
           <button
+            ref={vizSettingsButtonRef}
             onClick={() => { setShowVizSettings(!showVizSettings); setShowEqualizer(false); }}
             aria-label="Visualizer settings"
             disabled={!isVisualizerMode}
@@ -490,7 +508,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* Visualizer settings panel */}
       {showVizSettings && (
-        <div className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up">
+        <div
+          ref={vizSettingsRef}
+          className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up"
+        >
           <VisualizerSettingsPanel config={vizCfg} />
         </div>
       )}
@@ -498,14 +519,20 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       {/* Equalizer panel — absolute overlay so it doesn't push the cover
           (and its measured visualizer canvas) out of place on mobile. */}
       {showEqualizer && (
-        <div className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up">
+        <div
+          ref={equalizerRef}
+          className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up"
+        >
           <EqualizerPanel onClose={() => setShowEqualizer(false)} />
         </div>
       )}
 
       {/* ── Player tab ── */}
       {activeTab === "player" && (
-      <div className="relative flex-1 flex flex-col items-center justify-center overflow-hidden px-6 pb-40">
+      <div
+        className="relative flex-1 flex flex-col items-center justify-center overflow-hidden px-6"
+        style={{ paddingBottom: mobileBottomClearance }}
+      >
         <div className="mx-auto w-full max-w-[360px]">
           <div ref={coverRef} className="relative">
             {isCdMode ? (
@@ -652,7 +679,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* ── Queue tab ── */}
       {activeTab === "queue" && (
-        <div className="flex-1 overflow-y-auto pb-40">
+        <div className="flex-1 overflow-y-auto" style={{ paddingBottom: mobileBottomClearance }}>
           <div className="px-4 py-3">
             <p className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2">
               Up Next · {upcomingTracks.length} tracks
@@ -676,7 +703,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* ── Lyrics tab ── */}
       {activeTab === "lyrics" && (
-        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4 pb-40">
+        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4" style={{ paddingBottom: mobileBottomClearance }}>
           {!lyrics ? (
             <p className="text-center text-white/40 text-sm mt-20">Loading lyrics...</p>
           ) : lyrics.synced ? (
@@ -707,7 +734,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       )}
 
       {activeTab === "info" && (
-        <div className="flex-1 overflow-hidden px-4 py-3 pb-40">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3" style={{ paddingBottom: mobileBottomClearance }}>
           <InfoTab className="pr-0" />
         </div>
       )}
