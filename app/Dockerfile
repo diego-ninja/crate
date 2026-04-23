@@ -7,11 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ENV HOME=/app
 ENV MPLCONFIGDIR=/tmp/matplotlib
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
 
 # PyTorch CPU-only + PANNs for audio classification (x86_64 only)
 RUN if [ "$(uname -m)" = "x86_64" ]; then \
@@ -19,14 +21,18 @@ RUN if [ "$(uname -m)" = "x86_64" ]; then \
         pip install --no-cache-dir panns_inference; \
     fi
 
-COPY . .
+COPY alembic.ini .
+COPY crate ./crate
+COPY scripts ./scripts
+COPY bin ./bin
 
 # Download Essentia ML models + PANNs CNN14 checkpoint (x86_64 only)
 RUN if [ "$(uname -m)" = "x86_64" ]; then \
         apt-get update && apt-get install -y --no-install-recommends curl && \
         bash scripts/download_models.sh /app/models && \
         chmod -R 755 /app/models /app/panns_data && \
-        rm -rf /var/lib/apt/lists/*; \
+        apt-get purge -y --auto-remove curl && \
+        rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
     fi
 
 # Install crate-cli binary if available (x86_64 only)

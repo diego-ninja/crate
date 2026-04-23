@@ -1,4 +1,38 @@
-ui/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 .git/
+.github/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+node_modules/
+dist/
+coverage/
+
+# Frontend apps and shared web packages are not needed in the backend image.
+ui/
+listen/
+site/
+reference/
+docs/
+shared/
+
+# Backend image does not need tests or local/mobile build artifacts.
+tests/
+**/node_modules/
+**/dist/
+**/.vite/
+**/coverage/
+listen/android/
+listen/ios/
+
+# Local config and editor noise
+.env
+.env.*
+*.log
+*.sqlite*
+*.swp
+*.swo

@@ -28,6 +28,18 @@ def _lerp(a: list[float], b: list[float], t: float) -> list[float]:
     return [a[d] + (b[d] - a[d]) * t for d in range(len(a))]
 
 
+def _array_distance_sql(vector_expr: str) -> str:
+    """Return SQL for L2 distance between a bliss array column and a probe array."""
+    return f"""
+        SQRT(COALESCE((
+            SELECT SUM(POWER(tv.val - pv.val, 2))
+            FROM UNNEST({vector_expr}) WITH ORDINALITY AS tv(val, idx)
+            JOIN UNNEST(CAST(:probe_array AS double precision[])) WITH ORDINALITY AS pv(val, idx)
+              USING (idx)
+        ), 0.0))
+    """
+
+
 # ── Resolve endpoints to bliss centroids ──────────────────────────
 
 
@@ -401,8 +413,9 @@ def _find_anchor_track(
     For artist/album/genre, finds the closest track within that scope.
     """
     probe_vector = to_pgvector_literal(target_vec)
+    probe_array = list(target_vec)
     exclude_clause = "AND t.id != ALL(:exclude)" if exclude else ""
-    params: dict = {"probe_vector": probe_vector}
+    params: dict = {"probe_vector": probe_vector, "probe_array": probe_array}
     if exclude:
         params["exclude"] = list(exclude)
 
@@ -456,6 +469,24 @@ def _find_anchor_track(
             params,
         ).mappings().first()
 
+        if not row:
+            fallback_distance = _array_distance_sql("t.bliss_vector")
+            row = session.execute(
+                text(f"""
+                    SELECT t.id, t.storage_id, t.title, a.artist, a.name AS album,
+                           t.album_id, t.bliss_vector,
+                           {fallback_distance} AS distance
+                    FROM library_tracks t
+                    JOIN library_albums a ON a.id = t.album_id
+                    WHERE t.bliss_vector IS NOT NULL
+                    {scope_clause}
+                    {exclude_clause}
+                    ORDER BY {fallback_distance}
+                    LIMIT 1
+                """),
+                params,
+            ).mappings().first()
+
     if not row:
         return None
     d = dict(row)
@@ -484,9 +515,10 @@ def _find_best_candidate(
     - Boosts tracks from artists sharing genres with the path context
     """
     probe_vector = to_pgvector_literal(target)
+    probe_array = list(target)
 
     exclude_clause = ""
-    params: dict = {"probe_vector": probe_vector}
+    params: dict = {"probe_vector": probe_vector, "probe_array": probe_array}
     if exclude_ids:
         exclude_clause = "AND t.id != ALL(:exclude)"
         params["exclude"] = list(exclude_ids)
@@ -506,6 +538,23 @@ def _find_best_candidate(
             """),
             params,
         ).mappings().all()
+
+        if not rows:
+            fallback_distance = _array_distance_sql("t.bliss_vector")
+            rows = session.execute(
+                text(f"""
+                    SELECT t.id, t.storage_id, t.title, a.artist,
+                           a.name AS album, t.album_id, t.bliss_vector,
+                           {fallback_distance} AS distance
+                    FROM library_tracks t
+                    JOIN library_albums a ON a.id = t.album_id
+                    WHERE t.bliss_vector IS NOT NULL
+                    {exclude_clause}
+                    ORDER BY {fallback_distance}
+                    LIMIT {_CANDIDATE_POOL_SIZE}
+                """),
+                params,
+            ).mappings().all()
 
     if not rows:
         return None

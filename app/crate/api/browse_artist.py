@@ -85,6 +85,24 @@ _IMAGE_RESPONSES = merge_responses(
 )
 
 
+def _artist_browse_order_sql(sort: str) -> str:
+    sort_map = {
+        "name": "la.name ASC",
+        "popularity": (
+            "CASE WHEN la.popularity_score IS NULL AND la.popularity IS NULL AND la.listeners IS NULL THEN 1 ELSE 0 END ASC, "
+            "COALESCE(la.popularity_score, -1) DESC, "
+            "COALESCE(la.popularity, 0) DESC, "
+            "la.listeners DESC NULLS LAST, "
+            "la.name ASC"
+        ),
+        "albums": "la.album_count DESC, la.name ASC",
+        "recent": "recent_sort DESC, la.name ASC",
+        "size": "la.total_size DESC, la.name ASC",
+        "tracks": "la.track_count DESC, la.name ASC",
+    }
+    return sort_map.get(sort, "la.name ASC")
+
+
 def _library_artist_ref(name: str) -> dict | None:
     artist = get_library_artist(name)
     if not artist:
@@ -288,15 +306,7 @@ def api_artists(
         params["q"] = f"%{q}%"
 
     where_sql = " AND ".join(where_clauses)
-    sort_map = {
-        "name": "la.name ASC",
-        "popularity": "COALESCE(la.popularity_score, -1) DESC, la.listeners DESC NULLS LAST",
-        "albums": "la.album_count DESC",
-        "recent": "recent_sort DESC",
-        "size": "la.total_size DESC",
-        "tracks": "la.track_count DESC",
-    }
-    order_sql = sort_map.get(sort, "la.name ASC")
+    order_sql = _artist_browse_order_sql(sort)
 
     total = get_artists_count(joins, where_sql, params)
     rows = get_artists_page(select_cols, joins, where_sql, order_sql, params, per_page, (page - 1) * per_page)

@@ -280,10 +280,10 @@ def cleanup_zombie_tasks(heartbeat_timeout_min: int = 5, no_heartbeat_timeout_mi
         WHERE status = 'running'
           AND (
               (heartbeat_at IS NOT NULL
-               AND heartbeat_at < (NOW() AT TIME ZONE 'UTC' - make_interval(mins => :hb_timeout))::text)
+               AND heartbeat_at < (NOW() - make_interval(mins => :hb_timeout)))
               OR
               (heartbeat_at IS NULL
-               AND updated_at < (NOW() AT TIME ZONE 'UTC' - make_interval(mins => :no_hb_timeout))::text)
+               AND updated_at < (NOW() - make_interval(mins => :no_hb_timeout)))
           )
     """), {"hb_timeout": heartbeat_timeout_min, "no_hb_timeout": no_heartbeat_timeout_min})
     count = result.rowcount

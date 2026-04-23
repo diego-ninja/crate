@@ -100,7 +100,7 @@ def upsert_metric_rollup(
         session.execute(
             text("""
                 INSERT INTO metric_rollups (name, tags_json, period, bucket_start, count, sum_value, min_value, max_value, avg_value)
-                VALUES (:name, :tags::jsonb, :period, :bucket_start, :count, :sum, :min, :max, :avg)
+                VALUES (:name, CAST(:tags AS jsonb), :period, :bucket_start, :count, :sum, :min, :max, :avg)
                 ON CONFLICT (name, tags_json, period, bucket_start)
                 DO UPDATE SET
                     count = metric_rollups.count + EXCLUDED.count,

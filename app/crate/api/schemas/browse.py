@@ -157,6 +157,11 @@ class ArtistShowEventResponse(BaseModel):
     date: str | None = None
     local_time: str | None = None
 
+    @field_validator("id", mode="before")
+    @classmethod
+    def coerce_id_to_str(cls, v: Any) -> str:
+        return str(v)
+
     @field_validator("date", mode="before")
     @classmethod
     def coerce_date_to_str(cls, v: Any) -> str | None:

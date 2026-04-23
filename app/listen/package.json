@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --force",
     "build": "tsc -b && vite build",
     "build:cap": "tsc -b && vite build --mode capacitor && npx cap sync",
     "cap:ios": "npx cap open ios",

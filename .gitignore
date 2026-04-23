@@ -37,3 +37,7 @@ worktrees/
 docs/plans/
 docs/technical/.obsidian/
 app/shared/web/node_modules
+
+# MemPalace per-project files (issue #185)
+mempalace.yaml
+entities.json

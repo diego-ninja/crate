@@ -90,6 +90,39 @@ async function requestRadio(url: string, options: RadioRequestOptions = {}): Pro
   }
 }
 
+async function startSeededRadioSession(
+  seedType: "artist" | "album" | "track" | "playlist" | "home-playlist" | "genre",
+  seedValue: string,
+  seedLabel: string,
+  options: RadioRequestOptions = {},
+): Promise<{
+  tracks: Track[];
+  source: PlaySource;
+}> {
+  const data = await api<ShapedRadioStartResponse>(
+    "/api/radio/start",
+    "POST",
+    {
+      mode: "seeded",
+      seed_type: seedType,
+      seed_value: seedValue,
+    },
+    { signal: options.signal },
+  );
+  return {
+    tracks: data.tracks.map(shapedToTrack),
+    source: {
+      type: "radio",
+      name: `${data.seed_label || seedLabel} Radio`,
+      radio: {
+        seedType,
+        seedId: Number.isNaN(Number(seedValue)) ? seedValue : Number(seedValue),
+        shapedSessionId: data.session_id,
+      },
+    },
+  };
+}
+
 export async function fetchArtistRadio(
   artistId: number,
   artistName: string,
@@ -99,18 +132,8 @@ export async function fetchArtistRadio(
   tracks: Track[];
   source: PlaySource;
 }> {
-  const data = await requestRadio(`/api/artists/${artistId}/radio?limit=${limit}`, options);
-  return {
-    tracks: (data.tracks || []).map(toTrack),
-    source: {
-      type: "radio",
-      name: data.session?.name || `${artistName} Radio`,
-      radio: {
-        seedType: "artist",
-        seedId: data.session?.seed?.artist_id ?? artistId,
-      },
-    },
-  };
+  void limit;
+  return startSeededRadioSession("artist", String(artistId), artistName, options);
 }
 
 export async function fetchTrackRadio(seed: {
@@ -122,32 +145,14 @@ export async function fetchTrackRadio(seed: {
   tracks: Track[];
   source: PlaySource;
 }> {
-  const params = new URLSearchParams();
-  if (seed.libraryTrackId != null) {
-    params.set("track_id", String(seed.libraryTrackId));
-  } else if (seed.storageId) {
-    params.set("storage_id", seed.storageId);
-  } else if (seed.path) {
-    params.set("path", seed.path);
-  } else {
+  const seedValue =
+    seed.libraryTrackId != null
+      ? String(seed.libraryTrackId)
+      : seed.storageId || seed.path;
+  if (!seedValue) {
     throw new Error("track radio requires libraryTrackId, storageId or path");
   }
-  params.set("limit", "50");
-
-  const data = await requestRadio(`/api/radio/track?${params.toString()}`, options);
-  return {
-    tracks: (data.tracks || []).map(toTrack),
-    source: {
-      type: "radio",
-      name: data.session?.name || `${seed.title} Radio`,
-      radio: {
-        seedType: "track",
-        seedId: data.session?.seed?.track_id ?? seed.libraryTrackId ?? null,
-        seedStorageId: data.session?.seed?.track_storage_id ?? seed.storageId ?? null,
-        seedPath: data.session?.seed?.track_path ?? seed.path ?? null,
-      },
-    },
-  };
+  return startSeededRadioSession("track", seedValue, seed.title, options);
 }
 
 export async function fetchAlbumRadio(seed: {
@@ -158,18 +163,7 @@ export async function fetchAlbumRadio(seed: {
   tracks: Track[];
   source: PlaySource;
 }> {
-  const data = await requestRadio(`/api/radio/album/${seed.albumId}?limit=50`, options);
-  return {
-    tracks: (data.tracks || []).map(toTrack),
-    source: {
-      type: "radio",
-      name: data.session?.name || `${seed.albumName} Radio`,
-      radio: {
-        seedType: "album",
-        seedId: data.session?.seed?.album_id ?? seed.albumId,
-      },
-    },
-  };
+  return startSeededRadioSession("album", String(seed.albumId), seed.albumName, options);
 }
 
 export async function fetchPlaylistRadio(seed: {
@@ -179,18 +173,7 @@ export async function fetchPlaylistRadio(seed: {
   tracks: Track[];
   source: PlaySource;
 }> {
-  const data = await requestRadio(`/api/radio/playlist/${seed.playlistId}?limit=50`, options);
-  return {
-    tracks: (data.tracks || []).map(toTrack),
-    source: {
-      type: "radio",
-      name: data.session?.name || `${seed.playlistName} Radio`,
-      radio: {
-        seedType: "playlist",
-        seedId: data.session?.seed?.playlist_id ?? seed.playlistId,
-      },
-    },
-  };
+  return startSeededRadioSession("playlist", String(seed.playlistId), seed.playlistName, options);
 }
 
 export async function fetchHomePlaylistRadio(seed: {
@@ -200,18 +183,7 @@ export async function fetchHomePlaylistRadio(seed: {
   tracks: Track[];
   source: PlaySource;
 }> {
-  const data = await requestRadio(`/api/radio/home-playlist/${encodeURIComponent(seed.playlistId)}?limit=50`, options);
-  return {
-    tracks: (data.tracks || []).map(toTrack),
-    source: {
-      type: "radio",
-      name: data.session?.name || `${seed.playlistName} Radio`,
-      radio: {
-        seedType: "playlist",
-        seedId: data.session?.seed?.playlist_id ?? seed.playlistId,
-      },
-    },
-  };
+  return startSeededRadioSession("home-playlist", seed.playlistId, seed.playlistName, options);
 }
 
 export async function fetchRadioContinuation(
@@ -222,9 +194,8 @@ export async function fetchRadioContinuation(
   const radio = source.radio;
   if (!radio) return [];
 
-  // Shaped radio sessions use their own continuation endpoint
   if (radio.shapedSessionId) {
-    return fetchShapedRadioNext(radio.shapedSessionId, limit);
+    return fetchShapedRadioNext(radio.shapedSessionId, limit, options);
   }
 
   if (radio.seedType === "artist" && radio.seedId) {
@@ -347,7 +318,7 @@ export async function startShapedRadio(
         type: "radio",
         name: `${data.seed_label} Radio`,
         radio: {
-          seedType: (seedType || "discovery") as "track" | "album" | "artist" | "playlist" | "discovery",
+          seedType: (seedType || "discovery") as "track" | "album" | "artist" | "playlist" | "home-playlist" | "genre" | "discovery",
           seedId: seedValue ? (isNaN(Number(seedValue)) ? seedValue : Number(seedValue)) : null,
           shapedSessionId: data.session_id,
         },
@@ -361,12 +332,18 @@ export async function startShapedRadio(
 export async function fetchShapedRadioNext(
   sessionId: string,
   count = 5,
+  options: RadioRequestOptions = {},
 ): Promise<Track[]> {
   try {
-    const data = await api<ShapedRadioNextResponse>("/api/radio/next", "POST", {
-      session_id: sessionId,
-      count,
-    });
+    const data = await api<ShapedRadioNextResponse>(
+      "/api/radio/next",
+      "POST",
+      {
+        session_id: sessionId,
+        count,
+      },
+      { signal: options.signal },
+    );
     return data.tracks.map(shapedToTrack);
   } catch {
     return [];

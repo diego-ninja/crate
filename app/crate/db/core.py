@@ -19,6 +19,15 @@ _pool: psycopg2.pool.ThreadedConnectionPool | None = None
 _db_provisioned = False
 
 
+def _get_pg_connection_settings() -> tuple[str, str, str, str, str]:
+    user = os.environ.get("CRATE_POSTGRES_USER", "crate")
+    password = os.environ.get("CRATE_POSTGRES_PASSWORD", "crate")
+    host = os.environ.get("CRATE_POSTGRES_HOST", "crate-postgres")
+    port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
+    db = os.environ.get("CRATE_POSTGRES_DB", "crate")
+    return user, password, host, port, db
+
+
 def _default_legacy_pool_settings() -> tuple[int, int]:
     runtime = os.environ.get("CRATE_RUNTIME", "").lower()
     if runtime == "api":
@@ -94,11 +103,7 @@ def _reset_pool():
 
 
 def _get_dsn() -> str:
-    user = os.environ.get("CRATE_POSTGRES_USER", "crate")
-    password = os.environ.get("CRATE_POSTGRES_PASSWORD", "crate")
-    host = os.environ.get("CRATE_POSTGRES_HOST", "crate-postgres")
-    port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
-    db = os.environ.get("CRATE_POSTGRES_DB", "crate")
+    user, password, host, port, db = _get_pg_connection_settings()
     return f"postgresql://{user}:{password}@{host}:{port}/{db}"
 
 
@@ -112,22 +117,18 @@ def _ensure_database():
         return
     _db_provisioned = True
 
-    su_user = os.environ.get("POSTGRES_SUPERUSER_USER") or os.environ.get("MUSICDOCK_POSTGRES_USER")
-    su_pass = os.environ.get("POSTGRES_SUPERUSER_PASSWORD") or os.environ.get("MUSICDOCK_POSTGRES_PASSWORD")
+    su_user = os.environ.get("POSTGRES_SUPERUSER_USER")
+    su_pass = os.environ.get("POSTGRES_SUPERUSER_PASSWORD")
     if not su_user:
         return  # No superuser creds — assume app user already exists
 
-    app_user = os.environ.get("CRATE_POSTGRES_USER", "crate")
-    app_pass = os.environ.get("CRATE_POSTGRES_PASSWORD", "crate")
-    app_db = os.environ.get("CRATE_POSTGRES_DB", "crate")
-    host = os.environ.get("CRATE_POSTGRES_HOST", "crate-postgres")
-    port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
+    app_user, app_pass, host, port, app_db = _get_pg_connection_settings()
 
     if su_user == app_user:
         return  # Same user, nothing to provision
 
     try:
-        su_db = os.environ.get("POSTGRES_SUPERUSER_DB") or os.environ.get("MUSICDOCK_POSTGRES_DB", "postgres")
+        su_db = os.environ.get("POSTGRES_SUPERUSER_DB", "postgres")
         conn = psycopg2.connect(
             host=host, port=port, user=su_user, password=su_pass,
             dbname=su_db,
@@ -167,6 +168,55 @@ def _ensure_database():
         conn.close()
     except Exception:
         log.debug("Could not provision app database (superuser may not be available)", exc_info=True)
+
+
+def _ensure_optional_superuser_extension(extension_name: str) -> bool:
+    """Best-effort enablement for optional extensions that need superuser.
+
+    This is intentionally non-fatal: if the server has not been restarted with
+    the required preload libraries yet, or the configured role cannot create the
+    extension, startup should continue and the logs should make the missing
+    observability explicit.
+    """
+    su_user = os.environ.get("POSTGRES_SUPERUSER_USER")
+    su_pass = os.environ.get("POSTGRES_SUPERUSER_PASSWORD")
+    if not su_user:
+        log.info("Skipping optional extension %s: no superuser credentials configured", extension_name)
+        return False
+
+    _, _, host, port, app_db = _get_pg_connection_settings()
+
+    try:
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            user=su_user,
+            password=su_pass,
+            dbname=app_db,
+        )
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM pg_extension WHERE extname = %s", (extension_name,))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return True
+
+        cur.execute(
+            sql.SQL("CREATE EXTENSION IF NOT EXISTS {}").format(sql.Identifier(extension_name))
+        )
+        cur.close()
+        conn.close()
+        log.info("Enabled optional PostgreSQL extension: %s", extension_name)
+        return True
+    except Exception:
+        log.warning(
+            "Optional PostgreSQL extension %s could not be enabled yet; "
+            "ensure the server was restarted with the required preload settings",
+            extension_name,
+            exc_info=True,
+        )
+        return False
 
 
 def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
@@ -285,6 +335,10 @@ def _init_db_inner():
     # alembic_version table and stamps the baseline (001). Subsequent
     # boots only run migrations newer than the stamped head.
     _run_alembic_upgrade()
+
+    # Observability extensions are optional and may require a server restart
+    # with shared_preload_libraries before they can be created successfully.
+    _ensure_optional_superuser_extension("pg_stat_statements")
 
     # Seeds run last — they depend on the schema being fully up to date.
     from crate.db.tx import transaction_scope

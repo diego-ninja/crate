@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="MusicDock",
+        title="Crate",
         version="0.1.0",
         lifespan=lifespan,
         default_response_class=DateAwareJSONResponse,
@@ -40,7 +40,7 @@ def create_app() -> FastAPI:
             app,
             "crate-rest",
             exclude_tags={"subsonic"},
-            title="MusicDock API",
+            title="Crate API",
             summary="OpenAPI contract for Crate's primary HTTP API.",
             description=(
                 "Crate is a self-hosted music platform for library management, enrichment, "

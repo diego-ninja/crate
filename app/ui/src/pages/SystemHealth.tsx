@@ -43,6 +43,9 @@ interface MetricsSummaryResponse {
   home_cache_coalesced: MetricSummary;
   home_cache_stale_fallback: MetricSummary;
   home_compute_ms: MetricSummary;
+  home_endpoint_cache_hit: MetricSummary;
+  home_endpoint_cache_miss: MetricSummary;
+  home_endpoint_compute_ms: MetricSummary;
 }
 
 interface TimeseriesPoint {
@@ -54,10 +57,11 @@ interface TimeseriesPoint {
   sum: number;
 }
 
-interface TimeseriesResponse {
-  name: string;
-  period: string;
-  data: TimeseriesPoint[];
+interface SystemHealthDashboardResponse {
+  summary: MetricsSummaryResponse;
+  system: SystemMetrics;
+  tasks: ActiveTask[];
+  timeseries: Record<string, TimeseriesPoint[]>;
 }
 
 interface ActiveTask {
@@ -324,38 +328,23 @@ export function SystemHealth() {
   const [period, setPeriod] = useState<Period>("minute");
   const minutes = period === "minute" ? 60 : 1440;
 
-  const { data: summary, refetch: refetchSummary } = useApi<MetricsSummaryResponse>(
-    "/api/admin/metrics/summary",
+  const { data: dashboard, refetch: refetchDashboard } = useApi<SystemHealthDashboardResponse>(
+    `/api/admin/metrics/dashboard?period=${period}&minutes=${minutes}`,
   );
-  const { data: system } = useApi<SystemMetrics>("/api/admin/metrics/system");
-  const { data: latencyTs } = useApi<TimeseriesResponse>(
-    `/api/admin/metrics/timeseries?name=api.latency&period=${period}&minutes=${minutes}`,
-  );
-  const { data: requestsTs } = useApi<TimeseriesResponse>(
-    `/api/admin/metrics/timeseries?name=api.requests&period=${period}&minutes=${minutes}`,
-  );
-  const { data: errorsTs } = useApi<TimeseriesResponse>(
-    `/api/admin/metrics/timeseries?name=api.errors&period=${period}&minutes=${minutes}`,
-  );
-  const { data: apiSlowTs } = useApi<TimeseriesResponse>(
-    `/api/admin/metrics/timeseries?name=api.slow&period=${period}&minutes=${minutes}`,
-  );
-  const { data: streamTs } = useApi<TimeseriesResponse>(
-    `/api/admin/metrics/timeseries?name=stream.requests&period=${period}&minutes=${minutes}`,
-  );
-  const { data: homeComputeTs } = useApi<TimeseriesResponse>(
-    `/api/admin/metrics/timeseries?name=home.compute.ms&period=${period}&minutes=${minutes}`,
-  );
-  const { data: queueTs } = useApi<TimeseriesResponse>(
-    `/api/admin/metrics/timeseries?name=worker.queue.depth&period=${period}&minutes=${minutes}`,
-  );
-  const { data: taskDurationTs } = useApi<TimeseriesResponse>(
-    `/api/admin/metrics/timeseries?name=worker.task.duration&period=${period}&minutes=${minutes}`,
-  );
-  const { data: queueWaitTs } = useApi<TimeseriesResponse>(
-    `/api/admin/metrics/timeseries?name=worker.queue.wait&period=${period}&minutes=${minutes}`,
-  );
-  const { data: tasks } = useApi<ActiveTask[]>("/api/tasks?status=running&limit=10");
+
+  const summary = dashboard?.summary ?? null;
+  const system = dashboard?.system ?? null;
+  const tasks = dashboard?.tasks ?? [];
+  const latencyTs = dashboard?.timeseries?.["api.latency"] ?? [];
+  const requestsTs = dashboard?.timeseries?.["api.requests"] ?? [];
+  const errorsTs = dashboard?.timeseries?.["api.errors"] ?? [];
+  const apiSlowTs = dashboard?.timeseries?.["api.slow"] ?? [];
+  const streamTs = dashboard?.timeseries?.["stream.requests"] ?? [];
+  const homeComputeTs = dashboard?.timeseries?.["home.compute.ms"] ?? [];
+  const homeEndpointComputeTs = dashboard?.timeseries?.["home.endpoint_compute.ms"] ?? [];
+  const queueTs = dashboard?.timeseries?.["worker.queue.depth"] ?? [];
+  const taskDurationTs = dashboard?.timeseries?.["worker.task.duration"] ?? [];
+  const queueWaitTs = dashboard?.timeseries?.["worker.queue.wait"] ?? [];
 
   const score = useMemo(() => {
     if (!summary) return 100;
@@ -378,6 +367,12 @@ export function SystemHealth() {
   const homeCacheTotal = (summary?.home_cache_hit.count ?? 0) + (summary?.home_cache_miss.count ?? 0);
   const homeCacheHitRate =
     homeCacheTotal > 0 ? ((summary?.home_cache_hit.count ?? 0) / homeCacheTotal) * 100 : 0;
+  const homeEndpointCacheTotal =
+    (summary?.home_endpoint_cache_hit.count ?? 0) + (summary?.home_endpoint_cache_miss.count ?? 0);
+  const homeEndpointCacheHitRate =
+    homeEndpointCacheTotal > 0
+      ? ((summary?.home_endpoint_cache_hit.count ?? 0) / homeEndpointCacheTotal) * 100
+      : 0;
 
   const scoreSummary =
     score >= 80
@@ -386,10 +381,10 @@ export function SystemHealth() {
         ? "The system is usable, but latency or load deserve attention before they become user-facing."
         : "Health is degraded enough to warrant immediate triage on latency, queue pressure or database usage.";
 
-  const runningTasks = tasks?.length ?? 0;
+  const runningTasks = tasks.length;
   const queueDepth =
-    queueTs?.data.length
-      ? queueTs.data[queueTs.data.length - 1]?.max ?? 0
+    queueTs.length
+      ? queueTs[queueTs.length - 1]?.max ?? 0
       : 0;
 
   return (
@@ -416,7 +411,7 @@ export function SystemHealth() {
                 24h
               </button>
             </div>
-            <ActionIconButton variant="card" onClick={() => refetchSummary()} title="Refresh metrics">
+            <ActionIconButton variant="card" onClick={() => refetchDashboard()} title="Refresh metrics">
               <RefreshCw size={15} />
             </ActionIconButton>
           </div>
@@ -430,12 +425,13 @@ export function SystemHealth() {
             {errorRate}% error rate
           </CrateChip>
         ) : null}
-        {summary && homeCacheTotal > 0 ? (
-          <CrateChip>{homeCacheHitRate.toFixed(0)}% home cache hit</CrateChip>
+        {summary && homeCacheTotal > 0 ? <CrateChip>{homeCacheHitRate.toFixed(0)}% home core hit</CrateChip> : null}
+        {summary && homeEndpointCacheTotal > 0 ? (
+          <CrateChip>{homeEndpointCacheHitRate.toFixed(0)}% home endpoint hit</CrateChip>
         ) : null}
       </OpsPageHero>
 
-      <div className="grid gap-4 xl:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))]">
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_repeat(6,minmax(0,1fr))]">
         <HealthSignal score={score} summary={scoreSummary} />
         <OpsStatTile
           icon={Activity}
@@ -464,11 +460,22 @@ export function SystemHealth() {
         />
         <OpsStatTile
           icon={Radio}
-          label="Home Cache"
+          label="Home Core Cache"
           value={homeCacheTotal > 0 ? `${homeCacheHitRate.toFixed(0)}%` : "—"}
           caption={
             summary
               ? `${summary.home_cache_hit.count} hits, ${summary.home_cache_miss.count} misses`
+              : "Waiting for metrics"
+          }
+          tone="default"
+        />
+        <OpsStatTile
+          icon={Radio}
+          label="Home Endpoint Cache"
+          value={homeEndpointCacheTotal > 0 ? `${homeEndpointCacheHitRate.toFixed(0)}%` : "—"}
+          caption={
+            summary
+              ? `${summary.home_endpoint_cache_hit.count} hits, ${summary.home_endpoint_cache_miss.count} misses`
               : "Waiting for metrics"
           }
           tone="default"
@@ -590,29 +597,30 @@ export function SystemHealth() {
         description="Latency, request volume, queue pressure and task execution trends over the selected time window."
       >
         <div className="grid gap-4 lg:grid-cols-2">
-          <MetricChart title="API Latency" data={latencyTs?.data ?? []} yLabel="ms" />
-          <MetricChart title="Request Volume" data={requestsTs?.data ?? []} yLabel="req" />
+          <MetricChart title="API Latency" data={latencyTs} yLabel="ms" />
+          <MetricChart title="Request Volume" data={requestsTs} yLabel="req" />
           <MetricChart
             title="Error Rate"
-            data={errorsTs?.data ?? []}
+            data={errorsTs}
             yLabel="errors"
             series={[{ id: "errors", field: "count" }]}
           />
           <MetricChart
             title="Slow Requests"
-            data={apiSlowTs?.data ?? []}
+            data={apiSlowTs}
             yLabel="slow"
             series={[{ id: "slow", field: "count" }]}
           />
-          <MetricChart title="Stream Activity" data={streamTs?.data ?? []} yLabel="streams" />
-          <MetricChart title="Home Compute" data={homeComputeTs?.data ?? []} yLabel="ms" />
-          <MetricChart title="Task Duration" data={taskDurationTs?.data ?? []} yLabel="sec" />
-          <MetricChart title="Queue Wait Time" data={queueWaitTs?.data ?? []} yLabel="sec" />
-          <MetricChart title="Queue Depth" data={queueTs?.data ?? []} yLabel="tasks" />
+          <MetricChart title="Stream Activity" data={streamTs} yLabel="streams" />
+          <MetricChart title="Home Core Compute" data={homeComputeTs} yLabel="ms" />
+          <MetricChart title="Home Endpoint Compute" data={homeEndpointComputeTs} yLabel="ms" />
+          <MetricChart title="Task Duration" data={taskDurationTs} yLabel="sec" />
+          <MetricChart title="Queue Wait Time" data={queueWaitTs} yLabel="sec" />
+          <MetricChart title="Queue Depth" data={queueTs} yLabel="tasks" />
         </div>
       </OpsPanel>
 
-      {tasks && tasks.length > 0 ? (
+      {tasks.length > 0 ? (
         <OpsPanel
           icon={Zap}
           title="Running Tasks"
