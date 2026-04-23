@@ -737,6 +737,8 @@ def _create_schema(cur):
             spectral_complexity DOUBLE PRECISION,
             analysis_state TEXT DEFAULT 'pending',
             bliss_state TEXT DEFAULT 'pending',
+            analysis_completed_at TIMESTAMPTZ,
+            bliss_computed_at TIMESTAMPTZ,
             bliss_vector DOUBLE PRECISION[],
             lastfm_listeners INTEGER,
             lastfm_playcount BIGINT,
@@ -1570,6 +1572,16 @@ def _m13_add_track_rating(cur):
     """)
 
 
+def _m30_add_pipeline_activity_timestamps(cur):
+    for col in ("analysis_completed_at", "bliss_computed_at"):
+        cur.execute(f"""
+            DO $$ BEGIN
+                ALTER TABLE library_tracks ADD COLUMN {col} TIMESTAMPTZ;
+            EXCEPTION WHEN duplicate_column THEN NULL;
+            END $$
+        """)
+
+
 def _m14_add_tasks_dramatiq_columns(cur):
     for col, col_type, default in [
         ("priority", "INTEGER", "2"),
@@ -2114,4 +2126,5 @@ _MIGRATIONS = [
     (27, "add_track_sample_rate_and_bit_depth", _m27_add_track_sample_rate_and_bit_depth),
     (28, "add_user_location_fields", _m28_add_user_location_fields),
     (29, "add_shows_lastfm_fields", _m29_add_shows_lastfm_fields),
+    (30, "add_pipeline_activity_timestamps", _m30_add_pipeline_activity_timestamps),
 ]

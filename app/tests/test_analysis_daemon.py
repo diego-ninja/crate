@@ -191,6 +191,7 @@ class TestAnalysisJobsIntegration:
 
     def test_reset_stale_claims_and_store_bliss_vector(self, pg_db):
         from crate.db.jobs import analysis as analysis_jobs
+        from crate.db.management import get_last_bliss_track
         from crate.db.tx import transaction_scope
 
         track = self._seed_track(pg_db, "bliss")
@@ -212,6 +213,7 @@ class TestAnalysisJobsIntegration:
                 text(
                     """
                     SELECT analysis_state, bliss_state, bliss_vector,
+                           bliss_computed_at,
                            bliss_embedding IS NOT NULL AS has_bliss_embedding
                     FROM library_tracks
                     WHERE id = :id
@@ -224,3 +226,96 @@ class TestAnalysisJobsIntegration:
         assert row["bliss_state"] == "done"
         assert row["bliss_vector"] == vector
         assert row["has_bliss_embedding"] is True
+        assert row["bliss_computed_at"] is not None
+
+        last_bliss = get_last_bliss_track()
+        assert last_bliss["title"] == "Track bliss"
+
+    def test_bliss_claim_skips_tracks_under_active_analysis(self, pg_db):
+        from crate.db.jobs import analysis as analysis_jobs
+        from crate.db.tx import transaction_scope
+
+        blocked = self._seed_track(pg_db, "blocked")
+        eligible = self._seed_track(pg_db, "eligible")
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET analysis_state = 'analyzing', bliss_state = 'pending', updated_at = NOW() + INTERVAL '2 seconds'
+                    WHERE id = :id
+                    """
+                ),
+                {"id": blocked["id"]},
+            )
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET analysis_state = 'pending', bliss_state = 'pending', updated_at = NOW()
+                    WHERE id = :id
+                    """
+                ),
+                {"id": eligible["id"]},
+            )
+
+        claimed = analysis_jobs.claim_track("bliss_state")
+
+        assert claimed is not None
+        assert claimed["id"] == eligible["id"]
+
+        with transaction_scope() as session:
+            rows = session.execute(
+                text("SELECT id, analysis_state, bliss_state FROM library_tracks WHERE id IN (:blocked_id, :eligible_id) ORDER BY id"),
+                {"blocked_id": blocked["id"], "eligible_id": eligible["id"]},
+            ).mappings().all()
+
+        by_id = {row["id"]: row for row in rows}
+        assert by_id[blocked["id"]]["analysis_state"] == "analyzing"
+        assert by_id[blocked["id"]]["bliss_state"] == "pending"
+        assert by_id[eligible["id"]]["bliss_state"] == "analyzing"
+
+    def test_last_pipeline_cards_use_pipeline_specific_timestamps(self, pg_db):
+        from crate.db.management import get_last_analyzed_track, get_last_bliss_track
+        from crate.db.tx import transaction_scope
+
+        bliss_track = self._seed_track(pg_db, "bliss-last")
+        analysis_track = self._seed_track(pg_db, "analysis-last")
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET bliss_state = 'done',
+                        bliss_vector = CAST(:vector AS double precision[]),
+                        bliss_computed_at = TIMESTAMPTZ '2026-04-23T10:00:00Z',
+                        updated_at = TIMESTAMPTZ '2026-04-23T11:00:00Z'
+                    WHERE id = :id
+                    """
+                ),
+                {"id": bliss_track["id"], "vector": [0.3] * 20},
+            )
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET analysis_state = 'done',
+                        bpm = 128.0,
+                        energy = 0.82,
+                        analysis_completed_at = TIMESTAMPTZ '2026-04-23T12:00:00Z',
+                        updated_at = TIMESTAMPTZ '2026-04-23T09:00:00Z'
+                    WHERE id = :id
+                    """
+                ),
+                {"id": analysis_track["id"]},
+            )
+
+        last_bliss = get_last_bliss_track()
+        last_analyzed = get_last_analyzed_track()
+
+        assert last_bliss["title"] == "Track bliss-last"
+        assert last_bliss["updated_at"] is not None
+        assert last_analyzed["title"] == "Track analysis-last"
+        assert last_analyzed["updated_at"] is not None
