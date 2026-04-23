@@ -3,7 +3,6 @@ import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
-import { extractPalette } from "@/lib/palette";
 
 interface LyricLine {
   time: number;
@@ -14,9 +13,6 @@ interface LyricsData {
   synced: LyricLine[] | null;
   plain: string | null;
 }
-
-type PaletteTriplet = [number, number, number];
-
 function parseSyncedLyrics(lrc: string): LyricLine[] {
   const lines: LyricLine[] = [];
   for (const line of lrc.split("\n")) {
@@ -33,21 +29,11 @@ function parseSyncedLyrics(lrc: string): LyricLine[] {
   return lines;
 }
 
-function cssColor(color: PaletteTriplet, alpha = 1): string {
-  const [r, g, b] = color.map((value) => Math.round(value * 255));
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
+export function LyricsTab({ useAlbumPalette: _useAlbumPalette }: { useAlbumPalette: boolean }) {
   const { currentTime } = usePlayer();
   const { currentTrack, seek } = usePlayerActions();
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [palette, setPalette] = useState<{
-    primary: PaletteTriplet;
-    secondary: PaletteTriplet;
-    accent: PaletteTriplet;
-  } | null>(null);
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -80,28 +66,6 @@ export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
     };
   }, [currentTrack?.id, currentTrack?.artist, currentTrack?.title]);
 
-  useEffect(() => {
-    if (!useAlbumPalette || !currentTrack?.albumCover) {
-      setPalette(null);
-      return;
-    }
-    let cancelled = false;
-    extractPalette(currentTrack.albumCover)
-      .then(([primary, secondary, accent]) => {
-        if (!cancelled) {
-          setPalette({ primary, secondary, accent });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPalette(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentTrack?.albumCover, useAlbumPalette]);
-
   const activeIndex = useMemo(() => {
     if (!lyrics?.synced) return -1;
     for (let i = lyrics.synced.length - 1; i >= 0; i--) {
@@ -132,15 +96,12 @@ export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
     );
   }
 
-  const primary = palette?.primary ?? [0.024, 0.714, 0.831];
-  const secondary = palette?.secondary ?? [0.4, 0.9, 1.0];
-
   return (
     <div
       ref={containerRef}
       className="lyrics-mask relative flex-1 overflow-y-auto pr-1"
       style={{
-        background: `linear-gradient(180deg, ${cssColor(primary, 0.12)} 0%, transparent 28%, transparent 72%, ${cssColor(secondary, 0.06)} 100%)`,
+        background: "linear-gradient(180deg, rgba(6,182,212,0.12) 0%, transparent 28%, transparent 72%, rgba(6,182,212,0.06) 100%)",
       }}
     >
       {lyrics?.synced ? (
@@ -155,7 +116,7 @@ export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
                 onClick={() => seek(line.time)}
                 className={`relative z-20 w-full rounded-md px-2 py-1 text-left transition-all duration-500 ${
                   isActive
-                    ? "bg-primary/10 text-[17px] font-semibold"
+                    ? "bg-primary/10 text-[17px] font-semibold text-primary"
                     : isPast
                       ? "text-[14px] text-white/25"
                       : "text-[14px] text-white/50"
@@ -163,8 +124,7 @@ export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
                 style={
                   isActive
                     ? {
-                        color: cssColor(secondary, 1),
-                        textShadow: `0 0 20px ${cssColor(primary, 0.25)}`,
+                        textShadow: "0 0 20px rgba(6,182,212,0.28)",
                       }
                     : undefined
                 }

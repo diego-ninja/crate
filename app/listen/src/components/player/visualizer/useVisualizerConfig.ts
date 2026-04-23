@@ -7,13 +7,14 @@ import {
   DEFAULT_VISUALIZER_SETTINGS,
   PLAYER_VIZ_PREFS_EVENT,
   getTrackAdaptiveVisualizerPreference,
+  getPlayerSurfaceModePreference,
   getUseAlbumPalettePreference,
-  getVisualizerEnabledPreference,
   getVisualizerSettingsPreference,
+  setPlayerSurfaceModePreference,
   setTrackAdaptiveVisualizerPreference,
   setUseAlbumPalettePreference,
-  setVisualizerEnabledPreference,
   setVisualizerSettingsPreference,
+  type PlayerSurfaceMode,
   type VisualizerSettingsPreference,
 } from "@/lib/player-visualizer-prefs";
 import type { MusicVisualizer } from "./MusicVisualizer";
@@ -97,13 +98,14 @@ function adjustPaletteColor(
 }
 
 export interface VisualizerConfigState {
+  surfaceMode: PlayerSurfaceMode;
   vizEnabled: boolean;
   useAlbumPalette: boolean;
   trackAdaptiveViz: boolean;
   vizConfig: VisualizerSettingsPreference;
   effectiveVizConfig: VisualizerSettingsPreference;
   trackVizProfile: VisualizerTrackProfile;
-  toggleEnabled: () => void;
+  setSurfaceMode: (mode: PlayerSurfaceMode) => void;
   toggleAlbumPalette: () => void;
   toggleTrackAdaptive: () => void;
   updateConfig: (next: VisualizerSettingsPreference) => void;
@@ -116,11 +118,12 @@ export function useVisualizerConfig(
   isOpen: boolean,
   crossfadeTransition: CrossfadeTransition | null = null,
 ): VisualizerConfigState {
-  const [vizEnabled, setVizEnabled] = useState(getVisualizerEnabledPreference);
+  const [surfaceMode, setSurfaceModeState] = useState(getPlayerSurfaceModePreference);
   const [useAlbumPalette, setUseAlbumPalette] = useState(getUseAlbumPalettePreference);
   const [trackAdaptiveViz, setTrackAdaptiveViz] = useState(getTrackAdaptiveVisualizerPreference);
   const [vizConfig, setVizConfig] = useState(getVisualizerSettingsPreference);
   const trackVizProfile = useTrackVisualizerProfile(currentTrack, trackAdaptiveViz);
+  const vizEnabled = surfaceMode === "visualizer";
 
   const effectiveVizDelta = trackAdaptiveViz ? trackVizProfile.settingsDelta : ZERO_VIZ_DELTA;
   const effectiveVizConfig = {
@@ -134,9 +137,9 @@ export function useVisualizerConfig(
   // Sync preferences from storage events
   useEffect(() => {
     const sync = () => {
+      setSurfaceModeState(getPlayerSurfaceModePreference());
       setUseAlbumPalette(getUseAlbumPalettePreference());
       setVizConfig(getVisualizerSettingsPreference());
-      setVizEnabled(getVisualizerEnabledPreference());
       setTrackAdaptiveViz(getTrackAdaptiveVisualizerPreference());
     };
     window.addEventListener("storage", sync);
@@ -323,10 +326,9 @@ export function useVisualizerConfig(
     return () => window.clearTimeout(timer);
   }, [currentTrack?.id, isOpen, trackAdaptiveViz, vizEnabled, vizRef]);
 
-  const toggleEnabled = () => {
-    const next = !vizEnabled;
-    setVizEnabled(next);
-    setVisualizerEnabledPreference(next);
+  const setSurfaceMode = (mode: PlayerSurfaceMode) => {
+    setSurfaceModeState(mode);
+    setPlayerSurfaceModePreference(mode);
   };
 
   const toggleAlbumPalette = () => {
@@ -349,13 +351,14 @@ export function useVisualizerConfig(
   const resetConfig = () => updateConfig(DEFAULT_VISUALIZER_SETTINGS);
 
   return {
+    surfaceMode,
     vizEnabled,
     useAlbumPalette,
     trackAdaptiveViz,
     vizConfig,
     effectiveVizConfig,
     trackVizProfile,
-    toggleEnabled,
+    setSurfaceMode,
     toggleAlbumPalette,
     toggleTrackAdaptive,
     updateConfig,
