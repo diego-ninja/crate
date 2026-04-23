@@ -5,11 +5,13 @@ import {
   Heart, Airplay, ListMusic, Mic2, Maximize2, Loader2, SlidersHorizontal,
 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import type { PlaySource } from "@/contexts/player-types";
 import { artistPagePath, albumPagePath } from "@/lib/library-routes";
 import { api } from "@/lib/api";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
+import { cn } from "@crate/ui/lib/cn";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { toast } from "sonner";
@@ -33,6 +35,53 @@ const SHOW_PLAYER_BAR_ANALYZER = true;
 
 function getStoredFsOpen(): boolean {
   try { return localStorage.getItem(FS_OPEN_KEY) === "true"; } catch { return false; }
+}
+
+type TransportTone = "default" | "album" | "playlist" | "radio" | "discovery";
+
+function getTransportTone(playSource: PlaySource | null): TransportTone {
+  if (playSource?.radio?.seedType === "discovery") return "discovery";
+  if (playSource?.type === "album") return "album";
+  if (playSource?.type === "playlist") return "playlist";
+  if (playSource?.type === "radio" || playSource?.radio) return "radio";
+  return "default";
+}
+
+function getTransportButtonToneClass(playSource: PlaySource | null, active: boolean): string {
+  const tone = getTransportTone(playSource);
+
+  switch (tone) {
+    case "album":
+      return cn(
+        "border-primary/20 bg-[linear-gradient(180deg,#fbfeff,#dffbff)]",
+        "shadow-[0_0_0_1px_rgba(103,232,249,0.12),0_8px_22px_rgba(8,145,178,0.2)]",
+        active && "shadow-[0_0_0_1px_rgba(103,232,249,0.16),0_10px_28px_rgba(8,145,178,0.28)]",
+      );
+    case "playlist":
+      return cn(
+        "border-primary/16 bg-[linear-gradient(180deg,#ffffff,#ecfbff)]",
+        "shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_8px_20px_rgba(14,116,144,0.16)]",
+        active && "shadow-[0_0_0_1px_rgba(255,255,255,0.12),0_10px_26px_rgba(14,116,144,0.22)]",
+      );
+    case "radio":
+      return cn(
+        "border-primary/24 bg-[linear-gradient(180deg,#f3fdff,#d4f8ff)]",
+        "shadow-[0_0_18px_rgba(34,211,238,0.2),0_10px_24px_rgba(8,145,178,0.18)]",
+        active && "shadow-[0_0_22px_rgba(34,211,238,0.28),0_12px_28px_rgba(8,145,178,0.24)]",
+      );
+    case "discovery":
+      return cn(
+        "border-primary/30 bg-[linear-gradient(180deg,#f8feff,#d6fbff)]",
+        "shadow-[0_0_22px_rgba(34,211,238,0.26),0_10px_26px_rgba(8,145,178,0.2)]",
+        active && "animate-pulse-subtle shadow-[0_0_28px_rgba(34,211,238,0.34),0_14px_32px_rgba(8,145,178,0.28)]",
+      );
+    default:
+      return cn(
+        "border-white/75 bg-white",
+        "shadow-[0_8px_20px_rgba(255,255,255,0.1)]",
+        active && "shadow-[0_10px_24px_rgba(255,255,255,0.14)]",
+      );
+  }
 }
 
 export function PlayerBar() {
@@ -177,6 +226,9 @@ export function PlayerBar() {
     ...trackQuality,
   };
   const qualityBadge = getTrackQualityBadge(qualityTrack);
+  const transportButtonClass = getTransportButtonToneClass(playSource, isPlaying || isBuffering);
+  const shapedRadioSessionId = playSource?.radio?.shapedSessionId;
+  const isShapedRadioTrack = !!(shapedRadioSessionId && currentTrack?.libraryTrackId);
 
 
   if (!currentTrack) return null;
@@ -368,10 +420,11 @@ export function PlayerBar() {
               </button>
 
             {/* Radio shaping — thumbs up/down when shaped radio is active */}
-            {playSource?.radio?.shapedSessionId && currentTrack?.libraryTrackId && (
+            {isDesktop && isShapedRadioTrack && (
               <RadioFeedback
-                sessionId={playSource.radio.shapedSessionId}
+                sessionId={shapedRadioSessionId!}
                 trackId={currentTrack.libraryTrackId}
+                onDislike={() => next()}
               />
             )}
 
@@ -414,7 +467,10 @@ export function PlayerBar() {
                 <button
                   onClick={isPlaying ? pause : resume}
                   aria-label={isPlaying ? "Pause" : "Play"}
-                  className="w-9 h-9 rounded-full bg-white flex items-center justify-center hover:scale-105 transition-transform"
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-full border text-black transition-[transform,background-color,box-shadow,border-color] duration-200 hover:scale-105",
+                    transportButtonClass,
+                  )}
                 >
                   {isBuffering ? (
                     <Loader2 size={15} className="animate-spin text-black" />
@@ -481,13 +537,25 @@ export function PlayerBar() {
 
           {/* ── Mobile/tablet play controls (md only, no progress) ── */}
           <div className="flex items-center gap-1 md:hidden">
-            <button onClick={prev} aria-label="Previous track" className="w-10 h-10 flex items-center justify-center text-white/50">
-              <SkipBack size={18} fill="currentColor" />
-            </button>
+            {isShapedRadioTrack ? (
+              <RadioFeedback
+                sessionId={shapedRadioSessionId!}
+                trackId={currentTrack.libraryTrackId}
+                onDislike={() => next()}
+                size="sm"
+              />
+            ) : (
+              <button onClick={prev} aria-label="Previous track" className="w-10 h-10 flex items-center justify-center text-white/50">
+                <SkipBack size={18} fill="currentColor" />
+              </button>
+            )}
             <button
               onClick={isPlaying ? pause : resume}
               aria-label={isPlaying ? "Pause" : "Play"}
-              className="w-10 h-10 rounded-full bg-white flex items-center justify-center"
+              className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-full border text-black transition-[transform,background-color,box-shadow,border-color] duration-200",
+                transportButtonClass,
+              )}
             >
               {isBuffering ? (
                 <Loader2 size={15} className="animate-spin text-black" />
@@ -497,9 +565,19 @@ export function PlayerBar() {
                 <Play size={16} className="text-black ml-0.5" fill="black" />
               )}
             </button>
-            <button onClick={next} aria-label="Next track" className="w-10 h-10 flex items-center justify-center text-white/50">
-              <SkipForward size={18} fill="currentColor" />
-            </button>
+            {isShapedRadioTrack ? (
+              <button
+                onClick={() => setFsOpen(true)}
+                aria-label="Open fullscreen player"
+                className="w-10 h-10 flex items-center justify-center text-white/35 transition-colors hover:text-white/60"
+              >
+                <Maximize2 size={16} />
+              </button>
+            ) : (
+              <button onClick={next} aria-label="Next track" className="w-10 h-10 flex items-center justify-center text-white/50">
+                <SkipForward size={18} fill="currentColor" />
+              </button>
+            )}
           </div>
 
           {/* ── Block 3: Action Buttons (lg+) ── */}

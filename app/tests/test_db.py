@@ -3,9 +3,10 @@
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import Event, Thread
 from unittest.mock import patch
+from uuid import uuid4
 
 import psycopg2
 import pytest
@@ -188,6 +189,151 @@ class TestGenreTaxonomyCleanup:
         assert edge_count == 0
 
 
+class TestBlissFallbackQueries:
+    def test_find_best_candidate_falls_back_to_bliss_vector_when_embedding_missing(self, pg_db):
+        from crate.db.paths import _find_best_candidate
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Fallback Artist"})
+        album_id = pg_db.upsert_album({
+            "artist": "Fallback Artist",
+            "name": "Fallback Album",
+            "path": "/music/Fallback Artist/Fallback Album",
+        })
+        pg_db.upsert_track({
+            "album_id": album_id,
+            "artist": "Fallback Artist",
+            "album": "Fallback Album",
+            "filename": "01 - Near.flac",
+            "title": "Near",
+            "track_number": 1,
+            "format": "flac",
+            "path": "/music/Fallback Artist/Fallback Album/01 - Near.flac",
+        })
+        pg_db.upsert_track({
+            "album_id": album_id,
+            "artist": "Fallback Artist",
+            "album": "Fallback Album",
+            "filename": "02 - Far.flac",
+            "title": "Far",
+            "track_number": 2,
+            "format": "flac",
+            "path": "/music/Fallback Artist/Fallback Album/02 - Far.flac",
+        })
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET bliss_vector = CAST(:vector AS double precision[]),
+                        bliss_embedding = NULL
+                    WHERE path = :path
+                    """
+                ),
+                {
+                    "vector": [0.0] * 20,
+                    "path": "/music/Fallback Artist/Fallback Album/01 - Near.flac",
+                },
+            )
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET bliss_vector = CAST(:vector AS double precision[]),
+                        bliss_embedding = NULL
+                    WHERE path = :path
+                    """
+                ),
+                {
+                    "vector": [1.0] * 20,
+                    "path": "/music/Fallback Artist/Fallback Album/02 - Far.flac",
+                },
+            )
+
+        candidate = _find_best_candidate(
+            [0.0] * 20,
+            exclude_ids=set(),
+            exclude_titles=set(),
+            recent_artists=[],
+            sim_graph={},
+            genre_map={},
+            member_graph={},
+            target_artists=[],
+        )
+
+        assert candidate is not None
+        assert candidate["title"] == "Near"
+
+    def test_find_anchor_track_falls_back_to_bliss_vector_when_embedding_missing(self, pg_db):
+        from crate.db.paths import _find_anchor_track
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Anchor Artist"})
+        artist = pg_db.get_library_artist("Anchor Artist")
+        assert artist is not None
+        album_id = pg_db.upsert_album({
+            "artist": "Anchor Artist",
+            "name": "Anchor Album",
+            "path": "/music/Anchor Artist/Anchor Album",
+        })
+        pg_db.upsert_track({
+            "album_id": album_id,
+            "artist": "Anchor Artist",
+            "album": "Anchor Album",
+            "filename": "01 - Close.flac",
+            "title": "Close",
+            "track_number": 1,
+            "format": "flac",
+            "path": "/music/Anchor Artist/Anchor Album/01 - Close.flac",
+        })
+        pg_db.upsert_track({
+            "album_id": album_id,
+            "artist": "Anchor Artist",
+            "album": "Anchor Album",
+            "filename": "02 - Distant.flac",
+            "title": "Distant",
+            "track_number": 2,
+            "format": "flac",
+            "path": "/music/Anchor Artist/Anchor Album/02 - Distant.flac",
+        })
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET bliss_vector = CAST(:vector AS double precision[]),
+                        bliss_embedding = NULL
+                    WHERE path = :path
+                    """
+                ),
+                {
+                    "vector": [0.1] * 20,
+                    "path": "/music/Anchor Artist/Anchor Album/01 - Close.flac",
+                },
+            )
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET bliss_vector = CAST(:vector AS double precision[]),
+                        bliss_embedding = NULL
+                    WHERE path = :path
+                    """
+                ),
+                {
+                    "vector": [0.9] * 20,
+                    "path": "/music/Anchor Artist/Anchor Album/02 - Distant.flac",
+                },
+            )
+
+        anchor = _find_anchor_track("artist", str(artist["id"]), [0.1] * 20, set())
+
+        assert anchor is not None
+        assert anchor["title"] == "Close"
+
+
 class TestTaskCRUD:
     def test_create_task(self, pg_db):
         task_id = pg_db.create_task("scan", {"only": "naming"})
@@ -219,6 +365,110 @@ class TestTaskCRUD:
         assert task_id is not None
         assert mock_dispatch.call_count == 0
         assert pg_db.get_task(task_id) is None
+
+    def test_cleanup_zombie_tasks_marks_stale_running_rows_failed(self, pg_db):
+        from crate.db.tasks import cleanup_zombie_tasks
+        from crate.db.tx import transaction_scope
+
+        now = datetime.now(timezone.utc)
+        stale_heartbeat_task = uuid4().hex[:12]
+        stale_updated_task = uuid4().hex[:12]
+        healthy_task = uuid4().hex[:12]
+
+        with transaction_scope() as session:
+            for task_id, heartbeat_at, updated_at in (
+                (
+                    stale_heartbeat_task,
+                    now - timedelta(minutes=12),
+                    now - timedelta(minutes=1),
+                ),
+                (
+                    stale_updated_task,
+                    None,
+                    now - timedelta(minutes=8),
+                ),
+                (
+                    healthy_task,
+                    now - timedelta(minutes=1),
+                    now - timedelta(minutes=1),
+                ),
+            ):
+                session.execute(
+                    text(
+                        """
+                        INSERT INTO tasks (
+                            id, type, status, params_json, priority, pool,
+                            max_duration_sec, max_retries, created_at, updated_at, heartbeat_at
+                        ) VALUES (
+                            :id, 'scan', 'running', '{}'::jsonb, 2, 'default',
+                            1800, 0, :created_at, :updated_at, :heartbeat_at
+                        )
+                        """
+                    ),
+                    {
+                        "id": task_id,
+                        "created_at": now.isoformat(),
+                        "updated_at": updated_at.isoformat(),
+                        "heartbeat_at": heartbeat_at.isoformat() if heartbeat_at else None,
+                    },
+                )
+
+        cleaned = cleanup_zombie_tasks(heartbeat_timeout_min=5, no_heartbeat_timeout_min=3)
+
+        assert cleaned == 2
+        assert pg_db.get_task(stale_heartbeat_task)["status"] == "failed"
+        assert pg_db.get_task(stale_updated_task)["status"] == "failed"
+        assert pg_db.get_task(healthy_task)["status"] == "running"
+
+
+class TestManagementQueries:
+    def test_upsert_metric_rollup_inserts_and_accumulates_jsonb_tags(self, pg_db):
+        from crate.db.management import upsert_metric_rollup, query_metric_rollups
+        from crate.db.tx import transaction_scope
+
+        metric_name = f"test.metric.rollup.{uuid4().hex[:8]}"
+        tags_json = json.dumps({"route": "/api/status", "status": "200"}, sort_keys=True)
+        bucket_start = "2026-04-23T00:00:00+00:00"
+
+        with transaction_scope() as session:
+            session.execute(
+                text("DELETE FROM metric_rollups WHERE name = :name"),
+                {"name": metric_name},
+            )
+
+        upsert_metric_rollup(
+            name=metric_name,
+            tags_json=tags_json,
+            period="hour",
+            bucket_start=bucket_start,
+            count=2,
+            sum_value=300.0,
+            min_value=100.0,
+            max_value=200.0,
+            avg_value=150.0,
+        )
+        upsert_metric_rollup(
+            name=metric_name,
+            tags_json=tags_json,
+            period="hour",
+            bucket_start=bucket_start,
+            count=1,
+            sum_value=150.0,
+            min_value=150.0,
+            max_value=150.0,
+            avg_value=150.0,
+        )
+
+        rows = query_metric_rollups(name=metric_name, period="hour", limit=10)
+
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["count"] == 3
+        assert float(row["sum_value"]) == pytest.approx(450.0)
+        assert float(row["min_value"]) == pytest.approx(100.0)
+        assert float(row["max_value"]) == pytest.approx(200.0)
+        assert float(row["avg_value"]) == pytest.approx(150.0)
+        assert row["tags_json"] == json.loads(tags_json)
 
 
 class TestPlaylistQueryBatching:

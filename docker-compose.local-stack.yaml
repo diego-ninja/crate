@@ -1,6 +1,6 @@
-# Override para entorno LOCAL
-# Docker Compose carga este fichero automaticamente junto con docker-compose.yaml
-# Para produccion, usar: docker compose -f docker-compose.yaml (sin override)
+# Local-only override
+# Docker Compose loads this file alongside docker-compose.yaml.
+# For production use: docker compose -f docker-compose.yaml
 
 services:
   traefik:
@@ -16,25 +16,17 @@ services:
     labels:
       traefik.http.routers.traefik-secure.rule: Host(`traefik.crate.local`)
 
-  authelia:
-    labels:
-      traefik.http.routers.authelia.rule: Host(`auth.crate.local`)
-
-  lidarr:
-    labels:
-      traefik.http.routers.lidarr.rule: Host(`collection.crate.local`)
-
   tidarr:
     labels:
       traefik.http.routers.tidarr.rule: Host(`search.crate.local`)
 
   crate-api:
     ports:
-      - "${MUSICDOCK_API_PORT}:8585"
+      - "${CRATE_API_PORT:-8585}:8585"
 
   crate-ui:
     ports:
-      - "${MUSICDOCK_UI_PORT:-8580}:80"
+      - "${CRATE_UI_PORT:-8580}:80"
     labels:
       traefik.http.routers.admin.rule: Host(`admin.crate.local`)
 

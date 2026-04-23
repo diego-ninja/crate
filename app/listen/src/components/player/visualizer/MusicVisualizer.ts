@@ -98,6 +98,7 @@ export class MusicVisualizer {
   private renderedLowBandWeight = 1.0;
   private renderedMidBandWeight = 1.0;
   private renderedHighBandWeight = 1.0;
+  private viewportScaleCompensation = 1.0;
   private renderedColor1: [number, number, number] = [0.024, 0.714, 0.831];
   private renderedColor2: [number, number, number] = [0.4, 0.9, 1.0];
   private renderedColor3: [number, number, number] = [0.1, 0.3, 0.8];
@@ -153,9 +154,23 @@ export class MusicVisualizer {
     this.height = Math.min(Math.floor(canvas.clientHeight * dpr), MAX_DIM);
     canvas.width = this.width;
     canvas.height = this.height;
+    this.updateViewportScaleCompensation();
 
     setGL(glCtx);
     this.initScene();
+  }
+
+  private updateViewportScaleCompensation() {
+    const rawReference = this.canvas.dataset.vizReferenceSize;
+    const referenceSize = rawReference ? Number.parseFloat(rawReference) : NaN;
+    const currentSize = Math.max(1, Math.min(this.canvas.clientWidth || 0, this.canvas.clientHeight || 0));
+
+    if (!Number.isFinite(referenceSize) || referenceSize <= 0 || currentSize <= 0) {
+      this.viewportScaleCompensation = 1.0;
+      return;
+    }
+
+    this.viewportScaleCompensation = clamp(referenceSize / currentSize, 0.7, 1.0);
   }
 
   setMode(mode: VisualizerMode) {
@@ -456,7 +471,9 @@ export class MusicVisualizer {
     const color2 = mixColor(this.renderedColor2, [1, 1, 1], colorLift * 0.85);
     const color3 = mixColor(this.renderedColor3, [1, 1, 1], colorLift * 0.72);
 
-    let scaleVal = 1.16 + pulseLow * 0.3 + beat * 0.11 + this.renderedCameraDepth * 0.08 + sectionLift * 0.08 + arrival * 0.1;
+    let scaleVal =
+      (1.16 + pulseLow * 0.3 + beat * 0.11 + this.renderedCameraDepth * 0.08 + sectionLift * 0.08 + arrival * 0.1)
+      * this.viewportScaleCompensation;
     this.line.setNoise(
       this.renderedScale * 2.0 * turbulence * (0.92 + this.renderedShellDensity * 0.08),
       this.renderedPersistence * (0.48 + sectionWave * 0.04),
@@ -497,6 +514,7 @@ export class MusicVisualizer {
     this.height = h;
     this.canvas.width = w;
     this.canvas.height = h;
+    this.updateViewportScaleCompensation();
 
     const g = this.glCtx;
 
@@ -547,6 +565,7 @@ export class MusicVisualizer {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.min(Math.floor(this.canvas.clientWidth * dpr), MAX_DIM);
     const h = Math.min(Math.floor(this.canvas.clientHeight * dpr), MAX_DIM);
+    this.updateViewportScaleCompensation();
     if (w > 0 && h > 0 && (w !== this.width || h !== this.height)) {
       this.setSize(w, h);
     }

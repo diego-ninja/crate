@@ -10,6 +10,16 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    include: [
+      "@nivo/core",
+      "@nivo/bar",
+      "@nivo/line",
+      "@nivo/pie",
+      "@nivo/radar",
+      "@nivo/scatterplot",
+    ],
+  },
   server: {
     allowedHosts: [".crate.local", ".dev.lespedants.org"],
     fs: {

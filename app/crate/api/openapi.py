@@ -224,7 +224,7 @@ def custom_openapi(app: FastAPI) -> dict:
         return app.openapi_schema
 
     schema = get_openapi(
-        title="MusicDock API",
+        title="Crate API",
         version="0.1.0",
         summary="OpenAPI contract for Crate's HTTP API.",
         description=(

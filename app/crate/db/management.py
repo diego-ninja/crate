@@ -7,10 +7,12 @@ def get_last_analyzed_track() -> dict:
     with transaction_scope() as session:
         row = session.execute(text("""
             SELECT title, artist, album, bpm, audio_key, energy, danceability,
-                   mood_json IS NOT NULL as has_mood, updated_at
+                   mood_json IS NOT NULL as has_mood,
+                   COALESCE(analysis_completed_at, updated_at) AS updated_at
             FROM library_tracks
             WHERE analysis_state = 'done' AND bpm IS NOT NULL
-            ORDER BY updated_at DESC LIMIT 1
+            ORDER BY COALESCE(analysis_completed_at, updated_at) DESC NULLS LAST
+            LIMIT 1
         """)).mappings().first()
     return dict(row) if row else {}
 
@@ -18,10 +20,12 @@ def get_last_analyzed_track() -> dict:
 def get_last_bliss_track() -> dict:
     with transaction_scope() as session:
         row = session.execute(text("""
-            SELECT title, artist, album, updated_at
+            SELECT title, artist, album,
+                   COALESCE(bliss_computed_at, updated_at) AS updated_at
             FROM library_tracks
             WHERE bliss_state = 'done' AND bliss_vector IS NOT NULL
-            ORDER BY updated_at DESC LIMIT 1
+            ORDER BY COALESCE(bliss_computed_at, updated_at) DESC NULLS LAST
+            LIMIT 1
         """)).mappings().first()
     return dict(row) if row else {}
 
@@ -100,7 +104,7 @@ def upsert_metric_rollup(
         session.execute(
             text("""
                 INSERT INTO metric_rollups (name, tags_json, period, bucket_start, count, sum_value, min_value, max_value, avg_value)
-                VALUES (:name, :tags::jsonb, :period, :bucket_start, :count, :sum, :min, :max, :avg)
+                VALUES (:name, CAST(:tags AS jsonb), :period, :bucket_start, :count, :sum, :min, :max, :avg)
                 ON CONFLICT (name, tags_json, period, bucket_start)
                 DO UPDATE SET
                     count = metric_rollups.count + EXCLUDED.count,

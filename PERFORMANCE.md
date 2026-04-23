@@ -1,6 +1,6 @@
 # Performance Analysis & Optimization Guide
 
-> **MusicDock Performance Assessment**
+> **Crate Performance Assessment**
 >
 > Library: ~900 artists, 4,400 albums, 48,000 tracks, 1.2TB
 >
@@ -10,7 +10,7 @@
 
 ## Executive Summary
 
-This document identifies performance bottlenecks across the MusicDock stack and provides actionable recommendations organized by priority and ROI. Critical issues include unpaginated database queries, N+1 query patterns, lack of database indexes, and frontend re-rendering problems.
+This document identifies performance bottlenecks across the Crate stack and provides actionable recommendations organized by priority and ROI. Critical issues include unpaginated database queries, N+1 query patterns, lack of database indexes, and frontend re-rendering problems.
 
 **Key Metrics:**
 - Current: 4400+ queries per artist page load (N+1 pattern)
@@ -36,7 +36,7 @@ This document identifies performance bottlenecks across the MusicDock stack and 
 
 ### 1. Unpaginated Queries in browse.py
 
-**Location:** `app/musicdock/api/browse.py:218-224`
+**Location:** `app/crate/api/browse.py:218-224`
 
 **Problem:**
 ```python
@@ -74,7 +74,7 @@ genres = [{"name": r["genre"], "count": r["cnt"]} for r in cur.fetchall()]
 
 ### 2. N+1 Query Pattern in browse.py
 
-**Location:** `app/musicdock/api/browse.py:660-716`
+**Location:** `app/crate/api/browse.py:660-716`
 
 **Problem:**
 ```python
@@ -126,7 +126,7 @@ cur.execute("""
 
 ### 3. ILIKE Without pg_trgm Index
 
-**Location:** `app/musicdock/db/library.py:15`
+**Location:** `app/crate/db/library.py:15`
 
 **Problem:**
 ```python
@@ -158,7 +158,7 @@ CREATE INDEX idx_albums_name_trgm
 
 ### 4. Connection Pool Undersized
 
-**Location:** `app/musicdock/db/core.py:30`
+**Location:** `app/crate/db/core.py:30`
 
 **Problem:**
 ```python
@@ -395,7 +395,7 @@ async def get_cover_thumbnail(
 
 ### 9. L1 Cache Too Small
 
-**Location:** `app/musicdock/db/cache.py:14-15`
+**Location:** `app/crate/db/cache.py:14-15`
 
 **Problem:**
 ```python
@@ -420,7 +420,7 @@ _MEM_MAX_SIZE = 15000   # 15K items
 
 ### 10. No Cache for Paginated Lists
 
-**Location:** `app/musicdock/api/browse.py`
+**Location:** `app/crate/api/browse.py`
 
 **Problem:**
 ```python
@@ -671,7 +671,7 @@ CREATE INDEX IF NOT EXISTS idx_tracks_title_trgm
 
 ### 3. Increase L1 Cache Size
 
-**Location:** `app/musicdock/db/cache.py`
+**Location:** `app/crate/db/cache.py`
 
 **Action:**
 ```python
@@ -712,7 +712,7 @@ export const AlbumCard = React.memo(function AlbumCard({ artist, name, ... }: Al
 
 ### 5. Pagination for Aggregation Queries
 
-**Location:** `app/musicdock/api/browse.py`
+**Location:** `app/crate/api/browse.py`
 
 **Action:**
 ```python
@@ -1034,7 +1034,7 @@ server {
 
     # Cover images with aggressive cache
     location /api/cover/ {
-        set $backend http://musicdock-api:8585;
+        set $backend http://crate-api:8585;
         proxy_pass $backend;
         proxy_cache_bypass $http_pragma $http_authorization;
         add_header Cache-Control "public, max-age=86400, stale-while-revalidate=604800";
@@ -1046,7 +1046,7 @@ server {
 
     # Proxy API requests to backend
     location /api/ {
-        set $backend http://musicdock-api:8585;
+        set $backend http://crate-api:8585;
         proxy_pass $backend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

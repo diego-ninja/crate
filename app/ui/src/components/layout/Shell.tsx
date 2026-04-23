@@ -127,7 +127,7 @@ export function Shell() {
       </div>
 
       <main className={`overflow-x-hidden transition-all duration-200 ${sidebarWidthClass}`}>
-        <div className={`mx-auto w-full max-w-[1536px] px-4 py-4 pt-20 md:py-6 ${overlayHeader ? "md:px-0" : sidebarExpanded ? "md:px-6" : "md:px-10"} ${desktopHeaderOffsetClass}`}>
+        <div className={`mx-auto w-full max-w-[1664px] px-4 py-4 pt-20 md:py-6 ${overlayHeader ? "md:px-0" : sidebarExpanded ? "md:px-6" : "md:px-10"} ${desktopHeaderOffsetClass}`}>
           <div key={location.pathname} className="animate-page-in">
             <Outlet />
           </div>

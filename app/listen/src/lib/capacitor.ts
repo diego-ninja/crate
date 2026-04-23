@@ -6,9 +6,34 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 export const isNative = Capacitor.isNativePlatform();
 export const platform = Capacitor.getPlatform(); // "ios" | "android" | "web"
 
+export async function consumeOAuthCallbackUrl(url: string): Promise<{ handled: boolean; next: string }> {
+  if (!url.startsWith("cratemusic://oauth/callback")) {
+    return { handled: false, next: "/" };
+  }
+
+  try {
+    const params = new URL(url).searchParams;
+    const token = params.get("token");
+    const next = params.get("next") || "/";
+    if (!token) {
+      return { handled: false, next };
+    }
+
+    const { setAuthToken } = await import("@/lib/api");
+    setAuthToken(token);
+    void import("@capacitor/browser")
+      .then(({ Browser }) => Browser.close().catch(() => {}))
+      .catch(() => {});
+
+    return { handled: true, next };
+  } catch {
+    return { handled: false, next: "/" };
+  }
+}
+
 /** Call once at app startup to configure native plugins. No-ops on web. */
-export async function initCapacitor() {
-  if (!isNative) return;
+export async function initCapacitor(): Promise<string | null> {
+  if (!isNative) return null;
 
   // Dark status bar, overlays WebView content (no black gap)
   try {
@@ -32,26 +57,24 @@ export async function initCapacitor() {
 
   // OAuth deep link handler — capture token from system browser callback
   App.addListener("appUrlOpen", ({ url }) => {
-    if (url.startsWith("cratemusic://oauth/callback")) {
-      try {
-        const params = new URL(url).searchParams;
-        const token = params.get("token");
-        const next = params.get("next") || "/";
-        if (token) {
-          import("@/lib/api").then(({ setAuthToken }) => {
-            setAuthToken(token);
-          });
-          import("@capacitor/browser").then(({ Browser }) => {
-            Browser.close().catch(() => {});
-          });
-          window.dispatchEvent(new CustomEvent("crate:auth-token-received", { detail: { next } }));
-          window.location.href = next;
-        }
-      } catch {
-        // Malformed URL
+    void consumeOAuthCallbackUrl(url).then((result) => {
+      if (!result.handled) return;
+      window.dispatchEvent(new CustomEvent("crate:auth-token-received", { detail: { next: result.next } }));
+      window.location.replace(result.next);
+    });
+  });
+
+  try {
+    const launch = await App.getLaunchUrl();
+    if (launch?.url) {
+      const result = await consumeOAuthCallbackUrl(launch.url);
+      if (result.handled) {
+        return result.next;
       }
     }
-  });
+  } catch {
+    // Ignore launch URL failures
+  }
 
   // Network status → trigger audio resume on reconnect
   Network.addListener("networkStatusChange", (status) => {
@@ -61,6 +84,8 @@ export async function initCapacitor() {
       window.dispatchEvent(new CustomEvent("crate:network-restored"));
     }
   });
+
+  return null;
 }
 
 /** Register a callback for when the app goes to background. */

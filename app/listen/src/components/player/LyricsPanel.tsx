@@ -1,11 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { X, Loader2 } from "lucide-react";
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
-import { extractPalette } from "@/lib/palette";
-import {
-  getUseAlbumPalettePreference,
-  PLAYER_VIZ_PREFS_EVENT,
-} from "@/lib/player-visualizer-prefs";
 
 interface LyricLine {
   time: number;
@@ -16,8 +11,6 @@ interface LyricsData {
   synced: LyricLine[] | null;
   plain: string | null;
 }
-
-type PaletteTriplet = [number, number, number];
 
 function parseSyncedLyrics(lrc: string): LyricLine[] {
   const lines: LyricLine[] = [];
@@ -35,11 +28,6 @@ function parseSyncedLyrics(lrc: string): LyricLine[] {
   return lines;
 }
 
-function cssColor(color: PaletteTriplet, alpha = 1): string {
-  const [r, g, b] = color.map((value) => Math.round(value * 255));
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
 interface LyricsPanelProps {
   open: boolean;
   onClose: () => void;
@@ -50,24 +38,8 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
   const { currentTrack, seek } = usePlayerActions();
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [palette, setPalette] = useState<{
-    primary: PaletteTriplet;
-    secondary: PaletteTriplet;
-    accent: PaletteTriplet;
-  } | null>(null);
-  const [useAlbumPalette, setUseAlbumPalette] = useState(getUseAlbumPalettePreference);
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const syncPreference = () => setUseAlbumPalette(getUseAlbumPalettePreference());
-    window.addEventListener("storage", syncPreference);
-    window.addEventListener(PLAYER_VIZ_PREFS_EVENT, syncPreference as EventListener);
-    return () => {
-      window.removeEventListener("storage", syncPreference);
-      window.removeEventListener(PLAYER_VIZ_PREFS_EVENT, syncPreference as EventListener);
-    };
-  }, []);
 
   // Fetch lyrics when track changes
   useEffect(() => {
@@ -95,28 +67,6 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
       .finally(() => setLoading(false));
   }, [open, currentTrack?.id]);
 
-  useEffect(() => {
-    if (!open || !useAlbumPalette || !currentTrack?.albumCover) {
-      setPalette(null);
-      return;
-    }
-    let cancelled = false;
-    extractPalette(currentTrack.albumCover)
-      .then(([primary, secondary, accent]) => {
-        if (!cancelled) {
-          setPalette({ primary, secondary, accent });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setPalette(null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, currentTrack?.albumCover, useAlbumPalette]);
-
   // Find active line index
   const activeIndex = useMemo(() => {
     if (!lyrics?.synced) return -1;
@@ -135,19 +85,16 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
 
   if (!open) return null;
 
-  const primary = palette?.primary ?? [0.024, 0.714, 0.831];
-  const secondary = palette?.secondary ?? [0.4, 0.9, 1.0];
-
   return (
     <div
       className="z-app-player-drawer fixed right-0 top-0 bottom-[72px] flex w-[480px] flex-col overflow-hidden border-l border-white/5 shadow-2xl"
       style={{
-        background: `linear-gradient(180deg, ${cssColor(primary, useAlbumPalette ? 0.2 : 0.12)} 0%, rgba(12,12,20,0.96) 22%, var(--surface-panel) 100%)`,
+        background: "linear-gradient(180deg, rgba(6,182,212,0.12) 0%, rgba(12,12,20,0.96) 22%, var(--surface-panel) 100%)",
       }}
     >
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-40 blur-3xl"
-        style={{ background: `radial-gradient(circle at top, ${cssColor(secondary, useAlbumPalette ? 0.28 : 0.2)} 0%, transparent 72%)` }}
+        style={{ background: "radial-gradient(circle at top, rgba(6,182,212,0.22) 0%, transparent 72%)" }}
       />
       {/* Header */}
       <div className="relative flex items-center justify-between border-b border-white/5 px-4 py-3">
@@ -189,17 +136,16 @@ export function LyricsPanel({ open, onClose }: LyricsPanelProps) {
                 <button
                   key={i}
                   ref={isActive ? activeRef : null}
-                  onClick={() => seek(line.time)}
-                  className={`relative z-20 w-full rounded-md px-2 py-1 text-left transition-all duration-500 ${
-                    isActive
-                      ? "bg-primary/10 text-[17px] font-semibold"
-                      : isPast
+                onClick={() => seek(line.time)}
+                className={`relative z-20 w-full rounded-md px-2 py-1 text-left transition-all duration-500 ${
+                  isActive
+                      ? "bg-primary/10 text-[17px] font-semibold text-primary"
+                    : isPast
                         ? "text-[14px] text-white/25"
                         : "text-[14px] text-white/50"
                   }`}
                   style={isActive ? {
-                    textShadow: `0 0 20px ${cssColor(primary, 0.25)}`,
-                    color: cssColor(secondary, 1),
+                    textShadow: "0 0 20px rgba(6,182,212,0.28)",
                   } : undefined}
                 >
                   {line.text}

@@ -8,10 +8,21 @@ from crate.api.openapi_responses import AUTH_ERROR_RESPONSES
 
 router = APIRouter(prefix="/api/admin", tags=["admin-metrics"])
 
+_DASHBOARD_TIMESERIES = [
+    "api.latency",
+    "api.requests",
+    "api.errors",
+    "api.slow",
+    "stream.requests",
+    "home.compute.ms",
+    "home.endpoint_compute.ms",
+    "worker.queue.depth",
+    "worker.task.duration",
+    "worker.queue.wait",
+]
 
-@router.get("/metrics/summary", responses=AUTH_ERROR_RESPONSES, summary="Current metrics snapshot")
-def metrics_summary(request: Request):
-    _require_admin(request)
+
+def _build_metrics_summary() -> dict:
     from crate.metrics import query_summary
 
     return {
@@ -28,66 +39,16 @@ def metrics_summary(request: Request):
         "home_cache_coalesced": query_summary("home.cache.coalesced", minutes=15),
         "home_cache_stale_fallback": query_summary("home.cache.stale_fallback", minutes=15),
         "home_compute_ms": query_summary("home.compute.ms", minutes=15),
+        "home_endpoint_cache_hit": query_summary("home.endpoint_cache.hit", minutes=15),
+        "home_endpoint_cache_miss": query_summary("home.endpoint_cache.miss", minutes=15),
+        "home_endpoint_compute_ms": query_summary("home.endpoint_compute.ms", minutes=15),
     }
 
 
-@router.get("/metrics/timeseries", responses=AUTH_ERROR_RESPONSES, summary="Time-series metric data")
-def metrics_timeseries(
-    request: Request,
-    name: str = Query(..., description="Metric name, e.g. api.latency"),
-    period: str = Query("hour", description="Granularity: minute, hour, day"),
-    start: str | None = Query(None, description="ISO start timestamp"),
-    end: str | None = Query(None, description="ISO end timestamp"),
-    minutes: int = Query(60, ge=1, le=2880, description="Minutes of recent data (for period=minute)"),
-):
-    _require_admin(request)
-    from crate.metrics import query_recent, query_historical
-
-    if period == "minute":
-        return {"name": name, "period": period, "data": query_recent(name, minutes)}
-
-    return {"name": name, "period": period, "data": query_historical(name, period, start, end)}
-
-
-@router.get("/llm/status", responses=AUTH_ERROR_RESPONSES, summary="Check LLM provider status")
-def llm_status(request: Request):
-    _require_admin(request)
-    from crate.llm import get_config
-    config = get_config()
-
-    # Test connectivity
-    available = False
-    error = None
-    try:
-        if config["provider"] == "ollama":
-            import requests as req
-            resp = req.get(f"{config['ollama_url']}/api/tags", timeout=5)
-            available = resp.status_code == 200
-            models = [m["name"] for m in resp.json().get("models", [])] if available else []
-        else:
-            available = True  # Cloud providers assumed available if key is set
-            models = []
-    except Exception as e:
-        error = str(e)
-        models = []
-
-    return {
-        "available": available,
-        "model": config["model"],
-        "provider": config["provider"],
-        "models": models,
-        "error": error,
-    }
-
-
-@router.get("/metrics/system", responses=AUTH_ERROR_RESPONSES, summary="System-level health stats")
-def metrics_system(request: Request):
-    """Disk usage, DB pool status, analysis progress."""
-    _require_admin(request)
+def _build_metrics_system() -> dict:
     import os
     import shutil
 
-    # Disk usage
     disk = {}
     for label, path in [("music", "/music"), ("data", "/data")]:
         try:
@@ -101,7 +62,6 @@ def metrics_system(request: Request):
         except Exception:
             disk[label] = None
 
-    # DB pools
     db_pool = {}
     db_pools = {"combined": {}, "sqlalchemy": {}, "legacy": {}}
     try:
@@ -150,7 +110,6 @@ def metrics_system(request: Request):
         db_pools["combined"] = combined
         db_pool = combined or sqlalchemy_pool or legacy_state
 
-    # Analysis progress
     analysis = {}
     try:
         from crate.analysis_daemon import get_analysis_status
@@ -158,7 +117,6 @@ def metrics_system(request: Request):
     except Exception:
         pass
 
-    # System load
     load = {}
     try:
         load_avg = os.getloadavg()
@@ -174,6 +132,115 @@ def metrics_system(request: Request):
         pass
 
     return {"disk": disk, "db_pool": db_pool, "db_pools": db_pools, "analysis": analysis, "load": load}
+
+
+def _list_running_tasks(limit: int = 10) -> list[dict]:
+    from crate.db.tasks import list_tasks
+
+    return list_tasks(status="running", limit=limit)
+
+
+def _build_metrics_dashboard(period: str, minutes: int) -> dict:
+    from crate.db.cache import get_cache, set_cache
+    from crate.metrics import query_historical, query_recent, query_recent_rolled
+
+    cache_key = f"admin:metrics:dashboard:{period}:{minutes}"
+    cached = get_cache(cache_key, max_age_seconds=10)
+    if cached is not None:
+        return cached
+
+    timeseries: dict[str, list[dict]] = {}
+    for name in _DASHBOARD_TIMESERIES:
+        if period == "minute":
+            timeseries[name] = query_recent(name, minutes)
+        elif period == "hour":
+            timeseries[name] = query_recent_rolled(name, minutes=minutes, bucket_minutes=60)
+        else:
+            timeseries[name] = query_historical(name, period)
+
+    payload = {
+        "summary": _build_metrics_summary(),
+        "system": _build_metrics_system(),
+        "tasks": _list_running_tasks(limit=10),
+        "timeseries": timeseries,
+    }
+    set_cache(cache_key, payload, ttl=10)
+    return payload
+
+
+@router.get("/metrics/summary", responses=AUTH_ERROR_RESPONSES, summary="Current metrics snapshot")
+def metrics_summary(request: Request):
+    _require_admin(request)
+    return _build_metrics_summary()
+
+
+@router.get("/metrics/timeseries", responses=AUTH_ERROR_RESPONSES, summary="Time-series metric data")
+def metrics_timeseries(
+    request: Request,
+    name: str = Query(..., description="Metric name, e.g. api.latency"),
+    period: str = Query("hour", description="Granularity: minute, hour, day"),
+    start: str | None = Query(None, description="ISO start timestamp"),
+    end: str | None = Query(None, description="ISO end timestamp"),
+    minutes: int = Query(60, ge=1, le=2880, description="Minutes of recent data (for period=minute)"),
+):
+    _require_admin(request)
+    from crate.metrics import query_recent, query_historical, query_recent_rolled
+
+    if period == "minute":
+        return {"name": name, "period": period, "data": query_recent(name, minutes)}
+    if period == "hour" and not start and not end:
+        return {"name": name, "period": period, "data": query_recent_rolled(name, minutes=minutes, bucket_minutes=60)}
+
+    return {"name": name, "period": period, "data": query_historical(name, period, start, end)}
+
+
+@router.get("/metrics/dashboard", responses=AUTH_ERROR_RESPONSES, summary="Bundled system health payload")
+def metrics_dashboard(
+    request: Request,
+    period: str = Query("minute", description="Granularity: minute or hour"),
+    minutes: int = Query(60, ge=1, le=2880, description="Minutes of recent data"),
+):
+    _require_admin(request)
+    safe_period = period if period in {"minute", "hour", "day"} else "minute"
+    return _build_metrics_dashboard(safe_period, minutes)
+
+
+@router.get("/llm/status", responses=AUTH_ERROR_RESPONSES, summary="Check LLM provider status")
+def llm_status(request: Request):
+    _require_admin(request)
+    from crate.llm import get_config
+    config = get_config()
+
+    # Test connectivity
+    available = False
+    error = None
+    try:
+        if config["provider"] == "ollama":
+            import requests as req
+            resp = req.get(f"{config['ollama_url']}/api/tags", timeout=5)
+            available = resp.status_code == 200
+            models = [m["name"] for m in resp.json().get("models", [])] if available else []
+        else:
+            available = True  # Cloud providers assumed available if key is set
+            models = []
+    except Exception as e:
+        error = str(e)
+        models = []
+
+    return {
+        "available": available,
+        "model": config["model"],
+        "provider": config["provider"],
+        "models": models,
+        "error": error,
+    }
+
+
+@router.get("/metrics/system", responses=AUTH_ERROR_RESPONSES, summary="System-level health stats")
+def metrics_system(request: Request):
+    """Disk usage, DB pool status, analysis progress."""
+    _require_admin(request)
+    return _build_metrics_system()
 
 
 @router.get("/logs", responses=AUTH_ERROR_RESPONSES, summary="Query worker logs")

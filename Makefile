@@ -1,24 +1,22 @@
-# MusicDock - Stack de musica self-hosted
-# =========================================
+# Crate - Self-hosted music platform
+# ==================================
 
-# Servidor remoto
+# Remote server
 SERVER_HOST   := 104.152.210.73
 SERVER_USER   := root
 SERVER_PATH   := /home/crate/crate
 SSH           := ssh $(SERVER_USER)@$(SERVER_HOST)
-SCP           := scp
 
 # Compose
 DC            := docker compose
-DC_PROD       := $(DC) -f docker-compose.yaml
-DC_LOCAL      := $(DC) -f docker-compose.yaml -f docker-compose.override.yaml
+DC_LOCAL      := $(DC) -f docker-compose.yaml -f docker-compose.local-stack.yaml
 REMOTE_DC     := docker compose -f docker-compose.yaml -f docker-compose.project.yaml
 
-# Dominios locales
+# Local domains
 LOCAL_DOMAIN  := crate.local
-LOCAL_HOSTS   := traefik auth collection search web api admin ai
+LOCAL_HOSTS   := traefik auth collection search web api admin
 
-# Colores
+# Colors
 GREEN  := \033[0;32m
 YELLOW := \033[0;33m
 RED    := \033[0;31m
@@ -27,14 +25,14 @@ NC     := \033[0m
 .DEFAULT_GOAL := help
 
 # ===========================================================================
-# DEV (entorno de desarrollo local)
+# DEV (local development environment)
 # ===========================================================================
 
 DC_DEV := $(DC) -f docker-compose.dev.yaml
 DEV_CONTAINERS := crate-dev-api crate-dev-worker crate-dev-postgres crate-dev-redis crate-dev-slskd crate-dev-caddy
 
 .PHONY: dev
-dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend dev servers
+dev: ## Start backend (Postgres + Redis + API + Worker + Caddy) and frontend dev servers
 	@# Kill any leftover Vite processes from previous runs (by port AND pattern)
 	@-lsof -ti :5173,:5174,:5175,:5176,:5177 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
@@ -45,9 +43,9 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@sleep 0.5
 	@$(DC_DEV) up -d --build
-	@echo "$(GREEN)Backend levantado (Postgres, Redis, API, Worker, Caddy)$(NC)"
+	@echo "$(GREEN)Backend is up (Postgres, Redis, API, Worker, Caddy)$(NC)"
 	@echo ""
-	@echo "Arrancando frontends..."
+	@echo "Starting frontends..."
 	@rm -rf app/ui/node_modules/.vite app/listen/node_modules/.vite node_modules/.vite 2>/dev/null || true
 	@npm install --silent 2>/dev/null
 	@cd app/docs && npm install --silent 2>/dev/null; cd ../..
@@ -68,37 +66,36 @@ dev: ## Levantar backend (Postgres + Redis + API + Worker + Caddy) + frontend de
 	@echo "  $(GREEN)API:$(NC)    https://api.dev.lespedants.org"
 	@echo "  Login:  admin@cratemusic.app / admin"
 	@echo ""
-	@echo "$(GREEN)Todo arrancado. make dev-down para parar.$(NC)"
-	@echo "$(YELLOW)Nota: ejecuta 'make dns-setup' si *.crate.local no resuelve$(NC)"
+	@echo "$(GREEN)Everything is running. Use make dev-down to stop it.$(NC)"
 
 .PHONY: dev-back
-dev-back: ## Solo backend (Postgres + Redis + API + Worker) sin frontends
+dev-back: ## Start only the backend (Postgres + Redis + API + Worker)
 	@$(DC_DEV) up -d --build
-	@echo "$(GREEN)Backend levantado$(NC)"
+	@echo "$(GREEN)Backend is up$(NC)"
 	@echo "  API: http://localhost:8585"
 
 .PHONY: dev-admin
-dev-admin: ## Arrancar solo Admin UI dev server (:5173)
+dev-admin: ## Start only the Admin UI dev server (:5173)
 	@npm run --workspace=app/ui dev -- --port 5173 --host
 
 .PHONY: dev-listen
-dev-listen: ## Arrancar solo Listen dev server (:5174)
+dev-listen: ## Start only the Listen dev server (:5174)
 	@npm run --workspace=app/listen dev -- --port 5174 --host
 
 .PHONY: dev-docs
-dev-docs: ## Arrancar solo Docs dev server (:5175)
+dev-docs: ## Start only the docs dev server (:5175)
 	@cd app/docs && npx vite --port 5175 --host
 
 .PHONY: dev-site
-dev-site: ## Arrancar solo Site dev server (:5176)
+dev-site: ## Start only the site dev server (:5176)
 	@cd app/site && npx vite --port 5176 --host
 
 .PHONY: dev-reference
-dev-reference: ## Arrancar solo Scalar reference dev server (:5177)
+dev-reference: ## Start only the Scalar reference dev server (:5177)
 	@cd app/reference && npx vite --port 5177 --host
 
 .PHONY: dev-down
-dev-down: ## Parar todo (backend + frontends)
+dev-down: ## Stop everything (backend + frontends)
 	@$(DC_DEV) down
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@-lsof -ti :5173,:5174,:5175,:5176,:5177 2>/dev/null | xargs kill -9 2>/dev/null || true
@@ -107,10 +104,10 @@ dev-down: ## Parar todo (backend + frontends)
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
 	@-pkill -f "vite.*app/site" 2>/dev/null || true
 	@-pkill -f "vite.*app/reference" 2>/dev/null || true
-	@echo "$(GREEN)Todo parado$(NC)"
+	@echo "$(GREEN)Everything stopped$(NC)"
 
 .PHONY: dev-logs
-dev-logs: ## Ver logs de backend (uso: make dev-logs o make dev-logs s=worker)
+dev-logs: ## Tail backend logs (usage: make dev-logs or make dev-logs s=worker)
 	@if [ -n "$(s)" ]; then \
 		$(DC_DEV) logs -f $(s); \
 	else \
@@ -118,7 +115,7 @@ dev-logs: ## Ver logs de backend (uso: make dev-logs o make dev-logs s=worker)
 	fi
 
 .PHONY: dev-rebuild
-dev-rebuild: ## Rebuild y restart todo
+dev-rebuild: ## Rebuild and restart everything
 	@-pkill -f "vite.*app/ui" 2>/dev/null || true
 	@-pkill -f "vite.*app/listen" 2>/dev/null || true
 	@-pkill -f "vite.*app/docs" 2>/dev/null || true
@@ -133,54 +130,54 @@ dev-rebuild: ## Rebuild y restart todo
 	@(cd app/site && npx vite --port 5176 --strictPort --host > /dev/null 2>&1 &)
 	@(cd app/reference && npx vite --port 5177 --strictPort --host > /dev/null 2>&1 &)
 	@sleep 2
-	@echo "$(GREEN)Todo rebuildeado$(NC)"
+	@echo "$(GREEN)Everything rebuilt$(NC)"
 
 .PHONY: dev-reset
-dev-reset: ## Reset entorno dev (borra datos, para todo)
+dev-reset: ## Reset the dev environment (wipe data and stop everything)
 	@$(DC_DEV) down -v
 	@docker rm -f $(DEV_CONTAINERS) >/dev/null 2>&1 || true
 	@-pkill -f "vite.*517" 2>/dev/null || true
-	@echo "$(GREEN)Dev reseteado (datos borrados)$(NC)"
+	@echo "$(GREEN)Dev environment reset (data removed)$(NC)"
 
 .PHONY: dev-test
-dev-test: ## Correr tests en el contenedor dev
+dev-test: ## Run tests inside the dev container
 	@$(DC_DEV) exec worker pytest tests/ -v
 
 .PHONY: regression-api
-regression-api: ## Contratos backend criticos (Explore/search/system playlists)
+regression-api: ## Critical backend contracts (Explore/search/system playlists)
 	@$(DC_DEV) exec worker pytest tests/test_explore_contracts.py tests/test_upload_contracts.py -q
 
 .PHONY: regression-radio
-regression-radio: ## Contratos de radio usando una imagen efimera del backend del branch actual
+regression-radio: ## Radio contracts using a temporary backend image from the current branch
 	@docker build -t crate-radio-tests ./app
 	@docker run --rm --entrypoint pytest crate-radio-tests tests/test_radio_contracts.py -q
 
 .PHONY: regression-smoke
-regression-smoke: ## Smoke real contra el entorno dev autenticado
+regression-smoke: ## Real smoke test against the authenticated dev environment
 	@python3 scripts/regression_smoke.py
 
 .PHONY: regression-min
-regression-min: regression-api regression-smoke ## Suite minima de regresion antes de tocar listen
+regression-min: regression-api regression-smoke ## Minimum regression suite before touching Listen
 
 # ===========================================================================
-# LOCAL (stack completo con Traefik)
+# LOCAL (full stack with Traefik)
 # ===========================================================================
 
 .PHONY: up
-up: _check-network ## Levantar stack local
+up: _check-network ## Start the local stack
 	@$(DC_LOCAL) up -d
-	@echo "$(GREEN)Stack local levantado$(NC)"
+	@echo "$(GREEN)Local stack is up$(NC)"
 	@echo "Dashboard: https://traefik.$(LOCAL_DOMAIN)"
 
 .PHONY: down
-down: ## Parar stack local
+down: ## Stop the local stack
 	@$(DC_LOCAL) down
 
 .PHONY: restart
-restart: down up ## Reiniciar stack local
+restart: down up ## Restart the local stack
 
 .PHONY: logs
-logs: ## Ver logs (uso: make logs o make logs s=crate-api)
+logs: ## Tail logs (usage: make logs or make logs s=crate-api)
 	@if [ -n "$(s)" ]; then \
 		$(DC_LOCAL) logs -f $(s); \
 	else \
@@ -188,7 +185,7 @@ logs: ## Ver logs (uso: make logs o make logs s=crate-api)
 	fi
 
 .PHONY: ps
-ps: ## Estado de los servicios (dev)
+ps: ## Show dev service status
 	@$(DC_DEV) ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
 	@echo ""
 	@echo "$(YELLOW)Frontends:$(NC)"
@@ -199,13 +196,13 @@ ps: ## Estado de los servicios (dev)
 	@-pgrep -af "vite.*5177" > /dev/null 2>&1 && echo "  APIRef: http://localhost:5177 (running)" || echo "  APIRef: not running"
 
 .PHONY: pull
-pull: ## Pull de imagenes en local
+pull: ## Pull images for the local stack
 	@$(DC_LOCAL) pull
-	@echo "$(GREEN)Imagenes actualizadas$(NC)"
+	@echo "$(GREEN)Images updated$(NC)"
 
 .PHONY: shell
-shell: ## Shell en un servicio (uso: make shell s=crate-api)
-	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make shell s=crate-api$(NC)"; exit 1; fi
+shell: ## Open a shell in a service (usage: make shell s=crate-api)
+	@if [ -z "$(s)" ]; then echo "$(RED)Specify a service: make shell s=crate-api$(NC)"; exit 1; fi
 	@$(DC_LOCAL) exec $(s) sh
 
 # ===========================================================================
@@ -213,59 +210,59 @@ shell: ## Shell en un servicio (uso: make shell s=crate-api)
 # ===========================================================================
 
 .PHONY: setup
-setup: _check-deps _create-network _generate-certs _setup-hosts _create-dirs ## Setup inicial del entorno local
-	@echo "$(GREEN)Setup completado. Ejecuta 'make up' para levantar el stack$(NC)"
+setup: _check-deps _create-network _generate-certs _setup-hosts _create-dirs ## Initial local environment setup
+	@echo "$(GREEN)Setup complete. Run 'make up' to start the stack$(NC)"
 
 .PHONY: _check-deps
 _check-deps:
-	@command -v docker >/dev/null 2>&1 || { echo "$(RED)Docker no instalado$(NC)"; exit 1; }
-	@command -v mkcert >/dev/null 2>&1 || { echo "$(YELLOW)Instalando mkcert...$(NC)"; brew install mkcert; }
+	@command -v docker >/dev/null 2>&1 || { echo "$(RED)Docker is not installed$(NC)"; exit 1; }
+	@command -v mkcert >/dev/null 2>&1 || { echo "$(YELLOW)Installing mkcert...$(NC)"; brew install mkcert; }
 	@mkcert -install 2>/dev/null || true
 
 .PHONY: _create-network
 _create-network:
 	@docker network inspect crate >/dev/null 2>&1 || docker network create crate
-	@echo "$(GREEN)Red crate OK$(NC)"
+	@echo "$(GREEN)crate network ready$(NC)"
 
 .PHONY: _check-network
 _check-network:
-	@docker network inspect crate >/dev/null 2>&1 || { echo "$(RED)Red crate no existe. Ejecuta 'make setup'$(NC)"; exit 1; }
+	@docker network inspect crate >/dev/null 2>&1 || { echo "$(RED)The crate network does not exist. Run 'make setup'$(NC)"; exit 1; }
 
 .PHONY: _generate-certs
 _generate-certs:
-	@echo "$(YELLOW)Generando certificados TLS locales...$(NC)"
+	@echo "$(YELLOW)Generating local TLS certificates...$(NC)"
 	@cd data/traefik/local/certs && mkcert \
 		"$(LOCAL_DOMAIN)" \
 		"*.$(LOCAL_DOMAIN)" \
 		&& mv $(LOCAL_DOMAIN)+1.pem $(LOCAL_DOMAIN).pem \
 		&& mv $(LOCAL_DOMAIN)+1-key.pem $(LOCAL_DOMAIN)-key.pem
-	@echo "$(GREEN)Certificados generados$(NC)"
+	@echo "$(GREEN)Certificates generated$(NC)"
 
 .PHONY: _setup-hosts
 _setup-hosts:
-	@echo "$(YELLOW)Configurando /etc/hosts (requiere sudo)...$(NC)"
+	@echo "$(YELLOW)Configuring /etc/hosts (requires sudo)...$(NC)"
 	@for host in $(LOCAL_HOSTS); do \
 		if ! grep -q "$$host.$(LOCAL_DOMAIN)" /etc/hosts; then \
 			echo "127.0.0.1 $$host.$(LOCAL_DOMAIN)" | sudo tee -a /etc/hosts >/dev/null; \
 		fi; \
 	done
-	@echo "$(GREEN)/etc/hosts configurado$(NC)"
+	@echo "$(GREEN)/etc/hosts configured$(NC)"
 
 .PHONY: _create-dirs
 _create-dirs:
 	@mkdir -p data/{traefik/local/certs,tidarr,tidalrr,slskd,soulsync/{config,logs},nginx/{html,conf.d,logs}}
 	@mkdir -p media/{music,downloads/{tidal/{incomplete,albums,tracks,playlists,videos},soulseek/incomplete}}
-	@echo "$(GREEN)Directorios creados$(NC)"
+	@echo "$(GREEN)Directories created$(NC)"
 
 # ===========================================================================
-# DEPLOY (produccion)
+# DEPLOY (production)
 # ===========================================================================
 
 .PHONY: deploy
-deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
-	@echo "$(YELLOW)Asegurando directorios...$(NC)"
+deploy: ## Deploy by pulling pre-built images from GHCR, syncing config, and restarting
+	@echo "$(YELLOW)Ensuring directories exist...$(NC)"
 	@$(SSH) "mkdir -p $(SERVER_PATH)/media/downloads/soulseek/incomplete $(SERVER_PATH)/media/downloads/tidal/incomplete && chown -R $(shell grep PUID .env 2>/dev/null | cut -d= -f2 || echo 1000):$(shell grep PGID .env 2>/dev/null | cut -d= -f2 || echo 1000) $(SERVER_PATH)/media/downloads"
-	@echo "$(YELLOW)Sincronizando config...$(NC)"
+	@echo "$(YELLOW)Syncing config...$(NC)"
 	@# docker-compose.project.yaml is the overlay that adds crate-site
 	@# and crate-docs (the official project surfaces). The remote commands
 	@# below include it explicitly so deploys do not depend on COMPOSE_FILE
@@ -282,15 +279,15 @@ deploy: ## Deploy: pull pre-built images from GHCR + sync config + restart
 	@# path). Synced here so the server stays consistent even on pull-only
 	@# deploys.
 	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
-	@echo "$(YELLOW)Pulling imagenes (GHCR + externas)...$(NC)"
+	@echo "$(YELLOW)Pulling images (GHCR + external services)...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) pull --ignore-pull-failures"
-	@echo "$(YELLOW)Reiniciando servicios (sin build local)...$(NC)"
+	@echo "$(YELLOW)Restarting services (no local build)...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) up -d --no-build --remove-orphans"
-	@echo "$(GREEN)Deploy completado$(NC)"
+	@echo "$(GREEN)Deploy complete$(NC)"
 
 .PHONY: deploy-build
-deploy-build: ## Deploy con build en servidor (sin GHCR, fallback)
-	@echo "$(YELLOW)Sincronizando ficheros...$(NC)"
+deploy-build: ## Deploy by building on the server (GHCR fallback)
+	@echo "$(YELLOW)Syncing files...$(NC)"
 	@scp docker-compose.yaml docker-compose.project.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az --delete \
 		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
@@ -301,18 +298,18 @@ deploy-build: ## Deploy con build en servidor (sin GHCR, fallback)
 	@# the top-level docs/ directory for the markdown files embedded at
 	@# build time. Without this the build fails on COPY docs/ /docs/.
 	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
-	@echo "$(YELLOW)Building servicios en servidor...$(NC)"
+	@echo "$(YELLOW)Building services on the server...$(NC)"
 	@# Build every buildable service in the canonical project stack,
 	@# including the project overlay that defines crate-site + crate-docs.
 	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) build"
-	@echo "$(YELLOW)Pulling imagenes externas...$(NC)"
+	@echo "$(YELLOW)Pulling external images...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) pull --ignore-buildable"
-	@echo "$(YELLOW)Reiniciando servicios...$(NC)"
+	@echo "$(YELLOW)Restarting services...$(NC)"
 	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) up -d"
-	@echo "$(GREEN)Deploy completado$(NC)"
+	@echo "$(GREEN)Deploy complete$(NC)"
 
 .PHONY: deploy-sync
-deploy-sync: ## Solo sincronizar ficheros al servidor (sin restart)
+deploy-sync: ## Sync files to the server without restarting services
 	@scp docker-compose.yaml docker-compose.project.yaml .env $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/
 	@rsync -az --delete \
 		--exclude='node_modules' --exclude='dist' --exclude='__pycache__' \
@@ -322,15 +319,15 @@ deploy-sync: ## Solo sincronizar ficheros al servidor (sin restart)
 	@rsync -az --delete docs/ $(SERVER_USER)@$(SERVER_HOST):$(SERVER_PATH)/docs/
 
 .PHONY: deploy-restart
-deploy-restart: ## Reiniciar servicios en remoto (sin sync)
+deploy-restart: ## Restart remote services without syncing files
 	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) up -d"
 
 .PHONY: deploy-pull
-deploy-pull: ## Pull de imagenes en remoto
+deploy-pull: ## Pull images on the remote server
 	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) pull --ignore-buildable"
 
 .PHONY: deploy-logs
-deploy-logs: ## Ver logs en remoto (uso: make deploy-logs s=crate-api)
+deploy-logs: ## Tail remote logs (usage: make deploy-logs s=crate-api)
 	@if [ -n "$(s)" ]; then \
 		$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) logs -f --tail=100 $(s)"; \
 	else \
@@ -338,67 +335,62 @@ deploy-logs: ## Ver logs en remoto (uso: make deploy-logs s=crate-api)
 	fi
 
 .PHONY: deploy-ps
-deploy-ps: ## Estado de servicios en remoto
+deploy-ps: ## Show remote service status
 	@$(SSH) "cd $(SERVER_PATH) && $(REMOTE_DC) ps --format 'table {{.Name}}\t{{.Status}}'"
 
 .PHONY: deploy-shell
-deploy-shell: ## Shell remoto en un servicio (uso: make deploy-shell s=crate-api)
-	@if [ -z "$(s)" ]; then echo "$(RED)Especifica servicio: make deploy-shell s=crate-api$(NC)"; exit 1; fi
+deploy-shell: ## Open a remote shell in a service (usage: make deploy-shell s=crate-api)
+	@if [ -z "$(s)" ]; then echo "$(RED)Specify a service: make deploy-shell s=crate-api$(NC)"; exit 1; fi
 	@$(SSH) -t "cd $(SERVER_PATH) && $(REMOTE_DC) exec $(s) sh"
 
 .PHONY: deploy-ssh
-deploy-ssh: ## SSH al servidor
+deploy-ssh: ## Open an SSH session to the server
 	@$(SSH)
-
-.PHONY: _confirm-deploy
-_confirm-deploy:
-	@echo "$(YELLOW)Deploy a $(SERVER_HOST) ($(SERVER_PATH))$(NC)"
-	@read -p "Continuar? [y/N] " confirm && [ "$$confirm" = "y" ] || { echo "Cancelado"; exit 1; }
 
 # ===========================================================================
 # UTILIDADES
 # ===========================================================================
 
 .PHONY: lib-scan
-lib-scan: ## Scan de la biblioteca de musica (busca problemas)
+lib-scan: ## Scan the music library for issues
 	@$(DC_LOCAL) run --rm crate-worker scan
 
 .PHONY: lib-fix
-lib-fix: ## Fix con dry-run (muestra que haria sin tocar nada)
+lib-fix: ## Run fixers in dry-run mode
 	@$(DC_LOCAL) run --rm crate-worker fix --dry-run
 
 .PHONY: lib-fix-apply
-lib-fix-apply: ## Fix real (aplica correcciones con confianza >= umbral)
-	@echo "$(RED)ATENCION: Esto modificara ficheros en la biblioteca$(NC)"
-	@read -p "Seguro? [y/N] " confirm && [ "$$confirm" = "y" ] || { echo "Cancelado"; exit 1; }
+lib-fix-apply: ## Apply fixer changes to the library
+	@echo "$(RED)WARNING: This will modify files in the music library$(NC)"
+	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || { echo "Cancelled"; exit 1; }
 	@$(DC_LOCAL) run --rm crate-worker fix --apply
 
 .PHONY: lib-report
-lib-report: ## Genera informe de salud de la biblioteca
+lib-report: ## Generate a library health report
 	@$(DC_LOCAL) run --rm crate-worker report
 
 .PHONY: lib-build-ui
-lib-build-ui: ## Build de la UI del app
+lib-build-ui: ## Build the admin UI image
 	@$(DC_LOCAL) build crate-ui
-	@echo "$(GREEN)Librarian UI construida$(NC)"
+	@echo "$(GREEN)Admin UI image built$(NC)"
 
 .PHONY: clean
-clean: ## Parar stack y limpiar contenedores/redes huerfanas
+clean: ## Stop the local stack and clean up orphaned resources
 	@$(DC_LOCAL) down --remove-orphans
-	@echo "$(GREEN)Limpieza completada$(NC)"
+	@echo "$(GREEN)Cleanup complete$(NC)"
 
 .PHONY: nuke
-nuke: ## Parar stack, eliminar contenedores, volumenes y redes (DESTRUCTIVO)
-	@echo "$(RED)ATENCION: Esto eliminara contenedores y volumenes$(NC)"
-	@read -p "Seguro? [y/N] " confirm && [ "$$confirm" = "y" ] || { echo "Cancelado"; exit 1; }
+nuke: ## Stop the local stack and remove containers, volumes, and orphaned resources (DESTRUCTIVE)
+	@echo "$(RED)WARNING: This will remove containers and volumes$(NC)"
+	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || { echo "Cancelled"; exit 1; }
 	@$(DC_LOCAL) down -v --remove-orphans
 
 .PHONY: update
-update: pull up ## Pull de imagenes + reiniciar
+update: pull up ## Pull images and restart the local stack
 
 .PHONY: hosts-show
-hosts-show: ## Mostrar dominios locales configurados
-	@echo "$(GREEN)Dominios locales:$(NC)"
+hosts-show: ## Show configured local domains
+	@echo "$(GREEN)Local domains:$(NC)"
 	@for host in $(LOCAL_HOSTS); do \
 		echo "  https://$$host.$(LOCAL_DOMAIN)"; \
 	done
@@ -466,12 +458,12 @@ cap-android-list: ## List available Android Emulator targets
 # ===========================================================================
 
 .PHONY: help
-help: ## Mostrar esta ayuda
+help: ## Show this help
 	@echo ""
-	@echo "$(GREEN)MusicDock$(NC) - Stack de musica self-hosted"
+	@echo "$(GREEN)Crate$(NC) - Self-hosted music platform"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo ""
-	@echo "Ejemplo: $(YELLOW)make logs s=crate-api$(NC)"
+	@echo "Example: $(YELLOW)make logs s=crate-api$(NC)"
 	@echo ""

@@ -24,10 +24,13 @@ from crate.db.paths import (
 from crate.db.radio import (
     count_user_radio_signals,
     get_followed_artist_vectors,
+    get_home_playlist_seed,
+    get_playlist_seed,
     get_random_library_vectors,
     get_recent_liked_vectors,
     get_recent_play_vectors,
     get_saved_album_vectors,
+    get_track_seed,
     get_track_bliss_vector,
     load_feedback_history,
     persist_radio_feedback,
@@ -37,7 +40,7 @@ log = logging.getLogger(__name__)
 
 _SESSION_TTL = 86400  # 24 hours
 _DISLIKE_PENALTY_RADIUS = 0.10
-_BATCH_SIZE = 5
+_BATCH_SIZE = 20
 
 
 def _redis():
@@ -115,6 +118,34 @@ def has_enough_data(user_id: int) -> bool:
 # ── Radio start ───────────────────────────────────────────────────
 
 
+def _resolve_seed(user_id: int, seed_type: str, seed_value: str) -> tuple[list[float], str] | None:
+    if seed_type == "track":
+        return get_track_seed(seed_value)
+
+    if seed_type == "playlist":
+        try:
+            playlist_id = int(seed_value)
+        except (TypeError, ValueError):
+            return None
+        resolved = get_playlist_seed(playlist_id)
+        if not resolved:
+            return None
+        vectors, label = resolved
+        return _centroid(vectors), label
+
+    if seed_type == "home-playlist":
+        resolved = get_home_playlist_seed(user_id, seed_value)
+        if not resolved:
+            return None
+        vectors, label = resolved
+        return _centroid(vectors), label
+
+    seed_vec = resolve_bliss_centroid(seed_type, seed_value)
+    if not seed_vec:
+        return None
+    return seed_vec, resolve_endpoint_label(seed_type, seed_value)
+
+
 def start_radio(
     user_id: int,
     mode: str = "seeded",
@@ -125,10 +156,10 @@ def start_radio(
     if mode == "seeded":
         if not seed_type or not seed_value:
             return None
-        seed_vec = resolve_bliss_centroid(seed_type, seed_value)
-        if not seed_vec:
+        resolved_seed = _resolve_seed(user_id, seed_type, seed_value)
+        if not resolved_seed:
             return None
-        seed_label = resolve_endpoint_label(seed_type, seed_value)
+        seed_vec, seed_label = resolved_seed
     elif mode == "discovery":
         result = resolve_discovery_seed(user_id)
         if not result:

@@ -118,6 +118,69 @@ def query_recent(name: str, minutes: int = 60) -> list[dict]:
         return []
 
 
+def query_recent_rolled(name: str, minutes: int = 1440, bucket_minutes: int = 60) -> list[dict]:
+    """Read recent Redis buckets and roll them up in-process.
+
+    This keeps near-realtime dashboard queries on Redis instead of
+    depending on PostgreSQL rollups during interactive admin sessions.
+    """
+    if bucket_minutes <= 1:
+        return query_recent(name, minutes)
+
+    buckets = query_recent(name, minutes)
+    if not buckets:
+        return []
+
+    rolled: dict[int, dict] = {}
+    bucket_seconds = bucket_minutes * 60
+    for bucket in buckets:
+        ts = bucket.get("timestamp")
+        if not ts:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(ts))
+        except ValueError:
+            continue
+        epoch = int(dt.timestamp())
+        rolled_ts = epoch - (epoch % bucket_seconds)
+        current = rolled.setdefault(
+            rolled_ts,
+            {
+                "timestamp": datetime.fromtimestamp(rolled_ts, tz=timezone.utc).isoformat(),
+                "count": 0,
+                "sum": 0.0,
+                "min": None,
+                "max": None,
+            },
+        )
+        count = int(bucket.get("count", 0) or 0)
+        total = float(bucket.get("sum", 0) or 0)
+        current["count"] += count
+        current["sum"] += total
+
+        if count > 0:
+            min_value = float(bucket.get("min", 0) or 0)
+            max_value = float(bucket.get("max", 0) or 0)
+            current["min"] = min_value if current["min"] is None else min(current["min"], min_value)
+            current["max"] = max_value if current["max"] is None else max(current["max"], max_value)
+
+    results = []
+    for _, bucket in sorted(rolled.items()):
+        count = int(bucket["count"])
+        total = float(bucket["sum"])
+        results.append(
+            {
+                "timestamp": bucket["timestamp"],
+                "count": count,
+                "avg": round(total / count, 2) if count > 0 else 0,
+                "min": round(float(bucket["min"] or 0), 2),
+                "max": round(float(bucket["max"] or 0), 2),
+                "sum": round(total, 2),
+            }
+        )
+    return results
+
+
 def query_summary(name: str, minutes: int = 5) -> dict:
     """Aggregate summary of last N minutes."""
     buckets = query_recent(name, minutes)

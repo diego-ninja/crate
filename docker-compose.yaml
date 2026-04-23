@@ -38,7 +38,7 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      # Auth disabled — MusicDock handles access via Traefik middleware
+      # Auth disabled — Crate handles access via Traefik middleware
       - ENABLE_BEETS=true
       - REACT_APP_TIDAL_COUNTRY_CODE=${TIDAL_COUNTRY_CODE}
     volumes:
@@ -128,7 +128,7 @@ services:
       traefik.http.routers.slskd.tls: true
       traefik.http.routers.slskd.tls.certresolver: letsencrypt
 
-  # MusicDock — Redis cache
+  # Crate — Redis cache
   crate-redis:
     image: redis:7-alpine
     container_name: crate-redis
@@ -145,7 +145,7 @@ services:
     networks:
       - crate
 
-  # MusicDock — PostgreSQL database
+  # Crate — PostgreSQL database
   # POSTGRES_USER/PASSWORD/DB only take effect on first volume init.
   # The app connects using CRATE_POSTGRES_* vars from .env.
   # These MUST match an existing role in the volume, or the init script
@@ -155,21 +155,37 @@ services:
     container_name: crate-postgres
     restart: unless-stopped
     mem_limit: 1g
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.max=10000
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - track_io_timing=on
+      - -c
+      - log_min_duration_statement=1000
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_line_prefix=%m [%p] %q%u@%d 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER_USER:-musicdock}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER_USER:-crate}"]
       interval: 30s
       timeout: 5s
       retries: 3
     environment:
-      - POSTGRES_USER=${POSTGRES_SUPERUSER_USER:-musicdock}
-      - POSTGRES_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-musicdock}
-      - POSTGRES_DB=${POSTGRES_SUPERUSER_DB:-musicdock}
+      - POSTGRES_USER=${POSTGRES_SUPERUSER_USER:-crate}
+      - POSTGRES_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-crate}
+      - POSTGRES_DB=${POSTGRES_SUPERUSER_DB:-crate}
     volumes:
       - crate_postgres:/var/lib/postgresql/data
     networks:
       - crate
 
-  # MusicDock — Music stack management
+  # Crate — Music stack management
   crate-api:
     image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
     build: ./app
@@ -194,9 +210,9 @@ services:
       - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
       - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
       - CRATE_POSTGRES_HOST=crate-postgres
-      - POSTGRES_SUPERUSER_USER=${POSTGRES_SUPERUSER_USER:-musicdock}
-      - POSTGRES_SUPERUSER_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-musicdock}
-      - POSTGRES_SUPERUSER_DB=${POSTGRES_SUPERUSER_DB:-musicdock}
+      - POSTGRES_SUPERUSER_USER=${POSTGRES_SUPERUSER_USER:-crate}
+      - POSTGRES_SUPERUSER_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-crate}
+      - POSTGRES_SUPERUSER_DB=${POSTGRES_SUPERUSER_DB:-crate}
       - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
@@ -255,9 +271,9 @@ services:
       - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
       - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
       - CRATE_POSTGRES_HOST=crate-postgres
-      - POSTGRES_SUPERUSER_USER=${POSTGRES_SUPERUSER_USER:-musicdock}
-      - POSTGRES_SUPERUSER_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-musicdock}
-      - POSTGRES_SUPERUSER_DB=${POSTGRES_SUPERUSER_DB:-musicdock}
+      - POSTGRES_SUPERUSER_USER=${POSTGRES_SUPERUSER_USER:-crate}
+      - POSTGRES_SUPERUSER_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-crate}
+      - POSTGRES_SUPERUSER_DB=${POSTGRES_SUPERUSER_DB:-crate}
       - JWT_SECRET=${JWT_SECRET}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}

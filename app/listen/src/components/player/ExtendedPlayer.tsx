@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { ChevronDown, Settings } from "lucide-react";
+import { ChevronDown, Settings, SlidersHorizontal } from "lucide-react";
 
+import { EqualizerPanel } from "@/components/player/EqualizerPanel";
+import { PlayerSurfaceModeSwitch } from "@/components/player/PlayerSurfaceModeSwitch";
 import { InfoTab } from "@/components/player/extended/InfoTab";
+import { SpinningDisc } from "@/components/player/SpinningDisc";
 import { artistPagePath, albumPagePath } from "@/lib/library-routes";
 import { LyricsTab } from "@/components/player/extended/LyricsTab";
 import { QueueTab } from "@/components/player/extended/QueueTab";
 import { SuggestedTab } from "@/components/player/extended/SuggestedTab";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { useVisualizerConfig } from "@/components/player/visualizer/useVisualizerConfig";
+import { measureVisualizerCanvasRect } from "@/components/player/visualizer/canvas-layout";
 import { VisualizerSettingsPanel } from "@/components/player/visualizer/VisualizerSettingsPanel";
 import { AppPopover } from "@crate/ui/primitives/AppPopover";
-import { usePlayer } from "@/contexts/PlayerContext";
-import { useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
+import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
+import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { useEscapeKey } from "@crate/ui/lib/use-escape-key";
@@ -34,14 +38,23 @@ const TABS: { id: TabId; label: string }[] = [
 export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const navigate = useNavigate();
   const isDesktop = useIsDesktop();
-  const { currentTrack, isPlaying, volume, analyserVersion, crossfadeTransition } = usePlayer();
+  const { currentTrack, currentTime, duration, isPlaying, isBuffering, volume, analyserVersion, crossfadeTransition } = usePlayer();
+  const { pause, resume } = usePlayerActions();
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
+  const { displayedTime, displayedDuration } = useCrossfadeAwareProgress(
+    crossfadeTransition,
+    currentTime,
+    duration,
+  );
   const [tab, setTab] = useState<TabId>("queue");
   const [showVizSettings, setShowVizSettings] = useState(false);
+  const [showEqualizer, setShowEqualizer] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const coverRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const equalizerRef = useRef<HTMLDivElement>(null);
+  const equalizerButtonRef = useRef<HTMLButtonElement>(null);
   const vizSettingsRef = useRef<HTMLDivElement>(null);
   const vizSettingsButtonRef = useRef<HTMLButtonElement>(null);
   const playbackState = useMemo(() => ({ isPlaying, volume }), [isPlaying, volume]);
@@ -52,9 +65,12 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
     playbackState,
   );
   const vizCfg = useVisualizerConfig(vizRef, currentTrack, open && isDesktop, crossfadeTransition);
-  const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const isCdMode = vizCfg.surfaceMode === "cd";
+  const isVisualizerMode = vizCfg.surfaceMode === "visualizer";
+  const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number; referenceSize: number } | null>(null);
 
-  // Measure cover position relative to the left panel, expand 15%
+  // Measure cover position relative to the left panel and give the WebGL
+  // canvas a bit more breathing room than the visualizer itself needs.
   useEffect(() => {
     if (!open || !isDesktop) return;
     const measure = () => {
@@ -65,34 +81,41 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
       const pr = panel.getBoundingClientRect();
       // Skip measurement if panel is still animating (off-screen)
       if (pr.top > window.innerHeight * 0.5) return;
-      const expand = 0.40;
-      const ew = cr.width * expand;
-      const eh = cr.height * expand;
-      setCanvasRect({
-        top: cr.top - pr.top - eh / 2,
-        left: cr.left - pr.left - ew / 2,
-        width: cr.width + ew,
-        height: cr.height + eh,
-      });
+      setCanvasRect(
+        measureVisualizerCanvasRect(cr, pr, {
+          baseScale: 1.4,
+          edgePadding: 20,
+        }),
+      );
     };
     // Wait for open animation to settle before first measure
     const t1 = window.setTimeout(measure, 550);
     const resizeObs = new ResizeObserver(measure);
     if (coverRef.current) resizeObs.observe(coverRef.current);
+    if (panelRef.current) resizeObs.observe(panelRef.current);
     window.addEventListener("resize", measure);
     return () => {
       window.clearTimeout(t1);
       resizeObs.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [open, isDesktop, showVizSettings]);
+  }, [open, isDesktop, showVizSettings, vizCfg.surfaceMode]);
 
   useDismissibleLayer({
-    active: showVizSettings,
-    refs: [vizSettingsRef, vizSettingsButtonRef],
-    onDismiss: () => setShowVizSettings(false),
+    active: showVizSettings || showEqualizer,
+    refs: [vizSettingsRef, vizSettingsButtonRef, equalizerRef, equalizerButtonRef],
+    onDismiss: () => {
+      setShowVizSettings(false);
+      setShowEqualizer(false);
+    },
     closeOnEscape: false,
   });
+
+  useEffect(() => {
+    if (!isVisualizerMode && showVizSettings) {
+      setShowVizSettings(false);
+    }
+  }, [isVisualizerMode, showVizSettings]);
 
   const handleEscape = useCallback(
     (event: KeyboardEvent) => {
@@ -102,9 +125,13 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
         setShowVizSettings(false);
         return;
       }
+      if (showEqualizer) {
+        setShowEqualizer(false);
+        return;
+      }
       onClose();
     },
-    [onClose, showVizSettings],
+    [onClose, showEqualizer, showVizSettings],
   );
 
   useEscapeKey(open, handleEscape);
@@ -126,18 +153,45 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
           >
             <ChevronDown size={20} />
           </button>
-          <button
-            ref={vizSettingsButtonRef}
-            onClick={() => setShowVizSettings(!showVizSettings)}
-            aria-label="Visualizer settings"
-            className={`rounded-full p-2 backdrop-blur-sm transition-colors ${
-              showVizSettings
-                ? "bg-primary/20 text-primary"
-                : "bg-black/30 text-white/40 hover:text-white/70"
-            }`}
-          >
-            <Settings size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <PlayerSurfaceModeSwitch
+              mode={vizCfg.surfaceMode}
+              onChange={(mode) => {
+                vizCfg.setSurfaceMode(mode);
+                if (mode !== "visualizer") setShowVizSettings(false);
+              }}
+            />
+            <button
+              ref={equalizerButtonRef}
+              onClick={() => {
+                setShowEqualizer((value) => !value);
+                setShowVizSettings(false);
+              }}
+              aria-label="Equalizer"
+              className={`rounded-full p-2 backdrop-blur-sm transition-colors ${
+                showEqualizer
+                  ? "bg-primary/20 text-primary"
+                  : "bg-black/30 text-white/40 hover:bg-black/50 hover:text-white/70"
+              }`}
+            >
+              <SlidersHorizontal size={18} />
+            </button>
+            <button
+              ref={vizSettingsButtonRef}
+              onClick={() => setShowVizSettings(!showVizSettings)}
+              aria-label="Visualizer settings"
+              disabled={!isVisualizerMode}
+              className={`rounded-full p-2 backdrop-blur-sm transition-colors ${
+                !isVisualizerMode
+                  ? "bg-black/20 text-white/20"
+                  : showVizSettings
+                    ? "bg-primary/20 text-primary"
+                    : "bg-black/30 text-white/40 hover:bg-black/50 hover:text-white/70"
+              }`}
+            >
+              <Settings size={18} />
+            </button>
+          </div>
         </div>
 
         {showVizSettings ? (
@@ -146,57 +200,81 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
           </AppPopover>
         ) : null}
 
-        {/* Album cover — crossfades during audio crossfade */}
-        <div ref={coverRef} className="relative z-0 aspect-square w-[70%] max-w-[480px] shrink-0">
-          <div className="absolute inset-6 rounded-[28px] bg-primary/10 opacity-70 blur-3xl" />
-          <div className="absolute inset-2 rounded-[26px] border border-white/10 bg-white/[0.02]" />
-          {crossfadeTransition ? (
-            <>
-              {crossfadeTransition.outgoing.albumCover ? (
-                <img
-                  src={crossfadeTransition.outgoing.albumCover}
-                  alt=""
-                  className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-[0_28px_100px_rgba(0,0,0,0.75),0_10px_28px_rgba(0,0,0,0.45)]"
-                  style={{
-                    filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none",
-                    opacity: 1 - crossfadeProgress,
-                  }}
-                />
-              ) : null}
-              {crossfadeTransition.incoming.albumCover ? (
-                <img
-                  src={crossfadeTransition.incoming.albumCover}
-                  alt=""
-                  className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-[0_28px_100px_rgba(0,0,0,0.75),0_10px_28px_rgba(0,0,0,0.45)]"
-                  style={{
-                    filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none",
-                    opacity: crossfadeProgress,
-                  }}
-                />
-              ) : null}
-            </>
-          ) : currentTrack.albumCover ? (
-            <img
-              src={currentTrack.albumCover}
-              alt=""
-              className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-[0_28px_100px_rgba(0,0,0,0.75),0_10px_28px_rgba(0,0,0,0.45)]"
-              style={{ filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none" }}
+        {showEqualizer ? (
+          <AppPopover ref={equalizerRef} className="absolute top-14 right-4 w-[480px] max-w-[min(480px,calc(100%-2rem))] p-4">
+            <EqualizerPanel onClose={() => setShowEqualizer(false)} />
+          </AppPopover>
+        ) : null}
+
+        <div ref={coverRef} className="relative z-0 aspect-square w-[72%] max-w-[500px] shrink-0">
+          {isCdMode ? (
+            <SpinningDisc
+              albumCover={currentTrack.albumCover}
+              className="w-full"
+              crossfadeIncomingCover={crossfadeTransition?.incoming.albumCover}
+              crossfadeOutgoingCover={crossfadeTransition?.outgoing.albumCover}
+              crossfadeProgress={crossfadeProgress}
+              currentTime={displayedTime}
+              duration={displayedDuration}
+              isBuffering={isBuffering}
+              isPlaying={isPlaying}
+              onTogglePlay={isPlaying ? pause : resume}
             />
           ) : (
-            <div className="absolute inset-0 rounded-xl bg-white/5 shadow-[0_28px_100px_rgba(0,0,0,0.75)]" />
+            <>
+              <div className="absolute inset-6 rounded-[28px] bg-primary/10 opacity-70 blur-3xl" />
+              <div className="absolute inset-2 rounded-[26px] border border-white/10 bg-white/[0.02]" />
+              {crossfadeTransition ? (
+                <>
+                  {crossfadeTransition.outgoing.albumCover ? (
+                    <img
+                      src={crossfadeTransition.outgoing.albumCover}
+                      alt=""
+                      className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-[0_28px_100px_rgba(0,0,0,0.75),0_10px_28px_rgba(0,0,0,0.45)]"
+                      style={{
+                        filter: isVisualizerMode ? "grayscale(100%) brightness(0.35)" : "none",
+                        opacity: 1 - crossfadeProgress,
+                      }}
+                    />
+                  ) : null}
+                  {crossfadeTransition.incoming.albumCover ? (
+                    <img
+                      src={crossfadeTransition.incoming.albumCover}
+                      alt=""
+                      className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-[0_28px_100px_rgba(0,0,0,0.75),0_10px_28px_rgba(0,0,0,0.45)]"
+                      style={{
+                        filter: isVisualizerMode ? "grayscale(100%) brightness(0.35)" : "none",
+                        opacity: crossfadeProgress,
+                      }}
+                    />
+                  ) : null}
+                </>
+              ) : currentTrack.albumCover ? (
+                <img
+                  src={currentTrack.albumCover}
+                  alt=""
+                  className="absolute inset-0 h-full w-full rounded-xl object-cover shadow-[0_28px_100px_rgba(0,0,0,0.75),0_10px_28px_rgba(0,0,0,0.45)]"
+                  style={{ filter: isVisualizerMode ? "grayscale(100%) brightness(0.35)" : "none" }}
+                />
+              ) : (
+                <div className="absolute inset-0 rounded-xl bg-white/5 shadow-[0_28px_100px_rgba(0,0,0,0.75)]" />
+              )}
+            </>
           )}
         </div>
 
-        {/* WebGL canvas — 15% larger than cover, centered, maintains aspect ratio on resize */}
+        {/* WebGL canvas — slightly larger than the visualizer’s visual footprint,
+            with extra room from the container to avoid clipping on big pulses. */}
         <div
           className={`pointer-events-none absolute ${showVizSettings ? "z-30" : "z-10"} ${
-            vizCfg.vizEnabled && canvasRect ? "" : "hidden"
+            isVisualizerMode && canvasRect ? "" : "hidden"
           }`}
           style={canvasRect ? { top: canvasRect.top, left: canvasRect.left, width: canvasRect.width, height: canvasRect.height } : undefined}
         >
           <canvas
             ref={canvasRef}
             className="h-full w-full"
+            data-viz-reference-size={canvasRect ? String(canvasRect.referenceSize) : undefined}
             style={{ background: "transparent" }}
           />
         </div>
@@ -255,9 +333,9 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
               </>
             )}
           </div>
-          {vizCfg.vizEnabled && vizCfg.trackAdaptiveViz && vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
+          {vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
             <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.22em] text-white/40">
-              spheres · {vizCfg.trackVizProfile.summary}
+              {vizCfg.trackVizProfile.summary}
             </p>
           ) : null}
         </div>

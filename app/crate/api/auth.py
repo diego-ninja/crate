@@ -379,6 +379,16 @@ _AUTH_ADMIN_RESPONSES = merge_responses(
 
 
 def _should_skip_session_touch(path: str) -> bool:
+    if path.startswith("/api/admin/metrics"):
+        return True
+    if path.startswith("/api/events"):
+        return True
+    if path.startswith("/api/cache/events"):
+        return True
+    if path in {"/api/status", "/api/worker/status", "/api/setup/status"}:
+        return True
+    if path.startswith("/api/tasks"):
+        return True
     if path.startswith(("/api/stream/", "/api/download/")):
         return True
     if path.startswith("/api/tracks/") and path.endswith(("/stream", "/download")):
@@ -665,13 +675,16 @@ async def auth_sessions(request: Request):
 async def auth_heartbeat(request: Request, body: HeartbeatRequest):
     user = _require_auth(request)
     if user.get("session_id"):
-        touch_session(
-            user["session_id"],
-            last_seen_ip=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent"),
-            app_id=body.app_id or request.headers.get("x-crate-app"),
-            device_label=body.device_label or request.headers.get("x-device-label"),
-        )
+        from crate.api.auth_cache import should_touch_session
+
+        if should_touch_session(user["session_id"]):
+            touch_session(
+                user["session_id"],
+                last_seen_ip=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"),
+                app_id=body.app_id or request.headers.get("x-crate-app"),
+                device_label=body.device_label or request.headers.get("x-device-label"),
+            )
     return {"ok": True}
 
 

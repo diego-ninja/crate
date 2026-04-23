@@ -2,8 +2,10 @@ const USE_ALBUM_PALETTE_KEY = "listen-viz-use-album-palette";
 const VISUALIZER_ENABLED_KEY = "listen-viz-enabled";
 const VISUALIZER_SETTINGS_KEY = "listen-viz-settings";
 const TRACK_ADAPTIVE_VISUALIZER_KEY = "listen-viz-track-adaptive";
+const PLAYER_SURFACE_MODE_KEY = "listen-player-surface-mode";
 export const PLAYER_VIZ_PREFS_EVENT = "listen:viz-prefs-changed";
 export type VisualizerMode = "spheres";
+export type PlayerSurfaceMode = "cd" | "cover" | "visualizer";
 
 export interface VisualizerSettingsPreference {
   separation: number;
@@ -20,6 +22,26 @@ export const DEFAULT_VISUALIZER_SETTINGS: VisualizerSettingsPreference = {
   persistence: 0.8,
   octaves: 2,
 };
+
+export function getPlayerSurfaceModePreference(): PlayerSurfaceMode {
+  try {
+    const raw = localStorage.getItem(PLAYER_SURFACE_MODE_KEY);
+    if (raw === "cd" || raw === "cover" || raw === "visualizer") return raw;
+  } catch {
+    // fall through to legacy preference
+  }
+  return getLegacyVisualizerEnabledPreference() ? "visualizer" : "cd";
+}
+
+export function setPlayerSurfaceModePreference(value: PlayerSurfaceMode) {
+  try {
+    localStorage.setItem(PLAYER_SURFACE_MODE_KEY, value);
+    localStorage.setItem(VISUALIZER_ENABLED_KEY, String(value === "visualizer"));
+    dispatchVisualizerPrefsChange({ playerSurfaceMode: value, visualizerEnabled: value === "visualizer" });
+  } catch {
+    // ignore storage failures
+  }
+}
 
 export function getUseAlbumPalettePreference(): boolean {
   try {
@@ -39,6 +61,10 @@ export function setUseAlbumPalettePreference(value: boolean) {
 }
 
 export function getVisualizerEnabledPreference(): boolean {
+  return getPlayerSurfaceModePreference() === "visualizer";
+}
+
+function getLegacyVisualizerEnabledPreference(): boolean {
   try {
     const raw = localStorage.getItem(VISUALIZER_ENABLED_KEY);
     return raw == null ? false : raw === "true";
@@ -48,12 +74,7 @@ export function getVisualizerEnabledPreference(): boolean {
 }
 
 export function setVisualizerEnabledPreference(value: boolean) {
-  try {
-    localStorage.setItem(VISUALIZER_ENABLED_KEY, String(value));
-    dispatchVisualizerPrefsChange({ visualizerEnabled: value });
-  } catch {
-    // ignore storage failures
-  }
+  setPlayerSurfaceModePreference(value ? "visualizer" : "cover");
 }
 
 export function getTrackAdaptiveVisualizerPreference(): boolean {

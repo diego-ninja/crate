@@ -3,9 +3,13 @@ import { useNavigate } from "react-router";
 import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { trackToMenuData } from "@/components/actions/shared";
 import { useTrackActionEntries } from "@/components/actions/track-actions";
+import { PlayerSurfaceModeSwitch } from "@/components/player/PlayerSurfaceModeSwitch";
+import { SpinningDisc } from "@/components/player/SpinningDisc";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { useVisualizerConfig } from "@/components/player/visualizer/useVisualizerConfig";
+import { measureVisualizerCanvasRect } from "@/components/player/visualizer/canvas-layout";
 import { EqualizerPanel } from "@/components/player/EqualizerPanel";
+import { InfoTab } from "@/components/player/extended/InfoTab";
 import { VisualizerSettingsPanel } from "@/components/player/visualizer/VisualizerSettingsPanel";
 import { api } from "@/lib/api";
 import {
@@ -13,20 +17,36 @@ import {
   ListMusic,
   AlignLeft,
   Disc3,
+  Info,
   Settings,
   SlidersHorizontal,
-  User,
 } from "lucide-react";
 import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
-import { usePlayer, type Track } from "@/contexts/PlayerContext";
+import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
+import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { useEscapeKey } from "@crate/ui/lib/use-escape-key";
 import { PlayerSeekBar } from "@/components/player/bar/PlayerSeekBar";
 import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
 
-type FSTab = "player" | "queue" | "lyrics";
+type FSTab = "player" | "queue" | "lyrics" | "info";
 
 interface LyricLine { time: number; text: string; }
+interface ResolvedArtistMeta {
+  id: number;
+  name: string;
+  slug?: string;
+  hasPhoto?: boolean;
+}
+
+function normalizeArtistName(value: string | null | undefined) {
+  return (value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .toLowerCase();
+}
 
 function parseSyncedLyrics(raw: string): LyricLine[] {
   return raw.split("\n").reduce<LyricLine[]>((acc, line) => {
@@ -111,7 +131,8 @@ function FullscreenQueueRow({
 }
 
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
-  const { currentTrack, queue, currentIndex, currentTime, duration, seek, jumpTo, isPlaying, volume, analyserVersion, crossfadeTransition } = usePlayer();
+  const { currentTrack, queue, currentIndex, currentTime, duration, isBuffering, seek, jumpTo, isPlaying, volume, analyserVersion, crossfadeTransition } = usePlayer();
+  const { pause, resume } = usePlayerActions();
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   // Keep the crossfade visuals, but let time/progress track the live
   // incoming song so the UI does not jump backwards after the fade.
@@ -131,6 +152,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const [swipeY, setSwipeY] = useState(0);
   const [showVizSettings, setShowVizSettings] = useState(false);
   const [showEqualizer, setShowEqualizer] = useState(false);
+  const [artistPhotoFailed, setArtistPhotoFailed] = useState(false);
+  const [resolvedArtist, setResolvedArtist] = useState<ResolvedArtistMeta | null>(null);
 
   const swipeStartRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
@@ -139,6 +162,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const coverRef = useRef<HTMLDivElement>(null);
   const fsRootRef = useRef<HTMLDivElement>(null);
+  const equalizerRef = useRef<HTMLDivElement>(null);
+  const equalizerButtonRef = useRef<HTMLButtonElement>(null);
+  const vizSettingsRef = useRef<HTMLDivElement>(null);
+  const vizSettingsButtonRef = useRef<HTMLButtonElement>(null);
   const playbackState = useMemo(() => ({ isPlaying, volume }), [isPlaying, volume]);
   const vizRef = useMusicVisualizer(
     canvasRef,
@@ -147,10 +174,13 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     playbackState,
   );
   const vizCfg = useVisualizerConfig(vizRef, currentTrack, visible && activeTab === "player", crossfadeTransition);
-  const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
+  const isCdMode = vizCfg.surfaceMode === "cd";
+  const isVisualizerMode = vizCfg.surfaceMode === "visualizer";
+  const [canvasRect, setCanvasRect] = useState<{ top: number; left: number; width: number; height: number; referenceSize: number } | null>(null);
 
-  // Measure cover position relative to FS root, expand canvas 25%.
-  // Re-runs on viz settings toggle, tab change, and window resize.
+  // Measure cover position relative to FS root. The canvas can grow beyond the
+  // visualizer's reference size so peaks don't clip, while the effect itself
+  // keeps roughly the same visual footprint.
   useEffect(() => {
     if (!visible || activeTab !== "player") return;
     const measure = () => {
@@ -161,27 +191,25 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       const rr = root.getBoundingClientRect();
       // Skip if still animating in (root off-screen)
       if (rr.top > window.innerHeight * 0.5) return;
-      const expand = 0.25;
-      const ew = cr.width * expand;
-      const eh = cr.height * expand;
-      setCanvasRect({
-        top: cr.top - rr.top - eh / 2,
-        left: cr.left - rr.left - ew / 2,
-        width: cr.width + ew,
-        height: cr.height + eh,
-      });
+      setCanvasRect(
+        measureVisualizerCanvasRect(cr, rr, {
+          baseScale: 1.25,
+          edgePadding: 28,
+        }),
+      );
     };
     // Wait for open animation to settle before first measure
     const t1 = window.setTimeout(measure, 350);
     const resizeObs = new ResizeObserver(measure);
     if (coverRef.current) resizeObs.observe(coverRef.current);
+    if (fsRootRef.current) resizeObs.observe(fsRootRef.current);
     window.addEventListener("resize", measure);
     return () => {
       window.clearTimeout(t1);
       resizeObs.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [visible, activeTab, showVizSettings]);
+  }, [visible, activeTab, showVizSettings, vizCfg.surfaceMode]);
 
   // Animate in/out
   useEffect(() => {
@@ -212,14 +240,20 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   });
 
   function goToArtist() {
-    if (currentTrack?.artistId == null) return;
+    const targetArtist = resolvedArtist;
+    if (!targetArtist?.id) return;
     onClose();
-    navigate(artistPagePath({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug }));
+    navigate(artistPagePath({
+      artistId: targetArtist.id,
+      artistSlug: targetArtist.slug,
+      artistName: targetArtist.name,
+    }));
   }
 
-  const artistPhotoUrl = currentTrack?.artistId != null
-    ? artistPhotoApiUrl({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug, artistName: currentTrack.artist })
+  const artistPhotoUrl = resolvedArtist?.id != null
+    ? artistPhotoApiUrl({ artistId: resolvedArtist.id, artistSlug: resolvedArtist.slug, artistName: resolvedArtist.name })
     : null;
+  const artistAvatarUrl = !artistPhotoFailed && artistPhotoUrl ? artistPhotoUrl : null;
 
   // Lyrics fetch
   useEffect(() => {
@@ -238,6 +272,73 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     return () => { cancelled = true; };
   }, [visible, currentTrack?.id]);
 
+  useEffect(() => {
+    setArtistPhotoFailed(false);
+  }, [artistPhotoUrl, currentTrack?.artistId]);
+
+  useEffect(() => {
+    if (!currentTrack?.artist) {
+      setResolvedArtist(null);
+      return;
+    }
+
+    const artistName = currentTrack.artist.trim();
+    const normalizedArtist = normalizeArtistName(artistName);
+    if (normalizedArtist.length < 2) {
+      setResolvedArtist(null);
+      return;
+    }
+
+    if (currentTrack.artistId != null) {
+      setResolvedArtist({
+        id: currentTrack.artistId,
+        name: currentTrack.artist,
+        slug: currentTrack.artistSlug,
+      });
+      return;
+    }
+
+    const queueMatch = queue.find((track) => {
+      return track.artistId != null && normalizeArtistName(track.artist) === normalizedArtist;
+    });
+    if (queueMatch?.artistId != null) {
+      setResolvedArtist({
+        id: queueMatch.artistId,
+        name: queueMatch.artist || artistName,
+        slug: queueMatch.artistSlug,
+      });
+      return;
+    }
+
+    let cancelled = false;
+
+    api<{ artists?: { id: number; name: string; slug?: string; has_photo?: boolean }[] }>(
+      `/api/search?q=${encodeURIComponent(artistName)}&limit=5`,
+    )
+      .then((result) => {
+        if (cancelled) return;
+        const exactMatches = result.artists?.filter((artist) => normalizeArtistName(artist.name) === normalizedArtist) ?? [];
+        const bestMatch = exactMatches.find((artist) => artist.has_photo) ?? exactMatches[0] ?? result.artists?.[0] ?? null;
+        setResolvedArtist(
+          bestMatch
+            ? {
+                id: bestMatch.id,
+                name: bestMatch.name,
+                slug: bestMatch.slug,
+                hasPhoto: bestMatch.has_photo,
+              }
+            : null,
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedArtist(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTrack?.artist, currentTrack?.artistId, currentTrack?.artistSlug, queue]);
+
   // Active lyric index
   const activeLyricIndex = lyrics?.synced
     ? (() => { for (let i = (lyrics.synced?.length ?? 0) - 1; i >= 0; i--) { if (currentTime >= lyrics.synced![i]!.time) return i; } return -1; })()
@@ -251,6 +352,22 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
   // Reset tab when player closes
   useEffect(() => { if (!visible) { setActiveTab("player"); setSwipeY(0); setShowVizSettings(false); setShowEqualizer(false); } }, [visible]);
+
+  useEffect(() => {
+    if (!isVisualizerMode && showVizSettings) {
+      setShowVizSettings(false);
+    }
+  }, [isVisualizerMode, showVizSettings]);
+
+  useDismissibleLayer({
+    active: visible && (showVizSettings || showEqualizer),
+    refs: [vizSettingsRef, vizSettingsButtonRef, equalizerRef, equalizerButtonRef],
+    onDismiss: () => {
+      setShowVizSettings(false);
+      setShowEqualizer(false);
+    },
+    closeOnEscape: false,
+  });
 
   // Swipe-down to dismiss (only from top 150px)
   const onSwipeStart = useCallback((e: React.TouchEvent) => {
@@ -277,11 +394,13 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
   const upcomingTracks = queue.slice(currentIndex + 1, currentIndex + 20);
   const remainingTime = Math.max(0, displayedDuration - displayedTime);
+  const mobileBottomClearance = "calc(10rem + env(safe-area-inset-bottom, 0px))";
 
   const TAB_PILLS: { id: FSTab; icon: typeof Disc3; label: string }[] = [
     { id: "player", icon: Disc3, label: "Player" },
     { id: "queue", icon: ListMusic, label: "Queue" },
     { id: "lyrics", icon: AlignLeft, label: "Lyrics" },
+    { id: "info", icon: Info, label: "Info" },
   ];
 
   return (
@@ -305,13 +424,14 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       {/* WebGL canvas — positioned at root level, floats above cover */}
       <div
         className={`pointer-events-none absolute ${showVizSettings || showEqualizer ? "z-30" : "z-50"} ${
-          vizCfg.vizEnabled && activeTab === "player" && canvasRect ? "" : "hidden"
+          isVisualizerMode && activeTab === "player" && canvasRect ? "" : "hidden"
         }`}
         style={canvasRect ? { top: canvasRect.top, left: canvasRect.left, width: canvasRect.width, height: canvasRect.height } : undefined}
       >
         <canvas
           ref={canvasRef}
           className="h-full w-full"
+          data-viz-reference-size={canvasRect ? String(canvasRect.referenceSize) : undefined}
           style={{ background: "transparent" }}
         />
       </div>
@@ -321,7 +441,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
         <div className="w-10 h-1 rounded-full bg-white/20" />
       </div>
 
-      {/* Header row 1: close + artist pill + viz settings */}
+      {/* Header row 1: close + compact actions */}
       <div className="flex items-center justify-between px-4 pt-[env(safe-area-inset-top,8px)] pb-1">
         <button
           onClick={onClose}
@@ -331,26 +451,19 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           <ChevronDown size={28} />
         </button>
 
-        {/* Artist pill */}
-        <button
-          onClick={goToArtist}
-          aria-label={`Go to ${currentTrack.artist}`}
-          className="flex items-center gap-2 rounded-full bg-white/8 border border-white/10 pl-1 pr-3 py-1 active:bg-white/12 transition-colors"
-        >
-          {artistPhotoUrl ? (
-            <img src={artistPhotoUrl} alt={currentTrack.artist} className="w-6 h-6 rounded-full object-cover" />
-          ) : (
-            <div className="w-6 h-6 rounded-full bg-white/10 flex items-center justify-center">
-              <User size={12} className="text-white/40" />
-            </div>
-          )}
-          <span className="text-[12px] font-medium text-white/80 truncate max-w-[140px]">
-            {currentTrack.artist}
-          </span>
-        </button>
-
         <div className="flex items-center -mr-2">
+          <PlayerSurfaceModeSwitch
+            className="mr-1"
+            mode={vizCfg.surfaceMode}
+            onChange={(mode) => {
+              vizCfg.setSurfaceMode(mode);
+              if (mode !== "visualizer") setShowVizSettings(false);
+            }}
+            size="md"
+            variant="ghost"
+          />
           <button
+            ref={equalizerButtonRef}
             onClick={() => { setShowEqualizer((v) => !v); setShowVizSettings(false); }}
             aria-label="Equalizer"
             className={`w-11 h-11 flex items-center justify-center transition-colors ${showEqualizer ? "text-primary" : "text-white/40 active:text-white/60"}`}
@@ -358,9 +471,17 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
             <SlidersHorizontal size={18} />
           </button>
           <button
+            ref={vizSettingsButtonRef}
             onClick={() => { setShowVizSettings(!showVizSettings); setShowEqualizer(false); }}
             aria-label="Visualizer settings"
-            className={`w-11 h-11 flex items-center justify-center transition-colors ${showVizSettings ? "text-primary" : "text-white/40 active:text-white/60"}`}
+            disabled={!isVisualizerMode}
+            className={`w-11 h-11 flex items-center justify-center transition-colors ${
+              !isVisualizerMode
+                ? "text-white/20"
+                : showVizSettings
+                  ? "text-primary"
+                  : "text-white/40 active:text-white/60"
+            }`}
           >
             <Settings size={18} />
           </button>
@@ -387,7 +508,10 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* Visualizer settings panel */}
       {showVizSettings && (
-        <div className="relative z-40 mx-4 mb-2 rounded-xl bg-white/5 backdrop-blur-md p-4 animate-fade-slide-up">
+        <div
+          ref={vizSettingsRef}
+          className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up"
+        >
           <VisualizerSettingsPanel config={vizCfg} />
         </div>
       )}
@@ -395,52 +519,77 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       {/* Equalizer panel — absolute overlay so it doesn't push the cover
           (and its measured visualizer canvas) out of place on mobile. */}
       {showEqualizer && (
-        <div className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up">
+        <div
+          ref={equalizerRef}
+          className="absolute left-4 right-4 top-28 z-40 max-h-[calc(100dvh-220px)] overflow-y-auto rounded-xl bg-white/5 p-4 backdrop-blur-md animate-fade-slide-up"
+        >
           <EqualizerPanel onClose={() => setShowEqualizer(false)} />
         </div>
       )}
 
       {/* ── Player tab ── */}
       {activeTab === "player" && (
-      <div className="relative flex-1 flex flex-col items-center justify-center overflow-hidden px-6 pb-40">
+      <div
+        className="relative flex-1 flex flex-col items-center justify-center overflow-hidden px-6"
+        style={{ paddingBottom: mobileBottomClearance }}
+      >
         <div className="mx-auto w-full max-w-[360px]">
-          {/* Album cover — large, centered. Crossfades during audio crossfade. */}
-          <div ref={coverRef} className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "1" }}>
-            {crossfadeTransition ? (
-              <>
-                {crossfadeTransition.outgoing.albumCover ? (
-                  <img
-                    src={crossfadeTransition.outgoing.albumCover}
-                    alt=""
-                    className="absolute inset-0 h-full w-full object-cover shadow-2xl shadow-black/60"
-                    style={{
-                      filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none",
-                      opacity: 1 - crossfadeProgress,
-                    }}
-                  />
-                ) : null}
-                {crossfadeTransition.incoming.albumCover ? (
-                  <img
-                    src={crossfadeTransition.incoming.albumCover}
-                    alt=""
-                    className="absolute inset-0 h-full w-full object-cover shadow-2xl shadow-black/60"
-                    style={{
-                      filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none",
-                      opacity: crossfadeProgress,
-                    }}
-                  />
-                ) : null}
-              </>
-            ) : currentTrack.albumCover ? (
-              <img
-                src={currentTrack.albumCover}
-                alt=""
-                className="h-full w-full object-cover shadow-2xl shadow-black/60"
-                style={{ filter: vizCfg.vizEnabled ? "grayscale(100%) brightness(0.35)" : "none" }}
+          <div ref={coverRef} className="relative">
+            {isCdMode ? (
+              <SpinningDisc
+                albumCover={currentTrack.albumCover}
+                className="w-full"
+                crossfadeIncomingCover={crossfadeTransition?.incoming.albumCover}
+                crossfadeOutgoingCover={crossfadeTransition?.outgoing.albumCover}
+                crossfadeProgress={crossfadeProgress}
+                currentTime={displayedTime}
+                duration={displayedDuration}
+                isBuffering={isBuffering}
+                isPlaying={isPlaying}
+                jogEnabled
+                onJoggingChange={(jogging) => { draggingRef.current = jogging; }}
+                onSeek={seek}
+                onTogglePlay={isPlaying ? pause : resume}
               />
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-white/5 shadow-2xl shadow-black/60">
-                <ListMusic size={64} className="text-white/10" />
+              <div className="relative aspect-square overflow-hidden rounded-xl">
+                {crossfadeTransition ? (
+                  <>
+                    {crossfadeTransition.outgoing.albumCover ? (
+                      <img
+                        src={crossfadeTransition.outgoing.albumCover}
+                        alt=""
+                        className="absolute inset-0 h-full w-full object-cover shadow-2xl shadow-black/60"
+                        style={{
+                          filter: isVisualizerMode ? "grayscale(100%) brightness(0.35)" : "none",
+                          opacity: 1 - crossfadeProgress,
+                        }}
+                      />
+                    ) : null}
+                    {crossfadeTransition.incoming.albumCover ? (
+                      <img
+                        src={crossfadeTransition.incoming.albumCover}
+                        alt=""
+                        className="absolute inset-0 h-full w-full object-cover shadow-2xl shadow-black/60"
+                        style={{
+                          filter: isVisualizerMode ? "grayscale(100%) brightness(0.35)" : "none",
+                          opacity: crossfadeProgress,
+                        }}
+                      />
+                    ) : null}
+                  </>
+                ) : currentTrack.albumCover ? (
+                  <img
+                    src={currentTrack.albumCover}
+                    alt=""
+                    className="h-full w-full object-cover shadow-2xl shadow-black/60"
+                    style={{ filter: isVisualizerMode ? "grayscale(100%) brightness(0.35)" : "none" }}
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-white/5 shadow-2xl shadow-black/60">
+                    <ListMusic size={64} className="text-white/10" />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -482,7 +631,31 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
               </>
             )}
           </div>
-          {vizCfg.vizEnabled && vizCfg.trackAdaptiveViz && vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
+          <div className="mt-2 flex items-center justify-center">
+            <button
+              onClick={goToArtist}
+              aria-label={`Go to ${currentTrack.artist}`}
+              disabled={!resolvedArtist?.id}
+              className="inline-flex max-w-[240px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-2 py-1.5 active:bg-white/12 transition-colors"
+            >
+              {artistAvatarUrl ? (
+                <img
+                  src={artistAvatarUrl}
+                  alt={currentTrack.artist}
+                  className="h-7 w-7 rounded-full object-cover"
+                  onError={() => setArtistPhotoFailed(true)}
+                />
+              ) : (
+                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold text-white/55">
+                  {currentTrack.artist.slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <span className="truncate text-[12px] font-medium text-white/78">
+                {currentTrack.artist}
+              </span>
+            </button>
+          </div>
+          {vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
             <p className="mt-1 text-[9px] font-medium uppercase tracking-[0.18em] text-white/40">
               {vizCfg.trackVizProfile.summary}
             </p>
@@ -506,7 +679,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* ── Queue tab ── */}
       {activeTab === "queue" && (
-        <div className="flex-1 overflow-y-auto pb-40">
+        <div className="flex-1 overflow-y-auto" style={{ paddingBottom: mobileBottomClearance }}>
           <div className="px-4 py-3">
             <p className="text-xs text-white/40 uppercase tracking-wider font-medium mb-2">
               Up Next · {upcomingTracks.length} tracks
@@ -530,7 +703,7 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
       {/* ── Lyrics tab ── */}
       {activeTab === "lyrics" && (
-        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4 pb-40">
+        <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto px-6 py-4" style={{ paddingBottom: mobileBottomClearance }}>
           {!lyrics ? (
             <p className="text-center text-white/40 text-sm mt-20">Loading lyrics...</p>
           ) : lyrics.synced ? (
@@ -557,6 +730,12 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
           ) : (
             <p className="text-center text-white/40 text-sm mt-20">No lyrics available</p>
           )}
+        </div>
+      )}
+
+      {activeTab === "info" && (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3" style={{ paddingBottom: mobileBottomClearance }}>
+          <InfoTab className="pr-0" />
         </div>
       )}
     </div>

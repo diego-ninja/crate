@@ -26,7 +26,7 @@ def test_openapi_variants_split_crate_rest_and_subsonic(test_app):
     admin_schema = test_app.get("/openapi-admin-system.json").json()
     subsonic_schema = test_app.get("/openapi-subsonic.json").json()
 
-    assert crate_schema["info"]["title"] == "MusicDock API"
+    assert crate_schema["info"]["title"] == "Crate API"
     assert "subsonic" not in {tag["name"] for tag in crate_schema["tags"]}
     assert all(not path.startswith("/rest") for path in crate_schema["paths"])
 

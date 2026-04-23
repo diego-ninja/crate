@@ -101,6 +101,26 @@ class TestArtistsAPI:
             data = resp.json()
             assert data["total"] == 0
 
+    def test_get_artists_popularity_sort_uses_consolidated_signal(self, test_app):
+        captured: dict[str, str] = {}
+
+        def fake_get_artists_page(select_cols, joins, where_sql, order_sql, params, per_page, offset):
+            captured["order_sql"] = order_sql
+            return []
+
+        with patch("crate.api.browse_artist.has_library_data", return_value=True), \
+             patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
+             patch("crate.api.browse_artist.get_artists_count", return_value=0), \
+             patch("crate.api.browse_artist.get_artists_page", side_effect=fake_get_artists_page):
+            resp = test_app.get("/api/artists?sort=popularity")
+            assert resp.status_code == 200
+
+        order_sql = captured["order_sql"]
+        assert "COALESCE(la.popularity_score, -1) DESC" in order_sql
+        assert "COALESCE(la.popularity, 0) DESC" in order_sql
+        assert "la.listeners DESC NULLS LAST" in order_sql
+        assert order_sql.endswith("la.name ASC")
+
 
 class TestArtistDetailAPI:
     def test_get_artist_found(self, test_app):
@@ -609,3 +629,32 @@ class TestHomeEndpointCaching:
         data = resp.json()
         assert data["id"] == "custom-mixes"
         assert data["title"] == "Custom mixes"
+
+
+class TestShowsAPI:
+    def test_cached_shows_coerces_numeric_ids(self, test_app):
+        shows = [
+            {
+                "id": 62,
+                "show_id": 62,
+                "artist_name": "Converge",
+                "date": "2026-05-10",
+                "venue": "Sala X",
+                "city": "Sevilla",
+                "country": "Spain",
+                "country_code": "ES",
+                "lineup": ["Converge"],
+            }
+        ]
+        refs = {"converge": {"id": 7, "slug": "converge"}}
+
+        with patch("crate.db.get_upcoming_shows", return_value=shows), \
+             patch("crate.api.browse_artist.get_all_artist_genre_map", return_value={"Converge": ["metalcore"]}), \
+             patch("crate.api.browse_artist._lookup_artist_refs", return_value=refs), \
+             patch("crate.api.browse_artist._show_lineup_artists", return_value=[{"name": "Converge", "id": 7, "slug": "converge"}]):
+            resp = test_app.get("/api/shows/cached?limit=5")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["events"][0]["id"] == "62"
+        assert data["events"][0]["artist_slug"] == "converge"

@@ -99,6 +99,7 @@ def api_artist_radio(request: Request, artist_id: int, limit: int = Query(50, ge
     response_model=RadioResponse,
     responses=_RADIO_RESPONSES,
     summary="Build artist radio",
+    deprecated=True,
 )
 def api_artist_radio_by_id(request: Request, artist_id: int, limit: int = Query(50, ge=1, le=100)):
     return api_artist_radio(request, artist_id, limit)
@@ -109,6 +110,7 @@ def api_artist_radio_by_id(request: Request, artist_id: int, limit: int = Query(
     response_model=RadioResponse,
     responses=_RADIO_RESPONSES,
     summary="Build track radio",
+    deprecated=True,
 )
 def api_track_radio(
     request: Request,
@@ -157,6 +159,7 @@ def api_track_radio(
     response_model=RadioResponse,
     responses=_RADIO_RESPONSES,
     summary="Build album radio",
+    deprecated=True,
 )
 def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1, le=100)):
     user = _require_auth(request)
@@ -196,6 +199,7 @@ def api_album_radio(request: Request, album_id: int, limit: int = Query(50, ge=1
     response_model=RadioResponse,
     responses=_RADIO_RESPONSES,
     summary="Build playlist radio",
+    deprecated=True,
 )
 def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50, ge=1, le=100)):
     user = _require_auth(request)
@@ -242,6 +246,7 @@ def api_playlist_radio(request: Request, playlist_id: int, limit: int = Query(50
     response_model=RadioResponse,
     responses=_RADIO_RESPONSES,
     summary="Build radio from a home playlist",
+    deprecated=True,
 )
 def api_home_playlist_radio(request: Request, playlist_id: str, limit: int = Query(50, ge=1, le=100)):
     user = _require_auth(request)
@@ -288,7 +293,7 @@ class RadioStartRequest(BaseModel):
 
 class RadioNextRequest(BaseModel):
     session_id: str
-    count: int = Field(default=5, ge=1, le=20)
+    count: int = Field(default=20, ge=1, le=50)
 
 
 class RadioFeedbackRequest(BaseModel):

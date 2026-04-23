@@ -15,10 +15,11 @@ def claim_track(state_column: str) -> dict | None:
     Uses FOR UPDATE SKIP LOCKED to avoid race conditions.
     Quick-checks pending count first to avoid expensive lock query when idle."""
     col = _validate_state_column(state_column)
+    claim_predicate = _build_claim_predicate(col)
     with transaction_scope() as session:
         # Fast path: skip the FOR UPDATE if nothing is pending
         pending = session.execute(
-            text(f"SELECT EXISTS(SELECT 1 FROM library_tracks WHERE {col} = 'pending' AND path IS NOT NULL)")
+            text(f"SELECT EXISTS(SELECT 1 FROM library_tracks WHERE {claim_predicate})")
         ).scalar()
         if not pending:
             return None
@@ -27,7 +28,7 @@ def claim_track(state_column: str) -> dict | None:
             SET {col} = 'analyzing'
             WHERE id = (
                 SELECT id FROM library_tracks
-                WHERE {col} = 'pending' AND path IS NOT NULL
+                WHERE {claim_predicate}
                 ORDER BY updated_at DESC
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
@@ -46,12 +47,27 @@ def _validate_state_column(state_column: str) -> str:
     return state_column
 
 
+def _build_claim_predicate(state_column: str) -> str:
+    if state_column == "bliss_state":
+        return (
+            "bliss_state = 'pending' "
+            "AND path IS NOT NULL "
+            "AND COALESCE(analysis_state, 'pending') != 'analyzing'"
+        )
+    return f"{state_column} = 'pending' AND path IS NOT NULL"
+
+
 def mark_done(track_id: int, state_column: str):
     col = _validate_state_column(state_column)
     now = datetime.now(timezone.utc).isoformat()
+    extra_set = ""
+    if col == "analysis_state":
+        extra_set = ", analysis_completed_at = :now"
+    elif col == "bliss_state":
+        extra_set = ", bliss_computed_at = :now"
     with transaction_scope() as session:
         session.execute(
-            text(f"UPDATE library_tracks SET {col} = 'done', updated_at = :now WHERE id = :id"),
+            text(f"UPDATE library_tracks SET {col} = 'done', updated_at = :now{extra_set} WHERE id = :id"),
             {"now": now, "id": track_id},
         )
 
@@ -87,16 +103,18 @@ def get_pending_count(state_column: str) -> int:
 
 def store_bliss_vector(track_id: int, vector: list[float]):
     """Store a bliss vector and mark as done in one update."""
+    now = datetime.now(timezone.utc).isoformat()
     with transaction_scope() as session:
         session.execute(
             text(
                 "UPDATE library_tracks "
                 "SET bliss_vector = :vector, "
                 "    bliss_embedding = CAST(:vector_literal AS vector(20)), "
-                "    bliss_state = 'done' "
+                "    bliss_state = 'done', "
+                "    bliss_computed_at = :now "
                 "WHERE id = :id"
             ),
-            {"vector": vector, "vector_literal": to_pgvector_literal(vector), "id": track_id},
+            {"vector": vector, "vector_literal": to_pgvector_literal(vector), "now": now, "id": track_id},
         )
 
 

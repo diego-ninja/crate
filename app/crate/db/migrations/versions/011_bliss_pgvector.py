@@ -22,12 +22,11 @@ def _ensure_vector_extension() -> None:
     if exists:
         return
 
-    su_user = os.environ.get("POSTGRES_SUPERUSER_USER") or os.environ.get("MUSICDOCK_POSTGRES_USER")
-    su_pass = os.environ.get("POSTGRES_SUPERUSER_PASSWORD") or os.environ.get("MUSICDOCK_POSTGRES_PASSWORD")
+    su_user = os.environ.get("POSTGRES_SUPERUSER_USER")
+    su_pass = os.environ.get("POSTGRES_SUPERUSER_PASSWORD")
     host = os.environ.get("CRATE_POSTGRES_HOST", "crate-postgres")
     port = os.environ.get("CRATE_POSTGRES_PORT", "5432")
     dbname = os.environ.get("CRATE_POSTGRES_DB", "crate")
-    su_db = os.environ.get("POSTGRES_SUPERUSER_DB") or os.environ.get("MUSICDOCK_POSTGRES_DB") or dbname
 
     if su_user:
         conn = psycopg2.connect(
@@ -35,7 +34,7 @@ def _ensure_vector_extension() -> None:
             port=port,
             user=su_user,
             password=su_pass,
-            dbname=su_db,
+            dbname=dbname,
         )
         try:
             conn.autocommit = True
@@ -58,15 +57,8 @@ def _ensure_vector_extension() -> None:
 def upgrade() -> None:
     _ensure_vector_extension()
     op.execute("ALTER TABLE library_tracks ADD COLUMN IF NOT EXISTS bliss_embedding vector(20)")
-    op.execute(
-        """
-        UPDATE library_tracks
-        SET bliss_embedding = ('[' || array_to_string(bliss_vector, ',') || ']')::vector(20)
-        WHERE bliss_vector IS NOT NULL
-          AND array_length(bliss_vector, 1) = 20
-          AND bliss_embedding IS NULL
-        """
-    )
+    # Historical backfill is intentionally deferred outside Alembic so
+    # startup migrations stay fast and don't wedge production on large libraries.
     with op.get_context().autocommit_block():
         op.execute(
             """

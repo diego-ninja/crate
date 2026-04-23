@@ -29,27 +29,17 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 
 export function VisualizerSettingsPanel({ config, className }: VisualizerSettingsPanelProps) {
   const {
-    vizEnabled, useAlbumPalette, trackAdaptiveViz,
+    surfaceMode, vizEnabled, useAlbumPalette, trackAdaptiveViz,
     vizConfig, effectiveVizConfig, trackVizProfile,
-    toggleEnabled, toggleAlbumPalette, toggleTrackAdaptive,
+    toggleAlbumPalette, toggleTrackAdaptive,
     updateConfig, resetConfig,
   } = config;
 
   return (
     <div className={`space-y-3 ${className ?? ""}`}>
       <div className="mb-1 flex items-center justify-between">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Visualizer</span>
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Visualizer settings</span>
         <button onClick={resetConfig} className="text-[10px] text-primary hover:underline">Reset</button>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground">Enabled</span>
-        <div className="flex items-center gap-2">
-          <span className={`text-[10px] font-medium uppercase tracking-[0.16em] ${vizEnabled ? "text-primary" : "text-white/35"}`}>
-            {vizEnabled ? "On" : "Off"}
-          </span>
-          <Toggle on={vizEnabled} onToggle={toggleEnabled} />
-        </div>
       </div>
 
       <div className={`flex items-center justify-between transition-opacity ${vizEnabled ? "" : "opacity-45"}`}>
@@ -64,7 +54,9 @@ export function VisualizerSettingsPanel({ config, className }: VisualizerSetting
 
       <div className="rounded-md border border-white/8 bg-white/[0.03] px-2.5 py-2 text-[10px] text-muted-foreground">
         {!vizEnabled
-          ? "Visualizer disabled"
+          ? surfaceMode === "cd"
+            ? "CD mode active"
+            : "Cover mode active"
           : trackAdaptiveViz
           ? trackVizProfile.hasAnalysis
             ? `Using track analysis${trackVizProfile.summary ? ` · ${trackVizProfile.summary}` : ""}`
