@@ -45,7 +45,7 @@ from crate.api.schemas.auth import (
 )
 from crate.api.schemas.common import OkResponse
 from crate.db import (
-    count_users, create_user, get_user_by_email, get_user_by_id,
+    count_users, create_user, get_user_by_email, get_user_by_google_id, get_user_by_id,
     get_user_by_external_identity, update_user_last_login, update_user, list_users, delete_user,
     get_user_external_identity, upsert_user_external_identity, list_user_external_identities,
     unlink_user_external_identity, create_session, list_sessions, touch_session, revoke_session,
@@ -256,6 +256,18 @@ def _post_auth_redirect_url(return_to: str, token: str) -> str:
     if parsed.path == "/auth/callback":
         return _append_query_param(return_to, "token", token)
     return return_to
+
+
+def _raise_oauth_identity_conflict(provider: str, exc: SAIntegrityError) -> None:
+    lower = str(exc).lower()
+    if provider == "google" and (
+        "google_id" in lower
+        or "idx_user_external_identities_provider_user_id" in lower
+        or "idx_user_external_identities_provider_username" in lower
+        or "user_external_identities" in lower
+    ):
+        raise HTTPException(status_code=409, detail=f"{provider.title()} account is already linked to another user") from exc
+    raise exc
 
 
 def _build_oauth_state(*, provider: str, return_to: str | None, mode: str, user_id: int | None, invite_token: str | None, app_id: str | None = None) -> str:
@@ -944,10 +956,30 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
     external_payload = _google_userinfo(code, redirect_uri, verifier) if provider == "google" else _apple_userinfo(code, redirect_uri, verifier)
     external_user_id, email, name, avatar = _resolve_provider_subject(provider, external_payload)
     user = get_user_by_external_identity(provider, external_user_id)
+    resolved_via_legacy_google_id = False
+    if not user and provider == "google":
+        # Compatibility bridge for older installs that stored Google
+        # identities only on users.google_id, before
+        # user_external_identities became authoritative.
+        user = get_user_by_google_id(external_user_id)
+        resolved_via_legacy_google_id = user is not None
     # Always sync avatar from OAuth provider
     if user and avatar:
         update_user(user["id"], avatar=avatar)
         user = get_user_by_id(user["id"])
+    if user and resolved_via_legacy_google_id:
+        try:
+            upsert_user_external_identity(
+                user["id"],
+                provider,
+                external_user_id=external_user_id,
+                external_username=email,
+                status="linked",
+                last_error=None,
+                metadata={"email": email},
+            )
+        except SAIntegrityError as exc:
+            _raise_oauth_identity_conflict(provider, exc)
     if parsed_state.get("mode") == "link":
         target_user_id = parsed_state.get("user_id")
         if not target_user_id:
@@ -955,23 +987,7 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
         user = get_user_by_id(int(target_user_id))
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        upsert_user_external_identity(
-            user["id"],
-            provider,
-            external_user_id=external_user_id,
-            external_username=email,
-            status="linked",
-            last_error=None,
-            metadata={"email": email},
-        )
-        redirect_to = _validate_return_to(parsed_state.get("return_to"))
-        response = RedirectResponse(url=redirect_to)
-        return response
-
-    if not user:
-        if email:
-            user = get_user_by_email(email)
-        if user:
+        try:
             upsert_user_external_identity(
                 user["id"],
                 provider,
@@ -983,6 +999,30 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
             )
             if provider == "google" and not user.get("google_id"):
                 update_user(user["id"], google_id=external_user_id)
+        except SAIntegrityError as exc:
+            _raise_oauth_identity_conflict(provider, exc)
+        redirect_to = _validate_return_to(parsed_state.get("return_to"))
+        response = RedirectResponse(url=redirect_to)
+        return response
+
+    if not user:
+        if email:
+            user = get_user_by_email(email)
+        if user:
+            try:
+                upsert_user_external_identity(
+                    user["id"],
+                    provider,
+                    external_user_id=external_user_id,
+                    external_username=email,
+                    status="linked",
+                    last_error=None,
+                    metadata={"email": email},
+                )
+                if provider == "google" and not user.get("google_id"):
+                    update_user(user["id"], google_id=external_user_id)
+            except SAIntegrityError as exc:
+                _raise_oauth_identity_conflict(provider, exc)
             if avatar:
                 update_user(user["id"], avatar=avatar)
             user = get_user_by_id(user["id"])
@@ -991,16 +1031,19 @@ async def oauth_callback(request: Request, provider: str, code: str = "", state:
                 invite_token = parsed_state.get("invite_token")
                 if not invite_token or not consume_auth_invite(invite_token):
                     raise HTTPException(status_code=403, detail="Invite token required")
-            user = create_user(email=email, name=name, avatar=avatar, google_id=external_user_id if provider == "google" else None)
-            upsert_user_external_identity(
-                user["id"],
-                provider,
-                external_user_id=external_user_id,
-                external_username=email,
-                status="linked",
-                last_error=None,
-                metadata={"email": email},
-            )
+            try:
+                user = create_user(email=email, name=name, avatar=avatar, google_id=external_user_id if provider == "google" else None)
+                upsert_user_external_identity(
+                    user["id"],
+                    provider,
+                    external_user_id=external_user_id,
+                    external_username=email,
+                    status="linked",
+                    last_error=None,
+                    metadata={"email": email},
+                )
+            except SAIntegrityError as exc:
+                _raise_oauth_identity_conflict(provider, exc)
 
     update_user_last_login(user["id"])
     app_id = parsed_state.get("app_id")

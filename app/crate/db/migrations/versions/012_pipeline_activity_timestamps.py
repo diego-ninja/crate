@@ -18,25 +18,12 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.execute("ALTER TABLE library_tracks ADD COLUMN IF NOT EXISTS analysis_completed_at TIMESTAMPTZ")
     op.execute("ALTER TABLE library_tracks ADD COLUMN IF NOT EXISTS bliss_computed_at TIMESTAMPTZ")
-
-    op.execute(
-        """
-        UPDATE library_tracks
-        SET analysis_completed_at = COALESCE(analysis_completed_at, updated_at)
-        WHERE analysis_state = 'done'
-          AND analysis_completed_at IS NULL
-          AND updated_at IS NOT NULL
-        """
-    )
-    op.execute(
-        """
-        UPDATE library_tracks
-        SET bliss_computed_at = COALESCE(bliss_computed_at, updated_at)
-        WHERE bliss_state = 'done'
-          AND bliss_computed_at IS NULL
-          AND updated_at IS NOT NULL
-        """
-    )
+    # Intentionally avoid a full-table backfill here. On production-size
+    # libraries this can exceed statement_timeout during startup and block
+    # both API and worker boot. Runtime code already falls back to
+    # updated_at via COALESCE(..., updated_at), so timestamps can be
+    # populated lazily by fresh analysis/bliss writes or by an offline
+    # one-off maintenance job later.
 
 
 def downgrade() -> None:

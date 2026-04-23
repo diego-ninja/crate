@@ -10,6 +10,7 @@ import {
 import { useNavigate } from "react-router";
 
 import { api, setAuthToken } from "@/lib/api";
+import { consumePendingOAuthNext } from "@/lib/capacitor";
 import { primeOfflineRuntimeProfile, setActiveOfflineProfileKey, syncOfflineProfileToServiceWorker } from "@/lib/offline";
 import { clearQueue as clearPlayEventQueue } from "@/lib/play-event-queue";
 
@@ -101,12 +102,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     function handleTokenReceived() {
-      void refetch();
+      const next = consumePendingOAuthNext() || "/";
+      void refetch().then(() => {
+        navigate(next, { replace: true });
+      });
     }
 
     window.addEventListener("crate:auth-token-received", handleTokenReceived);
     return () => window.removeEventListener("crate:auth-token-received", handleTokenReceived);
-  }, [refetch]);
+  }, [navigate, refetch]);
+
+  useEffect(() => {
+    const next = consumePendingOAuthNext();
+    if (!next) return;
+    void refetch().then(() => {
+      navigate(next, { replace: true });
+    });
+  }, [navigate, refetch]);
 
   useEffect(() => {
     if (!user) return;

@@ -1,5 +1,6 @@
 """Tests for the auth system (JWT, password hashing, middleware, API endpoints)."""
 
+import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone, timedelta
 
@@ -125,6 +126,101 @@ class TestOAuthRedirectHelpers:
         )
         assert _post_auth_redirect_url("https://admin.example/users", "abc123") == "https://admin.example/users"
         assert _post_auth_redirect_url("/auth/callback?next=%2Fmix", "abc123") == "/auth/callback?next=%2Fmix&token=abc123"
+
+
+class TestOAuthCallback:
+    @staticmethod
+    def _request(path: str = "/api/auth/oauth/google/callback") -> Request:
+        return Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": path,
+                "query_string": b"",
+                "headers": [],
+                "client": ("127.0.0.1", 12345),
+                "scheme": "https",
+                "server": ("api.example.com", 443),
+            }
+        )
+
+    def test_google_callback_reuses_legacy_google_id_user(self):
+        from crate.api.auth import oauth_callback
+
+        legacy_user = {
+            "id": 42,
+            "email": "legacy@test.com",
+            "role": "user",
+            "username": "legacy",
+            "name": "Legacy User",
+            "google_id": "google-sub-123",
+        }
+
+        with patch("crate.api.auth._parse_oauth_state", return_value={
+            "provider": "google",
+            "return_to": "cratemusic://oauth/callback",
+            "mode": "login",
+            "verifier": "verifier",
+            "app_id": "listen-android",
+        }), \
+             patch("crate.api.auth._google_userinfo", return_value={
+                 "id": "google-sub-123",
+                 "email": "legacy@test.com",
+                 "name": "Legacy User",
+             }), \
+             patch("crate.api.auth.get_user_by_external_identity", return_value=None), \
+             patch("crate.api.auth.get_user_by_google_id", return_value=legacy_user), \
+             patch("crate.api.auth.upsert_user_external_identity") as mock_upsert, \
+             patch("crate.api.auth.update_user_last_login") as mock_last_login, \
+             patch("crate.api.auth._create_login_session", return_value=("jwt-token", {"id": "sess-1"})):
+            response = asyncio.run(oauth_callback(self._request(), "google", code="code", state="state"))
+
+        assert response.headers["location"] == "cratemusic://oauth/callback?token=jwt-token"
+        mock_upsert.assert_called_once()
+        mock_last_login.assert_called_once_with(legacy_user["id"])
+
+    def test_google_callback_identity_conflict_returns_409(self):
+        from fastapi import HTTPException
+        from sqlalchemy.exc import IntegrityError
+
+        from crate.api.auth import oauth_callback
+
+        existing_user = {
+            "id": 7,
+            "email": "conflict@test.com",
+            "role": "user",
+            "username": "conflict",
+            "name": "Conflict User",
+            "google_id": None,
+        }
+
+        with patch("crate.api.auth._parse_oauth_state", return_value={
+            "provider": "google",
+            "return_to": "cratemusic://oauth/callback",
+            "mode": "login",
+            "verifier": "verifier",
+        }), \
+             patch("crate.api.auth._google_userinfo", return_value={
+                 "id": "google-sub-999",
+                 "email": "conflict@test.com",
+                 "name": "Conflict User",
+             }), \
+             patch("crate.api.auth.get_user_by_external_identity", return_value=None), \
+             patch("crate.api.auth.get_user_by_google_id", return_value=None), \
+             patch("crate.api.auth.get_user_by_email", return_value=existing_user), \
+             patch(
+                 "crate.api.auth.upsert_user_external_identity",
+                 side_effect=IntegrityError(
+                     "INSERT INTO user_external_identities ...",
+                     {},
+                     Exception("duplicate key value violates unique constraint idx_user_external_identities_provider_user_id"),
+                 ),
+             ):
+            with pytest.raises(HTTPException) as exc_info:
+                asyncio.run(oauth_callback(self._request(), "google", code="code", state="state"))
+
+        assert exc_info.value.status_code == 409
+        assert "already linked" in exc_info.value.detail
 
 
 # ── API endpoint tests ─────────────────────────────────────────────

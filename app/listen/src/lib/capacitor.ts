@@ -5,6 +5,25 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 
 export const isNative = Capacitor.isNativePlatform();
 export const platform = Capacitor.getPlatform(); // "ios" | "android" | "web"
+const OAUTH_NEXT_KEY = "crate-oauth-next";
+
+function storePendingOAuthNext(next: string): void {
+  try {
+    localStorage.setItem(OAUTH_NEXT_KEY, next || "/");
+  } catch {
+    // Ignore storage failures; the token is still persisted separately.
+  }
+}
+
+export function consumePendingOAuthNext(): string | null {
+  try {
+    const next = localStorage.getItem(OAUTH_NEXT_KEY);
+    if (next) localStorage.removeItem(OAUTH_NEXT_KEY);
+    return next;
+  } catch {
+    return null;
+  }
+}
 
 export async function consumeOAuthCallbackUrl(url: string): Promise<{ handled: boolean; next: string }> {
   if (!url.startsWith("cratemusic://oauth/callback")) {
@@ -21,6 +40,7 @@ export async function consumeOAuthCallbackUrl(url: string): Promise<{ handled: b
 
     const { setAuthToken } = await import("@/lib/api");
     setAuthToken(token);
+    storePendingOAuthNext(next);
     void import("@capacitor/browser")
       .then(({ Browser }) => Browser.close().catch(() => {}))
       .catch(() => {});
@@ -59,18 +79,14 @@ export async function initCapacitor(): Promise<string | null> {
   App.addListener("appUrlOpen", ({ url }) => {
     void consumeOAuthCallbackUrl(url).then((result) => {
       if (!result.handled) return;
-      window.dispatchEvent(new CustomEvent("crate:auth-token-received", { detail: { next: result.next } }));
-      window.location.replace(result.next);
+      window.dispatchEvent(new CustomEvent("crate:auth-token-received"));
     });
   });
 
   try {
     const launch = await App.getLaunchUrl();
     if (launch?.url) {
-      const result = await consumeOAuthCallbackUrl(launch.url);
-      if (result.handled) {
-        return result.next;
-      }
+      await consumeOAuthCallbackUrl(launch.url);
     }
   } catch {
     // Ignore launch URL failures
