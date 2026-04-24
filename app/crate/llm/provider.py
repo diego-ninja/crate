@@ -24,7 +24,7 @@ _OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
 
 def get_config() -> dict:
     """Return current LLM config from DB settings, env, or defaults."""
-    from crate.db.cache import get_setting
+    from crate.db.cache_settings import get_setting
 
     model = get_setting("llm_model", os.environ.get("LLM_PROVIDER", _DEFAULT_MODEL))
     ollama_url = get_setting("llm_ollama_url", _OLLAMA_URL)
@@ -38,7 +38,7 @@ def get_config() -> dict:
 
 def _get_ollama_url() -> str:
     try:
-        from crate.db.cache import get_setting
+        from crate.db.cache_settings import get_setting
         return get_setting("llm_ollama_url", _OLLAMA_URL)
     except Exception:
         return _OLLAMA_URL
@@ -46,7 +46,7 @@ def _get_ollama_url() -> str:
 
 def _get_model() -> str:
     try:
-        from crate.db.cache import get_setting
+        from crate.db.cache_settings import get_setting
         return get_setting("llm_model", os.environ.get("LLM_PROVIDER", _DEFAULT_MODEL))
     except Exception:
         return os.environ.get("LLM_PROVIDER", _DEFAULT_MODEL)

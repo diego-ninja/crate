@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
   const authRequestRef = useRef<AbortController | null>(null);
+  const lastHeartbeatAtRef = useRef(0);
 
   const refetch = useCallback(async () => {
     authRequestRef.current?.abort();
@@ -122,10 +123,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user) return;
+
+    async function sendHeartbeat(force = false) {
+      if (!force && document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (!force && now - lastHeartbeatAtRef.current < 55_000) return;
+      lastHeartbeatAtRef.current = now;
+      await api("/api/auth/heartbeat", "POST", { app_id: "listen-web" }).catch(() => {});
+    }
+
     const timer = window.setInterval(() => {
-      void api("/api/auth/heartbeat", "POST", { app_id: "listen-web" }).catch(() => {});
+      void sendHeartbeat();
     }, 60_000);
-    return () => window.clearInterval(timer);
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void sendHeartbeat(true);
+      }
+    }
+
+    function handleOnline() {
+      void sendHeartbeat(true);
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleOnline);
+    };
   }, [user]);
 
   const logout = useCallback(async () => {

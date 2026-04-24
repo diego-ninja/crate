@@ -9,6 +9,8 @@ import threading
 import time
 from pathlib import Path
 
+from crate.db.cache_store import get_cache
+from crate.db.repositories.library import get_library_artist
 from watchdog.events import FileSystemEventHandler, EVENT_TYPE_CREATED
 from watchdog.observers import Observer
 
@@ -94,7 +96,6 @@ class LibraryWatcher:
             log.debug("Watcher: ignoring change during processing for %s", artist_name)
             return
         try:
-            from crate.db import get_cache
             if get_cache(f"processing:{artist_name.lower()}"):
                 log.debug("Watcher: ignoring change during processing for %s (DB flag)", artist_name)
                 return
@@ -120,7 +121,6 @@ class LibraryWatcher:
             canonical = self.sync._canonical_artist_name(artist_dir, artist_name)
 
             # Check if artist is new (not in DB yet)
-            from crate.db import get_library_artist
             is_new_artist = get_library_artist(canonical) is None
 
             if album_dir.is_dir():

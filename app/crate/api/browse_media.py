@@ -23,7 +23,8 @@ from crate.api.schemas.media import (
     TrackRatingRequest,
     TrackRatingResponse,
 )
-from crate.db import get_cache
+from crate.db.cache_store import get_cache
+from crate.db.repositories.library import set_track_rating
 from crate.db.queries.browse_media import (
     add_favorite,
     count_mood_tracks,
@@ -44,6 +45,7 @@ from crate.db.queries.browse_media import (
     search_artists,
     search_tracks,
 )
+from crate.db.repositories.tasks import create_task_dedup
 
 log = logging.getLogger(__name__)
 
@@ -218,7 +220,6 @@ def api_favorites_remove(request: Request, body: FavoriteMutationRequest):
 )
 def api_rate_track(request: Request, body: TrackRatingRequest):
     _require_auth(request)
-    from crate.db import set_track_rating
 
     rating = body.rating
     track_id = body.track_id
@@ -502,7 +503,6 @@ def api_discover_completeness(request: Request):
     cached = get_cache("discover:completeness", max_age_seconds=86400)
     if cached is not None:
         return cached
-    from crate.db import create_task_dedup
     create_task_dedup("compute_completeness", {})
     return []
 
@@ -516,7 +516,6 @@ def api_discover_completeness(request: Request):
 def api_discover_completeness_refresh(request: Request):
     """Force recompute of completeness data."""
     _require_auth(request)
-    from crate.db import create_task_dedup
     task_id = create_task_dedup("compute_completeness", {})
     return {"task_id": task_id}
 

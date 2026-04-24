@@ -325,6 +325,35 @@ class TestAuthMiddleware:
         user = _require_admin(mock_request)
         assert user["role"] == "admin"
 
+    @patch("crate.auth._get_jwt_secret", return_value="test-secret-key-1234-12345678901234")
+    def test_auth_middleware_does_not_touch_session_on_authenticated_reads(self, _mock_secret):
+        from crate.api.auth import AuthMiddleware
+        from crate.auth import create_jwt
+
+        token = create_jwt(1, "admin@cratemusic.app", "admin", session_id="sess-123")
+
+        app = FastAPI()
+        app.add_middleware(AuthMiddleware)
+
+        @app.get("/ping")
+        def ping(request: Request):
+            return {"user": request.state.user["email"]}
+
+        with patch(
+            "crate.api.auth_cache.get_cached_session",
+            return_value={"id": "sess-123", "expires_at": datetime.now(timezone.utc) + timedelta(hours=1), "revoked_at": None},
+        ), patch(
+            "crate.api.auth_cache.get_cached_user",
+            return_value={"id": 1, "email": "admin@cratemusic.app", "role": "admin"},
+        ), patch("crate.api.auth.touch_session") as mock_touch:
+            with TestClient(app) as client:
+                client.cookies.set("crate_session", token)
+                response = client.get("/ping")
+
+        assert response.status_code == 200
+        assert response.json()["user"] == "admin@cratemusic.app"
+        mock_touch.assert_not_called()
+
 
 @pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
 class TestAuthIntegration:

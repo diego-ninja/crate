@@ -1,0 +1,88 @@
+"""Project domain events into persisted UI snapshots."""
+
+from __future__ import annotations
+
+import logging
+
+from crate.db.domain_events import list_domain_events, mark_domain_events_processed
+from crate.db.home import get_cached_home_discovery
+from crate.db.ops_snapshot import get_cached_ops_snapshot
+
+log = logging.getLogger(__name__)
+
+_OPS_EVENT_TYPES = {
+    "library.import_queue.changed",
+    "library.scan.completed",
+    "ui.invalidate",
+    "track.analysis.updated",
+    "track.bliss.updated",
+    "snapshot.built",
+}
+
+_HOME_EVENT_TYPES = {
+    "user.follows.changed",
+    "user.likes.changed",
+    "user.saved_albums.changed",
+}
+
+
+def process_domain_events(*, limit: int = 100) -> dict[str, int]:
+    """Consume a small batch of domain events and warm affected snapshots."""
+    events = list_domain_events(limit=max(1, min(limit, 1000)), unprocessed_only=True)
+    if not events:
+        return {"processed": 0, "ops_refreshes": 0, "home_refreshes": 0}
+
+    refresh_ops = False
+    refresh_home_users: set[int] = set()
+    event_ids: list[int] = []
+
+    for event in events:
+        event_ids.append(int(event["id"]))
+        event_type = event.get("event_type")
+        scope = event.get("scope") or ""
+        payload = event.get("payload_json") or {}
+
+        if event_type in _OPS_EVENT_TYPES or scope.startswith("pipeline:") or scope == "ops":
+            refresh_ops = True
+
+        if scope == "home:discovery":
+            try:
+                refresh_home_users.add(int(event.get("subject_key")))
+            except (TypeError, ValueError):
+                pass
+        elif event_type in _HOME_EVENT_TYPES:
+            try:
+                refresh_home_users.add(int(payload.get("user_id") or event.get("subject_key")))
+            except (TypeError, ValueError, AttributeError):
+                pass
+        elif scope == "ui.invalidate":
+            invalidation_scope = str(payload.get("scope") or event.get("subject_key") or "")
+            if invalidation_scope.startswith("home:user:"):
+                try:
+                    refresh_home_users.add(int(invalidation_scope.split(":")[-1]))
+                except (TypeError, ValueError):
+                    pass
+
+    ops_refreshes = 0
+    home_refreshes = 0
+
+    if refresh_ops:
+        get_cached_ops_snapshot(fresh=True)
+        ops_refreshes = 1
+
+    for user_id in sorted(refresh_home_users):
+        get_cached_home_discovery(user_id, fresh=True)
+        home_refreshes += 1
+
+    mark_domain_events_processed(event_ids)
+    log.debug(
+        "Processed %d domain events (ops=%d, home=%d)",
+        len(event_ids),
+        ops_refreshes,
+        home_refreshes,
+    )
+    return {
+        "processed": len(event_ids),
+        "ops_refreshes": ops_refreshes,
+        "home_refreshes": home_refreshes,
+    }

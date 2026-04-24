@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
-from crate.api.schemas.common import OkResponse
+from crate.api.schemas.common import OkResponse, SnapshotMetadataResponse
 
 
 class _StorageIdMixin(BaseModel):
@@ -484,6 +484,7 @@ class HomeCardResponse(BaseModel):
 class HomeDiscoveryResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
+    snapshot: SnapshotMetadataResponse | None = None
     hero: dict[str, Any] | list[dict[str, Any]] | None = None
     recently_played: list[dict[str, Any]] = Field(default_factory=list)
     custom_mixes: list[HomeCardResponse] = Field(default_factory=list)

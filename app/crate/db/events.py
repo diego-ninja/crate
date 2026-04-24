@@ -48,7 +48,7 @@ def emit_task_event(task_id: str, event_type: str, data: dict | None = None):
 def _publish_to_redis(task_id: str, event_type: str, data: dict, timestamp: str):
     """Publish event to Redis channels for SSE consumers."""
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if not r:
             return

@@ -1,7 +1,12 @@
 import json
 import logging
-from crate.db import emit_task_event, update_task
+
+from crate.db.events import emit_task_event
 from crate.db.jobs.integrations import get_artists_with_similar_json
+from crate.db.repositories.library import get_library_artists
+from crate.db.repositories.shows import delete_past_shows, upsert_show
+from crate.db.similarities import bulk_upsert_similarities, mark_library_status
+from crate.db.repositories.tasks import update_task
 from crate.task_progress import TaskProgress, emit_progress, entity_label
 from crate.worker_handlers import TaskHandler, is_cancelled
 
@@ -10,7 +15,6 @@ log = logging.getLogger(__name__)
 
 def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
     """Sync shows from Ticketmaster to DB for all library artists."""
-    from crate.db import delete_past_shows, get_library_artists, upsert_show
     from crate.ticketmaster import get_upcoming_shows as tm_get_shows
     from crate.ticketmaster import is_configured
 
@@ -82,8 +86,6 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> dict:
     """Populate artist_similarities from existing similar_json on library_artists."""
-    from crate.db import bulk_upsert_similarities, mark_library_status
-
     rows = get_artists_with_similar_json()
 
     total = len(rows)
@@ -121,7 +123,7 @@ def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> d
 
 def _handle_sync_shows_lastfm(task_id: str, params: dict, config: dict) -> dict:
     """Scrape Last.fm events for a specific city and consolidate with DB."""
-    from crate.db.shows import consolidate_show
+    from crate.db.repositories.shows import consolidate_show
     from crate.lastfm_events import scrape_lastfm_events
     from pathlib import Path
     from datetime import date, timedelta

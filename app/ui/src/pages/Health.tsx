@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { timeAgo } from "@/lib/utils";
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { ErrorState } from "@crate/ui/primitives/ErrorState";
+import { useTaskEvents } from "@/hooks/use-task-events";
 
 interface HealthIssue {
   id: number;
@@ -24,6 +25,20 @@ interface HealthIssue {
   auto_fixable: boolean;
   status: string;
   created_at: string;
+}
+
+interface HealthSnapshotData {
+  snapshot: {
+    scope: string;
+    subject_key: string;
+    version: number;
+    stale: boolean;
+    generation_ms: number;
+  };
+  issues: HealthIssue[];
+  counts: Record<string, number>;
+  total: number;
+  filter: string | null;
 }
 
 const SEVERITY_ICONS: Record<string, typeof AlertTriangle> = {
@@ -81,11 +96,17 @@ export function Health() {
   const [filter, setFilter] = useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [fixing, setFixing] = useState<string | null>(null);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const { done: activeTaskDone, reset: resetTaskEvents } = useTaskEvents(activeTaskId);
 
-  async function fetchIssues() {
+  async function fetchIssues(fresh = false) {
     try {
-      const url = filter ? `/api/manage/health-issues?check_type=${filter}` : "/api/manage/health-issues";
-      const data = await api<{ issues: HealthIssue[]; counts: Record<string, number> }>(url);
+      const query = new URLSearchParams();
+      if (filter) query.set("check_type", filter);
+      if (fresh) query.set("fresh", "1");
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      const data = await api<HealthSnapshotData>(`/api/admin/health-snapshot${suffix}`);
       setIssues(data.issues);
       setCounts(data.counts);
       setError(null);
@@ -98,25 +119,63 @@ export function Health() {
 
   useEffect(() => { fetchIssues(); }, [filter]);
 
+  useEffect(() => {
+    let disposed = false;
+    let stream: EventSource | null = null;
+
+    function connect() {
+      if (disposed) return;
+      const query = filter ? `?check_type=${encodeURIComponent(filter)}` : "";
+      stream = new EventSource(`/api/admin/health-stream${query}`, { withCredentials: true });
+      stream.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as HealthSnapshotData;
+          setIssues(payload.issues);
+          setCounts(payload.counts);
+          setError(null);
+          setLoading(false);
+        } catch {
+          // Ignore malformed payloads and wait for the next event.
+        }
+      };
+      stream.onerror = () => {
+        stream?.close();
+        if (!disposed) {
+          reconnectTimerRef.current = window.setTimeout(connect, 3000);
+        }
+      };
+    }
+
+    connect();
+    return () => {
+      disposed = true;
+      stream?.close();
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+      }
+    };
+  }, [filter]);
+
+  useEffect(() => {
+    if (!activeTaskId || !activeTaskDone) return;
+    if (activeTaskDone.status === "completed") {
+      toast.success(scanning ? "Scan complete" : "Repair complete");
+      void fetchIssues(true);
+    } else if (activeTaskDone.status === "failed") {
+      toast.error(scanning ? "Scan failed" : "Repair failed");
+    }
+    setScanning(false);
+    setFixing(null);
+    setActiveTaskId(null);
+    resetTaskEvents();
+  }, [activeTaskDone, activeTaskId, resetTaskEvents, scanning]);
+
   async function runScan() {
     setScanning(true);
     try {
       const { task_id } = await api<{ task_id: string }>("/api/manage/health-check", "POST");
       toast.success("Health scan started...");
-      const poll = setInterval(async () => {
-        try {
-          const task = await api<{ status: string }>(`/api/tasks/${task_id}`);
-          if (task.status === "completed" || task.status === "failed") {
-            clearInterval(poll);
-            setScanning(false);
-            if (task.status === "completed") {
-              toast.success("Scan complete");
-              fetchIssues();
-            } else toast.error("Scan failed");
-          }
-        } catch { /* poll */ }
-      }, 3000);
-      setTimeout(() => { clearInterval(poll); setScanning(false); }, 300000);
+      setActiveTaskId(task_id);
     } catch { setScanning(false); toast.error("Failed to start scan"); }
   }
 
@@ -155,20 +214,7 @@ export function Health() {
         return;
       }
       toast.success(`Fixing ${res.fixable} issues...`);
-      const poll = setInterval(async () => {
-        try {
-          const task = await api<{ status: string }>(`/api/tasks/${res.task_id}`);
-          if (task.status === "completed" || task.status === "failed") {
-            clearInterval(poll);
-            setFixing(null);
-            if (task.status === "completed") {
-              toast.success("Repair complete");
-              fetchIssues();
-            } else toast.error("Repair failed");
-          }
-        } catch { /* poll */ }
-      }, 3000);
-      setTimeout(() => { clearInterval(poll); setFixing(null); }, 300000);
+      setActiveTaskId(res.task_id);
     } catch { setFixing(null); toast.error("Failed to start repair"); }
   }
 
@@ -204,7 +250,7 @@ export function Health() {
     grouped.push({ check, severity: items[0]?.severity || "medium", items });
   }
 
-  if (error) return <ErrorState message={error} onRetry={fetchIssues} />;
+  if (error) return <ErrorState message={error} onRetry={() => void fetchIssues(true)} />;
 
   return (
     <div className="space-y-6">

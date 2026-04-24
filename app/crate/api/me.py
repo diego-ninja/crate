@@ -1,12 +1,18 @@
 """User personal library: follows, saved albums, likes, play history, feed."""
 
+import asyncio
 import time
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from starlette.responses import StreamingResponse
 
-from crate.api._deps import artist_name_from_id, coerce_date as _coerce_date
+from crate.api._deps import artist_name_from_id, coerce_date as _coerce_date, json_dumps
 from crate.api.auth import _require_auth
+from crate.api.cache_events import (
+    get_invalidation_events_since,
+    get_latest_invalidation_event_id,
+)
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.common import OkResponse
 from crate.api.schemas.me import (
@@ -59,6 +65,55 @@ from crate.api.schemas.me import (
     UpdateLocationBody,
     UserLibraryCountsResponse,
 )
+from crate.db.repositories.auth import (
+    get_user_by_id,
+    unlink_user_external_identity,
+    update_user,
+    update_user_location,
+    upsert_user_external_identity,
+)
+from crate.db.cache_store import delete_cache, get_cache, set_cache
+from crate.db.home import get_cached_home_discovery, get_home_playlist, get_home_section
+from crate.db.repositories.playlists import get_followed_system_playlists
+from crate.db.snapshot_events import snapshot_channel
+from crate.db.queries.user import (
+    get_artist_genres_for_names,
+    get_feed_new_albums,
+    get_feed_new_releases,
+    get_feed_shows,
+    get_scrobble_identities,
+    get_upcoming_releases,
+    get_upcoming_shows,
+)
+from crate.db.queries.shows import get_attending_show_ids, get_show_reminders
+from crate.db.queries.user_library import (
+    get_followed_artists,
+    get_liked_tracks,
+    get_play_history,
+    get_play_stats,
+    get_replay_mix,
+    get_saved_albums,
+    get_stats_overview,
+    get_stats_trends,
+    get_top_albums,
+    get_top_artists,
+    get_top_genres,
+    get_top_tracks,
+    get_user_library_counts,
+    is_following,
+)
+from crate.db.repositories.shows import attend_show, create_show_reminder, unattend_show
+from crate.db.repositories.user_library import (
+    follow_artist,
+    like_track,
+    record_play,
+    record_play_event,
+    save_album,
+    unfollow_artist,
+    unlike_track,
+    unsave_album,
+)
+from crate.db.repositories.tasks import create_task_dedup
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -91,8 +146,6 @@ def _get_cached_home_endpoint_response(
     ttl: int,
     compute,
 ):
-    from crate.db import get_cache, set_cache
-
     cached = get_cache(cache_key, max_age_seconds=max_age_seconds)
     if cached is not None:
         _record_home_endpoint_metric("home.endpoint_cache.hit")
@@ -109,9 +162,81 @@ def _get_cached_home_endpoint_response(
     return result
 
 
-def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
-    from crate.db import get_cache
+def _get_home_discovery_payload(user_id: int, *, fresh: bool = False) -> dict:
+    payload = get_cached_home_discovery(user_id, fresh=fresh)
+    return payload if isinstance(payload, dict) else {}
 
+
+def _get_home_discovery_items(user_id: int, key: str, *, fresh: bool = False) -> list[dict]:
+    payload = _get_home_discovery_payload(user_id, fresh=fresh)
+    items = payload.get(key)
+    return items if isinstance(items, list) else []
+
+
+_HOME_DISCOVERY_INVALIDATION_SCOPES = {
+    "home",
+    "follows",
+    "likes",
+    "saved_albums",
+    "history",
+    "library",
+    "playlists",
+    "curation",
+    "shows",
+    "upcoming",
+}
+_HOME_DISCOVERY_INVALIDATION_PREFIXES = ("artist:", "album:", "playlist:", "home:user:")
+
+
+def _is_home_discovery_invalidation(scope: str, user_id: int) -> bool:
+    if scope in _HOME_DISCOVERY_INVALIDATION_SCOPES:
+        return True
+    if scope.startswith("home:user:"):
+        return scope == f"home:user:{user_id}"
+    return scope.startswith(_HOME_DISCOVERY_INVALIDATION_PREFIXES)
+
+
+async def _home_discovery_stream(user_id: int, last_event_id: int):
+    heartbeat_counter = 0
+    yield f"data: {json_dumps(_get_home_discovery_payload(user_id))}\n\n"
+
+    try:
+        import redis.asyncio as aioredis
+
+        redis = aioredis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True)
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(snapshot_channel("home:discovery", str(user_id)))
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message.get("type") == "message":
+                yield f"data: {json_dumps(_get_home_discovery_payload(user_id))}\n\n"
+                heartbeat_counter = 0
+                continue
+            heartbeat_counter += 1
+            if heartbeat_counter >= 30:
+                heartbeat_counter = 0
+                yield ": heartbeat\n\n"
+    except Exception:
+        while True:
+            await asyncio.sleep(1)
+            heartbeat_counter += 1
+            refresh = False
+
+            for event in get_invalidation_events_since(last_event_id):
+                last_event_id = int(event.get("id") or last_event_id)
+                scope = str(event.get("scope") or "").strip()
+                if _is_home_discovery_invalidation(scope, user_id):
+                    refresh = True
+
+            if refresh:
+                yield f"id: {last_event_id}\ndata: {json_dumps(_get_home_discovery_payload(user_id, fresh=True))}\n\n"
+                heartbeat_counter = 0
+            elif heartbeat_counter >= 30:
+                heartbeat_counter = 0
+                yield ": heartbeat\n\n"
+
+
+def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[dict]]:
     result: dict[str, list[dict]] = {}
     missing: list[str] = []
     for artist_name in artist_names:
@@ -141,9 +266,6 @@ def _build_upcoming_insights(
     shows: list[dict],
     attending_show_ids: set[int],
 ) -> list[dict]:
-    from crate.db import get_show_reminders
-    from crate.db.user_library import get_top_artists
-
     if not shows:
         return []
 
@@ -231,7 +353,6 @@ def _build_upcoming_insights(
 def my_library(request: Request):
     """Get counts for user's personal library."""
     user = _require_auth(request)
-    from crate.db.user_library import get_user_library_counts
     return get_user_library_counts(user["id"])
 
 
@@ -255,8 +376,6 @@ def my_sync_status(request: Request):
 )
 def my_followed_playlists(request: Request):
     user = _require_auth(request)
-    from crate.db import get_followed_system_playlists
-
     playlists = get_followed_system_playlists(user["id"])
     results = []
     for playlist in playlists:
@@ -277,7 +396,6 @@ def my_followed_playlists(request: Request):
 )
 def list_follows(request: Request):
     user = _require_auth(request)
-    from crate.db.user_library import get_followed_artists
     return get_followed_artists(user["id"])
 
 @router.post(
@@ -288,7 +406,6 @@ def list_follows(request: Request):
 )
 def follow(request: Request, body: FollowRequest):
     user = _require_auth(request)
-    from crate.db.user_library import follow_artist
     added = follow_artist(user["id"], body.artist_name)
     return {"ok": True, "added": added}
 
@@ -313,7 +430,6 @@ def follow_by_id(request: Request, artist_id: int):
 )
 def unfollow(request: Request, artist_name: str):
     user = _require_auth(request)
-    from crate.db.user_library import unfollow_artist
     removed = unfollow_artist(user["id"], artist_name)
     if not removed:
         raise HTTPException(status_code=404, detail="Not following this artist")
@@ -340,7 +456,6 @@ def unfollow_by_id(request: Request, artist_id: int):
 )
 def is_following_check(request: Request, artist_name: str):
     user = _require_auth(request)
-    from crate.db.user_library import is_following
     return {"following": is_following(user["id"], artist_name)}
 
 
@@ -367,7 +482,6 @@ def is_following_check_by_id(request: Request, artist_id: int):
 )
 def list_saved_albums(request: Request):
     user = _require_auth(request)
-    from crate.db.user_library import get_saved_albums
     return get_saved_albums(user["id"])
 
 @router.post(
@@ -378,7 +492,6 @@ def list_saved_albums(request: Request):
 )
 def save_album_endpoint(request: Request, body: SaveAlbumRequest):
     user = _require_auth(request)
-    from crate.db.user_library import save_album
     added = save_album(user["id"], body.album_id)
     return {"ok": True, "added": added}
 
@@ -390,7 +503,6 @@ def save_album_endpoint(request: Request, body: SaveAlbumRequest):
 )
 def unsave_album_endpoint(request: Request, album_id: int):
     user = _require_auth(request)
-    from crate.db.user_library import unsave_album
     removed = unsave_album(user["id"], album_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Album not in library")
@@ -407,7 +519,6 @@ def unsave_album_endpoint(request: Request, album_id: int):
 )
 def list_likes(request: Request, limit: int = 100):
     user = _require_auth(request)
-    from crate.db.user_library import get_liked_tracks
     return get_liked_tracks(user["id"], limit=limit)
 
 @router.post(
@@ -418,7 +529,6 @@ def list_likes(request: Request, limit: int = 100):
 )
 def like(request: Request, body: LikeTrackRequest):
     user = _require_auth(request)
-    from crate.db.user_library import like_track
     added = like_track(
         user["id"],
         track_id=body.track_id,
@@ -437,7 +547,6 @@ def like(request: Request, body: LikeTrackRequest):
 )
 def unlike(request: Request, body: LikeTrackRequest):
     user = _require_auth(request)
-    from crate.db.user_library import unlike_track
     removed = unlike_track(
         user["id"],
         track_id=body.track_id,
@@ -457,7 +566,6 @@ def unlike(request: Request, body: LikeTrackRequest):
 )
 def history(request: Request, limit: int = 50):
     user = _require_auth(request)
-    from crate.db.user_library import get_play_history
     return get_play_history(user["id"], limit=limit)
 
 @router.post(
@@ -468,7 +576,6 @@ def history(request: Request, limit: int = 50):
 )
 def record(request: Request, body: RecordPlayRequest):
     user = _require_auth(request)
-    from crate.db.user_library import record_play
     # Legacy endpoint kept for recently-played surfaces while /play-events becomes the
     # canonical telemetry path. Remove once remaining callers are migrated.
     record_play(
@@ -491,8 +598,6 @@ def record(request: Request, body: RecordPlayRequest):
 )
 def update_now_playing(request: Request, body: NowPlayingRequest):
     user = _require_auth(request)
-    from crate.db import delete_cache, set_cache
-
     cache_key = f"now_playing:{user['id']}"
     if not body.playing:
         delete_cache(cache_key)
@@ -521,7 +626,6 @@ def update_now_playing(request: Request, body: NowPlayingRequest):
 )
 def stats(request: Request):
     user = _require_auth(request)
-    from crate.db.user_library import get_play_stats
     return get_play_stats(user["id"])
 
 
@@ -533,8 +637,6 @@ def stats(request: Request):
 )
 def stats_overview(request: Request, window: str = Query("30d")):
     user = _require_auth(request)
-    from crate.db.user_library import get_stats_overview
-
     try:
         return get_stats_overview(user["id"], window=window)
     except ValueError as exc:
@@ -549,8 +651,6 @@ def stats_overview(request: Request, window: str = Query("30d")):
 )
 def stats_trends(request: Request, window: str = Query("30d")):
     user = _require_auth(request)
-    from crate.db.user_library import get_stats_trends
-
     try:
         return get_stats_trends(user["id"], window=window)
     except ValueError as exc:
@@ -565,8 +665,6 @@ def stats_trends(request: Request, window: str = Query("30d")):
 )
 def stats_top_tracks(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
     user = _require_auth(request)
-    from crate.db.user_library import get_top_tracks
-
     try:
         return {"window": window, "items": get_top_tracks(user["id"], window=window, limit=limit)}
     except ValueError as exc:
@@ -581,8 +679,6 @@ def stats_top_tracks(request: Request, window: str = Query("30d"), limit: int = 
 )
 def stats_top_artists(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
     user = _require_auth(request)
-    from crate.db.user_library import get_top_artists
-
     try:
         return {"window": window, "items": get_top_artists(user["id"], window=window, limit=limit)}
     except ValueError as exc:
@@ -597,8 +693,6 @@ def stats_top_artists(request: Request, window: str = Query("30d"), limit: int =
 )
 def stats_top_albums(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
     user = _require_auth(request)
-    from crate.db.user_library import get_top_albums
-
     try:
         return {"window": window, "items": get_top_albums(user["id"], window=window, limit=limit)}
     except ValueError as exc:
@@ -613,8 +707,6 @@ def stats_top_albums(request: Request, window: str = Query("30d"), limit: int = 
 )
 def stats_top_genres(request: Request, window: str = Query("30d"), limit: int = Query(20, ge=1, le=100)):
     user = _require_auth(request)
-    from crate.db.user_library import get_top_genres
-
     try:
         return {"window": window, "items": get_top_genres(user["id"], window=window, limit=limit)}
     except ValueError as exc:
@@ -629,8 +721,6 @@ def stats_top_genres(request: Request, window: str = Query("30d"), limit: int = 
 )
 def stats_replay(request: Request, window: str = Query("30d"), limit: int = Query(30, ge=1, le=100)):
     user = _require_auth(request)
-    from crate.db.user_library import get_replay_mix
-
     try:
         return get_replay_mix(user["id"], window=window, limit=limit)
     except ValueError as exc:
@@ -644,13 +734,8 @@ def stats_replay(request: Request, window: str = Query("30d"), limit: int = Quer
 )
 def home_hero(request: Request):
     user = _require_auth(request)
-    from crate.db.home import get_home_hero
-    return _get_cached_home_endpoint_response(
-        cache_key=f"home:hero:{user['id']}",
-        max_age_seconds=600,
-        ttl=600,
-        compute=lambda: get_home_hero(user["id"]),
-    )
+    payload = _get_home_discovery_payload(user["id"], fresh=request.query_params.get("fresh") == "1")
+    return payload.get("hero")
 
 
 @router.get(
@@ -660,13 +745,7 @@ def home_hero(request: Request):
 )
 def home_recently_played(request: Request):
     user = _require_auth(request)
-    from crate.db.home import get_home_recently_played
-    return _get_cached_home_endpoint_response(
-        cache_key=f"home:recently_played:{user['id']}",
-        max_age_seconds=60,
-        ttl=60,
-        compute=lambda: {"items": get_home_recently_played(user["id"])},
-    )
+    return {"items": _get_home_discovery_items(user["id"], "recently_played", fresh=request.query_params.get("fresh") == "1")}
 
 
 @router.get(
@@ -676,13 +755,7 @@ def home_recently_played(request: Request):
 )
 def home_mixes(request: Request):
     user = _require_auth(request)
-    from crate.db.home import get_home_mixes
-    return _get_cached_home_endpoint_response(
-        cache_key=f"home:mixes:{user['id']}",
-        max_age_seconds=300,
-        ttl=300,
-        compute=lambda: {"items": get_home_mixes(user["id"])},
-    )
+    return {"items": _get_home_discovery_items(user["id"], "custom_mixes", fresh=request.query_params.get("fresh") == "1")}
 
 
 @router.get(
@@ -692,13 +765,7 @@ def home_mixes(request: Request):
 )
 def home_suggested_albums(request: Request):
     user = _require_auth(request)
-    from crate.db.home import get_home_suggested_albums
-    return _get_cached_home_endpoint_response(
-        cache_key=f"home:suggested_albums:{user['id']}",
-        max_age_seconds=300,
-        ttl=300,
-        compute=lambda: {"items": get_home_suggested_albums(user["id"])},
-    )
+    return {"items": _get_home_discovery_items(user["id"], "suggested_albums", fresh=request.query_params.get("fresh") == "1")}
 
 
 @router.get(
@@ -708,13 +775,7 @@ def home_suggested_albums(request: Request):
 )
 def home_recommended_tracks(request: Request):
     user = _require_auth(request)
-    from crate.db.home import get_home_recommended_tracks
-    return _get_cached_home_endpoint_response(
-        cache_key=f"home:recommended_tracks:{user['id']}",
-        max_age_seconds=300,
-        ttl=300,
-        compute=lambda: {"items": get_home_recommended_tracks(user["id"])},
-    )
+    return {"items": _get_home_discovery_items(user["id"], "recommended_tracks", fresh=request.query_params.get("fresh") == "1")}
 
 
 @router.get(
@@ -724,13 +785,7 @@ def home_recommended_tracks(request: Request):
 )
 def home_radio_stations(request: Request):
     user = _require_auth(request)
-    from crate.db.home import get_home_radio_stations
-    return _get_cached_home_endpoint_response(
-        cache_key=f"home:radio_stations:{user['id']}",
-        max_age_seconds=300,
-        ttl=300,
-        compute=lambda: {"items": get_home_radio_stations(user["id"])},
-    )
+    return {"items": _get_home_discovery_items(user["id"], "radio_stations", fresh=request.query_params.get("fresh") == "1")}
 
 
 @router.get(
@@ -740,13 +795,7 @@ def home_radio_stations(request: Request):
 )
 def home_favorite_artists(request: Request):
     user = _require_auth(request)
-    from crate.db.home import get_home_favorite_artists
-    return _get_cached_home_endpoint_response(
-        cache_key=f"home:favorite_artists:{user['id']}",
-        max_age_seconds=300,
-        ttl=300,
-        compute=lambda: {"items": get_home_favorite_artists(user["id"])},
-    )
+    return {"items": _get_home_discovery_items(user["id"], "favorite_artists", fresh=request.query_params.get("fresh") == "1")}
 
 
 @router.get(
@@ -756,13 +805,7 @@ def home_favorite_artists(request: Request):
 )
 def home_essentials(request: Request):
     user = _require_auth(request)
-    from crate.db.home import get_home_essentials
-    return _get_cached_home_endpoint_response(
-        cache_key=f"home:essentials:{user['id']}",
-        max_age_seconds=600,
-        ttl=600,
-        compute=lambda: {"items": get_home_essentials(user["id"])},
-    )
+    return {"items": _get_home_discovery_items(user["id"], "essentials", fresh=request.query_params.get("fresh") == "1")}
 
 
 @router.get(
@@ -773,10 +816,28 @@ def home_essentials(request: Request):
 )
 def home_discovery(request: Request):
     user = _require_auth(request)
-    from crate.db.home import get_cached_home_discovery
-
     fresh = request.query_params.get("fresh") == "1"
     return get_cached_home_discovery(user["id"], fresh=fresh)
+
+
+@router.get(
+    "/home/discovery-stream",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Stream personalized home discovery snapshot updates",
+)
+async def home_discovery_stream(request: Request):
+    user = _require_auth(request)
+    last_event_id_str = request.headers.get("Last-Event-ID", "0")
+    try:
+        last_event_id = int(last_event_id_str)
+    except (TypeError, ValueError):
+        last_event_id = get_latest_invalidation_event_id()
+
+    return StreamingResponse(
+        _home_discovery_stream(user["id"], last_event_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get(
@@ -787,8 +848,6 @@ def home_discovery(request: Request):
 )
 def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
-    from crate.db.home import get_home_playlist
-
     mix = _get_cached_home_endpoint_response(
         cache_key=f"home_mix:{user['id']}:{mix_id}:{limit}",
         max_age_seconds=300,
@@ -808,8 +867,6 @@ def home_mix_detail(request: Request, mix_id: str, limit: int = Query(40, ge=1, 
 )
 def home_playlist_detail(request: Request, playlist_id: str, limit: int = Query(40, ge=1, le=80)):
     user = _require_auth(request)
-    from crate.db.home import get_home_playlist
-
     playlist = _get_cached_home_endpoint_response(
         cache_key=f"home_playlist:{user['id']}:{playlist_id}:{limit}",
         max_age_seconds=300,
@@ -829,8 +886,6 @@ def home_playlist_detail(request: Request, playlist_id: str, limit: int = Query(
 )
 def home_section_detail(request: Request, section_id: str, limit: int = Query(42, ge=1, le=120)):
     user = _require_auth(request)
-    from crate.db.home import get_home_section
-
     section = _get_cached_home_endpoint_response(
         cache_key=f"home_section:{user['id']}:{section_id}:{limit}",
         max_age_seconds=300,
@@ -850,9 +905,6 @@ def home_section_detail(request: Request, section_id: str, limit: int = Query(42
 )
 def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
     user = _require_auth(request)
-    from crate.db import create_task_dedup
-    from crate.db.user_library import record_play_event
-
     event_id = record_play_event(
         user["id"],
         track_id=body.track_id,
@@ -878,7 +930,6 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
         app_platform=body.app_platform,
     )
     # Debounce stats refresh — at most once per 10 minutes per user
-    from crate.db import get_cache, set_cache
     debounce_key = f"stats_refresh_debounce:{user['id']}"
     if not get_cache(debounce_key, max_age_seconds=600):
         create_task_dedup("refresh_user_listening_stats", {"user_id": user["id"]})
@@ -897,9 +948,6 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
 def feed(request: Request, limit: int = 30):
     """Personalized feed: new releases from followed artists + new library additions + upcoming shows."""
     user = _require_auth(request)
-    from crate.db.user_library import get_followed_artists
-    from crate.db.queries.user import get_feed_new_albums, get_feed_shows, get_feed_new_releases
-
     followed = get_followed_artists(user["id"])
     followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
 
@@ -932,10 +980,6 @@ def feed(request: Request, limit: int = 30):
 def upcoming(request: Request, limit: int = 120):
     """Upcoming releases and shows for followed artists."""
     user = _require_auth(request)
-    from crate.db.user_library import get_followed_artists
-    from crate.db import get_attending_show_ids
-    from crate.db.queries.user import get_upcoming_releases, get_upcoming_shows, get_artist_genres_for_names
-
     followed = get_followed_artists(user["id"])
     followed_names = [f["artist_name"] for f in followed if f.get("artist_name")]
     if not followed_names:
@@ -957,7 +1001,6 @@ def upcoming(request: Request, limit: int = 120):
     # Resolve user location for show filtering.
     # The middleware user dict only has JWT fields (id, email, role) — location
     # fields are in the DB, so we read the full user record here.
-    from crate.db.auth import get_user_by_id
     full_user = get_user_by_id(user["id"]) or {}
     user_lat, user_lon, user_radius = None, None, 60
     location_mode = full_user.get("show_location_mode") or "fixed"
@@ -1074,8 +1117,6 @@ def upcoming(request: Request, limit: int = 120):
 )
 def attend_show_endpoint(request: Request, show_id: int):
     user = _require_auth(request)
-    from crate.db import attend_show
-
     return {"ok": True, "added": attend_show(user["id"], show_id)}
 
 
@@ -1087,8 +1128,6 @@ def attend_show_endpoint(request: Request, show_id: int):
 )
 def unattend_show_endpoint(request: Request, show_id: int):
     user = _require_auth(request)
-    from crate.db import unattend_show
-
     return {"ok": True, "removed": unattend_show(user["id"], show_id)}
 
 
@@ -1100,8 +1139,6 @@ def unattend_show_endpoint(request: Request, show_id: int):
 )
 def create_show_reminder_endpoint(request: Request, show_id: int, body: ShowReminderRequest):
     user = _require_auth(request)
-    from crate.db import create_show_reminder
-
     if body.reminder_type not in {"one_month", "one_week", "show_prep"}:
         raise HTTPException(status_code=400, detail="Unsupported reminder type")
 
@@ -1119,7 +1156,6 @@ def create_show_reminder_endpoint(request: Request, show_id: int, body: ShowRemi
 def update_profile(request: Request, body: UpdateProfileRequest):
     _require_auth(request)
     user = request.state.user
-    from crate.db.auth import update_user
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Name cannot be empty")
@@ -1140,7 +1176,6 @@ def change_password(request: Request, body: ChangePasswordRequest):
     if not new_pw or len(new_pw) < 8:
         raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
 
-    from crate.db.auth import get_user_by_id
     import bcrypt
     db_user = get_user_by_id(user["id"])
     if not db_user or not db_user.get("password_hash"):
@@ -1149,7 +1184,6 @@ def change_password(request: Request, body: ChangePasswordRequest):
         raise HTTPException(status_code=403, detail="Current password is incorrect")
 
     new_hash = bcrypt.hashpw(new_pw.encode(), bcrypt.gensalt()).decode()
-    from crate.db.auth import update_user
     update_user(user["id"], password_hash=new_hash)
     return {"ok": True}
 
@@ -1166,7 +1200,6 @@ def change_password(request: Request, body: ChangePasswordRequest):
 def scrobble_status(request: Request):
     """Get current scrobble service connections."""
     user = _require_auth(request)
-    from crate.db.queries.user import get_scrobble_identities
     rows = get_scrobble_identities(user["id"])
 
     result = {}
@@ -1204,7 +1237,6 @@ def connect_listenbrainz(request: Request, body: ListenBrainzConnectRequest):
     except Exception:
         raise HTTPException(status_code=502, detail="Could not validate token with ListenBrainz")
 
-    from crate.db.auth import upsert_user_external_identity
     upsert_user_external_identity(
         user_id=user["id"],
         provider="listenbrainz",
@@ -1225,7 +1257,6 @@ def connect_listenbrainz(request: Request, body: ListenBrainzConnectRequest):
 def disconnect_listenbrainz(request: Request):
     """Disconnect ListenBrainz."""
     user = _require_auth(request)
-    from crate.db.auth import unlink_user_external_identity
     unlink_user_external_identity(user["id"], "listenbrainz")
     return {"ok": True}
 
@@ -1265,7 +1296,6 @@ def connect_lastfm(request: Request, body: LastfmCallbackRequest):
     if not session_key:
         raise HTTPException(status_code=400, detail="Failed to get Last.fm session — token may have expired")
 
-    from crate.db.auth import upsert_user_external_identity
     upsert_user_external_identity(
         user_id=user["id"],
         provider="lastfm",
@@ -1286,7 +1316,6 @@ def connect_lastfm(request: Request, body: LastfmCallbackRequest):
 def disconnect_lastfm(request: Request):
     """Disconnect Last.fm scrobbling."""
     user = _require_auth(request)
-    from crate.db.auth import unlink_user_external_identity
     unlink_user_external_identity(user["id"], "lastfm")
     return {"ok": True}
 
@@ -1342,8 +1371,6 @@ def update_location(request: Request, body: UpdateLocationBody):
     If only city is provided, geocodes it to fill lat/lon/country.
     """
     user = _require_auth(request)
-    from crate.db.queries.user import update_user_location
-
     city = (body.city or "").strip() or None
     lat = body.latitude
     lon = body.longitude
@@ -1368,25 +1395,24 @@ def update_location(request: Request, body: UpdateLocationBody):
     if mode and mode not in ("fixed", "near_me"):
         raise HTTPException(status_code=422, detail="show_location_mode must be 'fixed' or 'near_me'")
 
-    fields: list[str] = []
-    values: list[object] = []
+    updates: dict[str, object] = {}
     if city is not None:
-        fields.append("city = %s"); values.append(city)
+        updates["city"] = city
     if country is not None:
-        fields.append("country = %s"); values.append(country)
+        updates["country"] = country
     if country_code is not None:
-        fields.append("country_code = %s"); values.append(country_code)
+        updates["country_code"] = country_code
     if lat is not None:
-        fields.append("latitude = %s"); values.append(lat)
+        updates["latitude"] = lat
     if lon is not None:
-        fields.append("longitude = %s"); values.append(lon)
+        updates["longitude"] = lon
     if radius is not None:
-        fields.append("show_radius_km = %s"); values.append(radius)
+        updates["show_radius_km"] = radius
     if mode is not None:
-        fields.append("show_location_mode = %s"); values.append(mode)
+        updates["show_location_mode"] = mode
 
-    if fields:
-        update_user_location(user["id"], fields, values)
+    if updates:
+        update_user_location(user["id"], **updates)
 
     return {"ok": True}
 

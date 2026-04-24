@@ -5,6 +5,8 @@ import { Button } from "@crate/ui/shadcn/button";
 import { toast } from "sonner";
 import { Camera, Loader2, X } from "lucide-react";
 
+import { waitForTask } from "@/lib/tasks";
+
 interface ImageCropUploadProps {
   endpoint: string;
   aspect: number;
@@ -49,7 +51,10 @@ export function ImageCropUpload({ endpoint, aspect, onUploaded, className, label
       // Wait for worker task to complete
       if (data.task_id) {
         toast.success("Processing image...");
-        await waitForTask(data.task_id);
+        const task = await waitForTask(data.task_id, 15000).catch(() => null);
+        if (task?.status === "failed") {
+          throw new Error(task.error || "Image processing failed");
+        }
       }
 
       toast.success("Image saved");
@@ -128,25 +133,6 @@ export function ImageCropUpload({ endpoint, aspect, onUploaded, className, label
       )}
     </>
   );
-}
-
-
-async function waitForTask(taskId: string, timeout = 15000): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < timeout) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      const res = await fetch(`/api/tasks/${taskId}`, { credentials: "include" });
-      if (!res.ok) continue;
-      const task = await res.json();
-      if (task.status === "completed") return;
-      if (task.status === "failed") throw new Error(task.error || "Task failed");
-    } catch (e) {
-      if (e instanceof Error && e.message === "Task failed") throw e;
-      // network error — keep polling
-    }
-  }
-  // Timeout is OK — task is probably still processing, but close the modal anyway
 }
 
 

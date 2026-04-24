@@ -10,8 +10,8 @@ from crate.api.schemas.operations import (
     ResolveRequest,
 )
 from crate.audio import read_tags, get_audio_files
-from crate.db import create_task
 from crate.api._deps import library_path, extensions, safe_path, COVER_NAMES
+from crate.db.repositories.tasks import create_task
 
 router = APIRouter(tags=["duplicates"])
 

@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 
 from crate.api.auth import _require_auth
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
-from crate.api.playlist_utils import apply_playlist_cover_payload, execute_smart_rules
+from crate.api.playlist_utils import apply_playlist_cover_payload
 from crate.api.schemas.common import OkResponse
 from crate.api.schemas.playlists import (
     AddTracksRequest,
@@ -24,13 +24,28 @@ from crate.api.schemas.playlists import (
     UpdatePlaylistRequest,
 )
 from crate.playlist_covers import delete_playlist_cover, playlist_cover_abspath
-from crate.db import (
-    create_playlist, get_playlists, get_playlist, update_playlist,
-    delete_playlist, get_playlist_tracks, add_playlist_tracks,
-    remove_playlist_track, reorder_playlist,
-    can_view_playlist, can_edit_playlist, is_playlist_owner,
-    get_playlist_members, add_playlist_member, remove_playlist_member,
-    create_playlist_invite, consume_playlist_invite,
+from crate.db.genres import get_all_genres
+from crate.db.repositories.playlists import (
+    consume_playlist_invite,
+    create_playlist_invite,
+    execute_smart_rules,
+    get_playlist_filter_options,
+    replace_playlist_tracks,
+    add_playlist_member,
+    add_playlist_tracks,
+    can_edit_playlist,
+    can_view_playlist,
+    create_playlist,
+    delete_playlist,
+    get_playlist,
+    get_playlist_members,
+    get_playlist_tracks,
+    get_playlists,
+    is_playlist_owner,
+    reorder_playlist,
+    remove_playlist_member,
+    remove_playlist_track,
+    update_playlist,
 )
 
 router = APIRouter(prefix="/api/playlists", tags=["playlists"])
@@ -74,8 +89,6 @@ _PLAYLIST_COVER_RESPONSES = merge_responses(
 )
 def filter_options():
     """Return available values for smart playlist filters."""
-    from crate.db import get_all_genres
-    from crate.db.playlists import get_playlist_filter_options
     genres = [g["name"] for g in get_all_genres()]
     opts = get_playlist_filter_options()
     return {"genres": genres, **opts}
@@ -285,7 +298,6 @@ def generate_smart(request: Request, playlist_id: int):
     rules = pl["smart_rules"]
     tracks = execute_smart_rules(rules)
 
-    from crate.db.playlists import replace_playlist_tracks
     replace_playlist_tracks(playlist_id, tracks or [])
 
     return {"ok": True, "track_count": len(tracks)}

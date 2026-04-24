@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Skeleton } from "@crate/ui/shadcn/skeleton";
 import { api } from "@/lib/api";
 import { albumApiPath, albumCoverApiUrl, artistPagePath } from "@/lib/library-routes";
+import { waitForTask } from "@/lib/tasks";
 import { Badge } from "@crate/ui/shadcn/badge";
 import { AudioWaveform, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -118,20 +119,13 @@ export function Album() {
       });
       setPendingMatch(null);
       toast.success("Applying tags...");
-      const poll = setInterval(async () => {
-        try {
-          const task = await api<{ status: string; result?: { updated?: number; errors?: unknown[] } }>(`/api/tasks/${task_id}`);
-          if (task.status === "completed") {
-            clearInterval(poll);
-            toast.success(`Tags applied (${task.result?.updated ?? 0} tracks updated)`);
-            refetch();
-          } else if (task.status === "failed") {
-            clearInterval(poll);
-            toast.error("Failed to apply tags");
-          }
-        } catch { /* keep polling */ }
-      }, 2000);
-      setTimeout(() => clearInterval(poll), 60000);
+      const task = await waitForTask(task_id, 60000);
+      if (task.status === "completed") {
+        toast.success(`Tags applied (${Number(task.result?.updated ?? 0)} tracks updated)`);
+        refetch();
+      } else if (task.status === "failed") {
+        toast.error("Failed to apply tags");
+      }
     } catch {
       toast.error("Failed to start tag apply");
     }

@@ -1,6 +1,6 @@
 """Unified music acquisition API — Tidal + Soulseek + uploads."""
 
-import json
+import asyncio
 import logging
 import os
 import re
@@ -9,25 +9,33 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from starlette.responses import StreamingResponse
 
 from crate import soulseek
 from crate import tidal
+from crate.api._deps import json_dumps
 from crate.api.auth import _require_auth, _require_admin
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.acquisition import (
     AcquisitionDownloadRequest,
     AcquisitionDownloadResponse,
     AcquisitionQueueResponse,
+    AcquisitionSurfaceResponse,
     AcquisitionStatusResponse,
     AcquisitionUploadResponse,
     NewReleasesResponse,
+    NewReleasesSurfaceResponse,
     QueueClearResponse,
     SoulseekSearchPollResponse,
     SoulseekSearchRequest,
     SoulseekSearchStartResponse,
 )
 from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
-from crate.db import get_setting, create_task, list_tasks
+from crate.db.cache_settings import get_setting
+from crate.db.repositories.library import get_release_by_id
+from crate.db.releases import get_new_releases, mark_release_dismissed, mark_release_downloading
+from crate.db.repositories.tasks import create_task
+from crate.db.tidal import get_tidal_downloads
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/acquisition", tags=["acquisition"])
@@ -45,6 +53,105 @@ _ACQUISITION_RESPONSES = merge_responses(
 ALLOWED_UPLOAD_EXTENSIONS = {
     ".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".aac", ".alac", ".zip",
 }
+
+
+def _get_soulseek_queue_items() -> list[dict]:
+    queue: list[dict] = []
+    try:
+        for item in soulseek.get_downloads():
+            queue.append(
+                {
+                    "source": "soulseek",
+                    "artist": "",
+                    "album": item.get("directory", "").replace("\\", "/").split("/")[-1] if item.get("directory") else "",
+                    "filename": item.get("filename", ""),
+                    "fullPath": item.get("fullPath", ""),
+                    "status": item.get("state", ""),
+                    "progress": item.get("percentComplete", 0),
+                    "username": item.get("username", ""),
+                    "speed": item.get("averageSpeed", 0),
+                }
+            )
+    except Exception:
+        return []
+    return queue
+
+
+def _build_acquisition_surface() -> dict:
+    return {
+        "tidal_authenticated": tidal.is_authenticated(),
+        "tidal_queue": get_tidal_downloads(),
+        "soulseek_queue": _get_soulseek_queue_items(),
+    }
+
+
+def _acquisition_surface_signature(surface: dict) -> str:
+    return json_dumps(
+        {
+            "tidal_authenticated": surface.get("tidal_authenticated"),
+            "tidal_queue": [
+                {
+                    "id": item.get("id"),
+                    "status": item.get("status"),
+                    "task_id": item.get("task_id"),
+                    "updated_at": item.get("updated_at"),
+                }
+                for item in surface.get("tidal_queue") or []
+            ],
+            "soulseek_queue": [
+                {
+                    "fullPath": item.get("fullPath"),
+                    "status": item.get("status"),
+                    "progress": item.get("progress"),
+                    "speed": item.get("speed"),
+                }
+                for item in surface.get("soulseek_queue") or []
+            ],
+        },
+        sort_keys=True,
+    )
+
+
+async def _stream_acquisition_surface():
+    last_signature: str | None = None
+    heartbeat_counter = 0
+    while True:
+        surface = _build_acquisition_surface()
+        signature = _acquisition_surface_signature(surface)
+        if signature != last_signature:
+            last_signature = signature
+            yield f"data: {json_dumps(surface)}\n\n"
+        await asyncio.sleep(3)
+        heartbeat_counter += 3
+        if heartbeat_counter >= 30:
+            heartbeat_counter = 0
+            yield ": heartbeat\n\n"
+
+
+def _build_new_releases_surface(*, status: str = "", upcoming: bool = False) -> dict:
+    return {
+        "releases": get_new_releases(status=status, upcoming=upcoming),
+    }
+
+
+def _new_releases_surface_signature(surface: dict) -> str:
+    return json_dumps(surface, sort_keys=True)
+
+
+async def _stream_new_releases_surface():
+    last_signature: str | None = None
+    heartbeat_counter = 0
+    while True:
+        surface = _build_new_releases_surface()
+        signature = _new_releases_surface_signature(surface)
+        if signature != last_signature:
+            last_signature = signature
+            yield f"data: {json_dumps(surface)}\n\n"
+        await asyncio.sleep(5)
+        heartbeat_counter += 5
+        if heartbeat_counter >= 30:
+            heartbeat_counter = 0
+            yield ": heartbeat\n\n"
 
 
 def _upload_staging_root() -> Path:
@@ -71,6 +178,31 @@ def acquisition_status(request: Request):
     tidal_status = {"authenticated": tidal.is_authenticated()}
     slsk_status = soulseek.get_status()
     return {"tidal": tidal_status, "soulseek": slsk_status}
+
+
+@router.get(
+    "/snapshot",
+    response_model=AcquisitionSurfaceResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the canonical acquisition surface snapshot",
+)
+def acquisition_snapshot(request: Request):
+    _require_auth(request)
+    return _build_acquisition_surface()
+
+
+@router.get(
+    "/stream",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Stream acquisition surface updates",
+)
+async def acquisition_stream(request: Request):
+    _require_auth(request)
+    return StreamingResponse(
+        _stream_acquisition_surface(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(
@@ -122,6 +254,46 @@ def poll_soulseek_search(request: Request, search_id: str):
         "fileCount": status.get("fileCount", 0),
         "results": results,
     }
+
+
+async def _stream_soulseek_search(search_id: str):
+    quality_filter = get_setting("soulseek_quality", "flac")
+    heartbeat_counter = 0
+
+    while True:
+        status = soulseek.get_search_status(search_id)
+        results = soulseek.get_search_results(search_id, quality_filter)
+        payload = {
+            "state": status.get("state", "Unknown"),
+            "isComplete": status.get("isComplete", False),
+            "responseCount": status.get("responseCount", 0),
+            "fileCount": status.get("fileCount", 0),
+            "results": results,
+        }
+        yield f"data: {json_dumps(payload)}\n\n"
+        if payload["isComplete"]:
+            break
+
+        await asyncio.sleep(3)
+        heartbeat_counter += 3
+        if heartbeat_counter >= 30:
+            heartbeat_counter = 0
+            yield ": heartbeat\n\n"
+
+
+@router.get(
+    "/search/soulseek/{search_id}/stream",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Stream Soulseek search results",
+)
+async def stream_soulseek_search(request: Request, search_id: str):
+    """Stream Soulseek search progress until the search completes."""
+    _require_auth(request)
+    return StreamingResponse(
+        _stream_soulseek_search(search_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(
@@ -285,9 +457,32 @@ async def acquisition_upload(request: Request, files: list[UploadFile] = File(..
 def api_new_releases(request: Request, status: str = "", upcoming: bool = False):
     """Get detected new releases."""
     _require_auth(request)
-    from crate.db import get_new_releases
-    releases = get_new_releases(status=status, upcoming=upcoming)
-    return {"releases": releases}
+    return _build_new_releases_surface(status=status, upcoming=upcoming)
+
+
+@router.get(
+    "/new-releases/snapshot",
+    response_model=NewReleasesSurfaceResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the canonical new-releases surface snapshot",
+)
+def api_new_releases_snapshot(request: Request):
+    _require_auth(request)
+    return _build_new_releases_surface()
+
+
+@router.get(
+    "/new-releases/stream",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Stream new-release surface updates",
+)
+async def api_new_releases_stream(request: Request):
+    _require_auth(request)
+    return StreamingResponse(
+        _stream_new_releases_surface(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post(
@@ -299,7 +494,6 @@ def api_new_releases(request: Request, status: str = "", upcoming: bool = False)
 def api_download_release(request: Request, release_id: int):
     """Download a detected new release via Tidal."""
     _require_admin(request)
-    from crate.db import mark_release_downloading, get_release_by_id
     release = get_release_by_id(release_id)
     if not release or not release.get("tidal_url"):
         raise HTTPException(status_code=404, detail="Release not found or no Tidal URL")
@@ -323,7 +517,6 @@ def api_download_release(request: Request, release_id: int):
 def api_dismiss_release(request: Request, release_id: int):
     """Dismiss a new release (won't be shown again)."""
     _require_auth(request)
-    from crate.db import mark_release_dismissed
     mark_release_dismissed(release_id)
     return {"ok": True}
 
@@ -350,43 +543,7 @@ def api_check_new_releases(request: Request):
 def acquisition_queue(request: Request):
     """Get unified download queue from all sources."""
     _require_auth(request)
-    queue = []
-
-    # Tidal downloads from tasks
-    tidal_tasks = list_tasks(task_type="tidal_download", limit=20)
-    for t in tidal_tasks:
-        params = t.get("params", {})
-        if isinstance(params, str):
-            try: params = json.loads(params)
-            except Exception: params = {}
-        queue.append({
-            "source": "tidal",
-            "artist": params.get("artist", ""),
-            "album": params.get("album", ""),
-            "status": t.get("status", ""),
-            "progress": t.get("progress", ""),
-            "task_id": t.get("id", ""),
-        })
-
-    # Soulseek downloads from slskd
-    try:
-        slsk_downloads = soulseek.get_downloads()
-        for d in slsk_downloads:
-            queue.append({
-                "source": "soulseek",
-                "artist": "",
-                "album": d.get("directory", "").replace("\\", "/").split("/")[-1] if d.get("directory") else "",
-                "filename": d.get("filename", ""),
-                "fullPath": d.get("fullPath", ""),
-                "status": d.get("state", ""),
-                "progress": d.get("percentComplete", 0),
-                "username": d.get("username", ""),
-                "speed": d.get("averageSpeed", 0),
-            })
-    except Exception:
-        pass
-
-    return queue
+    return _build_acquisition_surface()["soulseek_queue"]
 
 
 @router.post(
@@ -424,6 +581,5 @@ def clear_errored(request: Request):
 def cleanup_incomplete(request: Request):
     """Create task to clean up incomplete Soulseek album downloads."""
     _require_admin(request)
-    from crate.db import create_task
     task_id = create_task("cleanup_incomplete_downloads", {})
     return {"task_id": task_id}

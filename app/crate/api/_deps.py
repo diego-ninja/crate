@@ -3,6 +3,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from crate.config import load_config
+from crate.db.repositories.library import enrich_track_refs, get_library_album_by_id, get_library_artist_by_id
 
 COVER_NAMES = ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png", "album.jpg", "album.png"]
 
@@ -67,8 +68,6 @@ def safe_path(base: Path, user_path: str) -> Path | None:
 
 
 def enrich_radio_tracks(tracks: list[dict]) -> list[dict]:
-    from crate.db import enrich_track_refs
-
     if not tracks:
         return []
 
@@ -91,13 +90,11 @@ def enrich_radio_tracks(tracks: list[dict]) -> list[dict]:
 
 
 def artist_name_from_id(artist_id: int) -> str | None:
-    from crate.db import get_library_artist_by_id
     artist = get_library_artist_by_id(artist_id)
     return artist["name"] if artist else None
 
 
 def album_names_from_id(album_id: int) -> tuple[str, str] | None:
-    from crate.db import get_library_album_by_id
     album = get_library_album_by_id(album_id)
     if not album:
         return None

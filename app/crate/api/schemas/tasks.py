@@ -5,7 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, RootModel
 
-from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
+from crate.api.schemas.common import OkResponse, SnapshotMetadataResponse, TaskEnqueueResponse
+from crate.api.schemas.analytics import ActivityLiveResponse
 
 
 class TaskResponse(BaseModel):
@@ -117,3 +118,9 @@ class WorkerActionOkResponse(OkResponse):
 
 class TaskActionEnqueueResponse(TaskEnqueueResponse):
     pass
+
+
+class AdminTasksSnapshotResponse(BaseModel):
+    snapshot: SnapshotMetadataResponse
+    live: ActivityLiveResponse
+    history: list[TaskResponse]

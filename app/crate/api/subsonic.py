@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 
-from crate.db import get_user_by_email
+from crate.db.repositories.auth import get_user_by_email
 from crate.db.queries.subsonic import (
     get_user_by_username,
     get_all_artists_sorted,
@@ -567,7 +567,7 @@ def scrobble(request: Request, id: str = Query(""), submission: str = Query("tru
     track = get_track_basic(track_id)
 
     if track:
-        from crate.db.user_library import record_play
+        from crate.db.repositories.user_library import record_play
         record_play(user["id"], track_id=track_id, title=track["title"], artist=track["artist"], album=track["album"])
 
     return _subsonic_response({})

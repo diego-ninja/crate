@@ -16,7 +16,7 @@ class TestStatsApiContracts:
             "top_artist": {"artist_name": "Converge", "play_count": 10, "minutes_listened": 31.0},
         }
 
-        with patch("crate.db.user_library.get_stats_overview", return_value=payload) as mock_get:
+        with patch("crate.api.me.get_stats_overview", return_value=payload) as mock_get:
             resp = test_app.get("/api/me/stats/overview?window=30d")
 
         assert resp.status_code == 200
@@ -42,7 +42,7 @@ class TestStatsApiContracts:
             "last_played_at": "2026-04-01T10:00:00Z",
         }]
 
-        with patch("crate.db.user_library.get_top_tracks", return_value=items) as mock_get:
+        with patch("crate.api.me.get_top_tracks", return_value=items) as mock_get:
             resp = test_app.get("/api/me/stats/top-tracks?window=90d&limit=5")
 
         assert resp.status_code == 200
@@ -58,7 +58,7 @@ class TestStatsApiContracts:
 
     def test_stats_invalid_window_returns_400(self, test_app):
         with patch(
-            "crate.db.user_library.get_stats_trends",
+            "crate.api.me.get_stats_trends",
             side_effect=ValueError("Unsupported stats window: banana"),
         ):
             resp = test_app.get("/api/me/stats/trends?window=banana")
@@ -85,7 +85,7 @@ class TestStatsApiContracts:
             }],
         }
 
-        with patch("crate.db.user_library.get_replay_mix", return_value=payload) as mock_get:
+        with patch("crate.api.me.get_replay_mix", return_value=payload) as mock_get:
             resp = test_app.get("/api/me/stats/replay?window=30d&limit=25")
 
         assert resp.status_code == 200

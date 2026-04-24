@@ -24,7 +24,7 @@ class TestSetupStatus:
 class TestSetupAdmin:
     def test_create_admin(self, test_app):
         with patch("crate.api.setup.count_users", return_value=0), \
-             patch("crate.db.create_user", return_value={"id": 42, "email": "admin@test.com"}) as mock_create:
+             patch("crate.api.setup.create_user", return_value={"id": 42, "email": "admin@test.com"}) as mock_create:
             resp = test_app.post("/api/setup/admin", json={
                 "email": "admin@test.com",
                 "password": "secret123",

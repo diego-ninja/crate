@@ -10,6 +10,10 @@ export interface UseApiState<T> {
   refetch: () => void;
 }
 
+interface UseApiOptions {
+  reactive?: boolean;
+}
+
 /**
  * SWR-enabled API hook.
  * - Returns cached data immediately (no skeleton flash)
@@ -21,7 +25,9 @@ export function useApi<T>(
   url: string | null,
   method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
   body?: unknown,
+  options: UseApiOptions = {},
 ): UseApiState<T> {
+  const { reactive = true } = options;
   const cached = url ? cacheGet<T>(url) : null;
   const [data, setData] = useState<T | null>(cached);
   const [loading, setLoading] = useState(!cached && !!url);
@@ -79,7 +85,7 @@ export function useApi<T>(
   // localStorage entries prevent the refetch. Now we refetch unconditionally
   // whenever a scope that covers this URL is invalidated.
   useEffect(() => {
-    if (!url) return;
+    if (!url || !reactive) return;
     const myScopes = scopesForUrl(url);
     if (!myScopes.length) return;
     return onCacheInvalidation((scope) => {
@@ -87,7 +93,7 @@ export function useApi<T>(
         refetch();
       }
     });
-  }, [url, refetch]);
+  }, [reactive, url, refetch]);
 
   return { data, loading, error, refetch };
 }

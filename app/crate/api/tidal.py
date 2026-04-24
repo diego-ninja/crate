@@ -27,10 +27,16 @@ from crate.api.schemas.tidal import (
     WishlistRequest,
     WishlistResponse,
 )
-from crate.db import (
-    create_task, add_tidal_download, get_tidal_downloads,
-    update_tidal_download, delete_tidal_download,
-    set_monitored_artist, get_monitored_artists, is_artist_monitored,
+from crate.db.repositories.library import get_album_quality_map, get_library_albums
+from crate.db.repositories.tasks import create_task, create_task_dedup
+from crate.db.tidal import (
+    add_tidal_download,
+    delete_tidal_download,
+    get_monitored_artists,
+    get_tidal_downloads,
+    is_artist_monitored,
+    set_monitored_artist,
+    update_tidal_download,
 )
 from crate import tidal
 
@@ -139,7 +145,6 @@ def tidal_missing(request: Request, artist: str):
         return {"albums": [], "authenticated": False}
 
     import re
-    from crate.db import get_library_albums
 
     result = tidal.search(artist, content_type="albums", limit=50)
     albums = result.get("albums", [])
@@ -188,7 +193,6 @@ def tidal_download_missing(request: Request, artist: str, body: TidalDownloadMis
     if not body.albums:
         return {"queued": 0}
 
-    from crate.db import create_task_dedup
     queued = 0
     for album in body.albums:
         url = album.url
@@ -258,8 +262,6 @@ def tidal_artist_albums(request: Request, tidal_artist_id: str):
 
     artist_name = albums[0].get("artist", "") if albums else ""
     if artist_name:
-        from crate.db import get_library_albums
-        from crate.db.library import get_album_quality_map
         from thefuzz import fuzz
 
         local_albums = get_library_albums(artist_name)
@@ -523,7 +525,6 @@ def remove_queue_item(request: Request, dl_id: int):
 def artist_discography(request: Request, name: str):
     """Cross-reference Tidal discography with local library."""
     _require_auth(request)
-    from crate.db import get_library_albums
     from thefuzz import fuzz
 
     # Search Tidal for artist

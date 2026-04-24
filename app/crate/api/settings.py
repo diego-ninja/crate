@@ -23,16 +23,10 @@ from crate.api.schemas.settings import (
     WorkerSettingsRequest,
 )
 from crate.db.audit import get_db_table_stats
-from crate.db.cache import (
-    clear_all_cache_tables,
-    delete_cache,
-    delete_cache_prefix,
-    get_cache_stats,
-    get_setting,
-    set_setting,
-)
-from crate.db.library import get_library_stats, get_library_track_count
-from crate.db.tasks import create_task
+from crate.db.cache_settings import get_setting, set_setting
+from crate.db.cache_store import clear_all_cache_tables, delete_cache, delete_cache_prefix, get_cache_stats
+from crate.db.repositories.library import get_library_stats, get_library_track_count
+from crate.db.repositories.tasks import create_task
 from crate.scheduler import get_schedules, set_schedules
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -98,7 +92,7 @@ def _mask_token(token: str) -> str:
 
 
 def _get_shows_settings() -> dict:
-    from crate.db.shows import get_unique_user_cities, get_upcoming_show_counts
+    from crate.db.queries.shows import get_unique_user_cities, get_upcoming_show_counts
     cities = []
     try:
         cities = get_unique_user_cities()
@@ -215,7 +209,7 @@ def clear_cache(request: Request, body: CacheClearRequest):
         delete_cache_prefix("")  # all cache keys
         clear_all_cache_tables()
         # Clear all Redis mb: keys
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if r:
             try:
@@ -334,7 +328,7 @@ def update_shows_settings(request: Request, body: ShowsSettingsUpdateRequest):
 def trigger_lastfm_sync(request: Request, body: LastfmSyncRequest | None = None):
     """Manually trigger Last.fm scrape for a specific city or all user cities."""
     _require_admin(request)
-    from crate.db.shows import get_unique_user_cities
+    from crate.db.queries.shows import get_unique_user_cities
 
     payload = body.model_dump(exclude_none=True) if body else {}
     city = (payload.get("city") or "").strip()

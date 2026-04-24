@@ -1,8 +1,11 @@
 import logging
 import time
 from pathlib import Path
-from crate.db import create_task, emit_task_event, get_task, save_scan_result
-from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
+
+from crate.db.events import emit_task_event
+from crate.db.queries.tasks import get_latest_scan, get_task
+from crate.db.repositories.tasks import create_task, save_scan_result
+from crate.task_progress import TaskProgress, emit_item_event, emit_progress, entity_label
 from crate.library_sync import LibrarySync
 from crate.matcher import apply_match, match_album
 from crate.report import save_report
@@ -149,7 +152,6 @@ def _handle_library_sync(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_fix_issues(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import get_latest_scan
     from crate.fixer import LibraryFixer
     from crate.models import Issue, IssueType, Severity
 

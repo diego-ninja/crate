@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -27,18 +27,14 @@ import {
   HomeUpcomingSection,
 } from "@/components/home/HomeUpcomingSections";
 import type {
-  HomeFavoriteArtist,
+  HomeDiscoveryPayload,
   HomeGeneratedPlaylistDetail,
   HomeGeneratedPlaylistSummary,
   HomeHeroArtist,
   HomeRadioStation,
-  HomeRecentItem,
   HomeRecommendedTrack,
   HomeSectionId,
-  HomeSuggestedAlbum,
   HomeUpcomingInsight,
-  HomeUpcomingResponse,
-  PaginatedArtistsResponse,
   ReplayMix,
 } from "@/components/home/home-model";
 import { PullIndicator } from "@crate/ui/primitives/PullIndicator";
@@ -46,7 +42,7 @@ import { useArtistFollows } from "@/contexts/ArtistFollowsContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
 import { usePullToRefresh } from "@/hooks/use-pull-to-refresh";
-import { api } from "@/lib/api";
+import { api, apiSseUrl } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchAlbumRadio, fetchArtistRadio, fetchHomePlaylistRadio } from "@/lib/radio";
 import { albumCoverApiUrl, artistPagePath } from "@/lib/library-routes";
@@ -93,45 +89,40 @@ export function Home() {
   const { play, playAll } = usePlayerActions();
   const { isFollowing, toggleArtistFollow } = useArtistFollows();
 
-  const { data: heroRaw, refetch: refetchHero } =
-    useApi<HomeHeroArtist[] | HomeHeroArtist | null>("/api/me/home/hero");
-  // Normalize: backend now returns array, old cache may still return single object
-  const heroes: HomeHeroArtist[] = Array.isArray(heroRaw) ? heroRaw : heroRaw ? [heroRaw] : [];
-  const { data: recentData, refetch: refetchRecent } =
-    useApi<{ items: HomeRecentItem[] }>("/api/me/home/recently-played");
-  const { data: mixesData, refetch: refetchMixes } =
-    useApi<{ items: HomeGeneratedPlaylistSummary[] }>("/api/me/home/mixes");
-  const { data: albumsData, refetch: refetchAlbums } =
-    useApi<{ items: HomeSuggestedAlbum[] }>("/api/me/home/suggested-albums");
-  const { data: tracksData, refetch: refetchTracks } =
-    useApi<{ items: HomeRecommendedTrack[] }>("/api/me/home/recommended-tracks");
-  const { data: radioData, refetch: refetchRadio } =
-    useApi<{ items: HomeRadioStation[] }>("/api/me/home/radio-stations");
-  const { data: artistsData, refetch: refetchFavArtists } =
-    useApi<{ items: HomeFavoriteArtist[] }>("/api/me/home/favorite-artists");
-  const { data: essentialsData, refetch: refetchEssentials } =
-    useApi<{ items: HomeGeneratedPlaylistSummary[] }>("/api/me/home/essentials");
+  const { data: discovery, refetch: refetchDiscovery } =
+    useApi<HomeDiscoveryPayload>("/api/me/home/discovery", "GET", undefined, { reactive: false });
+  const [liveDiscovery, setLiveDiscovery] = useState<HomeDiscoveryPayload | null>(null);
 
-  const { data: recentGlobalArtists, loading: globalArtistsLoading, refetch: refetchGlobalArtists } =
-    useApi<PaginatedArtistsResponse>("/api/artists?sort=recent&per_page=10");
-  const { data: upcoming, refetch: refetchUpcoming } =
-    useApi<HomeUpcomingResponse>("/api/me/upcoming");
-  const { data: replay, refetch: refetchReplay } =
-    useApi<ReplayMix>("/api/me/stats/replay?window=30d&limit=18");
+  useEffect(() => {
+    if (discovery) {
+      setLiveDiscovery(discovery);
+    }
+  }, [discovery]);
+
+  useEffect(() => {
+    const source = new EventSource(apiSseUrl("/api/me/home/discovery-stream"));
+    source.onmessage = (event) => {
+      try {
+        setLiveDiscovery(JSON.parse(event.data) as HomeDiscoveryPayload);
+      } catch {
+        // Ignore malformed snapshots and keep the last good payload.
+      }
+    };
+    return () => source.close();
+  }, []);
+
+  const currentDiscovery = liveDiscovery ?? discovery;
+  // Normalize: backend now returns array, old cache may still return single object
+  const heroRaw = currentDiscovery?.hero ?? null;
+  const heroes: HomeHeroArtist[] = Array.isArray(heroRaw) ? heroRaw : heroRaw ? [heroRaw] : [];
+  const recentGlobalArtists = currentDiscovery?.recent_global_artists || [];
+  const upcoming = currentDiscovery?.upcoming;
+  const replay = currentDiscovery?.replay as ReplayMix | undefined;
+  const globalArtistsLoading = !currentDiscovery;
 
   const onRefresh = useCallback(async () => {
-    refetchHero();
-    refetchRecent();
-    refetchMixes();
-    refetchAlbums();
-    refetchTracks();
-    refetchRadio();
-    refetchFavArtists();
-    refetchEssentials();
-    refetchGlobalArtists();
-    refetchUpcoming();
-    refetchReplay();
-  }, [refetchHero, refetchRecent, refetchMixes, refetchAlbums, refetchTracks, refetchRadio, refetchFavArtists, refetchEssentials, refetchGlobalArtists, refetchReplay, refetchUpcoming]);
+    refetchDiscovery();
+  }, [refetchDiscovery]);
 
   const { handlers: pullHandlers, pullDistance, refreshing } = usePullToRefresh(onRefresh);
 
@@ -144,7 +135,7 @@ export function Home() {
 
   const recommendedTracks = useMemo(
     () =>
-      (tracksData?.items || []).map((item) => ({
+      (currentDiscovery?.recommended_tracks || []).map((item) => ({
         id: item.track_id ?? item.track_storage_id ?? item.track_path ?? item.title,
         storage_id: item.track_storage_id ?? undefined,
         title: item.title,
@@ -158,7 +149,7 @@ export function Home() {
         duration: item.duration ?? undefined,
         library_track_id: item.track_id ?? undefined,
       })),
-    [tracksData?.items],
+    [currentDiscovery?.recommended_tracks],
   );
 
   function openHomeSection(sectionId: HomeSectionId) {
@@ -190,7 +181,7 @@ export function Home() {
     try {
       await toggleArtistFollow(artist.id);
       // Refetch to replace followed artist with a new one
-      refetchHero();
+      refetchDiscovery();
       toast.success(
         isFollowing(artist.id)
           ? `Unfollowed ${artist.name}`
@@ -373,13 +364,13 @@ export function Home() {
       </div>
 
       <RecentlyPlayedSection
-        items={recentData?.items || []}
+        items={currentDiscovery?.recently_played || []}
         onOpenItem={(item) => navigate(openRecentItemPath(item))}
         onViewAll={openHomeSection}
       />
 
       <CustomMixesSection
-        mixes={mixesData?.items || []}
+        mixes={currentDiscovery?.custom_mixes || []}
         onOpenMix={(mix) => navigate(homePlaylistPath(mix.id))}
         onPlayMix={(mix) => void playHomePlaylist(mix)}
         onShuffleMix={(mix) => void shuffleHomePlaylist(mix)}
@@ -387,20 +378,20 @@ export function Home() {
         onViewAll={openHomeSection}
       />
 
-      <SuggestedAlbumsSection albums={albumsData?.items || []} onViewAll={openHomeSection} />
+      <SuggestedAlbumsSection albums={currentDiscovery?.suggested_albums || []} onViewAll={openHomeSection} />
 
       <RecommendedTracksSection tracks={recommendedTracks} onViewAll={openHomeSection} />
 
       <RadioStationsSection
-        stations={radioData?.items || []}
+        stations={currentDiscovery?.radio_stations || []}
         onPlayStation={(station) => void playRadioStation(station)}
         onViewAll={openHomeSection}
       />
 
-      <FavoriteArtistsSection artists={artistsData?.items || []} onViewAll={openHomeSection} />
+      <FavoriteArtistsSection artists={currentDiscovery?.favorite_artists || []} onViewAll={openHomeSection} />
 
       <EssentialsSection
-        items={essentialsData?.items || []}
+        items={currentDiscovery?.essentials || []}
         onOpenPlaylist={(item) => navigate(homePlaylistPath(item.id))}
         onPlayPlaylist={(item) => void playHomePlaylist(item)}
         onShufflePlaylist={(item) => void shuffleHomePlaylist(item)}
@@ -429,11 +420,11 @@ export function Home() {
         onPlayTrack={(item) => play(toPlayerTrack(item), { type: "track", name: item.title })}
       />
 
-      <JustLandedSection
-        artists={recentGlobalArtists?.items}
-        loading={globalArtistsLoading}
-        onOpenExplore={() => navigate("/explore")}
-      />
+        <JustLandedSection
+          artists={recentGlobalArtists}
+          loading={globalArtistsLoading}
+          onOpenExplore={() => navigate("/explore")}
+        />
     </div>
   );
 }

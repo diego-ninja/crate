@@ -100,8 +100,9 @@ class TestComputeDirHash:
 class TestShouldProcessArtist:
     """Test the skip-if-unchanged logic in should_process_artist.
 
-    should_process_artist does `from crate.db import get_library_artist` inside the function,
-    so we patch `crate.db.get_library_artist` which is the re-export from crate.db.__init__.
+    ``should_process_artist()`` now imports ``get_library_artist`` directly from
+    ``crate.content``, so patch the module-local symbol instead of the deprecated
+    ``crate.db`` facade.
     """
 
     def test_returns_true_when_no_previous_hash(self):
@@ -114,7 +115,7 @@ class TestShouldProcessArtist:
             artist_dir.mkdir()
             (artist_dir / "track.flac").write_bytes(b"\x00")
 
-            with patch("crate.db.get_library_artist", return_value={"folder_name": "NewBand", "content_hash": None}), \
+            with patch("crate.content.get_library_artist", return_value={"folder_name": "NewBand", "content_hash": None}), \
                  patch("crate.content.resolve_artist_dir", return_value=artist_dir):
                 assert should_process_artist("NewBand", library_path=lib) is True
 
@@ -134,7 +135,7 @@ class TestShouldProcessArtist:
             with patch.dict("sys.modules", {"crate.crate_cli": mock_cli}):
                 current_hash = compute_dir_hash(artist_dir)
 
-            with patch("crate.db.get_library_artist", return_value={"folder_name": "SameBand", "content_hash": current_hash}), \
+            with patch("crate.content.get_library_artist", return_value={"folder_name": "SameBand", "content_hash": current_hash}), \
                  patch("crate.content.resolve_artist_dir", return_value=artist_dir):
                 assert should_process_artist("SameBand", library_path=lib) is False
 
@@ -148,7 +149,7 @@ class TestShouldProcessArtist:
             artist_dir.mkdir()
             (artist_dir / "track.flac").write_bytes(b"\x00" * 100)
 
-            with patch("crate.db.get_library_artist", return_value={"folder_name": "ChangedBand", "content_hash": "stale_old_hash"}), \
+            with patch("crate.content.get_library_artist", return_value={"folder_name": "ChangedBand", "content_hash": "stale_old_hash"}), \
                  patch("crate.content.resolve_artist_dir", return_value=artist_dir):
                 assert should_process_artist("ChangedBand", library_path=lib) is True
 
@@ -158,6 +159,6 @@ class TestShouldProcessArtist:
         from crate.content import should_process_artist
 
         with tempfile.TemporaryDirectory() as lib:
-            with patch("crate.db.get_library_artist", return_value={"folder_name": "GhostBand", "content_hash": "x"}), \
+            with patch("crate.content.get_library_artist", return_value={"folder_name": "GhostBand", "content_hash": "x"}), \
                  patch("crate.content.resolve_artist_dir", return_value=None):
                 assert should_process_artist("GhostBand", library_path=lib) is False

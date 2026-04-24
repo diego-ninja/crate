@@ -14,7 +14,7 @@ from crate.db.jobs.repair import (
     update_artist_has_photo,
     update_track_artist,
 )
-from crate.db.library import delete_album, delete_artist, delete_track, upsert_artist
+from crate.db.repositories.library import delete_album, delete_artist, delete_track, upsert_artist
 from crate.utils import PHOTO_NAMES
 
 log = logging.getLogger(__name__)

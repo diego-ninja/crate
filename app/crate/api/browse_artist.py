@@ -28,12 +28,8 @@ from crate.api.schemas.browse import (
     BrowseFiltersResponse,
 )
 from crate.audio import get_audio_files
-from crate.db import (
-    get_all_artist_issue_counts,
-    get_artist_issue_count,
-    get_library_albums,
-    get_library_artist,
-)
+from crate.db.health import get_all_artist_issue_counts, get_artist_issue_count
+from crate.db.repositories.library import get_album_quality_map, get_library_albums, get_library_artist
 from crate.db.queries.browse_artist import (
     check_artists_in_library,
     get_all_artist_genre_map,
@@ -53,6 +49,14 @@ from crate.db.queries.browse_artist import (
     get_browse_filter_genres,
     get_similar_artist_refs,
 )
+from crate.db.queries.shows import (
+    get_attending_show_ids,
+    get_show_cities,
+    get_show_countries,
+    get_upcoming_shows as db_get_shows,
+)
+from crate.db.releases import get_new_releases
+from crate.db.similarities import get_artist_network
 from crate.lastfm import get_artist_info
 from crate.storage_layout import resolve_artist_dir
 
@@ -669,8 +673,6 @@ def api_artist_info(request: Request, name: str):
 
 def api_artist_shows(request: Request, name: str, limit: int = Query(10), country: str = Query("")):
     user = _require_auth(request)
-    from crate.db import get_upcoming_shows as db_get_shows
-    from crate.db import get_attending_show_ids
     from crate.ticketmaster import get_upcoming_shows, is_configured
     from crate import setlistfm
 
@@ -763,7 +765,6 @@ def api_artist_shows(request: Request, name: str, limit: int = Query(10), countr
 )
 def api_artists_with_shows(request: Request):
     _require_auth(request)
-    from crate.db import get_upcoming_shows as db_get_shows
 
     shows = db_get_shows()
     artist_names = sorted({show["artist_name"] for show in shows})
@@ -778,7 +779,6 @@ def api_artists_with_shows(request: Request):
 )
 def api_cached_shows(request: Request, limit: int = Query(50)):
     _require_auth(request)
-    from crate.db import get_upcoming_shows as db_get_shows
 
     shows = db_get_shows(limit=limit)
     genre_map = get_all_artist_genre_map()
@@ -815,7 +815,6 @@ def api_cached_shows(request: Request, limit: int = Query(50)):
 )
 def api_shows_list(request: Request, city: str = "", country: str = ""):
     _require_auth(request)
-    from crate.db import get_show_cities, get_show_countries, get_upcoming_shows as db_get_shows
 
     shows = db_get_shows(city=city or None, country=country or None)
     refs_by_name = _lookup_artist_refs(
@@ -914,8 +913,6 @@ def api_artist_setlist_playable(request: Request, name: str):
 def api_upcoming(request: Request):
     from datetime import datetime, timezone
 
-    from crate.db import get_new_releases, get_upcoming_shows as db_get_shows
-
     _require_auth(request)
     items = []
     today = datetime.now(timezone.utc).date()
@@ -997,7 +994,6 @@ def api_upcoming(request: Request):
 
 def api_artist_network(request: Request, name: str, depth: int = 2):
     _require_auth(request)
-    from crate.db import get_artist_network
 
     return get_artist_network(name, depth=min(depth, 3), limit_per_level=15)
 
@@ -1036,8 +1032,6 @@ def api_artist(request: Request, name: str):
     album_quality: dict[int, dict] = {}
     album_ids = [a["id"] for a in albums_data if a.get("id")]
     if album_ids:
-        from crate.db.library import get_album_quality_map
-
         album_quality = get_album_quality_map(album_ids)
 
     top_genres = get_artist_top_genres(canonical)

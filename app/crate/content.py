@@ -17,6 +17,8 @@ import hashlib
 import logging
 from pathlib import Path
 
+from crate.db.repositories.library import get_library_artist
+from crate.db.repositories.tasks import create_task_dedup
 from crate.storage_layout import resolve_artist_dir
 
 log = logging.getLogger(__name__)
@@ -59,8 +61,6 @@ def should_process_artist(artist_name: str, library_path: Path | str | None = No
     - the artist directory cannot be located,
     - the hash already matches (no new content to process).
     """
-    from crate.db import get_library_artist
-
     if library_path is None:
         from crate.config import load_config
 
@@ -94,8 +94,6 @@ def queue_process_new_content_if_needed(
     call was suppressed because content is unchanged or the dedup window
     already contains a pending task for the same artist.
     """
-    from crate.db import create_task_dedup
-
     if not artist_name:
         return None
 

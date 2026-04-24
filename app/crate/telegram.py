@@ -21,7 +21,7 @@ from pathlib import Path
 
 import requests
 
-from crate.db.cache import get_setting, set_setting
+from crate.db.cache_settings import get_setting, set_setting
 from crate.db.queries.telegram import (
     find_active_task_by_prefix,
     get_library_status_summary,
@@ -30,7 +30,7 @@ from crate.db.queries.telegram import (
     list_recent_albums,
     list_recently_played,
 )
-from crate.db.tasks import create_task, update_task
+from crate.db.repositories.tasks import create_task, update_task
 
 log = logging.getLogger(__name__)
 
@@ -434,14 +434,14 @@ def _cmd_task(chat_id: str, args: str):
         send_message("\u26a0\ufe0f Usage: /task &lt;task_id&gt;", chat_id=chat_id)
         return
 
-    from crate.db.tasks import get_task
+    from crate.db.queries.tasks import get_task
     from crate.task_registry import task_label, task_icon
 
     row = find_active_task_by_prefix(task_id_prefix)
     if not row:
         # Try completed tasks too
         try:
-            from crate.db.tasks import list_tasks
+            from crate.db.queries.tasks import list_tasks
             for t in list_tasks(limit=50):
                 if t["id"].startswith(task_id_prefix):
                     row = t

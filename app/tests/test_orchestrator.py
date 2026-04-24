@@ -45,10 +45,9 @@ class TestCleanupOrphanedTasks:
             {"id": "def456", "type": "enrich_artist"},
         ]
 
-        # _cleanup_orphaned_tasks uses module-level list_tasks and local `from crate.db import update_task`
-        # Patching crate.db.update_task intercepts the `from crate.db import update_task` inside the method
+        # _cleanup_orphaned_tasks uses module-level imports from crate.orchestrator.
         with patch("crate.orchestrator.list_tasks", return_value=orphaned_tasks), \
-             patch("crate.db.update_task") as mock_update:
+             patch("crate.orchestrator.update_task") as mock_update:
             orch._cleanup_orphaned_tasks()
 
         assert mock_update.call_count == 2
@@ -61,7 +60,7 @@ class TestCleanupOrphanedTasks:
         orch = Orchestrator(config)
 
         with patch("crate.orchestrator.list_tasks", return_value=[]), \
-             patch("crate.db.update_task") as mock_update:
+             patch("crate.orchestrator.update_task") as mock_update:
             orch._cleanup_orphaned_tasks()
 
         mock_update.assert_not_called()

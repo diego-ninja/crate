@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@crate/ui/shadcn/card";
 import { Button } from "@crate/ui/shadcn/button";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
-import { useApi } from "@/hooks/use-api";
+import { useOpsSnapshot } from "@/contexts/OpsSnapshotContext";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 import { ResponsivePie } from "@nivo/pie";
@@ -20,73 +20,19 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
-interface Stats {
-  artists: number;
-  albums: number;
-  tracks: number;
-  total_size_gb: number;
-  formats: Record<string, number>;
-  last_scan: string | null;
-  pending_imports: number;
-  pending_tasks: number;
-  total_duration_hours: number;
-  avg_bitrate: number;
-  top_genres: { name: string; count: number }[];
-  recent_albums: { id?: number; slug?: string; artist: string; artist_id?: number; artist_slug?: string; name: string; display_name?: string; year: string | null; updated_at: string }[];
-  analyzed_tracks: number;
-  avg_album_duration_min?: number;
-  avg_tracks_per_album?: number;
-}
-
-interface AnalyticsData {
-  formats: Record<string, number>;
-  decades: Record<string, number>;
-  top_artists: { id?: number; slug?: string; name: string; albums: number }[];
-  computing?: boolean;
-}
-
-interface LiveActivity {
-  running_tasks: { id: string; type: string; progress: string }[];
-  recent_tasks: { id: string; type: string; status: string; updated_at: string }[];
-  worker_slots: { max: number; active: number };
-  systems: {
-    postgres: boolean;
-    watcher: boolean;
-  };
-}
-
-
 export function Dashboard() {
-  const { data: stats, loading: loadingStats, error: statsError, refetch: refetchStats } = useApi<Stats>("/api/stats");
-  const { data: analytics, refetch: refetchAnalytics } = useApi<AnalyticsData>("/api/analytics");
-  const { data: live, refetch: refetchLive } = useApi<LiveActivity>("/api/activity/live");
-  const [healthCounts, setHealthCounts] = useState<Record<string, number>>({});
-  const [upcomingShows, setUpcomingShows] = useState<{ artist_name?: string; venue: string; city: string; country: string; date: string; url: string }[]>([]);
-
-  useEffect(() => {
-    api<{ counts: Record<string, number> }>("/api/manage/health-issues").then((d) => setHealthCounts(d.counts || {})).catch(() => {});
-    api<{ events: typeof upcomingShows }>("/api/shows/cached?limit=5").then((d) => setUpcomingShows(d.events || [])).catch(() => {});
-  }, []);
+  const { data: opsSnapshot, loading: loadingSnapshot, error: snapshotError, refresh } = useOpsSnapshot();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
   const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
+  const stats = opsSnapshot?.stats;
+  const analytics = opsSnapshot?.analytics;
+  const live = opsSnapshot?.live;
+  const healthCounts = opsSnapshot?.health_counts || {};
+  const upcomingShows = opsSnapshot?.upcoming_shows || [];
 
-  // Auto-refresh live activity every 5s
-  useEffect(() => {
-    const timer = setInterval(() => refetchLive(), 5000);
-    return () => clearInterval(timer);
-  }, [refetchLive]);
-
-  // Auto-retry analytics if computing
-  useEffect(() => {
-    if (analytics?.computing) {
-      const timer = setTimeout(() => refetchAnalytics(), 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [analytics, refetchAnalytics]);
-
-  if (loadingStats) {
+  if (loadingSnapshot && !opsSnapshot) {
     return (
       <div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
@@ -101,8 +47,8 @@ export function Dashboard() {
     );
   }
 
-  if (statsError) {
-    return <ErrorState message="Failed to load dashboard" onRetry={refetchStats} />;
+  if (snapshotError && !opsSnapshot) {
+    return <ErrorState message="Failed to load dashboard" onRetry={() => void refresh(true)} />;
   }
 
   const heroStats = [
@@ -184,7 +130,7 @@ export function Dashboard() {
                 try {
                   await api("/api/tasks/sync-library", "POST");
                   toast.success("Library sync started");
-                  refetchLive();
+                  void refresh(true);
                 } catch {
                   toast.error("Sync already running or failed");
                 }
@@ -325,7 +271,7 @@ export function Dashboard() {
                     try {
                       await api("/api/tasks/sync-library", "POST");
                       toast.success("Library sync started");
-                      refetchLive();
+                      void refresh(true);
                     } catch {
                       toast.error("Sync already running or failed");
                     }
@@ -417,7 +363,9 @@ export function Dashboard() {
                       <span className="truncate font-medium">{s.artist_name}</span>
                       <span className="truncate text-white/45">{s.venue}, {s.city}</span>
                       <span className="ml-auto flex-shrink-0 text-white/35">
-                        {new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                        {s.date
+                          ? new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+                          : "TBA"}
                       </span>
                     </div>
                   ))}
@@ -621,7 +569,7 @@ export function Dashboard() {
           try {
             await api("/api/manage/rebuild", "POST");
             toast.success("Library rebuild started");
-            refetchLive();
+            void refresh(true);
           } catch {
             toast.error("Failed to start rebuild");
           }
@@ -639,7 +587,7 @@ export function Dashboard() {
           try {
             await api("/api/manage/wipe", "POST", { rebuild: false });
             toast.success("Library database wiped");
-            refetchLive();
+            void refresh(true);
           } catch {
             toast.error("Failed to wipe database");
           }

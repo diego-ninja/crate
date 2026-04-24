@@ -28,10 +28,10 @@ class TestPlayEventContract:
             "app_platform": "listen-web",
         }
 
-        with patch("crate.db.user_library.record_play_event", return_value=77) as mock_record, \
-             patch("crate.db.create_task_dedup", return_value="task123") as mock_enqueue, \
-             patch("crate.db.get_cache", return_value=None), \
-             patch("crate.db.set_cache"):
+        with patch("crate.api.me.record_play_event", return_value=77) as mock_record, \
+             patch("crate.api.me.create_task_dedup", return_value="task123") as mock_enqueue, \
+             patch("crate.api.me.get_cache", return_value=None), \
+             patch("crate.api.me.set_cache"):
             resp = test_app.post("/api/me/play-events", json=payload)
 
         assert resp.status_code == 200

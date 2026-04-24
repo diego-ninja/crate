@@ -18,20 +18,20 @@ from crate.api.schemas.jam import (
     JamRoomResponse,
 )
 from crate.auth import verify_jwt
-from crate.db import (
-    create_jam_room,
-    get_jam_room,
-    get_jam_room_members,
-    get_jam_room_member,
-    is_jam_room_member,
-    upsert_jam_room_member,
-    touch_jam_room_member,
+from crate.db.repositories.auth import get_session
+from crate.db.jam import (
     append_jam_room_event,
-    list_jam_room_events,
-    update_jam_room_state,
-    create_jam_room_invite,
     consume_jam_room_invite,
-    get_session,
+    create_jam_room,
+    create_jam_room_invite,
+    get_jam_room,
+    get_jam_room_member,
+    get_jam_room_members,
+    is_jam_room_member,
+    list_jam_room_events,
+    touch_jam_room_member,
+    update_jam_room_state,
+    upsert_jam_room_member,
 )
 
 router = APIRouter(prefix="/api/jam", tags=["jam"])

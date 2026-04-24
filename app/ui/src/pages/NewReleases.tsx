@@ -22,8 +22,10 @@ import { Button } from "@crate/ui/shadcn/button";
 import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { Input } from "@crate/ui/shadcn/input";
-import { api } from "@/lib/api";
+import { api, apiSseUrl } from "@/lib/api";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";
+import { waitForTask } from "@/lib/tasks";
+import { useApi } from "@/hooks/use-api";
 import { timeAgo } from "@/lib/utils";
 
 interface Release {
@@ -45,6 +47,10 @@ interface Release {
   status: string;
   detected_at: string;
   downloaded_at: string | null;
+}
+
+interface NewReleasesSurface {
+  releases: Release[];
 }
 
 type ViewMode = "timeline" | "grid";
@@ -291,30 +297,26 @@ function EmptyState({
 }
 
 export function NewReleases() {
-  const [releases, setReleases] = useState<Release[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: releaseSurface, loading, error, refetch } = useApi<NewReleasesSurface>("/api/acquisition/new-releases/snapshot");
+  const [liveSurface, setLiveSurface] = useState<NewReleasesSurface | null>(null);
   const [checking, setChecking] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("detected");
   const [typeFilter, setTypeFilter] = useState("");
   const [view, setView] = useState<ViewMode>("timeline");
-
-  async function fetchReleases(silent = false) {
-    if (!silent) setLoading(true);
-    try {
-      const data = await api<{ releases: Release[] }>("/api/acquisition/new-releases?status=");
-      setReleases(data.releases || []);
-      setError(null);
-    } catch {
-      setError("Failed to load release radar");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const releases = liveSurface?.releases ?? releaseSurface?.releases ?? [];
 
   useEffect(() => {
-    fetchReleases();
+    const stream = new EventSource(apiSseUrl("/api/acquisition/new-releases/stream"));
+    stream.onmessage = (event) => {
+      try {
+        const next = JSON.parse(event.data) as NewReleasesSurface;
+        setLiveSurface(next);
+      } catch {
+        // Ignore malformed stream payloads and keep the latest valid surface.
+      }
+    };
+    return () => stream.close();
   }, []);
 
   const typeOptions = useMemo(() => {
@@ -356,27 +358,13 @@ export function NewReleases() {
     try {
       const { task_id } = await api<{ task_id: string }>("/api/acquisition/new-releases/check", "POST");
       toast.success("Checking for new releases…");
-
-      const poll = setInterval(async () => {
-        try {
-          const task = await api<{ status: string }>(`/api/tasks/${task_id}`);
-          if (task.status === "completed" || task.status === "failed") {
-            clearInterval(poll);
-            setChecking(false);
-            if (task.status === "completed") {
-              toast.success("Release check complete");
-              fetchReleases(true);
-            }
-          }
-        } catch {
-          // ignore transient polling failures
-        }
-      }, 4000);
-
-      setTimeout(() => {
-        clearInterval(poll);
-        setChecking(false);
-      }, 300000);
+      const task = await waitForTask(task_id, 300000);
+      setChecking(false);
+      if (task.status === "completed") {
+        toast.success("Release check complete");
+        setLiveSurface(null);
+        refetch();
+      }
     } catch {
       setChecking(false);
       toast.error("Failed to queue the release check");
@@ -387,7 +375,11 @@ export function NewReleases() {
     try {
       await api(`/api/acquisition/new-releases/${id}/download`, "POST");
       toast.success("Download started");
-      setReleases((current) => current.map((release) => release.id === id ? { ...release, status: "downloading" } : release));
+      setLiveSurface((current) => ({
+        releases: (current?.releases ?? releaseSurface?.releases ?? []).map((release) =>
+          release.id === id ? { ...release, status: "downloading" } : release,
+        ),
+      }));
     } catch {
       toast.error("Download failed");
     }
@@ -396,14 +388,16 @@ export function NewReleases() {
   async function dismissRelease(id: number) {
     try {
       await api(`/api/acquisition/new-releases/${id}/dismiss`, "POST");
-      setReleases((current) => current.filter((release) => release.id !== id));
+      setLiveSurface((current) => ({
+        releases: (current?.releases ?? releaseSurface?.releases ?? []).filter((release) => release.id !== id),
+      }));
     } catch {
       toast.error("Dismiss failed");
     }
   }
 
   if (error && releases.length === 0) {
-    return <ErrorState message={error} onRetry={() => fetchReleases()} />;
+    return <ErrorState message={error} onRetry={refetch} />;
   }
 
   return (

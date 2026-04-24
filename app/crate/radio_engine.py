@@ -21,7 +21,7 @@ from crate.db.paths import (
     resolve_bliss_centroid,
     resolve_endpoint_label,
 )
-from crate.db.radio import (
+from crate.db.queries.radio import (
     count_user_radio_signals,
     get_followed_artist_vectors,
     get_home_playlist_seed,
@@ -33,6 +33,8 @@ from crate.db.radio import (
     get_track_seed,
     get_track_bliss_vector,
     load_feedback_history,
+)
+from crate.db.repositories.radio import (
     persist_radio_feedback,
 )
 
@@ -45,7 +47,7 @@ _BATCH_SIZE = 20
 
 def _redis():
     """Get the Redis connection used for radio sessions."""
-    from crate.db.cache import _get_redis
+    from crate.db.cache_runtime import _get_redis
     return _get_redis()
 
 

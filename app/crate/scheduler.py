@@ -4,7 +4,9 @@ import logging
 import time
 from datetime import datetime, timezone
 
-from crate.db import get_setting, set_setting, create_task, list_tasks
+from crate.db.cache_settings import get_setting, set_setting
+from crate.db.queries.tasks import list_tasks
+from crate.db.repositories.tasks import create_task
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +99,7 @@ def check_and_create_scheduled_tasks():
     # if should_run("sync_shows_lastfm", schedules):
     #     try:
     #         from crate.db.shows import get_unique_user_cities
-    #         from crate.db import get_setting
+    #         from crate.db.cache_settings import get_setting
     #         if get_setting("lastfm_scraping_enabled", "true") == "true":
     #             cities = get_unique_user_cities()
     #             for city_row in cities:

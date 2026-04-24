@@ -11,8 +11,9 @@ from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, me
 from crate.api.schemas.browse import AlbumDetailResponse, RelatedAlbumResponse
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
-from crate.db import get_library_album_by_id, get_library_artist, get_library_tracks
+from crate.db.repositories.library import get_library_album_by_id, get_library_artist, get_library_tracks
 from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list, get_album_genre_profile
+from crate.db.repositories.tasks import create_task
 from crate.storage_layout import resolve_album_dir
 
 router = APIRouter(tags=["browse"])
@@ -325,7 +326,6 @@ def api_enrich_album(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
         return JSONResponse({"error": "Not found"}, status_code=404)
-    from crate.db import create_task
     task_id = create_task("process_new_content", {
         "artist": album["artist"],
         "album": album["name"],
@@ -346,7 +346,6 @@ def api_fetch_cover(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
         return JSONResponse({"error": "Album not found"}, status_code=404)
-    from crate.db import create_task
     task_id = create_task("fetch_album_cover", {
         "album_id": album_id,
         "artist": album["artist"],

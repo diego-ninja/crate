@@ -27,6 +27,7 @@ export function createApiClient(options: ApiClientOptions = {}) {
     defaultHeaders = {},
     onUnauthorized,
   } = options;
+  const inflightGets = new Map<string, Promise<unknown>>();
 
   return async function api<T = unknown>(
     url: string,
@@ -55,15 +56,46 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }
     }
 
-    const res = await fetch(`${base}${url}`, requestOptions);
-    if (!res.ok) {
-      if (res.status === 401 && onUnauthorized && !url.includes("/auth/login")) {
-        onUnauthorized();
+    const execute = async () => {
+      const res = await fetch(`${base}${url}`, requestOptions);
+      if (!res.ok) {
+        if (res.status === 401 && onUnauthorized && !url.includes("/auth/login")) {
+          onUnauthorized();
+        }
+        const text = await res.text().catch(() => "Request failed");
+        throw new ApiError(res.status, text);
       }
-      const text = await res.text().catch(() => "Request failed");
-      throw new ApiError(res.status, text);
+      const text = await res.text();
+      return text ? JSON.parse(text) : (null as T);
+    };
+
+    const isAbortableGet = method === "GET" && body === undefined && options.signal != null;
+
+    if (method === "GET" && body === undefined) {
+      if (options.signal?.aborted) {
+        throw new DOMException("The request was aborted", "AbortError");
+      }
+      if (isAbortableGet) {
+        return execute();
+      }
+      const key = JSON.stringify({
+        base,
+        url,
+        method,
+        credentials,
+        headers,
+      });
+      const existing = inflightGets.get(key);
+      if (existing) {
+        return existing as Promise<T>;
+      }
+      const request = execute().finally(() => {
+        inflightGets.delete(key);
+      });
+      inflightGets.set(key, request);
+      return request as Promise<T>;
     }
-    const text = await res.text();
-    return text ? JSON.parse(text) : (null as T);
+
+    return execute();
   };
 }

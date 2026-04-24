@@ -6,9 +6,10 @@ from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, me
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.api.schemas.operations import MatchApplyRequest, MatchCandidateResponse
 from crate.matcher import match_album
-from crate.db import create_task, get_library_album_by_id
 from crate.api._deps import library_path, extensions
 from crate.api.browse_shared import find_album_dir
+from crate.db.repositories.library import get_library_album_by_id
+from crate.db.repositories.tasks import create_task
 
 router = APIRouter(tags=["matcher"])
 

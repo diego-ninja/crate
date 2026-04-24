@@ -15,18 +15,33 @@ class TestAnalysisDaemonUnit:
     def test_analysis_daemon_marks_done_for_valid_result(self, monkeypatch):
         import crate.analysis_daemon as analysis_daemon
 
-        calls: dict[str, list] = {"updated": [], "done": [], "failed": []}
+        calls: dict[str, list] = {"stored": [], "done": [], "failed": [], "released": []}
         track = {"id": 7, "path": "/music/test.flac", "title": "Test Track"}
 
         monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
         monkeypatch.setattr(analysis_daemon, "_get_pending_count", lambda state: 1)
-        monkeypatch.setattr(analysis_daemon, "_claim_track", lambda state: track)
+        monkeypatch.setattr(analysis_daemon, "_claim_tracks", lambda state, limit: [track])
         monkeypatch.setattr(analysis_daemon, "_mark_done", lambda track_id, state: calls["done"].append((track_id, state)))
         monkeypatch.setattr(analysis_daemon, "_mark_failed", lambda track_id, state: calls["failed"].append((track_id, state)))
+        monkeypatch.setattr(analysis_daemon, "_release_claims", lambda track_ids, state: calls["released"].append((track_ids, state)))
+        monkeypatch.setattr(
+            analysis_daemon,
+            "_store_analysis_results",
+            lambda results: calls["stored"].extend(results),
+        )
         monkeypatch.setitem(
             sys.modules,
             "crate.audio_analysis",
             SimpleNamespace(
+                analyze_batch=lambda paths: [
+                    {
+                        "bpm": 128.4,
+                        "key": "C",
+                        "scale": "major",
+                        "energy": 0.91,
+                        "mood": {"happy": 0.8},
+                    }
+                ],
                 analyze_track=lambda path: {
                     "bpm": 128.4,
                     "key": "C",
@@ -36,20 +51,14 @@ class TestAnalysisDaemonUnit:
                 }
             ),
         )
-        monkeypatch.setitem(
-            sys.modules,
-            "crate.db.library",
-            SimpleNamespace(
-                update_track_analysis=lambda path, **kwargs: calls["updated"].append((path, kwargs))
-            ),
-        )
         monkeypatch.setattr(analysis_daemon.time, "sleep", lambda _seconds: (_ for _ in ()).throw(_LoopExit()))
 
         with pytest.raises(_LoopExit):
             analysis_daemon.analysis_daemon({})
 
-        assert calls["updated"] == [
+        assert calls["stored"] == [
             (
+                7,
                 "/music/test.flac",
                 {
                     "bpm": 128.4,
@@ -57,57 +66,65 @@ class TestAnalysisDaemonUnit:
                     "scale": "major",
                     "energy": 0.91,
                     "mood": {"happy": 0.8},
-                    "danceability": None,
-                    "valence": None,
-                    "acousticness": None,
-                    "instrumentalness": None,
-                    "loudness": None,
-                    "dynamic_range": None,
-                    "spectral_complexity": None,
                 },
             )
         ]
-        assert calls["done"] == [(7, "analysis_state")]
+        assert calls["done"] == []
         assert calls["failed"] == []
+        assert calls["released"] == []
 
     def test_analysis_daemon_marks_failed_when_result_has_no_bpm(self, monkeypatch):
         import crate.analysis_daemon as analysis_daemon
 
-        calls: dict[str, list] = {"updated": [], "done": [], "failed": []}
+        calls: dict[str, list] = {"stored": [], "done": [], "failed": [], "released": []}
         track = {"id": 8, "path": "/music/empty.flac", "title": "Empty Track"}
 
         monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
         monkeypatch.setattr(analysis_daemon, "_get_pending_count", lambda state: 1)
-        monkeypatch.setattr(analysis_daemon, "_claim_track", lambda state: track)
+        monkeypatch.setattr(analysis_daemon, "_claim_tracks", lambda state, limit: [track])
         monkeypatch.setattr(analysis_daemon, "_mark_done", lambda track_id, state: calls["done"].append((track_id, state)))
         monkeypatch.setattr(analysis_daemon, "_mark_failed", lambda track_id, state: calls["failed"].append((track_id, state)))
-        monkeypatch.setitem(sys.modules, "crate.audio_analysis", SimpleNamespace(analyze_track=lambda path: {"key": "D"}))
+        monkeypatch.setattr(analysis_daemon, "_release_claims", lambda track_ids, state: calls["released"].append((track_ids, state)))
+        monkeypatch.setattr(
+            analysis_daemon,
+            "_store_analysis_results",
+            lambda results: calls["stored"].extend(results),
+        )
         monkeypatch.setitem(
             sys.modules,
-            "crate.db.library",
-            SimpleNamespace(update_track_analysis=lambda path, **kwargs: calls["updated"].append((path, kwargs))),
+            "crate.audio_analysis",
+            SimpleNamespace(
+                analyze_batch=lambda paths: [{"key": "D"}],
+                analyze_track=lambda path: {"key": "D"},
+            ),
         )
         monkeypatch.setattr(analysis_daemon.time, "sleep", lambda _seconds: (_ for _ in ()).throw(_LoopExit()))
 
         with pytest.raises(_LoopExit):
             analysis_daemon.analysis_daemon({})
 
-        assert calls["updated"] == []
+        assert calls["stored"] == []
         assert calls["done"] == []
         assert calls["failed"] == [(8, "analysis_state")]
+        assert calls["released"] == []
 
     def test_bliss_daemon_stores_valid_vector(self, monkeypatch):
         import crate.analysis_daemon as analysis_daemon
 
-        calls: dict[str, list] = {"stored": [], "failed": []}
+        calls: dict[str, list] = {"stored": [], "failed": [], "released": []}
         track = {"id": 9, "path": "/music/bliss.flac", "title": "Bliss Track"}
         vector = [0.1] * 20
 
         monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
         monkeypatch.setattr(analysis_daemon, "_get_pending_count", lambda state: 1)
-        monkeypatch.setattr(analysis_daemon, "_claim_track", lambda state: track)
+        monkeypatch.setattr(analysis_daemon, "_claim_tracks", lambda state, limit: [track])
         monkeypatch.setattr(analysis_daemon, "_mark_failed", lambda track_id, state: calls["failed"].append((track_id, state)))
-        monkeypatch.setattr(analysis_daemon, "_db_store_bliss_vector", lambda track_id, data: calls["stored"].append((track_id, data)))
+        monkeypatch.setattr(analysis_daemon, "_release_claims", lambda track_ids, state: calls["released"].append((track_ids, state)))
+        monkeypatch.setattr(
+            analysis_daemon,
+            "_store_bliss_vectors",
+            lambda batch: calls["stored"].append(batch),
+        )
         monkeypatch.setitem(
             sys.modules,
             "crate.bliss",
@@ -118,8 +135,9 @@ class TestAnalysisDaemonUnit:
         with pytest.raises(_LoopExit):
             analysis_daemon.bliss_daemon({})
 
-        assert calls["stored"] == [(9, vector)]
+        assert calls["stored"] == [{9: vector}]
         assert calls["failed"] == []
+        assert calls["released"] == []
 
 
 @pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
@@ -163,6 +181,29 @@ class TestAnalysisJobsIntegration:
                 {"path": path},
             ).mappings().first()
         return dict(row)
+
+    def test_upsert_track_creates_processing_rows(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        track = self._seed_track(pg_db, "processing-rows")
+
+        with transaction_scope() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT pipeline, state
+                    FROM track_processing_state
+                    WHERE track_id = :id
+                    ORDER BY pipeline
+                    """
+                ),
+                {"id": track["id"]},
+            ).mappings().all()
+
+        assert {(row["pipeline"], row["state"]) for row in rows} == {
+            ("analysis", "pending"),
+            ("bliss", "pending"),
+        }
 
     def test_claim_track_updates_state_and_status(self, pg_db):
         from crate.db.jobs import analysis as analysis_jobs
@@ -319,3 +360,88 @@ class TestAnalysisJobsIntegration:
         assert last_bliss["updated_at"] is not None
         assert last_analyzed["title"] == "Track analysis-last"
         assert last_analyzed["updated_at"] is not None
+
+    def test_backfill_pipeline_read_models_populates_shadow_tables(self, pg_db):
+        from crate.db.jobs import analysis as analysis_jobs
+        from crate.db.tx import transaction_scope
+
+        track = self._seed_track(pg_db, "shadow-backfill")
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET analysis_state = 'done',
+                        bpm = 124.0,
+                        audio_key = 'A',
+                        audio_scale = 'minor',
+                        energy = 0.71,
+                        bliss_state = 'done',
+                        bliss_vector = CAST(:vector AS double precision[]),
+                        bliss_embedding = CAST(:vector_literal AS vector(20)),
+                        analysis_completed_at = NOW(),
+                        bliss_computed_at = NOW()
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "id": track["id"],
+                    "vector": [0.4] * 20,
+                    "vector_literal": "[" + ",".join(["0.4"] * 20) + "]",
+                },
+            )
+            session.execute(text("DELETE FROM track_processing_state WHERE track_id = :id"), {"id": track["id"]})
+            session.execute(text("DELETE FROM track_analysis_features WHERE track_id = :id"), {"id": track["id"]})
+            session.execute(text("DELETE FROM track_bliss_embeddings WHERE track_id = :id"), {"id": track["id"]})
+
+        result = analysis_jobs.backfill_pipeline_read_models(limit=100)
+
+        assert result["processing_analysis"] >= 1
+        assert result["processing_bliss"] >= 1
+        assert result["analysis_features"] >= 1
+        assert result["bliss_embeddings"] >= 1
+
+        with transaction_scope() as session:
+            processing = session.execute(
+                text(
+                    """
+                    SELECT pipeline, state
+                    FROM track_processing_state
+                    WHERE track_id = :id
+                    ORDER BY pipeline
+                    """
+                ),
+                {"id": track["id"]},
+            ).mappings().all()
+            analysis_features = session.execute(
+                text(
+                    """
+                    SELECT bpm, audio_key, audio_scale, energy
+                    FROM track_analysis_features
+                    WHERE track_id = :id
+                    """
+                ),
+                {"id": track["id"]},
+            ).mappings().first()
+            bliss_features = session.execute(
+                text(
+                    """
+                    SELECT bliss_vector, bliss_embedding IS NOT NULL AS has_embedding
+                    FROM track_bliss_embeddings
+                    WHERE track_id = :id
+                    """
+                ),
+                {"id": track["id"]},
+            ).mappings().first()
+
+        assert {(row["pipeline"], row["state"]) for row in processing} == {
+            ("analysis", "done"),
+            ("bliss", "done"),
+        }
+        assert analysis_features["bpm"] == 124.0
+        assert analysis_features["audio_key"] == "A"
+        assert analysis_features["audio_scale"] == "minor"
+        assert analysis_features["energy"] == 0.71
+        assert bliss_features["bliss_vector"] == [0.4] * 20
+        assert bliss_features["has_embedding"] is True

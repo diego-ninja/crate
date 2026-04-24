@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from crate.api.schemas.common import OkResponse
+from crate.api.schemas.common import OkResponse, SnapshotMetadataResponse
 from crate.api.schemas.playlists import PlaylistDetailResponse, PlaylistSummaryResponse, PlaylistTrackResponse
 
 
@@ -45,6 +45,24 @@ class SystemPlaylistSummaryResponse(PlaylistSummaryResponse):
 
 class SystemPlaylistDetailResponse(SystemPlaylistSummaryResponse):
     tracks: list[PlaylistTrackResponse] = Field(default_factory=list)
+
+
+class PlaylistGenerationLogResponse(BaseModel):
+    id: int
+    started_at: str
+    completed_at: str | None = None
+    status: str
+    track_count: int | None = None
+    duration_sec: int | None = None
+    error: str | None = None
+    triggered_by: str
+    rule_snapshot: dict[str, Any] | None = None
+
+
+class SystemPlaylistEditorSnapshotResponse(BaseModel):
+    playlist: SystemPlaylistDetailResponse
+    history: list[PlaylistGenerationLogResponse] = Field(default_factory=list)
+    snapshot: SnapshotMetadataResponse | None = None
 
 
 class SystemPlaylistGenerateResponse(SystemPlaylistDetailResponse):

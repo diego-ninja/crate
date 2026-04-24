@@ -8,10 +8,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from crate.audio import get_audio_files, read_tags
-from crate.db import create_task, create_task_dedup, emit_task_event, get_setting, get_task
-from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
+from crate.db.cache_settings import get_setting
+from crate.db.cache_store import delete_cache, set_cache
+from crate.db.events import emit_task_event
 from crate.db.jobs.acquisition import update_artist_latest_release_date
-from crate.db.user_library import follow_artist, like_track, save_album
+from crate.db.repositories.library import (
+    delete_quarantined_album,
+    get_library_album,
+    get_library_artist,
+    get_library_artists,
+    get_library_tracks,
+    quarantine_album,
+    unquarantine_album,
+)
+from crate.db.releases import mark_release_downloaded, mark_release_downloading, upsert_new_release
+from crate.db.queries.tasks import get_task
+from crate.db.repositories.tasks import create_task, create_task_dedup
+from crate.db.tidal import get_tidal_download, update_tidal_download
+from crate.db.repositories.user_library import follow_artist, like_track, save_album
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.storage_import import resolve_import_album_target
 from crate.storage_layout import resolve_artist_dir
 from crate.worker_handlers import TaskHandler, is_cancelled, start_scan
@@ -38,8 +53,6 @@ def _safe_artist_folder_name(name: str) -> str:
 
 
 def _resolve_library_artist_folder_name(lib: Path, preferred_artist: str = "", staged_artist: str = "") -> str:
-    from crate.db import get_library_artist
-
     candidates = [
         preferred_artist,
         staged_artist,
@@ -88,8 +101,6 @@ def _resolve_library_artist_folder_name(lib: Path, preferred_artist: str = "", s
 
 
 def _resolve_tidal_preferred_artist_name(url: str, params: dict, download_id: int | None) -> str:
-    from crate.db.tidal import get_tidal_download
-
     if params.get("artist"):
         return params["artist"]
 
@@ -179,8 +190,6 @@ def _group_loose_audio_files(raw_dir: Path, grouped_dir: Path, extensions: set[s
 
 
 def _seed_uploaded_library(user_id: int | None, imported_albums: list[dict]):
-    from crate.db import get_library_album, get_library_tracks
-
     if not user_id:
         return
 
@@ -215,7 +224,6 @@ def _seed_uploaded_library(user_id: int | None, imported_albums: list[dict]):
 
 
 def _tidal_download_inner(task_id, params, config, url, quality, download_id, lib):
-    from crate.db import delete_cache, mark_release_downloaded, set_cache, update_tidal_download
     from crate.library_sync import LibrarySync
     from crate.tidal import download, move_to_library
 
@@ -228,7 +236,6 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # Quarantine old album if this is a quality upgrade
     upgrade_album_id = params.get("upgrade_album_id")
     if upgrade_album_id:
-        from crate.db import quarantine_album
         if quarantine_album(int(upgrade_album_id), task_id):
             emit_task_event(task_id, "info", {"message": f"Quarantined existing album #{upgrade_album_id} for upgrade"})
 
@@ -363,19 +370,16 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # All post-move work runs under the processing flag so the watcher's
     # debounce loop treats any filesystem activity as ours and stays out.
     try:
-        from crate.db import get_library_artist as _get_artist
-
         # Download Tidal cover for specific album if provided
         cover_url = params.get("cover_url", "")
         current_album = params.get("album", "")
         if cover_url and current_album and modified_artists:
             for current_artist in modified_artists:
-                artist_row = _get_artist(current_artist)
+                artist_row = get_library_artist(current_artist)
                 found_artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=current_artist, existing_only=True)
                 if not found_artist_dir:
                     continue
                 # Search all subdirs for the album (V2: subdirs are UUIDs)
-                from crate.db import get_library_album
                 album_row = get_library_album(current_artist, current_album)
                 if album_row and album_row.get("path"):
                     album_dir = Path(album_row["path"])
@@ -405,7 +409,7 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         emit_progress(task_id, p, force=True)
         sync = LibrarySync(config)
         for current_artist in modified_artists:
-            artist_row = _get_artist(current_artist)
+            artist_row = get_library_artist(current_artist)
             found_artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=current_artist, existing_only=True)
             if found_artist_dir and found_artist_dir.is_dir():
                 try:
@@ -457,7 +461,6 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # (files not deleted — new download may share the same directory)
     if upgrade_album_id:
         try:
-            from crate.db import delete_quarantined_album
             deleted = delete_quarantined_album(int(upgrade_album_id))
             if deleted:
                 emit_task_event(task_id, "info", {"message": f"Replaced old album records (id={upgrade_album_id})"})
@@ -474,8 +477,6 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
 
 
 def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import update_tidal_download
-
     url = params.get("url", "")
     quality = params.get("quality", "max")
     download_id = params.get("download_id")
@@ -501,7 +502,6 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
         upgrade_album_id = params.get("upgrade_album_id")
         if upgrade_album_id:
             try:
-                from crate.db import unquarantine_album
                 unquarantine_album(int(upgrade_album_id))
                 log.info("Restored quarantined album %s after download failure", upgrade_album_id)
             except Exception:
@@ -550,8 +550,6 @@ def _register_new_release(
     known_date: str,
     auto_download: bool,
 ) -> tuple[int, bool]:
-    from crate.db import mark_release_downloading, upsert_new_release
-
     release_date = release.get("first_release_date", "")
     if not release_date:
         return 0, False
@@ -612,7 +610,6 @@ def _register_new_release(
 
 
 def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import get_library_artists
     from crate.musicbrainz_ext import get_artist_releases as mb_get_releases
 
     auto_download = get_setting("auto_download_new_releases", "false").lower() == "true"
@@ -934,7 +931,6 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     # Quarantine old album if this is a quality upgrade
     upgrade_album_id = params.get("upgrade_album_id")
     if upgrade_album_id:
-        from crate.db import quarantine_album
         if quarantine_album(int(upgrade_album_id), task_id):
             emit_task_event(task_id, "info", {"message": f"Quarantined existing album #{upgrade_album_id} for upgrade"})
 
@@ -1008,7 +1004,6 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         # Incomplete download — restore quarantined album
         if upgrade_album_id:
             try:
-                from crate.db import unquarantine_album
                 unquarantine_album(int(upgrade_album_id))
             except Exception:
                 log.warning("Failed to unquarantine album %s", upgrade_album_id, exc_info=True)
@@ -1053,7 +1048,6 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     # Clean up quarantined album after successful upgrade
     if upgrade_album_id and moved > 0:
         try:
-            from crate.db import delete_quarantined_album
             deleted = delete_quarantined_album(int(upgrade_album_id))
             if deleted:
                 emit_task_event(task_id, "info", {"message": f"Replaced old album records (id={upgrade_album_id})"})
@@ -1062,7 +1056,6 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     elif upgrade_album_id and moved == 0:
         # Download produced no files — restore the old album
         try:
-            from crate.db import unquarantine_album
             unquarantine_album(int(upgrade_album_id))
         except Exception:
             log.warning("Failed to unquarantine album %s", upgrade_album_id, exc_info=True)
@@ -1211,8 +1204,7 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
     p_upload.total = len(modified_artists)
     emit_progress(task_id, p_upload, force=True)
     for artist in modified_artists:
-        from crate.db import get_library_artist as _get_artist_fn
-        artist_row = _get_artist_fn(artist)
+        artist_row = get_library_artist(artist)
         found_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist, existing_only=True)
         if found_dir and found_dir.is_dir():
             try:
@@ -1349,11 +1341,130 @@ def _handle_remux_m4a_dash(task_id: str, params: dict, config: dict) -> dict:
     }
 
 
+def _handle_import_queue_item(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.import_queue_read_models import mark_import_queue_item_imported
+    from crate.importer import ImportQueue
+
+    source_path = str(params.get("source_path") or "").strip()
+    if not source_path:
+        return {"error": "source_path is required"}
+
+    queue = ImportQueue(config)
+    artist = params.get("artist")
+    album = params.get("album")
+    emit_task_event(task_id, "info", {"message": f"Importing staged album from {source_path}"})
+    result = queue.import_item(source_path, artist, album)
+    if result.get("error"):
+        emit_task_event(task_id, "error", {"message": result["error"], "source_path": source_path})
+        return result
+
+    mark_import_queue_item_imported(source_path, result=result)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": f"Imported staged album to {result.get('dest')}",
+            "source_path": source_path,
+            "dest": result.get("dest"),
+            "status": result.get("status"),
+        },
+    )
+    start_scan()
+    return result
+
+
+def _handle_import_queue_all(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.import_queue_read_models import list_import_queue_items, mark_import_queue_item_imported
+    from crate.importer import ImportQueue
+
+    items = list_import_queue_items(status="pending", limit=5000)
+    if not items:
+        emit_task_event(task_id, "info", {"message": "No pending staged imports"})
+        return {"status": "noop", "imported": 0, "failed": 0, "results": []}
+
+    queue = ImportQueue(config)
+    progress = TaskProgress(phase="importing", phase_count=1, total=len(items), done=0)
+    emit_progress(task_id, progress, force=True)
+    results: list[dict] = []
+    imported = 0
+    failed = 0
+
+    for index, item in enumerate(items, start=1):
+        if is_cancelled(task_id):
+            emit_task_event(task_id, "warning", {"message": "Import-all cancelled"})
+            break
+
+        result = queue.import_item(item["source_path"], item.get("artist"), item.get("album"))
+        result["source"] = item.get("source")
+        result["source_path"] = item["source_path"]
+        results.append(result)
+        if result.get("error"):
+            failed += 1
+            emit_task_event(
+                task_id,
+                "error",
+                {
+                    "message": result["error"],
+                    "source_path": item["source_path"],
+                },
+            )
+        else:
+            imported += 1
+            mark_import_queue_item_imported(
+                item["source_path"],
+                result=result,
+                source=item.get("source"),
+            )
+            emit_item_event(
+                task_id,
+                level="info",
+                message=f"Imported {item.get('artist') or 'Unknown Artist'} — {item.get('album') or 'Unknown Album'}",
+                artist=item.get("artist"),
+                album=item.get("album"),
+            )
+
+        progress.done = index
+        progress.item = entity_label(artist=item.get("artist"), album=item.get("album"))
+        emit_progress(task_id, progress)
+
+    if imported > 0:
+        start_scan()
+
+    return {
+        "status": "completed",
+        "imported": imported,
+        "failed": failed,
+        "results": results,
+    }
+
+
+def _handle_import_queue_remove(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.import_queue_read_models import remove_import_queue_item
+    from crate.importer import ImportQueue
+
+    source_path = str(params.get("source_path") or "").strip()
+    if not source_path:
+        return {"error": "source_path is required"}
+
+    queue = ImportQueue(config)
+    emit_task_event(task_id, "info", {"message": f"Removing staged source {source_path}"})
+    ok = queue.remove_source(source_path)
+    if ok:
+        remove_import_queue_item(source_path)
+        emit_task_event(task_id, "info", {"message": "Staged source removed", "source_path": source_path})
+    else:
+        emit_task_event(task_id, "warning", {"message": "Staged source not found", "source_path": source_path})
+    return {"removed": ok, "source_path": source_path}
+
+
 ACQUISITION_TASK_HANDLERS: dict[str, TaskHandler] = {
     "tidal_download": _handle_tidal_download,
     "check_new_releases": _handle_check_new_releases,
     "soulseek_download": _handle_soulseek_download,
     "cleanup_incomplete_downloads": _handle_cleanup_incomplete_downloads,
     "library_upload": _handle_library_upload,
+    "import_queue_item": _handle_import_queue_item,
+    "import_queue_all": _handle_import_queue_all,
+    "import_queue_remove": _handle_import_queue_remove,
     "remux_m4a_dash": _handle_remux_m4a_dash,
 }

@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
+from crate.api.schemas.common import SnapshotMetadataResponse
+
 
 class ImportItemRequest(BaseModel):
     source_path: str
@@ -109,6 +111,11 @@ class StackStatusResponse(BaseModel):
     total: int = 0
     running: int = 0
     containers: list[StackContainerResponse] = Field(default_factory=list)
+
+
+class AdminStackSnapshotResponse(BaseModel):
+    snapshot: SnapshotMetadataResponse
+    stack: StackStatusResponse
 
 
 class StackContainerDetailResponse(StackContainerResponse):

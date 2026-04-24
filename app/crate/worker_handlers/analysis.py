@@ -3,8 +3,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from crate.db import create_task, emit_task_event, get_task, set_cache
-from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
+from crate.db.cache_store import set_cache
 from crate.db.genres import cleanup_invalid_genre_taxonomy_nodes
 from crate.db.jobs.analysis import (
     get_albums_needing_popularity,
@@ -13,6 +12,18 @@ from crate.db.jobs.analysis import (
     requeue_tracks,
     update_album_popularity as _db_update_album_popularity,
 )
+from crate.db.events import emit_task_event
+from crate.db.repositories.library import (
+    get_library_album,
+    get_library_albums,
+    get_library_artist,
+    get_library_artists,
+    get_library_tracks,
+    update_track_analysis,
+)
+from crate.db.queries.tasks import get_task
+from crate.db.repositories.tasks import create_task
+from crate.task_progress import TaskProgress, emit_item_event, emit_progress, entity_label
 from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
@@ -80,7 +91,7 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_refresh_user_listening_stats(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db.user_library import recompute_user_listening_aggregates
+    from crate.db.repositories.user_library import recompute_user_listening_aggregates
 
     user_id = int(params.get("user_id") or 0)
     if user_id <= 0:
@@ -95,8 +106,6 @@ def _handle_refresh_user_listening_stats(task_id: str, params: dict, config: dic
 
 def _handle_analyze_album_full(task_id: str, params: dict, config: dict) -> dict:
     """Analyze audio + compute bliss vectors for a single album."""
-    from crate.db import get_library_album
-
     artist = params.get("artist", "")
     album_name = params.get("album", "")
 
@@ -123,7 +132,6 @@ def _handle_analyze_album_full(task_id: str, params: dict, config: dict) -> dict
                     bliss_count = len(vectors)
     else:
         lib = Path(config["library_path"])
-        from crate.db import get_library_artist
 
         artist_data = get_library_artist(artist)
         folder = (artist_data.get("folder_name") if artist_data else None) or artist
@@ -147,7 +155,6 @@ def _handle_analyze_album_full(task_id: str, params: dict, config: dict) -> dict
 def _handle_analyze_tracks(task_id: str, params: dict, config: dict) -> dict:
     """Analyze audio tracks for BPM, key, energy, mood with batched inference."""
     from crate.audio_analysis import PANNS_BATCH_SIZE, analyze_batch, analyze_track
-    from crate.db import get_library_album, get_library_albums, get_library_artists, get_library_tracks, update_track_analysis
 
     artist = params.get("artist")
     album_name = params.get("album")
@@ -290,8 +297,6 @@ def _chunk_coordinator(
 
     This avoids deadlocks regardless of how many Dramatiq workers are available.
     """
-    from crate.db import get_library_artists
-
     all_artists, total = get_library_artists(per_page=10000)
 
     if filter_fn:
@@ -328,7 +333,7 @@ def _try_complete_parent(parent_task_id: str, child_task_type: str = "") -> None
     Atomically checks if all siblings are done. The last one wins the
     race (via DB-level claim) and runs any post-processing finalization.
     """
-    from crate.db.tasks import check_siblings_complete, update_task
+    from crate.db.repositories.tasks import check_siblings_complete, update_task
 
     status = check_siblings_complete(parent_task_id)
     if not status["all_done"]:
@@ -388,7 +393,6 @@ def _handle_compute_bliss(task_id: str, params: dict, config: dict) -> dict:
 def _handle_bliss_chunk(task_id: str, params: dict, config: dict) -> dict:
     """Process a chunk of artists for bliss vectors."""
     from crate.bliss import analyze_directory, store_vectors
-    from crate.db import get_library_artist
 
     lib = Path(config["library_path"])
     artists = params.get("artists", [])
@@ -691,10 +695,13 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
     what = params.get("what", "both")  # 'analysis', 'bliss', or 'both'
 
     cols = []
+    pipelines = []
     if what in ("analysis", "both"):
         cols.append("analysis_state = 'pending'")
+        pipelines.append("analysis")
     if what in ("bliss", "both"):
         cols.append("bliss_state = 'pending'")
+        pipelines.append("bliss")
     if not cols:
         return {"requeued": 0}
 
@@ -707,6 +714,7 @@ def _handle_requeue_analysis(task_id: str, params: dict, config: dict) -> dict:
         artist=artist,
         album_name=album_name,
         scope=scope,
+        pipelines=pipelines,
     )
 
     if count == 0 and not track_id and not album_id and not artist and scope != "all":

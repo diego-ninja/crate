@@ -10,3 +10,7 @@ export const api = createApiClient({
     }
   },
 });
+
+export function apiSseUrl(path: string): string {
+  return path;
+}

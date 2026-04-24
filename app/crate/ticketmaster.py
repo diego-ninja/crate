@@ -9,7 +9,8 @@ import logging
 import requests
 from datetime import datetime, timezone
 
-from crate.db import get_setting, get_cache, set_cache
+from crate.db.cache_settings import get_setting
+from crate.db.cache_store import get_cache, set_cache
 
 log = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 from crate.audio import read_tags
-from crate.db import get_library_album, get_library_artist, upsert_artist
+from crate.db.repositories.library import get_library_album, get_library_artist, upsert_artist
 from crate.storage_layout import album_dir as managed_album_dir
 from crate.storage_layout import artist_dir as managed_artist_dir
 from crate.storage_layout import looks_like_storage_id

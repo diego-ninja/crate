@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@crate/ui/shadcn/select";
-import { api } from "@/lib/api";
+import { api, apiSseUrl } from "@/lib/api";
 import { useApi } from "@/hooks/use-api";
 import { toast } from "sonner";
 import {
@@ -83,6 +83,24 @@ interface QueueItem {
   quality: string;
   cover_url: string | null;
   created_at: string;
+}
+
+interface SoulseekQueueItem {
+  source: string;
+  artist: string;
+  album: string;
+  filename: string;
+  fullPath?: string;
+  status: string;
+  progress: number;
+  username: string;
+  speed: number;
+}
+
+interface AcquisitionSurface {
+  tidal_authenticated: boolean;
+  tidal_queue: QueueItem[];
+  soulseek_queue: SoulseekQueueItem[];
 }
 
 // Cover lookup cache — fetches from Last.fm public API (no auth needed)
@@ -189,33 +207,48 @@ export function DownloadPage() {
   const [soulseekResults, setSoulseekResults] = useState<SoulseekResult[] | null>(session.soulseek);
   const [searchingSlsk, setSearchingSlsk] = useState(false);
   const [, setSlskSearchId] = useState<string | null>(null);
-  const slskPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const slskStreamRef = useRef<EventSource | null>(null);
   const [resultTab, setResultTab] = useState<"tidal" | "soulseek">(session.tab);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadTaskId, setUploadTaskId] = useState<string | null>(null);
   const [browsingArtist, setBrowsingArtist] = useState<{ id: string; name: string; picture: string | null } | null>(null);
-  const { data: tidalQueue, refetch: refetchTidalQueue } = useApi<QueueItem[]>("/api/tidal/queue");
-  const { data: slskQueue, refetch: refetchSlskQueue } = useApi<{ source: string; artist: string; album: string; filename: string; fullPath?: string; status: string; progress: number; username: string; speed: number }[]>("/api/acquisition/queue");
-  const { data: tidalStatus } = useApi<{ authenticated: boolean }>("/api/tidal/status");
+  const { data: acquisitionSurface, refetch: refetchAcquisitionSurface } = useApi<AcquisitionSurface>("/api/acquisition/snapshot");
+  const [liveAcquisitionSurface, setLiveAcquisitionSurface] = useState<AcquisitionSurface | null>(null);
+
+  const currentAcquisitionSurface = liveAcquisitionSurface ?? acquisitionSurface ?? null;
+  const tidalQueue = currentAcquisitionSurface?.tidal_queue ?? [];
+  const slskQueue = currentAcquisitionSurface?.soulseek_queue ?? [];
+  const tidalAuthenticated = currentAcquisitionSurface?.tidal_authenticated ?? false;
 
   // Merged queue
   const queue = tidalQueue;
-  const slskDownloads = slskQueue?.filter((d) => d.source === "soulseek") ?? [];
-  function refetchQueue() { refetchTidalQueue(); refetchSlskQueue(); }
+  const slskDownloads = slskQueue.filter((d) => d.source === "soulseek");
+  function refetchQueue() { refetchAcquisitionSurface(); }
 
   // Persist search state across navigation
   useEffect(() => {
     saveSession({ query, results, soulseek: soulseekResults, tab: resultTab });
   }, [query, results, soulseekResults, resultTab]);
 
-  // Auto-refresh queue
   useEffect(() => {
-    const hasActive = queue?.some((q) => ["downloading", "queued", "processing"].includes(q.status));
-    if (!hasActive) return;
-    const timer = setInterval(refetchQueue, 5000);
-    return () => clearInterval(timer);
-  }, [queue, refetchQueue]);
+    setLiveAcquisitionSurface(acquisitionSurface);
+  }, [acquisitionSurface]);
+
+  useEffect(() => {
+    const stream = new EventSource(apiSseUrl("/api/acquisition/stream"));
+    stream.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as AcquisitionSurface;
+        setLiveAcquisitionSurface(payload);
+      } catch {
+        // Ignore malformed acquisition frames and keep the stream alive.
+      }
+    };
+    return () => {
+      stream.close();
+    };
+  }, []);
 
   const doSearch = useCallback(async (q?: string) => {
     const term = (q ?? query).trim();
@@ -231,8 +264,8 @@ export function DownloadPage() {
     }
     // Also search Soulseek (non-blocking: start search, then poll)
     if (term.length >= 3) {
-      // Clear previous poll
-      if (slskPollRef.current) clearInterval(slskPollRef.current);
+      slskStreamRef.current?.close();
+      slskStreamRef.current = null;
       setSoulseekResults(null);
       setSearchingSlsk(true);
       setSlskSearchId(null);
@@ -241,25 +274,33 @@ export function DownloadPage() {
         .then((d) => {
           if (d.search_id) {
             setSlskSearchId(d.search_id);
-            // Poll every 3s for progressive results
-            const poll = setInterval(async () => {
+            const stream = new EventSource(apiSseUrl(`/api/acquisition/search/soulseek/${d.search_id}/stream`));
+            slskStreamRef.current = stream;
+            stream.onmessage = (event) => {
               try {
-                const r = await api<{ results: SoulseekResult[]; isComplete: boolean; responseCount: number }>(
-                  `/api/acquisition/search/soulseek/${d.search_id}`
-                );
-                setSoulseekResults(r.results);
-                if (r.isComplete) {
-                  clearInterval(poll);
+                const payload = JSON.parse(event.data) as {
+                  results: SoulseekResult[];
+                  isComplete: boolean;
+                };
+                setSoulseekResults(payload.results);
+                if (payload.isComplete) {
                   setSearchingSlsk(false);
+                  stream.close();
+                  if (slskStreamRef.current === stream) {
+                    slskStreamRef.current = null;
+                  }
                 }
               } catch {
-                clearInterval(poll);
-                setSearchingSlsk(false);
+                // Ignore malformed search frames and keep the stream alive.
               }
-            }, 3000);
-            slskPollRef.current = poll;
-            // Auto-stop after 30s
-            setTimeout(() => { clearInterval(poll); setSearchingSlsk(false); }, 30000);
+            };
+            stream.onerror = () => {
+              setSearchingSlsk(false);
+              stream.close();
+              if (slskStreamRef.current === stream) {
+                slskStreamRef.current = null;
+              }
+            };
           }
         })
         .catch(() => { setSoulseekResults([]); setSearchingSlsk(false); });
@@ -270,7 +311,10 @@ export function DownloadPage() {
   // Auto-search on mount if URL has ?q=
   useEffect(() => {
     if (initialQ) doSearch(initialQ);
-    return () => { if (slskPollRef.current) clearInterval(slskPollRef.current); };
+    return () => {
+      slskStreamRef.current?.close();
+      slskStreamRef.current = null;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function startDownload(url: string, title: string, source = "search", upgradeAlbumId?: number) {
@@ -365,8 +409,8 @@ export function DownloadPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <CrateChip className={tidalStatus?.authenticated ? "border-green-500/25 bg-green-500/10 text-green-300" : "border-red-500/25 bg-red-500/10 text-red-300"}>
-                Tidal {tidalStatus?.authenticated ? "connected" : "disconnected"}
+              <CrateChip className={tidalAuthenticated ? "border-green-500/25 bg-green-500/10 text-green-300" : "border-red-500/25 bg-red-500/10 text-red-300"}>
+                Tidal {tidalAuthenticated ? "connected" : "disconnected"}
               </CrateChip>
               <CrateChip className={activeQueue.length > 0 ? "border-blue-500/25 bg-blue-500/10 text-blue-300" : ""}>
                 {activeQueue.length} active
@@ -614,12 +658,12 @@ export function DownloadPage() {
               <div className="flex gap-2 mb-3">
                 <Button size="sm" variant="outline" onClick={async () => {
                   await api("/api/acquisition/queue/clear-completed", "POST");
-                  refetchSlskQueue();
+                  refetchQueue();
                   toast.success("Cleared completed downloads");
                 }}>Clear Completed</Button>
                 <Button size="sm" variant="outline" onClick={async () => {
                   await api("/api/acquisition/queue/clear-errored", "POST");
-                  refetchSlskQueue();
+                  refetchQueue();
                   toast.success("Cleared errored downloads");
                 }}>Clear Errored</Button>
                 <Button size="sm" variant="destructive" onClick={async () => {

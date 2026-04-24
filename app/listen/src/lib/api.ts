@@ -50,6 +50,34 @@ export function apiUrl(path: string): string {
   return `${getApiBase()}${path}`;
 }
 
+/** Resolve an SSE path to a full URL, adding auth token for native clients. */
+export function apiSseUrl(path: string): string {
+  const token = getAuthToken();
+  if (!token) return apiUrl(path);
+  const separator = path.includes("?") ? "&" : "?";
+  return `${getApiBase()}${path}${separator}token=${encodeURIComponent(token)}`;
+}
+
+/** Resolve an API media path to a full URL, adding auth token for <img>/<video> requests. */
+export function apiAssetUrl(path: string): string {
+  const baseUrl = apiUrl(path);
+  const token = getAuthToken();
+  if (!token) return baseUrl;
+  const separator = baseUrl.includes("?") ? "&" : "?";
+  return `${baseUrl}${separator}token=${encodeURIComponent(token)}`;
+}
+
+export function resolveMaybeApiAssetUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith("/api/")) return apiAssetUrl(url);
+  const base = getApiBase();
+  if (base && url.startsWith(`${base}/api/`)) {
+    const relative = url.slice(base.length);
+    return apiAssetUrl(relative);
+  }
+  return url;
+}
+
 /** Resolve an API path to a full WebSocket URL. */
 export function apiWsUrl(path: string): string {
   const base = getApiBase();
@@ -89,6 +117,12 @@ export function getApiAuthHeaders(): Record<string, string> {
     headers["X-Device-Label"] = `${platform === "ios" ? "iPhone" : platform === "android" ? "Android" : "Native"} (Listen)`;
   }
   return headers;
+}
+
+if (typeof window !== "undefined") {
+  (window as Window & typeof globalThis & {
+    __crateResolveApiAssetUrl?: (path: string) => string;
+  }).__crateResolveApiAssetUrl = apiAssetUrl;
 }
 
 // The shared api client is created ONCE, but we want the base URL to be

@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from crate.api.schemas.common import OkResponse
+from crate.api.schemas.common import OkResponse, SnapshotMetadataResponse
 
 
 class DeleteRequest(BaseModel):
@@ -63,6 +63,14 @@ class HealthIssuesResponse(BaseModel):
     issues: list[HealthIssueResponse] = Field(default_factory=list)
     counts: dict[str, int] = Field(default_factory=dict)
     total: int
+
+
+class AdminHealthSnapshotResponse(BaseModel):
+    snapshot: SnapshotMetadataResponse
+    issues: list[HealthIssueResponse] = Field(default_factory=list)
+    counts: dict[str, int] = Field(default_factory=dict)
+    total: int = 0
+    filter: str | None = None
 
 
 class CheckTypeMutationResponse(OkResponse):

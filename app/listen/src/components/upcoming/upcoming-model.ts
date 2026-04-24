@@ -1,3 +1,5 @@
+import { resolveMaybeApiAssetUrl } from "@/lib/api";
+
 export interface UpcomingItem {
   id?: number;
   type: "release" | "show";
@@ -65,7 +67,7 @@ export function artistShowToUpcomingItem(show: ArtistShowEvent): UpcomingItem {
     artist_slug: show.artist_slug,
     title: show.venue || "",
     subtitle: [show.city, show.country].filter(Boolean).join(", "),
-    cover_url: show.image_url || null,
+    cover_url: resolveMaybeApiAssetUrl(show.image_url) || null,
     status: "onsale",
     url: show.url,
     venue: show.venue,

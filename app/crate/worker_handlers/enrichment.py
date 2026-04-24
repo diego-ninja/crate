@@ -3,8 +3,11 @@ import shutil
 import time
 from pathlib import Path
 
-from crate.db import delete_cache, emit_task_event, get_library_artist, get_setting, get_task, set_cache
-from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
+from crate.db.audit import log_audit
+from crate.db.cache_settings import get_setting
+from crate.db.cache_store import delete_cache, get_cache, set_cache
+from crate.db.events import emit_task_event
+from crate.db.genres import set_album_genres
 from crate.db.jobs.enrichment import (
     get_albums_without_mbid,
     get_album_names_for_artist,
@@ -16,7 +19,10 @@ from crate.db.jobs.enrichment import (
     update_album_popularity,
     update_artist_content_hash,
 )
+from crate.db.repositories.library import get_library_albums, get_library_artist, get_library_artists, get_library_tracks
+from crate.db.queries.tasks import get_task
 from crate.storage_layout import looks_like_storage_id, resolve_artist_dir
+from crate.task_progress import TaskProgress, emit_item_event, emit_progress, entity_label
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
@@ -200,7 +206,6 @@ def _sync_album_after_auto_apply(album_name: str, artist_name: str, album_dir: P
 
 
 def _handle_enrich_artists(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import get_library_artists
     from crate.enrichment import enrich_artist
 
     all_artists, total = get_library_artists(per_page=10000)
@@ -247,8 +252,6 @@ def _handle_enrich_single(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import get_library_artist, log_audit
-
     name = params.get("artist", "")
     lib = Path(config["library_path"])
 
@@ -275,8 +278,6 @@ def _handle_reset_enrichment(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_enrich_mbids(task_id: str, params: dict, config: dict) -> dict:
     """Enrich albums and tracks with MusicBrainz IDs."""
-    from crate.db import get_library_albums, get_library_tracks
-
     lib = Path(config["library_path"])
     exts = DEFAULT_AUDIO_EXTENSIONS
     artist_filter = params.get("artist")
@@ -500,7 +501,6 @@ def _process_new_content_album_genres(
     album_folder: str,
     p: TaskProgress,
 ) -> list[dict]:
-    from crate.db import get_library_albums, get_library_tracks, set_album_genres
     from crate.db.queries.browse_artist import get_artist_genre_profile
     from crate.genre_indexer import derive_album_genres
 
@@ -539,8 +539,6 @@ def _process_new_content_album_mbids(
     config: dict,
     p: TaskProgress,
 ) -> None:
-    from crate.db import get_library_tracks
-
     p.phase = "album_mbid"
     p.phase_index += 1
     p.item = entity_label(artist=artist_name)
@@ -719,8 +717,6 @@ def _handle_process_new_content(task_id: str, params: dict, config: dict) -> dic
 def _process_new_content_inner(
     task_id: str, params: dict, config: dict, artist_name: str, album_folder: str
 ) -> dict:
-    from crate.db import get_library_artist
-
     lib = Path(config["library_path"])
     result = {"artist": artist_name, "album": album_folder, "steps": {}}
 
@@ -766,8 +762,7 @@ def _process_new_content_inner(
     # Worker runs in a separate process — POST to the API to broadcast.
     try:
         import requests as _req
-        from crate.db import get_library_artist as _get_artist
-        _artist_row = _get_artist(artist_name)
+        _artist_row = get_library_artist(artist_name)
         _scopes = ["library"]
         if _artist_row and _artist_row.get("id"):
             _scopes.append(f"artist:{_artist_row['id']}")
@@ -782,7 +777,6 @@ def _handle_compute_completeness(task_id: str, params: dict, config: dict) -> di
     """Compute library completeness vs MusicBrainz for all artists with MBIDs."""
     import re
     import musicbrainzngs
-    from crate.db import get_cache, set_cache
 
     musicbrainzngs.set_useragent("crate", "1.0", "https://github.com/crate")
     year_re = re.compile(r"^\d{4}\s*[-–]\s*")

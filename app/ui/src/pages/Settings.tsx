@@ -16,6 +16,7 @@ import {
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { cn, formatNumber } from "@/lib/utils";
+import { useOpsSnapshot } from "@/contexts/OpsSnapshotContext";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -81,14 +82,6 @@ interface SettingsData {
     tracks: number;
     total_size_gb: number;
   };
-}
-
-interface WorkerStatus {
-  engine: string;
-  running: number;
-  pending: number;
-  running_tasks: { id: string; type: string; pool: string }[];
-  pending_tasks: { id: string; type: string; pool: string }[];
 }
 
 interface DownloadPolicy {
@@ -426,7 +419,9 @@ export function Settings() {
 // ── General ────────────────────────────────────────────────────
 
 function GeneralSection({ settings }: { settings: SettingsData }) {
-  const { data: worker } = useApi<WorkerStatus>("/api/worker/status");
+  const { data: opsSnapshot } = useOpsSnapshot();
+  const worker = opsSnapshot?.live;
+  const pendingTasks = opsSnapshot?.stats.pending_tasks ?? 0;
   const about = settings.about;
 
   return (
@@ -465,17 +460,17 @@ function GeneralSection({ settings }: { settings: SettingsData }) {
             </FieldRow>
             <FieldRow label="Status">
               <div className="flex items-center gap-3">
-                {worker && worker.running > 0 ? (
+                {worker && worker.running_tasks.length > 0 ? (
                   <Badge className="border-primary/30 bg-primary/15 text-[10px] text-primary">
                     <Activity size={10} className="mr-1" />
-                    {worker.running} running
+                    {worker.running_tasks.length} running
                   </Badge>
                 ) : (
                   <Badge variant="secondary" className="text-[10px]">Idle</Badge>
                 )}
-                {worker && worker.pending > 0 && (
+                {pendingTasks > 0 && (
                   <Badge variant="secondary" className="text-[10px]">
-                    {worker.pending} pending
+                    {pendingTasks} pending
                   </Badge>
                 )}
               </div>

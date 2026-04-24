@@ -8,7 +8,7 @@ from pathlib import Path
 import mutagen
 
 from crate.audio import read_tags
-from crate.db import (
+from crate.db.repositories.library import (
     delete_album,
     delete_artist,
     get_library_albums,

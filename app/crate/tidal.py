@@ -11,7 +11,7 @@ from pathlib import Path
 
 import requests
 
-from crate.db import get_setting, set_setting
+from crate.db.cache_settings import get_setting, set_setting
 from crate.storage_import import infer_album_identity, move_album_tree, resolve_import_album_target
 
 log = logging.getLogger(__name__)

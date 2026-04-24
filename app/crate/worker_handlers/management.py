@@ -2,7 +2,31 @@ import logging
 import shutil
 from pathlib import Path
 
-from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
+from crate.task_progress import TaskProgress, emit_progress
+from crate.db.audit import log_audit, wipe_library_tables
+from crate.db.cache_runtime import _get_redis, delete_cache, set_cache
+from crate.db.events import emit_task_event
+from crate.db.health import get_open_issues, resolve_issue
+from crate.db.repositories.library import (
+    delete_album as db_delete_album,
+    delete_artist as db_delete_artist,
+    get_library_albums,
+    get_library_artist,
+    get_library_artists,
+    upsert_artist,
+)
+from crate.db.repositories.playlists import (
+    execute_smart_rules,
+    get_playlist,
+    get_smart_playlists_for_refresh,
+    log_generation_complete,
+    log_generation_failed,
+    log_generation_start,
+    replace_playlist_tracks,
+    set_generation_status,
+    update_playlist,
+)
+from crate.db.repositories.tasks import create_task
 
 
 def _escape_like(value: str) -> str:
@@ -10,14 +34,6 @@ def _escape_like(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"% - {escaped}"
 
-from crate.db import (
-    create_task,
-    delete_cache,
-    emit_task_event,
-    get_cache,
-    get_task,
-    set_cache,
-)
 from crate.db.jobs.management import (
     apply_mbid_to_album,
     find_album_path,
@@ -76,7 +92,6 @@ def _handle_health_check(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import get_open_issues
     from crate.repair import LibraryRepair
 
     dry_run = params.get("dry_run", True)
@@ -136,7 +151,6 @@ def _handle_repair(task_id: str, params: dict, config: dict) -> dict:
 
         # Mark resolved issues as fixed in the DB
         if not dry_run and resolved_ids:
-            from crate.db import resolve_issue
             for issue_id in resolved_ids:
                 try:
                     resolve_issue(issue_id)
@@ -198,7 +212,6 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
     from crate.health_check import LibraryHealthCheck
     from crate.repair import LibraryRepair
     from crate.scheduler import mark_run
-    from crate.db import get_library_artists
     from crate.library_sync import LibrarySync
 
     p_pipe = TaskProgress(phase="health_check", phase_count=3)
@@ -308,8 +321,6 @@ def _handle_library_pipeline(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_delete_artist(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import delete_artist as db_delete_artist, get_library_artist, log_audit
-
     name = params.get("name", "")
     mode = params.get("mode", "db_only")
     lib = Path(config["library_path"])
@@ -337,14 +348,6 @@ def _handle_delete_artist(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import (
-        delete_album as db_delete_album,
-        get_library_albums,
-        get_library_artist,
-        log_audit,
-        upsert_artist,
-    )
-
     artist_name = params.get("artist", "")
     album_name = params.get("album", "")
     mode = params.get("mode", "db_only")
@@ -389,8 +392,6 @@ def _handle_delete_album(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_move_artist(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import get_library_artist, log_audit
-
     name = params.get("name", "")
     new_name = params.get("new_name", "")
     lib = Path(config["library_path"])
@@ -431,8 +432,6 @@ def _handle_move_artist(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_wipe_library(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import log_audit, wipe_library_tables
-
     wipe_library_tables()
     emit_task_event(task_id, "info", {"message": "Library database wiped"})
     log_audit("wipe_library", "database", "library", task_id=task_id)
@@ -444,8 +443,6 @@ def _handle_wipe_library(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_rebuild_library(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import log_audit, wipe_library_tables
-
     p_rebuild = TaskProgress(phase="wipe", phase_count=2)
     emit_progress(task_id, p_rebuild, force=True)
     wipe_library_tables()
@@ -601,12 +598,6 @@ def _handle_match_apply(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_generate_system_playlist(task_id: str, params: dict, config: dict) -> dict:
     """Generate or regenerate a smart system playlist."""
-    from crate.db import emit_task_event
-    from crate.db.playlists import (
-        get_playlist, execute_smart_rules, replace_playlist_tracks,
-        set_generation_status, log_generation_start, log_generation_complete, log_generation_failed,
-    )
-
     playlist_id = int(params.get("playlist_id", 0))
     triggered_by = params.get("triggered_by", "manual")
 
@@ -663,10 +654,6 @@ def _handle_generate_system_playlist(task_id: str, params: dict, config: dict) -
 
 def _handle_refresh_system_smart_playlists(task_id: str, params: dict, config: dict) -> dict:
     """Scheduled daily refresh of eligible smart system playlists."""
-    from crate.db import emit_task_event
-    from crate.db.playlists import get_smart_playlists_for_refresh
-    from crate.db.tasks import create_task
-
     playlists = get_smart_playlists_for_refresh()
     emit_task_event(task_id, "info", {"message": f"Found {len(playlists)} playlists eligible for refresh"})
 
@@ -685,9 +672,6 @@ def _handle_refresh_system_smart_playlists(task_id: str, params: dict, config: d
 def _handle_persist_playlist_cover(task_id: str, params: dict, config: dict) -> dict:
     """Read cover base64 from Redis and write to disk."""
     import base64
-    from crate.db import emit_task_event
-    from crate.db.playlists import update_playlist
-    from crate.db.cache import _get_redis
 
     playlist_id = int(params.get("playlist_id", 0))
     redis_key = f"cover:staging:{playlist_id}"

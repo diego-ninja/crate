@@ -1,4 +1,4 @@
-import { getApiBase, getAuthToken } from "@/lib/api";
+import { apiSseUrl } from "@/lib/api";
 import { isNative } from "@/lib/capacitor";
 
 // ── Cache Store ────────────────────────────────────────────────
@@ -25,6 +25,7 @@ export function scopesForUrl(url: string): string[] {
   const scopes: string[] = [];
 
   // Home — per-section scopes
+  if (url === "/api/me/home/discovery") return ["home", "library", "follows", "history", "likes"];
   if (url === "/api/me/home/hero") return ["home", "library", "follows"];
   if (url === "/api/me/home/recently-played") return ["home", "history"];
   if (url === "/api/me/home/mixes") return ["home", "library"];
@@ -175,11 +176,7 @@ export function onCacheInvalidation(fn: (scope: string) => void): () => void {
 export function connectCacheEvents(): () => void {
   if (eventSource) return () => {};
 
-  const base = getApiBase();
-  const token = isNative ? getAuthToken() : null;
-  const url = token
-    ? `${base}/api/cache/events?token=${encodeURIComponent(token)}`
-    : `${base}/api/cache/events`;
+  const url = apiSseUrl("/api/cache/events");
 
   try {
     eventSource = new EventSource(url, { withCredentials: !isNative });

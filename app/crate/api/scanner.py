@@ -12,7 +12,10 @@ from crate.api.schemas.operations import (
     ScanRequest,
     ScanStartResponse,
 )
-from crate.db import create_task, get_task, list_tasks, get_latest_scan
+from crate.db.import_queue_read_models import count_import_queue_items
+from crate.db.ops_snapshot import get_public_status_snapshot
+from crate.db.queries.tasks import get_latest_scan, list_tasks
+from crate.db.repositories.tasks import create_task
 
 router = APIRouter(tags=["scanner"])
 
@@ -59,7 +62,10 @@ def start_scan(request: Request, body: ScanRequest | None = None):
 )
 def api_status(request: Request):
     # No auth — used by Docker healthcheck and sidebar polling
-    pass
+    snapshot = get_public_status_snapshot()
+    if snapshot:
+        return snapshot
+
     import json as _json
 
     running = list_tasks(status="running", task_type="scan", limit=1)
@@ -74,12 +80,15 @@ def api_status(request: Request):
     latest = get_latest_scan()
     last_scan = latest["scanned_at"] if latest else None
     issue_count = len(latest["issues"]) if latest else 0
+    pending_imports = count_import_queue_items(status="pending")
 
     return {
         "scanning": scanning,
         "last_scan": last_scan,
         "issue_count": issue_count,
         "progress": progress,
+        "pending_imports": pending_imports,
+        "running_tasks": 0,
     }
 
 

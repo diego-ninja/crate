@@ -1,12 +1,18 @@
+import asyncio
 import json as _json
+import os
+from typing import AsyncIterator
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from starlette.responses import StreamingResponse
 
+from crate.api._deps import json_dumps
 from crate.api.auth import _require_auth, _require_admin
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.api.schemas.tasks import (
+    AdminTasksSnapshotResponse,
     CancelAllTasksResponse,
     TaskCancelResponse,
     TaskCleanupRequest,
@@ -23,15 +29,11 @@ from crate.api.schemas.tasks import (
     WorkerSlotsResponse,
     WorkerStatusResponse,
 )
-from crate.db.cache import get_cache, get_setting, set_setting
-from crate.db.tasks import (
-    create_task,
-    delete_old_finished_tasks,
-    delete_tasks_by_status,
-    get_task,
-    list_tasks,
-    update_task,
-)
+from crate.db.admin_tasks_surface import TASKS_SURFACE_STREAM_CHANNEL, get_cached_tasks_surface
+from crate.db.cache_settings import get_setting, set_setting
+from crate.db.cache_store import get_cache
+from crate.db.queries.tasks import get_task, list_tasks
+from crate.db.repositories.tasks import create_task, delete_old_finished_tasks, delete_tasks_by_status, update_task
 from crate.docker_ctl import restart_container
 from crate.scheduler import get_schedules, set_schedules
 
@@ -52,42 +54,91 @@ _TASK_RESPONSES = merge_responses(
 )
 
 
+def _get_redis_url() -> str:
+    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+
+async def _tasks_stream(limit: int) -> AsyncIterator[str]:
+    yield f"data: {json_dumps(get_cached_tasks_surface(limit=limit))}\n\n"
+    try:
+        import redis.asyncio as aioredis
+
+        redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(TASKS_SURFACE_STREAM_CHANNEL)
+        heartbeat_counter = 0
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message.get("type") == "message":
+                yield f"data: {json_dumps(get_cached_tasks_surface(limit=limit, fresh=True))}\n\n"
+                heartbeat_counter = 0
+                continue
+            heartbeat_counter += 1
+            if heartbeat_counter >= 30:
+                heartbeat_counter = 0
+                yield ": heartbeat\n\n"
+    except Exception:
+        while True:
+            yield f"data: {json_dumps(get_cached_tasks_surface(limit=limit))}\n\n"
+            await asyncio.sleep(15)
+
+
+@router.get(
+    "/api/admin/tasks-snapshot",
+    response_model=AdminTasksSnapshotResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the canonical admin tasks snapshot",
+)
+def api_admin_tasks_snapshot(request: Request, fresh: bool = False, limit: int = 100):
+    _require_admin(request)
+    return get_cached_tasks_surface(limit=limit, fresh=fresh)
+
+
+@router.get(
+    "/api/admin/tasks-stream",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Stream admin task snapshot updates",
+)
+async def api_admin_tasks_stream(request: Request, limit: int = 100):
+    _require_admin(request)
+    safe_limit = min(max(limit, 1), 200)
+    return StreamingResponse(
+        _tasks_stream(safe_limit),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get(
     "/api/tasks",
     response_model=list[TaskResponse],
     responses=AUTH_ERROR_RESPONSES,
     summary="List background tasks",
 )
-def api_tasks(request: Request, status: str | None = None, limit: int = 50):
+def api_tasks(request: Request, status: str | None = None, limit: int = 50, fresh: bool = False):
     _require_auth(request)
-    tasks = list_tasks(status=status, limit=limit)
+    snapshot = get_cached_tasks_surface(limit=200 if status else limit, fresh=fresh)
+    tasks = snapshot.get("history") or []
+    if status:
+        if status == "running":
+            tasks = [task for task in tasks if task.get("status") in {"running", "delegated", "completing"}]
+        else:
+            tasks = [task for task in tasks if task.get("status") == status]
     result = []
     for t in tasks:
-        progress = t.get("progress", "")
-        try:
-            progress_parsed = _json.loads(progress) if progress and progress.startswith("{") else progress
-        except (_json.JSONDecodeError, TypeError):
-            progress_parsed = progress
-
-        params_raw = t.get("params")
-        try:
-            params_parsed = _json.loads(params_raw) if isinstance(params_raw, str) and params_raw.startswith("{") else params_raw
-        except (_json.JSONDecodeError, TypeError):
-            params_parsed = params_raw
-
         result.append({
             "id": t["id"],
             "type": t["type"],
             "status": t["status"],
-            "progress": progress_parsed,
+            "progress": t.get("progress"),
             "error": t.get("error"),
             "result": t.get("result"),
-            "params": params_parsed,
+            "params": t.get("params"),
             "priority": t.get("priority", 2),
             "pool": t.get("pool", "default"),
-            "created_at": t["created_at"],
+            "created_at": t.get("created_at"),
             "started_at": t.get("started_at"),
-            "updated_at": t["updated_at"],
+            "updated_at": t.get("updated_at"),
         })
     return result
 
@@ -182,10 +233,29 @@ def api_task_detail(request: Request, task_id: str):
 def api_worker_status(request: Request):
     """Get worker status: running/pending tasks, engine info."""
     _require_auth(request)
+    try:
+        from crate.db.ops_snapshot import get_cached_ops_snapshot
+
+        snapshot = get_cached_ops_snapshot()
+        live = snapshot.get("live") or {}
+        return {
+            "engine": live.get("engine", "dramatiq"),
+            "running": len(live.get("running_tasks") or []),
+            "pending": len(live.get("pending_tasks") or []),
+            "running_tasks": [
+                {"id": task["id"], "type": task["type"], "pool": task.get("pool")}
+                for task in (live.get("running_tasks") or [])
+            ],
+            "pending_tasks": [
+                {"id": task["id"], "type": task["type"], "pool": task.get("pool")}
+                for task in (live.get("pending_tasks") or [])
+            ],
+        }
+    except Exception:
+        pass
+
     running = list_tasks(status="running")
     pending = list_tasks(status="pending")
-
-    # Service loop publishes status to cache
     cached_status = get_cache("worker_status") or {}
 
     return {

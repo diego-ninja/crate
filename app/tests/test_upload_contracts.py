@@ -84,3 +84,60 @@ class TestUploadWorkerHelpers:
 
         with pytest.raises(ValueError):
             _safe_extract_zip(archive_path, dest_dir)
+
+    def test_import_queue_item_handler_marks_read_model_and_starts_scan(self, monkeypatch):
+        from crate.worker_handlers.acquisition import _handle_import_queue_item
+
+        queue = type(
+            "Queue",
+            (),
+            {
+                "import_item": lambda self, source_path, artist, album: {
+                    "status": "imported",
+                    "dest": "/music/A/B",
+                }
+            },
+        )()
+
+        monkeypatch.setattr("crate.importer.ImportQueue", lambda config: queue)
+
+        with patch("crate.worker_handlers.acquisition.start_scan") as mock_start_scan, \
+             patch("crate.db.import_queue_read_models.mark_import_queue_item_imported") as mock_mark, \
+             patch("crate.worker_handlers.acquisition.emit_task_event") as mock_event:
+            result = _handle_import_queue_item(
+                "task-1",
+                {"source_path": "/music/.imports/tidal/A/B", "artist": "A", "album": "B"},
+                {"library_path": "/music"},
+            )
+
+        assert result["status"] == "imported"
+        mock_mark.assert_called_once_with(
+            "/music/.imports/tidal/A/B",
+            result={"status": "imported", "dest": "/music/A/B"},
+        )
+        assert mock_event.call_count >= 2
+        mock_start_scan.assert_called_once()
+
+    def test_import_queue_remove_handler_updates_read_model(self, monkeypatch):
+        from crate.worker_handlers.acquisition import _handle_import_queue_remove
+
+        queue = type(
+            "Queue",
+            (),
+            {
+                "remove_source": lambda self, source_path: True
+            },
+        )()
+
+        monkeypatch.setattr("crate.importer.ImportQueue", lambda config: queue)
+
+        with patch("crate.worker_handlers.acquisition.emit_task_event"), \
+             patch("crate.db.import_queue_read_models.remove_import_queue_item") as mock_remove:
+            result = _handle_import_queue_remove(
+                "task-2",
+                {"source_path": "/music/.imports/tidal/A/B"},
+                {"library_path": "/music"},
+            )
+
+        assert result == {"removed": True, "source_path": "/music/.imports/tidal/A/B"}
+        mock_remove.assert_called_once_with("/music/.imports/tidal/A/B")

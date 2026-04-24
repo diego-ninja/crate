@@ -5,10 +5,11 @@ import logging
 import time
 from pathlib import Path
 
-from crate.db import (
-    get_cache, set_cache, delete_cache, get_library_artist,
-    update_artist_enrichment, get_setting, update_artist_has_photo,
-)
+from crate.db.cache_settings import get_setting
+from crate.db.cache_store import delete_cache, get_cache, set_cache
+from crate.db.genres import set_artist_genres
+from crate.db.repositories.library import get_library_artist, update_artist_enrichment, update_artist_has_photo
+from crate.db.similarities import bulk_upsert_similarities
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +65,6 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
             similar_list = info.get("similar", [])
             if similar_list:
                 try:
-                    from crate.db import bulk_upsert_similarities
                     bulk_upsert_similarities(name, similar_list)
                 except Exception:
                     log.debug("Failed to persist similarities for %s", name)
@@ -187,7 +187,6 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
     tags = persist_data.get("tags", [])
     if tags:
         try:
-            from crate.db import set_artist_genres
             genres = []
             for j, tag in enumerate(tags):
                 tag = tag.strip()

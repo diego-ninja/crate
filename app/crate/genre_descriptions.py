@@ -97,7 +97,7 @@ def _parse_musicbrainz_genre_catalog(payload: dict) -> list[dict]:
 
 
 def fetch_musicbrainz_genre_catalog(*, force: bool = False) -> list[dict]:
-    from crate.db import get_cache, set_cache
+    from crate.db.cache_store import get_cache, set_cache
 
     cached = None if force else get_cache(_MB_ALL_CACHE_KEY, max_age_seconds=_MB_ALL_TTL)
     if cached:
@@ -168,7 +168,7 @@ def _find_musicbrainz_match(node: dict, index: dict[str, dict]) -> dict | None:
 
 
 def fetch_musicbrainz_genre_external_links(mbid: str, *, force: bool = False) -> dict:
-    from crate.db import get_mb_cache, set_mb_cache
+    from crate.db.cache_musicbrainz import get_mb_cache, set_mb_cache
 
     cache_key = f"mb:genre:links:{mbid}"
     cached = None if force else get_mb_cache(cache_key)
@@ -323,7 +323,7 @@ def _map_musicbrainz_relationships(current_name: str, relationships: dict[str, l
 
 
 def fetch_musicbrainz_genre_page_details(mbid: str, *, force: bool = False) -> dict:
-    from crate.db import get_mb_cache, set_mb_cache
+    from crate.db.cache_musicbrainz import get_mb_cache, set_mb_cache
 
     cache_key = f"mb:genre:details:v2:{mbid}"
     cached = None if force else get_mb_cache(cache_key)
@@ -376,7 +376,7 @@ def _pick_wikidata_description(payload: dict, languages: tuple[str, ...]) -> dic
 
 
 def fetch_wikidata_description(entity_id: str, *, force: bool = False, languages: tuple[str, ...] = ("en", "es")) -> dict | None:
-    from crate.db import get_cache, set_cache
+    from crate.db.cache_store import get_cache, set_cache
 
     entity_id = (entity_id or "").strip().upper()
     if not entity_id:

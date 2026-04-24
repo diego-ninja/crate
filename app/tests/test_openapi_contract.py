@@ -166,12 +166,16 @@ def test_openapi_types_settings_routes_and_marks_them_authenticated(test_app):
 def test_openapi_types_task_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
     list_operation = data["paths"]["/api/tasks"]["get"]
+    admin_snapshot_operation = data["paths"]["/api/admin/tasks-snapshot"]["get"]
     worker_status_operation = data["paths"]["/api/worker/status"]["get"]
     retry_operation = data["paths"]["/api/tasks/retry"]["post"]
 
     assert list_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert list_operation["responses"]["200"]["content"]["application/json"]["schema"]["type"] == "array"
     assert list_operation["responses"]["200"]["content"]["application/json"]["schema"]["items"]["$ref"].endswith("/TaskResponse")
+
+    assert admin_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert admin_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminTasksSnapshotResponse")
 
     assert worker_status_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert worker_status_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/WorkerStatusResponse")
@@ -466,6 +470,8 @@ def test_openapi_types_system_playlist_and_curation_routes(test_app):
 
 def test_openapi_types_imports_organizer_and_stack_routes(test_app):
     data = test_app.get("/openapi.json").json()
+    logs_snapshot_operation = data["paths"]["/api/admin/logs-snapshot"]["get"]
+    admin_stack_snapshot_operation = data["paths"]["/api/admin/stack-snapshot"]["get"]
     imports_pending_operation = data["paths"]["/api/imports/pending"]["get"]
     imports_import_operation = data["paths"]["/api/imports/import"]["post"]
     imports_all_operation = data["paths"]["/api/imports/import-all"]["post"]
@@ -477,19 +483,25 @@ def test_openapi_types_imports_organizer_and_stack_routes(test_app):
     stack_logs_operation = data["paths"]["/api/stack/container/{name}/logs"]["get"]
     stack_restart_operation = data["paths"]["/api/stack/container/{name}/restart"]["post"]
 
+    assert logs_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert logs_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminLogsSnapshotResponse")
+
+    assert admin_stack_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert admin_stack_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminStackSnapshotResponse")
+
     assert imports_pending_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert imports_pending_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportPendingResponse")
 
     assert imports_import_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert imports_import_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportItemRequest")
-    assert imports_import_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportResultResponse")
+    assert imports_import_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
 
     assert imports_all_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
-    assert imports_all_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportResultsResponse")
+    assert imports_all_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
 
     assert imports_remove_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert imports_remove_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportRemoveRequest")
-    assert imports_remove_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportRemoveResponse")
+    assert imports_remove_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
 
     assert organize_presets_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert organize_presets_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/OrganizePresetsResponse")
@@ -786,6 +798,7 @@ def test_openapi_types_analytics_routes_and_marks_them_authenticated(test_app):
 
 def test_openapi_types_management_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
+    admin_health_snapshot_operation = data["paths"]["/api/admin/health-snapshot"]["get"]
     health_check_operation = data["paths"]["/api/manage/health-check"]["post"]
     health_issues_operation = data["paths"]["/api/manage/health-issues"]["get"]
     resolve_issue_operation = data["paths"]["/api/manage/health-issues/{issue_id}/resolve"]["post"]
@@ -794,6 +807,9 @@ def test_openapi_types_management_routes_and_marks_them_authenticated(test_app):
     analysis_status_operation = data["paths"]["/api/manage/analysis-status"]["get"]
     audit_log_operation = data["paths"]["/api/manage/audit-log"]["get"]
     storage_status_operation = data["paths"]["/api/manage/storage-v2-status"]["get"]
+
+    assert admin_health_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert admin_health_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminHealthSnapshotResponse")
 
     assert health_check_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert health_check_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")

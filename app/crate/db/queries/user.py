@@ -1,14 +1,14 @@
 from datetime import date, datetime
 
 from crate.db.serialize import serialize_rows
-from crate.db.tx import transaction_scope
+from crate.db.tx import read_scope
 from sqlalchemy import text
 
 
 def get_feed_new_albums(followed_names: list[str], cutoff: str, limit: int) -> list[dict]:
     if not followed_names:
         return []
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(text("""
             SELECT 'new_album' AS type, la.artist, la.name AS title, la.year, la.has_cover,
                    la.updated_at AS date
@@ -24,7 +24,7 @@ def get_feed_new_albums(followed_names: list[str], cutoff: str, limit: int) -> l
 def get_feed_shows(followed_names: list[str], today: date, limit: int) -> list[dict]:
     if not followed_names:
         return []
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(text("""
             SELECT 'show' AS type, s.artist_name AS artist, s.venue AS title,
                    s.city, s.country, s.date, s.url, s.image_url
@@ -38,7 +38,7 @@ def get_feed_shows(followed_names: list[str], today: date, limit: int) -> list[d
 
 
 def get_feed_new_releases(limit: int) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(text("""
             SELECT 'release' AS type, nr.artist_name AS artist, nr.album_title AS title,
                    nr.cover_url, nr.year, nr.status, nr.detected_at AS date
@@ -53,7 +53,7 @@ def get_feed_new_releases(limit: int) -> list[dict]:
 def get_upcoming_releases(
     followed_names: list[str], today: date, recent_cutoff: str, limit: int,
 ) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("""
             SELECT
@@ -100,7 +100,7 @@ def get_upcoming_shows(
         params["lat_max"] = user_lat + user_radius / 111.0
         params["lon_min"] = user_lon - user_radius / 70.0
         params["lon_max"] = user_lon + user_radius / 70.0
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text(f"""
             SELECT
@@ -136,7 +136,7 @@ def get_upcoming_shows(
 def get_artist_genres_for_names(artist_names: list[str]) -> dict[str, list[str]]:
     if not artist_names:
         return {}
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(
             text("""
             SELECT ag.artist_name, g.name
@@ -154,7 +154,7 @@ def get_artist_genres_for_names(artist_names: list[str]) -> dict[str, list[str]]
 
 
 def get_scrobble_identities(user_id: int) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(text("""
             SELECT provider, status, metadata_json
             FROM user_external_identities
@@ -164,7 +164,7 @@ def get_scrobble_identities(user_id: int) -> list[dict]:
 
 
 def get_user_scrobble_identities(user_id: int) -> list[dict]:
-    with transaction_scope() as session:
+    with read_scope() as session:
         rows = session.execute(text("""
             SELECT provider, external_username, metadata_json
             FROM user_external_identities
@@ -172,17 +172,3 @@ def get_user_scrobble_identities(user_id: int) -> list[dict]:
               AND status = 'linked'
         """), {"user_id": user_id}).mappings().all()
         return serialize_rows(rows)
-
-
-def update_user_location(user_id: int, fields: list[str], values: list) -> None:
-    if not fields:
-        return
-    set_clauses = []
-    named_params: dict = {"user_id": user_id}
-    for i, (field, value) in enumerate(zip(fields, values)):
-        param_name = f"v{i}"
-        col_name = field.split("=")[0].strip()
-        set_clauses.append(f"{col_name} = :{param_name}")
-        named_params[param_name] = value
-    with transaction_scope() as session:
-        session.execute(text(f"UPDATE users SET {', '.join(set_clauses)} WHERE id = :user_id"), named_params)

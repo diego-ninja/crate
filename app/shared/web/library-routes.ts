@@ -1,5 +1,13 @@
 import { encPath } from "./utils";
 
+function resolveAssetUrl(path: string) {
+  if (typeof window === "undefined") return path;
+  const resolver = (window as Window & typeof globalThis & {
+    __crateResolveApiAssetUrl?: (nextPath: string) => string;
+  }).__crateResolveApiAssetUrl;
+  return typeof resolver === "function" ? resolver(path) : path;
+}
+
 export interface ArtistRouteInput {
   artistId?: number | null;
   artistSlug?: string | null;
@@ -40,14 +48,14 @@ export function artistApiPath(input: ArtistRouteInput) {
 
 export function artistPhotoApiUrl(input: ArtistRouteInput) {
   if (input.artistId != null) {
-    return `/api/artists/${input.artistId}/photo`;
+    return resolveAssetUrl(`/api/artists/${input.artistId}/photo`);
   }
   return "";
 }
 
 export function artistBackgroundApiUrl(input: ArtistRouteInput) {
   if (input.artistId != null) {
-    return `/api/artists/${input.artistId}/background`;
+    return resolveAssetUrl(`/api/artists/${input.artistId}/background`);
   }
   return "";
 }
@@ -75,7 +83,7 @@ export function albumRelatedApiPath(input: AlbumRouteInput) {
 
 export function albumCoverApiUrl(input: AlbumRouteInput) {
   if (input.albumId != null) {
-    return `/api/albums/${input.albumId}/cover`;
+    return resolveAssetUrl(`/api/albums/${input.albumId}/cover`);
   }
   return "";
 }

@@ -19,9 +19,9 @@ import os
 import re
 from time import time
 
-from fastapi import APIRouter, HTTPException, Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import StreamingResponse
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from crate.api.auth import _require_auth
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
@@ -90,11 +90,18 @@ def broadcast_invalidation(*scopes: str):
 def _do_broadcast(scopes: tuple[str, ...] | list[str]):
     try:
         r = _get_redis()
+        from crate.db.domain_events import append_domain_event
         for scope in scopes:
             event_id = r.incr(_EVENT_ID_KEY)
             event = json.dumps({"id": event_id, "scope": scope, "ts": time()})
             r.lpush(_EVENTS_KEY, event)
             r.ltrim(_EVENTS_KEY, 0, _MAX_EVENTS - 1)
+            append_domain_event(
+                "ui.invalidate",
+                {"scope": scope, "redis_event_id": event_id},
+                scope="ui.invalidate",
+                subject_key=scope,
+            )
             log.debug("cache invalidation: %s (event %d)", scope, event_id)
     except Exception as exc:
         log.warning("Failed to broadcast cache invalidation for %s: %s", scopes, exc)
@@ -104,7 +111,8 @@ def _do_broadcast(scopes: tuple[str, ...] | list[str]):
 
 def _clear_backend_cache_for_scopes(scopes: tuple[str, ...] | list[str]):
     """Clear backend cache entries that correspond to the invalidated scopes."""
-    from crate.db.cache import delete_cache_prefix
+    from crate.db.cache_store import delete_cache_prefix
+    from crate.db.ui_snapshot_store import mark_ui_snapshots_stale
 
     # Mapping from scope → backend cache key prefixes to clear.
     # Not every scope has a backend cache (many are frontend-only).
@@ -136,8 +144,24 @@ def _clear_backend_cache_for_scopes(scopes: tuple[str, ...] | list[str]):
         except Exception:
             log.debug("Failed to clear backend cache prefix: %s", prefix, exc_info=True)
 
+    try:
+        if any(
+            scope in {"home", "follows", "likes", "saved_albums", "history", "library", "curation", "playlists", "shows", "upcoming"}
+            or scope.startswith(("artist:", "album:", "playlist:"))
+            for scope in scopes
+        ):
+            mark_ui_snapshots_stale(scope_prefix="home:")
+        if any(
+            scope in {"library", "shows", "upcoming", "curation", "playlists"}
+            or scope.startswith(("artist:", "album:", "playlist:"))
+            for scope in scopes
+        ):
+            mark_ui_snapshots_stale(scope="ops", subject_key="dashboard")
+    except Exception:
+        log.debug("Failed to mark ui snapshots stale for scopes: %s", scopes, exc_info=True)
 
-def _get_events_since(last_id: int) -> list[dict]:
+
+def get_invalidation_events_since(last_id: int) -> list[dict]:
     """Fetch all events with id > last_id from Redis (oldest first)."""
     r = _get_redis()
     raw_events = r.lrange(_EVENTS_KEY, 0, -1)  # newest first
@@ -152,7 +176,7 @@ def _get_events_since(last_id: int) -> list[dict]:
     return events
 
 
-def _get_latest_event_id() -> int:
+def get_latest_invalidation_event_id() -> int:
     """Get the current highest event ID (for new connections)."""
     r = _get_redis()
     val = r.get(_EVENT_ID_KEY)
@@ -173,7 +197,7 @@ async def _invalidation_stream(last_event_id: int):
     to prevent proxy timeouts.
     """
     # Replay missed events
-    missed = _get_events_since(last_event_id)
+    missed = get_invalidation_events_since(last_event_id)
     for event in missed:
         last_event_id = event["id"]
         yield f"id: {event['id']}\ndata: {event['scope']}\n\n"
@@ -184,7 +208,7 @@ async def _invalidation_stream(last_event_id: int):
         heartbeat_counter += 1
 
         # Check for new events
-        new_events = _get_events_since(last_event_id)
+        new_events = get_invalidation_events_since(last_event_id)
         for event in new_events:
             last_event_id = event["id"]
             yield f"id: {event['id']}\ndata: {event['scope']}\n\n"
@@ -213,7 +237,7 @@ async def cache_events(request: Request):
     try:
         last_event_id = int(last_event_id_str)
     except (ValueError, TypeError):
-        last_event_id = _get_latest_event_id()
+        last_event_id = get_latest_invalidation_event_id()
 
     return StreamingResponse(
         _invalidation_stream(last_event_id),
@@ -275,27 +299,47 @@ _INVALIDATION_RULES: list[tuple[re.Pattern[str], list[str]]] = [
 ]
 
 
-class CacheInvalidationMiddleware(BaseHTTPMiddleware):
-    """After successful mutations (POST/PUT/DELETE), broadcast cache invalidation."""
+def _match_invalidation_scopes(path: str) -> list[str]:
+    for pattern, scope_templates in _INVALIDATION_RULES:
+        match = pattern.match(path)
+        if not match:
+            continue
+        scopes: list[str] = []
+        for template in scope_templates:
+            scope = template
+            for index, group in enumerate(match.groups(), 1):
+                if group:
+                    scope = scope.replace(f"{{{index}}}", group)
+            if "{" not in scope:
+                scopes.append(scope)
+        return scopes
+    return []
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        response = await call_next(request)
 
-        if request.method in ("POST", "PUT", "DELETE") and 200 <= response.status_code < 300:
-            path = request.url.path
-            for pattern, scope_templates in _INVALIDATION_RULES:
-                m = pattern.match(path)
-                if m:
-                    scopes = []
-                    for tmpl in scope_templates:
-                        scope = tmpl
-                        for i, group in enumerate(m.groups(), 1):
-                            if group:
-                                scope = scope.replace(f"{{{i}}}", group)
-                        if "{" not in scope:
-                            scopes.append(scope)
-                    if scopes:
-                        broadcast_invalidation(*scopes)
-                    break
+class CacheInvalidationMiddleware:
+    """After successful mutations, broadcast cache invalidation asynchronously."""
 
-        return response
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        method = scope.get("method", "GET")
+        path = scope.get("path", "")
+        status_code = 500
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = int(message["status"])
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+        if method in ("POST", "PUT", "DELETE") and 200 <= status_code < 300:
+            scopes = _match_invalidation_scopes(path)
+            if scopes:
+                broadcast_invalidation(*scopes)

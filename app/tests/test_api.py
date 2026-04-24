@@ -140,10 +140,10 @@ class TestArtistDetailAPI:
         ])
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
-             patch("crate.db.get_library_artist_by_id", return_value={"id": 7, "name": "Tool", "slug": "tool"}), \
+             patch("crate.api.browse_artist.artist_name_from_id", return_value="Tool"), \
              patch("crate.api.browse_artist.get_library_artist", return_value=mock_artist), \
              patch("crate.api.browse_artist.get_library_albums", return_value=mock_albums), \
-             patch("crate.db.library.get_album_quality_map", return_value={1: {"format": "flac", "bit_depth": 16, "sample_rate": 44100}}), \
+             patch("crate.api.browse_artist.get_album_quality_map", return_value={1: {"format": "flac", "bit_depth": 16, "sample_rate": 44100}}), \
              patch("crate.api.browse_artist.get_artist_issue_count", return_value=0), \
              patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
 
@@ -154,23 +154,64 @@ class TestArtistDetailAPI:
             assert len(data["albums"]) == 1
 
     def test_get_artist_not_found(self, test_app):
-        with patch("crate.db.get_library_artist_by_id", return_value=None):
+        with patch("crate.api.browse_artist.artist_name_from_id", return_value=None):
             resp = test_app.get("/api/artists/999")
             assert resp.status_code == 404
 
 
 class TestStatsAPI:
-    def test_get_stats_db(self, test_app):
-        mock_stats = {
+    def test_get_stats_reads_from_ops_snapshot(self, test_app):
+        snapshot_payload = {
+            "snapshot": {"scope": "ops", "subject_key": "dashboard", "version": 3, "stale": False, "generation_ms": 12},
+            "stats": {
             "artists": 100,
             "albums": 500,
             "tracks": 5000,
-            "total_size": 1024**4,
             "formats": {"flac": 4000, "mp3": 1000},
+            "total_size_gb": 1024,
+            "last_scan": None,
+            "pending_imports": 7,
+            "pending_tasks": 2,
+            "total_duration_hours": 320.4,
+            "avg_bitrate": 914,
+            "top_genres": [{"name": "post-hardcore", "count": 42}],
+            "recent_albums": [],
+            "analyzed_tracks": 4900,
+            "avg_album_duration_min": 41.2,
+            "avg_tracks_per_album": 10.0,
+            },
         }
-        with patch("crate.api.browse_shared.get_library_track_count", return_value=5000), \
-             patch("crate.db.get_library_stats", return_value=mock_stats):
-            pass
+        with patch("crate.api.analytics._has_library_data", return_value=True), \
+             patch("crate.api.analytics.get_cached_ops_snapshot", return_value=snapshot_payload):
+            resp = test_app.get("/api/stats")
+            assert resp.status_code == 200
+            assert resp.json()["pending_imports"] == 7
+
+    def test_get_stats_returns_empty_snapshot_shape_without_filesystem_scan(self, test_app):
+        with patch("crate.api.analytics.get_cached_ops_snapshot", return_value={}), \
+             patch("crate.api.analytics.count_import_queue_items", return_value=0), \
+             patch("crate.api.analytics.list_tasks", return_value=[]), \
+             patch("crate.api.analytics.library_path", side_effect=AssertionError("filesystem scan should not run")):
+            resp = test_app.get("/api/stats")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["artists"] == 0
+        assert data["albums"] == 0
+        assert data["tracks"] == 0
+        assert data["top_genres"] == []
+        assert data["recent_albums"] == []
+        assert data["pending_tasks"] == 0
+
+
+class TestTimelineAPI:
+    def test_timeline_returns_empty_without_filesystem_scan(self, test_app):
+        with patch("crate.api.analytics._has_library_data", return_value=False), \
+             patch("crate.api.analytics.library_path", side_effect=AssertionError("filesystem scan should not run")):
+            resp = test_app.get("/api/timeline")
+
+        assert resp.status_code == 200
+        assert resp.json() == {}
 
 
 class TestSearchAPI:
@@ -219,6 +260,106 @@ class TestScanAPI:
             resp = test_app.post("/api/scan", json={"only": "naming"})
             assert resp.status_code == 200
             mock_create.assert_called_once_with("scan", {"only": "naming"})
+
+    def test_status_prefers_runtime_snapshot(self, test_app):
+        with patch(
+            "crate.api.scanner.get_public_status_snapshot",
+            return_value={
+                "scanning": False,
+                "last_scan": None,
+                "issue_count": 4,
+                "progress": {},
+                "pending_imports": 9,
+                "running_tasks": 2,
+            },
+        ):
+            resp = test_app.get("/api/status")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["pending_imports"] == 9
+            assert data["issue_count"] == 4
+            assert data["running_tasks"] == 2
+
+    def test_status_falls_back_when_runtime_snapshot_missing(self, test_app):
+        with patch("crate.api.scanner.get_public_status_snapshot", return_value=None), \
+             patch("crate.api.scanner.list_tasks", return_value=[]), \
+             patch("crate.api.scanner.get_latest_scan", return_value=None), \
+             patch("crate.api.scanner.count_import_queue_items", return_value=9):
+            resp = test_app.get("/api/status")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["pending_imports"] == 9
+            assert data["issue_count"] == 0
+            assert data["running_tasks"] == 0
+
+    def test_status_exposes_persisted_pending_imports(self, test_app):
+        with patch("crate.api.scanner.list_tasks", return_value=[]), \
+             patch("crate.api.scanner.get_latest_scan", return_value=None), \
+             patch("crate.api.scanner.count_import_queue_items", return_value=9), \
+             patch("crate.api.scanner.get_public_status_snapshot", return_value=None):
+            resp = test_app.get("/api/status")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["pending_imports"] == 9
+            assert data["issue_count"] == 0
+
+
+class TestImportsAPI:
+    def test_imports_pending_reads_persisted_queue(self, test_app):
+        pending = [
+            {
+                "source": "tidal",
+                "source_path": "/music/.imports/tidal/A/B",
+                "artist": "A",
+                "album": "B",
+                "track_count": 8,
+                "formats": ["flac"],
+                "total_size_mb": 320,
+                "dest_path": "/music/A/B",
+                "dest_exists": False,
+                "status": "pending",
+            }
+        ]
+        with patch("crate.api.imports.list_import_queue_items", return_value=pending):
+            resp = test_app.get("/api/imports/pending")
+            assert resp.status_code == 200
+            assert resp.json() == pending
+
+    def test_imports_import_queues_worker_task(self, test_app):
+        with patch("crate.api.imports.create_task", return_value="task-import-1") as mock_create:
+            resp = test_app.post(
+                "/api/imports/import",
+                json={"source_path": "/music/.imports/tidal/A/B", "artist": "A", "album": "B"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["task_id"] == "task-import-1"
+            assert resp.json()["status"] == "queued"
+            mock_create.assert_called_once_with(
+                "import_queue_item",
+                {"source_path": "/music/.imports/tidal/A/B", "artist": "A", "album": "B"},
+            )
+
+    def test_imports_import_all_queues_worker_task(self, test_app):
+        with patch("crate.api.imports.create_task", return_value="task-import-all") as mock_create:
+            resp = test_app.post("/api/imports/import-all")
+            assert resp.status_code == 200
+            assert resp.json()["task_id"] == "task-import-all"
+            assert resp.json()["status"] == "queued"
+            mock_create.assert_called_once_with("import_queue_all", {})
+
+    def test_imports_remove_queues_worker_task(self, test_app):
+        with patch("crate.api.imports.create_task", return_value="task-remove-1") as mock_create:
+            resp = test_app.post(
+                "/api/imports/remove",
+                json={"source_path": "/music/.imports/tidal/A/B"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["task_id"] == "task-remove-1"
+            assert resp.json()["status"] == "queued"
+            mock_create.assert_called_once_with(
+                "import_queue_remove",
+                {"source_path": "/music/.imports/tidal/A/B"},
+            )
 
 
 class TestGenresAPI:
@@ -445,12 +586,17 @@ class TestSyncLibraryAPI:
 
 
 class TestWorkerAPI:
-    def test_worker_status(self, test_app):
-        with patch("crate.api.tasks.list_tasks", side_effect=[
-            [{"id": "r1", "type": "scan"}],
-            [{"id": "p1", "type": "library_sync"}],
-        ]), \
-             patch("crate.db.get_cache", return_value=None):
+    def test_worker_status_prefers_ops_snapshot(self, test_app):
+        with patch(
+            "crate.db.ops_snapshot.get_cached_ops_snapshot",
+            return_value={
+                "live": {
+                    "engine": "dramatiq",
+                    "running_tasks": [{"id": "r1", "type": "scan", "pool": "default"}],
+                    "pending_tasks": [{"id": "p1", "type": "library_sync", "pool": "default"}],
+                }
+            },
+        ):
             resp = test_app.get("/api/worker/status")
             assert resp.status_code == 200
             data = resp.json()
@@ -474,17 +620,39 @@ class TestWorkerAPI:
 
 class TestTasksAPI:
     def test_list_tasks(self, test_app):
-        mock_tasks = [
-            {"id": "t1", "type": "scan", "status": "completed", "progress": "",
-             "error": None, "result": {"issues": 5}, "params": {},
-             "created_at": "2024-01-01T00:00:00", "updated_at": "2024-01-01T00:01:00"},
-        ]
-        with patch("crate.api.tasks.list_tasks", return_value=mock_tasks):
+        snapshot = {
+            "history": [
+                {"id": "t1", "type": "scan", "status": "completed", "progress": "",
+                 "error": None, "result": {"issues": 5}, "params": {},
+                 "created_at": "2024-01-01T00:00:00", "updated_at": "2024-01-01T00:01:00"},
+            ]
+        }
+        with patch("crate.api.tasks.get_cached_tasks_surface", return_value=snapshot):
             resp = test_app.get("/api/tasks")
             assert resp.status_code == 200
             data = resp.json()
             assert len(data) == 1
             assert data[0]["id"] == "t1"
+
+    def test_admin_tasks_snapshot(self, test_app):
+        snapshot = {
+            "snapshot": {"scope": "ops:tasks", "subject_key": "surface:100", "version": 2, "stale": False, "generation_ms": 8},
+            "live": {
+                "engine": "dramatiq",
+                "running_tasks": [],
+                "pending_tasks": [],
+                "recent_tasks": [],
+                "worker_slots": {"max": 3, "active": 0},
+                "systems": {"postgres": True, "watcher": True},
+            },
+            "history": [],
+        }
+
+        with patch("crate.api.tasks.get_cached_tasks_surface", return_value=snapshot):
+            resp = test_app.get("/api/admin/tasks-snapshot")
+
+        assert resp.status_code == 200
+        assert resp.json()["snapshot"]["scope"] == "ops:tasks"
 
     def test_get_task_detail(self, test_app):
         mock_task = {
@@ -557,8 +725,7 @@ class TestPlaylistCurationAPI:
             "follower_count": 5,
         }
 
-        with patch("crate.db.get_followed_system_playlists", return_value=[playlist]), \
-             patch("crate.db.get_playlist_followers_count", side_effect=AssertionError("unexpected follower count lookup")):
+        with patch("crate.api.me.get_followed_system_playlists", return_value=[playlist]):
             resp = test_app.get("/api/me/followed-playlists")
 
         assert resp.status_code == 200
@@ -589,8 +756,142 @@ class TestPlaylistCurationAPI:
         assert len(data) == 1
         assert data[0]["follower_count"] == 9
 
+    def test_admin_system_playlist_editor_snapshot_collapses_detail_and_history(self, test_app):
+        playlist = {
+            "id": 23,
+            "name": "Curated Mix",
+            "description": "Test",
+            "scope": "system",
+            "generation_mode": "smart",
+            "is_curated": True,
+            "is_active": True,
+            "auto_refresh_enabled": True,
+            "featured_rank": 2,
+            "category": "editorial",
+            "track_count": 9,
+            "total_duration": 1800,
+            "follower_count": 9,
+            "artwork_tracks": [],
+            "generation_status": "running",
+            "generation_error": None,
+            "last_generated_at": None,
+            "smart_rules": {"match": "all", "rules": [], "limit": 50, "sort": "random"},
+        }
+        tracks = [{"title": "Locust Reign", "artist": "Converge", "album": "Jane Doe", "duration": 424}]
+        history = [{
+            "id": 3,
+            "started_at": "2026-04-23T10:00:00+00:00",
+            "completed_at": None,
+            "status": "running",
+            "track_count": None,
+            "duration_sec": None,
+            "error": None,
+            "triggered_by": "manual",
+            "rule_snapshot": {"match": "all"},
+        }]
+
+        with patch("crate.api.system_playlists.get_playlist", return_value=playlist), \
+             patch("crate.api.system_playlists.get_playlist_tracks", return_value=tracks), \
+             patch("crate.api.system_playlists.get_generation_history", return_value=history), \
+             patch("crate.api.system_playlists.get_playlist_followers_count", side_effect=AssertionError("unexpected follower count lookup")):
+            resp = test_app.get("/api/admin/system-playlists/23/editor-snapshot")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["playlist"]["id"] == 23
+        assert data["playlist"]["generation_status"] == "running"
+        assert data["playlist"]["tracks"][0]["title"] == "Locust Reign"
+        assert data["history"][0]["triggered_by"] == "manual"
+
+
+class TestAcquisitionAPI:
+    def test_acquisition_snapshot_collapses_tidal_and_soulseek_state(self, test_app):
+        tidal_queue = [{
+            "id": 7,
+            "tidal_url": "https://tidal.com/album/7",
+            "tidal_id": "7",
+            "content_type": "album",
+            "title": "Jane Doe",
+            "artist": "Converge",
+            "status": "queued",
+            "source": "search",
+            "quality": "max",
+            "cover_url": None,
+            "created_at": "2026-04-23T10:00:00+00:00",
+        }]
+        slsk_downloads = [{
+            "directory": "music/C/Converge - Jane Doe",
+            "filename": "01 - Concubine.flac",
+            "fullPath": "music/C/Converge - Jane Doe/01 - Concubine.flac",
+            "state": "downloading",
+            "percentComplete": 42,
+            "username": "peer42",
+            "averageSpeed": 2048,
+        }]
+
+        with patch("crate.api.acquisition.tidal.is_authenticated", return_value=True), \
+             patch("crate.api.acquisition.get_tidal_downloads", return_value=tidal_queue), \
+             patch("crate.api.acquisition.soulseek.get_downloads", return_value=slsk_downloads):
+            resp = test_app.get("/api/acquisition/snapshot")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["tidal_authenticated"] is True
+        assert data["tidal_queue"][0]["title"] == "Jane Doe"
+        assert data["soulseek_queue"][0]["album"] == "Converge - Jane Doe"
+        assert data["soulseek_queue"][0]["progress"] == 42
+
+    def test_new_releases_snapshot_collapses_release_radar_state(self, test_app):
+        releases = [{
+            "id": 11,
+            "artist_name": "Converge",
+            "album_title": "Axe to Fall",
+            "status": "detected",
+            "tidal_id": "11",
+            "tidal_url": "https://tidal.com/album/11",
+            "cover_url": "https://cdn.example/11.jpg",
+            "year": "2009",
+            "tracks": 13,
+            "quality": "max",
+            "release_date": "2026-04-25",
+            "release_type": "album",
+            "artist_id": 7,
+            "artist_slug": "converge",
+            "album_id": 19,
+            "album_slug": "axe-to-fall",
+        }]
+
+        with patch("crate.api.acquisition.get_new_releases", return_value=releases):
+            resp = test_app.get("/api/acquisition/new-releases/snapshot")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["releases"]) == 1
+        assert data["releases"][0]["album_title"] == "Axe to Fall"
+        assert data["releases"][0]["status"] == "detected"
+
 
 class TestHomeEndpointCaching:
+    def test_home_hero_reads_from_discovery_snapshot(self, test_app):
+        payload = {"hero": {"artist": "Converge", "reason": "Top artist"}}
+
+        with patch("crate.api.me._get_home_discovery_payload", return_value=payload):
+            resp = test_app.get("/api/me/home/hero")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["artist"] == "Converge"
+
+    def test_home_recently_played_reads_from_discovery_snapshot(self, test_app):
+        payload = {"recently_played": [{"track_id": 12, "title": "Locust Reign"}]}
+
+        with patch("crate.api.me._get_home_discovery_payload", return_value=payload):
+            resp = test_app.get("/api/me/home/recently-played")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["items"][0]["track_id"] == 12
+
     def test_home_mix_detail_uses_cache(self, test_app):
         cached_mix = {
             "id": "daily-discovery",
@@ -604,8 +905,8 @@ class TestHomeEndpointCaching:
             "tracks": [],
         }
 
-        with patch("crate.db.get_cache", return_value=cached_mix), \
-             patch("crate.db.home.get_home_playlist", side_effect=AssertionError("unexpected playlist rebuild")):
+        with patch("crate.api.me.get_cache", return_value=cached_mix), \
+             patch("crate.api.me.get_home_playlist", side_effect=AssertionError("unexpected playlist rebuild")):
             resp = test_app.get("/api/me/home/mixes/daily-discovery")
 
         assert resp.status_code == 200
@@ -621,8 +922,8 @@ class TestHomeEndpointCaching:
             "items": [],
         }
 
-        with patch("crate.db.get_cache", return_value=cached_section), \
-             patch("crate.db.home.get_home_section", side_effect=AssertionError("unexpected section rebuild")):
+        with patch("crate.api.me.get_cache", return_value=cached_section), \
+             patch("crate.api.me.get_home_section", side_effect=AssertionError("unexpected section rebuild")):
             resp = test_app.get("/api/me/home/sections/custom-mixes")
 
         assert resp.status_code == 200
@@ -648,7 +949,7 @@ class TestShowsAPI:
         ]
         refs = {"converge": {"id": 7, "slug": "converge"}}
 
-        with patch("crate.db.get_upcoming_shows", return_value=shows), \
+        with patch("crate.api.browse_artist.db_get_shows", return_value=shows), \
              patch("crate.api.browse_artist.get_all_artist_genre_map", return_value={"Converge": ["metalcore"]}), \
              patch("crate.api.browse_artist._lookup_artist_refs", return_value=refs), \
              patch("crate.api.browse_artist._show_lineup_artists", return_value=[{"name": "Converge", "id": 7, "slug": "converge"}]):
@@ -658,3 +959,178 @@ class TestShowsAPI:
         data = resp.json()
         assert data["events"][0]["id"] == "62"
         assert data["events"][0]["artist_slug"] == "converge"
+
+
+class TestAdminLogsAPI:
+    def test_admin_logs_snapshot(self, test_app):
+        snapshot = {
+            "snapshot": {"scope": "ops:logs", "subject_key": "surface:100", "version": 1, "stale": False, "generation_ms": 4},
+            "logs": [
+                {
+                    "id": 1,
+                    "worker_id": "worker-1",
+                    "task_id": None,
+                    "level": "info",
+                    "category": "analysis",
+                    "message": "Track analyzed",
+                    "metadata": {"track_id": 7},
+                    "created_at": "2026-04-23T12:00:00Z",
+                }
+            ],
+            "workers": [
+                {
+                    "worker_id": "worker-1",
+                    "last_seen": "2026-04-23T12:00:00Z",
+                    "log_count": 14,
+                }
+            ],
+        }
+
+        with patch("crate.api.admin_metrics.get_cached_logs_surface", return_value=snapshot):
+            resp = test_app.get("/api/admin/logs-snapshot")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["logs"][0]["message"] == "Track analyzed"
+        assert data["workers"][0]["worker_id"] == "worker-1"
+
+
+class TestAdminMetricsAPI:
+    def test_metrics_dashboard_uses_clean_http_metric_series(self, test_app):
+        summary_calls: list[str] = []
+        recent_calls: list[str] = []
+
+        def fake_query_summary(name: str, minutes: int = 5):
+            summary_calls.append(name)
+            return {"count": 1, "avg": 42, "min": 42, "max": 42, "sum": 42}
+
+        def fake_query_recent(name: str, minutes: int = 60):
+            recent_calls.append(name)
+            return []
+
+        with patch("crate.metrics.query_summary", side_effect=fake_query_summary), \
+             patch("crate.metrics.query_recent", side_effect=fake_query_recent), \
+             patch("crate.db.cache.get_cache", return_value=None), \
+             patch("crate.db.cache.set_cache"), \
+             patch("crate.api.admin_metrics._build_metrics_system", return_value={}), \
+             patch("crate.api.admin_metrics._list_running_tasks", return_value=[]):
+            resp = test_app.get("/api/admin/metrics/dashboard?period=minute&minutes=5")
+
+        assert resp.status_code == 200
+        assert "api.request.latency" in summary_calls
+        assert "api.request.count" in summary_calls
+        assert "api.request.errors" in summary_calls
+        assert "api.request.slow" in summary_calls
+        assert "api.latency" not in summary_calls
+        assert "api.request.latency" in recent_calls
+        assert "api.request.count" in recent_calls
+        assert "api.request.errors" in recent_calls
+        assert "api.request.slow" in recent_calls
+        assert "api.latency" not in recent_calls
+        assert "api.latency" in resp.json()["timeseries"]
+
+    def test_metrics_timeseries_maps_legacy_http_name(self, test_app):
+        calls: list[str] = []
+
+        def fake_query_recent(name: str, minutes: int = 60):
+            calls.append(name)
+            return []
+
+        with patch("crate.metrics.query_recent", side_effect=fake_query_recent):
+            resp = test_app.get("/api/admin/metrics/timeseries?name=api.latency&period=minute&minutes=5")
+
+        assert resp.status_code == 200
+        assert calls == ["api.request.latency"]
+        assert resp.json()["name"] == "api.latency"
+
+
+class TestHealthAPI:
+    def test_health_issues_reads_from_snapshot(self, test_app):
+        snapshot = {
+            "snapshot": {"scope": "ops:health", "subject_key": "surface:all:500", "version": 1, "stale": False, "generation_ms": 5},
+            "issues": [
+                {
+                    "id": 7,
+                    "check_type": "duplicate_albums",
+                    "severity": "high",
+                    "description": "Duplicate album",
+                    "details_json": {"artist": "Converge"},
+                    "auto_fixable": False,
+                    "status": "open",
+                    "created_at": "2026-04-23T12:00:00Z",
+                }
+            ],
+            "counts": {"duplicate_albums": 1},
+            "total": 1,
+            "filter": None,
+        }
+
+        with patch("crate.api.management.get_cached_health_surface", return_value=snapshot):
+            resp = test_app.get("/api/manage/health-issues")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert data["issues"][0]["check_type"] == "duplicate_albums"
+
+    def test_admin_health_snapshot(self, test_app):
+        snapshot = {
+            "snapshot": {"scope": "ops:health", "subject_key": "surface:all:500", "version": 2, "stale": False, "generation_ms": 9},
+            "issues": [],
+            "counts": {},
+            "total": 0,
+            "filter": None,
+        }
+
+        with patch("crate.api.management.get_cached_health_surface", return_value=snapshot):
+            resp = test_app.get("/api/admin/health-snapshot")
+
+        assert resp.status_code == 200
+        assert resp.json()["snapshot"]["scope"] == "ops:health"
+
+
+class TestStackAPI:
+    def test_stack_status_reads_from_snapshot(self, test_app):
+        snapshot = {
+            "snapshot": {"scope": "ops:stack", "subject_key": "global", "version": 3, "stale": False, "generation_ms": 11},
+            "stack": {
+                "available": True,
+                "total": 2,
+                "running": 1,
+                "containers": [
+                    {
+                        "id": "abc123",
+                        "name": "crate-api",
+                        "image": "crate/api:latest",
+                        "state": "running",
+                        "status": "Up 5 minutes",
+                        "ports": ["8585:8585"],
+                    }
+                ],
+            },
+        }
+
+        with patch("crate.api.stack.get_cached_stack_surface", return_value=snapshot):
+            resp = test_app.get("/api/stack/status")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["running"] == 1
+        assert data["containers"][0]["name"] == "crate-api"
+
+    def test_admin_stack_snapshot(self, test_app):
+        snapshot = {
+            "snapshot": {"scope": "ops:stack", "subject_key": "global", "version": 4, "stale": False, "generation_ms": 7},
+            "stack": {
+                "available": True,
+                "total": 1,
+                "running": 1,
+                "containers": [],
+            },
+        }
+
+        with patch("crate.api.stack.get_cached_stack_surface", return_value=snapshot):
+            resp = test_app.get("/api/admin/stack-snapshot")
+
+        assert resp.status_code == 200
+        assert resp.json()["snapshot"]["scope"] == "ops:stack"

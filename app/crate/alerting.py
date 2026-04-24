@@ -10,7 +10,7 @@ import logging
 import shutil
 from dataclasses import dataclass, field
 
-from crate.db.cache import get_setting
+from crate.db.cache_settings import get_setting
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def evaluate_health() -> HealthStatus:
     breaches: list[ThresholdBreach] = []
 
     # API latency
-    api_latency = query_summary("api.latency", minutes=5)
+    api_latency = query_summary("api.request.latency", minutes=5)
     api_p95 = api_latency.get("max", 0)  # approximation — max of 5min as p95 proxy
     status.metrics["api_p95"] = api_p95
     threshold = _get_threshold("api_p95_latency_ms", DEFAULT_THRESHOLDS["api_p95_latency_ms"])
@@ -80,8 +80,8 @@ def evaluate_health() -> HealthStatus:
         breaches.append(ThresholdBreach("API p95 latency", api_p95, threshold, "warning"))
 
     # API error rate
-    api_requests = query_summary("api.requests", minutes=5)
-    api_errors = query_summary("api.errors", minutes=5)
+    api_requests = query_summary("api.request.count", minutes=5)
+    api_errors = query_summary("api.request.errors", minutes=5)
     total_requests = api_requests.get("count", 0)
     error_count = api_errors.get("count", 0)
     error_rate = (error_count / total_requests * 100) if total_requests > 0 else 0

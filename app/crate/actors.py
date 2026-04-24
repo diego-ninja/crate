@@ -119,7 +119,7 @@ DB_HEAVY_TASK_TYPES = frozenset({
 
 def _heartbeat_loop(task_id: str, stop_event: threading.Event):
     """Background thread: updates heartbeat_at every 30s while task runs."""
-    from crate.db.tasks import heartbeat_task
+    from crate.db.repositories.tasks import heartbeat_task
     while not stop_event.wait(30):
         try:
             heartbeat_task(task_id)
@@ -152,7 +152,7 @@ _DB_HEAVY_LOCK_TTL = 7200  # 2h max
 def clear_db_heavy_lock():
     """Force-clear the DB-heavy lock. Called on worker startup."""
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if r:
             r.delete(_DB_HEAVY_REDIS_KEY)
@@ -163,7 +163,7 @@ def clear_db_heavy_lock():
 def _acquire_db_heavy_lock(task_id: str, timeout: int = 60) -> bool:
     """Acquire a Redis-based mutex for DB-heavy tasks. Blocks up to timeout seconds."""
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if not r:
             log.warning("Redis unavailable — DB-heavy lock cannot be acquired, proceeding without lock")
@@ -182,7 +182,7 @@ def _acquire_db_heavy_lock(task_id: str, timeout: int = 60) -> bool:
 def _release_db_heavy_lock(task_id: str):
     """Release the DB-heavy mutex. Uses Lua script for atomic check-and-delete."""
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if r:
             # Atomic: only delete if we hold the lock
@@ -214,7 +214,7 @@ def _is_download_allowed() -> bool:
     Each condition is independently toggleable. If all are disabled,
     downloads run immediately (default behavior).
     """
-    from crate.db.cache import get_setting
+    from crate.db.cache_settings import get_setting
 
     # Time window check
     if get_setting("download_window_enabled", "false") == "true":
@@ -241,7 +241,7 @@ def _is_download_allowed() -> bool:
 
 
 def _is_in_time_window() -> bool:
-    from crate.db.cache import get_setting
+    from crate.db.cache_settings import get_setting
     start_str = get_setting("download_window_start", "02:00")
     end_str = get_setting("download_window_end", "07:00")
     try:
@@ -268,7 +268,7 @@ def _count_active_users() -> int:
     is actually streaming, which is the real indicator of load.
     """
     try:
-        from crate.db.management import count_recent_active_users
+        from crate.db.queries.management import count_recent_active_users
 
         return count_recent_active_users(window_minutes=5)
     except Exception:
@@ -283,7 +283,7 @@ def _count_active_streams() -> int:
     not just unique users.
     """
     try:
-        from crate.db.management import count_recent_streams
+        from crate.db.queries.management import count_recent_streams
 
         return count_recent_streams(window_minutes=3)
     except Exception:
@@ -292,7 +292,7 @@ def _count_active_streams() -> int:
 
 def _ms_until_download_window() -> int:
     """Milliseconds until the next download window opens (or 5 min if user-gated)."""
-    from crate.db.cache import get_setting
+    from crate.db.cache_settings import get_setting
     if get_setting("download_window_enabled", "false") == "true":
         start_str = get_setting("download_window_start", "02:00")
         try:
@@ -366,7 +366,7 @@ _DOWNLOAD_SEM_TTL = 14400  # 4h — matches tidal_download timeout
 
 def _acquire_download_slot(task_id: str, timeout: int = 120) -> bool:
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if not r:
             return True
@@ -386,7 +386,7 @@ def _acquire_download_slot(task_id: str, timeout: int = 120) -> bool:
 
 def _release_download_slot(task_id: str):
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if r:
             r.srem(_DOWNLOAD_SEM_KEY, task_id)
@@ -397,7 +397,7 @@ def _release_download_slot(task_id: str):
 def clear_download_slots():
     """Force-clear download semaphore. Called on worker startup."""
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if r:
             r.delete(_DOWNLOAD_SEM_KEY)
@@ -410,7 +410,8 @@ def clear_download_slots():
 def _execute_task(task_type: str, task_id: str):
     """Generic wrapper: read PG task → run handler → update PG → check memory."""
     from crate.config import load_config
-    from crate.db.tasks import get_task, update_task
+    from crate.db.queries.tasks import get_task
+    from crate.db.repositories.tasks import update_task
     from crate.worker import TASK_HANDLERS, _is_cancelled
 
     task = get_task(task_id)
@@ -443,7 +444,7 @@ def _execute_task(task_type: str, task_id: str):
         active_users = _count_active_users()
         active_streams = _count_active_streams()
         reason = []
-        from crate.db.cache import get_setting
+        from crate.db.cache_settings import get_setting
         if get_setting("download_window_enabled", "false") == "true" and not _is_in_time_window():
             reason.append("outside download window")
         if active_users > 0:

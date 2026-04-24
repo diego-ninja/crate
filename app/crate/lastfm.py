@@ -5,7 +5,8 @@ import requests
 
 import musicbrainzngs
 
-from crate.db import get_cache, set_cache, get_mb_cache, set_mb_cache
+from crate.db.cache_musicbrainz import get_mb_cache, set_mb_cache
+from crate.db.cache_store import get_cache, set_cache
 
 LASTFM_BASE = "http://ws.audioscrobbler.com/2.0/"
 FANART_BASE = "https://webservice.fanart.tv/v3/music/"

@@ -3,8 +3,12 @@ import io as _io
 import logging
 import time
 from pathlib import Path
-from crate.db import emit_task_event, get_library_artist, get_task, set_cache
-from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
+
+from crate.db.cache_store import set_cache
+from crate.db.events import emit_task_event
+from crate.db.repositories.library import get_library_album, get_library_artist
+from crate.db.queries.tasks import get_task
+from crate.task_progress import TaskProgress, emit_item_event, emit_progress, entity_label
 from crate.db.jobs.artwork import set_album_has_cover, set_artist_has_photo
 from crate.storage_layout import resolve_artist_dir
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled, start_scan
@@ -448,8 +452,6 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
         return resolved
 
     if img_type == "cover":
-        from crate.db import get_library_album
-
         album_data = get_library_album(artist, album)
         if not album_data:
             return {"error": "Album not found"}

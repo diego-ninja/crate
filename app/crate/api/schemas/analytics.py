@@ -82,7 +82,12 @@ class StatsResponse(BaseModel):
 class RunningTaskResponse(BaseModel):
     id: str
     type: str
+    status: str | None = None
+    pool: str | None = None
     progress: str | dict[str, Any] | list[Any] | None = None
+    created_at: datetime | str | None = None
+    started_at: datetime | str | None = None
+    updated_at: datetime | str | None = None
 
 
 class RecentTaskSummaryResponse(BaseModel):
@@ -103,7 +108,9 @@ class ActivitySystemsResponse(BaseModel):
 
 
 class ActivityLiveResponse(BaseModel):
+    engine: str | None = None
     running_tasks: list[RunningTaskResponse] = Field(default_factory=list)
+    pending_tasks: list[RunningTaskResponse] = Field(default_factory=list)
     recent_tasks: list[RecentTaskSummaryResponse] = Field(default_factory=list)
     worker_slots: WorkerSlotsResponse
     systems: ActivitySystemsResponse

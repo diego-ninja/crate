@@ -2,7 +2,7 @@
 
 import logging
 
-from crate.db.playlists import (
+from crate.db.repositories.playlists import (
     generate_by_artist,
     generate_by_decade,
     generate_by_genre,

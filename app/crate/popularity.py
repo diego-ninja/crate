@@ -27,7 +27,7 @@ from crate.db.jobs.popularity import (
     reset_track_popularity_signals,
     update_album_lastfm,
 )
-from crate.db.library import get_library_artists
+from crate.db.repositories.library import get_library_artists
 from crate.lastfm import get_top_tracks as get_lastfm_top_tracks
 from crate.spotify import get_top_tracks as get_spotify_top_tracks
 
