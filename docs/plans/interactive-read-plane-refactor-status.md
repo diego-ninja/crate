@@ -5,12 +5,13 @@ Branch: `refactor/interactive_read_models`
 
 ## Executive Summary
 
-This refactor is well past the halfway point and the new architecture is already the dominant shape of the backend.
+This refactor is now structurally complete and the new architecture is the dominant shape of the backend.
 
 Current estimate:
 
-- Structural refactor complete: `~99%`
-- Remaining work: `~1%`
+- Structural refactor complete: `~100%`
+- Remaining module-splitting work: `~0%`
+- Follow-up conceptual hardening: separate optional pass
 
 What that means in practice:
 
@@ -18,7 +19,7 @@ What that means in practice:
 - Most of the backend has already been converted into thin facades over more focused `queries/`, `repositories/`, `jobs/`, and `surface` modules.
 - Snapshot-backed admin/listen surfaces, domain events, and dedicated SSE channels are already in place and actively used.
 - Alembic is already the only live migration path for fresh installs and normal runtime bootstrap.
-- The last few sessions removed eleven more concentrated backend modules from the “real monolith” list; what remains is now mostly the final query-heavy/service-heavy tail plus the last conceptual cutover of pipeline state to the new shadow/read-model plane.
+- The final concentrated backend modules from the “real monolith” list have now been split behind thin facades and validated with a full backend sweep plus frontend builds.
 
 ## Hard Constraints Followed During This Refactor
 
@@ -64,6 +65,33 @@ These domains have already been split into focused internals with thin facades o
 
 These were specifically completed and validated in the latest run:
 
+- `jam` split into:
+  - [app/crate/db/jam_rooms.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam_rooms.py)
+  - [app/crate/db/jam_members.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam_members.py)
+  - [app/crate/db/jam_events.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam_events.py)
+  - [app/crate/db/jam_invites.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam_invites.py)
+  - facade: [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
+- `analytics_audio_insights` split into:
+  - [app/crate/db/queries/analytics_audio_distribution_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_distribution_queries.py)
+  - [app/crate/db/queries/analytics_audio_scatter_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_scatter_queries.py)
+  - [app/crate/db/queries/analytics_audio_feature_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_feature_queries.py)
+  - facade: [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
+- `analytics_catalog_insights` split into:
+  - [app/crate/db/queries/analytics_catalog_distribution_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_distribution_queries.py)
+  - [app/crate/db/queries/analytics_catalog_genre_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_genre_queries.py)
+  - [app/crate/db/queries/analytics_catalog_popularity_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_popularity_queries.py)
+  - facade: [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
+- `schema_sections/curation` split into:
+  - [app/crate/db/schema_sections/curation_playlists.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation_playlists.py)
+  - [app/crate/db/schema_sections/curation_social.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation_social.py)
+  - [app/crate/db/schema_sections/curation_favorites.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation_favorites.py)
+  - facade: [app/crate/db/schema_sections/curation.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation.py)
+- `subsonic` queries split into:
+  - [app/crate/db/queries/subsonic_user_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic_user_queries.py)
+  - [app/crate/db/queries/subsonic_artist_album_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic_artist_album_queries.py)
+  - [app/crate/db/queries/subsonic_track_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic_track_queries.py)
+  - [app/crate/db/queries/subsonic_search_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic_search_queries.py)
+  - facade: [app/crate/db/queries/subsonic.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic.py)
 - `paths_service` split into:
   - [app/crate/db/paths_service_planning.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service_planning.py)
   - [app/crate/db/paths_service_payloads.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service_payloads.py)
@@ -319,6 +347,26 @@ If a future session starts failing these tests, it probably means the refactor r
 
 These were executed successfully during the latest session:
 
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_auth_maintenance.py app/tests/test_openapi_contract.py -q -k "jam or runtime_boundaries"`
+  Result: `90 passed, 30 deselected`
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py app/tests/test_ops_snapshot.py app/tests/test_openapi_contract.py -q -k "analytics or stats or timeline or insights or runtime_boundaries"`
+  Result: `94 passed, 82 deselected`
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_db.py app/tests/test_api.py app/tests/test_openapi_contract.py -q -k "curation or system_playlist or runtime_boundaries"`
+  Result: `97 passed, 142 deselected`
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api_integration.py app/tests/test_openapi_contract.py -q -k "subsonic or runtime_boundaries"`
+  Result: `96 passed, 49 deselected`
+- `uv run pytest app/tests/test_db.py -q -k "test_find_best_candidate_falls_back_to_bliss_vector_when_embedding_missing"`
+  Result: `1 passed, 62 deselected`
+- `uv run pytest app/tests/test_db.py -q -k "test_upsert_ui_snapshot_publishes_snapshot_update_when_committing_its_own_tx"`
+  Result: `1 passed, 62 deselected`
+- `uv run pytest app/tests/test_db_facade_exports.py -q`
+  Result: `1 passed`
+- `uv run pytest app/tests -q`
+  Result: `511 passed, 1 skipped`
+- `npm run --workspace=app/ui build`
+  Result: `passed`
+- `npm run --workspace=app/listen build`
+  Result: `passed` with an existing Vite chunk-size warning in Listen only
 - `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py -q -k "paths or runtime_boundaries"`
   Result: `85 passed, 56 deselected`
 - `uv run pytest app/tests/test_api.py app/tests/test_explore_contracts.py app/tests/test_runtime_boundaries.py -q -k "browse_artist or runtime_boundaries"`
@@ -370,11 +418,9 @@ These were executed successfully during the latest session:
 
 ## Remaining High-Value Work
 
-This is the most important part of the handoff.
+The module-splitting tail is done. What remains now is follow-up work, not structural breakup work.
 
-### Top remaining modules by size / concentration
-
-At the time of writing, the main remaining concentrated modules are roughly:
+### Modules completed in this final structural batch
 
 - [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
 - [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
@@ -382,41 +428,36 @@ At the time of writing, the main remaining concentrated modules are roughly:
 - [app/crate/db/schema_sections/curation.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation.py)
 - [app/crate/db/queries/subsonic.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic.py)
 
+### Structural modules still pending
+
+- none identified in the original remaining tail
+
 ### Recommended continuation order
 
-The next session should probably continue in roughly this order:
+If a future session continues from here, it should be for conceptual hardening in roughly this order:
 
-1. [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
-2. [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
-3. [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
-4. [app/crate/db/schema_sections/curation.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation.py)
-5. [app/crate/db/queries/subsonic.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic.py)
-
-Reason for this order:
-
-- finish the last big runtime/service-heavy module first
-- then tackle the remaining concentrated query/schema nodes that still hold a lot of inline SQL and shaping logic
-- keep the pipeline truth cutover moving by continuing to favor split modules around `track_processing_state` and shadow tables instead of re-expanding legacy `library_tracks` hot columns
+1. Finish the final truth cutover around `track_processing_state` and shadow tables.
+2. Continue reducing broad invalidation in favor of semantic events and snapshot-driven updates where still useful.
+3. Do opportunistic performance cleanup in Listen build output if the chunk-size warning becomes worth addressing.
+4. Keep boundary coverage strict so facades do not re-accumulate logic.
 
 ## Remaining Conceptual Work Beyond File Splits
 
-Even after the remaining large files are split, these deeper items still need a final pass:
+The structural refactor can now reasonably be called done. These are the follow-ups that may still deserve their own focused passes.
 
 ### 1. Final pipeline truth cutover
-
-This is still one of the most important unfinished conceptual tasks.
 
 Current state:
 
 - `track_processing_state` exists and is already used heavily
 - analysis/bliss writes already use new helper layers and batch paths
-- read-plane tables/shadows already exist
+- read-plane tables and shadows already exist
 
-Still to finish:
+Still worth tightening:
 
 - make `track_processing_state` and the shadow result tables the unquestioned operational truth
 - reduce compatibility dependence on legacy `library_tracks.analysis_state` / `library_tracks.bliss_state`
-- keep `library_tracks` stable and non-churny as much as possible
+- keep `library_tracks` stable and low-churn where possible
 
 ### 2. Final snapshot / projector maturity pass
 
@@ -426,37 +467,37 @@ Still worth doing:
 - reduce reliance on broad invalidation when a semantic event would do
 - keep moving surfaces toward snapshot-driven updates
 
-### 3. Final cleanup / consolidation pass
+### 3. Optional frontend performance follow-up
 
-Before calling the refactor “done”, the last pass should include:
+Current state:
 
-- boundary tests for any newly split facades
-- a broad regression pytest sweep
-- `app/ui` and `app/listen` build validation
-- one final review of runtime imports so no new accidental backslides appeared
+- `app/ui` build passed cleanly
+- `app/listen` build passed, with an existing Vite chunk-size warning only
+
+Possible follow-up:
+
+- split or defer the largest Listen chunks if bundle pressure becomes user-visible
 
 ## Files That Matter Most For The Next Session
 
-Start here first:
+If work continues, start from the conceptual cutover and projection layers rather than from split facades:
 
-- [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
-- [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
-- [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
-
-Secondary:
-
-- [app/crate/db/schema_sections/curation.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation.py)
-- [app/crate/db/queries/subsonic.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic.py)
+- [app/crate/db/repositories/library_processing_state.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/repositories/library_processing_state.py)
+- [app/crate/db/jobs/analysis_backfill_processing_state.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/analysis_backfill_processing_state.py)
+- [app/crate/db/jobs/analysis_backfill_shadow_tables.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/analysis_backfill_shadow_tables.py)
+- [app/crate/db/ui_snapshot_writes.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/ui_snapshot_writes.py)
+- [app/crate/db/snapshot_events.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/snapshot_events.py)
 
 ## Worktree / Commit State
 
 - Branch: `refactor/interactive_read_models`
-- The worktree is currently very dirty with many uncommitted refactor changes after the checkpoint commit.
+- The worktree is still very dirty because this long-running refactor spans many modules and prior in-progress edits.
 - Recent checkpoints in this long-running refactor include:
   - `f5c9ad2c` — `refactor: split home, paths, and media query modules`
   - `86441eaa` — `refactor: split shows query module`
+  - `ac2152ea` — `refactor: split paths service, similarities, and repair jobs`
 
-Before stopping for a long time, it would be sensible in a future session to create another checkpoint commit once the next few remaining large cuts are done and a broader test sweep is green.
+This session finished the last identified structural cuts and passed the broad backend sweep plus both frontend builds, so creating a new checkpoint commit is appropriate if the staged diff is kept coherent.
 
 ## Practical Resume Checklist
 
@@ -464,25 +505,28 @@ When resuming in a fresh session:
 
 1. Read this file first.
 2. Confirm branch: `git branch --show-current`
-3. Start with:
-   - [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
-4. After each cut:
-   - add/update a boundary test in [app/tests/test_runtime_boundaries.py](/Users/diego/Code/Ninja/musicdock/app/tests/test_runtime_boundaries.py)
+3. Decide whether the goal is:
+   - conceptual pipeline truth hardening, or
+   - projector / snapshot event maturity, or
+   - frontend bundle follow-up
+4. Keep using:
+   - thin facades
+   - focused internals
+   - boundary tests in [app/tests/test_runtime_boundaries.py](/Users/diego/Code/Ninja/musicdock/app/tests/test_runtime_boundaries.py)
+5. After each follow-up cut:
    - run the smallest relevant pytest slice
-   - only then continue to the next block
-5. Once the remaining big nodes are split:
-   - do a broad regression sweep
-   - run `npm run build` in [app/ui](/Users/diego/Code/Ninja/musicdock/app/ui) and [app/listen](/Users/diego/Code/Ninja/musicdock/app/listen)
-   - re-estimate progress and decide whether the final pipeline truth cutover still needs separate focused work
+   - then rerun `uv run pytest app/tests -q` before calling the work complete
+   - rerun `npm run --workspace=app/ui build` and `npm run --workspace=app/listen build` if contracts or payloads changed
 
 ## Bottom Line
 
-This is no longer an “architecture idea”. It is already the dominant reality of the backend.
+This is no longer an “architecture idea”, and it is no longer a module-splitting project.
 
-What remains is not a messy unknown; it is a finite tail:
+The structural backend refactor is complete:
 
-- a handful of still-large modules
-- the last conceptual cutover of pipeline truth
-- and a final consolidation/validation pass
+- thin facades are now the dominant pattern
+- the remaining monolith tail has been split
+- broad regression tests are green
+- both frontend apps still build against the refactored backend surface
 
-The next session should be able to continue directly from this file without having to reconstruct the whole refactor story from scratch.
+Any next session should treat this as a consolidation and hardening phase, not as unfinished structural breakup work.

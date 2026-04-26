@@ -51,6 +51,9 @@ def artist_to_dict(artist) -> dict | None:
         "enriched_at": artist.enriched_at,
         "discogs_id": artist.discogs_id,
         "lastfm_playcount": artist.lastfm_playcount,
+        "popularity": artist.popularity,
+        "popularity_score": artist.popularity_score,
+        "popularity_confidence": artist.popularity_confidence,
         "discogs_profile": artist.discogs_profile,
         "discogs_members_json": artist.discogs_members_json,
         "latest_release_date": artist.latest_release_date,
@@ -84,6 +87,8 @@ def album_to_dict(album) -> dict | None:
         "lastfm_listeners": album.lastfm_listeners,
         "lastfm_playcount": album.lastfm_playcount,
         "popularity": album.popularity,
+        "popularity_score": album.popularity_score,
+        "popularity_confidence": album.popularity_confidence,
         "quarantined_at": album.quarantined_at,
         "quarantine_task_id": album.quarantine_task_id,
     }
@@ -135,7 +140,12 @@ def track_to_dict(track) -> dict | None:
         "bliss_vector": list(track.bliss_vector or []) if track.bliss_vector is not None else None,
         "lastfm_listeners": track.lastfm_listeners,
         "lastfm_playcount": track.lastfm_playcount,
+        "lastfm_top_rank": track.lastfm_top_rank,
+        "spotify_track_popularity": track.spotify_track_popularity,
+        "spotify_top_rank": track.spotify_top_rank,
         "popularity": track.popularity,
+        "popularity_score": track.popularity_score,
+        "popularity_confidence": track.popularity_confidence,
         "rating": track.rating or 0,
     }
 

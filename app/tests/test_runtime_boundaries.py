@@ -764,6 +764,22 @@ def test_analytics_insights_facade_stays_thin():
     assert "from sqlalchemy import" not in source
 
 
+def test_analytics_audio_insights_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "queries" / "analytics_audio_insights.py").read_text()
+
+    assert "transaction_scope" not in source
+    assert "read_scope" not in source
+    assert "from sqlalchemy import" not in source
+
+
+def test_analytics_catalog_insights_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "queries" / "analytics_catalog_insights.py").read_text()
+
+    assert "transaction_scope" not in source
+    assert "read_scope" not in source
+    assert "from sqlalchemy import" not in source
+
+
 def test_bliss_artists_facade_stays_thin():
     source = (CRATE_ROOT / "db" / "queries" / "bliss_artists.py").read_text()
 
@@ -804,6 +820,14 @@ def test_library_schema_section_facade_stays_thin():
     assert "ALTER TABLE" not in source
 
 
+def test_curation_schema_section_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "schema_sections" / "curation.py").read_text()
+
+    assert "CREATE TABLE" not in source
+    assert "CREATE INDEX" not in source
+    assert "ALTER TABLE" not in source
+
+
 def test_paths_module_keeps_sql_in_query_and_repository_layers():
     source = (CRATE_ROOT / "db" / "paths.py").read_text()
 
@@ -828,6 +852,16 @@ def test_paths_scoring_facade_stays_thin():
     assert "read_scope" not in source
 
 
+def test_jam_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "jam.py").read_text()
+
+    assert "from sqlalchemy import" not in source
+    assert "transaction_scope" not in source
+    assert "import json" not in source
+    assert "import secrets" not in source
+    assert "import uuid" not in source
+
+
 def test_paths_service_facade_stays_thin():
     source = (CRATE_ROOT / "db" / "paths_service.py").read_text()
 
@@ -847,6 +881,14 @@ def test_paths_queries_module_stays_read_only():
 
 def test_paths_graph_queries_facade_stays_thin():
     source = (CRATE_ROOT / "db" / "queries" / "paths_graph_queries.py").read_text()
+
+    assert "transaction_scope" not in source
+    assert "read_scope" not in source
+    assert "from sqlalchemy import" not in source
+
+
+def test_subsonic_queries_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "queries" / "subsonic.py").read_text()
 
     assert "transaction_scope" not in source
     assert "read_scope" not in source

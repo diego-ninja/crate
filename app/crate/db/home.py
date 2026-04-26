@@ -6,9 +6,11 @@ across cache/context/surface modules.
 
 from crate.db.home_cache import _get_or_compute_home_cache
 from crate.db.home_context import _derive_home_genres
-from crate.db.home_surfaces import (
+from crate.db.home_discovery_surface import (
     get_cached_home_discovery,
     get_home_discovery,
+)
+from crate.db.home_personalized_sections import (
     get_home_essentials,
     get_home_favorite_artists,
     get_home_hero,

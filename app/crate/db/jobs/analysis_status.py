@@ -1,0 +1,122 @@
+"""Status and inventory helpers for analysis pipelines."""
+
+from __future__ import annotations
+
+from sqlalchemy import text
+
+from crate.db.tx import transaction_scope
+
+
+def get_analysis_status() -> dict:
+    """Return current analysis progress for both daemons."""
+    with transaction_scope() as session:
+        total = int(session.execute(text("SELECT COUNT(*) AS cnt FROM library_tracks")).scalar() or 0)
+        rows = session.execute(
+            text(
+                """
+                SELECT pipeline, state, COUNT(*) AS cnt
+                FROM track_processing_state
+                GROUP BY pipeline, state
+                """
+            )
+        ).mappings().all()
+        counts: dict[str, dict[str, int]] = {
+            "analysis": {"done": 0, "pending": 0, "analyzing": 0, "failed": 0},
+            "bliss": {"done": 0, "pending": 0, "analyzing": 0, "failed": 0},
+        }
+        coverage = {"analysis": 0, "bliss": 0}
+        for row in rows:
+            pipeline = row["pipeline"]
+            state = row["state"]
+            if pipeline in counts and state in counts[pipeline]:
+                counts[pipeline][state] = int(row["cnt"] or 0)
+                coverage[pipeline] += int(row["cnt"] or 0)
+
+        if coverage["analysis"] < total:
+            missing = session.execute(
+                text(
+                    """
+                    SELECT
+                        COUNT(*) FILTER (WHERE analysis_state = 'done') AS done,
+                        COUNT(*) FILTER (WHERE analysis_state = 'pending') AS pending,
+                        COUNT(*) FILTER (WHERE analysis_state = 'analyzing') AS analyzing,
+                        COUNT(*) FILTER (WHERE analysis_state = 'failed') AS failed
+                    FROM library_tracks lt
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM track_processing_state ps
+                        WHERE ps.track_id = lt.id AND ps.pipeline = 'analysis'
+                    )
+                    """
+                )
+            ).mappings().first()
+            if missing:
+                for state in counts["analysis"]:
+                    counts["analysis"][state] += int(missing[state] or 0)
+
+        if coverage["bliss"] < total:
+            missing = session.execute(
+                text(
+                    """
+                    SELECT
+                        COUNT(*) FILTER (WHERE bliss_state = 'done') AS done,
+                        COUNT(*) FILTER (WHERE bliss_state = 'pending') AS pending,
+                        COUNT(*) FILTER (WHERE bliss_state = 'analyzing') AS analyzing,
+                        COUNT(*) FILTER (WHERE bliss_state = 'failed') AS failed
+                    FROM library_tracks lt
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM track_processing_state ps
+                        WHERE ps.track_id = lt.id AND ps.pipeline = 'bliss'
+                    )
+                    """
+                )
+            ).mappings().first()
+            if missing:
+                for state in counts["bliss"]:
+                    counts["bliss"][state] += int(missing[state] or 0)
+
+        return {
+            "total": total,
+            "analysis_done": counts["analysis"]["done"],
+            "analysis_pending": counts["analysis"]["pending"],
+            "analysis_active": counts["analysis"]["analyzing"],
+            "analysis_failed": counts["analysis"]["failed"],
+            "bliss_done": counts["bliss"]["done"],
+            "bliss_pending": counts["bliss"]["pending"],
+            "bliss_active": counts["bliss"]["analyzing"],
+            "bliss_failed": counts["bliss"]["failed"],
+        }
+
+
+def get_artists_needing_analysis() -> set[str]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text(
+                "SELECT al.artist FROM library_tracks t "
+                "JOIN library_albums al ON t.album_id = al.id "
+                "WHERE t.bpm IS NULL OR t.energy IS NULL "
+                "GROUP BY al.artist"
+            )
+        ).mappings().all()
+        return {row["artist"] for row in rows}
+
+
+def get_artists_needing_bliss() -> set[str]:
+    with transaction_scope() as session:
+        rows = session.execute(
+            text(
+                "SELECT al.artist FROM library_tracks t "
+                "JOIN library_albums al ON t.album_id = al.id "
+                "WHERE t.bliss_vector IS NULL "
+                "GROUP BY al.artist"
+            )
+        ).mappings().all()
+        return {row["artist"] for row in rows}
+
+
+__all__ = [
+    "get_analysis_status",
+    "get_artists_needing_analysis",
+    "get_artists_needing_bliss",
+]
