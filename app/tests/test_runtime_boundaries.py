@@ -731,6 +731,14 @@ def test_analytics_queries_facade_stays_thin():
     assert "from sqlalchemy import" not in source
 
 
+def test_analytics_overview_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "queries" / "analytics_overview.py").read_text()
+
+    assert "transaction_scope" not in source
+    assert "read_scope" not in source
+    assert "from sqlalchemy import" not in source
+
+
 def test_analytics_surfaces_facade_stays_thin():
     source = (CRATE_ROOT / "db" / "analytics_surfaces.py").read_text()
 
@@ -770,6 +778,14 @@ def test_browse_media_queries_facade_stays_thin():
     assert "transaction_scope" not in source
     assert "read_scope" not in source
     assert "from sqlalchemy import" not in source
+
+
+def test_library_schema_section_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "schema_sections" / "library.py").read_text()
+
+    assert "CREATE TABLE" not in source
+    assert "CREATE INDEX" not in source
+    assert "ALTER TABLE" not in source
 
 
 def test_paths_module_keeps_sql_in_query_and_repository_layers():
