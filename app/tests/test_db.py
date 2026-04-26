@@ -716,7 +716,7 @@ class TestPlaylistQueryBatching:
         def mock_scope():
             yield MockSession()
 
-        with patch("crate.db.repositories.playlists_reads.read_scope", mock_scope):
+        with patch("crate.db.repositories.playlists_collection_reads.read_scope", mock_scope):
             playlists = list_system_playlists(user_id=7)
 
         assert len(execute_calls) == 2
@@ -988,6 +988,8 @@ class TestLibraryCRUD:
         assert isinstance(album_id, int)
 
     def test_upsert_track(self, pg_db):
+        from crate.db.tx import transaction_scope
+
         pg_db.upsert_artist({"name": "Artist C"})
         album_id = pg_db.upsert_album({
             "artist": "Artist C",
@@ -1007,6 +1009,22 @@ class TestLibraryCRUD:
         tracks = pg_db.get_library_tracks(album_id)
         assert len(tracks) == 1
         assert tracks[0]["title"] == "Song"
+
+        with transaction_scope() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT pipeline, state
+                    FROM track_processing_state
+                    WHERE track_id = :track_id
+                    ORDER BY pipeline
+                    """
+                ),
+                {"track_id": tracks[0]["id"]},
+            ).mappings().all()
+
+        assert [row["pipeline"] for row in rows] == ["analysis", "bliss"]
+        assert all(row["state"] == "pending" for row in rows)
 
     def test_get_library_artists_pagination(self, pg_db):
         for i in range(5):
@@ -1175,6 +1193,24 @@ class TestReadModels:
 
         assert affected >= 1
         assert stale is None
+
+    def test_analytics_surfaces_facade_reexports_snapshot_helpers(self, pg_db):
+        from crate.db.analytics_surfaces import empty_missing_report, empty_quality_report, missing_snapshot_subject_key
+
+        quality = empty_quality_report(computing=True, task_id="quality-1")
+        missing = empty_missing_report(
+            artist="Drive Like Jehu",
+            artist_id=7,
+            local=[{"id": 10, "name": "Yank Crime"}],
+            error="missing metadata",
+        )
+
+        assert quality["computing"] is True
+        assert quality["task_id"] == "quality-1"
+        assert missing["artist_id"] == 7
+        assert missing["local_count"] == 1
+        assert missing["error"] == "missing metadata"
+        assert missing_snapshot_subject_key(7) == "artist:7"
 
     def test_ops_runtime_state_roundtrip(self, pg_db):
         from crate.db.read_models import get_ops_runtime_state, set_ops_runtime_state
