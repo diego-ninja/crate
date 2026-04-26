@@ -9,8 +9,8 @@ This refactor is well past the halfway point and the new architecture is already
 
 Current estimate:
 
-- Structural refactor complete: `~98%`
-- Remaining work: `~2%`
+- Structural refactor complete: `~99%`
+- Remaining work: `~1%`
 
 What that means in practice:
 
@@ -64,6 +64,21 @@ These domains have already been split into focused internals with thin facades o
 
 These were specifically completed and validated in the latest run:
 
+- `paths_service` split into:
+  - [app/crate/db/paths_service_planning.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service_planning.py)
+  - [app/crate/db/paths_service_payloads.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service_payloads.py)
+  - [app/crate/db/paths_service_reads.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service_reads.py)
+  - [app/crate/db/paths_service_writes.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service_writes.py)
+  - facade: [app/crate/db/paths_service.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service.py)
+- `similarities` split into:
+  - [app/crate/db/similarity_writes.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarity_writes.py)
+  - [app/crate/db/similarity_reads.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarity_reads.py)
+  - [app/crate/db/similarity_network.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarity_network.py)
+  - facade: [app/crate/db/similarities.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarities.py)
+- `jobs/repair` split into:
+  - [app/crate/db/jobs/repair_artist_jobs.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair_artist_jobs.py)
+  - [app/crate/db/jobs/repair_media_jobs.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair_media_jobs.py)
+  - facade: [app/crate/db/jobs/repair.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair.py)
 - `shows` queries split into:
   - [app/crate/db/queries/shows_location_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/shows_location_queries.py)
   - [app/crate/db/queries/shows_upcoming_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/shows_upcoming_queries.py)
@@ -304,6 +319,12 @@ If a future session starts failing these tests, it probably means the refactor r
 
 These were executed successfully during the latest session:
 
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py -q -k "paths or runtime_boundaries"`
+  Result: `85 passed, 56 deselected`
+- `uv run pytest app/tests/test_api.py app/tests/test_explore_contracts.py app/tests/test_runtime_boundaries.py -q -k "browse_artist or runtime_boundaries"`
+  Result: `86 passed, 59 deselected`
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_db.py app/tests/test_repair.py -q -k "repair or runtime_boundaries"`
+  Result: `101 passed, 62 deselected`
 - `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py app/tests/test_api_integration.py app/tests/test_upcoming_intelligence_contracts.py -q -k "shows or upcoming or runtime_boundaries"`
   Result: `89 passed, 78 deselected`
 - `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_db.py -q -k "library_schema_section or init_db_ or runtime_boundaries"`
@@ -356,9 +377,6 @@ This is the most important part of the handoff.
 At the time of writing, the main remaining concentrated modules are roughly:
 
 - [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
-- [app/crate/db/similarities.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarities.py)
-- [app/crate/db/paths_service.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service.py)
-- [app/crate/db/jobs/repair.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair.py)
 - [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
 - [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
 - [app/crate/db/schema_sections/curation.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation.py)
@@ -368,18 +386,15 @@ At the time of writing, the main remaining concentrated modules are roughly:
 
 The next session should probably continue in roughly this order:
 
-1. [app/crate/db/paths_service.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service.py)
-2. [app/crate/db/similarities.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarities.py)
-3. [app/crate/db/jobs/repair.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair.py)
-4. [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
-5. [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
-6. [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
-7. [app/crate/db/schema_sections/curation.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation.py)
-8. [app/crate/db/queries/subsonic.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic.py)
+1. [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
+2. [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
+3. [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
+4. [app/crate/db/schema_sections/curation.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation.py)
+5. [app/crate/db/queries/subsonic.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic.py)
 
 Reason for this order:
 
-- finish the last two modules from the original recommended block first
+- finish the last big runtime/service-heavy module first
 - then tackle the remaining concentrated query/schema nodes that still hold a lot of inline SQL and shaping logic
 - keep the pipeline truth cutover moving by continuing to favor split modules around `track_processing_state` and shadow tables instead of re-expanding legacy `library_tracks` hot columns
 
@@ -424,15 +439,12 @@ Before calling the refactor “done”, the last pass should include:
 
 Start here first:
 
-- [app/crate/db/paths_service.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service.py)
-- [app/crate/db/similarities.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarities.py)
-- [app/crate/db/jobs/repair.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair.py)
 - [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
+- [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
+- [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
 
 Secondary:
 
-- [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
-- [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
 - [app/crate/db/schema_sections/curation.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/curation.py)
 - [app/crate/db/queries/subsonic.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/subsonic.py)
 
@@ -440,8 +452,9 @@ Secondary:
 
 - Branch: `refactor/interactive_read_models`
 - The worktree is currently very dirty with many uncommitted refactor changes after the checkpoint commit.
-- The last known checkpoint commit created during this long-running refactor before the current in-flight continuation was:
+- Recent checkpoints in this long-running refactor include:
   - `f5c9ad2c` — `refactor: split home, paths, and media query modules`
+  - `86441eaa` — `refactor: split shows query module`
 
 Before stopping for a long time, it would be sensible in a future session to create another checkpoint commit once the next few remaining large cuts are done and a broader test sweep is green.
 
@@ -452,7 +465,7 @@ When resuming in a fresh session:
 1. Read this file first.
 2. Confirm branch: `git branch --show-current`
 3. Start with:
-   - [app/crate/db/paths_service.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service.py)
+   - [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
 4. After each cut:
    - add/update a boundary test in [app/tests/test_runtime_boundaries.py](/Users/diego/Code/Ninja/musicdock/app/tests/test_runtime_boundaries.py)
    - run the smallest relevant pytest slice

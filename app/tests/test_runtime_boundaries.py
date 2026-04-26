@@ -440,6 +440,14 @@ def test_analysis_backfill_facade_stays_thin():
     assert "read_scope" not in source
 
 
+def test_repair_jobs_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "jobs" / "repair.py").read_text()
+
+    assert "from sqlalchemy import" not in source
+    assert "transaction_scope" not in source
+    assert "\ndef " not in source
+
+
 def test_library_repository_facade_stays_thin():
     source = (CRATE_ROOT / "db" / "repositories" / "library.py").read_text()
 
@@ -820,6 +828,15 @@ def test_paths_scoring_facade_stays_thin():
     assert "read_scope" not in source
 
 
+def test_paths_service_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "paths_service.py").read_text()
+
+    assert "from crate.db.paths_compute import" not in source
+    assert "from crate.db.queries.paths import" not in source
+    assert "from crate.db.repositories.paths import" not in source
+    assert "\ndef _" not in source
+
+
 def test_paths_queries_module_stays_read_only():
     source = (CRATE_ROOT / "db" / "queries" / "paths.py").read_text()
 
@@ -834,6 +851,14 @@ def test_paths_graph_queries_facade_stays_thin():
     assert "transaction_scope" not in source
     assert "read_scope" not in source
     assert "from sqlalchemy import" not in source
+
+
+def test_similarities_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "similarities.py").read_text()
+
+    assert "from sqlalchemy import" not in source
+    assert "transaction_scope" not in source
+    assert "\ndef _" not in source
 
 
 def test_social_queries_module_stays_read_only():
