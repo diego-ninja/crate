@@ -274,6 +274,14 @@ def test_home_queries_facade_stays_thin():
     assert "transaction_scope" not in source
 
 
+def test_home_tracks_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "queries" / "home_tracks.py").read_text()
+
+    assert "from sqlalchemy import" not in source
+    assert "read_scope" not in source
+    assert "transaction_scope" not in source
+
+
 def test_home_builders_facade_stays_thin():
     source = (CRATE_ROOT / "db" / "home_builders.py").read_text()
 
@@ -756,6 +764,14 @@ def test_browse_artist_queries_facade_stays_thin():
     assert "from sqlalchemy import" not in source
 
 
+def test_browse_media_queries_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "queries" / "browse_media.py").read_text()
+
+    assert "transaction_scope" not in source
+    assert "read_scope" not in source
+    assert "from sqlalchemy import" not in source
+
+
 def test_paths_module_keeps_sql_in_query_and_repository_layers():
     source = (CRATE_ROOT / "db" / "paths.py").read_text()
 
@@ -782,6 +798,14 @@ def test_paths_scoring_facade_stays_thin():
 
 def test_paths_queries_module_stays_read_only():
     source = (CRATE_ROOT / "db" / "queries" / "paths.py").read_text()
+
+    assert "transaction_scope" not in source
+    assert "read_scope" not in source
+    assert "from sqlalchemy import" not in source
+
+
+def test_paths_graph_queries_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "queries" / "paths_graph_queries.py").read_text()
 
     assert "transaction_scope" not in source
     assert "read_scope" not in source

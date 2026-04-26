@@ -9,8 +9,8 @@ This refactor is well past the halfway point and the new architecture is already
 
 Current estimate:
 
-- Structural refactor complete: `~94%`
-- Remaining work: `~6%`
+- Structural refactor complete: `~96%`
+- Remaining work: `~4%`
 
 What that means in practice:
 
@@ -18,7 +18,7 @@ What that means in practice:
 - Most of the backend has already been converted into thin facades over more focused `queries/`, `repositories/`, `jobs/`, and `surface` modules.
 - Snapshot-backed admin/listen surfaces, domain events, and dedicated SSE channels are already in place and actively used.
 - Alembic is already the only live migration path for fresh installs and normal runtime bootstrap.
-- This session removed six more concentrated backend modules from the “real monolith” list; what remains is now mostly the final query-heavy nodes plus the last conceptual cutover of pipeline state to the new shadow/read-model plane.
+- The last two sessions removed nine more concentrated backend modules from the “real monolith” list; what remains is now mostly the final query-heavy/schema-heavy nodes plus the last conceptual cutover of pipeline state to the new shadow/read-model plane.
 
 ## Hard Constraints Followed During This Refactor
 
@@ -64,6 +64,24 @@ These domains have already been split into focused internals with thin facades o
 
 These were specifically completed and validated in the latest run:
 
+- `home_tracks` split into:
+  - [app/crate/db/queries/home_track_rows.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_track_rows.py)
+  - [app/crate/db/queries/home_track_album_candidates.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_track_album_candidates.py)
+  - [app/crate/db/queries/home_track_discovery.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_track_discovery.py)
+  - [app/crate/db/queries/home_track_recent_interest.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_track_recent_interest.py)
+  - [app/crate/db/queries/home_track_artist_core.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_track_artist_core.py)
+  - facade: [app/crate/db/queries/home_tracks.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_tracks.py)
+- `paths_graph_queries` split into:
+  - [app/crate/db/queries/paths_artist_graph_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/paths_artist_graph_queries.py)
+  - [app/crate/db/queries/paths_bliss_candidate_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/paths_bliss_candidate_queries.py)
+  - facade: [app/crate/db/queries/paths_graph_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/paths_graph_queries.py)
+- `browse_media` split into:
+  - [app/crate/db/queries/browse_media_search.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/browse_media_search.py)
+  - [app/crate/db/queries/browse_media_favorites.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/browse_media_favorites.py)
+  - [app/crate/db/queries/browse_media_track_lookup.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/browse_media_track_lookup.py)
+  - [app/crate/db/queries/browse_media_track_genres.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/browse_media_track_genres.py)
+  - [app/crate/db/queries/browse_media_mood.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/browse_media_mood.py)
+  - facade: [app/crate/db/queries/browse_media.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/browse_media.py)
 - `home_builder_shared` split into:
   - [app/crate/db/home_builder_dates.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/home_builder_dates.py)
   - [app/crate/db/home_builder_identity.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/home_builder_identity.py)
@@ -272,6 +290,12 @@ If a future session starts failing these tests, it probably means the refactor r
 These were executed successfully during the latest session:
 
 - `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py app/tests/test_openapi_contract.py -q -k "home or runtime_boundaries"`
+  Result: `84 passed, 80 deselected`
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_radio_contracts.py app/tests/test_api.py -q -k "paths or radio or runtime_boundaries"`
+  Result: `86 passed, 56 deselected`
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py app/tests/test_explore_contracts.py app/tests/test_openapi_contract.py -q -k "browse_media or search_from_db or test_search_contract_shapes_artist_album_and_track_results or runtime_boundaries"`
+  Result: `83 passed, 86 deselected`
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py app/tests/test_openapi_contract.py -q -k "home or runtime_boundaries"`
   Result: `78 passed, 80 deselected`
 - `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api_integration.py app/tests/test_openapi_contract.py -q -k "home_discovery or upcoming or runtime_boundaries"`
   Result: `79 passed, 48 deselected`
@@ -311,29 +335,28 @@ This is the most important part of the handoff.
 At the time of writing, the main remaining concentrated modules are roughly:
 
 - [app/crate/db/schema_sections/library.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/library.py)
-- [app/crate/db/queries/paths_graph_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/paths_graph_queries.py)
-- [app/crate/db/queries/browse_media.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/browse_media.py)
 - [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
 - [app/crate/db/similarities.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarities.py)
 - [app/crate/db/queries/analytics_overview.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_overview.py)
 - [app/crate/db/paths_service.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service.py)
 - [app/crate/db/jobs/repair.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair.py)
 - [app/crate/db/queries/shows.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/shows.py)
-- [app/crate/db/queries/home_tracks.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_tracks.py)
+- [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
+- [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
 
 ### Recommended continuation order
 
 The next session should probably continue in roughly this order:
 
-1. [app/crate/db/queries/home_tracks.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_tracks.py)
-2. [app/crate/db/queries/paths_graph_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/paths_graph_queries.py)
-3. [app/crate/db/queries/browse_media.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/browse_media.py)
-4. [app/crate/db/schema_sections/library.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/library.py)
-5. [app/crate/db/queries/analytics_overview.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_overview.py)
-6. [app/crate/db/queries/shows.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/shows.py)
-7. [app/crate/db/paths_service.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service.py)
-8. [app/crate/db/similarities.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarities.py)
-9. [app/crate/db/jobs/repair.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair.py)
+1. [app/crate/db/schema_sections/library.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/library.py)
+2. [app/crate/db/queries/analytics_overview.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_overview.py)
+3. [app/crate/db/queries/shows.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/shows.py)
+4. [app/crate/db/paths_service.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service.py)
+5. [app/crate/db/similarities.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarities.py)
+6. [app/crate/db/jobs/repair.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair.py)
+7. [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
+8. [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
+9. [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
 
 Reason for this order:
 
@@ -382,25 +405,25 @@ Before calling the refactor “done”, the last pass should include:
 
 Start here first:
 
-- [app/crate/db/queries/home_tracks.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_tracks.py)
-- [app/crate/db/queries/paths_graph_queries.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/paths_graph_queries.py)
-- [app/crate/db/queries/browse_media.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/browse_media.py)
 - [app/crate/db/schema_sections/library.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/library.py)
 - [app/crate/db/queries/analytics_overview.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_overview.py)
-
-Secondary:
-
 - [app/crate/db/queries/shows.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/shows.py)
 - [app/crate/db/paths_service.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/paths_service.py)
 - [app/crate/db/similarities.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/similarities.py)
+
+Secondary:
+
 - [app/crate/db/jobs/repair.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/repair.py)
+- [app/crate/db/jam.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jam.py)
+- [app/crate/db/queries/analytics_audio_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_audio_insights.py)
+- [app/crate/db/queries/analytics_catalog_insights.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/analytics_catalog_insights.py)
 
 ## Worktree / Commit State
 
 - Branch: `refactor/interactive_read_models`
 - The worktree is currently very dirty with many uncommitted refactor changes after the checkpoint commit.
-- The last known checkpoint commit created during this long-running refactor was:
-  - `8224a3d7` — `refactor: consolidate interactive read plane foundations`
+- The last known checkpoint commit created during this long-running refactor before the current in-flight continuation was:
+  - `1bf6e1e0` — `refactor: split more interactive read plane modules`
 
 Before stopping for a long time, it would be sensible in a future session to create another checkpoint commit once the next few remaining large cuts are done and a broader test sweep is green.
 
@@ -411,7 +434,7 @@ When resuming in a fresh session:
 1. Read this file first.
 2. Confirm branch: `git branch --show-current`
 3. Start with:
-   - [app/crate/db/queries/home_tracks.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/queries/home_tracks.py)
+   - [app/crate/db/schema_sections/library.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/schema_sections/library.py)
 4. After each cut:
    - add/update a boundary test in [app/tests/test_runtime_boundaries.py](/Users/diego/Code/Ninja/musicdock/app/tests/test_runtime_boundaries.py)
    - run the smallest relevant pytest slice

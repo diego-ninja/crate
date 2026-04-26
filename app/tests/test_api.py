@@ -61,7 +61,7 @@ class TestArtistsAPI:
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
-             patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
+             patch("crate.db.queries.browse_artist_listing.read_scope", mock_scope):
             resp = test_app.get("/api/artists")
             assert resp.status_code == 200
             data = resp.json()
@@ -80,7 +80,7 @@ class TestArtistsAPI:
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
-             patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
+             patch("crate.db.queries.browse_artist_listing.read_scope", mock_scope):
             resp = test_app.get("/api/artists?page=1&per_page=3")
             assert resp.status_code == 200
             data = resp.json()
@@ -95,7 +95,7 @@ class TestArtistsAPI:
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
              patch("crate.api.browse_artist.get_all_artist_issue_counts", return_value={}), \
-             patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
+             patch("crate.db.queries.browse_artist_listing.read_scope", mock_scope):
             resp = test_app.get("/api/artists?q=radio&sort=name")
             assert resp.status_code == 200
             data = resp.json()
@@ -145,7 +145,7 @@ class TestArtistDetailAPI:
              patch("crate.api.browse_artist.get_library_albums", return_value=mock_albums), \
              patch("crate.api.browse_artist.get_album_quality_map", return_value={1: {"format": "flac", "bit_depth": 16, "sample_rate": 44100}}), \
              patch("crate.api.browse_artist.get_artist_issue_count", return_value=0), \
-             patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
+             patch("crate.db.queries.browse_artist_genres.read_scope", mock_scope):
 
             resp = test_app.get("/api/artists/7")
             assert resp.status_code == 200
@@ -231,7 +231,7 @@ class TestSearchAPI:
         ])
 
         with patch("crate.api.browse_media.has_library_data", return_value=True), \
-             patch("crate.db.queries.browse_media.transaction_scope", mock_scope):
+             patch("crate.db.queries.browse_media_search.transaction_scope", mock_scope):
             resp = test_app.get("/api/search?q=radio")
             assert resp.status_code == 200
             data = resp.json()
