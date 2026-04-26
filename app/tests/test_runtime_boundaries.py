@@ -780,6 +780,14 @@ def test_browse_media_queries_facade_stays_thin():
     assert "from sqlalchemy import" not in source
 
 
+def test_shows_queries_facade_stays_thin():
+    source = (CRATE_ROOT / "db" / "queries" / "shows.py").read_text()
+
+    assert "from datetime import" not in source
+    assert "from sqlalchemy import" not in source
+    assert "read_scope" not in source
+
+
 def test_library_schema_section_facade_stays_thin():
     source = (CRATE_ROOT / "db" / "schema_sections" / "library.py").read_text()
 
