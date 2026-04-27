@@ -355,6 +355,14 @@ If a future session starts failing these tests, it probably means the refactor r
 
 These were executed successfully during the latest session:
 
+- `PYTHONPYCACHEPREFIX=/tmp/pycache python3 -m py_compile app/crate/enrichment.py app/crate/db/cache_runtime.py app/crate/db/cache_store.py app/tests/test_enrichment.py`
+  Result: `passed`
+- `uv run pytest app/tests/test_enrichment.py -q`
+  Result: `16 passed`
+- `uv run pytest app/tests/test_enrichment.py app/tests/test_openapi_contract.py app/tests/test_api.py -q -k "enrichment or enrich"`
+  Result: `17 passed, 84 deselected`
+- `uv run pytest app/tests -q`
+  Result: `526 passed, 1 skipped`
 - `uv run pytest app/tests/test_analysis_daemon.py -q`
   Result: `12 passed`
 - `npm run --workspace=app/listen test -- src/lib/capacitor.test.ts`
@@ -549,10 +557,18 @@ Completed in this session:
 - consolidated repeated worker/task polling into a shared task-activity snapshot query reused by the worker loop and ops/admin surfaces
 - removed the album double-walk in `library_sync` by scanning each album tree once for both audio-file discovery and latest mtime
 - switched the bliss daemon to batch directory analysis first, with per-track fallback only when a directory batch misses a file
+- parallelized `enrichment` provider fetches with a bounded worker pool, removed fixed inter-provider pacing sleeps, and kept merge/persist/photo writes deterministic and sequential
+- added L1 cache locking in [app/crate/db/cache_runtime.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/cache_runtime.py) and [app/crate/db/cache_store.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/cache_store.py) so the new parallel enrichment path does not race on process-local cache state
+
+Production `EXPLAIN ANALYZE` notes gathered during this pass:
+
+- the consolidated task-activity snapshot query is healthy in prod at current scale: `~2.46 ms`, using the existing `idx_tasks_status` and `idx_tasks_dispatch` indexes effectively; the `recent` branch still seq-scans `tasks`, but that table is small enough that it is not a present bottleneck
+- the legacy mood aggregation path over `library_tracks.mood_json` is still a real hotspot in prod: `~14.0 s` wall time with a parallel seq scan and `jsonb_each(...)` expansion
+- prod is still on Alembic version `012`, so `track_analysis_features` / `track_bliss_embeddings` are not present there yet; the newer shadow-table mood path cannot be exercised on that server until the read-plane migrations are deployed
 
 Still worth doing later:
 
-- parallelize enrichment providers carefully with per-provider concurrency limits
+- deploy Alembic `013+` / the read-plane shadow tables to prod before expecting the new shadow-backed analytics paths there
 - revisit image payload size and home-discovery fragmentation on the frontend side
 - validate any additional index work with `EXPLAIN ANALYZE` before adding more schema churn
 
@@ -605,6 +621,7 @@ The structural backend refactor is complete, and the first hardening pass is com
 - the remaining monolith tail has been split
 - pipeline state now leans more directly on `track_processing_state` plus shadow tables
 - generic `ui.invalidate` no longer fans out into unnecessary ops snapshot rebuilds
+- artist enrichment now overlaps independent provider fetches with bounded concurrency instead of sleeping between sources
 - broad regression tests are green
 - both frontend apps still build against the refactored backend surface
 

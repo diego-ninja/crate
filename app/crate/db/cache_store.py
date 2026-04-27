@@ -8,7 +8,7 @@ from typing import Any
 
 from sqlalchemy import text
 
-from crate.db.cache_runtime import _get_redis, _mem_cache, _mem_delete, _mem_get, _mem_set
+from crate.db.cache_runtime import _get_redis, _mem_cache, _mem_delete, _mem_get, _mem_lock, _mem_set
 from crate.db.tx import read_scope, transaction_scope
 
 
@@ -105,9 +105,10 @@ def delete_cache(key: str) -> None:
 
 
 def delete_cache_prefix(prefix: str) -> None:
-    to_delete = [key for key in _mem_cache if key.startswith(prefix)]
-    for key in to_delete:
-        del _mem_cache[key]
+    with _mem_lock:
+        to_delete = [key for key in _mem_cache if key.startswith(prefix)]
+        for key in to_delete:
+            del _mem_cache[key]
 
     redis_client = _get_redis()
     if redis_client:
@@ -130,7 +131,8 @@ def delete_cache_prefix(prefix: str) -> None:
 
 
 def get_cache_stats() -> dict:
-    stats = {"l1_size": len(_mem_cache)}
+    with _mem_lock:
+        stats = {"l1_size": len(_mem_cache)}
     redis_client = _get_redis()
     if redis_client:
         try:

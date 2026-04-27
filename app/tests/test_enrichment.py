@@ -1,5 +1,6 @@
 """Tests for enrichment modules: Spotify, Setlist.fm, MusicBrainz, Last.fm."""
 
+import threading
 from unittest.mock import patch, MagicMock
 
 
@@ -244,3 +245,125 @@ class TestCachingBehavior:
             result = search_artist("Tool")
             assert result == cached_result
             assert call_count["api"] == 1  # No additional API call
+
+
+class TestArtistEnrichment:
+    def test_run_enrichment_fetchers_uses_multiple_workers(self):
+        from crate.enrichment import _run_enrichment_fetchers
+
+        barrier = threading.Barrier(2, timeout=1)
+
+        def _fetch_lastfm():
+            barrier.wait()
+            return {"source": "lastfm"}
+
+        def _fetch_spotify():
+            barrier.wait()
+            return {"source": "spotify"}
+
+        result = _run_enrichment_fetchers(
+            "Radiohead",
+            {"lastfm": _fetch_lastfm, "spotify": _fetch_spotify},
+            max_workers=2,
+        )
+
+        assert result == {
+            "lastfm": {"source": "lastfm"},
+            "spotify": {"source": "spotify"},
+        }
+
+    def test_enrich_artist_merges_parallel_payloads_and_persists(self, tmp_path):
+        artist_dir = tmp_path / "Radiohead"
+        artist_dir.mkdir()
+        (artist_dir / "artist.jpg").write_bytes(b"already-present")
+
+        payloads = {
+            "lastfm": {
+                "bio": "English rock band",
+                "tags": ["rock"],
+                "similar": [{"name": "Muse", "match": 0.88}],
+                "listeners": 5000000,
+                "playcount": 200000000,
+                "url": "https://www.last.fm/music/Radiohead",
+            },
+            "spotify": {
+                "artist": {
+                    "id": "sp123",
+                    "popularity": 80,
+                    "followers": 5000000,
+                    "genres": ["alternative rock"],
+                    "url": "https://open.spotify.com/artist/sp123",
+                },
+                "top_tracks": [{"name": "Creep"}],
+                "related_artists": [{"name": "Muse"}],
+            },
+            "musicbrainz": {
+                "mbid": "mbid-123",
+                "country": "GB",
+                "area": "Oxfordshire",
+                "begin_date": "1985",
+                "end_date": "",
+                "type": "Group",
+                "members": [{"name": "Thom Yorke"}],
+                "urls": {"wikipedia": "https://en.wikipedia.org/wiki/Radiohead"},
+            },
+            "setlist": [{"title": "Everything In Its Right Place", "frequency": 1.0}],
+            "fanart": {"backgrounds": ["https://img.example/bg.jpg"]},
+            "discogs": {
+                "discogs_id": 42,
+                "discogs_profile": "Profile text",
+                "discogs_members": ["Thom Yorke", "Jonny Greenwood"],
+                "discogs_url": "https://www.discogs.com/artist/42-Radiohead",
+            },
+        }
+
+        with patch("crate.enrichment.get_library_artist", return_value={"folder_name": "Radiohead", "enriched_at": None}), \
+             patch("crate.enrichment._collect_enrichment_payloads", return_value=payloads), \
+             patch("crate.enrichment.set_cache") as mock_set_cache, \
+             patch("crate.enrichment.update_artist_enrichment") as mock_update_artist_enrichment, \
+             patch("crate.enrichment.bulk_upsert_similarities") as mock_bulk_upsert_similarities, \
+             patch("crate.enrichment.set_artist_genres") as mock_set_artist_genres, \
+             patch("crate.enrichment._download_artist_photo") as mock_download_artist_photo:
+            from crate.enrichment import enrich_artist
+
+            result = enrich_artist(
+                "Radiohead",
+                {"library_path": str(tmp_path), "enrichment_parallelism": 3},
+            )
+
+        assert result == {
+            "artist": "Radiohead",
+            "has_lastfm": True,
+            "has_spotify": True,
+            "has_setlist": True,
+            "has_musicbrainz": True,
+            "has_fanart": True,
+            "has_discogs": True,
+        }
+
+        mock_set_cache.assert_called_once()
+        mock_update_artist_enrichment.assert_called_once()
+        persist_data = mock_update_artist_enrichment.call_args.args[1]
+        assert persist_data["bio"] == "English rock band"
+        assert persist_data["spotify_id"] == "sp123"
+        assert persist_data["spotify_popularity"] == 80
+        assert persist_data["spotify_followers"] == 5000000
+        assert persist_data["mbid"] == "mbid-123"
+        assert persist_data["discogs_id"] == "42"
+        assert persist_data["tags"] == ["rock", "alternative rock"]
+        assert persist_data["similar"] == [{"name": "Muse", "match": 0.88}]
+        assert persist_data["urls"] == {
+            "wikipedia": "https://en.wikipedia.org/wiki/Radiohead",
+            "lastfm": "https://www.last.fm/music/Radiohead",
+            "spotify": "https://open.spotify.com/artist/sp123",
+            "discogs": "https://www.discogs.com/artist/42-Radiohead",
+        }
+
+        mock_bulk_upsert_similarities.assert_called_once_with(
+            "Radiohead",
+            [{"name": "Muse", "match": 0.88}],
+        )
+        mock_set_artist_genres.assert_called_once()
+        genre_rows = mock_set_artist_genres.call_args.args[1]
+        assert [row[0] for row in genre_rows] == ["rock", "alternative rock"]
+        mock_download_artist_photo.assert_not_called()

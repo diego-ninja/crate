@@ -5,11 +5,13 @@ from __future__ import annotations
 import logging
 import os
 import time
+from threading import RLock
 from typing import Any
 
 log = logging.getLogger(__name__)
 
 _mem_cache: dict[str, tuple[float, Any]] = {}
+_mem_lock = RLock()
 _MEM_TTL = 300
 _MEM_MAX_SIZE = 10000
 
@@ -17,24 +19,27 @@ _redis_client = None
 
 
 def _mem_get(key: str) -> Any | None:
-    entry = _mem_cache.get(key)
-    if entry and entry[0] > time.time():
-        return entry[1]
-    if entry:
-        del _mem_cache[key]
-    return None
+    with _mem_lock:
+        entry = _mem_cache.get(key)
+        if entry and entry[0] > time.time():
+            return entry[1]
+        if entry:
+            del _mem_cache[key]
+        return None
 
 
 def _mem_set(key: str, value: Any, ttl: int = _MEM_TTL) -> None:
-    if len(_mem_cache) >= _MEM_MAX_SIZE:
-        sorted_keys = sorted(_mem_cache, key=lambda cache_key: _mem_cache[cache_key][0])
-        for cache_key in sorted_keys[: _MEM_MAX_SIZE // 5]:
-            del _mem_cache[cache_key]
-    _mem_cache[key] = (time.time() + ttl, value)
+    with _mem_lock:
+        if len(_mem_cache) >= _MEM_MAX_SIZE:
+            sorted_keys = sorted(_mem_cache, key=lambda cache_key: _mem_cache[cache_key][0])
+            for cache_key in sorted_keys[: _MEM_MAX_SIZE // 5]:
+                del _mem_cache[cache_key]
+        _mem_cache[key] = (time.time() + ttl, value)
 
 
 def _mem_delete(key: str) -> None:
-    _mem_cache.pop(key, None)
+    with _mem_lock:
+        _mem_cache.pop(key, None)
 
 
 def _get_redis():
@@ -60,5 +65,6 @@ __all__ = [
     "_mem_cache",
     "_mem_delete",
     "_mem_get",
+    "_mem_lock",
     "_mem_set",
 ]
