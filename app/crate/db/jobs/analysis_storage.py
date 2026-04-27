@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import text
@@ -10,11 +11,11 @@ from crate.db.bliss_vectors import to_pgvector_literal
 from crate.db.jobs.analysis_shared import (
     append_pipeline_event,
     complete_processing_state,
+    complete_processing_states,
     mark_ops_snapshot_dirty,
     pipeline_name_for_state_column,
     validate_state_column,
 )
-from crate.db.repositories.library_analysis_writes import update_track_analysis
 from crate.db.tx import transaction_scope
 
 
@@ -106,39 +107,72 @@ def store_bliss_vectors(vectors_by_track_id: dict[int, list[float]]) -> None:
         return
 
     now = datetime.now(timezone.utc).isoformat()
+    rows = [
+        {
+            "track_id": int(track_id),
+            "vector": vector,
+            "vector_literal": to_pgvector_literal(vector),
+        }
+        for track_id, vector in vectors_by_track_id.items()
+        if track_id and vector
+    ]
+    if not rows:
+        return
+
     with transaction_scope() as session:
-        for track_id, vector in vectors_by_track_id.items():
-            session.execute(
-                text(
-                    "UPDATE library_tracks "
-                    "SET bliss_vector = :vector, "
-                    "    bliss_embedding = CAST(:vector_literal AS vector(20)), "
-                    "    bliss_state = 'done', "
-                    "    bliss_computed_at = :now "
-                    "WHERE id = :id"
-                ),
-                {"vector": vector, "vector_literal": to_pgvector_literal(vector), "now": now, "id": track_id},
-            )
-            session.execute(
-                text(
-                    """
-                    INSERT INTO track_bliss_embeddings (track_id, bliss_vector, bliss_embedding, updated_at)
-                    VALUES (:track_id, :vector, CAST(:vector_literal AS vector(20)), :updated_at)
-                    ON CONFLICT (track_id) DO UPDATE SET
-                        bliss_vector = EXCLUDED.bliss_vector,
-                        bliss_embedding = EXCLUDED.bliss_embedding,
-                        updated_at = EXCLUDED.updated_at
-                    """
-                ),
-                {
-                    "track_id": track_id,
-                    "vector": vector,
-                    "vector_literal": to_pgvector_literal(vector),
-                    "updated_at": now,
-                },
-            )
-            complete_processing_state(session, track_id=track_id, pipeline="bliss", completed_at=now)
-            append_pipeline_event(session, pipeline="bliss", track_id=track_id, state="done")
+        rows_json = json.dumps(rows, default=str)
+        session.execute(
+            text(
+                """
+                WITH rows AS (
+                    SELECT track_id, vector, vector_literal
+                    FROM jsonb_to_recordset(CAST(:rows_json AS jsonb)) AS rows(
+                        track_id INTEGER,
+                        vector DOUBLE PRECISION[],
+                        vector_literal TEXT
+                    )
+                )
+                UPDATE library_tracks lt
+                SET bliss_vector = rows.vector,
+                    bliss_embedding = CAST(rows.vector_literal AS vector(20)),
+                    bliss_state = 'done',
+                    bliss_computed_at = :now
+                FROM rows
+                WHERE lt.id = rows.track_id
+                """
+            ),
+            {"rows_json": rows_json, "now": now},
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO track_bliss_embeddings (track_id, bliss_vector, bliss_embedding, updated_at)
+                SELECT
+                    rows.track_id,
+                    rows.vector,
+                    CAST(rows.vector_literal AS vector(20)),
+                    :updated_at
+                FROM jsonb_to_recordset(CAST(:rows_json AS jsonb)) AS rows(
+                    track_id INTEGER,
+                    vector DOUBLE PRECISION[],
+                    vector_literal TEXT
+                )
+                ON CONFLICT (track_id) DO UPDATE SET
+                    bliss_vector = EXCLUDED.bliss_vector,
+                    bliss_embedding = EXCLUDED.bliss_embedding,
+                    updated_at = EXCLUDED.updated_at
+                """
+            ),
+            {"rows_json": rows_json, "updated_at": now},
+        )
+        complete_processing_states(
+            session,
+            track_ids=[row["track_id"] for row in rows],
+            pipeline="bliss",
+            completed_at=now,
+        )
+        for row in rows:
+            append_pipeline_event(session, pipeline="bliss", track_id=row["track_id"], state="done")
         mark_ops_snapshot_dirty(session)
 
 
@@ -151,37 +185,158 @@ def store_analysis_results(results: list[tuple[int, str, dict]]) -> None:
         return
 
     now = datetime.now(timezone.utc).isoformat()
+    rows = []
+    for track_id, _path, result in results:
+        rows.append(
+            {
+                "track_id": int(track_id),
+                "bpm": result["bpm"],
+                "audio_key": result.get("key"),
+                "audio_scale": result.get("scale"),
+                "energy": result.get("energy"),
+                "mood_json": result.get("mood"),
+                "danceability": result.get("danceability"),
+                "valence": result.get("valence"),
+                "acousticness": result.get("acousticness"),
+                "instrumentalness": result.get("instrumentalness"),
+                "loudness": result.get("loudness"),
+                "dynamic_range": result.get("dynamic_range"),
+                "spectral_complexity": result.get("spectral_complexity"),
+            }
+        )
+
     with transaction_scope() as session:
-        for track_id, path, result in results:
-            update_track_analysis(
-                path,
-                bpm=result["bpm"],
-                key=result.get("key"),
-                scale=result.get("scale"),
-                energy=result.get("energy"),
-                mood=result.get("mood"),
-                danceability=result.get("danceability"),
-                valence=result.get("valence"),
-                acousticness=result.get("acousticness"),
-                instrumentalness=result.get("instrumentalness"),
-                loudness=result.get("loudness"),
-                dynamic_range=result.get("dynamic_range"),
-                spectral_complexity=result.get("spectral_complexity"),
-                session=session,
-            )
-            session.execute(
-                text(
-                    """
-                    UPDATE library_tracks
-                    SET analysis_state = 'done',
-                        analysis_completed_at = :now
-                    WHERE id = :track_id
-                    """
-                ),
-                {"track_id": track_id, "now": now},
-            )
-            complete_processing_state(session, track_id=track_id, pipeline="analysis", completed_at=now)
-            append_pipeline_event(session, pipeline="analysis", track_id=track_id, state="done")
+        rows_json = json.dumps(rows, default=str)
+        session.execute(
+            text(
+                """
+                WITH rows AS (
+                    SELECT
+                        track_id,
+                        bpm,
+                        audio_key,
+                        audio_scale,
+                        energy,
+                        mood_json,
+                        danceability,
+                        valence,
+                        acousticness,
+                        instrumentalness,
+                        loudness,
+                        dynamic_range,
+                        spectral_complexity
+                    FROM jsonb_to_recordset(CAST(:rows_json AS jsonb)) AS rows(
+                        track_id INTEGER,
+                        bpm DOUBLE PRECISION,
+                        audio_key TEXT,
+                        audio_scale TEXT,
+                        energy DOUBLE PRECISION,
+                        mood_json JSONB,
+                        danceability DOUBLE PRECISION,
+                        valence DOUBLE PRECISION,
+                        acousticness DOUBLE PRECISION,
+                        instrumentalness DOUBLE PRECISION,
+                        loudness DOUBLE PRECISION,
+                        dynamic_range DOUBLE PRECISION,
+                        spectral_complexity DOUBLE PRECISION
+                    )
+                )
+                UPDATE library_tracks lt
+                SET bpm = rows.bpm,
+                    audio_key = rows.audio_key,
+                    audio_scale = rows.audio_scale,
+                    energy = rows.energy,
+                    mood_json = rows.mood_json,
+                    danceability = rows.danceability,
+                    valence = rows.valence,
+                    acousticness = rows.acousticness,
+                    instrumentalness = rows.instrumentalness,
+                    loudness = rows.loudness,
+                    dynamic_range = rows.dynamic_range,
+                    spectral_complexity = rows.spectral_complexity,
+                    analysis_state = 'done',
+                    analysis_completed_at = :now
+                FROM rows
+                WHERE lt.id = rows.track_id
+                """
+            ),
+            {"rows_json": rows_json, "now": now},
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO track_analysis_features (
+                    track_id,
+                    bpm,
+                    audio_key,
+                    audio_scale,
+                    energy,
+                    mood_json,
+                    danceability,
+                    valence,
+                    acousticness,
+                    instrumentalness,
+                    loudness,
+                    dynamic_range,
+                    spectral_complexity,
+                    updated_at
+                )
+                SELECT
+                    rows.track_id,
+                    rows.bpm,
+                    rows.audio_key,
+                    rows.audio_scale,
+                    rows.energy,
+                    rows.mood_json,
+                    rows.danceability,
+                    rows.valence,
+                    rows.acousticness,
+                    rows.instrumentalness,
+                    rows.loudness,
+                    rows.dynamic_range,
+                    rows.spectral_complexity,
+                    :updated_at
+                FROM jsonb_to_recordset(CAST(:rows_json AS jsonb)) AS rows(
+                    track_id INTEGER,
+                    bpm DOUBLE PRECISION,
+                    audio_key TEXT,
+                    audio_scale TEXT,
+                    energy DOUBLE PRECISION,
+                    mood_json JSONB,
+                    danceability DOUBLE PRECISION,
+                    valence DOUBLE PRECISION,
+                    acousticness DOUBLE PRECISION,
+                    instrumentalness DOUBLE PRECISION,
+                    loudness DOUBLE PRECISION,
+                    dynamic_range DOUBLE PRECISION,
+                    spectral_complexity DOUBLE PRECISION
+                )
+                ON CONFLICT (track_id) DO UPDATE SET
+                    bpm = EXCLUDED.bpm,
+                    audio_key = EXCLUDED.audio_key,
+                    audio_scale = EXCLUDED.audio_scale,
+                    energy = EXCLUDED.energy,
+                    mood_json = EXCLUDED.mood_json,
+                    danceability = EXCLUDED.danceability,
+                    valence = EXCLUDED.valence,
+                    acousticness = EXCLUDED.acousticness,
+                    instrumentalness = EXCLUDED.instrumentalness,
+                    loudness = EXCLUDED.loudness,
+                    dynamic_range = EXCLUDED.dynamic_range,
+                    spectral_complexity = EXCLUDED.spectral_complexity,
+                    updated_at = EXCLUDED.updated_at
+                """
+            ),
+            {"rows_json": rows_json, "updated_at": now},
+        )
+        complete_processing_states(
+            session,
+            track_ids=[row["track_id"] for row in rows],
+            pipeline="analysis",
+            completed_at=now,
+        )
+        for row in rows:
+            append_pipeline_event(session, pipeline="analysis", track_id=row["track_id"], state="done")
         mark_ops_snapshot_dirty(session)
 
 

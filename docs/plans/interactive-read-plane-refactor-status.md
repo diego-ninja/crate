@@ -369,6 +369,24 @@ These were executed successfully during the latest session:
   Result: `1 passed, 62 deselected`
 - `uv run pytest app/tests -q`
   Result: `520 passed, 1 skipped`
+- `uv run pytest app/tests/test_analysis_daemon.py -q`
+  Result: `13 passed`
+- `uv run pytest app/tests/test_runtime_boundaries.py -q -k "analysis_shared or runtime_boundaries"`
+  Result: `92 passed`
+- `uv run pytest app/tests/test_db.py -q -k "mood_distribution"`
+  Result: `1 passed, 63 deselected`
+- `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py app/tests/test_ops_snapshot.py app/tests/test_openapi_contract.py -q -k "analytics or stats or timeline or insights or runtime_boundaries"`
+  Result: `96 passed, 82 deselected`
+- `uv run pytest app/tests/test_db.py -q -k "task_activity_snapshot or list_tasks"`
+  Result: `5 passed, 60 deselected`
+- `uv run pytest app/tests/test_ops_snapshot.py app/tests/test_api.py -q -k "ops_snapshot or worker_status or tasks"`
+  Result: `8 passed, 49 deselected`
+- `PYTHONPYCACHEPREFIX=/tmp/pycache python3 -m py_compile app/crate/library_sync.py`
+  Result: `passed`
+- `uv run pytest app/tests/test_api.py app/tests/test_auth.py app/tests/test_runtime_boundaries.py -q -k "library or artists or albums or runtime_boundaries"`
+  Result: `98 passed, 79 deselected`
+- `uv run pytest app/tests -q`
+  Result: `524 passed, 1 skipped`
 - `uv run pytest app/tests/test_projector.py app/tests/test_cache_events.py -q`
   Result: `7 passed`
 - `uv run pytest app/tests -q`
@@ -521,6 +539,22 @@ What still remains:
 
 - most remaining `legacy` / `compat` surfaces in `app/crate/db/` look intentional, documented, and tied to frozen shims or operator compatibility rather than to obvious dead code
 - the next useful pass should be a review-driven cleanup, not a speculative delete pass
+
+### 5. Backend performance pass
+
+Completed in this session:
+
+- batched `analysis_storage` writes for analysis and bliss so pipeline results no longer fan out into per-track SQL loops
+- moved analytics mood distribution aggregation into PostgreSQL and preferred `track_analysis_features` over the legacy hot column when available
+- consolidated repeated worker/task polling into a shared task-activity snapshot query reused by the worker loop and ops/admin surfaces
+- removed the album double-walk in `library_sync` by scanning each album tree once for both audio-file discovery and latest mtime
+- switched the bliss daemon to batch directory analysis first, with per-track fallback only when a directory batch misses a file
+
+Still worth doing later:
+
+- parallelize enrichment providers carefully with per-provider concurrency limits
+- revisit image payload size and home-discovery fragmentation on the frontend side
+- validate any additional index work with `EXPLAIN ANALYZE` before adding more schema churn
 
 ## Files That Matter Most For The Next Session
 

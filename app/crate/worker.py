@@ -3,7 +3,7 @@ import threading
 
 from crate.db.cache_store import set_cache
 from crate.db.core import init_db
-from crate.db.queries.tasks import get_task, list_tasks
+from crate.db.queries.tasks import get_task, get_task_activity_snapshot
 from crate.db.repositories.tasks import cleanup_orphaned_tasks, cleanup_zombie_tasks
 from crate.worker_handlers.acquisition import ACQUISITION_TASK_HANDLERS
 from crate.worker_handlers.analysis import ANALYSIS_TASK_HANDLERS
@@ -185,15 +185,16 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
             try:
                 from crate.db.cache_settings import get_setting
                 from crate.db.ops_runtime import set_ops_runtime_state
-                running = list_tasks(status="running", limit=100)
-                pending = list_tasks(status="pending", limit=100)
-                recent = list_tasks(limit=10)
+                activity = get_task_activity_snapshot(running_limit=100, pending_limit=100, recent_limit=10)
+                running = activity["running_tasks"]
+                pending = activity["pending_tasks"]
+                recent = activity["recent_tasks"]
                 max_workers = int(get_setting("max_workers", str(config.get("worker_processes", 6))) or config.get("worker_processes", 6) or 6)
                 scan_running = next((task for task in running if task.get("type") == "scan"), None)
                 worker_live = {
                     "engine": "dramatiq",
-                    "running_count": len(running),
-                    "pending_count": len(pending),
+                    "running_count": int(activity["running_count"]),
+                    "pending_count": int(activity["pending_count"]),
                     "running_tasks": [
                         {
                             "id": task["id"],
@@ -231,7 +232,7 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                     ],
                     "worker_slots": {
                         "max": max_workers,
-                        "active": len(running),
+                        "active": int(activity["running_count"]),
                     },
                     "scan": {
                         "running": scan_running is not None,
@@ -243,16 +244,16 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                     },
                 }
                 set_cache("worker_status", {
-                    "running": len(running),
-                    "pending": len(pending),
+                    "running": int(activity["running_count"]),
+                    "pending": int(activity["pending_count"]),
                     "engine": "dramatiq",
                 }, ttl=60)
                 set_ops_runtime_state("worker_live", worker_live)
                 # Record queue depth as a metric
                 try:
                     from crate.metrics import record
-                    record("worker.queue.depth", len(pending))
-                    record("worker.queue.running", len(running))
+                    record("worker.queue.depth", int(activity["pending_count"]))
+                    record("worker.queue.running", int(activity["running_count"]))
                 except Exception:
                     pass
             except Exception:

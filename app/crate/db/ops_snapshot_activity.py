@@ -11,7 +11,7 @@ from crate.db.ops_runtime import get_ops_runtime_state
 from crate.db.ops_runtime_views import DEFAULT_MAX_WORKERS, get_worker_live_state
 from crate.db.queries.management import count_recent_active_users, count_recent_streams
 from crate.db.queries.shows import get_upcoming_shows
-from crate.db.queries.tasks import get_latest_scan, list_tasks
+from crate.db.queries.tasks import get_latest_scan, get_task_activity_snapshot, list_tasks
 
 
 def _get_imports_pending_count() -> int:
@@ -23,9 +23,10 @@ def build_live_activity_payload() -> dict[str, Any]:
     if cached_live:
         return cached_live
 
-    running = list_tasks(status="running")
-    pending = list_tasks(status="pending")
-    recent = list_tasks(limit=10)
+    activity = get_task_activity_snapshot(running_limit=100, pending_limit=100, recent_limit=10)
+    running = activity["running_tasks"]
+    pending = activity["pending_tasks"]
+    recent = activity["recent_tasks"]
     max_workers = int(get_setting("max_workers", str(DEFAULT_MAX_WORKERS)) or DEFAULT_MAX_WORKERS)
     cached_status = get_cache("worker_status") or {}
     return {
@@ -67,7 +68,7 @@ def build_live_activity_payload() -> dict[str, Any]:
         ],
         "worker_slots": {
             "max": max_workers,
-            "active": len(running),
+            "active": int(activity["running_count"]),
         },
         "systems": {
             "postgres": True,

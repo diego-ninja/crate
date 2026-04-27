@@ -91,6 +91,28 @@ def complete_processing_state(session, *, track_id: int, pipeline: str, complete
     )
 
 
+def complete_processing_states(session, *, track_ids: list[int], pipeline: str, completed_at: str) -> None:
+    cleaned = [int(track_id) for track_id in track_ids if track_id]
+    if not cleaned:
+        return
+    session.execute(
+        text(
+            """
+            UPDATE track_processing_state
+            SET state = 'done',
+                claimed_by = NULL,
+                claimed_at = NULL,
+                last_error = NULL,
+                completed_at = :completed_at,
+                updated_at = :completed_at
+            WHERE pipeline = :pipeline
+              AND track_id = ANY(:track_ids)
+            """
+        ),
+        {"track_ids": cleaned, "pipeline": pipeline, "completed_at": completed_at},
+    )
+
+
 def ensure_processing_rows(session, *, pipeline: str, limit: int) -> None:
     if pipeline not in {"analysis", "bliss"}:
         raise ValueError(f"Invalid pipeline: {pipeline!r}")

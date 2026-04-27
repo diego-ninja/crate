@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from sqlalchemy import text
 
 from crate.db.tx import read_scope
@@ -46,22 +44,36 @@ def get_insights_mood_distribution() -> list[dict]:
         rows = session.execute(
             text(
                 """
-                SELECT mood_json FROM library_tracks
-                WHERE mood_json IS NOT NULL AND mood_json::text != '{}'
+                SELECT
+                    expanded.mood,
+                    ROUND(SUM(expanded.score)::numeric, 1) AS score
+                FROM (
+                    SELECT
+                        moods.key AS mood,
+                        CASE
+                            WHEN jsonb_typeof(moods.value) = 'number'
+                            THEN (moods.value #>> '{}')::double precision
+                            ELSE NULL
+                        END AS score
+                    FROM library_tracks lt
+                    LEFT JOIN track_analysis_features taf ON taf.track_id = lt.id
+                    CROSS JOIN LATERAL jsonb_each(
+                        COALESCE(taf.mood_json, lt.mood_json, '{}'::jsonb)
+                    ) AS moods(key, value)
+                ) AS expanded
+                WHERE expanded.score IS NOT NULL
+                GROUP BY expanded.mood
+                ORDER BY SUM(expanded.score) DESC, expanded.mood ASC
+                LIMIT 12
                 """
             )
         ).mappings().all()
 
-    mood_counts: dict[str, float] = {}
-    for row in rows:
-        moods = row["mood_json"]
-        if isinstance(moods, str):
-            moods = json.loads(moods) if moods else {}
-        if isinstance(moods, dict):
-            for mood, score in moods.items():
-                mood_counts[mood] = mood_counts.get(mood, 0) + (score if isinstance(score, (int, float)) else 0)
-    top_moods = sorted(mood_counts.items(), key=lambda item: item[1], reverse=True)[:12]
-    return [{"mood": mood, "score": round(score, 1)} for mood, score in top_moods]
+    return [
+        {"mood": str(row.get("mood") or ""), "score": float(row.get("score") or 0.0)}
+        for row in rows
+        if row.get("mood")
+    ]
 
 
 __all__ = [

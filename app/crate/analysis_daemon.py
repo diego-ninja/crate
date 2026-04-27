@@ -10,6 +10,7 @@ legacy `library_tracks` columns compatible during the cutover.
 
 import logging
 import time
+from pathlib import Path
 
 from crate.db.jobs.analysis import (
     claim_tracks as _db_claim_tracks,
@@ -209,7 +210,7 @@ def bliss_daemon(config: dict):
     pending = _get_pending_count("bliss_state")
     log.info("Bliss daemon: %d tracks pending", pending)
 
-    from crate.bliss import analyze_file
+    from crate.bliss import analyze_directory, analyze_file
 
     consecutive_failures = 0
 
@@ -232,31 +233,45 @@ def bliss_daemon(config: dict):
 
             successful_vectors: dict[int, list[float]] = {}
 
+            tracks_by_directory: dict[str, list[dict]] = {}
             for track in batch:
-                track_id = track["id"]
-                path = track["path"]
+                directory = str(Path(track["path"]).parent)
+                tracks_by_directory.setdefault(directory, []).append(track)
 
+            for directory, directory_tracks in tracks_by_directory.items():
+                batch_vectors: dict[str, list[float]] = {}
                 try:
-                    vector = analyze_file(path)
-
-                    if vector and len(vector) == 20:
-                        successful_vectors[int(track_id)] = vector
-                    else:
-                        _mark_failed(track_id, "bliss_state")
-                        log.warning("Bliss returned invalid vector for: %s", path)
-
+                    batch_vectors = analyze_directory(directory)
                 except Exception:
-                    _mark_failed(track_id, "bliss_state")
-                    consecutive_failures += 1
-                    log.warning("Bliss failed for: %s", path, exc_info=True)
+                    log.warning("Bliss batch analysis failed for directory: %s", directory, exc_info=True)
 
-                    if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
-                        log.warning(
-                            "Bliss daemon: %d consecutive failures, backing off %ds",
-                            consecutive_failures, FAILURE_BACKOFF,
-                        )
-                        time.sleep(FAILURE_BACKOFF)
-                        consecutive_failures = 0
+                for track in directory_tracks:
+                    track_id = track["id"]
+                    path = track["path"]
+
+                    try:
+                        vector = batch_vectors.get(path)
+                        if not vector:
+                            vector = analyze_file(path)
+
+                        if vector and len(vector) == 20:
+                            successful_vectors[int(track_id)] = vector
+                        else:
+                            _mark_failed(track_id, "bliss_state")
+                            log.warning("Bliss returned invalid vector for: %s", path)
+
+                    except Exception:
+                        _mark_failed(track_id, "bliss_state")
+                        consecutive_failures += 1
+                        log.warning("Bliss failed for: %s", path, exc_info=True)
+
+                        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                            log.warning(
+                                "Bliss daemon: %d consecutive failures, backing off %ds",
+                                consecutive_failures, FAILURE_BACKOFF,
+                            )
+                            time.sleep(FAILURE_BACKOFF)
+                            consecutive_failures = 0
 
             if successful_vectors:
                 _store_bliss_vectors(successful_vectors)

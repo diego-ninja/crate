@@ -110,7 +110,7 @@ class TestAnalysisDaemonUnit:
         import crate.analysis_daemon as analysis_daemon
 
         calls: dict[str, list] = {"stored": [], "failed": [], "released": []}
-        track = {"id": 9, "path": "/music/bliss.flac", "title": "Bliss Track"}
+        track = {"id": 9, "path": "/music/Artist/Album/bliss.flac", "title": "Bliss Track"}
         vector = [0.1] * 20
 
         monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
@@ -127,7 +127,11 @@ class TestAnalysisDaemonUnit:
         monkeypatch.setitem(
             sys.modules,
             "crate.bliss",
-            SimpleNamespace(is_available=lambda: True, analyze_file=lambda path: vector),
+            SimpleNamespace(
+                is_available=lambda: True,
+                analyze_directory=lambda path: {track["path"]: vector},
+                analyze_file=lambda path: (_ for _ in ()).throw(AssertionError("single-file fallback should not run")),
+            ),
         )
         monkeypatch.setattr(analysis_daemon.time, "sleep", lambda _seconds: (_ for _ in ()).throw(_LoopExit()))
 
@@ -135,6 +139,42 @@ class TestAnalysisDaemonUnit:
             analysis_daemon.bliss_daemon({})
 
         assert calls["stored"] == [{9: vector}]
+        assert calls["failed"] == []
+        assert calls["released"] == []
+
+    def test_bliss_daemon_falls_back_to_single_file_when_directory_batch_misses_track(self, monkeypatch):
+        import crate.analysis_daemon as analysis_daemon
+
+        calls: dict[str, list] = {"stored": [], "failed": [], "released": []}
+        track = {"id": 11, "path": "/music/Artist/Album/missed.flac", "title": "Missed Track"}
+        vector = [0.3] * 20
+
+        monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
+        monkeypatch.setattr(analysis_daemon, "_get_pending_count", lambda state: 1)
+        monkeypatch.setattr(analysis_daemon, "_claim_tracks", lambda state, limit: [track])
+        monkeypatch.setattr(analysis_daemon, "_should_pause_for_load", lambda: False)
+        monkeypatch.setattr(analysis_daemon, "_mark_failed", lambda track_id, state: calls["failed"].append((track_id, state)))
+        monkeypatch.setattr(analysis_daemon, "_release_claims", lambda track_ids, state: calls["released"].append((track_ids, state)))
+        monkeypatch.setattr(
+            analysis_daemon,
+            "_store_bliss_vectors",
+            lambda batch: calls["stored"].append(batch),
+        )
+        monkeypatch.setitem(
+            sys.modules,
+            "crate.bliss",
+            SimpleNamespace(
+                is_available=lambda: True,
+                analyze_directory=lambda path: {},
+                analyze_file=lambda path: vector,
+            ),
+        )
+        monkeypatch.setattr(analysis_daemon.time, "sleep", lambda _seconds: (_ for _ in ()).throw(_LoopExit()))
+
+        with pytest.raises(_LoopExit):
+            analysis_daemon.bliss_daemon({})
+
+        assert calls["stored"] == [{11: vector}]
         assert calls["failed"] == []
         assert calls["released"] == []
 
@@ -270,6 +310,83 @@ class TestAnalysisJobsIntegration:
 
         last_bliss = get_last_bliss_track()
         assert last_bliss["title"] == "Track bliss"
+
+    def test_store_analysis_results_updates_multiple_tracks_and_processing_rows(self, pg_db):
+        from crate.db.jobs import analysis as analysis_jobs
+        from crate.db.tx import transaction_scope
+
+        first = self._seed_track(pg_db, "analysis-batch-1")
+        second = self._seed_track(pg_db, "analysis-batch-2")
+
+        analysis_jobs.store_analysis_results(
+            [
+                (
+                    first["id"],
+                    first["path"],
+                    {
+                        "bpm": 121.5,
+                        "key": "C",
+                        "scale": "major",
+                        "energy": 0.81,
+                        "mood": {"happy": 0.7},
+                        "danceability": 0.62,
+                    },
+                ),
+                (
+                    second["id"],
+                    second["path"],
+                    {
+                        "bpm": 98.0,
+                        "key": "A",
+                        "scale": "minor",
+                        "energy": 0.41,
+                        "mood": {"melancholic": 0.9},
+                        "valence": 0.21,
+                    },
+                ),
+            ]
+        )
+
+        with transaction_scope() as session:
+            processing = session.execute(
+                text(
+                    """
+                    SELECT track_id, pipeline, state
+                    FROM track_processing_state
+                    WHERE track_id IN (:first_id, :second_id) AND pipeline = 'analysis'
+                    ORDER BY track_id
+                    """
+                ),
+                {"first_id": first["id"], "second_id": second["id"]},
+            ).mappings().all()
+            features = session.execute(
+                text(
+                    """
+                    SELECT track_id, bpm, audio_key, audio_scale, energy, mood_json, danceability, valence
+                    FROM track_analysis_features
+                    WHERE track_id IN (:first_id, :second_id)
+                    ORDER BY track_id
+                    """
+                ),
+                {"first_id": first["id"], "second_id": second["id"]},
+            ).mappings().all()
+
+        assert [(row["track_id"], row["pipeline"], row["state"]) for row in processing] == [
+            (first["id"], "analysis", "done"),
+            (second["id"], "analysis", "done"),
+        ]
+        assert features[0]["bpm"] == 121.5
+        assert features[0]["audio_key"] == "C"
+        assert features[0]["audio_scale"] == "major"
+        assert features[0]["energy"] == 0.81
+        assert features[0]["mood_json"] == {"happy": 0.7}
+        assert features[0]["danceability"] == 0.62
+        assert features[1]["bpm"] == 98.0
+        assert features[1]["audio_key"] == "A"
+        assert features[1]["audio_scale"] == "minor"
+        assert features[1]["energy"] == 0.41
+        assert features[1]["mood_json"] == {"melancholic": 0.9}
+        assert features[1]["valence"] == 0.21
 
     def test_bliss_claim_skips_tracks_under_active_analysis(self, pg_db):
         from crate.db.jobs import analysis as analysis_jobs

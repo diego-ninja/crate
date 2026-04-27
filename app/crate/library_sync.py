@@ -158,14 +158,20 @@ class LibrarySync:
         artist_name = self._canonical_artist_name(artist_dir, folder_name)
         return self.sync_artist_dirs(artist_name, [artist_dir])
 
-    def _iter_album_audio_files(self, album_dir: Path) -> list[Path]:
-        all_audio = sorted(
-            file_path
-            for file_path in album_dir.rglob("*")
-            if file_path.is_file()
-            and not any(part.startswith(".") for part in file_path.relative_to(album_dir).parts)
-            and file_path.suffix.lower() in self.extensions
-        )
+    def _scan_album_tree(self, album_dir: Path) -> tuple[list[Path], float]:
+        latest_mtime = album_dir.stat().st_mtime
+        all_audio: list[Path] = []
+
+        for path in sorted(album_dir.rglob("*")):
+            if any(part.startswith(".") for part in path.relative_to(album_dir).parts):
+                continue
+            try:
+                latest_mtime = max(latest_mtime, path.stat().st_mtime)
+            except OSError:
+                continue
+            if path.is_file() and path.suffix.lower() in self.extensions:
+                all_audio.append(path)
+
         # When an album directory contains both FLAC and M4A files, skip the
         # M4A.  Tidal's lossless tier delivers FLAC-in-MP4 DASH containers
         # without metadata alongside proper FLAC files.  Indexing both would
@@ -173,17 +179,14 @@ class LibrarySync:
         has_flac = any(f.suffix.lower() == ".flac" for f in all_audio)
         if has_flac:
             all_audio = [f for f in all_audio if f.suffix.lower() != ".m4a"]
+        return all_audio, latest_mtime
+
+    def _iter_album_audio_files(self, album_dir: Path) -> list[Path]:
+        all_audio, _latest_mtime = self._scan_album_tree(album_dir)
         return all_audio
 
     def _album_tree_mtime(self, album_dir: Path) -> float:
-        latest_mtime = album_dir.stat().st_mtime
-        for path in album_dir.rglob("*"):
-            if any(part.startswith(".") for part in path.relative_to(album_dir).parts):
-                continue
-            try:
-                latest_mtime = max(latest_mtime, path.stat().st_mtime)
-            except OSError:
-                continue
+        _all_audio, latest_mtime = self._scan_album_tree(album_dir)
         return latest_mtime
 
     def sync_artist_dirs(self, artist_name: str, artist_dirs: list[Path]) -> int:
@@ -237,8 +240,8 @@ class LibrarySync:
                 synced_paths.add(album_path)
 
                 existing_album = next((a for a in existing_albums if a["path"] == album_path), None)
-                tree_mtime = self._album_tree_mtime(album_dir)
-                actual_track_count = len(self._iter_album_audio_files(album_dir))
+                audio_files, tree_mtime = self._scan_album_tree(album_dir)
+                actual_track_count = len(audio_files)
 
                 if (
                     existing_album
@@ -256,7 +259,7 @@ class LibrarySync:
                         total_tracks += existing_album.get("track_count", 0)
                         continue
 
-                result = self.sync_album(album_dir, artist_name)
+                result = self.sync_album(album_dir, artist_name, audio_files=audio_files, tree_mtime=tree_mtime)
                 total_tracks += result["track_count"]
 
             except Exception:
@@ -299,7 +302,14 @@ class LibrarySync:
 
         return total_tracks
 
-    def sync_album(self, album_dir: Path, artist_name: str) -> dict:
+    def sync_album(
+        self,
+        album_dir: Path,
+        artist_name: str,
+        *,
+        audio_files: list[Path] | None = None,
+        tree_mtime: float | None = None,
+    ) -> dict:
         # Ensure artist exists (FK constraint) and use exact DB name for FK references
         existing = get_library_artist(artist_name)
         if existing:
@@ -308,7 +318,10 @@ class LibrarySync:
             upsert_artist({"name": artist_name, "album_count": 0, "track_count": 0,
                            "total_size": 0, "formats": [], "dir_mtime": album_dir.parent.stat().st_mtime})
 
-        audio_files = self._iter_album_audio_files(album_dir)
+        if audio_files is None or tree_mtime is None:
+            audio_files, scanned_mtime = self._scan_album_tree(album_dir)
+            if tree_mtime is None:
+                tree_mtime = scanned_mtime
 
         # Get existing tracks for this album to reuse data for unchanged files
         existing_album_id = get_album_id_by_path(str(album_dir))
@@ -461,7 +474,7 @@ class LibrarySync:
             "has_cover": has_cover,
             "musicbrainz_albumid": mb_albumid,
             "tag_album": tag_album,
-            "dir_mtime": self._album_tree_mtime(album_dir),
+            "dir_mtime": tree_mtime,
         })
 
         # Upsert tracks

@@ -140,6 +140,91 @@ class TestBootstrap:
 
         assert expected <= present
 
+
+class TestAnalyticsQueries:
+    def test_get_insights_mood_distribution_aggregates_in_sql_with_shadow_fallback(self, pg_db):
+        from crate.db.queries.analytics_audio_feature_queries import get_insights_mood_distribution
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Mood Artist"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Mood Artist",
+                "name": "Mood Album",
+                "path": "/music/Mood Artist/Mood Album",
+                "track_count": 2,
+                "total_size": 2000,
+                "total_duration": 360.0,
+                "formats": ["flac"],
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Mood Artist",
+                "album": "Mood Album",
+                "filename": "01-first.flac",
+                "title": "First",
+                "path": "/music/Mood Artist/Mood Album/01-first.flac",
+                "duration": 180.0,
+                "size": 1000,
+                "format": "flac",
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Mood Artist",
+                "album": "Mood Album",
+                "filename": "02-second.flac",
+                "title": "Second",
+                "path": "/music/Mood Artist/Mood Album/02-second.flac",
+                "duration": 180.0,
+                "size": 1000,
+                "format": "flac",
+            }
+        )
+
+        with transaction_scope() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM library_tracks
+                    WHERE album_id = :album_id
+                    ORDER BY id
+                    """
+                ),
+                {"album_id": album_id},
+            ).mappings().all()
+            first_id = rows[0]["id"]
+            second_id = rows[1]["id"]
+            session.execute(
+                text("UPDATE library_tracks SET mood_json = CAST(:mood_json AS jsonb) WHERE id = :id"),
+                {"id": first_id, "mood_json": json.dumps({"happy": 0.5, "calm": 0.2})},
+            )
+            session.execute(
+                text(
+                    """
+                    INSERT INTO track_analysis_features (track_id, mood_json, updated_at)
+                    VALUES (:track_id, CAST(:mood_json AS jsonb), NOW())
+                    ON CONFLICT (track_id) DO UPDATE SET
+                        mood_json = EXCLUDED.mood_json,
+                        updated_at = EXCLUDED.updated_at
+                    """
+                ),
+                {"track_id": second_id, "mood_json": json.dumps({"happy": 0.8, "tense": 0.4})},
+            )
+
+        moods = get_insights_mood_distribution()
+
+        assert moods[:3] == [
+            {"mood": "happy", "score": 1.3},
+            {"mood": "tense", "score": 0.4},
+            {"mood": "calm", "score": 0.2},
+        ]
+
+
 class TestHealthQueries:
     def test_get_zombie_artists_ignores_artists_with_real_content(self, pg_db):
         from crate.db.queries.health import get_zombie_artists
@@ -854,6 +939,26 @@ class TestHomeCaching:
             pg_db.create_task("scan")
         tasks = pg_db.list_tasks(limit=3)
         assert len(tasks) == 3
+
+    def test_get_task_activity_snapshot(self, pg_db):
+        from crate.db.queries.tasks import get_task_activity_snapshot
+
+        running_id = pg_db.create_task("scan")
+        delegated_id = pg_db.create_task("library_sync")
+        pending_id = pg_db.create_task("repair")
+        completed_id = pg_db.create_task("enrich")
+
+        pg_db.update_task(running_id, status="running")
+        pg_db.update_task(delegated_id, status="delegated")
+        pg_db.update_task(completed_id, status="completed")
+
+        snapshot = get_task_activity_snapshot(running_limit=10, pending_limit=10, recent_limit=10)
+
+        assert snapshot["running_count"] == 2
+        assert snapshot["pending_count"] == 1
+        assert {task["id"] for task in snapshot["running_tasks"]} == {running_id, delegated_id}
+        assert [task["id"] for task in snapshot["pending_tasks"]] == [pending_id]
+        assert {task["id"] for task in snapshot["recent_tasks"]} >= {running_id, delegated_id, pending_id, completed_id}
 
     def test_claim_next_task(self, pg_db):
         t1 = pg_db.create_task("scan")

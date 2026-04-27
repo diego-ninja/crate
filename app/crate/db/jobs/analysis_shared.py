@@ -5,6 +5,7 @@ from __future__ import annotations
 from crate.db.jobs.analysis_processing_sql import (
     claim_batch_sql,
     complete_processing_state,
+    complete_processing_states,
     ensure_processing_rows,
     processing_pending_count_sql,
     processing_pending_exists_sql,
@@ -27,6 +28,7 @@ __all__ = [
     "append_pipeline_event",
     "claim_batch_sql",
     "complete_processing_state",
+    "complete_processing_states",
     "ensure_processing_rows",
     "mark_ops_snapshot_dirty",
     "pipeline_name_for_state_column",

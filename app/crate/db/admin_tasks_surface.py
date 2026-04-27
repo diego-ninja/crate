@@ -9,7 +9,7 @@ from typing import Any
 from crate.db.cache_runtime import _get_redis
 from crate.db.ops_runtime_views import DEFAULT_MAX_WORKERS, get_worker_live_state
 from crate.db.ui_snapshot_store import get_or_build_ui_snapshot
-from crate.db.queries.tasks import list_tasks
+from crate.db.queries.tasks import get_task_activity_snapshot, list_tasks
 
 TASKS_SNAPSHOT_SCOPE = "ops:tasks"
 TASKS_SNAPSHOT_MAX_AGE = 10
@@ -56,9 +56,10 @@ def build_tasks_surface_payload(limit: int = 100) -> dict[str, Any]:
             "systems": worker_live["systems"],
         }
     else:
-        running = list_tasks(status="running", limit=25)
-        pending = list_tasks(status="pending", limit=25)
-        recent = list_tasks(limit=10)
+        activity = get_task_activity_snapshot(running_limit=25, pending_limit=25, recent_limit=10)
+        running = activity["running_tasks"]
+        pending = activity["pending_tasks"]
+        recent = activity["recent_tasks"]
         live = {
             "engine": "dramatiq",
             "running_tasks": [serialize_task_surface(task) for task in running],
@@ -74,7 +75,7 @@ def build_tasks_surface_payload(limit: int = 100) -> dict[str, Any]:
             ],
             "worker_slots": {
                 "max": DEFAULT_MAX_WORKERS,
-                "active": len(running),
+                "active": int(activity["running_count"]),
             },
             "systems": {"postgres": True, "watcher": True},
         }
