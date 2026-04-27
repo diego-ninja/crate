@@ -1,6 +1,7 @@
 export { ApiError } from "../../../shared/web/api";
 
 import { createApiClient } from "../../../shared/web/api";
+import { redirectToLoginOnUnauthorized, shouldRedirectToLoginOnUnauthorized } from "@/lib/auth-route-policy";
 import { isNative, platform } from "@/lib/capacitor";
 import {
   getCurrentServer,
@@ -105,7 +106,9 @@ export function setAuthToken(token: string | null) {
   try {
     if (token) localStorage.setItem("listen-auth-token", token);
     else localStorage.removeItem("listen-auth-token");
-  } catch {}
+  } catch {
+    // ignore persistence failures
+  }
 }
 
 export function getApiAuthHeaders(): Record<string, string> {
@@ -118,10 +121,7 @@ export function getApiAuthHeaders(): Record<string, string> {
   }
   return headers;
 }
-
-export function shouldRedirectToLoginOnUnauthorized(pathname: string): boolean {
-  return !new Set(["/login", "/register", "/server-setup", "/auth/callback"]).has(pathname);
-}
+export { shouldRedirectToLoginOnUnauthorized };
 
 if (typeof window !== "undefined") {
   (window as Window & typeof globalThis & {
@@ -136,9 +136,9 @@ const innerApi = createApiClient({
   credentials: "include",
   defaultHeaders: getApiAuthHeaders,
   onUnauthorized: () => {
-    if (shouldRedirectToLoginOnUnauthorized(window.location.pathname)) {
-      window.location.href = "/login";
-    }
+    redirectToLoginOnUnauthorized(window.location.pathname, (path) => {
+      window.location.href = path;
+    });
   },
 });
 

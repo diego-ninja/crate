@@ -77,7 +77,6 @@ export function useApi<T>(
       cancelled = true;
       controller.abort();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, method, trigger]);
 
   // Listen to SSE invalidation events — refetch when ANY matching scope fires.

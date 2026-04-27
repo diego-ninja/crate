@@ -4,7 +4,7 @@ vi.mock("@/lib/offline", () => ({
   getOfflineNativePlaybackUrl: vi.fn(() => null),
 }));
 
-import type { Track } from "./player-types";
+import type { PlaySource, Track } from "./player-types";
 import { getOfflineNativePlaybackUrl } from "@/lib/offline";
 import {
   getEffectiveCrossfadeSeconds,
@@ -13,7 +13,6 @@ import {
   saveQueue,
   STORAGE_KEY,
 } from "./player-utils";
-import type { PlaySource } from "./player-types";
 
 const TRACK_A: Track = { id: "a", title: "A", artist: "X" };
 const TRACK_B: Track = { id: "b", title: "B", artist: "Y" };

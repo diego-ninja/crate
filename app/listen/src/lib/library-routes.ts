@@ -20,7 +20,6 @@ export const albumPagePath = _albumPagePath;
 
 // Image/media URLs — prefix with the active API base + append ?token=
 // for <img> elements that can't send headers.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function authedUrl<F extends (...args: any[]) => string>(fn: F): F {
   return ((...args: Parameters<F>) => {
     const path = fn(...args);

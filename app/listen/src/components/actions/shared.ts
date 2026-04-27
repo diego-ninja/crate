@@ -5,6 +5,7 @@ import { buildArtistPlayerTrack, type ArtistTopTrack } from "@/components/artist
 import type { ItemActionMenuEntry } from "@/components/actions/ItemActionMenu";
 import type { Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
+import { toPlayableTrack } from "@/lib/playable-track";
 import {
   albumApiPath,
   albumCoverApiUrl,
@@ -94,7 +95,6 @@ export function trackToMenuData(track: Track): TrackMenuData {
 
 /** Rebuild a player-ready Track from menu data, honoring optional cover override and carrying metadata. */
 export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string): Track {
-  const playbackId = track.storage_id || track.path || String(track.id || "");
   const resolvedCover = cover || (track.album_id != null
     ? albumCoverApiUrl({
         albumId: track.album_id,
@@ -104,26 +104,7 @@ export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string):
       })
     : undefined);
 
-  return {
-    id: playbackId,
-    storageId: track.storage_id,
-    title: track.title || "Unknown",
-    artist: track.artist,
-    artistId: track.artist_id,
-    artistSlug: track.artist_slug,
-    album: track.album,
-    albumId: track.album_id,
-    albumSlug: track.album_slug,
-    albumCover: resolvedCover,
-    path: track.path,
-    libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
-    format: track.format,
-    bitrate: track.bitrate,
-    sampleRate: track.sample_rate,
-    bitDepth: track.bit_depth,
-    isSuggested: track.is_suggested,
-    suggestionSource: track.suggestion_source,
-  };
+  return toPlayableTrack(track, { cover: resolvedCover });
 }
 
 export function action(config: MenuActionConfig): ItemActionMenuEntry {
@@ -185,22 +166,20 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
     albumName: data.album,
   });
 
-  return (response.tracks || []).map((track) => ({
-    id: track.storage_id || track.path || String(track.id),
-    storageId: track.storage_id,
+  return (response.tracks || []).map((track) => toPlayableTrack({
+    id: track.id,
+    storage_id: track.storage_id,
     title: track.tags?.title || track.filename || "Unknown",
     artist: response.artist,
     album: response.display_name || response.name,
-    albumId: data.albumId,
-    albumSlug: data.albumSlug,
-    albumCover: coverUrl || undefined,
+    album_id: data.albumId,
+    album_slug: data.albumSlug,
     path: track.path,
-    libraryTrackId: track.id,
     format: track.format || undefined,
     bitrate: track.bitrate,
-    sampleRate: track.sample_rate,
-    bitDepth: track.bit_depth,
-  }));
+    sample_rate: track.sample_rate,
+    bit_depth: track.bit_depth,
+  }, { cover: coverUrl || undefined }));
 }
 
 export async function fetchArtistTopTracks(artist: ArtistMenuData): Promise<Track[]> {

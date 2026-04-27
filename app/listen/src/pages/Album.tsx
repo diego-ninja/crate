@@ -15,13 +15,13 @@ import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
 import { QualityBadge } from "@/components/player/bar/QualityBadge";
-import { getTrackQualityBadge, type QualityBadge as QualityBadgeData } from "@/components/player/bar/player-bar-utils";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { isOfflineBusy } from "@/lib/offline";
 import { fetchAlbumRadio } from "@/lib/radio";
 import { shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { buildAlbumPlayerTracks, buildAlbumQualityBadges } from "@/pages/album-model";
 
 function albumGenreSlug(name: string) {
   return name
@@ -88,69 +88,6 @@ interface Playlist {
   name: string;
 }
 
-
-function buildPlayerTracks(data: AlbumData): Track[] {
-  const cover = albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name });
-  return data.tracks.map((t) => ({
-    id: t.storage_id || t.path || String(t.id),
-      storageId: t.storage_id,
-      title: t.tags.title || t.filename,
-      artist: data.artist,
-      artistId: data.artist_id,
-      artistSlug: data.artist_slug,
-      album: data.display_name || data.name,
-      albumId: data.id,
-      albumSlug: data.slug,
-      albumCover: cover,
-      path: t.path,
-      libraryTrackId: t.id,
-      format: t.format || undefined,
-      bitrate: t.bitrate,
-      sampleRate: t.sample_rate,
-      bitDepth: t.bit_depth,
-  }));
-}
-
-function buildAlbumQualityBadges(tracks: AlbumTrack[]): QualityBadgeData[] {
-  const byFormat = new Map<string, AlbumTrack>();
-  for (const track of tracks) {
-    const format = (track.format || "").trim().toLowerCase();
-    if (!format) continue;
-    const current = byFormat.get(format);
-    if (!current) {
-      byFormat.set(format, track);
-      continue;
-    }
-
-    const currentScore =
-      (current.bit_depth || 0) * 1_000_000 +
-      (current.sample_rate || 0) * 1_000 +
-      (current.bitrate || 0);
-    const nextScore =
-      (track.bit_depth || 0) * 1_000_000 +
-      (track.sample_rate || 0) * 1_000 +
-      (track.bitrate || 0);
-    if (nextScore > currentScore) {
-      byFormat.set(format, track);
-    }
-  }
-
-  return Array.from(byFormat.values())
-    .map((track) =>
-      getTrackQualityBadge({
-        id: track.storage_id || track.path || String(track.id),
-        title: track.tags.title || track.filename,
-        artist: track.tags.artist || "",
-        format: track.format || undefined,
-        bitrate: track.bitrate,
-        sampleRate: track.sample_rate,
-        bitDepth: track.bit_depth,
-      }),
-    )
-    .filter((badge): badge is QualityBadgeData => Boolean(badge));
-}
-
-
 export function Album() {
   const { albumId: albumIdParam } = useParams<{ albumId?: string }>();
   const navigate = useNavigate();
@@ -203,7 +140,7 @@ export function Album() {
   const albumTracks = data.tracks;
   const year = data.album_tags?.year?.slice(0, 4);
   const genre = data.genres.length > 0 ? data.genres.join(", ") : data.album_tags?.genre;
-  const playerTracks = buildPlayerTracks(data);
+  const playerTracks: Track[] = buildAlbumPlayerTracks(data);
   const saved = isSaved(albumId);
   const offlineState = getAlbumState(albumId);
   const offlineRecord = getAlbumRecord(albumId);
