@@ -35,24 +35,34 @@ export function getOAuthCallbackPayload(search: string | URLSearchParams): { tok
   };
 }
 
+export function persistOAuthCallbackPayload(
+  search: string | URLSearchParams,
+): { handled: boolean; next: string } {
+  const { token, next } = getOAuthCallbackPayload(search);
+  if (!token) {
+    return { handled: false, next };
+  }
+
+  setAuthToken(token);
+  storePendingOAuthNext(next);
+  return { handled: true, next };
+}
+
 export async function consumeOAuthCallbackUrl(url: string): Promise<{ handled: boolean; next: string }> {
   if (!url.startsWith("cratemusic://oauth/callback")) {
     return { handled: false, next: "/" };
   }
 
   try {
-    const { token, next } = getOAuthCallbackPayload(new URL(url).searchParams);
-    if (!token) {
-      return { handled: false, next };
+    const result = persistOAuthCallbackPayload(new URL(url).searchParams);
+    if (!result.handled) {
+      return result;
     }
-
-    setAuthToken(token);
-    storePendingOAuthNext(next);
     void import("@capacitor/browser")
       .then(({ Browser }) => Browser.close().catch(() => {}))
       .catch(() => {});
 
-    return { handled: true, next };
+    return result;
   } catch {
     return { handled: false, next: "/" };
   }
