@@ -130,7 +130,8 @@ Crate uses several realtime mechanisms:
 - `/api/cache/events`
 
 This feed supports `Last-Event-ID` replay and is used by authenticated clients
-to invalidate local caches.
+to invalidate local caches. Live updates arrive through Redis pub/sub and the
+replay window comes from the bounded Redis invalidation log.
 
 ### Snapshot-driven feeds
 

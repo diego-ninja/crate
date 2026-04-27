@@ -18,6 +18,7 @@ import logging
 import os
 import re
 from time import time
+from typing import AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import StreamingResponse
@@ -60,6 +61,7 @@ _CACHE_INVALIDATION_RESPONSES = {
 
 _EVENTS_KEY = "cache:invalidation:events"
 _EVENT_ID_KEY = "cache:invalidation:next_id"
+_LIVE_CHANNEL = "crate:sse:cache-invalidation"
 _MAX_EVENTS = 500
 
 _redis = None
@@ -82,6 +84,10 @@ def _get_redis():
         url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
         _redis = _redis_lib.from_url(url, decode_responses=True)
     return _redis
+
+
+def _get_redis_url() -> str:
+    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 
 def _should_append_invalidation_domain_event(scope: str) -> bool:
@@ -114,6 +120,7 @@ def _do_broadcast(scopes: tuple[str, ...] | list[str]):
             event = json.dumps({"id": event_id, "scope": scope, "ts": time()})
             r.lpush(_EVENTS_KEY, event)
             r.ltrim(_EVENTS_KEY, 0, _MAX_EVENTS - 1)
+            r.publish(_LIVE_CHANNEL, event)
             if _should_append_invalidation_domain_event(scope):
                 append_domain_event(
                     "ui.invalidate",
@@ -202,40 +209,95 @@ def get_latest_invalidation_event_id() -> int:
     return int(val) if val else 0
 
 
+def _format_invalidation_sse(event: dict) -> str:
+    return f"id: {event['id']}\ndata: {event['scope']}\n\n"
+
+
+async def _open_live_invalidation_pubsub():
+    import redis.asyncio as aioredis
+
+    redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
+    pubsub = redis.pubsub()
+    await pubsub.subscribe(_LIVE_CHANNEL)
+    return redis, pubsub
+
+
+async def _close_live_invalidation_pubsub(redis, pubsub) -> None:
+    try:
+        await pubsub.unsubscribe(_LIVE_CHANNEL)
+    except Exception:
+        log.debug("Failed to unsubscribe cache invalidation pubsub", exc_info=True)
+    try:
+        await pubsub.aclose()
+    except Exception:
+        log.debug("Failed to close cache invalidation pubsub", exc_info=True)
+    try:
+        await redis.aclose()
+    except Exception:
+        log.debug("Failed to close cache invalidation redis client", exc_info=True)
+
+
 # ── SSE stream ──────────────────────────────────────────────────────
 
 _HEARTBEAT_INTERVAL = 30  # seconds
 
 
-async def _invalidation_stream(last_event_id: int):
+async def _invalidation_stream(last_event_id: int) -> AsyncIterator[str]:
     """Yield SSE events for cache invalidation.
 
     Replays any events missed since ``last_event_id`` (from the
-    ``Last-Event-ID`` header on reconnect), then polls Redis for
-    new events every second. Sends a keep-alive comment every 30 s
-    to prevent proxy timeouts.
+    ``Last-Event-ID`` header on reconnect), then subscribes to a
+    Redis pub/sub channel for low-latency live delivery. Sends a
+    keep-alive comment every 30 s to prevent proxy timeouts.
     """
-    # Replay missed events
-    missed = get_invalidation_events_since(last_event_id)
-    for event in missed:
-        last_event_id = event["id"]
-        yield f"id: {event['id']}\ndata: {event['scope']}\n\n"
+    redis = None
+    pubsub = None
 
-    heartbeat_counter = 0
-    while True:
-        await asyncio.sleep(1)
-        heartbeat_counter += 1
+    try:
+        redis, pubsub = await _open_live_invalidation_pubsub()
 
-        # Check for new events
-        new_events = get_invalidation_events_since(last_event_id)
-        for event in new_events:
+        missed = get_invalidation_events_since(last_event_id)
+        for event in missed:
             last_event_id = event["id"]
-            yield f"id: {event['id']}\ndata: {event['scope']}\n\n"
+            yield _format_invalidation_sse(event)
 
-        # Heartbeat to keep connection alive across proxies
-        if heartbeat_counter >= _HEARTBEAT_INTERVAL:
-            heartbeat_counter = 0
-            yield ": heartbeat\n\n"
+        heartbeat_counter = 0
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message.get("type") == "message":
+                try:
+                    event = json.loads(message["data"])
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                event_id = int(event.get("id") or 0)
+                if event_id <= last_event_id:
+                    continue
+                last_event_id = event_id
+                heartbeat_counter = 0
+                yield _format_invalidation_sse(event)
+                continue
+
+            heartbeat_counter += 1
+            if heartbeat_counter >= _HEARTBEAT_INTERVAL:
+                heartbeat_counter = 0
+                yield ": heartbeat\n\n"
+    except Exception:
+        heartbeat_counter = 0
+        while True:
+            await asyncio.sleep(1)
+            heartbeat_counter += 1
+
+            new_events = get_invalidation_events_since(last_event_id)
+            for event in new_events:
+                last_event_id = event["id"]
+                yield _format_invalidation_sse(event)
+
+            if heartbeat_counter >= _HEARTBEAT_INTERVAL:
+                heartbeat_counter = 0
+                yield ": heartbeat\n\n"
+    finally:
+        if redis is not None and pubsub is not None:
+            await _close_live_invalidation_pubsub(redis, pubsub)
 
 
 @router.get(

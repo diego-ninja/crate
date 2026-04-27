@@ -90,7 +90,8 @@ These are ideal for task activity and lightweight global status updates.
 - `/api/cache/events`
 
 This stream is backed by Redis with monotonic IDs and supports replay through
-`Last-Event-ID`.
+`Last-Event-ID`. Live delivery uses Redis pub/sub, while reconnect replay reads
+the bounded invalidation log.
 
 ### Snapshot-driven SSE feeds
 
