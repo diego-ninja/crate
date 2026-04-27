@@ -31,31 +31,33 @@ _DASHBOARD_TIMESERIES = {
     "worker.queue.wait": "worker.queue.wait",
 }
 
+_SUMMARY_METRICS = {
+    "api_latency": ("api.request.latency", 5),
+    "api_requests": ("api.request.count", 5),
+    "api_errors": ("api.request.errors", 5),
+    "api_slow": ("api.request.slow", 5),
+    "stream_requests": ("stream.requests", 5),
+    "stream_latency": ("stream.latency", 5),
+    "stream_concurrent": ("stream.concurrent", 5),
+    "home_cache_hit": ("home.cache.hit", 15),
+    "home_cache_miss": ("home.cache.miss", 15),
+    "home_cache_waited": ("home.cache.waited", 15),
+    "home_cache_coalesced": ("home.cache.coalesced", 15),
+    "home_cache_stale_fallback": ("home.cache.stale_fallback", 15),
+    "home_compute_ms": ("home.compute.ms", 15),
+    "home_endpoint_cache_hit": ("home.endpoint_cache.hit", 15),
+    "home_endpoint_cache_miss": ("home.endpoint_cache.miss", 15),
+    "home_endpoint_compute_ms": ("home.endpoint_compute.ms", 15),
+}
+
 def _get_redis_url() -> str:
     return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 
 def _build_metrics_summary() -> dict:
-    from crate.metrics import query_summary
+    from crate.metrics import query_summaries
 
-    return {
-        "api_latency": query_summary("api.request.latency", minutes=5),
-        "api_requests": query_summary("api.request.count", minutes=5),
-        "api_errors": query_summary("api.request.errors", minutes=5),
-        "api_slow": query_summary("api.request.slow", minutes=5),
-        "stream_requests": query_summary("stream.requests", minutes=5),
-        "stream_latency": query_summary("stream.latency", minutes=5),
-        "stream_concurrent": query_summary("stream.concurrent", minutes=5),
-        "home_cache_hit": query_summary("home.cache.hit", minutes=15),
-        "home_cache_miss": query_summary("home.cache.miss", minutes=15),
-        "home_cache_waited": query_summary("home.cache.waited", minutes=15),
-        "home_cache_coalesced": query_summary("home.cache.coalesced", minutes=15),
-        "home_cache_stale_fallback": query_summary("home.cache.stale_fallback", minutes=15),
-        "home_compute_ms": query_summary("home.compute.ms", minutes=15),
-        "home_endpoint_cache_hit": query_summary("home.endpoint_cache.hit", minutes=15),
-        "home_endpoint_cache_miss": query_summary("home.endpoint_cache.miss", minutes=15),
-        "home_endpoint_compute_ms": query_summary("home.endpoint_compute.ms", minutes=15),
-    }
+    return query_summaries(_SUMMARY_METRICS)
 
 
 def _build_metrics_system() -> dict:

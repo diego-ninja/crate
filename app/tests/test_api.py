@@ -997,31 +997,34 @@ class TestAdminLogsAPI:
 
 class TestAdminMetricsAPI:
     def test_metrics_dashboard_uses_clean_http_metric_series(self, test_app):
-        summary_calls: list[str] = []
+        summary_specs: dict[str, tuple[str, int]] = {}
         recent_calls: list[str] = []
 
-        def fake_query_summary(name: str, minutes: int = 5):
-            summary_calls.append(name)
-            return {"count": 1, "avg": 42, "min": 42, "max": 42, "sum": 42}
+        def fake_query_summaries(specs: dict[str, tuple[str, int]]):
+            summary_specs.update(specs)
+            return {
+                key: {"count": 1, "avg": 42, "min": 42, "max": 42, "sum": 42}
+                for key in specs
+            }
 
         def fake_query_recent(name: str, minutes: int = 60):
             recent_calls.append(name)
             return []
 
-        with patch("crate.metrics.query_summary", side_effect=fake_query_summary), \
+        with patch("crate.metrics.query_summaries", side_effect=fake_query_summaries), \
              patch("crate.metrics.query_recent", side_effect=fake_query_recent), \
-             patch("crate.db.cache.get_cache", return_value=None), \
-             patch("crate.db.cache.set_cache"), \
+             patch("crate.db.cache_store.get_cache", return_value=None), \
+             patch("crate.db.cache_store.set_cache"), \
              patch("crate.api.admin_metrics._build_metrics_system", return_value={}), \
              patch("crate.api.admin_metrics._list_running_tasks", return_value=[]):
             resp = test_app.get("/api/admin/metrics/dashboard?period=minute&minutes=5")
 
         assert resp.status_code == 200
-        assert "api.request.latency" in summary_calls
-        assert "api.request.count" in summary_calls
-        assert "api.request.errors" in summary_calls
-        assert "api.request.slow" in summary_calls
-        assert "api.latency" not in summary_calls
+        assert summary_specs["api_latency"] == ("api.request.latency", 5)
+        assert summary_specs["api_requests"] == ("api.request.count", 5)
+        assert summary_specs["api_errors"] == ("api.request.errors", 5)
+        assert summary_specs["api_slow"] == ("api.request.slow", 5)
+        assert ("api.latency", 5) not in summary_specs.values()
         assert "api.request.latency" in recent_calls
         assert "api.request.count" in recent_calls
         assert "api.request.errors" in recent_calls

@@ -256,6 +256,66 @@ def query_summary(name: str, minutes: int = 5) -> dict:
     }
 
 
+def query_summaries(specs: dict[str, tuple[str, int]]) -> dict[str, dict]:
+    """Aggregate multiple metric summaries with one Redis pipeline."""
+    defaults = {key: {"count": 0, "avg": 0, "min": 0, "max": 0, "sum": 0} for key in specs}
+    if not specs:
+        return {}
+
+    try:
+        from crate.db.cache_runtime import _get_redis
+
+        r = _get_redis()
+        if r is None:
+            return defaults
+
+        now_bucket = _minute_bucket()
+        pipe = r.pipeline(transaction=False)
+        lookup_keys: list[str] = []
+
+        for summary_key, (metric_name, minutes) in specs.items():
+            for offset in range(minutes):
+                bucket_ts = now_bucket - offset * 60
+                pipe.hgetall(_bucket_key(metric_name, bucket_ts))
+                lookup_keys.append(summary_key)
+
+        raw_results = pipe.execute()
+        aggregates: dict[str, dict[str, float | int | None]] = {
+            key: {"count": 0, "sum": 0.0, "min": None, "max": None}
+            for key in specs
+        }
+
+        for summary_key, data in zip(lookup_keys, raw_results):
+            if not data:
+                continue
+            count = int(data.get(b"count", data.get("count", 0)))
+            total = float(data.get(b"sum", data.get("sum", 0)))
+            aggregates[summary_key]["count"] += count
+            aggregates[summary_key]["sum"] += total
+
+            if count > 0:
+                min_value = float(data.get(b"min", data.get("min", 0)))
+                max_value = float(data.get(b"max", data.get("max", 0)))
+                current_min = aggregates[summary_key]["min"]
+                current_max = aggregates[summary_key]["max"]
+                aggregates[summary_key]["min"] = min_value if current_min is None else min(float(current_min), min_value)
+                aggregates[summary_key]["max"] = max_value if current_max is None else max(float(current_max), max_value)
+
+        return {
+            key: {
+                "count": int(aggregate["count"]),
+                "avg": round(float(aggregate["sum"]) / int(aggregate["count"]), 2) if int(aggregate["count"]) > 0 else 0,
+                "min": round(float(aggregate["min"] or 0), 2),
+                "max": round(float(aggregate["max"] or 0), 2),
+                "sum": round(float(aggregate["sum"]), 2),
+            }
+            for key, aggregate in aggregates.items()
+        }
+    except Exception:
+        log.debug("Failed to query batched metric summaries", exc_info=True)
+        return defaults
+
+
 # ── Flush to PostgreSQL ──────────────────────────────────────────
 
 def flush_to_postgres(period: str = "hour"):
