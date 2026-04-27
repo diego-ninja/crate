@@ -3,6 +3,8 @@ import { App } from "@capacitor/app";
 import { Network } from "@capacitor/network";
 import { StatusBar, Style } from "@capacitor/status-bar";
 
+import { setAuthToken } from "@/lib/api";
+
 export const isNative = Capacitor.isNativePlatform();
 export const platform = Capacitor.getPlatform(); // "ios" | "android" | "web"
 const OAUTH_NEXT_KEY = "crate-oauth-next";
@@ -38,7 +40,6 @@ export async function consumeOAuthCallbackUrl(url: string): Promise<{ handled: b
       return { handled: false, next };
     }
 
-    const { setAuthToken } = await import("@/lib/api");
     setAuthToken(token);
     storePendingOAuthNext(next);
     void import("@capacitor/browser")

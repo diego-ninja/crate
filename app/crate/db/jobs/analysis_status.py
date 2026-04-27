@@ -45,7 +45,20 @@ def get_analysis_status() -> dict:
                         SELECT
                             CASE
                                 WHEN taf.track_id IS NOT NULL THEN 'done'
-                                WHEN lt.analysis_state IN ('pending', 'analyzing', 'done', 'failed') THEN lt.analysis_state
+                                WHEN (
+                                    lt.bpm IS NOT NULL
+                                    OR lt.audio_key IS NOT NULL
+                                    OR lt.energy IS NOT NULL
+                                    OR lt.mood_json IS NOT NULL
+                                    OR lt.danceability IS NOT NULL
+                                    OR lt.valence IS NOT NULL
+                                    OR lt.acousticness IS NOT NULL
+                                    OR lt.instrumentalness IS NOT NULL
+                                    OR lt.loudness IS NOT NULL
+                                    OR lt.dynamic_range IS NOT NULL
+                                    OR lt.spectral_complexity IS NOT NULL
+                                ) THEN 'done'
+                                WHEN lt.analysis_state IN ('analyzing', 'failed') THEN lt.analysis_state
                                 ELSE 'pending'
                             END AS inferred_state
                         FROM library_tracks lt
@@ -76,7 +89,8 @@ def get_analysis_status() -> dict:
                         SELECT
                             CASE
                                 WHEN tbe.track_id IS NOT NULL THEN 'done'
-                                WHEN lt.bliss_state IN ('pending', 'analyzing', 'done', 'failed') THEN lt.bliss_state
+                                WHEN lt.bliss_vector IS NOT NULL THEN 'done'
+                                WHEN lt.bliss_state IN ('analyzing', 'failed') THEN lt.bliss_state
                                 ELSE 'pending'
                             END AS inferred_state
                         FROM library_tracks lt

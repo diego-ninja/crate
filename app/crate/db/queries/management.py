@@ -49,7 +49,20 @@ def get_last_analyzed_track() -> dict:
                       AND COALESCE(
                         ps.state,
                         CASE
-                            WHEN lt.analysis_state IN ('pending', 'analyzing', 'done', 'failed')
+                            WHEN (
+                                lt.bpm IS NOT NULL
+                                OR lt.audio_key IS NOT NULL
+                                OR lt.energy IS NOT NULL
+                                OR lt.mood_json IS NOT NULL
+                                OR lt.danceability IS NOT NULL
+                                OR lt.valence IS NOT NULL
+                                OR lt.acousticness IS NOT NULL
+                                OR lt.instrumentalness IS NOT NULL
+                                OR lt.loudness IS NOT NULL
+                                OR lt.dynamic_range IS NOT NULL
+                                OR lt.spectral_complexity IS NOT NULL
+                            ) THEN 'done'
+                            WHEN lt.analysis_state IN ('analyzing', 'failed')
                             THEN lt.analysis_state
                             ELSE 'pending'
                         END
@@ -96,7 +109,8 @@ def get_last_bliss_track() -> dict:
                       AND COALESCE(
                         ps.state,
                         CASE
-                            WHEN lt.bliss_state IN ('pending', 'analyzing', 'done', 'failed')
+                            WHEN lt.bliss_vector IS NOT NULL THEN 'done'
+                            WHEN lt.bliss_state IN ('analyzing', 'failed')
                             THEN lt.bliss_state
                             ELSE 'pending'
                         END

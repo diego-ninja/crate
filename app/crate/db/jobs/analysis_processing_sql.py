@@ -12,14 +12,39 @@ def _processing_seed_sql(*, pipeline: str) -> tuple[str, str, str]:
             """
                 CASE
                     WHEN taf.track_id IS NOT NULL THEN 'done'
-                    WHEN analysis_state IN ('pending', 'analyzing', 'done', 'failed') THEN analysis_state
+                    WHEN (
+                        lt.bpm IS NOT NULL
+                        OR lt.audio_key IS NOT NULL
+                        OR lt.energy IS NOT NULL
+                        OR lt.mood_json IS NOT NULL
+                        OR lt.danceability IS NOT NULL
+                        OR lt.valence IS NOT NULL
+                        OR lt.acousticness IS NOT NULL
+                        OR lt.instrumentalness IS NOT NULL
+                        OR lt.loudness IS NOT NULL
+                        OR lt.dynamic_range IS NOT NULL
+                        OR lt.spectral_complexity IS NOT NULL
+                    ) THEN 'done'
+                    WHEN analysis_state IN ('analyzing', 'failed') THEN analysis_state
                     ELSE 'pending'
                 END AS state
             """,
             """
                 CASE
                     WHEN taf.track_id IS NOT NULL THEN COALESCE(taf.updated_at, analysis_completed_at, lt.updated_at, NOW())
-                    WHEN analysis_state = 'done' THEN COALESCE(analysis_completed_at, lt.updated_at, NOW())
+                    WHEN (
+                        lt.bpm IS NOT NULL
+                        OR lt.audio_key IS NOT NULL
+                        OR lt.energy IS NOT NULL
+                        OR lt.mood_json IS NOT NULL
+                        OR lt.danceability IS NOT NULL
+                        OR lt.valence IS NOT NULL
+                        OR lt.acousticness IS NOT NULL
+                        OR lt.instrumentalness IS NOT NULL
+                        OR lt.loudness IS NOT NULL
+                        OR lt.dynamic_range IS NOT NULL
+                        OR lt.spectral_complexity IS NOT NULL
+                    ) THEN COALESCE(analysis_completed_at, lt.updated_at, NOW())
                     ELSE NULL
                 END AS completed_at
             """,
@@ -32,14 +57,15 @@ def _processing_seed_sql(*, pipeline: str) -> tuple[str, str, str]:
             """
                 CASE
                     WHEN tbe.track_id IS NOT NULL THEN 'done'
-                    WHEN bliss_state IN ('pending', 'analyzing', 'done', 'failed') THEN bliss_state
+                    WHEN lt.bliss_vector IS NOT NULL THEN 'done'
+                    WHEN bliss_state IN ('analyzing', 'failed') THEN bliss_state
                     ELSE 'pending'
                 END AS state
             """,
             """
                 CASE
                     WHEN tbe.track_id IS NOT NULL THEN COALESCE(tbe.updated_at, bliss_computed_at, lt.updated_at, NOW())
-                    WHEN bliss_state = 'done' THEN COALESCE(bliss_computed_at, lt.updated_at, NOW())
+                    WHEN lt.bliss_vector IS NOT NULL THEN COALESCE(bliss_computed_at, lt.updated_at, NOW())
                     ELSE NULL
                 END AS completed_at
             """,

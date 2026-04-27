@@ -64,6 +64,16 @@ _MAX_EVENTS = 500
 
 _redis = None
 
+_PROJECTOR_RELEVANT_INVALIDATION_SCOPES = frozenset(
+    {
+        "library",
+        "shows",
+        "upcoming",
+        "curation",
+        "playlists",
+    }
+)
+
 
 def _get_redis():
     global _redis
@@ -72,6 +82,14 @@ def _get_redis():
         url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
         _redis = _redis_lib.from_url(url, decode_responses=True)
     return _redis
+
+
+def _should_append_invalidation_domain_event(scope: str) -> bool:
+    return (
+        scope.startswith("home:user:")
+        or scope.startswith(("artist:", "album:", "playlist:"))
+        or scope in _PROJECTOR_RELEVANT_INVALIDATION_SCOPES
+    )
 
 
 def broadcast_invalidation(*scopes: str):
@@ -96,12 +114,13 @@ def _do_broadcast(scopes: tuple[str, ...] | list[str]):
             event = json.dumps({"id": event_id, "scope": scope, "ts": time()})
             r.lpush(_EVENTS_KEY, event)
             r.ltrim(_EVENTS_KEY, 0, _MAX_EVENTS - 1)
-            append_domain_event(
-                "ui.invalidate",
-                {"scope": scope, "redis_event_id": event_id},
-                scope="ui.invalidate",
-                subject_key=scope,
-            )
+            if _should_append_invalidation_domain_event(scope):
+                append_domain_event(
+                    "ui.invalidate",
+                    {"scope": scope, "redis_event_id": event_id},
+                    scope="ui.invalidate",
+                    subject_key=scope,
+                )
             log.debug("cache invalidation: %s (event %d)", scope, event_id)
     except Exception as exc:
         log.warning("Failed to broadcast cache invalidation for %s: %s", scopes, exc)

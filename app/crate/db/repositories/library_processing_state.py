@@ -26,7 +26,20 @@ def ensure_track_processing_rows(session: Session, track_id: int) -> None:
                 'analysis',
                 CASE
                     WHEN taf.track_id IS NOT NULL THEN 'done'
-                    WHEN COALESCE(NULLIF(lt.analysis_state, ''), 'pending') IN ('pending', 'analyzing', 'done', 'failed')
+                    WHEN (
+                        lt.bpm IS NOT NULL
+                        OR lt.audio_key IS NOT NULL
+                        OR lt.energy IS NOT NULL
+                        OR lt.mood_json IS NOT NULL
+                        OR lt.danceability IS NOT NULL
+                        OR lt.valence IS NOT NULL
+                        OR lt.acousticness IS NOT NULL
+                        OR lt.instrumentalness IS NOT NULL
+                        OR lt.loudness IS NOT NULL
+                        OR lt.dynamic_range IS NOT NULL
+                        OR lt.spectral_complexity IS NOT NULL
+                    ) THEN 'done'
+                    WHEN COALESCE(NULLIF(lt.analysis_state, ''), 'pending') IN ('analyzing', 'failed')
                     THEN COALESCE(NULLIF(lt.analysis_state, ''), 'pending')
                     ELSE 'pending'
                 END,
@@ -38,7 +51,19 @@ def ensure_track_processing_rows(session: Session, track_id: int) -> None:
                 CASE
                     WHEN taf.track_id IS NOT NULL
                     THEN COALESCE(taf.updated_at, lt.analysis_completed_at, lt.updated_at, NOW())
-                    WHEN COALESCE(NULLIF(lt.analysis_state, ''), 'pending') = 'done'
+                    WHEN (
+                        lt.bpm IS NOT NULL
+                        OR lt.audio_key IS NOT NULL
+                        OR lt.energy IS NOT NULL
+                        OR lt.mood_json IS NOT NULL
+                        OR lt.danceability IS NOT NULL
+                        OR lt.valence IS NOT NULL
+                        OR lt.acousticness IS NOT NULL
+                        OR lt.instrumentalness IS NOT NULL
+                        OR lt.loudness IS NOT NULL
+                        OR lt.dynamic_range IS NOT NULL
+                        OR lt.spectral_complexity IS NOT NULL
+                    )
                     THEN COALESCE(lt.analysis_completed_at, lt.updated_at, NOW())
                     ELSE NULL
                 END
@@ -69,7 +94,8 @@ def ensure_track_processing_rows(session: Session, track_id: int) -> None:
                 'bliss',
                 CASE
                     WHEN tbe.track_id IS NOT NULL THEN 'done'
-                    WHEN COALESCE(NULLIF(lt.bliss_state, ''), 'pending') IN ('pending', 'analyzing', 'done', 'failed')
+                    WHEN lt.bliss_vector IS NOT NULL THEN 'done'
+                    WHEN COALESCE(NULLIF(lt.bliss_state, ''), 'pending') IN ('analyzing', 'failed')
                     THEN COALESCE(NULLIF(lt.bliss_state, ''), 'pending')
                     ELSE 'pending'
                 END,
@@ -81,7 +107,7 @@ def ensure_track_processing_rows(session: Session, track_id: int) -> None:
                 CASE
                     WHEN tbe.track_id IS NOT NULL
                     THEN COALESCE(tbe.updated_at, lt.bliss_computed_at, lt.updated_at, NOW())
-                    WHEN COALESCE(NULLIF(lt.bliss_state, ''), 'pending') = 'done'
+                    WHEN lt.bliss_vector IS NOT NULL
                     THEN COALESCE(lt.bliss_computed_at, lt.updated_at, NOW())
                     ELSE NULL
                 END

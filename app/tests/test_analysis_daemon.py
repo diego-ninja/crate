@@ -470,6 +470,42 @@ class TestAnalysisJobsIntegration:
         }
         assert all(row["completed_at"] is not None for row in rows)
 
+    def test_processing_rows_do_not_trust_legacy_done_without_shadow_data(self, pg_db):
+        from crate.db.jobs import analysis as analysis_jobs
+        from crate.db.management import get_last_analyzed_track, get_last_bliss_track
+        from crate.db.tx import transaction_scope
+
+        track = self._seed_track(pg_db, "legacy-done-no-shadow")
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET analysis_state = 'done',
+                        bliss_state = 'done',
+                        analysis_completed_at = TIMESTAMPTZ '2026-04-27T08:00:00Z',
+                        bliss_computed_at = TIMESTAMPTZ '2026-04-27T08:00:00Z',
+                        bpm = NULL,
+                        audio_key = NULL,
+                        energy = NULL,
+                        mood_json = NULL,
+                        bliss_vector = NULL,
+                        bliss_embedding = NULL
+                    WHERE id = :id
+                    """
+                ),
+                {"id": track["id"]},
+            )
+            session.execute(text("DELETE FROM track_processing_state WHERE track_id = :id"), {"id": track["id"]})
+            session.execute(text("DELETE FROM track_analysis_features WHERE track_id = :id"), {"id": track["id"]})
+            session.execute(text("DELETE FROM track_bliss_embeddings WHERE track_id = :id"), {"id": track["id"]})
+
+        assert analysis_jobs.get_pending_count("analysis_state") == 1
+        assert analysis_jobs.get_pending_count("bliss_state") == 1
+        assert get_last_analyzed_track() == {}
+        assert get_last_bliss_track() == {}
+
     def test_last_pipeline_cards_use_pipeline_specific_timestamps(self, pg_db):
         from crate.db.management import get_last_analyzed_track, get_last_bliss_track
         from crate.db.tx import transaction_scope

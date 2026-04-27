@@ -333,6 +333,7 @@ These are worth continuing:
 - New SSE endpoints: none
 - Semantics changes:
   - `ui.invalidate` no longer forces an ops snapshot rebuild for every invalidation event.
+  - `ui.invalidate` domain events are now only appended for projector-relevant scopes instead of for every cache invalidation broadcast.
   - The projector now refreshes ops snapshots only for ops-relevant invalidation scopes such as `library`, `shows`, `upcoming`, `curation`, `playlists`, and entity-detail scopes like `artist:{id}`, `album:{id}`, and `playlist:{id}`.
   - Home-only invalidations such as `home:user:{id}` continue to refresh home discovery without unnecessarily rebuilding ops.
 
@@ -352,15 +353,15 @@ If a future session starts failing these tests, it probably means the refactor r
 These were executed successfully during the latest session:
 
 - `uv run pytest app/tests/test_analysis_daemon.py -q`
-  Result: `11 passed`
-- `uv run pytest app/tests/test_projector.py -q`
-  Result: `5 passed`
+  Result: `12 passed`
+- `uv run pytest app/tests/test_projector.py app/tests/test_cache_events.py -q`
+  Result: `7 passed`
 - `uv run pytest app/tests -q`
-  Result: `515 passed, 1 skipped`
+  Result: `518 passed, 1 skipped`
 - `npm run --workspace=app/ui build`
   Result: `passed`
 - `npm run --workspace=app/listen build`
-  Result: `passed` with the existing Listen chunk-size warning only
+  Result: `passed` without chunk-size warning after route/code splitting
 - `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_auth_maintenance.py app/tests/test_openapi_contract.py -q -k "jam or runtime_boundaries"`
   Result: `90 passed, 30 deselected`
 - `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py app/tests/test_ops_snapshot.py app/tests/test_openapi_contract.py -q -k "analytics or stats or timeline or insights or runtime_boundaries"`
@@ -452,7 +453,7 @@ If a future session continues from here, it should be for optional refinement in
 
 1. Clean up the last edge compatibility paths that still read legacy pipeline columns directly.
 2. Continue reducing broad invalidation in favor of semantic events and snapshot-driven updates where still useful.
-3. Do opportunistic performance cleanup in Listen build output if the chunk-size warning becomes worth addressing.
+3. Watch real bundle growth in Listen over time and keep non-critical routes lazy if the main chunk starts creeping back up.
 4. Keep boundary coverage strict so facades do not re-accumulate logic.
 
 ## Remaining Conceptual Work Beyond File Splits
@@ -487,11 +488,12 @@ Still worth doing:
 Current state:
 
 - `app/ui` build passed cleanly
-- `app/listen` build passed, with an existing Vite chunk-size warning only
+- `app/listen` build passed cleanly after extra lazy routes plus vendor chunk splitting
+- the previous chunk-size warning is gone
 
 Possible follow-up:
 
-- split or defer the largest Listen chunks if bundle pressure becomes user-visible
+- keep an eye on the main Listen chunk and continue splitting heavy routes if bundle pressure becomes user-visible
 
 ## Files That Matter Most For The Next Session
 

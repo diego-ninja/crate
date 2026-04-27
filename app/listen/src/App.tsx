@@ -5,7 +5,6 @@ import { connectCacheEvents } from "@/lib/cache";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { isNative } from "@/lib/capacitor";
 import { getCurrentServer, SERVER_STORE_EVENT } from "@/lib/server-store";
-import { ServerSetup } from "@/pages/ServerSetup";
 import { ArtistFollowsProvider } from "@/contexts/ArtistFollowsContext";
 import { LikedTracksProvider } from "@/contexts/LikedTracksContext";
 import { PlayerProvider } from "@/contexts/PlayerContext";
@@ -14,14 +13,31 @@ import { SavedAlbumsProvider } from "@/contexts/SavedAlbumsContext";
 import { OfflineProvider } from "@/contexts/OfflineContext";
 import { Shell } from "@/components/layout/Shell";
 import { Home } from "@/pages/Home";
-import { Explore } from "@/pages/Explore";
-import { Library } from "@/pages/Library";
-import { Settings } from "@/pages/Settings";
-import { Upload } from "@/pages/Upload";
-import { AuthCallback } from "@/pages/AuthCallback";
-import { Login } from "@/pages/Login";
-import { Register } from "@/pages/Register";
 
+const ServerSetup = React.lazy(() =>
+  import("@/pages/ServerSetup").then((m) => ({ default: m.ServerSetup })),
+);
+const AuthCallback = React.lazy(() =>
+  import("@/pages/AuthCallback").then((m) => ({ default: m.AuthCallback })),
+);
+const Login = React.lazy(() =>
+  import("@/pages/Login").then((m) => ({ default: m.Login })),
+);
+const Register = React.lazy(() =>
+  import("@/pages/Register").then((m) => ({ default: m.Register })),
+);
+const Explore = React.lazy(() =>
+  import("@/pages/Explore").then((m) => ({ default: m.Explore })),
+);
+const Library = React.lazy(() =>
+  import("@/pages/Library").then((m) => ({ default: m.Library })),
+);
+const Settings = React.lazy(() =>
+  import("@/pages/Settings").then((m) => ({ default: m.Settings })),
+);
+const Upload = React.lazy(() =>
+  import("@/pages/Upload").then((m) => ({ default: m.Upload })),
+);
 const Artist = React.lazy(() =>
   import("@/pages/Artist").then((m) => ({ default: m.Artist })),
 );
@@ -111,6 +127,10 @@ function Spinner() {
   );
 }
 
+function DeferredRoute({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<Spinner />}>{children}</Suspense>;
+}
+
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -164,10 +184,10 @@ export function App() {
     <AuthProvider>
       <ServerGate>
       <Routes>
-        <Route path="/server-setup" element={<ServerSetup />} />
-        <Route path="/auth/callback" element={<AuthCallback />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        <Route path="/server-setup" element={<DeferredRoute><ServerSetup /></DeferredRoute>} />
+        <Route path="/auth/callback" element={<DeferredRoute><AuthCallback /></DeferredRoute>} />
+        <Route path="/login" element={<DeferredRoute><Login /></DeferredRoute>} />
+        <Route path="/register" element={<DeferredRoute><Register /></DeferredRoute>} />
         <Route
           element={
             <ProtectedRoute>
@@ -188,170 +208,170 @@ export function App() {
           }
         >
                     <Route index element={<Home />} />
-                    <Route path="explore" element={<Explore />} />
-                    <Route path="search" element={<Suspense fallback={<Spinner />}><SearchResults /></Suspense>} />
-                    <Route path="library" element={<Library />} />
+                    <Route path="explore" element={<DeferredRoute><Explore /></DeferredRoute>} />
+                    <Route path="search" element={<DeferredRoute><SearchResults /></DeferredRoute>} />
+                    <Route path="library" element={<DeferredRoute><Library /></DeferredRoute>} />
                     <Route
                       path="stats"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <Stats />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
-                    <Route path="upload" element={<Upload />} />
-                    <Route path="settings" element={<Settings />} />
+                    <Route path="upload" element={<DeferredRoute><Upload /></DeferredRoute>} />
+                    <Route path="settings" element={<DeferredRoute><Settings /></DeferredRoute>} />
                     <Route
                       path="people"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <People />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="users/:username"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <UserProfile />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="users/:username/followers"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <UserConnections />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="users/:username/following"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <UserConnections />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="jam"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <JamSession />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="jam/rooms/:roomId"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <JamSession />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="jam/invite/:token"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <JamInvite />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="playlist/invite/:token"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <PlaylistInvite />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route path="shows" element={<Navigate to="/upcoming" replace />} />
                     <Route
                       path="upcoming"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <Shows />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="paths"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <PathsPage />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="paths/:id"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <PathDetailPage />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="radio"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <RadioPage />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="artists/:artistId/:slug"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <Artist />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="artists/:artistId/:slug/top-tracks"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <ArtistTopTracks />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="albums/:albumId/:slug"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <Album />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="playlist/:id"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <Playlist />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="home/playlist/:playlistId"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <HomePlaylist />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="home/section/:sectionId"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <HomeSection />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                     <Route
                       path="curation/playlist/:id"
                       element={
-                        <Suspense fallback={<Spinner />}>
+                        <DeferredRoute>
                           <CuratedPlaylist />
-                        </Suspense>
+                        </DeferredRoute>
                       }
                     />
                   </Route>
