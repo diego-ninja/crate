@@ -28,6 +28,9 @@ export interface TrackRowData {
   path?: string;
   track_number?: number;
   format?: string;
+  bitrate?: number | null;
+  sample_rate?: number | null;
+  bit_depth?: number | null;
   library_track_id?: number;
 }
 
@@ -96,6 +99,10 @@ export const TrackRow = memo(function TrackRow({
     albumCover: cover,
     path: track.path,
     libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
+    format: track.format,
+    bitrate: track.bitrate,
+    sampleRate: track.sample_rate,
+    bitDepth: track.bit_depth,
   };
   const actions = useTrackActionEntries({
     track,

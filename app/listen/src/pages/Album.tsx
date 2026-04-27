@@ -14,11 +14,13 @@ import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
+import { QualityBadge } from "@/components/player/bar/QualityBadge";
+import { getTrackQualityBadge, type QualityBadge as QualityBadgeData } from "@/components/player/bar/player-bar-utils";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { isOfflineBusy } from "@/lib/offline";
 import { fetchAlbumRadio } from "@/lib/radio";
-import { formatBadgeClass, shuffleArray, formatTotalDuration } from "@/lib/utils";
+import { shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 function albumGenreSlug(name: string) {
@@ -36,6 +38,8 @@ interface AlbumTrack {
   format: string;
   size_mb: number;
   bitrate: number | null;
+  sample_rate?: number | null;
+  bit_depth?: number | null;
   length_sec: number;
   rating: number;
   tags: {
@@ -100,7 +104,50 @@ function buildPlayerTracks(data: AlbumData): Track[] {
       albumCover: cover,
       path: t.path,
       libraryTrackId: t.id,
+      format: t.format || undefined,
+      bitrate: t.bitrate,
+      sampleRate: t.sample_rate,
+      bitDepth: t.bit_depth,
   }));
+}
+
+function buildAlbumQualityBadges(tracks: AlbumTrack[]): QualityBadgeData[] {
+  const byFormat = new Map<string, AlbumTrack>();
+  for (const track of tracks) {
+    const format = (track.format || "").trim().toLowerCase();
+    if (!format) continue;
+    const current = byFormat.get(format);
+    if (!current) {
+      byFormat.set(format, track);
+      continue;
+    }
+
+    const currentScore =
+      (current.bit_depth || 0) * 1_000_000 +
+      (current.sample_rate || 0) * 1_000 +
+      (current.bitrate || 0);
+    const nextScore =
+      (track.bit_depth || 0) * 1_000_000 +
+      (track.sample_rate || 0) * 1_000 +
+      (track.bitrate || 0);
+    if (nextScore > currentScore) {
+      byFormat.set(format, track);
+    }
+  }
+
+  return Array.from(byFormat.values())
+    .map((track) =>
+      getTrackQualityBadge({
+        id: track.storage_id || track.path || String(track.id),
+        title: track.tags.title || track.filename,
+        artist: track.tags.artist || "",
+        format: track.format || undefined,
+        bitrate: track.bitrate,
+        sampleRate: track.sample_rate,
+        bitDepth: track.bit_depth,
+      }),
+    )
+    .filter((badge): badge is QualityBadgeData => Boolean(badge));
 }
 
 
@@ -188,7 +235,7 @@ export function Album() {
             : "Offline copy failed. Retry to finish the album mirror."
           : null;
 
-  const formats = [...new Set(albumTracks.map((t) => t.format).filter(Boolean))];
+  const qualityBadges = buildAlbumQualityBadges(albumTracks);
   const hasMultipleDiscs = albumTracks.some(
     (t) => t.tags.discnumber && parseInt(t.tags.discnumber) > 1,
   );
@@ -418,8 +465,8 @@ export function Album() {
                   {formatTotalDuration(data.total_length_sec)}
                 </span>
               )}
-              {formats.map((f) => (
-                <span key={f} className={`${formatBadgeClass(f)} text-[11px] px-2.5 py-0.5`}>{f}</span>
+              {qualityBadges.map((badge) => (
+                <QualityBadge key={`${badge.tier}-${badge.label}`} badge={badge} />
               ))}
             </div>
 
@@ -592,6 +639,9 @@ export function Album() {
                       path: t.path,
                       track_number: parseInt(t.tags.tracknumber) || idx + 1,
                       format: t.format,
+                      bitrate: t.bitrate,
+                      sample_rate: t.sample_rate,
+                      bit_depth: t.bit_depth,
                       library_track_id: t.id,
                     }}
                     index={parseInt(t.tags.tracknumber) || idx + 1}
@@ -622,6 +672,9 @@ export function Album() {
                 path: t.path,
                 track_number: parseInt(t.tags.tracknumber) || idx + 1,
                 format: t.format,
+                bitrate: t.bitrate,
+                sample_rate: t.sample_rate,
+                bit_depth: t.bit_depth,
                 library_track_id: t.id,
               }}
               index={parseInt(t.tags.tracknumber) || idx + 1}

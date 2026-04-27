@@ -34,6 +34,10 @@ export interface TrackMenuData {
   duration?: number;
   path?: string;
   library_track_id?: number;
+  format?: string;
+  bitrate?: number | null;
+  sample_rate?: number | null;
+  bit_depth?: number | null;
   is_suggested?: boolean;
   suggestion_source?: "playlist";
 }
@@ -79,6 +83,10 @@ export function trackToMenuData(track: Track): TrackMenuData {
     album_slug: track.albumSlug,
     path: track.path,
     library_track_id: track.libraryTrackId,
+    format: track.format,
+    bitrate: track.bitrate,
+    sample_rate: track.sampleRate,
+    bit_depth: track.bitDepth,
     is_suggested: track.isSuggested,
     suggestion_source: track.suggestionSource,
   };
@@ -109,6 +117,10 @@ export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string):
     albumCover: resolvedCover,
     path: track.path,
     libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
+    format: track.format,
+    bitrate: track.bitrate,
+    sampleRate: track.sample_rate,
+    bitDepth: track.bit_depth,
     isSuggested: track.is_suggested,
     suggestionSource: track.suggestion_source,
   };
