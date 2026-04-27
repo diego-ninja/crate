@@ -71,6 +71,13 @@ def run_worker(config: dict):
     bliss_thread.start()
     log.info("Background analysis daemons started")
 
+    # Start projector daemon (domain events → snapshot warming)
+    projector_thread = threading.Thread(
+        target=_run_projector_loop, args=(service_stop,), daemon=True, name="projector",
+    )
+    projector_thread.start()
+    log.info("Projector daemon started")
+
     # Start Telegram bot
     from crate.telegram import telegram_bot_loop
     telegram_thread = threading.Thread(
@@ -103,6 +110,19 @@ def run_worker(config: dict):
     sys.exit(exit_code)
 
 
+def _run_projector_loop(stop_event: threading.Event):
+    """Dedicated thread: consume domain events from Redis Stream and warm snapshots."""
+    from crate.projector import process_domain_events
+
+    while not stop_event.is_set():
+        try:
+            process_domain_events(limit=200)
+        except Exception:
+            log.debug("Snapshot projector failed", exc_info=True)
+        stop_event.wait(5)
+    log.info("Projector loop stopped")
+
+
 def _run_service_loop(config: dict, stop_event: threading.Event):
     """Background thread: scheduler checks, watcher, zombie cleanup, import queue."""
     import time as _time
@@ -125,7 +145,6 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
     last_cleanup = 0
     last_status_update = 0
     last_metrics_flush = 0
-    last_projector_run = 0
     last_shadow_backfill = 0
 
     while not stop_event.is_set():
@@ -247,15 +266,6 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                 flush_to_postgres()
             except Exception:
                 log.debug("Metrics flush failed", exc_info=True)
-
-        # Project persisted domain events into warmed snapshots every 5s
-        if now - last_projector_run > 5:
-            last_projector_run = now
-            try:
-                from crate.projector import process_domain_events
-                process_domain_events(limit=200)
-            except Exception:
-                log.debug("Snapshot projector failed", exc_info=True)
 
         # Incrementally backfill shadow pipeline read models every 30s
         if now - last_shadow_backfill > 30:

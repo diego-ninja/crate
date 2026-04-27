@@ -8,7 +8,6 @@ from typing import Any, Callable
 
 from sqlalchemy import text
 
-from crate.db.domain_events import append_domain_event
 from crate.db.read_model_shared import utc_now
 from crate.db.snapshot_events import publish_snapshot_update
 from crate.db.tx import optional_scope
@@ -22,7 +21,6 @@ def upsert_ui_snapshot(
     generation_ms: int = 0,
     stale_after_seconds: int | None = None,
     source_seq: int | None = None,
-    emit_event: bool = True,
     publish_snapshot: Callable[[str, str, int], None] = publish_snapshot_update,
     session=None,
 ) -> dict[str, Any]:
@@ -74,18 +72,6 @@ def upsert_ui_snapshot(
             },
         ).mappings().first()
         record = dict(row)
-        if emit_event:
-            append_domain_event(
-                "ui.snapshot.updated",
-                {
-                    "scope": scope,
-                    "subject_key": subject_key,
-                    "version": int(record.get("version") or 1),
-                },
-                scope=scope,
-                subject_key=subject_key,
-                session=managed,
-            )
     if record is None:
         raise RuntimeError("Snapshot upsert did not return a row")
     if session is None:

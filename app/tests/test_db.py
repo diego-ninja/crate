@@ -1167,10 +1167,11 @@ class TestReadModels:
         assert second is not None
         assert second["version"] == 2
 
-    def test_ui_snapshot_records_source_sequence(self, pg_db):
-        from crate.db.read_models import append_domain_event, get_or_build_ui_snapshot
+    def test_ui_snapshot_records_source_sequence(self, pg_db, monkeypatch):
+        from crate.db.read_models import get_or_build_ui_snapshot
 
-        event_id = append_domain_event("library.scan.completed", {"scan_id": 12}, scope="library", subject_key="global")
+        monkeypatch.setattr("crate.db.ui_snapshot_building.get_latest_domain_event_id", lambda **kw: 42)
+
         snapshot = get_or_build_ui_snapshot(
             scope="ops",
             subject_key="dashboard",
@@ -1179,7 +1180,7 @@ class TestReadModels:
             build=lambda: {"status": {"pending_imports": 1}},
         )
 
-        assert snapshot["snapshot"]["source_seq"] >= event_id
+        assert snapshot["snapshot"]["source_seq"] == 42
 
     def test_mark_ui_snapshots_stale_marks_matching_rows(self, pg_db):
         from crate.db.read_models import get_ui_snapshot, mark_ui_snapshots_stale, upsert_ui_snapshot

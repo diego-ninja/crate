@@ -44,31 +44,7 @@ def upgrade() -> None:
         """
     )
 
-    op.execute(
-        """
-        CREATE TABLE IF NOT EXISTS domain_events (
-            id BIGSERIAL PRIMARY KEY,
-            event_type TEXT NOT NULL,
-            scope TEXT,
-            subject_key TEXT,
-            payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            processed_at TIMESTAMPTZ
-        )
-        """
-    )
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_domain_events_unprocessed
-        ON domain_events (processed_at, id)
-        """
-    )
-    op.execute(
-        """
-        CREATE INDEX IF NOT EXISTS idx_domain_events_scope
-        ON domain_events (scope, subject_key, id DESC)
-        """
-    )
+    # domain_events are ephemeral and live in Redis Streams, not PostgreSQL.
 
     op.execute(
         """
@@ -217,5 +193,4 @@ def downgrade() -> None:
     op.execute("DROP TABLE IF EXISTS track_processing_state")
     op.execute("DROP TABLE IF EXISTS import_queue_items")
     op.execute("DROP TABLE IF EXISTS ops_runtime_state")
-    op.execute("DROP TABLE IF EXISTS domain_events")
     op.execute("DROP TABLE IF EXISTS ui_snapshots")

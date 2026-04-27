@@ -45,10 +45,10 @@ def process_domain_events(*, limit: int = 100) -> dict[str, int]:
 
     refresh_ops = False
     refresh_home_users: set[int] = set()
-    event_ids: list[int] = []
+    event_ids: list = []
 
     for event in events:
-        event_ids.append(int(event["id"]))
+        event_ids.append(event["id"])
         event_type = event.get("event_type")
         scope = event.get("scope") or ""
         payload = event.get("payload_json") or {}

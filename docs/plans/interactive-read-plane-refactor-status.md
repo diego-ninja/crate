@@ -336,6 +336,9 @@ These are worth continuing:
   - `ui.invalidate` domain events are now only appended for projector-relevant scopes instead of for every cache invalidation broadcast.
   - The projector now refreshes ops snapshots only for ops-relevant invalidation scopes such as `library`, `shows`, `upcoming`, `curation`, `playlists`, and entity-detail scopes like `artist:{id}`, `album:{id}`, and `playlist:{id}`.
   - Home-only invalidations such as `home:user:{id}` continue to refresh home discovery without unnecessarily rebuilding ops.
+  - `domain_events` now travel through Redis Streams as ephemeral projector signals instead of through a persisted PostgreSQL table on fresh bootstraps.
+  - Redis-backed `domain_events` are now published only after the surrounding SQLAlchemy transaction commits, preserving the old commit-aligned semantics.
+  - The projector consumer now retries its own pending Redis Stream deliveries before consuming new ones, so a mid-batch crash does not strand read-model events forever.
 
 ## Current Runtime / Boundary Rules That Are Already Enforced
 
@@ -360,6 +363,12 @@ These were executed successfully during the latest session:
   Result: `passed`
 - `uv run pytest app/tests -q`
   Result: `518 passed, 1 skipped`
+- `uv run pytest app/tests/test_analysis_daemon.py app/tests/test_domain_events.py app/tests/test_projector.py app/tests/test_import_queue_read_models.py -q`
+  Result: `21 passed`
+- `uv run pytest app/tests/test_db.py -q -k "ui_snapshot_records_source_sequence"`
+  Result: `1 passed, 62 deselected`
+- `uv run pytest app/tests -q`
+  Result: `520 passed, 1 skipped`
 - `uv run pytest app/tests/test_projector.py app/tests/test_cache_events.py -q`
   Result: `7 passed`
 - `uv run pytest app/tests -q`

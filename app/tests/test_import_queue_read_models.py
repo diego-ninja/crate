@@ -29,21 +29,7 @@ class TestImportQueueReadModels:
                     """
                 )
             )
-            session.execute(
-                text(
-                    """
-                    CREATE TABLE IF NOT EXISTS domain_events (
-                        id BIGSERIAL PRIMARY KEY,
-                        event_type TEXT NOT NULL,
-                        scope TEXT,
-                        subject_key TEXT,
-                        payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        processed_at TIMESTAMPTZ
-                    )
-                    """
-                )
-            )
+            # domain_events now live in Redis Streams, no PG table needed.
             session.execute(
                 text(
                     """

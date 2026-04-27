@@ -1,6 +1,3 @@
-from types import SimpleNamespace
-
-
 def test_process_domain_events_refreshes_ops_and_home(monkeypatch):
     from crate import projector
 
@@ -11,14 +8,14 @@ def test_process_domain_events_refreshes_ops_and_home(monkeypatch):
         "list_domain_events",
         lambda limit, unprocessed_only=True: [
             {
-                "id": 1,
+                "id": "1682349000000-0",
                 "event_type": "track.analysis.updated",
                 "scope": "pipeline:analysis",
                 "subject_key": "42",
                 "payload_json": {"track_id": 42},
             },
             {
-                "id": 2,
+                "id": "1682349000001-0",
                 "event_type": "ui.invalidate",
                 "scope": "ui.invalidate",
                 "subject_key": "home:user:7",
@@ -35,7 +32,7 @@ def test_process_domain_events_refreshes_ops_and_home(monkeypatch):
     assert result == {"processed": 2, "ops_refreshes": 1, "home_refreshes": 1}
     assert calls["ops"] == [True]
     assert calls["home"] == [(7, True)]
-    assert calls["processed"] == [[1, 2]]
+    assert calls["processed"] == [["1682349000000-0", "1682349000001-0"]]
 
 
 def test_process_domain_events_noops_when_empty(monkeypatch):
@@ -58,7 +55,7 @@ def test_process_domain_events_refreshes_home_for_semantic_user_event(monkeypatc
         "list_domain_events",
         lambda limit, unprocessed_only=True: [
             {
-                "id": 10,
+                "id": "1682349000010-0",
                 "event_type": "user.likes.changed",
                 "scope": "user",
                 "subject_key": "3",
@@ -75,7 +72,7 @@ def test_process_domain_events_refreshes_home_for_semantic_user_event(monkeypatc
     assert result == {"processed": 1, "ops_refreshes": 0, "home_refreshes": 1}
     assert calls["ops"] == []
     assert calls["home"] == [(3, True)]
-    assert calls["processed"] == [[10]]
+    assert calls["processed"] == [["1682349000010-0"]]
 
 
 def test_process_domain_events_does_not_refresh_ops_for_home_only_invalidation(monkeypatch):
@@ -88,7 +85,7 @@ def test_process_domain_events_does_not_refresh_ops_for_home_only_invalidation(m
         "list_domain_events",
         lambda limit, unprocessed_only=True: [
             {
-                "id": 20,
+                "id": "1682349000020-0",
                 "event_type": "ui.invalidate",
                 "scope": "ui.invalidate",
                 "subject_key": "home:user:7",
@@ -105,7 +102,7 @@ def test_process_domain_events_does_not_refresh_ops_for_home_only_invalidation(m
     assert result == {"processed": 1, "ops_refreshes": 0, "home_refreshes": 1}
     assert calls["ops"] == []
     assert calls["home"] == [(7, True)]
-    assert calls["processed"] == [[20]]
+    assert calls["processed"] == [["1682349000020-0"]]
 
 
 def test_process_domain_events_refreshes_ops_for_ops_relevant_invalidation(monkeypatch):
@@ -118,7 +115,7 @@ def test_process_domain_events_refreshes_ops_for_ops_relevant_invalidation(monke
         "list_domain_events",
         lambda limit, unprocessed_only=True: [
             {
-                "id": 21,
+                "id": "1682349000021-0",
                 "event_type": "ui.invalidate",
                 "scope": "ui.invalidate",
                 "subject_key": "playlist:42",
@@ -135,4 +132,4 @@ def test_process_domain_events_refreshes_ops_for_ops_relevant_invalidation(monke
     assert result == {"processed": 1, "ops_refreshes": 1, "home_refreshes": 0}
     assert calls["ops"] == [True]
     assert calls["home"] == []
-    assert calls["processed"] == [[21]]
+    assert calls["processed"] == [["1682349000021-0"]]

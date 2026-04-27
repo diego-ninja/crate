@@ -21,6 +21,7 @@ class TestAnalysisDaemonUnit:
         monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
         monkeypatch.setattr(analysis_daemon, "_get_pending_count", lambda state: 1)
         monkeypatch.setattr(analysis_daemon, "_claim_tracks", lambda state, limit: [track])
+        monkeypatch.setattr(analysis_daemon, "_should_pause_for_load", lambda: False)
         monkeypatch.setattr(analysis_daemon, "_mark_failed", lambda track_id, state: calls["failed"].append((track_id, state)))
         monkeypatch.setattr(analysis_daemon, "_release_claims", lambda track_ids, state: calls["released"].append((track_ids, state)))
         monkeypatch.setattr(
@@ -80,6 +81,7 @@ class TestAnalysisDaemonUnit:
         monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
         monkeypatch.setattr(analysis_daemon, "_get_pending_count", lambda state: 1)
         monkeypatch.setattr(analysis_daemon, "_claim_tracks", lambda state, limit: [track])
+        monkeypatch.setattr(analysis_daemon, "_should_pause_for_load", lambda: False)
         monkeypatch.setattr(analysis_daemon, "_mark_failed", lambda track_id, state: calls["failed"].append((track_id, state)))
         monkeypatch.setattr(analysis_daemon, "_release_claims", lambda track_ids, state: calls["released"].append((track_ids, state)))
         monkeypatch.setattr(
@@ -114,6 +116,7 @@ class TestAnalysisDaemonUnit:
         monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
         monkeypatch.setattr(analysis_daemon, "_get_pending_count", lambda state: 1)
         monkeypatch.setattr(analysis_daemon, "_claim_tracks", lambda state, limit: [track])
+        monkeypatch.setattr(analysis_daemon, "_should_pause_for_load", lambda: False)
         monkeypatch.setattr(analysis_daemon, "_mark_failed", lambda track_id, state: calls["failed"].append((track_id, state)))
         monkeypatch.setattr(analysis_daemon, "_release_claims", lambda track_ids, state: calls["released"].append((track_ids, state)))
         monkeypatch.setattr(
