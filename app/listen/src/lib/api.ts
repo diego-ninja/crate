@@ -119,6 +119,10 @@ export function getApiAuthHeaders(): Record<string, string> {
   return headers;
 }
 
+export function shouldRedirectToLoginOnUnauthorized(pathname: string): boolean {
+  return !new Set(["/login", "/register", "/server-setup", "/auth/callback"]).has(pathname);
+}
+
 if (typeof window !== "undefined") {
   (window as Window & typeof globalThis & {
     __crateResolveApiAssetUrl?: (path: string) => string;
@@ -132,7 +136,7 @@ const innerApi = createApiClient({
   credentials: "include",
   defaultHeaders: getApiAuthHeaders,
   onUnauthorized: () => {
-    if (window.location.pathname !== "/login" && window.location.pathname !== "/server-setup") {
+    if (shouldRedirectToLoginOnUnauthorized(window.location.pathname)) {
       window.location.href = "/login";
     }
   },
