@@ -42,7 +42,8 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ["@capacitor/browser", "@nivo/core", "@nivo/line"],
+    include: ["@capacitor/browser"],
+    exclude: ["@nivo/core", "@nivo/line"],
   },
   server: {
     allowedHosts: [".crate.local", ".dev.lespedants.org"],
