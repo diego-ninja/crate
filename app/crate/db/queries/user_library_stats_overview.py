@@ -27,27 +27,6 @@ def get_play_stats(user_id: int) -> dict:
         ).mappings().all()
         top_artists = [dict(r) for r in top_artists_rows]
 
-        if not total and not top_artists:
-            row = session.execute(
-                text("SELECT COUNT(*) AS total_plays FROM play_history WHERE user_id = :user_id"),
-                {"user_id": user_id},
-            ).mappings().first()
-            total = row["total_plays"]
-            top_artists_rows = session.execute(
-                text(
-                    """
-                    SELECT artist, COUNT(*) AS plays
-                    FROM play_history ph
-                    WHERE user_id = :user_id
-                    GROUP BY artist
-                    ORDER BY plays DESC
-                    LIMIT 10
-                    """
-                ),
-                {"user_id": user_id},
-            ).mappings().all()
-            top_artists = [dict(r) for r in top_artists_rows]
-
     return {"total_plays": total, "top_artists": top_artists}
 
 

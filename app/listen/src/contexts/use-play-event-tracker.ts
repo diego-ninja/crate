@@ -24,6 +24,13 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function generateClientEventId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 /**
  * Tracks listening time + attribution for the currently active track.
  *
@@ -110,6 +117,7 @@ export function usePlayEventTracker(
     const wasSkipped = reason === "skipped";
 
     void postWithRetry("/api/me/play-events", {
+      client_event_id: generateClientEventId(),
       track_id: session.track.libraryTrackId ?? null,
       track_storage_id: session.track.storageId ?? null,
       track_path: session.track.path || session.track.id,

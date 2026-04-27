@@ -52,7 +52,14 @@ describe("usePlayEventTracker — explicit lifecycle", () => {
     act(() => { result.current.flushCurrentPlayEvent("skipped"); });
 
     expect(mockPost).toHaveBeenCalledTimes(1);
-    const payload = mockPost.mock.calls[0]![1] as { played_seconds: number; track_duration_seconds: number; was_skipped: boolean };
+    const payload = mockPost.mock.calls[0]![1] as {
+      client_event_id: string;
+      played_seconds: number;
+      track_duration_seconds: number;
+      was_skipped: boolean;
+    };
+    expect(payload.client_event_id).toEqual(expect.any(String));
+    expect(payload.client_event_id.length).toBeGreaterThan(0);
     expect(payload.played_seconds).toBeCloseTo(10, 5);
     expect(payload.track_duration_seconds).toBe(240);
     expect(payload.was_skipped).toBe(true);

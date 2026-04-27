@@ -41,8 +41,9 @@ BLISS_BATCH_SIZE = 32
 def _should_pause_for_load() -> bool:
     """Check if daemons should pause to let active users have resources.
 
-    Pauses when users are actively streaming. Uses play_history
-    (actual playback), not session heartbeats (idle tabs don't count).
+    Pauses when users are actively streaming. Uses recent
+    ``user_play_events`` (actual playback), not session heartbeats
+    (idle tabs don't count).
     Also pauses when system load is high relative to CPU count.
     """
     # Check active streams (users actually listening)

@@ -10,6 +10,7 @@ from crate.db.ops_snapshot_activity import (
     build_upcoming_shows_payload,
     get_public_status_snapshot,
 )
+from crate.db.ops_snapshot_eventing import build_eventing_payload
 from crate.db.ops_snapshot_pipeline import (
     build_analysis_payload,
     build_ops_snapshot_payload,
@@ -26,6 +27,7 @@ __all__ = [
     "build_public_status_payload",
     "build_recent_activity_payload",
     "build_runtime_payload",
+    "build_eventing_payload",
     "build_stats_payload",
     "build_upcoming_shows_payload",
     "get_worker_live_state",

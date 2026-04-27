@@ -113,7 +113,6 @@ from crate.db.repositories.user_library import (
     unlike_track,
     unsave_album,
 )
-from crate.db.repositories.tasks import create_task_dedup
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -572,7 +571,7 @@ def history(request: Request, limit: int = 50):
     "/history",
     response_model=OkResponse,
     responses=_ME_RESPONSES,
-    summary="Record a legacy play-history entry",
+    summary="Record a deprecated legacy play-history entry",
 )
 def record(request: Request, body: RecordPlayRequest):
     user = _require_auth(request)
@@ -907,6 +906,7 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
     user = _require_auth(request)
     event_id = record_play_event(
         user["id"],
+        client_event_id=body.client_event_id,
         track_id=body.track_id,
         track_path=body.track_path,
         track_storage_id=body.track_storage_id,
@@ -929,11 +929,6 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
         device_type=body.device_type,
         app_platform=body.app_platform,
     )
-    # Debounce stats refresh — at most once per 10 minutes per user
-    debounce_key = f"stats_refresh_debounce:{user['id']}"
-    if not get_cache(debounce_key, max_age_seconds=600):
-        create_task_dedup("refresh_user_listening_stats", {"user_id": user["id"]})
-        set_cache(debounce_key, True, ttl=600)
     return {"ok": True, "id": event_id}
 
 

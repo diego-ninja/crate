@@ -176,8 +176,8 @@ def count_recent_active_users(window_minutes: int = 5) -> int:
             text(
                 """
                 SELECT COUNT(DISTINCT user_id)::INTEGER AS cnt
-                FROM play_history
-                WHERE played_at > now() - (:window_minutes * interval '1 minute')
+                FROM user_play_events
+                WHERE ended_at > now() - (:window_minutes * interval '1 minute')
                 """
             ),
             {"window_minutes": max(window_minutes, 0)},
@@ -191,8 +191,8 @@ def count_recent_streams(window_minutes: int = 3) -> int:
             text(
                 """
                 SELECT COUNT(*)::INTEGER AS cnt
-                FROM play_history
-                WHERE played_at > now() - (:window_minutes * interval '1 minute')
+                FROM user_play_events
+                WHERE ended_at > now() - (:window_minutes * interval '1 minute')
                 """
             ),
             {"window_minutes": max(window_minutes, 0)},

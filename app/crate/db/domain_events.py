@@ -218,6 +218,55 @@ def list_domain_events(
     return _decode_stream_messages(messages)
 
 
+def get_domain_event_runtime(*, limit: int = 10) -> dict[str, Any]:
+    """Return Redis stream diagnostics for the domain-event bus."""
+
+    safe_limit = max(1, min(int(limit or 10), 50))
+    runtime: dict[str, Any] = {
+        "redis_connected": False,
+        "stream_key": _STREAM_KEY,
+        "consumer_group": _GROUP_NAME,
+        "latest_sequence": get_latest_domain_event_id(),
+        "stream_length": 0,
+        "pending": 0,
+        "consumers": 0,
+        "lag": 0,
+        "last_delivered_id": None,
+        "recent_events": [],
+    }
+
+    r = _get_redis()
+    if not r:
+        return runtime
+
+    runtime["redis_connected"] = True
+
+    try:
+        runtime["stream_length"] = int(r.xlen(_STREAM_KEY) or 0)
+    except Exception:
+        log.debug("Failed to inspect domain-event stream length", exc_info=True)
+
+    try:
+        groups = r.xinfo_groups(_STREAM_KEY) or []
+        group = next((item for item in groups if item.get("name") == _GROUP_NAME), None)
+        if group:
+            runtime["pending"] = int(group.get("pending", 0) or 0)
+            runtime["consumers"] = int(group.get("consumers", 0) or 0)
+            lag = group.get("lag")
+            runtime["lag"] = int(lag) if lag not in (None, "") else 0
+            runtime["last_delivered_id"] = group.get("last-delivered-id") or group.get("last_delivered_id")
+    except Exception:
+        log.debug("Failed to inspect domain-event consumer group", exc_info=True)
+
+    try:
+        recent = r.xrevrange(_STREAM_KEY, "+", "-", count=safe_limit)
+        runtime["recent_events"] = _decode_stream_messages(recent)
+    except Exception:
+        log.debug("Failed to inspect recent domain events", exc_info=True)
+
+    return runtime
+
+
 def mark_domain_events_processed(event_ids: list, *, session=None) -> None:
     """Acknowledge processed events in the consumer group."""
 
@@ -238,6 +287,7 @@ def mark_domain_events_processed(event_ids: list, *, session=None) -> None:
 
 __all__ = [
     "append_domain_event",
+    "get_domain_event_runtime",
     "get_latest_domain_event_id",
     "list_domain_events",
     "mark_domain_events_processed",

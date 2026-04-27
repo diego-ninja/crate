@@ -91,6 +91,7 @@ def _handle_compute_analytics(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_refresh_user_listening_stats(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.domain_events import append_domain_event
     from crate.db.repositories.user_library import recompute_user_listening_aggregates
 
     user_id = int(params.get("user_id") or 0)
@@ -100,6 +101,12 @@ def _handle_refresh_user_listening_stats(task_id: str, params: dict, config: dic
     p = TaskProgress(phase="stats", phase_count=1, total=1, item=f"user:{user_id}")
     emit_progress(task_id, p, force=True)
     recompute_user_listening_aggregates(user_id)
+    append_domain_event(
+        "user.listening_aggregates.updated",
+        {"user_id": user_id},
+        scope="user",
+        subject_key=str(user_id),
+    )
     emit_task_event(task_id, "info", {"message": f"Listening stats refreshed for user {user_id}"})
     return {"ok": True, "user_id": user_id}
 

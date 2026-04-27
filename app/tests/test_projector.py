@@ -75,6 +75,43 @@ def test_process_domain_events_refreshes_home_for_semantic_user_event(monkeypatc
     assert calls["processed"] == [["1682349000010-0"]]
 
 
+def test_process_domain_events_refreshes_home_for_play_event_and_aggregate_update(monkeypatch):
+    from crate import projector
+
+    calls = {"ops": [], "home": [], "processed": []}
+
+    monkeypatch.setattr(
+        projector,
+        "list_domain_events",
+        lambda limit, unprocessed_only=True: [
+            {
+                "id": "1682349000011-0",
+                "event_type": "user.play_event.recorded",
+                "scope": "user",
+                "subject_key": "3",
+                "payload_json": {"user_id": 3, "event_id": 77},
+            },
+            {
+                "id": "1682349000012-0",
+                "event_type": "user.listening_aggregates.updated",
+                "scope": "user",
+                "subject_key": "3",
+                "payload_json": {"user_id": 3},
+            },
+        ],
+    )
+    monkeypatch.setattr(projector, "get_cached_ops_snapshot", lambda fresh=False: calls["ops"].append(fresh) or {"status": {}})
+    monkeypatch.setattr(projector, "get_cached_home_discovery", lambda user_id, fresh=False: calls["home"].append((user_id, fresh)) or {})
+    monkeypatch.setattr(projector, "mark_domain_events_processed", lambda event_ids: calls["processed"].append(event_ids))
+
+    result = projector.process_domain_events(limit=50)
+
+    assert result == {"processed": 2, "ops_refreshes": 0, "home_refreshes": 1}
+    assert calls["ops"] == []
+    assert calls["home"] == [(3, True)]
+    assert calls["processed"] == [["1682349000011-0", "1682349000012-0"]]
+
+
 def test_process_domain_events_does_not_refresh_ops_for_home_only_invalidation(monkeypatch):
     from crate import projector
 

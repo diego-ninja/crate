@@ -264,8 +264,8 @@ def _count_active_users() -> int:
     """Count users actually listening (play events in the last 5 minutes).
 
     NOT based on session last_seen_at — that fires on every heartbeat
-    even for idle tabs. Play history only gets written when audio
-    is actually streaming, which is the real indicator of load.
+    even for idle tabs. ``user_play_events`` reflects actual playback,
+    which is the real indicator of load.
     """
     try:
         from crate.db.queries.management import count_recent_active_users
@@ -278,8 +278,8 @@ def _count_active_users() -> int:
 def _count_active_streams() -> int:
     """Count distinct streams in the last 3 minutes (tracks being played).
 
-    Uses play_history which only gets entries when audio actually plays.
-    More granular than _count_active_users — counts concurrent streams,
+    Uses recent ``user_play_events`` as a best-effort playback signal.
+    More granular than _count_active_users — counts recent stream events,
     not just unique users.
     """
     try:
@@ -592,6 +592,32 @@ def _register_actors():
 
 
 _register_actors()
+
+
+@dramatiq.actor(
+    actor_name="scrobble_play_event_actor",
+    queue_name="fast",
+    max_retries=2,
+    time_limit=120_000,
+    min_backoff=5_000,
+    max_backoff=60_000,
+)
+def scrobble_play_event_actor(
+    user_id: int,
+    artist: str,
+    track: str,
+    album: str = "",
+    timestamp: int | None = None,
+):
+    from crate.scrobble import scrobble_play_event
+
+    scrobble_play_event(
+        user_id,
+        artist=artist,
+        track=track,
+        album=album,
+        timestamp=timestamp,
+    )
 
 
 def get_actor(task_type: str) -> dramatiq.Actor | None:

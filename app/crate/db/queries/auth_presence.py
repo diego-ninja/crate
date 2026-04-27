@@ -50,26 +50,26 @@ def get_users_presence(user_ids: list[int]) -> dict[int, dict]:
         play_rows = session.execute(
             text(
                 """
-                SELECT DISTINCT ON (ph.user_id)
-                    ph.user_id,
-                    COALESCE(lt.id, ph.track_id) AS track_id,
+                SELECT DISTINCT ON (upe.user_id)
+                    upe.user_id,
+                    COALESCE(lt.id, upe.track_id) AS track_id,
                     lt.storage_id AS track_storage_id,
-                    COALESCE(lt.title, ph.title) AS title,
-                    COALESCE(lt.artist, ph.artist) AS artist,
+                    COALESCE(lt.title, upe.title) AS title,
+                    COALESCE(lt.artist, upe.artist) AS artist,
                     ar.id AS artist_id,
                     ar.slug AS artist_slug,
-                    COALESCE(lt.album, ph.album) AS album,
+                    COALESCE(lt.album, upe.album) AS album,
                     alb.id AS album_id,
                     alb.slug AS album_slug,
-                    ph.played_at
-                FROM play_history ph
+                    upe.ended_at AS played_at
+                FROM user_play_events upe
                 LEFT JOIN library_tracks lt
-                  ON lt.id = ph.track_id
-                  OR (ph.track_id IS NULL AND lt.path = ph.track_path)
+                  ON lt.id = upe.track_id
+                  OR (upe.track_id IS NULL AND lt.path = upe.track_path)
                 LEFT JOIN library_albums alb ON alb.id = lt.album_id
-                LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, ph.artist)
-                WHERE ph.user_id = ANY(:user_ids)
-                ORDER BY ph.user_id, ph.played_at DESC
+                LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, upe.artist)
+                WHERE upe.user_id = ANY(:user_ids)
+                ORDER BY upe.user_id, upe.ended_at DESC
                 """
             ),
             {"user_ids": user_ids},

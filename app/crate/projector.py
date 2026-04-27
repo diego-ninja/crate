@@ -21,6 +21,8 @@ _OPS_EVENT_TYPES = {
 _HOME_EVENT_TYPES = {
     "user.follows.changed",
     "user.likes.changed",
+    "user.listening_aggregates.updated",
+    "user.play_event.recorded",
     "user.saved_albums.changed",
 }
 

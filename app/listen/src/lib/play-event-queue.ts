@@ -1,5 +1,5 @@
 /**
- * Local retry queue for play-event + history writes.
+ * Local retry queue for play-event writes.
  *
  * When `apiFetch` fails (auth expired, server down, offline), these
  * events are best-effort — losing them silently erodes stats/scrobble

@@ -253,8 +253,15 @@ Confirmed emitters currently in tree:
   - emitted from [app/crate/db/jobs/analysis_state_events.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/analysis_state_events.py)
 - `track.bliss.updated`
   - emitted from [app/crate/db/jobs/analysis_state_events.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/jobs/analysis_state_events.py)
+- `user.play_event.recorded`
+  - emitted from [app/crate/db/repositories/user_library_playback_writes.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/repositories/user_library_playback_writes.py)
+  - this is now the canonical semantic event for rich listening telemetry writes
+- `user.listening_aggregates.updated`
+  - emitted from [app/crate/worker_handlers/analysis.py](/Users/diego/Code/Ninja/musicdock/app/crate/worker_handlers/analysis.py)
+  - emitted after aggregate recomputation completes for a user
 - `user.history.changed`
   - emitted from [app/crate/db/repositories/user_library_playback_writes.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/repositories/user_library_playback_writes.py)
+  - legacy-only path kept for deprecated `/api/me/history` style writes
 - `user.follows.changed`
   - emitted from [app/crate/db/repositories/user_library_preferences.py](/Users/diego/Code/Ninja/musicdock/app/crate/db/repositories/user_library_preferences.py)
 - `user.saved_albums.changed`
@@ -328,10 +335,18 @@ These are worth continuing:
 
 ### Eventing / SSE delta in this session
 
-- New `domain_events`: none
+- New `domain_events`:
+  - `user.play_event.recorded`
+  - `user.listening_aggregates.updated`
 - New snapshot channels: none
 - New SSE endpoints: none
 - Semantics changes:
+  - `user_play_events` is now the operational truth for user listening history/presence/recent-played style reads; `play_history` is no longer the active read source for those surfaces.
+  - Listen now emits only rich `/api/me/play-events` writes for playback telemetry and includes a `client_event_id` idempotency key.
+  - backend play-event writes are now idempotent per `(user_id, client_event_id)`.
+  - scrobbling no longer runs inline in the SQL write path for rich play-events; it is now queued asynchronously after commit through a dedicated Dramatiq actor.
+  - listening aggregate refresh is now a post-commit follow-up of rich play-event writes instead of endpoint-local orchestration.
+  - the projector now treats `user.play_event.recorded` and `user.listening_aggregates.updated` as home-refreshing semantic events.
   - `ui.invalidate` no longer forces an ops snapshot rebuild for every invalidation event.
   - `ui.invalidate` domain events are now only appended for projector-relevant scopes instead of for every cache invalidation broadcast.
   - The projector now refreshes ops snapshots only for ops-relevant invalidation scopes such as `library`, `shows`, `upcoming`, `curation`, `playlists`, and entity-detail scopes like `artist:{id}`, `album:{id}`, and `playlist:{id}`.
@@ -354,6 +369,27 @@ If a future session starts failing these tests, it probably means the refactor r
 ## Recent Validation Runs
 
 These were executed successfully during the latest session:
+
+- `uv run pytest app/tests/test_play_event_contracts.py app/tests/test_user_stats_aggregates.py app/tests/test_api_integration.py app/tests/test_projector.py -q -k "play_event or listening_aggregates or home_discovery_resolves or projector"`
+  Result: `11 passed, 23 deselected`
+- `npm run --workspace=app/listen test -- src/contexts/use-play-event-tracker.test.ts src/app-shell/AppRouter.test.tsx src/pages/AuthCallback.test.tsx`
+  Result: `19 passed`
+- `uv run pytest app/tests/test_play_event_contracts.py app/tests/test_user_stats_aggregates.py app/tests/test_stats_integration.py app/tests/test_api_integration.py app/tests/test_openapi_contract.py app/tests/test_projector.py -q`
+  Result: `78 passed, 1 skipped`
+- `npm run --workspace=app/listen lint`
+  Result: `passed`
+- `npm run --workspace=app/listen typecheck`
+  Result: `passed`
+- `npm run --workspace=app/listen test`
+  Result: `27 files, 168 tests passed`
+- `npm run --workspace=app/listen build`
+  Result: `passed`
+- `uv run pytest app/tests -q`
+  Result: `532 passed, 1 skipped`
+- `npm run --workspace=app/ui build`
+  Result: `passed`
+- `uv run pytest app/tests/test_ops_snapshot.py app/tests/test_api.py -q -k "ops_snapshot or tasks_snapshot or worker_status_prefers_ops_snapshot or get_stats_reads_from_ops_snapshot"`
+  Result: `4 passed, 53 deselected`
 
 - `PYTHONPYCACHEPREFIX=/tmp/pycache python3 -m py_compile app/crate/enrichment.py app/crate/db/cache_runtime.py app/crate/db/cache_store.py app/tests/test_enrichment.py`
   Result: `passed`

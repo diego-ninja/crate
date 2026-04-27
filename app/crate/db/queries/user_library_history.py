@@ -9,35 +9,35 @@ from crate.db.tx import read_scope
 def get_play_history_rows(user_id: int, *, limit: int, has_legacy_stream_id_column: bool) -> list[dict]:
     query_sql = """
         SELECT
-            COALESCE(lt.id, ph.track_id) AS track_id,
+            COALESCE(lt.id, upe.track_id) AS track_id,
             lt.storage_id AS track_storage_id,
-            COALESCE(lt.path, ph.track_path) AS track_path,
-            COALESCE(lt.title, ph.title) AS title,
-            COALESCE(lt.artist, ph.artist) AS artist,
+            COALESCE(lt.path, upe.track_path) AS track_path,
+            COALESCE(lt.title, upe.title) AS title,
+            COALESCE(lt.artist, upe.artist) AS artist,
             ar.id AS artist_id,
             ar.slug AS artist_slug,
-            COALESCE(lt.album, ph.album) AS album,
+            COALESCE(lt.album, upe.album) AS album,
             alb.id AS album_id,
             alb.slug AS album_slug,
-            ph.played_at
-        FROM play_history ph
+            upe.ended_at AS played_at
+        FROM user_play_events upe
         LEFT JOIN library_tracks lt
-          ON lt.id = ph.track_id
+          ON lt.id = upe.track_id
     """
     if has_legacy_stream_id_column:
         query_sql += """
-          OR (ph.track_id IS NULL AND lt.navidrome_id = ph.track_path)
-          OR (ph.track_id IS NULL AND lt.path = ph.track_path)
+          OR (upe.track_id IS NULL AND lt.navidrome_id = upe.track_path)
+          OR (upe.track_id IS NULL AND lt.path = upe.track_path)
         """
     else:
         query_sql += """
-          OR (ph.track_id IS NULL AND lt.path = ph.track_path)
+          OR (upe.track_id IS NULL AND lt.path = upe.track_path)
         """
     query_sql += """
         LEFT JOIN library_albums alb ON alb.id = lt.album_id
-        LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, ph.artist)
-        WHERE ph.user_id = :user_id
-        ORDER BY ph.played_at DESC
+        LEFT JOIN library_artists ar ON ar.name = COALESCE(lt.artist, upe.artist)
+        WHERE upe.user_id = :user_id
+        ORDER BY upe.ended_at DESC
         LIMIT :lim
     """
 

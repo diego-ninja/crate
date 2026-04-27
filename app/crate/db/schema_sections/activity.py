@@ -51,6 +51,7 @@ def create_activity_schema(cur) -> None:
         CREATE TABLE IF NOT EXISTS user_play_events (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            client_event_id TEXT,
             track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
             track_path TEXT,
             title TEXT,
@@ -74,11 +75,19 @@ def create_activity_schema(cur) -> None:
             created_at TIMESTAMPTZ NOT NULL
         )
     """)
+    cur.execute("ALTER TABLE user_play_events ADD COLUMN IF NOT EXISTS client_event_id TEXT")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user ON user_play_events(user_id, ended_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_track ON user_play_events(track_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_source ON user_play_events(user_id, play_source_type, ended_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_artist ON user_play_events(user_id, artist, ended_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_album ON user_play_events(user_id, album, ended_at DESC)")
+    cur.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_user_play_events_user_client_event
+        ON user_play_events(user_id, client_event_id)
+        WHERE client_event_id IS NOT NULL
+        """
+    )
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_daily_listening (

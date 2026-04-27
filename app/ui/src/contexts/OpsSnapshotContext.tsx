@@ -115,6 +115,48 @@ export interface AnalysisStatusSnapshot {
   };
 }
 
+export interface OpsDomainEventPreview {
+  id: string;
+  event_type: string;
+  scope: string;
+  subject_key: string;
+}
+
+export interface OpsDomainEventRuntime {
+  redis_connected: boolean;
+  stream_key: string;
+  consumer_group: string;
+  latest_sequence: number;
+  stream_length: number;
+  pending: number;
+  consumers: number;
+  lag: number;
+  last_delivered_id: string | null;
+  recent_events: OpsDomainEventPreview[];
+}
+
+export interface OpsCacheInvalidationRuntime {
+  redis_connected: boolean;
+  events_key: string;
+  latest_event_id: number;
+  retained_events: number;
+}
+
+export interface OpsSseSurface {
+  name: string;
+  endpoint: string | null;
+  channel: string;
+  mode: string;
+  description?: string | null;
+}
+
+export interface OpsEventingSnapshot {
+  redis_connected: boolean;
+  domain_events: OpsDomainEventRuntime;
+  cache_invalidation: OpsCacheInvalidationRuntime;
+  sse_surfaces: OpsSseSurface[];
+}
+
 export interface OpsSnapshotData {
   snapshot: OpsSnapshotMetadata;
   status: {
@@ -153,6 +195,7 @@ export interface OpsSnapshotData {
     active_users_5m: number;
     streams_3m: number;
   };
+  eventing: OpsEventingSnapshot;
 }
 
 interface OpsSnapshotContextValue {

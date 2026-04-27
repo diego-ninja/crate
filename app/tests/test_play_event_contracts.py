@@ -6,6 +6,7 @@ from unittest.mock import patch
 class TestPlayEventContract:
     def test_play_event_endpoint_persists_event_payload(self, test_app):
         payload = {
+            "client_event_id": "evt_abc123",
             "track_id": 12,
             "track_path": "Converge/Jane Doe/01 - Concubine.flac",
             "title": "Concubine",
@@ -28,16 +29,14 @@ class TestPlayEventContract:
             "app_platform": "listen-web",
         }
 
-        with patch("crate.api.me.record_play_event", return_value=77) as mock_record, \
-             patch("crate.api.me.create_task_dedup", return_value="task123") as mock_enqueue, \
-             patch("crate.api.me.get_cache", return_value=None), \
-             patch("crate.api.me.set_cache"):
+        with patch("crate.api.me.record_play_event", return_value=77) as mock_record:
             resp = test_app.post("/api/me/play-events", json=payload)
 
         assert resp.status_code == 200
         assert resp.json() == {"ok": True, "id": 77}
         mock_record.assert_called_once_with(
             1,
+            client_event_id="evt_abc123",
             track_id=12,
             track_path="Converge/Jane Doe/01 - Concubine.flac",
             track_storage_id=None,
@@ -60,7 +59,6 @@ class TestPlayEventContract:
             device_type="web",
             app_platform="listen-web",
         )
-        mock_enqueue.assert_called_once_with("refresh_user_listening_stats", {"user_id": 1})
 
     def test_play_event_endpoint_rejects_inconsistent_completion_flags(self, test_app):
         payload = {

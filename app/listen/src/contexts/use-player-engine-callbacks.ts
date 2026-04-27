@@ -9,7 +9,6 @@ import {
   type GaplessPlayerCallbacks,
 } from "@/lib/gapless-player";
 import { isOnline as isRuntimeOnline } from "@/lib/capacitor";
-import { postWithRetry } from "@/lib/play-event-queue";
 
 interface UsePlayerEngineCallbacksParams {
   callbacksRef: MutableRefObject<GaplessPlayerCallbacks>;
@@ -51,17 +50,6 @@ interface UsePlayerEngineCallbacksParams {
     startedAt: number;
     outgoingDurationSeconds: number;
   } | null>>;
-}
-
-function postTrackHistory(track: Track) {
-  void postWithRetry("/api/me/history", {
-    track_id: track.libraryTrackId ?? null,
-    track_storage_id: track.storageId ?? null,
-    track_path: track.path || track.id,
-    title: track.title,
-    artist: track.artist,
-    album: track.album || "",
-  });
 }
 
 export function usePlayerEngineCallbacks({
@@ -205,7 +193,6 @@ export function usePlayerEngineCallbacks({
       if (!endedTrack) return;
 
       flushCurrentPlayEvent("completed", endedTrack);
-      postTrackHistory(endedTrack);
 
       const incoming = currentTrackRef.current;
       if (incoming) {

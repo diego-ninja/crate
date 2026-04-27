@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router";
 import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@crate/ui/shadcn/card";
 import { Button } from "@crate/ui/shadcn/button";
+import { OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
 import { useOpsSnapshot } from "@/contexts/OpsSnapshotContext";
 import { api } from "@/lib/api";
@@ -31,6 +32,10 @@ export function Dashboard() {
   const live = opsSnapshot?.live;
   const healthCounts = opsSnapshot?.health_counts || {};
   const upcomingShows = opsSnapshot?.upcoming_shows || [];
+  const eventing = opsSnapshot?.eventing;
+  const domainEvents = eventing?.domain_events;
+  const recentDomainEvents = domainEvents?.recent_events ?? [];
+  const sseSurfaces = eventing?.sse_surfaces ?? [];
 
   if (loadingSnapshot && !opsSnapshot) {
     return (
@@ -84,6 +89,16 @@ export function Dashboard() {
   const systems = live?.systems;
   const workerSlots = live?.worker_slots;
   const totalHealthIssues = Object.values(healthCounts).reduce((sum, count) => sum + count, 0);
+  const sseModeClass = (mode: string) => {
+    switch (mode) {
+      case "snapshot":
+        return "border-cyan-500/25 bg-cyan-500/10 text-cyan-200";
+      case "replay":
+        return "border-amber-500/25 bg-amber-500/10 text-amber-200";
+      default:
+        return "border-white/10 bg-white/[0.05] text-white/65";
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -375,6 +390,102 @@ export function Dashboard() {
           </Link>
         )}
       </div>
+
+      <OpsPanel
+        icon={Activity}
+        title="Event Bus & SSE"
+        description="Visibility into the Redis-backed domain-event stream, cache invalidations, and live SSE surfaces that keep admin and listen snapshots fresh."
+      >
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+          <OpsStatTile
+            icon={Activity}
+            label="Domain Sequence"
+            value={formatNumber(domainEvents?.latest_sequence ?? 0)}
+            caption={domainEvents?.stream_key || "Domain-event stream"}
+            tone={eventing?.redis_connected ? "primary" : "warning"}
+          />
+          <OpsStatTile
+            icon={Database}
+            label="Stream Depth"
+            value={formatNumber(domainEvents?.stream_length ?? 0)}
+            caption={domainEvents?.consumer_group ? `${domainEvents.consumer_group} consumer group` : "No consumer group"}
+          />
+          <OpsStatTile
+            icon={Clock}
+            label="Pending Acks"
+            value={formatNumber(domainEvents?.pending ?? 0)}
+            caption={domainEvents?.last_delivered_id ? `Last delivered ${domainEvents.last_delivered_id}` : "Projector idle"}
+            tone={(domainEvents?.pending ?? 0) > 0 ? "warning" : "success"}
+          />
+          <OpsStatTile
+            icon={Eye}
+            label="SSE Surfaces"
+            value={formatNumber(sseSurfaces.length)}
+            caption={`${formatNumber(eventing?.cache_invalidation?.retained_events ?? 0)} retained invalidations`}
+          />
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <Card className="border-white/10 bg-black/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Recent Domain Events</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2">
+                {recentDomainEvents.length > 0 ? recentDomainEvents.map((event) => (
+                  <div
+                    key={`${event.id}-${event.event_type}`}
+                    className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CrateChip className="border-cyan-500/20 bg-cyan-500/10 text-cyan-200">
+                        {event.event_type || "unknown"}
+                      </CrateChip>
+                      <span className="text-[11px] text-white/35">{event.id}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/55">
+                      <span>scope: {event.scope || "—"}</span>
+                      <span>subject: {event.subject_key || "—"}</span>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="rounded-md border border-dashed border-white/10 bg-white/[0.03] px-3 py-6 text-sm text-white/45">
+                    No recent domain events captured in the retained stream window.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-white/10 bg-black/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">SSE Surface Catalog</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2">
+                {sseSurfaces.map((surface) => (
+                  <div
+                    key={`${surface.name}-${surface.channel}`}
+                    className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-medium text-white">{surface.name}</div>
+                      <CrateChip className={sseModeClass(surface.mode)}>{surface.mode}</CrateChip>
+                    </div>
+                    {surface.endpoint ? (
+                      <div className="mt-1 text-xs text-cyan-200">{surface.endpoint}</div>
+                    ) : null}
+                    <div className="mt-1 break-all text-[11px] text-white/40">{surface.channel}</div>
+                    {surface.description ? (
+                      <div className="mt-2 text-xs text-white/55">{surface.description}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </OpsPanel>
 
       {/* Row 3: Recent Albums */}
       {recentAlbums.length > 0 && (

@@ -138,7 +138,7 @@ class TestUserEndpoints:
         ):
             assert key in data, f"Missing key: {key}"
 
-    def test_home_discovery_resolves_legacy_play_history_by_artist_title(self, api_client, pg_db):
+    def test_home_discovery_resolves_play_events_by_artist_title_when_track_path_cannot_resolve(self, api_client, pg_db):
         artist_name = "Fallback Artist"
         album_name = "Fallback Album"
         track_title = "Fallback Track"
@@ -190,14 +190,21 @@ class TestUserEndpoints:
             }
         )
 
-        # Simulate a legacy play-history row that cannot resolve by track_id/path
-        # anymore, but should still recover album/artist metadata by title + artist.
-        pg_db.record_play(
+        # Simulate a rich play event that cannot resolve by track_id/path anymore,
+        # but should still recover album/artist metadata by title + artist.
+        pg_db.record_play_event(
             1,
+            client_event_id="evt-fallback-track",
             track_path="/legacy/missing-file.flac",
             title=track_title,
             artist=artist_name,
             album=album_name,
+            started_at="2026-04-01T10:00:00+00:00",
+            ended_at="2026-04-01T10:04:00+00:00",
+            played_seconds=240,
+            track_duration_seconds=240,
+            completion_ratio=1.0,
+            was_completed=True,
         )
 
         resp = api_client.get("/api/me/home/discovery?fresh=1")

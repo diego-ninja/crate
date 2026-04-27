@@ -55,6 +55,7 @@ class NowPlayingRequest(BaseModel):
 
 
 class RecordPlayEventRequest(BaseModel):
+    client_event_id: str | None = None
     track_id: int | None = None
     track_storage_id: str | None = None
     track_path: str | None = None

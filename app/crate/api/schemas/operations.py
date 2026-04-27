@@ -75,6 +75,48 @@ class AdminOpsRuntimeResponse(BaseModel):
     streams_3m: int = 0
 
 
+class AdminDomainEventPreviewResponse(BaseModel):
+    id: str
+    event_type: str = ""
+    scope: str = ""
+    subject_key: str = ""
+
+
+class AdminDomainEventRuntimeResponse(BaseModel):
+    redis_connected: bool = False
+    stream_key: str = ""
+    consumer_group: str = ""
+    latest_sequence: int = 0
+    stream_length: int = 0
+    pending: int = 0
+    consumers: int = 0
+    lag: int = 0
+    last_delivered_id: str | None = None
+    recent_events: list[AdminDomainEventPreviewResponse] = Field(default_factory=list)
+
+
+class AdminCacheInvalidationRuntimeResponse(BaseModel):
+    redis_connected: bool = False
+    events_key: str = ""
+    latest_event_id: int = 0
+    retained_events: int = 0
+
+
+class AdminSseSurfaceResponse(BaseModel):
+    name: str
+    endpoint: str | None = None
+    channel: str
+    mode: str
+    description: str | None = None
+
+
+class AdminEventingRuntimeResponse(BaseModel):
+    redis_connected: bool = False
+    domain_events: AdminDomainEventRuntimeResponse = Field(default_factory=AdminDomainEventRuntimeResponse)
+    cache_invalidation: AdminCacheInvalidationRuntimeResponse = Field(default_factory=AdminCacheInvalidationRuntimeResponse)
+    sse_surfaces: list[AdminSseSurfaceResponse] = Field(default_factory=list)
+
+
 class AdminOpsSnapshotResponse(BaseModel):
     snapshot: SnapshotMetadataResponse
     status: ScannerStatusResponse
@@ -86,6 +128,7 @@ class AdminOpsSnapshotResponse(BaseModel):
     health_counts: dict[str, int] = Field(default_factory=dict)
     upcoming_shows: list[dict[str, Any]] = Field(default_factory=list)
     runtime: AdminOpsRuntimeResponse = Field(default_factory=AdminOpsRuntimeResponse)
+    eventing: AdminEventingRuntimeResponse = Field(default_factory=AdminEventingRuntimeResponse)
 
 
 class WorkerLogEntryResponse(BaseModel):

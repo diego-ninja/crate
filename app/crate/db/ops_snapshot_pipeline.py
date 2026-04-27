@@ -14,6 +14,7 @@ from crate.db.ops_snapshot_activity import (
     build_runtime_payload,
     build_upcoming_shows_payload,
 )
+from crate.db.ops_snapshot_eventing import build_eventing_payload
 from crate.db.ops_snapshot_stats import build_analytics_payload, build_stats_payload
 from crate.db.queries.management import get_last_analyzed_track, get_last_bliss_track
 
@@ -44,6 +45,7 @@ def build_ops_snapshot_payload() -> dict[str, Any]:
         "health_counts": get_issue_counts(),
         "upcoming_shows": build_upcoming_shows_payload(),
         "runtime": build_runtime_payload(),
+        "eventing": build_eventing_payload(),
     }
     set_ops_runtime_state("public_status", status)
     set_ops_runtime_state("analysis_status", analysis)
