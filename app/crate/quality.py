@@ -18,15 +18,13 @@ def quality_report(library_path: Path, extensions: set[str]) -> dict:
     low_bitrate = []
     lossy_with_lossless = []
     corrupt = []
-    short_albums = []
     mixed_format_albums = []
 
     for artist_dir in sorted(library_path.iterdir()):
         if not artist_dir.is_dir() or artist_dir.name.startswith("."):
             continue
 
-        # Collect all albums for this artist to cross-check formats
-        artist_albums = {}
+        album_versions: dict[str, list[dict]] = {}
 
         for album_dir in sorted(artist_dir.iterdir()):
             if not album_dir.is_dir() or album_dir.name.startswith("."):
@@ -37,7 +35,6 @@ def quality_report(library_path: Path, extensions: set[str]) -> dict:
                 continue
 
             album_formats = set()
-            album_issues = []
 
             for track in tracks:
                 fmt = track.suffix.lower()
@@ -94,37 +91,17 @@ def quality_report(library_path: Path, extensions: set[str]) -> dict:
                     "track_count": len(tracks),
                 })
 
-            # Short albums (potentially incomplete downloads)
-            tags = read_tags(tracks[0]) if tracks else {}
-            album_tag = tags.get("album", album_dir.name)
-            artist_albums[album_tag] = {
+            tags = read_tags(tracks[0])
+            album_name = _normalize_album(tags.get("album", "") or album_dir.name)
+            album_versions.setdefault(album_name, []).append({
                 "dir": album_dir.name,
                 "formats": album_formats,
                 "track_count": len(tracks),
-            }
-
-        # Cross-check: lossy album when lossless exists for same album name
-        album_by_name = {}
-        for album_dir in artist_dir.iterdir():
-            if not album_dir.is_dir() or album_dir.name.startswith("."):
-                continue
-            tracks = get_audio_files(album_dir, extensions)
-            if not tracks:
-                continue
-            tags = read_tags(tracks[0])
-            name = _normalize_album(tags.get("album", "") or album_dir.name)
-            fmts = {t.suffix.lower() for t in tracks}
-            if name not in album_by_name:
-                album_by_name[name] = []
-            album_by_name[name].append({
-                "dir": album_dir.name,
-                "formats": fmts,
-                "track_count": len(tracks),
-                "has_lossless": bool(fmts & LOSSLESS),
-                "has_lossy": bool(fmts & LOSSY),
+                "has_lossless": bool(album_formats & LOSSLESS),
+                "has_lossy": bool(album_formats & LOSSY),
             })
 
-        for name, versions in album_by_name.items():
+        for versions in album_versions.values():
             has_any_lossless = any(v["has_lossless"] for v in versions)
             for v in versions:
                 if v["has_lossy"] and not v["has_lossless"] and has_any_lossless:
