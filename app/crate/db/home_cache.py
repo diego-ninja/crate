@@ -10,6 +10,7 @@ log = logging.getLogger(__name__)
 
 _home_cache_singleflight_guard = Lock()
 _home_cache_singleflight_events: dict[str, Event] = {}
+_HOME_CACHE_READY_CHANNEL_PREFIX = "crate:home-cache:ready:"
 
 
 def _home_cache_scope(cache_key: str) -> str:
@@ -30,6 +31,10 @@ def _record_home_metric(name: str, *, cache_key: str, value: float = 1.0):
         return
 
 
+def _home_cache_ready_channel(cache_key: str) -> str:
+    return f"{_HOME_CACHE_READY_CHANNEL_PREFIX}{cache_key}"
+
+
 def _get_or_compute_home_cache(
     cache_key: str,
     *,
@@ -43,14 +48,58 @@ def _get_or_compute_home_cache(
 ) -> dict:
     from crate.db.cache_store import get_cache, set_cache
 
-    def _wait_for_cached_value() -> dict | None:
+    def _close_wait_pubsub(pubsub: object | None, channel: str) -> None:
+        if pubsub is None:
+            return
+        try:
+            pubsub.unsubscribe(channel)
+        except Exception:
+            log.debug("Failed to unsubscribe home cache pubsub", exc_info=True)
+        try:
+            pubsub.close()
+        except Exception:
+            log.debug("Failed to close home cache pubsub", exc_info=True)
+
+    def _wait_for_cached_value(*, redis_client: object | None = None) -> dict | None:
         deadline = time.time() + wait_timeout_seconds
-        while time.time() < deadline:
-            cached_value = get_cache(cache_key, max_age_seconds=max_age_seconds)
-            if cached_value is not None:
-                return cached_value
-            time.sleep(0.1)
-        return None
+        poll_sleep_seconds = 0.1
+        channel = _home_cache_ready_channel(cache_key)
+        pubsub = None
+
+        if redis_client is not None:
+            try:
+                pubsub = redis_client.pubsub()
+                pubsub.subscribe(channel)
+            except Exception:
+                pubsub = None
+
+        try:
+            while time.time() < deadline:
+                cached_value = get_cache(cache_key, max_age_seconds=max_age_seconds)
+                if cached_value is not None:
+                    return cached_value
+
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    break
+
+                if pubsub is not None:
+                    try:
+                        pubsub.get_message(
+                            ignore_subscribe_messages=True,
+                            timeout=min(remaining, 1.0),
+                        )
+                    except Exception:
+                        _close_wait_pubsub(pubsub, channel)
+                        pubsub = None
+                        continue
+                else:
+                    time.sleep(min(poll_sleep_seconds, remaining))
+                    poll_sleep_seconds = min(poll_sleep_seconds * 2, 1.0)
+
+            return None
+        finally:
+            _close_wait_pubsub(pubsub, channel)
 
     def _acquire_distributed_lock() -> tuple[object, str, str] | None | bool:
         from crate.db.cache_runtime import _get_redis
@@ -87,6 +136,15 @@ def _get_or_compute_home_cache(
         except Exception:
             return
 
+    def _publish_cache_ready(lock_state: tuple[object, str, str] | None):
+        if not lock_state:
+            return
+        redis_client, _, _ = lock_state
+        try:
+            redis_client.publish(_home_cache_ready_channel(cache_key), str(time.time()))
+        except Exception:
+            log.debug("Failed to publish home cache ready notification", exc_info=True)
+
     if not fresh:
         cached = get_cache(cache_key, max_age_seconds=max_age_seconds)
         if cached is not None:
@@ -116,7 +174,9 @@ def _get_or_compute_home_cache(
 
     distributed_lock = _acquire_distributed_lock()
     if distributed_lock is False:
-        waited = _wait_for_cached_value()
+        from crate.db.cache_runtime import _get_redis
+
+        waited = _wait_for_cached_value(redis_client=_get_redis())
         if waited is not None:
             _record_home_metric("home.cache.waited", cache_key=cache_key)
             return waited
@@ -139,7 +199,9 @@ def _get_or_compute_home_cache(
                 return stale
         raise
     finally:
-        _release_distributed_lock(distributed_lock if isinstance(distributed_lock, tuple) else None)
+        lock_state = distributed_lock if isinstance(distributed_lock, tuple) else None
+        _publish_cache_ready(lock_state)
+        _release_distributed_lock(lock_state)
         if is_owner:
             with _home_cache_singleflight_guard:
                 current = _home_cache_singleflight_events.pop(cache_key, None)

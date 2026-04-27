@@ -861,6 +861,99 @@ class TestHomeCaching:
         assert compute_calls["count"] == 1
         assert results == [{"ok": True, "n": 1}, {"ok": True, "n": 1}]
 
+    def test_get_or_compute_home_cache_waits_for_cross_process_notification(self):
+        from crate.db.home import _get_or_compute_home_cache
+        from crate.db.home_cache import _home_cache_ready_channel
+
+        class FakePubSub:
+            def __init__(self):
+                self.messages: list[dict] = []
+                self.signal = Event()
+                self.subscribed: list[str] = []
+                self.unsubscribed: list[str] = []
+                self.closed = False
+
+            def subscribe(self, channel: str):
+                self.subscribed.append(channel)
+
+            def unsubscribe(self, channel: str):
+                self.unsubscribed.append(channel)
+
+            def get_message(self, ignore_subscribe_messages: bool = True, timeout: float = 0.0):
+                del ignore_subscribe_messages
+                if not self.signal.wait(timeout):
+                    return None
+                self.signal.clear()
+                if self.messages:
+                    return self.messages.pop(0)
+                return None
+
+            def close(self):
+                self.closed = True
+
+            def push(self, payload: str):
+                self.messages.append({"type": "message", "data": payload})
+                self.signal.set()
+
+        class FakeRedis:
+            def __init__(self, pubsub: FakePubSub):
+                self._pubsub = pubsub
+                self.published: list[tuple[str, str]] = []
+
+            def set(self, *args, **kwargs):
+                return False
+
+            def pubsub(self):
+                return self._pubsub
+
+            def publish(self, channel: str, payload: str):
+                self.published.append((channel, payload))
+                self._pubsub.push(payload)
+
+        cache_store: dict[str, dict] = {}
+        cache_key = "home:test:cross-process"
+        cache_reads = {"count": 0}
+        fake_pubsub = FakePubSub()
+        fake_redis = FakeRedis(fake_pubsub)
+        result: list[dict] = []
+
+        def fake_get_cache(key: str, max_age_seconds: int | None = None):
+            del max_age_seconds
+            cache_reads["count"] += 1
+            return cache_store.get(key)
+
+        def fake_set_cache(key: str, value: dict, ttl: int | None = None):
+            del ttl
+            cache_store[key] = value
+
+        def worker():
+            result.append(
+                _get_or_compute_home_cache(
+                    cache_key,
+                    max_age_seconds=600,
+                    ttl=600,
+                    compute=lambda: (_ for _ in ()).throw(AssertionError("compute should not run")),
+                    wait_timeout_seconds=1.0,
+                )
+            )
+
+        with patch("crate.db.cache_store.get_cache", side_effect=fake_get_cache), \
+             patch("crate.db.cache_store.set_cache", side_effect=fake_set_cache), \
+             patch("crate.db.cache_runtime._get_redis", return_value=fake_redis):
+            thread = Thread(target=worker)
+            thread.start()
+
+            time.sleep(0.35)
+            cache_store[cache_key] = {"ok": True}
+            fake_redis.publish(_home_cache_ready_channel(cache_key), "ready")
+            thread.join()
+
+        assert result == [{"ok": True}]
+        assert fake_pubsub.subscribed == [_home_cache_ready_channel(cache_key)]
+        assert fake_pubsub.unsubscribed == [_home_cache_ready_channel(cache_key)]
+        assert fake_pubsub.closed is True
+        assert cache_reads["count"] <= 4
+
     def test_get_home_context_skips_fallback_genre_query_when_top_genres_exist(self):
         from crate.db.home import _get_home_context
 
