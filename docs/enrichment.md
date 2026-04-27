@@ -1,126 +1,74 @@
-# Enrichment Pipeline
+# Enrichment Notes
 
-Crate enriches artist and album metadata from multiple external sources through a unified pipeline.
+Crate enriches artist and album metadata from multiple external sources and
+normalizes imported media so the library stays consistent regardless of where
+the bytes came from.
 
-## Pipeline Flow
+## Pipeline shape
 
-When new content arrives (Tidal download, Soulseek download, or filesystem watcher detection):
+When new content arrives from a filesystem scan, Tidal, Soulseek, or manual
+upload/import, the downstream flow is roughly:
 
-```
-process_new_content task
-  |
-  1. Reorganize folders (Artist/Year/Album structure)
-  2. Artist enrichment (6 sources)
-  3. Album genre indexing (from audio tags)
-  4. Album MBID lookup (MusicBrainz fuzzy match)
-  5. Audio analysis (PANNs + Essentia)
-  6. Bliss vectors (Rust CLI)
-  7. Popularity (Last.fm listeners/playcount)
-  8. Cover art (6 sources)
-```
+1. normalize staging tree and target destination
+2. sync files into the library model
+3. enrich artist/album metadata
+4. index genres and MusicBrainz identifiers
+5. run audio analysis and Bliss similarity
+6. refresh read models, home/admin surfaces, and follow-up tasks
 
-## Artist Enrichment Sources
+## Artist enrichment
 
-All sources are called through `enrich_artist()` in `enrichment.py`:
+The unified entrypoint is `enrich_artist(...)` in `app/crate/enrichment.py`.
+It merges multiple providers rather than scattering provider writes across the
+codebase.
 
-### 1. Last.fm
-- **Data**: Bio (HTML stripped), top tags, similar artists (up to 15), listener count, playcount
-- **Auth**: API key (`LASTFM_APIKEY`)
-- **Caching**: Results persisted to `library_artists` columns; cache expires but DB data survives
+Typical sources:
 
-### 2. Spotify
-- **Data**: Popularity score (0-100), Spotify ID, follower count
-- **Auth**: Client ID + Secret (`SPOTIFY_ID`, `SPOTIFY_SECRET`)
-- **Note**: Currently returns 403 (requires Premium account)
+- Last.fm
+- MusicBrainz
+- Setlist.fm
+- Fanart.tv
+- Discogs
+- Deezer / iTunes fallbacks
+- Spotify popularity/follower overlays when configured
 
-### 3. MusicBrainz
-- **Data**: MBID, country, area, formation year, dissolution year, members (JSON array), external URLs (Wikipedia, Discogs, Wikidata, etc.)
-- **Auth**: None (rate-limited to 1 req/sec)
-- **Matching**: Fuzzy search with `thefuzz`, minimum score threshold of 80 to prevent false matches
+## Acquisition normalization
 
-### 4. Setlist.fm
-- **Data**: Probable setlist (most commonly played songs, weighted by frequency)
-- **Auth**: API key (`SETLISTFM_API_KEY`)
-- **Display**: Artist page "Setlist" tab with library track matching
+Crate treats acquisition as “import into a canonical library”, not merely
+“download succeeded”.
 
-### 5. Fanart.tv
-- **Data**: Artist backgrounds (panoramic 1920x1080), artist thumbnails
-- **Auth**: API key (`FANART_API_KEY`)
-- **Selection**: Multiple images scored by aspect ratio; random pick on each page load
+### Tidal
 
-### 6. Deezer
-- **Data**: Artist photos (square, fallback source)
-- **Auth**: None (scraping via search API)
+The repo currently pins `tiddl 3.3.0`.
 
-## Artist Photo Resolution
+Crate wraps it with:
 
-The photo endpoint tries sources in priority order:
+- progress reporting and task events
+- partial failure detection
+- staging-tree inspection
+- artifact cleanup and repair
+- move/import into the library
+- downstream sync, enrichment, and analysis
 
-1. **Manual upload on disk** (`artist.jpg`) - highest priority
-2. **Fanart.tv thumbnails** (random pick if `?random=true`)
-3. **Last.fm / Fanart.tv / Deezer / Spotify** via `get_best_artist_image()`
-4. **First album cover** (last resort)
+The important current behavior is **best-quality-real-output**:
 
-## Background Image Resolution
+- if the staging tree contains recoverable lossless audio, Crate preserves it
+- if `tiddl` leaves MP4/AAC wrappers, false `.flac` files, or `tmp*` artifacts,
+  Crate inspects and normalizes them
+- if the “lossless” path is incomplete or not genuinely lossless, Crate falls
+  back cleanly to a playable `.m4a` result instead of importing broken FLACs
 
-1. **Manual upload on disk** (`background.jpg`) - highest priority
-2. **Fanart.tv backgrounds** (panoramic, random pick)
-3. **Last.fm scraped backgrounds** (scored by aspect ratio)
-4. **Deezer artist image**
-5. **Spotify artist image**
-6. **Artist photo on disk** (last resort)
+### Soulseek
 
-## Album MBID Matching
+Crate uses `slskd` for transport and adds:
 
-For each album, Crate searches MusicBrainz for the best matching release:
+- search heuristics
+- quality filtering
+- retry/alternate-peer logic
+- canonical import normalization once files land
 
-1. Search by artist + album name (fuzzy)
-2. Score results by string similarity (`thefuzz.fuzz.ratio`)
-3. Reject matches below 80% to prevent false positives
-4. Auto-apply tags when score >= 95% (configurable threshold)
-5. Lower scores shown in UI for manual review
+## Persistence and freshness
 
-Applied data: `musicbrainz_albumid`, `musicbrainz_releasegroupid`, genre tags, track-level MBIDs.
-
-## Cover Art Sources
-
-Checked in order for each album:
-
-1. **Cover Art Archive** (by MBID, if available)
-2. **Embedded audio** (FLAC/MP3 APIC tag)
-3. **Deezer** (search by artist + album)
-4. **iTunes** (search API)
-5. **Last.fm** (album info)
-6. **MusicBrainz search** (secondary MBID lookup)
-
-Covers saved as `cover.jpg` in the album directory. Manual upload via UI also supported (with crop).
-
-## Scheduled Enrichment
-
-| Task | Default Interval | Description |
-|------|-----------------|-------------|
-| `library_pipeline` | 30 min | Health check + repair + sync |
-| `enrich_artists` | 24 hours | Full re-enrichment of all artists |
-| `compute_analytics` | 1 hour | Recompute stats and charts |
-| `check_new_releases` | 6 hours | Check Tidal for monitored artists |
-| `cleanup_incomplete_downloads` | 48 hours | Remove partial Soulseek downloads |
-
-All intervals are configurable from Settings > Schedules.
-
-## Data Persistence
-
-Enrichment data is persisted directly to `library_artists` columns:
-
-```
-bio, tags_json, similar_json, spotify_id, mbid, country, area,
-formed, ended, members_json, urls_json, listeners, lastfm_playcount,
-spotify_followers, enriched_at, has_photo
-```
-
-This means enrichment data survives cache expiration. The `enriched_at` timestamp controls when re-enrichment is needed.
-
-## Cache Strategy
-
-- **Don't cache partial results**: Only cache enrichment results that include Last.fm or Spotify data
-- **Prefix-based invalidation**: `delete_cache_prefix("enrichment:")` clears all enrichment cache
-- **Per-artist reset**: Settings page or `POST /api/manage/artist/{name}/reset` clears all caches for one artist and re-enriches
+Enrichment data is persisted into PostgreSQL. Caches accelerate fetches, but the
+DB is the durable truth. Freshness is governed by timestamps and settings rather
+than blindly re-querying providers on every request.

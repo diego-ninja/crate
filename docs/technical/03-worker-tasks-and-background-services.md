@@ -2,7 +2,8 @@
 
 ## Why the worker exists
 
-Crate's worker is not just "background jobs". It is the write-capable side of the system.
+Crate's worker is not just “background jobs”. It is the write-capable side of
+the system and the host for several long-lived background runtimes.
 
 Anything that can mutate the library or perform long-running work belongs here:
 
@@ -14,24 +15,27 @@ Anything that can mutate the library or perform long-running work belongs here:
 - enrichment fan-out
 - storage migration
 - audio analysis orchestration
+- snapshot projection
 
-The worker process mounts `/music` read-write, unlike the API.
+The worker mounts `/music` read-write, unlike the API.
 
 ## Execution model
 
-The worker entrypoint is [app/crate/worker.py](https://github.com/diego-ninja/crate/blob/main/app/crate/worker.py).
+The worker entrypoint is `app/crate/worker.py`.
 
 At startup it:
 
 1. initializes DB and MusicBrainz client
 2. cleans orphaned/running task state
 3. clears stale locks and download semaphores
-4. starts a background service loop
-5. starts background analysis daemons
-6. starts the Telegram bot loop
-7. launches Dramatiq workers in a subprocess
+4. starts the background service loop
+5. starts the analysis and bliss daemons
+6. starts the projector thread for domain events
+7. starts the Telegram bot loop
+8. launches Dramatiq workers in a subprocess
 
-This means the "worker container" actually hosts several cooperating background concerns, not only message consumption.
+This means the worker container hosts several cooperating concerns, not only
+message consumption.
 
 ## Task model
 
@@ -58,79 +62,82 @@ The Dramatiq message provides:
 - process isolation
 - distribution over worker processes
 
-This is one of the most important architectural choices in the project.
+This remains one of the most important architectural choices in the project.
 
 ## Task lifecycle
 
 ### Creation
 
-`create_task()` in [app/crate/db/tasks.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/tasks.py):
+`create_task()` / `create_task_dedup()`:
 
-- inserts a row into `tasks`
-- derives queue, priority, max duration, and retries from `TASK_POOL_CONFIG`
-- if `dispatch=True`, schedules Dramatiq dispatch only after the surrounding transaction commits
-- can participate in a larger transaction by reusing a caller-provided DB session
-- `dispatch=False` persists the task row without sending an actor message
+- insert a row into `tasks`
+- derive queue/priority/runtime limits from config
+- schedule Dramatiq dispatch only after the surrounding transaction commits
+- can participate in a caller-owned session
 
 ### Execution
 
-The actor wrapper in [app/crate/actors.py](https://github.com/diego-ninja/crate/blob/main/app/crate/actors.py):
+The actor wrapper in `app/crate/actors.py`:
 
-- fetches the PG task row
-- acquires DB-heavy or download locks if required
+- fetches the task row
+- acquires Redis-backed locks/semaphores when needed
 - marks the task as running
-- starts a heartbeat thread
-- calls the real task handler
-- updates completion or failure state
+- starts heartbeat state
+- calls the real handler
+- records completion or failure
 - releases locks
 
 ### Progress and events
 
-- task progress is persisted as JSON-ish text in `tasks.progress`
-- richer events are emitted into `task_events`
-- SSE endpoints in [app/crate/api/events.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/events.py) stream both global and per-task updates
+- coarse progress lives on `tasks.progress`
+- richer task activity lives in `task_events`
+- SSE endpoints stream both global and per-task activity
 
 ### Cancellation
 
 Cancellation is cooperative:
 
-- a task status can be set to `cancelled`
-- handlers periodically call `is_cancelled` or related checks
-- cancellation is not preemptive thread termination
+- the task row can be marked cancelled
+- handlers poll for cancellation
+- Crate does not kill threads preemptively during filesystem work
 
-This is safer for filesystem operations.
+## Not all follow-up work is a DB task
+
+The task model is important, but it is not the only async mechanism anymore.
+
+Examples:
+
+- the **projector** consumes Redis Stream domain events in its own loop
+- **scrobble follow-ups** for play events are queued as direct actors after
+  commit rather than as user-visible task rows
+- **analysis/bliss daemons** claim pipeline work directly rather than routing
+  every unit of work through a task row
+
+That split is intentional: not every async unit needs to be operator-visible as
+its own row in `tasks`.
 
 ## Queue and priority strategy
 
-[app/crate/actors.py](https://github.com/diego-ninja/crate/blob/main/app/crate/actors.py) defines `TASK_POOL_CONFIG`.
+`app/crate/actors.py` defines per-task execution policy.
 
-Each task type gets:
+Queues:
 
-- queue name
-- priority
-- max duration
-- max retries
+- `fast` — lightweight HTTP/DB-heavy but short jobs
+- `default` — mixed work, library pipeline, downloads, management
+- `heavy` — reserved for heavier CPU paths
 
-### Queues
+Priority bands broadly map to:
 
-- `fast`: lightweight HTTP/DB-heavy but short jobs
-- `default`: mixed work, library pipeline, downloads, management
-- `heavy`: reserved for heavier CPU paths, though much of the current analysis orchestration now fans out differently
-
-### Priority bands
-
-- `0`: user-initiated urgent actions such as downloads, deletes, tag writes
-- `1`: immediate post-ingest work
-- `2`: scheduled operational work
-- `3`: lower-priority background maintenance or backfills
-
-This gives Crate a useful product property: manual user actions can outrun background hygiene work.
+- urgent user actions
+- immediate post-ingest work
+- scheduled operational work
+- lower-priority maintenance/backfills
 
 ## Coordination primitives
 
 ### DB-heavy mutex
 
-Some tasks should not overlap, especially ones that can churn a lot of database state:
+Some tasks should not overlap, especially ones that churn library state:
 
 - `library_sync`
 - `library_pipeline`
@@ -139,47 +146,51 @@ Some tasks should not overlap, especially ones that can churn a lot of database 
 - `repair`
 - `migrate_storage_v2`
 
-These acquire a Redis-backed mutex so only one such task runs at a time across worker processes.
+These use Redis-backed coordination so only one runs at a time across worker
+processes.
 
 ### Download semaphore
 
-Tidal and Soulseek transfers are globally capped using a Redis set-based semaphore:
-
-- avoids network and provider overload
-- enforces bounded parallelism
-- works across worker processes
+Tidal and Soulseek transfers are globally capped using a Redis semaphore.
 
 ## Service loop responsibilities
 
-The worker's `_run_service_loop()` is a second major architectural element.
+`_run_service_loop()` is the second major part of the worker runtime.
 
-Every few seconds or minutes it handles:
+On a cadence, it handles:
 
 - filesystem watcher lifecycle
 - scheduled task creation
-- import queue scanning
+- import queue refresh
 - zombie task cleanup
 - worker status cache updates
-- old task/event/session/jam cleanup
+- ops runtime state updates
+- queue depth metrics
+- metrics flush to PostgreSQL
+- incremental shadow read-model backfill for analysis/bliss pipeline tables
+- old task/event/log/session/jam cleanup
 
-This service loop is what makes the worker feel like a living background runtime rather than a pure message consumer.
+This is what makes the worker feel like a living background runtime rather than
+a pure broker consumer.
 
 ## Filesystem watcher
 
-[app/crate/library_watcher.py](https://github.com/diego-ninja/crate/blob/main/app/crate/library_watcher.py) uses `watchdog` to:
+`app/crate/library_watcher.py` uses `watchdog` to:
 
 - react to created and moved audio files
 - debounce per album directory
 - ignore files written by enrichment or artwork generation
-- avoid infinite loops using in-process and DB/Redis processing flags
+- avoid infinite loops using runtime flags and suppression logic
 
-Watcher writes do not directly do enrichment. They trigger sync and then queue higher-level content processing if needed.
+Watcher events trigger sync and downstream processing rather than performing
+heavy work inline.
 
 ## Scheduler
 
-[app/crate/scheduler.py](https://github.com/diego-ninja/crate/blob/main/app/crate/scheduler.py) implements configurable recurring tasks backed by settings rather than static cron files.
+`app/crate/scheduler.py` implements configurable recurring tasks backed by
+settings rather than static cron files.
 
-Default schedules cover:
+Default schedules cover things such as:
 
 - artist enrichment
 - library pipeline
@@ -188,85 +199,38 @@ Default schedules cover:
 - incomplete download cleanup
 - show sync
 
-The scheduler checks:
+It checks both elapsed time and whether a same-type task is already
+pending/running to avoid schedule storms.
 
-- whether enough time has elapsed since the last run
-- whether a task of the same type is already pending or running
+## Analysis and bliss daemons
 
-This prevents schedule storms.
-
-## Analysis daemons
-
-Separate background daemons in the worker handle throughput-oriented analysis flows:
+Separate long-lived daemons handle throughput-oriented analysis flows:
 
 - audio analysis daemon
 - bliss daemon
 
-These are conceptually different from request-triggered jobs. They let Crate absorb newly indexed content and background resets without requiring every analysis step to run synchronously inside one monolithic task.
+They claim work from `track_processing_state` and update the shadow pipeline
+tables plus compatibility columns.
 
-[app/crate/analysis_daemon.py](https://github.com/diego-ninja/crate/blob/main/app/crate/analysis_daemon.py) is intentionally thin orchestration. Claim/reset/status logic and Bliss vector writes live in [app/crate/db/jobs/analysis.py](https://github.com/diego-ninja/crate/blob/main/app/crate/db/jobs/analysis.py), where the system keeps the atomic SQL patterns that make per-track claiming and recovery safe.
+This is conceptually different from request-triggered tasks: the daemons absorb
+newly indexed content and background resets without wrapping every track in a
+task row.
+
+## Projector loop
+
+The projector thread is the worker-side consumer for the domain-event bus.
+
+It:
+
+- reads Redis Stream events through a consumer group
+- retries its own pending messages first after a crash/restart
+- decides whether ops or home snapshots need refreshing
+- marks processed messages only after warming completes
+
+This is the bridge between write-side mutations and snapshot-driven UI surfaces.
 
 ## Import queue
 
-The service loop periodically scans import sources declared in [app/config.yaml](https://github.com/diego-ninja/crate/blob/main/app/config.yaml):
-
-- Tidal
-- Soulseek
-- other ingestion roots
-
-This supports workflows where external systems or download tools populate a staging area that Crate then normalizes and ingests.
-
-## Task handler organization
-
-Handlers are grouped by subsystem under `https://github.com/diego-ninja/crate/blob/main/app/crate/worker_handlers`:
-
-- `acquisition.py`
-- `analysis.py`
-- `artwork.py`
-- `enrichment.py`
-- `integrations.py`
-- `library.py`
-- `management.py`
-- `migration.py`
-
-`worker.py` assembles these into the final `TASK_HANDLERS` dictionary.
-
-This makes the task registry flat at runtime but modular in source.
-
-## Operational characteristics
-
-### Strengths
-
-- good visibility into work in progress
-- retryable failures
-- live progress in the UI
-- safe separation of reads and writes
-- easier to reason about than ad hoc threads inside the API
-
-### Trade-offs
-
-- dual representation means more moving parts
-- task handlers must remain idempotent or at least retry-safe
-- long-running operations need careful heartbeat and cleanup behavior
-
-## Recommended mental model
-
-When thinking about Crate, it helps to split the system into:
-
-- request path: API + DB + cache
-- background path: task row + actor + handler + events
-
-Many product features cross both paths:
-
-- user requests an operation via API
-- API creates a task
-- worker mutates the world
-- UI follows the operation through task events
-
-That request-to-task-to-event loop is the dominant operational pattern in Crate.
-
-## Related documents
-
-- [Backend API and Data Layer](/technical/backend-api-and-data)
-- [Library, Storage, Sync, and Imports](/technical/library-storage-sync-and-imports)
-- [Enrichment, Acquisition, and External Integrations](/technical/enrichment-acquisition-and-integrations)
+The service loop periodically normalizes external import sources into
+`import_queue_items`, which gives the admin UI and ops snapshot a read model for
+staging/import state rather than live rescans every time.
