@@ -15,33 +15,20 @@ import {
   type PlayerStateValue,
 } from "@/contexts/player-context";
 import {
-  clampIndex,
-  resolveQueueFromUrls,
 } from "@/contexts/player-queue-helpers";
 import {
-  getEffectiveCrossfadeSeconds,
-  getPredictableNextTrack,
   getTrackCacheKey,
-  MAX_RECENT,
-  saveRecentlyPlayed,
 } from "@/contexts/player-utils";
 import {
   addTrack as gpAddTrack,
-  getCurrentTrackDuration as gpGetCurrentTrackDuration,
-  getTrackIndex as gpGetTrackIndex,
-  getTracks as gpGetTracks,
   gotoTrack as gpGotoTrack,
   insertTrack as gpInsertTrack,
-  loadQueue as gpLoadQueue,
-  pause as gpPause,
-  play as gpPlay,
-  seekTo as gpSeekTo,
-  setCrossfadeDuration as gpSetCrossfadeDuration,
   setLoop as gpSetLoop,
   setSingleMode as gpSetSingleMode,
   setVolume as gpSetVolume,
 } from "@/lib/gapless-player";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePlayerEngineSync } from "@/contexts/use-player-engine-sync";
 import { usePlayEventTracker } from "@/contexts/use-play-event-tracker";
 import { usePlaybackIntelligence } from "@/contexts/use-playback-intelligence";
 import { usePlaybackPersistence } from "@/contexts/use-playback-persistence";
@@ -54,7 +41,6 @@ import { useSoftInterruption } from "@/contexts/use-soft-interruption";
 import { usePlayerShortcuts } from "@/contexts/use-player-shortcuts";
 import { useMediaSession } from "@/contexts/use-media-session";
 import {
-  getCrossfadeDurationPreference,
   getInfinitePlaybackPreference,
   getSmartCrossfadePreference,
   getSmartPlaylistSuggestionsCadencePreference,
@@ -160,27 +146,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     smartCrossfadeEnabledRef.current = smartCrossfadeEnabled;
   }, [playSource, repeat, shuffle, smartCrossfadeEnabled]);
 
-  const syncEffectiveCrossfade = useCallback(() => {
-    const nextTrack = getPredictableNextTrack(
-      queueRef.current,
-      currentIndexRef.current,
-      repeatRef.current,
-      shuffleRef.current,
-    );
-    const effectiveSeconds = getEffectiveCrossfadeSeconds(
-      currentTrackRef.current,
-      nextTrack,
-      playSourceRef.current,
-      shuffleRef.current,
-      getCrossfadeDurationPreference(),
-      smartCrossfadeEnabledRef.current,
-    );
-    const effectiveMs = Math.max(0, effectiveSeconds * 1000);
-    effectiveCrossfadeMsRef.current = effectiveMs;
-    gpSetCrossfadeDuration(effectiveMs);
-    return effectiveMs;
-  }, []);
-
   usePlaybackPersistence({
     queue,
     currentIndex,
@@ -200,26 +165,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     currentTrack,
     isPlaying,
   });
-
-  const addToRecentlyPlayed = useCallback((track: Track) => {
-    setRecentlyPlayed((prev) => {
-      const filtered = prev.filter((t) => t.id !== track.id);
-      const updated = [track, ...filtered].slice(0, MAX_RECENT);
-      saveRecentlyPlayed(updated);
-      return updated;
-    });
-  }, []);
-
-  const rememberActiveTrack = useCallback((track: Track | undefined) => {
-    if (!track) {
-      activatedTrackKeyRef.current = null;
-      return;
-    }
-    const trackKey = getTrackCacheKey(track);
-    if (activatedTrackKeyRef.current === trackKey) return;
-    activatedTrackKeyRef.current = trackKey;
-    addToRecentlyPlayed(track);
-  }, [addToRecentlyPlayed]);
 
   const getPlaybackSnapshot = useCallback(() => ({
     currentTime: currentTimeRef.current,
@@ -247,138 +192,37 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     bufferingIntentRef,
     commitIsBuffering,
   });
-
-  /**
-   * Read queue/index/duration from the engine and reconcile React state
-   * to match. Call after any engine-initiated change (onnext/onprev, or
-   * when we've just told the engine something and need to resync).
-   *
-   * No-op at the state level when nothing actually changed thanks to
-   * identity guards — safe to call generously.
-   */
-  const pullFromEngine = useCallback((sourceQueue?: Track[]) => {
-    const resolvedQueue = resolveQueueFromUrls(
-      gpGetTracks(),
-      sourceQueue ?? queueRef.current,
-      engineTrackMapRef.current,
-    );
-    const resolvedIndex = clampIndex(gpGetTrackIndex(), resolvedQueue.length);
-    const resolvedTrack = resolvedQueue[resolvedIndex];
-    const resolvedDuration = Math.max(gpGetCurrentTrackDuration() / 1000, 0);
-
-    // Identity guards: avoid spurious state updates + cascading
-    // re-renders when the engine just reports the same queue/index
-    // we already hold (happens on every onNext, onPrev, onTimeUpdate
-    // fallback etc. — most calls are no-ops at the state level).
-    const prevQueue = queueRef.current;
-    const sameQueue =
-      resolvedQueue.length === prevQueue.length &&
-      resolvedQueue.every((track, i) => track === prevQueue[i]);
-    if (!sameQueue) commitQueue(resolvedQueue);
-
-    if (resolvedIndex !== currentIndexRef.current) {
-      commitCurrentIndex(resolvedIndex);
-    }
-    if (resolvedDuration !== durationRef.current) {
-      commitDuration(resolvedDuration);
-    }
-    rememberActiveTrack(resolvedTrack);
-
-    return {
-      resolvedQueue,
-      resolvedIndex,
-      resolvedTrack,
-    };
-  }, [commitCurrentIndex, commitDuration, commitQueue, rememberActiveTrack]);
-
-  /**
-   * Replace the engine queue + React queue in one shot. Used for changes
-   * that need a full reload (shuffle toggle, removing current track,
-   * reordering the current track, radio/intelligence insert).
-   *
-   * For incremental mutations (addToQueue, playNext, removeFromQueue of
-   * a non-current track, reordering non-current tracks) prefer the
-   * gpInsert/gpRemove helpers — they don't interrupt playback.
-   */
-  const pushToEngine = useCallback((
-    nextQueue: Track[],
-    requestedIndex: number,
-    options?: { autoplay?: boolean; positionMs?: number },
-  ) => {
-    const nextIndex = clampIndex(requestedIndex, nextQueue.length);
-    const autoplay = options?.autoplay ?? isPlayingRef.current;
-    const positionMs = options?.positionMs ?? 0;
-
-    if (nextQueue.length === 0) {
-      bufferingIntentRef.current = false;
-      gpPause();
-      gpLoadQueue([], 0);
-      engineTrackMapRef.current = new Map();
-      commitQueue([]);
-      commitCurrentIndex(0);
-      commitCurrentTime(0);
-      commitDuration(0);
-      commitIsPlaying(false);
-      commitIsBuffering(false);
-      activatedTrackKeyRef.current = null;
-      return;
-    }
-
-    gpLoadQueue(buildEngineUrls(nextQueue), nextIndex);
-    gpSetLoop(repeatRef.current === "all");
-    gpSetSingleMode(repeatRef.current === "one");
-    // NOTE: no gpSetShuffle here. The React queue is the source of truth
-    // for play order; loadQueue normalizes Gapless's shuffledIndices so
-    // the engine plays our list sequentially in the exact order passed.
-
-    // Commits queue/index/duration internally.
-    pullFromEngine(nextQueue);
-
-    if (positionMs > 0) {
-      gpSeekTo(positionMs);
-      const positionSeconds = positionMs / 1000;
-      commitCurrentTime(positionSeconds);
-      markSeekPosition(positionSeconds);
-    } else {
-      commitCurrentTime(0);
-    }
-
-    if (autoplay) {
-      bufferingIntentRef.current = true;
-      commitIsBuffering(true);
-      gpPlay();
-    } else {
-      bufferingIntentRef.current = false;
-      gpPause();
-      commitIsPlaying(false);
-      commitIsBuffering(false);
-    }
-  }, [
-    commitCurrentTime,
-    commitIsBuffering,
-    commitIsPlaying,
+  const {
+    syncEffectiveCrossfade,
+    rememberActiveTrack,
+    pullFromEngine,
+    pushToEngine,
+    advanceCursorTo,
+  } = usePlayerEngineSync({
+    queueRef,
+    currentIndexRef,
+    currentTrackRef,
+    repeatRef,
+    shuffleRef,
+    playSourceRef,
+    smartCrossfadeEnabledRef,
+    effectiveCrossfadeMsRef,
+    isPlayingRef,
+    durationRef,
+    bufferingIntentRef,
+    activatedTrackKeyRef,
+    engineTrackMapRef,
+    setRecentlyPlayed,
     commitQueue,
     commitCurrentIndex,
+    commitCurrentTime,
     commitDuration,
+    commitIsPlaying,
+    commitIsBuffering,
     buildEngineUrls,
+    clearPrevRestartLatch,
     markSeekPosition,
-    pullFromEngine,
-  ]);
-
-  /**
-   * Advance the React cursor to a new index. Caller is responsible for
-   * moving the engine (gpNext/gpPrev/gpGotoTrack) BEFORE calling this so
-   * the duration read is from the new track.
-   */
-  const advanceCursorTo = useCallback((index: number) => {
-    clearPrevRestartLatch();
-    commitCurrentIndex(index);
-    commitCurrentTime(0);
-    commitDuration(Math.max(gpGetCurrentTrackDuration() / 1000, 0));
-    rememberActiveTrack(queueRef.current[index]);
-    bufferingIntentRef.current = true;
-    commitIsBuffering(true);
-  }, [clearPrevRestartLatch, commitCurrentIndex, commitCurrentTime, commitDuration, commitIsBuffering, rememberActiveTrack]);
+  });
 
   // Domain-level actions for usePlaybackIntelligence. Verb-oriented
   // instead of raw state setters — the hook no longer needs to reason
