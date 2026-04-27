@@ -4,7 +4,8 @@ from pathlib import Path
 
 from crate.task_progress import TaskProgress, emit_progress
 from crate.db.audit import log_audit, wipe_library_tables
-from crate.db.cache_runtime import _get_redis, delete_cache, set_cache
+from crate.db.cache_runtime import _get_redis
+from crate.db.cache_store import delete_cache, set_cache
 from crate.db.events import emit_task_event
 from crate.db.health import get_open_issues, resolve_issue
 from crate.db.repositories.library import (
