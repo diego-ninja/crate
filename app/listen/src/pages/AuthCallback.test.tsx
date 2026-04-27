@@ -7,6 +7,11 @@ const { mockNavigate, mockRefetch, mockSetAuthToken } = vi.hoisted(() => ({
   mockSetAuthToken: vi.fn(),
 }));
 
+const authState = vi.hoisted(() => ({
+  user: null as null | { id: number },
+  loading: true,
+}));
+
 vi.mock("react-router", async () => {
   const actual = await vi.importActual<typeof import("react-router")>("react-router");
   return {
@@ -17,6 +22,8 @@ vi.mock("react-router", async () => {
 
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
+    user: authState.user,
+    loading: authState.loading,
     refetch: mockRefetch,
   }),
 }));
@@ -32,6 +39,8 @@ describe("AuthCallback", () => {
     mockNavigate.mockReset();
     mockRefetch.mockReset();
     mockSetAuthToken.mockReset();
+    authState.user = null;
+    authState.loading = true;
     localStorage.clear();
     window.history.replaceState({}, "", "/auth/callback?token=oauth-token&next=%2Fstats");
   });
@@ -41,26 +50,36 @@ describe("AuthCallback", () => {
   });
 
   it("hydrates auth before navigating to the next route", async () => {
-    let resolveRefetch!: () => void;
-    mockRefetch.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveRefetch = resolve;
-        }),
-    );
+    mockRefetch.mockResolvedValueOnce();
 
-    render(<AuthCallback />);
+    const { rerender } = render(<AuthCallback />);
 
     expect(mockSetAuthToken).toHaveBeenCalledWith("oauth-token");
     expect(localStorage.getItem("crate-oauth-next")).toBe("/stats");
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
     expect(mockNavigate).not.toHaveBeenCalled();
 
-    resolveRefetch();
+    authState.user = { id: 1 };
+    authState.loading = false;
+    rerender(<AuthCallback />);
 
     await waitFor(() => {
-      expect(mockRefetch).toHaveBeenCalledTimes(1);
       expect(mockNavigate).toHaveBeenCalledWith("/stats", { replace: true });
     });
+  });
+
+  it("returns to login when auth hydration finishes without a user", async () => {
+    mockRefetch.mockResolvedValueOnce();
+
+    const { rerender } = render(<AuthCallback />);
+
+    authState.loading = false;
+    rerender(<AuthCallback />);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("/login", { replace: true });
+    });
+    expect(mockRefetch).toHaveBeenCalledTimes(1);
   });
 
   it("returns to login when the callback token is missing", async () => {
