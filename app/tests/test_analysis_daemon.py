@@ -293,6 +293,20 @@ class TestAnalysisJobsIntegration:
             session.execute(
                 text(
                     """
+                    UPDATE track_processing_state
+                    SET state = 'analyzing',
+                        claimed_by = 'test-suite',
+                        claimed_at = NOW(),
+                        updated_at = NOW()
+                    WHERE track_id = :id
+                      AND pipeline = 'analysis'
+                    """
+                ),
+                {"id": blocked["id"]},
+            )
+            session.execute(
+                text(
+                    """
                     UPDATE library_tracks
                     SET analysis_state = 'pending', bliss_state = 'pending', updated_at = NOW()
                     WHERE id = :id
@@ -316,6 +330,145 @@ class TestAnalysisJobsIntegration:
         assert by_id[blocked["id"]]["analysis_state"] == "analyzing"
         assert by_id[blocked["id"]]["bliss_state"] == "pending"
         assert by_id[eligible["id"]]["bliss_state"] == "analyzing"
+
+    def test_bliss_claim_ignores_stale_legacy_analysis_state_when_processing_row_is_pending(self, pg_db):
+        from crate.db.jobs import analysis as analysis_jobs
+        from crate.db.tx import transaction_scope
+
+        track = self._seed_track(pg_db, "legacy-stale")
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET analysis_state = 'analyzing', bliss_state = 'pending', updated_at = NOW()
+                    WHERE id = :id
+                    """
+                ),
+                {"id": track["id"]},
+            )
+            session.execute(
+                text(
+                    """
+                    UPDATE track_processing_state
+                    SET state = 'pending',
+                        claimed_by = NULL,
+                        claimed_at = NULL,
+                        updated_at = NOW()
+                    WHERE track_id = :id
+                      AND pipeline IN ('analysis', 'bliss')
+                    """
+                ),
+                {"id": track["id"]},
+            )
+
+        claimed = analysis_jobs.claim_track("bliss_state")
+
+        assert claimed is not None
+        assert claimed["id"] == track["id"]
+
+    def test_processing_rows_prefer_shadow_tables_when_legacy_states_are_stale(self, pg_db):
+        from crate.db.jobs import analysis as analysis_jobs
+        from crate.db.tx import transaction_scope
+
+        track = self._seed_track(pg_db, "shadow-truth")
+        vector = [0.6] * 20
+        vector_literal = "[" + ",".join(["0.6"] * 20) + "]"
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE library_tracks
+                    SET analysis_state = 'pending',
+                        bliss_state = 'pending',
+                        bpm = 126.0,
+                        audio_key = 'F',
+                        audio_scale = 'minor',
+                        energy = 0.67,
+                        bliss_vector = CAST(:vector AS double precision[]),
+                        bliss_embedding = CAST(:vector_literal AS vector(20))
+                    WHERE id = :id
+                    """
+                ),
+                {"id": track["id"], "vector": vector, "vector_literal": vector_literal},
+            )
+            session.execute(text("DELETE FROM track_processing_state WHERE track_id = :id"), {"id": track["id"]})
+            session.execute(
+                text(
+                    """
+                    INSERT INTO track_analysis_features (
+                        track_id,
+                        bpm,
+                        audio_key,
+                        audio_scale,
+                        energy,
+                        updated_at
+                    )
+                    VALUES (
+                        :track_id,
+                        126.0,
+                        'F',
+                        'minor',
+                        0.67,
+                        TIMESTAMPTZ '2026-04-27T09:30:00Z'
+                    )
+                    ON CONFLICT (track_id) DO UPDATE SET
+                        bpm = EXCLUDED.bpm,
+                        audio_key = EXCLUDED.audio_key,
+                        audio_scale = EXCLUDED.audio_scale,
+                        energy = EXCLUDED.energy,
+                        updated_at = EXCLUDED.updated_at
+                    """
+                ),
+                {"track_id": track["id"]},
+            )
+            session.execute(
+                text(
+                    """
+                    INSERT INTO track_bliss_embeddings (
+                        track_id,
+                        bliss_vector,
+                        bliss_embedding,
+                        updated_at
+                    )
+                    VALUES (
+                        :track_id,
+                        :vector,
+                        CAST(:vector_literal AS vector(20)),
+                        TIMESTAMPTZ '2026-04-27T10:00:00Z'
+                    )
+                    ON CONFLICT (track_id) DO UPDATE SET
+                        bliss_vector = EXCLUDED.bliss_vector,
+                        bliss_embedding = EXCLUDED.bliss_embedding,
+                        updated_at = EXCLUDED.updated_at
+                    """
+                ),
+                {"track_id": track["id"], "vector": vector, "vector_literal": vector_literal},
+            )
+
+        assert analysis_jobs.get_pending_count("analysis_state") == 0
+        assert analysis_jobs.get_pending_count("bliss_state") == 0
+
+        with transaction_scope() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT pipeline, state, completed_at
+                    FROM track_processing_state
+                    WHERE track_id = :id
+                    ORDER BY pipeline
+                    """
+                ),
+                {"id": track["id"]},
+            ).mappings().all()
+
+        assert {(row["pipeline"], row["state"]) for row in rows} == {
+            ("analysis", "done"),
+            ("bliss", "done"),
+        }
+        assert all(row["completed_at"] is not None for row in rows)
 
     def test_last_pipeline_cards_use_pipeline_specific_timestamps(self, pg_db):
         from crate.db.management import get_last_analyzed_track, get_last_bliss_track
@@ -341,6 +494,28 @@ class TestAnalysisJobsIntegration:
             session.execute(
                 text(
                     """
+                    INSERT INTO track_bliss_embeddings (track_id, bliss_vector, bliss_embedding, updated_at)
+                    VALUES (
+                        :track_id,
+                        :vector,
+                        CAST(:vector_literal AS vector(20)),
+                        TIMESTAMPTZ '2026-04-23T10:00:00Z'
+                    )
+                    ON CONFLICT (track_id) DO UPDATE SET
+                        bliss_vector = EXCLUDED.bliss_vector,
+                        bliss_embedding = EXCLUDED.bliss_embedding,
+                        updated_at = EXCLUDED.updated_at
+                    """
+                ),
+                {
+                    "track_id": bliss_track["id"],
+                    "vector": [0.3] * 20,
+                    "vector_literal": "[" + ",".join(["0.3"] * 20) + "]",
+                },
+            )
+            session.execute(
+                text(
+                    """
                     UPDATE library_tracks
                     SET analysis_state = 'done',
                         bpm = 128.0,
@@ -351,6 +526,29 @@ class TestAnalysisJobsIntegration:
                     """
                 ),
                 {"id": analysis_track["id"]},
+            )
+            session.execute(
+                text(
+                    """
+                    INSERT INTO track_analysis_features (
+                        track_id,
+                        bpm,
+                        energy,
+                        updated_at
+                    )
+                    VALUES (
+                        :track_id,
+                        128.0,
+                        0.82,
+                        TIMESTAMPTZ '2026-04-23T12:00:00Z'
+                    )
+                    ON CONFLICT (track_id) DO UPDATE SET
+                        bpm = EXCLUDED.bpm,
+                        energy = EXCLUDED.energy,
+                        updated_at = EXCLUDED.updated_at
+                    """
+                ),
+                {"track_id": analysis_track["id"]},
             )
 
         last_bliss = get_last_bliss_track()

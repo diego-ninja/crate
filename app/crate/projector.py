@@ -13,7 +13,6 @@ log = logging.getLogger(__name__)
 _OPS_EVENT_TYPES = {
     "library.import_queue.changed",
     "library.scan.completed",
-    "ui.invalidate",
     "track.analysis.updated",
     "track.bliss.updated",
     "snapshot.built",
@@ -24,6 +23,18 @@ _HOME_EVENT_TYPES = {
     "user.likes.changed",
     "user.saved_albums.changed",
 }
+
+_OPS_INVALIDATION_SCOPES = {
+    "library",
+    "shows",
+    "upcoming",
+    "curation",
+    "playlists",
+}
+
+
+def _refreshes_ops_from_invalidation(scope: str) -> bool:
+    return scope in _OPS_INVALIDATION_SCOPES or scope.startswith(("artist:", "album:", "playlist:"))
 
 
 def process_domain_events(*, limit: int = 100) -> dict[str, int]:
@@ -57,6 +68,8 @@ def process_domain_events(*, limit: int = 100) -> dict[str, int]:
                 pass
         elif scope == "ui.invalidate":
             invalidation_scope = str(payload.get("scope") or event.get("subject_key") or "")
+            if _refreshes_ops_from_invalidation(invalidation_scope):
+                refresh_ops = True
             if invalidation_scope.startswith("home:user:"):
                 try:
                     refresh_home_users.add(int(invalidation_scope.split(":")[-1]))

@@ -32,18 +32,29 @@ def get_last_analyzed_track() -> dict:
                 text(
                     """
                     SELECT
-                        title,
-                        artist,
-                        album,
-                        bpm,
-                        audio_key,
-                        energy,
-                        danceability,
-                        mood_json IS NOT NULL as has_mood,
-                        COALESCE(analysis_completed_at, updated_at) AS updated_at
-                    FROM library_tracks
-                    WHERE analysis_state = 'done' AND bpm IS NOT NULL
-                    ORDER BY COALESCE(analysis_completed_at, updated_at) DESC NULLS LAST
+                        lt.title,
+                        lt.artist,
+                        lt.album,
+                        lt.bpm,
+                        lt.audio_key,
+                        lt.energy,
+                        lt.danceability,
+                        lt.mood_json IS NOT NULL as has_mood,
+                        COALESCE(ps.completed_at, lt.analysis_completed_at, lt.updated_at) AS updated_at
+                    FROM library_tracks lt
+                    LEFT JOIN track_processing_state ps
+                      ON ps.track_id = lt.id
+                     AND ps.pipeline = 'analysis'
+                    WHERE lt.bpm IS NOT NULL
+                      AND COALESCE(
+                        ps.state,
+                        CASE
+                            WHEN lt.analysis_state IN ('pending', 'analyzing', 'done', 'failed')
+                            THEN lt.analysis_state
+                            ELSE 'pending'
+                        END
+                      ) = 'done'
+                    ORDER BY COALESCE(ps.completed_at, lt.analysis_completed_at, lt.updated_at) DESC NULLS LAST
                     LIMIT 1
                     """
                 )
@@ -73,13 +84,24 @@ def get_last_bliss_track() -> dict:
                 text(
                     """
                     SELECT
-                        title,
-                        artist,
-                        album,
-                        COALESCE(bliss_computed_at, updated_at) AS updated_at
-                    FROM library_tracks
-                    WHERE bliss_state = 'done' AND bliss_vector IS NOT NULL
-                    ORDER BY COALESCE(bliss_computed_at, updated_at) DESC NULLS LAST
+                        lt.title,
+                        lt.artist,
+                        lt.album,
+                        COALESCE(ps.completed_at, lt.bliss_computed_at, lt.updated_at) AS updated_at
+                    FROM library_tracks lt
+                    LEFT JOIN track_processing_state ps
+                      ON ps.track_id = lt.id
+                     AND ps.pipeline = 'bliss'
+                    WHERE lt.bliss_vector IS NOT NULL
+                      AND COALESCE(
+                        ps.state,
+                        CASE
+                            WHEN lt.bliss_state IN ('pending', 'analyzing', 'done', 'failed')
+                            THEN lt.bliss_state
+                            ELSE 'pending'
+                        END
+                      ) = 'done'
+                    ORDER BY COALESCE(ps.completed_at, lt.bliss_computed_at, lt.updated_at) DESC NULLS LAST
                     LIMIT 1
                     """
                 )

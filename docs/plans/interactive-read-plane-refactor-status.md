@@ -1,6 +1,6 @@
 # Interactive Read Plane Refactor Status
 
-Date: 2026-04-26
+Date: 2026-04-27
 Branch: `refactor/interactive_read_models`
 
 ## Executive Summary
@@ -11,7 +11,8 @@ Current estimate:
 
 - Structural refactor complete: `~100%`
 - Remaining module-splitting work: `~0%`
-- Follow-up conceptual hardening: separate optional pass
+- Primary conceptual hardening pass: `completed`
+- Remaining follow-up: optional refinement only
 
 What that means in practice:
 
@@ -20,6 +21,7 @@ What that means in practice:
 - Snapshot-backed admin/listen surfaces, domain events, and dedicated SSE channels are already in place and actively used.
 - Alembic is already the only live migration path for fresh installs and normal runtime bootstrap.
 - The final concentrated backend modules from the “real monolith” list have now been split behind thin facades and validated with a full backend sweep plus frontend builds.
+- The post-split hardening pass now makes pipeline state rely more directly on `track_processing_state` plus shadow tables, and the projector no longer refreshes ops snapshots for every generic `ui.invalidate`.
 
 ## Hard Constraints Followed During This Refactor
 
@@ -330,7 +332,9 @@ These are worth continuing:
 - New snapshot channels: none
 - New SSE endpoints: none
 - Semantics changes:
-  - none; this session did not change invalidation-vs-snapshot semantics
+  - `ui.invalidate` no longer forces an ops snapshot rebuild for every invalidation event.
+  - The projector now refreshes ops snapshots only for ops-relevant invalidation scopes such as `library`, `shows`, `upcoming`, `curation`, `playlists`, and entity-detail scopes like `artist:{id}`, `album:{id}`, and `playlist:{id}`.
+  - Home-only invalidations such as `home:user:{id}` continue to refresh home discovery without unnecessarily rebuilding ops.
 
 ## Current Runtime / Boundary Rules That Are Already Enforced
 
@@ -347,6 +351,16 @@ If a future session starts failing these tests, it probably means the refactor r
 
 These were executed successfully during the latest session:
 
+- `uv run pytest app/tests/test_analysis_daemon.py -q`
+  Result: `11 passed`
+- `uv run pytest app/tests/test_projector.py -q`
+  Result: `5 passed`
+- `uv run pytest app/tests -q`
+  Result: `515 passed, 1 skipped`
+- `npm run --workspace=app/ui build`
+  Result: `passed`
+- `npm run --workspace=app/listen build`
+  Result: `passed` with the existing Listen chunk-size warning only
 - `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_auth_maintenance.py app/tests/test_openapi_contract.py -q -k "jam or runtime_boundaries"`
   Result: `90 passed, 30 deselected`
 - `uv run pytest app/tests/test_runtime_boundaries.py app/tests/test_api.py app/tests/test_ops_snapshot.py app/tests/test_openapi_contract.py -q -k "analytics or stats or timeline or insights or runtime_boundaries"`
@@ -434,9 +448,9 @@ The module-splitting tail is done. What remains now is follow-up work, not struc
 
 ### Recommended continuation order
 
-If a future session continues from here, it should be for conceptual hardening in roughly this order:
+If a future session continues from here, it should be for optional refinement in roughly this order:
 
-1. Finish the final truth cutover around `track_processing_state` and shadow tables.
+1. Clean up the last edge compatibility paths that still read legacy pipeline columns directly.
 2. Continue reducing broad invalidation in favor of semantic events and snapshot-driven updates where still useful.
 3. Do opportunistic performance cleanup in Listen build output if the chunk-size warning becomes worth addressing.
 4. Keep boundary coverage strict so facades do not re-accumulate logic.
@@ -452,11 +466,12 @@ Current state:
 - `track_processing_state` exists and is already used heavily
 - analysis/bliss writes already use new helper layers and batch paths
 - read-plane tables and shadows already exist
+- pipeline row seeding and backfill now prefer shadow tables over stale legacy `library_tracks.*state` values
+- bliss queue gating now follows analysis rows in `track_processing_state` rather than relying on stale legacy `analysis_state`
 
 Still worth tightening:
 
-- make `track_processing_state` and the shadow result tables the unquestioned operational truth
-- reduce compatibility dependence on legacy `library_tracks.analysis_state` / `library_tracks.bliss_state`
+- keep trimming the last direct reads of legacy `library_tracks.analysis_state` / `library_tracks.bliss_state` where they are still only compatibility fallbacks
 - keep `library_tracks` stable and low-churn where possible
 
 ### 2. Final snapshot / projector maturity pass
@@ -464,7 +479,7 @@ Still worth tightening:
 Still worth doing:
 
 - expand projector behavior where still too generic
-- reduce reliance on broad invalidation when a semantic event would do
+- continue shrinking reliance on broad invalidation now that ops refresh is no longer triggered by every `ui.invalidate`
 - keep moving surfaces toward snapshot-driven updates
 
 ### 3. Optional frontend performance follow-up
@@ -491,13 +506,12 @@ If work continues, start from the conceptual cutover and projection layers rathe
 ## Worktree / Commit State
 
 - Branch: `refactor/interactive_read_models`
-- The worktree is still very dirty because this long-running refactor spans many modules and prior in-progress edits.
 - Recent checkpoints in this long-running refactor include:
   - `f5c9ad2c` — `refactor: split home, paths, and media query modules`
   - `86441eaa` — `refactor: split shows query module`
   - `ac2152ea` — `refactor: split paths service, similarities, and repair jobs`
 
-This session finished the last identified structural cuts and passed the broad backend sweep plus both frontend builds, so creating a new checkpoint commit is appropriate if the staged diff is kept coherent.
+This session finished the primary conceptual hardening pass and passed the broad backend sweep plus both frontend builds, so a new checkpoint commit is appropriate once these changes are staged coherently.
 
 ## Practical Resume Checklist
 
@@ -522,11 +536,13 @@ When resuming in a fresh session:
 
 This is no longer an “architecture idea”, and it is no longer a module-splitting project.
 
-The structural backend refactor is complete:
+The structural backend refactor is complete, and the first hardening pass is complete too:
 
 - thin facades are now the dominant pattern
 - the remaining monolith tail has been split
+- pipeline state now leans more directly on `track_processing_state` plus shadow tables
+- generic `ui.invalidate` no longer fans out into unnecessary ops snapshot rebuilds
 - broad regression tests are green
 - both frontend apps still build against the refactored backend surface
 
-Any next session should treat this as a consolidation and hardening phase, not as unfinished structural breakup work.
+Any next session should treat this as optional refinement, not as unfinished structural breakup work.

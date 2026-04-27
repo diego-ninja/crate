@@ -9,10 +9,20 @@ def backfill_analysis_processing_state(session, *, limit: int) -> int:
             text(
                 """
                 WITH batch AS (
-                    SELECT id,
-                           analysis_state,
-                           COALESCE(analysis_completed_at, updated_at, NOW()) AS completed_at
+                    SELECT
+                        lt.id,
+                        CASE
+                            WHEN taf.track_id IS NOT NULL THEN 'done'
+                            WHEN analysis_state IN ('pending', 'analyzing', 'done', 'failed') THEN analysis_state
+                            ELSE 'pending'
+                        END AS state,
+                        CASE
+                            WHEN taf.track_id IS NOT NULL THEN COALESCE(taf.updated_at, analysis_completed_at, lt.updated_at, NOW())
+                            WHEN analysis_state = 'done' THEN COALESCE(analysis_completed_at, lt.updated_at, NOW())
+                            ELSE NULL
+                        END AS completed_at
                     FROM library_tracks lt
+                    LEFT JOIN track_analysis_features taf ON taf.track_id = lt.id
                     WHERE NOT EXISTS (
                         SELECT 1
                         FROM track_processing_state ps
@@ -35,15 +45,12 @@ def backfill_analysis_processing_state(session, *, limit: int) -> int:
                     SELECT
                         id,
                         'analysis',
-                        CASE
-                            WHEN analysis_state IN ('pending', 'analyzing', 'done', 'failed') THEN analysis_state
-                            ELSE 'pending'
-                        END,
+                        state,
                         NULL,
                         NULL,
                         0,
                         NOW(),
-                        CASE WHEN analysis_state = 'done' THEN completed_at ELSE NULL END
+                        completed_at
                     FROM batch
                     ON CONFLICT (track_id, pipeline) DO NOTHING
                     RETURNING 1
@@ -63,10 +70,20 @@ def backfill_bliss_processing_state(session, *, limit: int) -> int:
             text(
                 """
                 WITH batch AS (
-                    SELECT id,
-                           bliss_state,
-                           COALESCE(bliss_computed_at, updated_at, NOW()) AS completed_at
+                    SELECT
+                        lt.id,
+                        CASE
+                            WHEN tbe.track_id IS NOT NULL THEN 'done'
+                            WHEN bliss_state IN ('pending', 'analyzing', 'done', 'failed') THEN bliss_state
+                            ELSE 'pending'
+                        END AS state,
+                        CASE
+                            WHEN tbe.track_id IS NOT NULL THEN COALESCE(tbe.updated_at, bliss_computed_at, lt.updated_at, NOW())
+                            WHEN bliss_state = 'done' THEN COALESCE(bliss_computed_at, lt.updated_at, NOW())
+                            ELSE NULL
+                        END AS completed_at
                     FROM library_tracks lt
+                    LEFT JOIN track_bliss_embeddings tbe ON tbe.track_id = lt.id
                     WHERE NOT EXISTS (
                         SELECT 1
                         FROM track_processing_state ps
@@ -89,15 +106,12 @@ def backfill_bliss_processing_state(session, *, limit: int) -> int:
                     SELECT
                         id,
                         'bliss',
-                        CASE
-                            WHEN bliss_state IN ('pending', 'analyzing', 'done', 'failed') THEN bliss_state
-                            ELSE 'pending'
-                        END,
+                        state,
                         NULL,
                         NULL,
                         0,
                         NOW(),
-                        CASE WHEN bliss_state = 'done' THEN completed_at ELSE NULL END
+                        completed_at
                     FROM batch
                     ON CONFLICT (track_id, pipeline) DO NOTHING
                     RETURNING 1

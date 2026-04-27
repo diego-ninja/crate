@@ -21,6 +21,13 @@ from crate.db.jobs.analysis_shared import (
 from crate.db.tx import transaction_scope
 
 
+def _ensure_claimable_processing_rows(session, *, pipeline: str, batch_size: int) -> None:
+    seed_limit = max(batch_size * 8, batch_size)
+    ensure_processing_rows(session, pipeline=pipeline, limit=seed_limit)
+    if pipeline == "bliss":
+        ensure_processing_rows(session, pipeline="analysis", limit=seed_limit)
+
+
 def claim_track(state_column: str) -> dict | None:
     """Backward-compatible single-track claim helper."""
     tracks = claim_tracks(state_column, limit=1)
@@ -35,7 +42,7 @@ def claim_tracks(state_column: str, *, limit: int = 1) -> list[dict]:
     claimed_at = datetime.now(timezone.utc).isoformat()
     claimed_by = f"{os.environ.get('CRATE_RUNTIME', 'runtime')}:{socket.gethostname()}"
     with transaction_scope() as session:
-        ensure_processing_rows(session, pipeline=pipeline, limit=max(batch_size * 8, batch_size))
+        _ensure_claimable_processing_rows(session, pipeline=pipeline, batch_size=batch_size)
         pending = session.execute(
             text(processing_pending_exists_sql(col)),
             {"pipeline": pipeline},
@@ -127,7 +134,7 @@ def get_pending_count(state_column: str) -> int:
     col = validate_state_column(state_column)
     pipeline = pipeline_name_for_state_column(col)
     with transaction_scope() as session:
-        ensure_processing_rows(session, pipeline=pipeline, limit=2000)
+        _ensure_claimable_processing_rows(session, pipeline=pipeline, batch_size=2000)
         row = session.execute(
             text(processing_pending_count_sql(col)),
             {"pipeline": pipeline},

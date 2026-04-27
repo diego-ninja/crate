@@ -3,6 +3,50 @@ from __future__ import annotations
 from sqlalchemy import text
 
 
+def _processing_seed_sql(*, pipeline: str) -> tuple[str, str, str]:
+    if pipeline == "analysis":
+        return (
+            """
+                LEFT JOIN track_analysis_features taf ON taf.track_id = lt.id
+            """,
+            """
+                CASE
+                    WHEN taf.track_id IS NOT NULL THEN 'done'
+                    WHEN analysis_state IN ('pending', 'analyzing', 'done', 'failed') THEN analysis_state
+                    ELSE 'pending'
+                END AS state
+            """,
+            """
+                CASE
+                    WHEN taf.track_id IS NOT NULL THEN COALESCE(taf.updated_at, analysis_completed_at, lt.updated_at, NOW())
+                    WHEN analysis_state = 'done' THEN COALESCE(analysis_completed_at, lt.updated_at, NOW())
+                    ELSE NULL
+                END AS completed_at
+            """,
+        )
+    if pipeline == "bliss":
+        return (
+            """
+                LEFT JOIN track_bliss_embeddings tbe ON tbe.track_id = lt.id
+            """,
+            """
+                CASE
+                    WHEN tbe.track_id IS NOT NULL THEN 'done'
+                    WHEN bliss_state IN ('pending', 'analyzing', 'done', 'failed') THEN bliss_state
+                    ELSE 'pending'
+                END AS state
+            """,
+            """
+                CASE
+                    WHEN tbe.track_id IS NOT NULL THEN COALESCE(tbe.updated_at, bliss_computed_at, lt.updated_at, NOW())
+                    WHEN bliss_state = 'done' THEN COALESCE(bliss_computed_at, lt.updated_at, NOW())
+                    ELSE NULL
+                END AS completed_at
+            """,
+        )
+    raise ValueError(f"Invalid pipeline: {pipeline!r}")
+
+
 def complete_processing_state(session, *, track_id: int, pipeline: str, completed_at: str) -> None:
     session.execute(
         text(
@@ -25,8 +69,7 @@ def ensure_processing_rows(session, *, pipeline: str, limit: int) -> None:
     if pipeline not in {"analysis", "bliss"}:
         raise ValueError(f"Invalid pipeline: {pipeline!r}")
 
-    state_column = "analysis_state" if pipeline == "analysis" else "bliss_state"
-    completed_column = "analysis_completed_at" if pipeline == "analysis" else "bliss_computed_at"
+    shadow_join, state_sql, completed_at_sql = _processing_seed_sql(pipeline=pipeline)
 
     session.execute(
         text(
@@ -34,15 +77,10 @@ def ensure_processing_rows(session, *, pipeline: str, limit: int) -> None:
             WITH batch AS (
                 SELECT
                     lt.id AS track_id,
-                    CASE
-                        WHEN {state_column} IN ('pending', 'analyzing', 'done', 'failed') THEN {state_column}
-                        ELSE 'pending'
-                    END AS state,
-                    CASE
-                        WHEN {state_column} = 'done' THEN COALESCE({completed_column}, lt.updated_at, NOW())
-                        ELSE NULL
-                    END AS completed_at
+                    {state_sql},
+                    {completed_at_sql}
                 FROM library_tracks lt
+                {shadow_join}
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM track_processing_state ps
@@ -94,7 +132,6 @@ def processing_pending_exists_sql(state_column: str) -> str:
                   AND ps.state = 'pending'
                   AND lt.path IS NOT NULL
                   AND COALESCE(aps.state, 'pending') != 'analyzing'
-                  AND COALESCE(lt.analysis_state, 'pending') != 'analyzing'
             )
         """
     return """
@@ -122,7 +159,6 @@ def processing_pending_count_sql(state_column: str) -> str:
               AND ps.state = 'pending'
               AND lt.path IS NOT NULL
               AND COALESCE(aps.state, 'pending') != 'analyzing'
-              AND COALESCE(lt.analysis_state, 'pending') != 'analyzing'
         """
     return """
         SELECT COUNT(*) AS cnt
@@ -141,10 +177,7 @@ def claim_batch_sql(state_column: str) -> str:
               ON aps.track_id = lt.id
              AND aps.pipeline = 'analysis'
         """
-        extra_where = (
-            "AND COALESCE(aps.state, 'pending') != 'analyzing' "
-            "AND COALESCE(lt.analysis_state, 'pending') != 'analyzing'"
-        )
+        extra_where = "AND COALESCE(aps.state, 'pending') != 'analyzing'"
     else:
         extra_join = ""
         extra_where = ""

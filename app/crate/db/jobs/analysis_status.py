@@ -37,16 +37,25 @@ def get_analysis_status() -> dict:
                 text(
                     """
                     SELECT
-                        COUNT(*) FILTER (WHERE analysis_state = 'done') AS done,
-                        COUNT(*) FILTER (WHERE analysis_state = 'pending') AS pending,
-                        COUNT(*) FILTER (WHERE analysis_state = 'analyzing') AS analyzing,
-                        COUNT(*) FILTER (WHERE analysis_state = 'failed') AS failed
-                    FROM library_tracks lt
-                    WHERE NOT EXISTS (
-                        SELECT 1
-                        FROM track_processing_state ps
-                        WHERE ps.track_id = lt.id AND ps.pipeline = 'analysis'
-                    )
+                        COUNT(*) FILTER (WHERE inferred_state = 'done') AS done,
+                        COUNT(*) FILTER (WHERE inferred_state = 'pending') AS pending,
+                        COUNT(*) FILTER (WHERE inferred_state = 'analyzing') AS analyzing,
+                        COUNT(*) FILTER (WHERE inferred_state = 'failed') AS failed
+                    FROM (
+                        SELECT
+                            CASE
+                                WHEN taf.track_id IS NOT NULL THEN 'done'
+                                WHEN lt.analysis_state IN ('pending', 'analyzing', 'done', 'failed') THEN lt.analysis_state
+                                ELSE 'pending'
+                            END AS inferred_state
+                        FROM library_tracks lt
+                        LEFT JOIN track_analysis_features taf ON taf.track_id = lt.id
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM track_processing_state ps
+                            WHERE ps.track_id = lt.id AND ps.pipeline = 'analysis'
+                        )
+                    ) missing
                     """
                 )
             ).mappings().first()
@@ -59,16 +68,25 @@ def get_analysis_status() -> dict:
                 text(
                     """
                     SELECT
-                        COUNT(*) FILTER (WHERE bliss_state = 'done') AS done,
-                        COUNT(*) FILTER (WHERE bliss_state = 'pending') AS pending,
-                        COUNT(*) FILTER (WHERE bliss_state = 'analyzing') AS analyzing,
-                        COUNT(*) FILTER (WHERE bliss_state = 'failed') AS failed
-                    FROM library_tracks lt
-                    WHERE NOT EXISTS (
-                        SELECT 1
-                        FROM track_processing_state ps
-                        WHERE ps.track_id = lt.id AND ps.pipeline = 'bliss'
-                    )
+                        COUNT(*) FILTER (WHERE inferred_state = 'done') AS done,
+                        COUNT(*) FILTER (WHERE inferred_state = 'pending') AS pending,
+                        COUNT(*) FILTER (WHERE inferred_state = 'analyzing') AS analyzing,
+                        COUNT(*) FILTER (WHERE inferred_state = 'failed') AS failed
+                    FROM (
+                        SELECT
+                            CASE
+                                WHEN tbe.track_id IS NOT NULL THEN 'done'
+                                WHEN lt.bliss_state IN ('pending', 'analyzing', 'done', 'failed') THEN lt.bliss_state
+                                ELSE 'pending'
+                            END AS inferred_state
+                        FROM library_tracks lt
+                        LEFT JOIN track_bliss_embeddings tbe ON tbe.track_id = lt.id
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM track_processing_state ps
+                            WHERE ps.track_id = lt.id AND ps.pipeline = 'bliss'
+                        )
+                    ) missing
                     """
                 )
             ).mappings().first()
