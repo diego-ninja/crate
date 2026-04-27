@@ -354,6 +354,12 @@ These were executed successfully during the latest session:
 
 - `uv run pytest app/tests/test_analysis_daemon.py -q`
   Result: `12 passed`
+- `npm run --workspace=app/listen test -- src/lib/capacitor.test.ts`
+  Result: `3 passed`
+- `npm run --workspace=app/listen build`
+  Result: `passed`
+- `uv run pytest app/tests -q`
+  Result: `518 passed, 1 skipped`
 - `uv run pytest app/tests/test_projector.py app/tests/test_cache_events.py -q`
   Result: `7 passed`
 - `uv run pytest app/tests -q`
@@ -494,6 +500,18 @@ Current state:
 Possible follow-up:
 
 - keep an eye on the main Listen chunk and continue splitting heavy routes if bundle pressure becomes user-visible
+
+### 4. Low-effort cleanup / dead-code pass
+
+Current state:
+
+- a final low-risk cleanup pass removed dead helper wrappers from [app/crate/analysis_daemon.py](/Users/diego/Code/Ninja/musicdock/app/crate/analysis_daemon.py)
+- Listen OAuth callback parsing now goes through a shared helper in [app/listen/src/lib/capacitor.ts](/Users/diego/Code/Ninja/musicdock/app/listen/src/lib/capacitor.ts) instead of keeping two slightly different parsing paths
+
+What still remains:
+
+- most remaining `legacy` / `compat` surfaces in `app/crate/db/` look intentional, documented, and tied to frozen shims or operator compatibility rather than to obvious dead code
+- the next useful pass should be a review-driven cleanup, not a speculative delete pass
 
 ## Files That Matter Most For The Next Session
 

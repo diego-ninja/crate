@@ -27,15 +27,21 @@ export function consumePendingOAuthNext(): string | null {
   }
 }
 
+export function getOAuthCallbackPayload(search: string | URLSearchParams): { token: string | null; next: string } {
+  const params = typeof search === "string" ? new URLSearchParams(search) : search;
+  return {
+    token: params.get("token"),
+    next: params.get("next") || "/",
+  };
+}
+
 export async function consumeOAuthCallbackUrl(url: string): Promise<{ handled: boolean; next: string }> {
   if (!url.startsWith("cratemusic://oauth/callback")) {
     return { handled: false, next: "/" };
   }
 
   try {
-    const params = new URL(url).searchParams;
-    const token = params.get("token");
-    const next = params.get("next") || "/";
+    const { token, next } = getOAuthCallbackPayload(new URL(url).searchParams);
     if (!token) {
       return { handled: false, next };
     }

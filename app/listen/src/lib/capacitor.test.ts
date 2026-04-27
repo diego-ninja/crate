@@ -37,12 +37,14 @@ vi.mock("@capacitor/browser", () => ({
   },
 }));
 
-const setAuthToken = vi.fn();
+const { setAuthToken } = vi.hoisted(() => ({
+  setAuthToken: vi.fn(),
+}));
 vi.mock("@/lib/api", () => ({
   setAuthToken,
 }));
 
-import { consumeOAuthCallbackUrl, consumePendingOAuthNext } from "@/lib/capacitor";
+import { consumeOAuthCallbackUrl, consumePendingOAuthNext, getOAuthCallbackPayload } from "@/lib/capacitor";
 
 describe("capacitor OAuth callback helpers", () => {
   beforeEach(() => {
@@ -65,5 +67,12 @@ describe("capacitor OAuth callback helpers", () => {
     expect(result).toEqual({ handled: false, next: "/" });
     expect(setAuthToken).not.toHaveBeenCalled();
     expect(consumePendingOAuthNext()).toBeNull();
+  });
+
+  it("parses token and next from plain search params too", () => {
+    expect(getOAuthCallbackPayload("?token=abc123&next=%2Fstats")).toEqual({
+      token: "abc123",
+      next: "/stats",
+    });
   });
 });

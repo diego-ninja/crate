@@ -15,13 +15,12 @@ class TestAnalysisDaemonUnit:
     def test_analysis_daemon_marks_done_for_valid_result(self, monkeypatch):
         import crate.analysis_daemon as analysis_daemon
 
-        calls: dict[str, list] = {"stored": [], "done": [], "failed": [], "released": []}
+        calls: dict[str, list] = {"stored": [], "failed": [], "released": []}
         track = {"id": 7, "path": "/music/test.flac", "title": "Test Track"}
 
         monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
         monkeypatch.setattr(analysis_daemon, "_get_pending_count", lambda state: 1)
         monkeypatch.setattr(analysis_daemon, "_claim_tracks", lambda state, limit: [track])
-        monkeypatch.setattr(analysis_daemon, "_mark_done", lambda track_id, state: calls["done"].append((track_id, state)))
         monkeypatch.setattr(analysis_daemon, "_mark_failed", lambda track_id, state: calls["failed"].append((track_id, state)))
         monkeypatch.setattr(analysis_daemon, "_release_claims", lambda track_ids, state: calls["released"].append((track_ids, state)))
         monkeypatch.setattr(
@@ -69,20 +68,18 @@ class TestAnalysisDaemonUnit:
                 },
             )
         ]
-        assert calls["done"] == []
         assert calls["failed"] == []
         assert calls["released"] == []
 
     def test_analysis_daemon_marks_failed_when_result_has_no_bpm(self, monkeypatch):
         import crate.analysis_daemon as analysis_daemon
 
-        calls: dict[str, list] = {"stored": [], "done": [], "failed": [], "released": []}
+        calls: dict[str, list] = {"stored": [], "failed": [], "released": []}
         track = {"id": 8, "path": "/music/empty.flac", "title": "Empty Track"}
 
         monkeypatch.setattr(analysis_daemon, "_reset_stale_claims", lambda state: None)
         monkeypatch.setattr(analysis_daemon, "_get_pending_count", lambda state: 1)
         monkeypatch.setattr(analysis_daemon, "_claim_tracks", lambda state, limit: [track])
-        monkeypatch.setattr(analysis_daemon, "_mark_done", lambda track_id, state: calls["done"].append((track_id, state)))
         monkeypatch.setattr(analysis_daemon, "_mark_failed", lambda track_id, state: calls["failed"].append((track_id, state)))
         monkeypatch.setattr(analysis_daemon, "_release_claims", lambda track_ids, state: calls["released"].append((track_ids, state)))
         monkeypatch.setattr(
@@ -104,7 +101,6 @@ class TestAnalysisDaemonUnit:
             analysis_daemon.analysis_daemon({})
 
         assert calls["stored"] == []
-        assert calls["done"] == []
         assert calls["failed"] == [(8, "analysis_state")]
         assert calls["released"] == []
 

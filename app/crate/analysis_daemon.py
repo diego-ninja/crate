@@ -15,14 +15,11 @@ from crate.db.jobs.analysis import (
     claim_tracks as _db_claim_tracks,
     get_analysis_status as _db_get_analysis_status,
     get_pending_count as _db_get_pending_count,
-    mark_done as _db_mark_done,
     mark_failed as _db_mark_failed,
     release_claims as _db_release_claims,
     reset_stale_claims as _db_reset_stale_claims,
     store_analysis_results as _db_store_analysis_results,
-    store_analysis_result as _db_store_analysis_result,
     store_bliss_vectors as _db_store_bliss_vectors,
-    store_bliss_vector as _db_store_bliss_vector,
 )
 
 log = logging.getLogger(__name__)
@@ -74,11 +71,6 @@ def _should_pause_for_load() -> bool:
 def _claim_tracks(state_column: str, *, limit: int):
     return _db_claim_tracks(state_column, limit=limit)
 
-
-def _mark_done(track_id: int, state_column: str):
-    _db_mark_done(track_id, state_column)
-
-
 def _mark_failed(track_id: int, state_column: str):
     _db_mark_failed(track_id, state_column)
 
@@ -95,11 +87,6 @@ def _reset_stale_claims(state_column: str):
 
 def _get_pending_count(state_column: str) -> int:
     return _db_get_pending_count(state_column)
-
-
-def _store_analysis_result(track_id: int, path: str, result: dict):
-    _db_store_analysis_result(track_id, path, result)
-
 
 def _store_analysis_results(results: list[tuple[int, str, dict]]):
     _db_store_analysis_results(results)
