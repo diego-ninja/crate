@@ -7,10 +7,11 @@ import {
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import type { PlaySource } from "@/contexts/player-types";
 import { artistPagePath, albumPagePath } from "@/lib/library-routes";
-import { api } from "@/lib/api";
+import { getTrackQualityFallback, getTrackQualityFromInfo } from "@/lib/track-info";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
+import { useTrackInfo } from "@/hooks/use-track-info";
 import { cn } from "@crate/ui/lib/cn";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
@@ -175,51 +176,14 @@ export function PlayerBar() {
     }
   }
 
-  // Fetch quality metadata for the current track (format, bitrate, sample_rate, bit_depth).
-  // The Track object may not carry these fields depending on the source (playlist, radio, etc.)
-  // so we lazily fetch from the API when the track changes.
-  const [trackQuality, setTrackQuality] = useState<{
-    format?: string; bitrate?: number | null; sampleRate?: number | null; bitDepth?: number | null;
-  } | null>(null);
-
-  useEffect(() => {
-    setTrackQuality(null);
-    if (!currentTrack) return;
-
-    // If the track already has quality data, use it
-    if (currentTrack.format || currentTrack.sampleRate) {
-      setTrackQuality({
-        format: currentTrack.format,
-        bitrate: currentTrack.bitrate,
-        sampleRate: currentTrack.sampleRate,
-        bitDepth: currentTrack.bitDepth,
-      });
-      return;
-    }
-
-    // Otherwise fetch from API
-    const trackId = currentTrack.libraryTrackId;
-    const storageId = currentTrack.storageId;
-    if (!trackId && !storageId) return;
-
-    let cancelled = false;
-    const url = trackId
-      ? `/api/tracks/${trackId}/info`
-      : `/api/tracks/by-storage/${encodeURIComponent(storageId!)}/info`;
-
-    api<Record<string, unknown>>(url)
-      .then((info) => {
-        if (cancelled) return;
-        setTrackQuality({
-          format: (info.format as string) || undefined,
-          bitrate: (info.bitrate as number) || undefined,
-          sampleRate: (info.sample_rate as number) || undefined,
-          bitDepth: (info.bit_depth as number) || undefined,
-        });
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [currentTrack?.libraryTrackId, currentTrack?.storageId]);
+  const shouldResolveTrackInfo = !!currentTrack && !currentTrack.format && !currentTrack.sampleRate;
+  const { info: currentTrackInfo } = useTrackInfo(currentTrack, { enabled: shouldResolveTrackInfo });
+  const trackQuality = currentTrack
+    ? {
+        ...getTrackQualityFallback(currentTrack),
+        ...getTrackQualityFromInfo(currentTrackInfo),
+      }
+    : null;
 
   const qualityTrack = {
     ...currentTrack ?? { id: "", title: "", artist: "" },

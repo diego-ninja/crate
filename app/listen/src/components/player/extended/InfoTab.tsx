@@ -13,42 +13,11 @@ import {
 } from "lucide-react";
 
 import { usePlayer } from "@/contexts/PlayerContext";
-import { api } from "@/lib/api";
+import { useTrackInfo } from "@/hooks/use-track-info";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { extractPalette } from "@/lib/palette";
+import type { TrackInfo } from "@/lib/track-info";
 import { cn, formatCompact } from "@/lib/utils";
-
-interface BlissSignature {
-  texture: number | null;
-  motion: number | null;
-  density: number | null;
-}
-
-interface TrackInfo {
-  title: string | null;
-  artist: string | null;
-  album: string | null;
-  format: string | null;
-  bitrate: number | null;
-  sample_rate: number | null;
-  bit_depth: number | null;
-  bpm: number | null;
-  audio_key: string | null;
-  audio_scale: string | null;
-  energy: number | null;
-  danceability: number | null;
-  valence: number | null;
-  acousticness: number | null;
-  instrumentalness: number | null;
-  loudness: number | null;
-  dynamic_range: number | null;
-  mood_json: Record<string, unknown> | unknown[] | string | null;
-  lastfm_listeners: number | null;
-  lastfm_playcount: number | null;
-  popularity: number | null;
-  rating: number | null;
-  bliss_signature: BlissSignature | null;
-}
 
 type PaletteTriplet = [number, number, number];
 
@@ -203,8 +172,7 @@ function formatKey(audioKey: string | null | undefined, audioScale: string | nul
 export function InfoTab({ className }: { className?: string }) {
   const navigate = useNavigate();
   const { currentTrack } = usePlayer();
-  const [info, setInfo] = useState<TrackInfo | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { info, loading } = useTrackInfo(currentTrack);
   const [palette, setPalette] = useState<{
     primary: PaletteTriplet;
     secondary: PaletteTriplet;
@@ -232,39 +200,6 @@ export function InfoTab({ className }: { className?: string }) {
       cancelled = true;
     };
   }, [currentTrack?.albumCover]);
-
-  useEffect(() => {
-    if (!currentTrack) return;
-    const controller = new AbortController();
-
-    const resolvedId = currentTrack.libraryTrackId ?? (
-      /^\d+$/.test(currentTrack.id) ? Number(currentTrack.id) : null
-    );
-    const infoUrl = resolvedId != null
-      ? `/api/tracks/${resolvedId}/info`
-      : currentTrack.storageId
-        ? `/api/tracks/by-storage/${encodeURIComponent(currentTrack.storageId)}/info`
-        : `/api/track-info/${encodeURIComponent(
-            currentTrack.id.startsWith("/music/") ? currentTrack.id.slice(7) : currentTrack.id,
-          ).replace(/%2F/g, "/")}`;
-
-    setInfo(null);
-    setLoading(true);
-
-    api<TrackInfo>(infoUrl, "GET", undefined, { signal: controller.signal })
-      .then((data) => setInfo(data))
-      .catch((error) => {
-        if (controller.signal.aborted || (error as Error).name === "AbortError") return;
-        setInfo(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [currentTrack?.id, currentTrack?.libraryTrackId, currentTrack?.storageId]);
 
   const moodEntries = useMemo(() => parseMoodEntries(info?.mood_json ?? null), [info?.mood_json]);
   const topMoods = moodEntries.slice(0, 5);
