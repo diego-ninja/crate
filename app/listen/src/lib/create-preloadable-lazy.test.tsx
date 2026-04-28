@@ -16,9 +16,9 @@ function deferred<T>() {
 
 describe("createPreloadableLazy", () => {
   it("shares a single loader promise between preload and render", async () => {
-    const request = deferred<{ TestComponent: ComponentType }>();
+    const request = deferred<{ TestComponent: ComponentType<Record<string, never>> }>();
     const loader = vi.fn(() => request.promise);
-    const { Component, preload } = createPreloadableLazy(
+    const { Component, preload } = createPreloadableLazy<Record<string, never>, { TestComponent: ComponentType<Record<string, never>> }>(
       loader,
       (module) => module.TestComponent,
     );
@@ -49,7 +49,7 @@ describe("createPreloadableLazy", () => {
     const loader = vi.fn(async () => ({
       TestComponent: () => <div>Player surface</div>,
     }));
-    const { Component } = createPreloadableLazy(
+    const { Component } = createPreloadableLazy<Record<string, never>, { TestComponent: ComponentType<Record<string, never>> }>(
       loader,
       (module) => module.TestComponent,
     );
@@ -64,5 +64,30 @@ describe("createPreloadableLazy", () => {
     await waitFor(() => {
       expect(screen.getByText("Player surface")).toBeTruthy();
     });
+  });
+
+  it("allows retry after a failed preload", async () => {
+    const loader = vi.fn()
+      .mockRejectedValueOnce(new Error("chunk failed"))
+      .mockResolvedValueOnce({
+        TestComponent: () => <div>Recovered surface</div>,
+      });
+    const { Component, preload } = createPreloadableLazy<Record<string, never>, { TestComponent: ComponentType<Record<string, never>> }>(
+      loader,
+      (module) => module.TestComponent,
+    );
+
+    await expect(preload()).rejects.toThrow("chunk failed");
+
+    render(
+      <Suspense fallback={<div>Loading…</div>}>
+        <Component />
+      </Suspense>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Recovered surface")).toBeTruthy();
+    });
+    expect(loader).toHaveBeenCalledTimes(2);
   });
 });

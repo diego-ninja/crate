@@ -308,6 +308,8 @@ def admin_logs_snapshot(request: Request, fresh: bool = False, limit: int = Quer
 
 async def _admin_logs_stream(limit: int) -> AsyncIterator[str]:
     yield f"data: {json_dumps(get_cached_logs_surface(limit=limit))}\n\n"
+    redis = None
+    pubsub = None
     try:
         import redis.asyncio as aioredis
 
@@ -329,6 +331,11 @@ async def _admin_logs_stream(limit: int) -> AsyncIterator[str]:
         while True:
             yield f"data: {json_dumps(get_cached_logs_surface(limit=limit))}\n\n"
             await asyncio.sleep(15)
+    finally:
+        if pubsub is not None:
+            await pubsub.unsubscribe(LOGS_SURFACE_STREAM_CHANNEL)
+        if redis is not None:
+            await redis.aclose()
 
 
 @router.get(

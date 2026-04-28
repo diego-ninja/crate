@@ -37,6 +37,8 @@ def api_admin_ops_snapshot(request: Request, fresh: bool = False):
 
 async def _ops_stream() -> asyncio.AsyncIterator[str]:
     yield f"data: {json_dumps(get_cached_ops_snapshot())}\n\n"
+    redis = None
+    pubsub = None
     try:
         import redis.asyncio as aioredis
 
@@ -58,6 +60,11 @@ async def _ops_stream() -> asyncio.AsyncIterator[str]:
         while True:
             yield f"data: {json_dumps(get_cached_ops_snapshot())}\n\n"
             await asyncio.sleep(15)
+    finally:
+        if pubsub is not None:
+            await pubsub.unsubscribe(snapshot_channel("ops", "dashboard"))
+        if redis is not None:
+            await redis.aclose()
 
 
 @router.get(

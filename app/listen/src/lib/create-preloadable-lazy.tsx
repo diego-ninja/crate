@@ -13,7 +13,10 @@ export function createPreloadableLazy<TProps, TModule>(
 
   const load = () => {
     if (!promise) {
-      promise = loader();
+      promise = loader().catch((error) => {
+        promise = null;
+        throw error;
+      });
     }
     return promise;
   };

@@ -60,6 +60,8 @@ def _get_redis_url() -> str:
 
 async def _tasks_stream(limit: int) -> AsyncIterator[str]:
     yield f"data: {json_dumps(get_cached_tasks_surface(limit=limit))}\n\n"
+    redis = None
+    pubsub = None
     try:
         import redis.asyncio as aioredis
 
@@ -81,6 +83,11 @@ async def _tasks_stream(limit: int) -> AsyncIterator[str]:
         while True:
             yield f"data: {json_dumps(get_cached_tasks_surface(limit=limit))}\n\n"
             await asyncio.sleep(15)
+    finally:
+        if pubsub is not None:
+            await pubsub.unsubscribe(TASKS_SURFACE_STREAM_CHANNEL)
+        if redis is not None:
+            await redis.aclose()
 
 
 @router.get(

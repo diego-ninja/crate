@@ -64,6 +64,8 @@ def _get_redis_url() -> str:
 
 async def _health_stream(*, check_type: str | None = None, limit: int = 500) -> AsyncIterator[str]:
     yield f"data: {json_dumps(get_cached_health_surface(check_type=check_type, limit=limit))}\n\n"
+    redis = None
+    pubsub = None
     try:
         import redis.asyncio as aioredis
 
@@ -85,6 +87,11 @@ async def _health_stream(*, check_type: str | None = None, limit: int = 500) -> 
         while True:
             yield f"data: {json_dumps(get_cached_health_surface(check_type=check_type, limit=limit))}\n\n"
             await asyncio.sleep(15)
+    finally:
+        if pubsub is not None:
+            await pubsub.unsubscribe(HEALTH_SURFACE_STREAM_CHANNEL)
+        if redis is not None:
+            await redis.aclose()
 
 
 @admin_router.get(
