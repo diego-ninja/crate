@@ -13,8 +13,18 @@ vi.mock("@/lib/cache", () => ({
 }));
 
 import { api } from "@/lib/api";
-import { cacheGet } from "@/lib/cache";
+import { cacheGet, cacheSet } from "@/lib/cache";
 import { useApi } from "@/hooks/use-api";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 describe("useApi", () => {
   afterEach(() => {
@@ -41,5 +51,32 @@ describe("useApi", () => {
 
     rerender({ url: "/api/me/stats" });
     expect(cacheGetMock).toHaveBeenCalledTimes(initialCacheReads + 1);
+  });
+
+  it("does not let a stale in-flight response overwrite the current URL data", async () => {
+    const apiMock = vi.mocked(api);
+    const cacheSetMock = vi.mocked(cacheSet);
+    const first = deferred<{ id: string }>();
+    const second = deferred<{ id: string }>();
+    apiMock
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    const { result, rerender } = renderHook(
+      ({ url }) => useApi<{ id: string }>(url),
+      { initialProps: { url: "/api/tracks/1" as string | null } },
+    );
+
+    rerender({ url: "/api/tracks/2" });
+
+    first.resolve({ id: "track-a" });
+    second.resolve({ id: "track-b" });
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual({ id: "track-b" });
+    });
+
+    expect(cacheSetMock).toHaveBeenCalledWith("/api/tracks/1", { id: "track-a" });
+    expect(cacheSetMock).toHaveBeenCalledWith("/api/tracks/2", { id: "track-b" });
   });
 });

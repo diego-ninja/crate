@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 
 from sqlalchemy import text
 
@@ -10,6 +11,7 @@ from crate.db.repositories.user_library_shared import emit_user_domain_event, re
 from crate.db.tx import register_after_commit, transaction_scope
 
 _STATS_REFRESH_DEBOUNCE_SECONDS = 300
+log = logging.getLogger(__name__)
 
 
 def _schedule_stats_refresh(user_id: int) -> None:
@@ -43,7 +45,7 @@ def _queue_scrobble(
 
         scrobble_play_event_actor.send(user_id, artist, title, album, timestamp)
     except Exception:
-        pass
+        log.warning("Failed to dispatch scrobble follow-up", exc_info=True)
 
 
 def _schedule_play_event_followups(

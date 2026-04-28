@@ -58,6 +58,7 @@ export function useApi<T>(
   // Fetch + SWR
   useEffect(() => {
     if (!url) return;
+    const requestUrl = url;
     const controller = new AbortController();
     let cancelled = false;
 
@@ -65,10 +66,11 @@ export function useApi<T>(
     if (!data) setLoading(true);
     setError(null);
 
-    api<T>(url, method, body, { signal: controller.signal })
+    api<T>(requestUrl, method, body, { signal: controller.signal })
       .then((freshData) => {
+        cacheSet(requestUrl, freshData);
         if (cancelled) return;
-        cacheSet(url, freshData);
+        if (urlRef.current !== requestUrl) return;
         startTransition(() => {
           setData(freshData);
         });

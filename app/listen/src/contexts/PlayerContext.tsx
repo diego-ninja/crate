@@ -175,6 +175,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     startSession: startTrackerSession,
     ensureSession: ensureTrackerSession,
     flushCurrentPlayEvent,
+    rotateSession: rotateTrackerSession,
     markSeekPosition,
     recordProgress,
   } = usePlayEventTracker(getPlaybackSnapshot);
@@ -446,8 +447,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     beginSoftInterruption,
     isSoftInterrupted,
     ensureTrackerSession,
-    startTrackerSession,
-    flushCurrentPlayEvent,
+    rotateTrackerSession,
     markSeekPosition,
     recordProgress,
     pullFromEngine,

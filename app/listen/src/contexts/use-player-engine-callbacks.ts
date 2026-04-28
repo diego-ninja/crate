@@ -37,8 +37,12 @@ interface UsePlayerEngineCallbacksParams {
   beginSoftInterruption: (reason: "offline" | "stream") => void;
   isSoftInterrupted: () => boolean;
   ensureTrackerSession: (track: Track | undefined, source: PlaySource | null) => void;
-  startTrackerSession: (track: Track, source: PlaySource | null) => void;
-  flushCurrentPlayEvent: (reason: "completed" | "skipped" | "interrupted", track?: Track) => void;
+  rotateTrackerSession: (
+    reason: "completed" | "skipped" | "interrupted",
+    expectedTrack: Track | undefined,
+    nextTrack: Track | undefined,
+    nextSource: PlaySource | null,
+  ) => void;
   markSeekPosition: (seconds: number) => void;
   recordProgress: (seconds: number) => void;
   pullFromEngine: (sourceQueue?: Track[]) => { resolvedTrack: Track | undefined };
@@ -79,8 +83,7 @@ export function usePlayerEngineCallbacks({
   beginSoftInterruption,
   isSoftInterrupted,
   ensureTrackerSession,
-  startTrackerSession,
-  flushCurrentPlayEvent,
+  rotateTrackerSession,
   markSeekPosition,
   recordProgress,
   pullFromEngine,
@@ -192,12 +195,12 @@ export function usePlayerEngineCallbacks({
         queueRef.current.find((track) => getStreamUrl(track) === path);
       if (!endedTrack) return;
 
-      flushCurrentPlayEvent("completed", endedTrack);
-
-      const incoming = currentTrackRef.current;
-      if (incoming) {
-        startTrackerSession(incoming, playSourceRef.current);
-      }
+      rotateTrackerSession(
+        "completed",
+        endedTrack,
+        currentTrackRef.current,
+        playSourceRef.current,
+      );
     },
     onAllFinished: () => {
       resumeAfterReloadRef.current = false;

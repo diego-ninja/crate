@@ -93,7 +93,16 @@ function getTransportButtonToneClass(playSource: PlaySource | null, active: bool
 }
 
 function PlayerSurfaceFallback({ fullscreen = false }: { fullscreen?: boolean }) {
-  if (!fullscreen) return null;
+  if (!fullscreen) {
+    return (
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom,0px)+88px)] z-app-player-overlay flex justify-end px-4">
+        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/75 px-3 py-2 text-[11px] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          <Loader2 size={14} className="animate-spin text-primary" />
+          Loading player…
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="fixed inset-0 z-app-player-overlay flex items-center justify-center bg-black/70 backdrop-blur-xl">
       <Loader2 size={24} className="animate-spin text-primary" />
@@ -714,22 +723,22 @@ export function PlayerBar() {
         </div>
       </div>
       {shouldRenderQueuePanel ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<PlayerSurfaceFallback />}>
           <LazyQueuePanel open={showQueue} onClose={() => setShowQueue(false)} />
         </Suspense>
       ) : null}
       {shouldRenderLyricsPanel ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<PlayerSurfaceFallback />}>
           <LazyLyricsPanel open={showLyrics} onClose={() => setShowLyrics(false)} />
         </Suspense>
       ) : null}
       {shouldRenderEqualizerPopover ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<PlayerSurfaceFallback />}>
           <LazyEqualizerPopover open={showEqualizer} onClose={() => setShowEqualizer(false)} />
         </Suspense>
       ) : null}
       {shouldRenderExtendedPlayer ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<PlayerSurfaceFallback />}>
           <LazyExtendedPlayer open={extendedOpen} onClose={() => setExtendedOpen(false)} />
         </Suspense>
       ) : null}
