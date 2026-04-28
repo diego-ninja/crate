@@ -7,8 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from crate.api.auth import _require_auth
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.offline import OfflineManifestResponse
-from crate.db import (
-    can_view_playlist,
+from crate.db.repositories.library import (
     get_library_album_by_id,
     get_library_artist,
     get_library_track_by_id,
@@ -16,9 +15,8 @@ from crate.db import (
     get_library_track_by_storage_id,
     get_library_tracks,
     get_library_tracks_by_storage_ids,
-    get_playlist,
-    get_playlist_tracks,
 )
+from crate.db.repositories.playlists import can_view_playlist, get_playlist, get_playlist_tracks
 
 router = APIRouter(prefix="/api/offline", tags=["offline"])
 

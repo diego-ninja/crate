@@ -1,5 +1,6 @@
 import { useRef, useCallback, useEffect } from "react";
-import { api } from "@/lib/api";
+
+import { waitForTask } from "@/lib/tasks";
 
 interface TaskResult {
   status: string;
@@ -8,24 +9,24 @@ interface TaskResult {
 }
 
 /**
- * Hook for polling task status. Cleans up all intervals on unmount.
+ * Hook for task completion watching via SSE. Cleans up all in-flight waits on unmount.
  */
 export function useTaskPoll() {
-  const intervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const controllersRef = useRef<Map<string, AbortController>>(new Map());
 
   // Cleanup all on unmount
   useEffect(() => {
     return () => {
-      intervalsRef.current.forEach((timer) => clearInterval(timer));
-      intervalsRef.current.clear();
+      controllersRef.current.forEach((controller) => controller.abort());
+      controllersRef.current.clear();
     };
   }, []);
 
   const stopPolling = useCallback((taskId: string) => {
-    const timer = intervalsRef.current.get(taskId);
-    if (timer) {
-      clearInterval(timer);
-      intervalsRef.current.delete(taskId);
+    const controller = controllersRef.current.get(taskId);
+    if (controller) {
+      controller.abort();
+      controllersRef.current.delete(taskId);
     }
   }, []);
 
@@ -33,28 +34,26 @@ export function useTaskPoll() {
     taskId: string,
     onComplete: (result?: Record<string, unknown>) => void,
     onFailed?: (error?: string) => void,
-    intervalMs = 3000,
+    _intervalMs = 3000,
     timeoutMs = 120000,
   ) => {
     stopPolling(taskId);
-
-    const timer = setInterval(async () => {
-      try {
-        const task = await api<TaskResult>(`/api/tasks/${taskId}`);
+    const controller = new AbortController();
+    controllersRef.current.set(taskId, controller);
+    void waitForTask(taskId, timeoutMs, controller.signal)
+      .then((task: TaskResult) => {
+        stopPolling(taskId);
         if (task.status === "completed") {
-          stopPolling(taskId);
           onComplete(task.result);
         } else if (task.status === "failed") {
-          stopPolling(taskId);
           onFailed?.(task.error);
         }
-      } catch {
-        // Network error — keep polling
-      }
-    }, intervalMs);
-
-    intervalsRef.current.set(taskId, timer);
-    setTimeout(() => stopPolling(taskId), timeoutMs);
+      })
+      .catch((error: Error) => {
+        stopPolling(taskId);
+        if (error.name === "AbortError") return;
+        onFailed?.("Timed out waiting for task completion");
+      });
   }, [stopPolling]);
 
   return { pollTask, stopPolling };

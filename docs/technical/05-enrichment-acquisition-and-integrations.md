@@ -2,21 +2,25 @@
 
 ## Why this layer exists
 
-Crate is not a passive index of tags. A large part of its value comes from enriching local files with external knowledge and from importing new content into the library.
+Crate is not a passive index of tags. A large part of its value comes from
+enriching local files with external knowledge and importing new content into the
+library cleanly.
 
 This layer spans:
 
 - artist enrichment
-- album and artwork enrichment
+- artwork sourcing
 - acquisition from paid and P2P sources
 - show aggregation
-- library completeness checks
+- completeness checks
+- post-download normalization
 
 ## Artist enrichment
 
-The main unified entrypoint is [app/crate/enrichment.py](https://github.com/diego-ninja/crate/blob/main/app/crate/enrichment.py).
+The main unified entrypoint is `app/crate/enrichment.py`.
 
-For a given artist, `enrich_artist(...)` pulls from multiple providers and persists into DB.
+For a given artist, `enrich_artist(...)` pulls from multiple providers, merges
+the results, and persists them into PostgreSQL.
 
 ### Sources consulted
 
@@ -25,81 +29,95 @@ For a given artist, `enrich_artist(...)` pulls from multiple providers and persi
 - Setlist.fm
 - Fanart.tv
 - Discogs
-- Deezer and iTunes as image fallbacks in adjacent code paths
-- Spotify (popularity and followers only; requires a Premium-enabled app, otherwise the provider returns 403 and the pipeline skips it)
+- Deezer and iTunes as image fallbacks
+- Spotify popularity/follower overlays when configured
 
 ### Data persisted
 
-Typical artist enrichment writes include:
+Typical writes include:
 
 - biography
 - tags
 - similar artists
 - listeners and playcount
 - MBID and MusicBrainz URLs
-- country, area, type, dates
+- country, area, type, and dates
 - members
-- Discogs profile and identifiers
-- Spotify popularity and followers
+- Discogs profile/identifiers
+- Spotify popularity/followers
 
-The function also updates genre links and may download a local artist photo if missing.
-
-### Freshness strategy
-
-Enrichment is not run blindly every time. It is guarded by:
-
-- `enriched_at`
-- a configurable minimum age in settings
-- force-refresh logic that invalidates caches
-
-This reduces provider churn and rate-limit pressure.
+The function also updates genre links and may download a local artist photo if
+missing.
 
 ## Artwork sourcing
 
-Artwork is handled across API helpers, worker handlers, and image-specific modules.
+Artwork is handled across API helpers, worker handlers, and image-specific
+modules.
 
 Typical sources include:
 
 - Cover Art Archive
-- embedded file tags
+- embedded tags
 - Deezer
 - iTunes
 - Last.fm
 - Fanart.tv
-- MusicBrainz-linked assets
-- manual upload/crop by the user
+- manual upload/crop
 
-Crate treats artwork as part of the product surface, not just metadata decoration.
+Crate treats artwork as part of the product surface, not just metadata
+decoration.
 
 ## Acquisition sources
 
-Crate currently integrates strongly with two acquisition channels:
+Crate currently integrates strongly with two acquisition channels.
 
 ### Tidal
 
 Key pieces:
 
-- API surface in [app/crate/api/tidal.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/tidal.py)
-- transport and download logic in [app/crate/tidal.py](https://github.com/diego-ninja/crate/blob/main/app/crate/tidal.py)
-- worker orchestration in [app/crate/worker_handlers/acquisition.py](https://github.com/diego-ninja/crate/blob/main/app/crate/worker_handlers/acquisition.py)
+- API surface in `app/crate/api/tidal.py`
+- integration logic in `app/crate/tidal.py`
+- worker orchestration in `app/crate/worker_handlers/acquisition.py`
+- artifact inspection/repair in `app/crate/m4a_fix.py`
 
-Tidal downloads are mediated through `tiddl`, and Crate wraps the result with:
+The repo currently pins `tiddl 3.3.0`.
+
+Crate wraps it with:
 
 - progress reporting
 - partial failure reporting
-- intermediate file cleanup
+- intermediate artifact cleanup
 - library move and sync
-- post-download enrichment pipeline
+- post-download enrichment/analysis
+
+### Current quality philosophy
+
+Crate now optimizes for **best-quality real output**, not merely the requested
+quality label.
+
+That matters because Tidal/tiddl can leave behind:
+
+- extensionless `tmp*` artifacts
+- `.flac` files whose payload is actually MP4/AAC
+- recoverable raw FLAC streams with the wrong extension
+
+Current behavior:
+
+- preserve/recover true lossless output when it is really present
+- normalize playable AAC/ALAC wrappers to clean `.m4a`
+- avoid importing fake FLACs as if they were lossless
+- fall back to a clean playable `.m4a` result if the “lossless” tree is not
+  genuinely recoverable
 
 ### Soulseek
 
 Key pieces:
 
-- API surface in [app/crate/api/acquisition.py](https://github.com/diego-ninja/crate/blob/main/app/crate/api/acquisition.py)
-- integration logic in [app/crate/soulseek.py](https://github.com/diego-ninja/crate/blob/main/app/crate/soulseek.py)
+- API surface in `app/crate/api/acquisition.py`
+- integration logic in `app/crate/soulseek.py`
 - worker orchestration in acquisition handlers
 
-Crate uses `slskd` as the network client and adds:
+Crate uses `slskd` for the network client and adds:
 
 - search heuristics
 - quality filtering
@@ -108,32 +126,29 @@ Crate uses `slskd` as the network client and adds:
 
 ## Unified acquisition philosophy
 
-Even though Tidal and Soulseek are very different sources, Crate tries to converge them into one internal pattern:
+Even though Tidal and Soulseek are very different sources, Crate converges them
+into one internal pattern:
 
-- enqueue acquisition task
-- download to staging
-- normalize files
-- resolve target artist/album destination
-- move into library
-- sync to DB
-- queue enrichment and analysis
+1. enqueue acquisition work
+2. download to staging
+3. inspect and normalize artifacts
+4. resolve canonical artist/album destination
+5. move into the library
+6. sync into PostgreSQL
+7. queue enrichment and analysis follow-ups
 
-This makes the downstream pipeline source-agnostic.
+This keeps the downstream pipeline largely source-agnostic.
 
 ## Post-acquisition processing
 
-The acquisition worker does more than download bytes.
-
-It also:
+The acquisition worker does more than download bytes. It also:
 
 - emits user-facing task events
 - updates acquisition status tables
-- suppresses watcher loops during library writes
-- aligns staged artist names with existing library folder conventions
+- suppresses watcher loops during managed library writes
+- aligns staged artist names with existing folder conventions
 - triggers scans and downstream processing
 - seeds user library state in some upload/import flows
-
-That is why acquisition belongs in the worker layer rather than in the API.
 
 ## Shows and live data
 
@@ -147,62 +162,16 @@ Key integrations:
 
 This data powers:
 
-- upcoming shows in admin and listen
+- upcoming shows in admin and Listen
 - artist show sections
 - setlist-derived intelligence
 
-## Discovery and completeness integrations
-
-External integrations also feed quality/discovery surfaces such as:
-
-- completeness against MusicBrainz discography
-- new releases checks
-- artist similarity backfills
-- popularity overlays
-
-This means enrichment is not just "decorate artist page". It directly drives discovery workflows.
-
 ## Rate limiting and resilience
 
-Crate's enrichment/acquisition code makes several pragmatic trade-offs:
+Crate's enrichment/acquisition code makes pragmatic trade-offs:
 
 - source calls are wrapped defensively
 - caches are used aggressively
-- failures in one source do not normally abort the whole enrichment flow
+- one provider failing usually does not abort the whole enrichment flow
 - long-running acquisition is task-based, not request-based
-- partial Tidal failures can still produce usable files
-
-This is the right posture for a self-hosted app operating against unstable third-party APIs.
-
-## Design decisions in this layer
-
-### Why unify enrichment in one service function
-
-A single enrichment orchestrator gives Crate:
-
-- one place to enforce freshness policy
-- one place to merge source outputs
-- one place to persist consistent artist state
-
-Without this, the risk would be duplicated source logic and inconsistent writes across routes and tasks.
-
-### Why keep source modules separate
-
-Although the orchestration is unified, source implementations remain separate modules because:
-
-- each provider has different auth and data shape
-- rate-limit behavior differs
-- fallback order matters
-- source-specific failures should stay isolated
-
-### Why acquisition is opinionated
-
-Crate does not just "download what the source gives".
-
-It normalizes aggressively because the end goal is a clean canonical library, not merely a successful transfer.
-
-## Related documents
-
-- [Library, Storage, Sync, and Imports](/technical/library-storage-sync-and-imports)
-- [Audio Analysis, Similarity, and Discovery Intelligence](/technical/audio-analysis-similarity-and-discovery)
-- [Frontend Architecture: Admin and Listen](/technical/frontends-admin-and-listen)
+- partial Tidal failures can still yield a usable normalized result

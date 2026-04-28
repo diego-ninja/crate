@@ -70,6 +70,17 @@ class ImportQueue:
             self._queue = pending
         return pending
 
+    def refresh_pending_state(self) -> list[dict]:
+        """Scan download directories and persist the staged import read model."""
+        pending = self.scan_pending()
+        from crate.db.import_queue_read_models import refresh_import_queue_items
+
+        refresh_import_queue_items(
+            pending,
+            scanned_sources=[str(source.get("name") or "filesystem") for source in self.sources],
+        )
+        return pending
+
     def import_item(self, source_path: str, dest_artist: str = None, dest_album: str = None) -> dict:
         """Import a single album from source to library."""
         src = Path(source_path)

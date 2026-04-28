@@ -11,7 +11,7 @@ from pathlib import Path
 
 import requests
 
-from crate.db import get_setting, set_setting
+from crate.db.cache_settings import get_setting, set_setting
 from crate.storage_import import infer_album_identity, move_album_tree, resolve_import_album_target
 
 log = logging.getLogger(__name__)
@@ -375,6 +375,78 @@ def _resolve_child_dir_name(parent: Path, raw_name: str) -> str:
     return safe_name
 
 
+def _read_file_header(filepath: Path, size: int = 24) -> bytes:
+    try:
+        with open(filepath, "rb") as handle:
+            return handle.read(size)
+    except Exception:
+        return b""
+
+
+def _has_flac_header(filepath: Path) -> bool:
+    return _read_file_header(filepath, 4) == b"fLaC"
+
+
+def _has_mp4_ftyp_header(filepath: Path) -> bool:
+    header = _read_file_header(filepath, 12)
+    return len(header) >= 8 and header[4:8] == b"ftyp"
+
+
+def inspect_download_tree(processing_dir: str | Path) -> dict:
+    """Summarise audio-like output and suspicious tiddl artifacts in *processing_dir*."""
+    root = Path(processing_dir)
+    audio_exts = {".flac", ".mp3", ".m4a", ".ogg", ".opus", ".wav", ".aac", ".alac"}
+    files: list[str] = []
+    audio_files: list[str] = []
+    invalid_audio_files: list[str] = []
+    temp_artifact_files: list[str] = []
+
+    if not root.exists():
+        return {
+            "files": files,
+            "file_count": 0,
+            "audio_files": audio_files,
+            "audio_file_count": 0,
+            "invalid_audio_files": invalid_audio_files,
+            "temp_artifact_files": temp_artifact_files,
+        }
+
+    for filepath in sorted(root.rglob("*")):
+        if not filepath.is_file():
+            continue
+        rel_path = str(filepath.relative_to(root))
+        files.append(rel_path)
+        suffix = filepath.suffix.lower()
+        size = 0
+        try:
+            size = filepath.stat().st_size
+        except OSError:
+            pass
+
+        if filepath.name.startswith("tmp") and (size == 0 or _has_mp4_ftyp_header(filepath)):
+            temp_artifact_files.append(rel_path)
+            continue
+
+        if suffix == ".flac":
+            if _has_flac_header(filepath):
+                audio_files.append(rel_path)
+            else:
+                invalid_audio_files.append(rel_path)
+            continue
+
+        if suffix in audio_exts:
+            audio_files.append(rel_path)
+
+    return {
+        "files": files,
+        "file_count": len(files),
+        "audio_files": audio_files,
+        "audio_file_count": len(audio_files),
+        "invalid_audio_files": invalid_audio_files,
+        "temp_artifact_files": temp_artifact_files,
+    }
+
+
 # ── Download ─────────────────────────────────────────────────────
 
 def download(url: str, quality: str = "max", task_id: str = "",
@@ -452,29 +524,27 @@ def download(url: str, quality: str = "max", task_id: str = "",
 
         proc.wait(timeout=3600)
 
-        files = []
-        for f in processing_dir.rglob("*"):
-            if f.is_file():
-                files.append(str(f.relative_to(processing_dir)))
-
-        audio_exts = {'.flac', '.mp3', '.m4a', '.ogg', '.opus', '.wav', '.aac'}
-        audio_files = [f for f in files if Path(f).suffix.lower() in audio_exts]
+        inspection = inspect_download_tree(processing_dir)
+        error_lines = [line for line in output_lines if line.startswith("Error:")]
 
         if proc.returncode != 0:
             error_tail = "\n".join(output_lines[-10:])
-            if files:
+            if inspection["files"]:
                 log.warning(
                     "tiddl download returned non-zero for %s but produced %d files: %s",
                     url,
-                    len(files),
+                    inspection["file_count"],
                     error_tail,
                 )
                 return {
                     "success": True,
                     "path": str(processing_dir),
-                    "files": files,
-                    "file_count": len(files),
-                    "audio_file_count": len(audio_files),
+                    "files": inspection["files"],
+                    "file_count": inspection["file_count"],
+                    "audio_file_count": inspection["audio_file_count"],
+                    "invalid_audio_files": inspection["invalid_audio_files"],
+                    "temp_artifact_files": inspection["temp_artifact_files"],
+                    "errors": error_lines,
                     "partial": True,
                     "warning": error_tail,
                 }
@@ -488,9 +558,12 @@ def download(url: str, quality: str = "max", task_id: str = "",
         return {
             "success": True,
             "path": str(processing_dir),
-            "files": files,
-            "file_count": len(files),
-            "audio_file_count": len(audio_files),
+            "files": inspection["files"],
+            "file_count": inspection["file_count"],
+            "audio_file_count": inspection["audio_file_count"],
+            "invalid_audio_files": inspection["invalid_audio_files"],
+            "temp_artifact_files": inspection["temp_artifact_files"],
+            "errors": error_lines,
         }
 
     except subprocess.TimeoutExpired:

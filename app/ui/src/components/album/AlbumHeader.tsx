@@ -19,6 +19,7 @@ import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePi
 import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl, artistBackgroundApiUrl, artistPagePath } from "@/lib/library-routes";
+import { waitForTask } from "@/lib/tasks";
 import { formatDuration, formatSize } from "@/lib/utils";
 
 interface AlbumHeaderProps {
@@ -99,27 +100,14 @@ export function AlbumHeader({
     try {
       const response = await api<{ task_id: string }>(`/api/albums/${albumId}/enrich`, "POST");
       toast.success("Enriching album...");
-      const poll = setInterval(async () => {
-        try {
-          const task = await api<{ status: string }>(`/api/tasks/${response.task_id}`);
-          if (task.status === "completed") {
-            clearInterval(poll);
-            setAnalyzing(false);
-            toast.success("Album enrichment complete");
-            onAnalysisComplete?.();
-          } else if (task.status === "failed") {
-            clearInterval(poll);
-            setAnalyzing(false);
-            toast.error("Enrichment failed");
-          }
-        } catch {
-          // keep polling while the task is alive
-        }
-      }, 4000);
-      setTimeout(() => {
-        clearInterval(poll);
-        setAnalyzing(false);
-      }, 120000);
+      const task = await waitForTask(response.task_id, 120000);
+      setAnalyzing(false);
+      if (task.status === "completed") {
+        toast.success("Album enrichment complete");
+        onAnalysisComplete?.();
+      } else if (task.status === "failed") {
+        toast.error("Enrichment failed");
+      }
     } catch {
       setAnalyzing(false);
       toast.error("Failed to start enrichment");

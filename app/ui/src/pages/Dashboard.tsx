@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate, Link } from "react-router";
 import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@crate/ui/shadcn/card";
 import { Button } from "@crate/ui/shadcn/button";
+import { OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
 import { GridSkeleton } from "@/components/ui/grid-skeleton";
-import { useApi } from "@/hooks/use-api";
+import { useOpsSnapshot } from "@/contexts/OpsSnapshotContext";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 import { ResponsivePie } from "@nivo/pie";
@@ -20,73 +21,23 @@ import { useAuth } from "@/contexts/AuthContext";
 import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
-interface Stats {
-  artists: number;
-  albums: number;
-  tracks: number;
-  total_size_gb: number;
-  formats: Record<string, number>;
-  last_scan: string | null;
-  pending_imports: number;
-  pending_tasks: number;
-  total_duration_hours: number;
-  avg_bitrate: number;
-  top_genres: { name: string; count: number }[];
-  recent_albums: { id?: number; slug?: string; artist: string; artist_id?: number; artist_slug?: string; name: string; display_name?: string; year: string | null; updated_at: string }[];
-  analyzed_tracks: number;
-  avg_album_duration_min?: number;
-  avg_tracks_per_album?: number;
-}
-
-interface AnalyticsData {
-  formats: Record<string, number>;
-  decades: Record<string, number>;
-  top_artists: { id?: number; slug?: string; name: string; albums: number }[];
-  computing?: boolean;
-}
-
-interface LiveActivity {
-  running_tasks: { id: string; type: string; progress: string }[];
-  recent_tasks: { id: string; type: string; status: string; updated_at: string }[];
-  worker_slots: { max: number; active: number };
-  systems: {
-    postgres: boolean;
-    watcher: boolean;
-  };
-}
-
-
 export function Dashboard() {
-  const { data: stats, loading: loadingStats, error: statsError, refetch: refetchStats } = useApi<Stats>("/api/stats");
-  const { data: analytics, refetch: refetchAnalytics } = useApi<AnalyticsData>("/api/analytics");
-  const { data: live, refetch: refetchLive } = useApi<LiveActivity>("/api/activity/live");
-  const [healthCounts, setHealthCounts] = useState<Record<string, number>>({});
-  const [upcomingShows, setUpcomingShows] = useState<{ artist_name?: string; venue: string; city: string; country: string; date: string; url: string }[]>([]);
-
-  useEffect(() => {
-    api<{ counts: Record<string, number> }>("/api/manage/health-issues").then((d) => setHealthCounts(d.counts || {})).catch(() => {});
-    api<{ events: typeof upcomingShows }>("/api/shows/cached?limit=5").then((d) => setUpcomingShows(d.events || [])).catch(() => {});
-  }, []);
+  const { data: opsSnapshot, loading: loadingSnapshot, error: snapshotError, refresh } = useOpsSnapshot();
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
   const [showRebuildConfirm, setShowRebuildConfirm] = useState(false);
+  const stats = opsSnapshot?.stats;
+  const analytics = opsSnapshot?.analytics;
+  const live = opsSnapshot?.live;
+  const healthCounts = opsSnapshot?.health_counts || {};
+  const upcomingShows = opsSnapshot?.upcoming_shows || [];
+  const eventing = opsSnapshot?.eventing;
+  const domainEvents = eventing?.domain_events;
+  const recentDomainEvents = domainEvents?.recent_events ?? [];
+  const sseSurfaces = eventing?.sse_surfaces ?? [];
 
-  // Auto-refresh live activity every 5s
-  useEffect(() => {
-    const timer = setInterval(() => refetchLive(), 5000);
-    return () => clearInterval(timer);
-  }, [refetchLive]);
-
-  // Auto-retry analytics if computing
-  useEffect(() => {
-    if (analytics?.computing) {
-      const timer = setTimeout(() => refetchAnalytics(), 10000);
-      return () => clearTimeout(timer);
-    }
-  }, [analytics, refetchAnalytics]);
-
-  if (loadingStats) {
+  if (loadingSnapshot && !opsSnapshot) {
     return (
       <div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8">
@@ -101,8 +52,8 @@ export function Dashboard() {
     );
   }
 
-  if (statsError) {
-    return <ErrorState message="Failed to load dashboard" onRetry={refetchStats} />;
+  if (snapshotError && !opsSnapshot) {
+    return <ErrorState message="Failed to load dashboard" onRetry={() => void refresh(true)} />;
   }
 
   const heroStats = [
@@ -138,6 +89,16 @@ export function Dashboard() {
   const systems = live?.systems;
   const workerSlots = live?.worker_slots;
   const totalHealthIssues = Object.values(healthCounts).reduce((sum, count) => sum + count, 0);
+  const sseModeClass = (mode: string) => {
+    switch (mode) {
+      case "snapshot":
+        return "border-cyan-500/25 bg-cyan-500/10 text-cyan-200";
+      case "replay":
+        return "border-amber-500/25 bg-amber-500/10 text-amber-200";
+      default:
+        return "border-white/10 bg-white/[0.05] text-white/65";
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -184,7 +145,7 @@ export function Dashboard() {
                 try {
                   await api("/api/tasks/sync-library", "POST");
                   toast.success("Library sync started");
-                  refetchLive();
+                  void refresh(true);
                 } catch {
                   toast.error("Sync already running or failed");
                 }
@@ -325,7 +286,7 @@ export function Dashboard() {
                     try {
                       await api("/api/tasks/sync-library", "POST");
                       toast.success("Library sync started");
-                      refetchLive();
+                      void refresh(true);
                     } catch {
                       toast.error("Sync already running or failed");
                     }
@@ -417,7 +378,9 @@ export function Dashboard() {
                       <span className="truncate font-medium">{s.artist_name}</span>
                       <span className="truncate text-white/45">{s.venue}, {s.city}</span>
                       <span className="ml-auto flex-shrink-0 text-white/35">
-                        {new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                        {s.date
+                          ? new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+                          : "TBA"}
                       </span>
                     </div>
                   ))}
@@ -427,6 +390,102 @@ export function Dashboard() {
           </Link>
         )}
       </div>
+
+      <OpsPanel
+        icon={Activity}
+        title="Event Bus & SSE"
+        description="Visibility into the Redis-backed domain-event stream, cache invalidations, and live SSE surfaces that keep admin and listen snapshots fresh."
+      >
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+          <OpsStatTile
+            icon={Activity}
+            label="Domain Sequence"
+            value={formatNumber(domainEvents?.latest_sequence ?? 0)}
+            caption={domainEvents?.stream_key || "Domain-event stream"}
+            tone={eventing?.redis_connected ? "primary" : "warning"}
+          />
+          <OpsStatTile
+            icon={Database}
+            label="Stream Depth"
+            value={formatNumber(domainEvents?.stream_length ?? 0)}
+            caption={domainEvents?.consumer_group ? `${domainEvents.consumer_group} consumer group` : "No consumer group"}
+          />
+          <OpsStatTile
+            icon={Clock}
+            label="Pending Acks"
+            value={formatNumber(domainEvents?.pending ?? 0)}
+            caption={domainEvents?.last_delivered_id ? `Last delivered ${domainEvents.last_delivered_id}` : "Projector idle"}
+            tone={(domainEvents?.pending ?? 0) > 0 ? "warning" : "success"}
+          />
+          <OpsStatTile
+            icon={Eye}
+            label="SSE Surfaces"
+            value={formatNumber(sseSurfaces.length)}
+            caption={`${formatNumber(eventing?.cache_invalidation?.retained_events ?? 0)} retained invalidations`}
+          />
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <Card className="border-white/10 bg-black/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Recent Domain Events</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2">
+                {recentDomainEvents.length > 0 ? recentDomainEvents.map((event) => (
+                  <div
+                    key={`${event.id}-${event.event_type}`}
+                    className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CrateChip className="border-cyan-500/20 bg-cyan-500/10 text-cyan-200">
+                        {event.event_type || "unknown"}
+                      </CrateChip>
+                      <span className="text-[11px] text-white/35">{event.id}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/55">
+                      <span>scope: {event.scope || "—"}</span>
+                      <span>subject: {event.subject_key || "—"}</span>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="rounded-md border border-dashed border-white/10 bg-white/[0.03] px-3 py-6 text-sm text-white/45">
+                    No recent domain events captured in the retained stream window.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-white/10 bg-black/20">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">SSE Surface Catalog</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col gap-2">
+                {sseSurfaces.map((surface) => (
+                  <div
+                    key={`${surface.name}-${surface.channel}`}
+                    className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-3"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-medium text-white">{surface.name}</div>
+                      <CrateChip className={sseModeClass(surface.mode)}>{surface.mode}</CrateChip>
+                    </div>
+                    {surface.endpoint ? (
+                      <div className="mt-1 text-xs text-cyan-200">{surface.endpoint}</div>
+                    ) : null}
+                    <div className="mt-1 break-all text-[11px] text-white/40">{surface.channel}</div>
+                    {surface.description ? (
+                      <div className="mt-2 text-xs text-white/55">{surface.description}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </OpsPanel>
 
       {/* Row 3: Recent Albums */}
       {recentAlbums.length > 0 && (
@@ -621,7 +680,7 @@ export function Dashboard() {
           try {
             await api("/api/manage/rebuild", "POST");
             toast.success("Library rebuild started");
-            refetchLive();
+            void refresh(true);
           } catch {
             toast.error("Failed to start rebuild");
           }
@@ -639,7 +698,7 @@ export function Dashboard() {
           try {
             await api("/api/manage/wipe", "POST", { rebuild: false });
             toast.success("Library database wiped");
-            refetchLive();
+            void refresh(true);
           } catch {
             toast.error("Failed to wipe database");
           }

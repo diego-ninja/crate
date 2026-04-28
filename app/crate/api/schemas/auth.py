@@ -62,6 +62,11 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class AdminSetPasswordRequest(BaseModel):
+    new_password: str
+    revoke_all_sessions: bool = True
+
+
 class AuthUserPublicResponse(BaseModel):
     id: int | None = None
     email: str
@@ -98,6 +103,18 @@ class AuthSessionResponse(BaseModel):
     user_agent: str | None = None
     app_id: str | None = None
     device_label: str | None = None
+    display_label: str | None = None
+    client_name: str | None = None
+    client_version: str | None = None
+    os_name: str | None = None
+    os_version: str | None = None
+    device_type: str | None = None
+    device_brand: str | None = None
+    device_model: str | None = None
+    device_fingerprint: str | None = None
+    activity_state: str | None = None
+    is_active: bool | None = None
+    is_recent: bool | None = None
     revoked_at: datetime | None = None
 
 
@@ -187,6 +204,7 @@ class AdminUserSummaryResponse(AuthUserPublicResponse):
     username: str | None = None
     bio: str | None = None
     google_id: str | None = None
+    has_password: bool = False
     active_sessions: int | None = None
     connected_accounts: list[AuthExternalIdentityResponse] = Field(default_factory=list)
     created_at: datetime | None = None
@@ -200,6 +218,7 @@ class AdminUserSummaryResponse(AuthUserPublicResponse):
 
 
 class AdminUserDetailResponse(AuthMeResponse):
+    has_password: bool = False
     created_at: datetime | None = None
     last_login: datetime | None = None
     last_seen_at: datetime | None = None

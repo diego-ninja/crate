@@ -56,7 +56,10 @@ export const AlbumCard = memo(function AlbumCard({
   const { isSaved, toggleAlbumSaved } = useSavedAlbums();
   const { getAlbumState, getAlbumRecord } = useOffline();
   const [playing, setPlaying] = useState(false);
-  const coverUrl = cover || albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
+  const coverUrl = cover || albumCoverApiUrl(
+    { albumId, albumSlug, artistName: artist, albumName: album },
+    { size: layout === "grid" ? 320 : compact ? 192 : 256 },
+  );
   const saved = isSaved(albumId);
   const offlineState = getAlbumState(albumId);
   const offlineRecord = getAlbumRecord(albumId);

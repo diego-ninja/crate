@@ -1,4 +1,3 @@
-import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 import { Toaster } from "sonner";
@@ -6,6 +5,30 @@ import { App } from "./App";
 import { initCapacitor, isNative } from "./lib/capacitor";
 import { primeOfflineRuntimeProfile } from "./lib/offline";
 import "./index.css";
+
+async function disableDevServiceWorker() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  } catch {
+    // Ignore cleanup failures; the page can still boot without dev offline support.
+  }
+
+  if (!("caches" in window)) return;
+
+  try {
+    const cacheNames = await caches.keys();
+    await Promise.all(
+      cacheNames
+        .filter((cacheName) => cacheName.startsWith("crate-listen"))
+        .map((cacheName) => caches.delete(cacheName)),
+    );
+  } catch {
+    // Ignore cache cleanup failures; the next hard refresh can finish the reset.
+  }
+}
 
 // Load Poppins only on web — iOS/Android use system fonts (San
 // Francisco / Roboto) for a native feel. The import is dynamic so
@@ -18,16 +41,18 @@ initCapacitor();
 void primeOfflineRuntimeProfile();
 
 if (typeof window !== "undefined" && "serviceWorker" in navigator) {
-  void navigator.serviceWorker.register("/sw.js").catch(() => {
-    // Ignore registration failures; the app still works without offline mirror.
-  });
+  if (import.meta.env.DEV) {
+    void disableDevServiceWorker();
+  } else {
+    void navigator.serviceWorker.register("/sw.js").catch(() => {
+      // Ignore registration failures; the app still works without offline mirror.
+    });
+  }
 }
 
 createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <BrowserRouter>
-      <App />
-      <Toaster theme="dark" position="bottom-center" richColors />
-    </BrowserRouter>
-  </StrictMode>,
+  <BrowserRouter>
+    <App />
+    <Toaster theme="dark" position="bottom-center" richColors />
+  </BrowserRouter>,
 );

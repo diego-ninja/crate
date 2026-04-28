@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ExternalLink,
   Loader2,
@@ -39,6 +39,17 @@ interface StackStatus {
   total: number;
   running: number;
   containers: Container[];
+}
+
+interface StackSnapshotData {
+  snapshot: {
+    scope: string;
+    subject_key: string;
+    version: number;
+    stale: boolean;
+    generation_ms: number;
+  };
+  stack: StackStatus;
 }
 
 interface ContainerLogs {
@@ -264,7 +275,7 @@ function ServiceCard({
 }
 
 export function Stack() {
-  const [data, setData] = useState<StackStatus | null>(null);
+  const [snapshot, setSnapshot] = useState<StackSnapshotData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -274,26 +285,68 @@ export function Stack() {
   const [expandedLogs, setExpandedLogs] = useState<string | null>(null);
   const [logs, setLogs] = useState<ContainerLogs | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const data = snapshot?.stack ?? null;
 
-  const fetchStatus = useCallback(async (silent = false) => {
+  const fetchSnapshot = useCallback(async (fresh = false, silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const response = await api<StackStatus>("/api/stack/status");
-      setData(response);
+      const response = await api<StackSnapshotData>(fresh ? "/api/admin/stack-snapshot?fresh=1" : "/api/admin/stack-snapshot");
+      setSnapshot(response);
       setError(null);
     } catch {
       setError("Failed to load Docker stack status");
-      setData({ available: false, total: 0, running: 0, containers: [] });
+      setSnapshot({
+        snapshot: {
+          scope: "ops:stack",
+          subject_key: "global",
+          version: 0,
+          stale: true,
+          generation_ms: 0,
+        },
+        stack: { available: false, total: 0, running: 0, containers: [] },
+      });
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchStatus();
-    const timer = setInterval(() => fetchStatus(true), 15000);
-    return () => clearInterval(timer);
-  }, [fetchStatus]);
+    void fetchSnapshot();
+  }, [fetchSnapshot]);
+
+  useEffect(() => {
+    let closed = false;
+    let stream: EventSource | null = null;
+
+    const connect = () => {
+      if (closed) return;
+      stream = new EventSource("/api/admin/stack-stream", { withCredentials: true });
+      stream.onmessage = (event) => {
+        try {
+          setSnapshot(JSON.parse(event.data) as StackSnapshotData);
+          setError(null);
+          setLoading(false);
+        } catch {
+          // Ignore malformed stream payloads and wait for the next event.
+        }
+      };
+      stream.onerror = () => {
+        stream?.close();
+        if (closed) return;
+        reconnectTimerRef.current = window.setTimeout(connect, 3000);
+      };
+    };
+
+    connect();
+    return () => {
+      closed = true;
+      stream?.close();
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
+      }
+    };
+  }, []);
 
   async function handleRestart(name: string) {
     setRestartTarget(null);
@@ -301,7 +354,9 @@ export function Stack() {
     try {
       await api(`/api/stack/container/${name}/restart`, "POST");
       toast.success(`Restarting ${name}…`);
-      setTimeout(() => fetchStatus(true), 2500);
+      window.setTimeout(() => {
+        void fetchSnapshot(true, true);
+      }, 2500);
     } catch {
       toast.error(`Failed to restart ${name}`);
     } finally {
@@ -319,7 +374,9 @@ export function Stack() {
     try {
       await api(`/api/stack/container/${name}/${action}`, "POST");
       toast.success(`${action === "stop" ? "Stopping" : "Starting"} ${name}…`);
-      setTimeout(() => fetchStatus(true), 2000);
+      window.setTimeout(() => {
+        void fetchSnapshot(true, true);
+      }, 2000);
     } catch {
       toast.error(`Failed to ${action} ${name}`);
     } finally {
@@ -381,7 +438,7 @@ export function Stack() {
   }
 
   if (error && !data) {
-    return <ErrorState message={error} onRetry={() => fetchStatus()} />;
+    return <ErrorState message={error} onRetry={() => void fetchSnapshot(true)} />;
   }
 
   return (
@@ -391,7 +448,7 @@ export function Stack() {
         title="Stack"
         description="Managed Docker services, their runtime state, and the quickest path to logs or restart when the platform starts wobbling."
         actions={
-          <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchStatus()}>
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => void fetchSnapshot(true)}>
             <RefreshCw size={14} />
             Refresh
           </Button>

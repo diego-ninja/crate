@@ -1,12 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 import {
   LayoutDashboard,
   Library,
   HeartPulse,
   BarChart3,
-  Disc3,
-  ShieldCheck,
   ListTodo,
   ListMusic,
   Download,
@@ -29,18 +27,12 @@ import {
 
 import { VtNavLink as NavLink } from "@crate/ui/primitives/VtNavLink";
 import { Badge } from "@crate/ui/shadcn/badge";
-import { api } from "@/lib/api";
+import { useOpsSnapshot } from "@/contexts/OpsSnapshotContext";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface SidebarProps {
   onNavigate?: () => void;
-}
-
-interface SidebarStats {
-  issue_count?: number;
-  pending_imports?: number;
-  running_tasks?: number;
 }
 
 export const SIDEBAR_KEY = "crate-admin-sidebar-expanded";
@@ -71,8 +63,6 @@ const navItems = [
   { to: "/insights", icon: BarChart3, label: "Insights" },
   { to: "/genres", icon: Tag, label: "Genres" },
   { to: "/timeline", icon: Clock, label: "Timeline" },
-  { to: "/missing-albums", icon: Disc3, label: "Missing Albums" },
-  { to: "/quality", icon: ShieldCheck, label: "Quality" },
   { section: "System" },
   { to: "/system", icon: Activity, label: "System Health", adminOnly: true },
   { to: "/analysis", icon: AudioWaveform, label: "Analysis", adminOnly: true },
@@ -94,31 +84,15 @@ function emitSidebarExpanded(expanded: boolean) {
 
 export function Sidebar({ onNavigate }: SidebarProps) {
   const [expanded, setExpanded] = useState(getStoredSidebarExpanded);
-  const [stats, setStats] = useState<SidebarStats>({});
   const { user, isAdmin, logout } = useAuth();
+  const { data: opsSnapshot } = useOpsSnapshot();
+  const profileHref = user ? `/users?inspect=${user.id}` : "/users";
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const [status, importStats, taskList] = await Promise.all([
-        api<{ issue_count: number }>("/api/status"),
-        api<{ pending_imports: number }>("/api/stats").catch(() => ({ pending_imports: 0 })),
-        api<{ status: string }[]>("/api/tasks?status=running&limit=10").catch(() => []),
-      ]);
-      setStats({
-        issue_count: status.issue_count || 0,
-        pending_imports: importStats.pending_imports || 0,
-        running_tasks: Array.isArray(taskList) ? taskList.length : 0,
-      });
-    } catch {
-      // ignore transient polling failures
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchStats();
-    const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
-  }, [fetchStats]);
+  const stats = {
+    issue_count: opsSnapshot?.status.issue_count || 0,
+    pending_imports: opsSnapshot?.status.pending_imports || 0,
+    running_tasks: opsSnapshot?.status.running_tasks || 0,
+  };
 
   function toggleExpanded() {
     const next = !expanded;
@@ -234,7 +208,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <div className="mt-auto border-t border-white/6 p-3">
           {expanded ? (
             <div className="flex items-center gap-3 rounded-md border border-white/8 bg-white/[0.03] px-3 py-3">
-              <Link to="/profile" className="flex min-w-0 flex-1 items-center gap-3" onClick={onNavigate}>
+              <Link to={profileHref} className="flex min-w-0 flex-1 items-center gap-3" onClick={onNavigate}>
                 {user.avatar ? (
                   <img src={user.avatar} alt="" className="h-10 w-10 rounded-md object-cover" />
                 ) : (
@@ -263,7 +237,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           ) : (
             <div className="flex flex-col items-center gap-2">
               <Link
-                to="/profile"
+                to={profileHref}
                 onClick={onNavigate}
                 className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70"
               >

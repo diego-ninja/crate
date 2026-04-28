@@ -1,48 +1,63 @@
 """Admin-only endpoints for metrics, worker logs, and health summary."""
 
+from __future__ import annotations
+
+import asyncio
+import os
+from typing import AsyncIterator
+
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
+from crate.api._deps import json_dumps
 from crate.api.auth import _require_admin
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES
+from crate.api.schemas.operations import AdminLogsSnapshotResponse
+from crate.db.admin_logs_surface import LOGS_SURFACE_STREAM_CHANNEL, get_cached_logs_surface
 
 router = APIRouter(prefix="/api/admin", tags=["admin-metrics"])
 
-_DASHBOARD_TIMESERIES = [
-    "api.latency",
-    "api.requests",
-    "api.errors",
-    "api.slow",
-    "stream.requests",
-    "home.compute.ms",
-    "home.endpoint_compute.ms",
-    "worker.queue.depth",
-    "worker.task.duration",
-    "worker.queue.wait",
-]
+_DASHBOARD_TIMESERIES = {
+    "api.latency": "api.request.latency",
+    "api.requests": "api.request.count",
+    "api.errors": "api.request.errors",
+    "api.slow": "api.request.slow",
+    "stream.requests": "stream.requests",
+    "home.compute.ms": "home.compute.ms",
+    "home.endpoint_compute.ms": "home.endpoint_compute.ms",
+    "worker.queue.depth": "worker.queue.depth",
+    "worker.task.duration": "worker.task.duration",
+    "worker.queue.wait": "worker.queue.wait",
+}
+
+_SUMMARY_METRICS = {
+    "api_latency": ("api.request.latency", 5),
+    "api_requests": ("api.request.count", 5),
+    "api_errors": ("api.request.errors", 5),
+    "api_slow": ("api.request.slow", 5),
+    "stream_requests": ("stream.requests", 5),
+    "stream_latency": ("stream.latency", 5),
+    "stream_concurrent": ("stream.concurrent", 5),
+    "home_cache_hit": ("home.cache.hit", 15),
+    "home_cache_miss": ("home.cache.miss", 15),
+    "home_cache_waited": ("home.cache.waited", 15),
+    "home_cache_coalesced": ("home.cache.coalesced", 15),
+    "home_cache_stale_fallback": ("home.cache.stale_fallback", 15),
+    "home_compute_ms": ("home.compute.ms", 15),
+    "home_endpoint_cache_hit": ("home.endpoint_cache.hit", 15),
+    "home_endpoint_cache_miss": ("home.endpoint_cache.miss", 15),
+    "home_endpoint_compute_ms": ("home.endpoint_compute.ms", 15),
+}
+
+def _get_redis_url() -> str:
+    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 
 def _build_metrics_summary() -> dict:
-    from crate.metrics import query_summary
+    from crate.metrics import query_summaries
 
-    return {
-        "api_latency": query_summary("api.latency", minutes=5),
-        "api_requests": query_summary("api.requests", minutes=5),
-        "api_errors": query_summary("api.errors", minutes=5),
-        "api_slow": query_summary("api.slow", minutes=5),
-        "stream_requests": query_summary("stream.requests", minutes=5),
-        "stream_latency": query_summary("stream.latency", minutes=5),
-        "stream_concurrent": query_summary("stream.concurrent", minutes=5),
-        "home_cache_hit": query_summary("home.cache.hit", minutes=15),
-        "home_cache_miss": query_summary("home.cache.miss", minutes=15),
-        "home_cache_waited": query_summary("home.cache.waited", minutes=15),
-        "home_cache_coalesced": query_summary("home.cache.coalesced", minutes=15),
-        "home_cache_stale_fallback": query_summary("home.cache.stale_fallback", minutes=15),
-        "home_compute_ms": query_summary("home.compute.ms", minutes=15),
-        "home_endpoint_cache_hit": query_summary("home.endpoint_cache.hit", minutes=15),
-        "home_endpoint_cache_miss": query_summary("home.endpoint_cache.miss", minutes=15),
-        "home_endpoint_compute_ms": query_summary("home.endpoint_compute.ms", minutes=15),
-    }
+    return query_summaries(_SUMMARY_METRICS)
 
 
 def _build_metrics_system() -> dict:
@@ -135,13 +150,13 @@ def _build_metrics_system() -> dict:
 
 
 def _list_running_tasks(limit: int = 10) -> list[dict]:
-    from crate.db.tasks import list_tasks
+    from crate.db.queries.tasks import list_tasks
 
     return list_tasks(status="running", limit=limit)
 
 
 def _build_metrics_dashboard(period: str, minutes: int) -> dict:
-    from crate.db.cache import get_cache, set_cache
+    from crate.db.cache_store import get_cache, set_cache
     from crate.metrics import query_historical, query_recent, query_recent_rolled
 
     cache_key = f"admin:metrics:dashboard:{period}:{minutes}"
@@ -150,13 +165,13 @@ def _build_metrics_dashboard(period: str, minutes: int) -> dict:
         return cached
 
     timeseries: dict[str, list[dict]] = {}
-    for name in _DASHBOARD_TIMESERIES:
+    for response_name, metric_name in _DASHBOARD_TIMESERIES.items():
         if period == "minute":
-            timeseries[name] = query_recent(name, minutes)
+            timeseries[response_name] = query_recent(metric_name, minutes)
         elif period == "hour":
-            timeseries[name] = query_recent_rolled(name, minutes=minutes, bucket_minutes=60)
+            timeseries[response_name] = query_recent_rolled(metric_name, minutes=minutes, bucket_minutes=60)
         else:
-            timeseries[name] = query_historical(name, period)
+            timeseries[response_name] = query_historical(metric_name, period)
 
     payload = {
         "summary": _build_metrics_summary(),
@@ -186,12 +201,18 @@ def metrics_timeseries(
     _require_admin(request)
     from crate.metrics import query_recent, query_historical, query_recent_rolled
 
-    if period == "minute":
-        return {"name": name, "period": period, "data": query_recent(name, minutes)}
-    if period == "hour" and not start and not end:
-        return {"name": name, "period": period, "data": query_recent_rolled(name, minutes=minutes, bucket_minutes=60)}
+    metric_name = _DASHBOARD_TIMESERIES.get(name, name)
 
-    return {"name": name, "period": period, "data": query_historical(name, period, start, end)}
+    if period == "minute":
+        return {"name": name, "period": period, "data": query_recent(metric_name, minutes)}
+    if period == "hour" and not start and not end:
+        return {
+            "name": name,
+            "period": period,
+            "data": query_recent_rolled(metric_name, minutes=minutes, bucket_minutes=60),
+        }
+
+    return {"name": name, "period": period, "data": query_historical(metric_name, period, start, end)}
 
 
 @router.get("/metrics/dashboard", responses=AUTH_ERROR_RESPONSES, summary="Bundled system health payload")
@@ -274,10 +295,67 @@ def admin_workers(request: Request):
     return list_known_workers()
 
 
+@router.get(
+    "/logs-snapshot",
+    response_model=AdminLogsSnapshotResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the canonical admin logs snapshot",
+)
+def admin_logs_snapshot(request: Request, fresh: bool = False, limit: int = Query(100, ge=1, le=200)):
+    _require_admin(request)
+    return get_cached_logs_surface(limit=limit, fresh=fresh)
+
+
+async def _admin_logs_stream(limit: int) -> AsyncIterator[str]:
+    yield f"data: {json_dumps(get_cached_logs_surface(limit=limit))}\n\n"
+    redis = None
+    pubsub = None
+    try:
+        import redis.asyncio as aioredis
+
+        redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(LOGS_SURFACE_STREAM_CHANNEL)
+        heartbeat_counter = 0
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message.get("type") == "message":
+                yield f"data: {json_dumps(get_cached_logs_surface(limit=limit, fresh=True))}\n\n"
+                heartbeat_counter = 0
+                continue
+            heartbeat_counter += 1
+            if heartbeat_counter >= 30:
+                heartbeat_counter = 0
+                yield ": heartbeat\n\n"
+    except Exception:
+        while True:
+            yield f"data: {json_dumps(get_cached_logs_surface(limit=limit))}\n\n"
+            await asyncio.sleep(15)
+    finally:
+        if pubsub is not None:
+            await pubsub.unsubscribe(LOGS_SURFACE_STREAM_CHANNEL)
+        if redis is not None:
+            await redis.aclose()
+
+
+@router.get(
+    "/logs-stream",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Stream admin logs snapshot updates",
+)
+async def admin_logs_stream(request: Request, limit: int = Query(100, ge=1, le=200)):
+    _require_admin(request)
+    return StreamingResponse(
+        _admin_logs_stream(limit),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get("/download-policy", responses=AUTH_ERROR_RESPONSES, summary="Download policy status and suggested limits")
 def admin_download_policy(request: Request):
     _require_admin(request)
-    from crate.db.cache import get_setting
+    from crate.db.cache_settings import get_setting
     from crate.actors import (
         _is_download_allowed, _count_active_users, _count_active_streams,
         _is_in_time_window, get_suggested_download_limits,
@@ -319,7 +397,7 @@ class DownloadPolicyUpdate(BaseModel):
 @router.put("/download-policy", responses=AUTH_ERROR_RESPONSES, summary="Update download policy settings")
 def update_download_policy(request: Request, body: DownloadPolicyUpdate):
     _require_admin(request)
-    from crate.db.cache import set_setting
+    from crate.db.cache_settings import set_setting
 
     if body.window_enabled is not None:
         set_setting("download_window_enabled", "true" if body.window_enabled else "false")
@@ -338,6 +416,6 @@ def update_download_policy(request: Request, body: DownloadPolicyUpdate):
 @router.get("/users/map", responses=AUTH_ERROR_RESPONSES, summary="Users with geolocation, online and now-playing status")
 def users_map(request: Request):
     _require_admin(request)
-    from crate.db.auth import list_users_map_rows
+    from crate.db.repositories.auth import list_users_map_rows
 
     return {"users": list_users_map_rows()}

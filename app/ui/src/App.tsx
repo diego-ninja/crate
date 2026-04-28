@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@crate/ui/shadcn/tooltip";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { OpsSnapshotProvider } from "@/contexts/OpsSnapshotContext";
 import { Shell } from "@/components/layout/Shell";
 import { Loader2 } from "lucide-react";
 
@@ -13,8 +14,6 @@ const Artist = lazy(() => import("@/pages/Artist").then(m => ({ default: m.Artis
 const Album = lazy(() => import("@/pages/Album").then(m => ({ default: m.Album })));
 const Health = lazy(() => import("@/pages/Health").then(m => ({ default: m.Health })));
 const Insights = lazy(() => import("@/pages/Insights").then(m => ({ default: m.Insights })));
-const MissingAlbums = lazy(() => import("@/pages/MissingAlbums").then(m => ({ default: m.MissingAlbums })));
-const Quality = lazy(() => import("@/pages/Quality").then(m => ({ default: m.Quality })));
 const Tasks = lazy(() => import("@/pages/Tasks").then(m => ({ default: m.Tasks })));
 const Playlists = lazy(() => import("@/pages/Playlists").then(m => ({ default: m.Playlists })));
 const Stack = lazy(() => import("@/pages/Stack").then(m => ({ default: m.Stack })));
@@ -25,7 +24,6 @@ const Users = lazy(() => import("@/pages/Users").then(m => ({ default: m.Users }
 const DownloadPage = lazy(() => import("@/pages/Download").then(m => ({ default: m.DownloadPage })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Discover = lazy(() => import("@/pages/Discover").then(m => ({ default: m.Discover })));
-const Profile = lazy(() => import("@/pages/Profile").then(m => ({ default: m.Profile })));
 const NewReleases = lazy(() => import("@/pages/NewReleases").then(m => ({ default: m.NewReleases })));
 const Upcoming = lazy(() => import("@/pages/Upcoming").then(m => ({ default: m.Upcoming })));
 const Setup = lazy(() => import("@/pages/Setup").then(m => ({ default: m.Setup })));
@@ -77,6 +75,13 @@ function SetupGuard() {
   return null;
 }
 
+function ProfileRedirect() {
+  const { user, loading } = useAuth();
+  if (loading) return <PageSpinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  return <Navigate to={`/users?inspect=${user.id}`} replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -90,7 +95,9 @@ export default function App() {
               <Route
                 element={
                   <ProtectedRoute>
-                    <Shell />
+                    <OpsSnapshotProvider>
+                      <Shell />
+                    </OpsSnapshotProvider>
                   </ProtectedRoute>
                 }
               >
@@ -101,8 +108,6 @@ export default function App() {
                 <Route path="health" element={<Health />} />
                 <Route path="download" element={<DownloadPage />} />
                 <Route path="insights" element={<Insights />} />
-                <Route path="missing-albums" element={<MissingAlbums />} />
-                <Route path="quality" element={<Quality />} />
                 <Route path="analysis" element={<Analysis />} />
                 <Route path="system" element={<SystemHealth />} />
                 <Route path="logs" element={<Logs />} />
@@ -116,7 +121,7 @@ export default function App() {
                 <Route path="users" element={<Users />} />
                 <Route path="discover" element={<Discover />} />
                 <Route path="settings" element={<Settings />} />
-                <Route path="profile" element={<Profile />} />
+                <Route path="profile" element={<ProfileRedirect />} />
                 <Route path="new-releases" element={<NewReleases />} />
                 <Route path="upcoming" element={<Upcoming />} />
               </Route>

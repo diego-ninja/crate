@@ -6,7 +6,7 @@ import time
 import musicbrainzngs
 
 from crate.audio import read_tags
-from crate.db import get_mb_cache, set_mb_cache
+from crate.db.cache_musicbrainz import get_mb_cache, set_mb_cache
 from crate.models import Album
 
 log = logging.getLogger(__name__)

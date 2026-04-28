@@ -1,0 +1,140 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import BIGINT, JSON, DateTime, Float, ForeignKey, Integer, Text
+from sqlalchemy.dialects.postgresql import ARRAY, UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from crate.db.engine import Base
+
+
+class LibraryArtist(Base):
+    __tablename__ = "library_artists"
+
+    id: Mapped[int] = mapped_column(BIGINT, primary_key=True)
+    storage_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    slug: Mapped[str | None] = mapped_column(Text)
+    folder_name: Mapped[str | None] = mapped_column(Text)
+    album_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    track_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_size: Mapped[int] = mapped_column(BIGINT, nullable=False, default=0)
+    formats_json: Mapped[list[str] | None] = mapped_column(JSON)
+    primary_format: Mapped[str | None] = mapped_column(Text)
+    has_photo: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dir_mtime: Mapped[float | None] = mapped_column(Float)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    bio: Mapped[str | None] = mapped_column(Text)
+    tags_json: Mapped[Any | None] = mapped_column(JSON)
+    similar_json: Mapped[Any | None] = mapped_column(JSON)
+    spotify_id: Mapped[str | None] = mapped_column(Text)
+    spotify_popularity: Mapped[int | None] = mapped_column(Integer)
+    mbid: Mapped[str | None] = mapped_column(Text)
+    country: Mapped[str | None] = mapped_column(Text)
+    area: Mapped[str | None] = mapped_column(Text)
+    formed: Mapped[str | None] = mapped_column(Text)
+    ended: Mapped[str | None] = mapped_column(Text)
+    artist_type: Mapped[str | None] = mapped_column(Text)
+    members_json: Mapped[Any | None] = mapped_column(JSON)
+    urls_json: Mapped[Any | None] = mapped_column(JSON)
+    listeners: Mapped[int | None] = mapped_column(Integer)
+    enriched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    discogs_id: Mapped[str | None] = mapped_column(Text)
+    spotify_followers: Mapped[int | None] = mapped_column(Integer)
+    lastfm_playcount: Mapped[int | None] = mapped_column(BIGINT)
+    popularity: Mapped[int | None] = mapped_column(Integer)
+    popularity_score: Mapped[float | None] = mapped_column(Float)
+    popularity_confidence: Mapped[float | None] = mapped_column(Float)
+    discogs_profile: Mapped[str | None] = mapped_column(Text)
+    discogs_members_json: Mapped[Any | None] = mapped_column(JSON)
+    latest_release_date: Mapped[str | None] = mapped_column(Text)
+    content_hash: Mapped[str | None] = mapped_column(Text)
+
+
+class LibraryAlbum(Base):
+    __tablename__ = "library_albums"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    storage_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    artist: Mapped[str] = mapped_column(Text, ForeignKey("library_artists.name"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    path: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    track_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_size: Mapped[int] = mapped_column(BIGINT, nullable=False, default=0)
+    total_duration: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    formats_json: Mapped[list[str] | None] = mapped_column(JSON)
+    year: Mapped[str | None] = mapped_column(Text)
+    genre: Mapped[str | None] = mapped_column(Text)
+    has_cover: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    musicbrainz_albumid: Mapped[str | None] = mapped_column(Text)
+    dir_mtime: Mapped[float | None] = mapped_column(Float)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    slug: Mapped[str | None] = mapped_column(Text)
+    tag_album: Mapped[str | None] = mapped_column(Text)
+    musicbrainz_releasegroupid: Mapped[str | None] = mapped_column(Text)
+    discogs_master_id: Mapped[str | None] = mapped_column(Text)
+    lastfm_listeners: Mapped[int | None] = mapped_column(Integer)
+    lastfm_playcount: Mapped[int | None] = mapped_column(BIGINT)
+    popularity: Mapped[int | None] = mapped_column(Integer)
+    popularity_score: Mapped[float | None] = mapped_column(Float)
+    popularity_confidence: Mapped[float | None] = mapped_column(Float)
+    quarantined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quarantine_task_id: Mapped[str | None] = mapped_column(Text)
+
+
+class LibraryTrack(Base):
+    __tablename__ = "library_tracks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    storage_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    album_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("library_albums.id", ondelete="CASCADE"))
+    artist: Mapped[str] = mapped_column(Text, nullable=False)
+    album: Mapped[str] = mapped_column(Text, nullable=False)
+    filename: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str | None] = mapped_column(Text)
+    track_number: Mapped[int | None] = mapped_column(Integer)
+    disc_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    format: Mapped[str | None] = mapped_column(Text)
+    bitrate: Mapped[int | None] = mapped_column(Integer)
+    sample_rate: Mapped[int | None] = mapped_column(Integer)
+    bit_depth: Mapped[int | None] = mapped_column(Integer)
+    duration: Mapped[float | None] = mapped_column(Float)
+    size: Mapped[int | None] = mapped_column(BIGINT)
+    year: Mapped[str | None] = mapped_column(Text)
+    genre: Mapped[str | None] = mapped_column(Text)
+    albumartist: Mapped[str | None] = mapped_column(Text)
+    musicbrainz_albumid: Mapped[str | None] = mapped_column(Text)
+    musicbrainz_trackid: Mapped[str | None] = mapped_column(Text)
+    path: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bpm: Mapped[float | None] = mapped_column(Float)
+    audio_key: Mapped[str | None] = mapped_column(Text)
+    audio_scale: Mapped[str | None] = mapped_column(Text)
+    energy: Mapped[float | None] = mapped_column(Float)
+    mood_json: Mapped[Any | None] = mapped_column(JSON)
+    slug: Mapped[str | None] = mapped_column(Text)
+    danceability: Mapped[float | None] = mapped_column(Float)
+    valence: Mapped[float | None] = mapped_column(Float)
+    acousticness: Mapped[float | None] = mapped_column(Float)
+    instrumentalness: Mapped[float | None] = mapped_column(Float)
+    loudness: Mapped[float | None] = mapped_column(Float)
+    dynamic_range: Mapped[float | None] = mapped_column(Float)
+    spectral_complexity: Mapped[float | None] = mapped_column(Float)
+    analysis_state: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    bliss_state: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    analysis_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bliss_computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    bliss_vector: Mapped[list[float] | None] = mapped_column(ARRAY(Float))
+    lastfm_listeners: Mapped[int | None] = mapped_column(Integer)
+    lastfm_playcount: Mapped[int | None] = mapped_column(BIGINT)
+    lastfm_top_rank: Mapped[int | None] = mapped_column(Integer)
+    spotify_track_popularity: Mapped[int | None] = mapped_column(Integer)
+    spotify_top_rank: Mapped[int | None] = mapped_column(Integer)
+    popularity_score: Mapped[float | None] = mapped_column(Float)
+    popularity_confidence: Mapped[float | None] = mapped_column(Float)
+    popularity: Mapped[int | None] = mapped_column(Integer)
+    rating: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

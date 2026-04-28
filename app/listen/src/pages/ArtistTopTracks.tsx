@@ -1,12 +1,12 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { ArrowLeft, Play } from "lucide-react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useApi } from "@/hooks/use-api";
-import { albumCoverApiUrl, artistApiPath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { albumCoverApiUrl, artistApiPath, artistPagePath, artistPhotoApiUrl, artistTopTracksPath } from "@/lib/library-routes";
 
 interface ArtistTopTrack {
   id: string;
@@ -40,16 +40,30 @@ function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
 
 export function ArtistTopTracks() {
   const navigate = useNavigate();
-  const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
-  const artistId = artistIdParam ? Number(artistIdParam) : undefined;
+  const location = useLocation();
+  const { artistSlug: routeArtistSlug } = useParams<{ artistSlug?: string }>();
   const { playAll } = usePlayerActions();
   const { data: artist } = useApi<{ id?: number; slug?: string; name: string }>(
-    artistId != null ? artistApiPath({ artistId }) : null,
+    routeArtistSlug ? artistApiPath({ artistSlug: routeArtistSlug }) : null,
   );
   const artistName = artist?.name || "";
   const { data: topTracks, loading } = useApi<ArtistTopTrack[]>(
-    artistId != null ? `/api/artists/${artistId}/top-tracks?count=50` : null,
+    routeArtistSlug
+      ? `/api/artist-slugs/${encodeURIComponent(routeArtistSlug)}/top-tracks?count=50`
+      : null,
   );
+
+  useEffect(() => {
+    if (!artist?.name) return;
+    const canonicalPath = artistTopTracksPath({
+      artistId: artist.id,
+      artistSlug: artist.slug,
+      artistName: artist.name,
+    });
+    if (location.pathname !== canonicalPath) {
+      navigate(canonicalPath, { replace: true });
+    }
+  }, [artist?.id, artist?.name, artist?.slug, location.pathname, navigate]);
 
   function handlePlayAll() {
     const queue = toPlayerTracks(topTracks || []);
@@ -86,7 +100,7 @@ export function ArtistTopTracks() {
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => navigate(artistPagePath({ artistId: artist?.id ?? artistId, artistSlug: artist?.slug }))}
+            onClick={() => navigate(artistPagePath({ artistId: artist?.id, artistSlug: artist?.slug, artistName }))}
             className="flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-white/70 transition-colors hover:bg-white/5 hover:text-white"
           >
             <ArrowLeft size={18} />

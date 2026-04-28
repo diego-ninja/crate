@@ -5,7 +5,7 @@ import logging
 import requests
 from typing import Optional
 
-from crate.db import get_setting
+from crate.db.cache_settings import get_setting
 
 log = logging.getLogger(__name__)
 

@@ -69,21 +69,21 @@ def list_recently_played(limit_minutes: int = 10) -> list[dict]:
             text(
                 """
                 SELECT
-                    ph.user_id,
+                    upe.user_id,
                     u.username,
                     u.display_name,
-                    ph.artist,
-                    ph.album,
-                    ph.title,
+                    upe.artist,
+                    upe.album,
+                    upe.title,
                     t.format,
                     t.bit_depth,
                     t.sample_rate,
-                    ph.played_at
-                FROM play_history ph
-                LEFT JOIN users u ON u.id = ph.user_id
-                LEFT JOIN library_tracks t ON t.id = ph.track_id
-                WHERE ph.played_at > now() - (:minutes * INTERVAL '1 minute')
-                ORDER BY ph.played_at DESC
+                    upe.ended_at AS played_at
+                FROM user_play_events upe
+                LEFT JOIN users u ON u.id = upe.user_id
+                LEFT JOIN library_tracks t ON t.id = upe.track_id
+                WHERE upe.ended_at > now() - (:minutes * INTERVAL '1 minute')
+                ORDER BY upe.ended_at DESC
                 """
             ),
             {"minutes": limit_minutes},

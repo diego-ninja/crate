@@ -17,7 +17,7 @@ from tests.conftest import PG_AVAILABLE, TEST_DB_NAME
 pytestmark = pytest.mark.skipif(not PG_AVAILABLE, reason="PostgreSQL not available")
 
 
-class TestBootstrapBridge:
+class TestBootstrap:
     def test_init_db_stamps_alembic_baseline(self, pg_db):
         from alembic.config import Config
         from alembic.script import ScriptDirectory
@@ -36,15 +36,25 @@ class TestBootstrapBridge:
         assert row is not None
         assert row["version_num"] == script.get_current_head()
 
-    def test_init_db_marks_legacy_bridge_versions_applied(self, pg_db):
-        import crate.db.core as db_core
+    def test_init_db_does_not_require_legacy_bridge_tracking(self, pg_db):
         from crate.db.tx import transaction_scope
 
         with transaction_scope() as session:
-            row = session.execute(text("SELECT COUNT(*) AS cnt FROM schema_versions")).mappings().first()
+            row = session.execute(
+                text(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM information_schema.tables
+                        WHERE table_schema = 'public'
+                          AND table_name = 'schema_versions'
+                    ) AS exists
+                    """
+                )
+            ).mappings().first()
 
         assert row is not None
-        assert row["cnt"] == len(db_core._MIGRATIONS)
+        assert row["exists"] is False
 
     def test_pg_db_writes_stay_in_test_database(self, pg_db):
         marker = "LEAK_GUARD_ARTIST_20260417"
@@ -77,6 +87,143 @@ class TestBootstrapBridge:
         except psycopg2.OperationalError:
             pass  # DB doesn't exist in CI — no leak possible
 
+    def test_fresh_bootstrap_includes_late_legacy_columns(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        with transaction_scope() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT table_name, column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND (
+                        (table_name = 'users' AND column_name IN (
+                            'subsonic_token',
+                            'city',
+                            'country',
+                            'country_code',
+                            'latitude',
+                            'longitude',
+                            'show_location_mode',
+                            'show_radius_km'
+                        ))
+                        OR
+                        (table_name = 'shows' AND column_name IN (
+                            'lastfm_event_id',
+                            'lastfm_url',
+                            'lastfm_attendance',
+                            'tickets_url',
+                            'scrape_city'
+                        ))
+                      )
+                    """
+                )
+            ).mappings().all()
+
+        present = {(row["table_name"], row["column_name"]) for row in rows}
+        expected = {
+            ("users", "subsonic_token"),
+            ("users", "city"),
+            ("users", "country"),
+            ("users", "country_code"),
+            ("users", "latitude"),
+            ("users", "longitude"),
+            ("users", "show_location_mode"),
+            ("users", "show_radius_km"),
+            ("shows", "lastfm_event_id"),
+            ("shows", "lastfm_url"),
+            ("shows", "lastfm_attendance"),
+            ("shows", "tickets_url"),
+            ("shows", "scrape_city"),
+        }
+
+        assert expected <= present
+
+
+class TestAnalyticsQueries:
+    def test_get_insights_mood_distribution_aggregates_in_sql_with_shadow_fallback(self, pg_db):
+        from crate.db.queries.analytics_audio_feature_queries import get_insights_mood_distribution
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Mood Artist"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Mood Artist",
+                "name": "Mood Album",
+                "path": "/music/Mood Artist/Mood Album",
+                "track_count": 2,
+                "total_size": 2000,
+                "total_duration": 360.0,
+                "formats": ["flac"],
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Mood Artist",
+                "album": "Mood Album",
+                "filename": "01-first.flac",
+                "title": "First",
+                "path": "/music/Mood Artist/Mood Album/01-first.flac",
+                "duration": 180.0,
+                "size": 1000,
+                "format": "flac",
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Mood Artist",
+                "album": "Mood Album",
+                "filename": "02-second.flac",
+                "title": "Second",
+                "path": "/music/Mood Artist/Mood Album/02-second.flac",
+                "duration": 180.0,
+                "size": 1000,
+                "format": "flac",
+            }
+        )
+
+        with transaction_scope() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT id
+                    FROM library_tracks
+                    WHERE album_id = :album_id
+                    ORDER BY id
+                    """
+                ),
+                {"album_id": album_id},
+            ).mappings().all()
+            first_id = rows[0]["id"]
+            second_id = rows[1]["id"]
+            session.execute(
+                text("UPDATE library_tracks SET mood_json = CAST(:mood_json AS jsonb) WHERE id = :id"),
+                {"id": first_id, "mood_json": json.dumps({"happy": 0.5, "calm": 0.2})},
+            )
+            session.execute(
+                text(
+                    """
+                    INSERT INTO track_analysis_features (track_id, mood_json, updated_at)
+                    VALUES (:track_id, CAST(:mood_json AS jsonb), NOW())
+                    ON CONFLICT (track_id) DO UPDATE SET
+                        mood_json = EXCLUDED.mood_json,
+                        updated_at = EXCLUDED.updated_at
+                    """
+                ),
+                {"track_id": second_id, "mood_json": json.dumps({"happy": 0.8, "tense": 0.4})},
+            )
+
+        moods = get_insights_mood_distribution()
+
+        assert moods[:3] == [
+            {"mood": "happy", "score": 1.3},
+            {"mood": "tense", "score": 0.4},
+            {"mood": "calm", "score": 0.2},
+        ]
+
 
 class TestHealthQueries:
     def test_get_zombie_artists_ignores_artists_with_real_content(self, pg_db):
@@ -103,6 +250,67 @@ class TestHealthQueries:
 
         assert alive not in names
         assert zombie in names
+
+
+class TestRepairJobs:
+    def test_rename_artist_updates_fk_children_without_violation(self, pg_db):
+        from crate.db.jobs.repair import rename_artist
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Birds in Row"})
+        album_id = pg_db.upsert_album({
+            "artist": "Birds in Row",
+            "name": "You, Me & the Violence",
+            "path": "/music/Birds in Row/You, Me & the Violence",
+        })
+        pg_db.upsert_track({
+            "album_id": album_id,
+            "artist": "Birds in Row",
+            "album": "You, Me & the Violence",
+            "filename": "01 - Pilori.flac",
+            "title": "Pilori",
+            "track_number": 1,
+            "format": "flac",
+            "path": "/music/Birds in Row/You, Me & the Violence/01 - Pilori.flac",
+        })
+
+        with transaction_scope() as session:
+            genre_name = f"Screamo-{uuid4().hex[:8]}"
+            genre_id = session.execute(
+                text("INSERT INTO genres (name, slug) VALUES (:name, :slug) RETURNING id"),
+                {"name": genre_name, "slug": genre_name.lower()},
+            ).scalar_one()
+            session.execute(
+                text(
+                    """
+                    INSERT INTO artist_genres (artist_name, genre_id, weight, source)
+                    VALUES (:artist_name, :genre_id, 1.0, 'tags')
+                    """
+                ),
+                {"artist_name": "Birds in Row", "genre_id": genre_id},
+            )
+
+        rename_artist("Birds in Row", "Birds In Row", "birds-in-row")
+
+        with transaction_scope() as session:
+            artists = session.execute(
+                text("SELECT name, folder_name FROM library_artists ORDER BY name")
+            ).mappings().all()
+            albums = session.execute(
+                text("SELECT artist FROM library_albums")
+            ).mappings().all()
+            tracks = session.execute(
+                text("SELECT artist FROM library_tracks")
+            ).mappings().all()
+            artist_genres = session.execute(
+                text("SELECT artist_name FROM artist_genres")
+            ).mappings().all()
+
+        assert [row["name"] for row in artists] == ["Birds In Row"]
+        assert artists[0]["folder_name"] == "birds-in-row"
+        assert {row["artist"] for row in albums} == {"Birds In Row"}
+        assert {row["artist"] for row in tracks} == {"Birds In Row"}
+        assert {row["artist_name"] for row in artist_genres} == {"Birds In Row"}
 
 
 class TestGenreTaxonomyCleanup:
@@ -343,7 +551,7 @@ class TestTaskCRUD:
     def test_create_task_with_shared_session_dispatches_after_commit(self, pg_db):
         from crate.db.tx import transaction_scope
 
-        with patch("crate.db.tasks._dispatch_task") as mock_dispatch:
+        with patch("crate.db.repositories.tasks_mutations.dispatch_task") as mock_dispatch:
             with transaction_scope() as session:
                 task_id = pg_db.create_task("scan", session=session)
                 assert mock_dispatch.call_count == 0
@@ -356,7 +564,7 @@ class TestTaskCRUD:
         from crate.db.tx import transaction_scope
 
         task_id = None
-        with patch("crate.db.tasks._dispatch_task") as mock_dispatch:
+        with patch("crate.db.repositories.tasks_mutations.dispatch_task") as mock_dispatch:
             with pytest.raises(RuntimeError, match="boom"):
                 with transaction_scope() as session:
                     task_id = pg_db.create_task("scan", session=session)
@@ -474,36 +682,73 @@ class TestManagementQueries:
 class TestPlaylistQueryBatching:
     def test_list_system_playlists_batches_artwork_fetch(self):
         from contextlib import contextmanager
+        from types import SimpleNamespace
 
         from crate.db.playlists import list_system_playlists
 
         execute_calls: list[tuple[object, dict | None]] = []
         main_rows = [
             {
-                "id": 1,
-                "name": "Playlist One",
-                "description": "A",
-                "smart_rules_json": None,
-                "scope": "system",
-                "generation_mode": "static",
-                "is_curated": True,
-                "is_active": True,
-                "featured_rank": None,
-                "updated_at": "2026-04-23T12:00:00+00:00",
+                "playlist": SimpleNamespace(
+                    id=1,
+                    name="Playlist One",
+                    description="A",
+                    cover_data_url=None,
+                    cover_path=None,
+                    user_id=None,
+                    is_smart=False,
+                    smart_rules_json=None,
+                    scope="system",
+                    visibility="public",
+                    is_collaborative=False,
+                    generation_mode="static",
+                    auto_refresh_enabled=False,
+                    is_curated=True,
+                    is_active=True,
+                    managed_by_user_id=None,
+                    curation_key=None,
+                    featured_rank=None,
+                    category=None,
+                    track_count=0,
+                    total_duration=0,
+                    generation_status=None,
+                    generation_error=None,
+                    last_generated_at=None,
+                    created_at="2026-04-23T10:00:00+00:00",
+                    updated_at="2026-04-23T12:00:00+00:00",
+                ),
                 "follower_count": 3,
                 "is_followed": True,
             },
             {
-                "id": 2,
-                "name": "Playlist Two",
-                "description": "B",
-                "smart_rules_json": None,
-                "scope": "system",
-                "generation_mode": "smart",
-                "is_curated": True,
-                "is_active": True,
-                "featured_rank": None,
-                "updated_at": "2026-04-23T11:00:00+00:00",
+                "playlist": SimpleNamespace(
+                    id=2,
+                    name="Playlist Two",
+                    description="B",
+                    cover_data_url=None,
+                    cover_path=None,
+                    user_id=None,
+                    is_smart=False,
+                    smart_rules_json=None,
+                    scope="system",
+                    visibility="public",
+                    is_collaborative=False,
+                    generation_mode="smart",
+                    auto_refresh_enabled=False,
+                    is_curated=True,
+                    is_active=True,
+                    managed_by_user_id=None,
+                    curation_key=None,
+                    featured_rank=None,
+                    category=None,
+                    track_count=0,
+                    total_duration=0,
+                    generation_status=None,
+                    generation_error=None,
+                    last_generated_at=None,
+                    created_at="2026-04-23T09:00:00+00:00",
+                    updated_at="2026-04-23T11:00:00+00:00",
+                ),
                 "follower_count": 1,
                 "is_followed": False,
             },
@@ -542,6 +787,11 @@ class TestPlaylistQueryBatching:
                 rows = main_rows if len(execute_calls) == 1 else artwork_rows
 
                 class Result:
+                    def all(self_nonlocal):
+                        if rows is main_rows:
+                            return [(row["playlist"], row["follower_count"], row["is_followed"]) for row in rows]
+                        return rows
+
                     def mappings(self_nonlocal):
                         return MockMappings(rows)
 
@@ -551,7 +801,7 @@ class TestPlaylistQueryBatching:
         def mock_scope():
             yield MockSession()
 
-        with patch("crate.db.playlists.transaction_scope", mock_scope):
+        with patch("crate.db.repositories.playlists_collection_reads.read_scope", mock_scope):
             playlists = list_system_playlists(user_id=7)
 
         assert len(execute_calls) == 2
@@ -594,8 +844,8 @@ class TestHomeCaching:
                 )
             )
 
-        with patch("crate.db.cache.get_cache", side_effect=fake_get_cache), \
-             patch("crate.db.cache.set_cache", side_effect=fake_set_cache):
+        with patch("crate.db.cache_store.get_cache", side_effect=fake_get_cache), \
+             patch("crate.db.cache_store.set_cache", side_effect=fake_set_cache):
             thread_one = Thread(target=worker)
             thread_one.start()
             assert compute_started.wait(1)
@@ -611,6 +861,99 @@ class TestHomeCaching:
         assert compute_calls["count"] == 1
         assert results == [{"ok": True, "n": 1}, {"ok": True, "n": 1}]
 
+    def test_get_or_compute_home_cache_waits_for_cross_process_notification(self):
+        from crate.db.home import _get_or_compute_home_cache
+        from crate.db.home_cache import _home_cache_ready_channel
+
+        class FakePubSub:
+            def __init__(self):
+                self.messages: list[dict] = []
+                self.signal = Event()
+                self.subscribed: list[str] = []
+                self.unsubscribed: list[str] = []
+                self.closed = False
+
+            def subscribe(self, channel: str):
+                self.subscribed.append(channel)
+
+            def unsubscribe(self, channel: str):
+                self.unsubscribed.append(channel)
+
+            def get_message(self, ignore_subscribe_messages: bool = True, timeout: float = 0.0):
+                del ignore_subscribe_messages
+                if not self.signal.wait(timeout):
+                    return None
+                self.signal.clear()
+                if self.messages:
+                    return self.messages.pop(0)
+                return None
+
+            def close(self):
+                self.closed = True
+
+            def push(self, payload: str):
+                self.messages.append({"type": "message", "data": payload})
+                self.signal.set()
+
+        class FakeRedis:
+            def __init__(self, pubsub: FakePubSub):
+                self._pubsub = pubsub
+                self.published: list[tuple[str, str]] = []
+
+            def set(self, *args, **kwargs):
+                return False
+
+            def pubsub(self):
+                return self._pubsub
+
+            def publish(self, channel: str, payload: str):
+                self.published.append((channel, payload))
+                self._pubsub.push(payload)
+
+        cache_store: dict[str, dict] = {}
+        cache_key = "home:test:cross-process"
+        cache_reads = {"count": 0}
+        fake_pubsub = FakePubSub()
+        fake_redis = FakeRedis(fake_pubsub)
+        result: list[dict] = []
+
+        def fake_get_cache(key: str, max_age_seconds: int | None = None):
+            del max_age_seconds
+            cache_reads["count"] += 1
+            return cache_store.get(key)
+
+        def fake_set_cache(key: str, value: dict, ttl: int | None = None):
+            del ttl
+            cache_store[key] = value
+
+        def worker():
+            result.append(
+                _get_or_compute_home_cache(
+                    cache_key,
+                    max_age_seconds=600,
+                    ttl=600,
+                    compute=lambda: (_ for _ in ()).throw(AssertionError("compute should not run")),
+                    wait_timeout_seconds=1.0,
+                )
+            )
+
+        with patch("crate.db.cache_store.get_cache", side_effect=fake_get_cache), \
+             patch("crate.db.cache_store.set_cache", side_effect=fake_set_cache), \
+             patch("crate.db.cache_runtime._get_redis", return_value=fake_redis):
+            thread = Thread(target=worker)
+            thread.start()
+
+            time.sleep(0.35)
+            cache_store[cache_key] = {"ok": True}
+            fake_redis.publish(_home_cache_ready_channel(cache_key), "ready")
+            thread.join()
+
+        assert result == [{"ok": True}]
+        assert fake_pubsub.subscribed == [_home_cache_ready_channel(cache_key)]
+        assert fake_pubsub.unsubscribed == [_home_cache_ready_channel(cache_key)]
+        assert fake_pubsub.closed is True
+        assert cache_reads["count"] <= 4
+
     def test_get_home_context_skips_fallback_genre_query_when_top_genres_exist(self):
         from crate.db.home import _get_home_context
 
@@ -619,7 +962,7 @@ class TestHomeCaching:
              patch("crate.db.home.get_top_artists", return_value=[{"artist_name": "Converge"}]), \
              patch("crate.db.home.get_top_albums", return_value=[]), \
              patch("crate.db.home.get_top_genres", return_value=[{"genre_name": "Metalcore", "play_count": 10}]), \
-             patch("crate.db.home.transaction_scope", side_effect=AssertionError("fallback genre query should not run")):
+             patch("crate.db.home.get_followed_artist_genre_names", side_effect=AssertionError("fallback genre query should not run")):
             context = _get_home_context(1)
 
         assert context["top_genres_lower"]
@@ -689,6 +1032,26 @@ class TestHomeCaching:
             pg_db.create_task("scan")
         tasks = pg_db.list_tasks(limit=3)
         assert len(tasks) == 3
+
+    def test_get_task_activity_snapshot(self, pg_db):
+        from crate.db.queries.tasks import get_task_activity_snapshot
+
+        running_id = pg_db.create_task("scan")
+        delegated_id = pg_db.create_task("library_sync")
+        pending_id = pg_db.create_task("repair")
+        completed_id = pg_db.create_task("enrich")
+
+        pg_db.update_task(running_id, status="running")
+        pg_db.update_task(delegated_id, status="delegated")
+        pg_db.update_task(completed_id, status="completed")
+
+        snapshot = get_task_activity_snapshot(running_limit=10, pending_limit=10, recent_limit=10)
+
+        assert snapshot["running_count"] == 2
+        assert snapshot["pending_count"] == 1
+        assert {task["id"] for task in snapshot["running_tasks"]} == {running_id, delegated_id}
+        assert [task["id"] for task in snapshot["pending_tasks"]] == [pending_id]
+        assert {task["id"] for task in snapshot["recent_tasks"]} >= {running_id, delegated_id, pending_id, completed_id}
 
     def test_claim_next_task(self, pg_db):
         t1 = pg_db.create_task("scan")
@@ -763,7 +1126,7 @@ class TestCache:
         # Clear L1 memory cache and disable L2 Redis so max_age is tested at PG level
         from crate.db.cache import _mem_cache
         _mem_cache.pop("aged", None)
-        with patch("crate.db.cache._get_redis", return_value=None):
+        with patch("crate.db.cache_store._get_redis", return_value=None):
             # With max_age=0, should return None (expired immediately)
             result = pg_db.get_cache("aged", max_age_seconds=0)
             assert result is None
@@ -823,6 +1186,8 @@ class TestLibraryCRUD:
         assert isinstance(album_id, int)
 
     def test_upsert_track(self, pg_db):
+        from crate.db.tx import transaction_scope
+
         pg_db.upsert_artist({"name": "Artist C"})
         album_id = pg_db.upsert_album({
             "artist": "Artist C",
@@ -842,6 +1207,22 @@ class TestLibraryCRUD:
         tracks = pg_db.get_library_tracks(album_id)
         assert len(tracks) == 1
         assert tracks[0]["title"] == "Song"
+
+        with transaction_scope() as session:
+            rows = session.execute(
+                text(
+                    """
+                    SELECT pipeline, state
+                    FROM track_processing_state
+                    WHERE track_id = :track_id
+                    ORDER BY pipeline
+                    """
+                ),
+                {"track_id": tracks[0]["id"]},
+            ).mappings().all()
+
+        assert [row["pipeline"] for row in rows] == ["analysis", "bliss"]
+        assert all(row["state"] == "pending" for row in rows)
 
     def test_get_library_artists_pagination(self, pg_db):
         for i in range(5):
@@ -944,3 +1325,113 @@ class TestScanResults:
 
     def test_get_latest_scan_empty(self, pg_db):
         assert pg_db.get_latest_scan() is None
+
+
+class TestReadModels:
+    def test_ui_snapshot_roundtrip_and_versioning(self, pg_db):
+        from crate.db.read_models import get_or_build_ui_snapshot, get_ui_snapshot, upsert_ui_snapshot
+
+        upsert_ui_snapshot(
+            "ops",
+            "dashboard",
+            {"status": {"pending_imports": 3}},
+            generation_ms=11,
+            stale_after_seconds=30,
+        )
+        first = get_ui_snapshot("ops", "dashboard", max_age_seconds=30)
+
+        assert first is not None
+        assert first["version"] == 1
+
+        snapshot = get_or_build_ui_snapshot(
+            scope="ops",
+            subject_key="dashboard",
+            max_age_seconds=30,
+            fresh=False,
+            build=lambda: {"status": {"pending_imports": 9}},
+        )
+        assert snapshot["status"]["pending_imports"] == 3
+        assert snapshot["snapshot"]["version"] == 1
+
+        upsert_ui_snapshot(
+            "ops",
+            "dashboard",
+            {"status": {"pending_imports": 7}},
+            generation_ms=9,
+            stale_after_seconds=30,
+        )
+        second = get_ui_snapshot("ops", "dashboard", max_age_seconds=30)
+
+        assert second is not None
+        assert second["version"] == 2
+
+    def test_ui_snapshot_records_source_sequence(self, pg_db, monkeypatch):
+        from crate.db.read_models import get_or_build_ui_snapshot
+
+        monkeypatch.setattr("crate.db.ui_snapshot_building.get_latest_domain_event_id", lambda **kw: 42)
+
+        snapshot = get_or_build_ui_snapshot(
+            scope="ops",
+            subject_key="dashboard",
+            max_age_seconds=30,
+            fresh=True,
+            build=lambda: {"status": {"pending_imports": 1}},
+        )
+
+        assert snapshot["snapshot"]["source_seq"] == 42
+
+    def test_mark_ui_snapshots_stale_marks_matching_rows(self, pg_db):
+        from crate.db.read_models import get_ui_snapshot, mark_ui_snapshots_stale, upsert_ui_snapshot
+
+        upsert_ui_snapshot("home:discovery", "1", {"hero": None}, stale_after_seconds=300)
+        fresh = get_ui_snapshot("home:discovery", "1", max_age_seconds=300)
+        assert fresh is not None
+
+        affected = mark_ui_snapshots_stale(scope_prefix="home:")
+        stale = get_ui_snapshot("home:discovery", "1", max_age_seconds=300)
+
+        assert affected >= 1
+        assert stale is None
+
+    def test_analytics_surfaces_facade_reexports_snapshot_helpers(self, pg_db):
+        from crate.db.analytics_surfaces import empty_missing_report, empty_quality_report, missing_snapshot_subject_key
+
+        quality = empty_quality_report(computing=True, task_id="quality-1")
+        missing = empty_missing_report(
+            artist="Drive Like Jehu",
+            artist_id=7,
+            local=[{"id": 10, "name": "Yank Crime"}],
+            error="missing metadata",
+        )
+
+        assert quality["computing"] is True
+        assert quality["task_id"] == "quality-1"
+        assert missing["artist_id"] == 7
+        assert missing["local_count"] == 1
+        assert missing["error"] == "missing metadata"
+        assert missing_snapshot_subject_key(7) == "artist:7"
+
+    def test_ops_runtime_state_roundtrip(self, pg_db):
+        from crate.db.read_models import get_ops_runtime_state, set_ops_runtime_state
+
+        set_ops_runtime_state("public_status", {"pending_imports": 4, "issue_count": 2})
+        state = get_ops_runtime_state("public_status", max_age_seconds=30)
+
+        assert state is not None
+        assert state["pending_imports"] == 4
+        assert state["issue_count"] == 2
+
+    def test_upsert_ui_snapshot_publishes_snapshot_update_when_committing_its_own_tx(self, pg_db):
+        from crate.db.ui_snapshot_store import upsert_ui_snapshot
+
+        with patch("crate.db.ui_snapshot_store.publish_snapshot_update") as publish_snapshot_update:
+            saved = upsert_ui_snapshot(
+                "ops",
+                "dashboard",
+                {"status": {"pending_imports": 5}},
+                generation_ms=7,
+                stale_after_seconds=30,
+            )
+
+        assert saved["version"] == 1
+        publish_snapshot_update.assert_called_once_with("ops", "dashboard", 1)

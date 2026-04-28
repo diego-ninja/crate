@@ -16,7 +16,10 @@ from crate.api.schemas.operations import (
     SetupKeysResponse,
     SetupStatusResponse,
 )
-from crate.db import count_users, create_task
+from crate.db.repositories.auth import count_users, create_user
+from crate.db.cache_settings import get_setting, set_setting
+from crate.db.repositories.library import get_library_stats
+from crate.db.repositories.tasks import create_task
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +74,6 @@ def setup_create_admin(body: SetupAdminRequest):
     if not _is_setup_needed():
         raise HTTPException(status_code=403, detail="Setup already completed")
 
-    from crate.db import create_user
     user = create_user(
         email=body.email,
         name=body.name or None,
@@ -94,7 +96,6 @@ def setup_save_keys(request: Request, body: SetupKeysRequest):
 
     _require_admin(request)
 
-    from crate.db import set_setting
     keys = {
         "lastfm_apikey": body.lastfm_apikey,
         "ticketmaster_api_key": body.ticketmaster_api_key,
@@ -136,8 +137,6 @@ def setup_start_scan(request: Request):
 def setup_check(request: Request):
     """Check what's configured. Requires admin."""
     _require_admin(request)
-
-    from crate.db import get_setting, get_library_stats
 
     stats = get_library_stats()
 

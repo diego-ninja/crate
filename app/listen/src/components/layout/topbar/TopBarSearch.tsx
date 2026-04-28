@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Disc, Loader2, Music, Search, User, X } from "lucide-react";
 import { useNavigate } from "react-router";
 
@@ -6,6 +7,7 @@ import { AppPopover } from "@crate/ui/primitives/AppPopover";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { api } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 import {
   addTopBarSearchRecent,
@@ -46,10 +48,102 @@ export function TopBarSearch() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);
   const [recents, setRecents] = useState<string[]>(getTopBarSearchRecents);
+  const [expanded, setExpanded] = useState(false);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const collapseTimerRef = useRef<number | undefined>(undefined);
+  const queryRef = useRef(query);
+  const showDropdownRef = useRef(showDropdown);
+  const [dropdownStyle, setDropdownStyle] = useState<{ left: number; top: number; width: number } | null>(null);
+  const queryActive = query.trim().length > 0;
+  const searchOpen = expanded || showDropdown || queryActive;
+
+  useEffect(() => {
+    queryRef.current = query;
+  }, [query]);
+
+  useEffect(() => {
+    showDropdownRef.current = showDropdown;
+  }, [showDropdown]);
+
+  const clearCollapseTimer = useCallback(() => {
+    if (collapseTimerRef.current) {
+      clearTimeout(collapseTimerRef.current);
+      collapseTimerRef.current = undefined;
+    }
+  }, []);
+
+  const focusInputSoon = useCallback(() => {
+    clearCollapseTimer();
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, [clearCollapseTimer]);
+
+  const collapseIfIdle = useCallback((nextShowDropdown?: boolean) => {
+    if (queryRef.current.trim()) return;
+    if ((nextShowDropdown ?? showDropdownRef.current) === true) return;
+    if (containerRef.current?.contains(document.activeElement)) return;
+    setExpanded(false);
+    setActiveIdx(-1);
+  }, []);
+
+  const scheduleCollapseIfIdle = useCallback((nextShowDropdown?: boolean) => {
+    clearCollapseTimer();
+    collapseTimerRef.current = window.setTimeout(() => {
+      collapseIfIdle(nextShowDropdown);
+    }, 140);
+  }, [clearCollapseTimer, collapseIfIdle]);
+
+  const openSearch = useCallback((withDropdown = true) => {
+    clearCollapseTimer();
+    setExpanded(true);
+    if (withDropdown) {
+      setShowDropdown(true);
+    }
+  }, [clearCollapseTimer]);
+
+  useEffect(() => {
+    return () => {
+      clearCollapseTimer();
+    };
+  }, [clearCollapseTimer]);
+
+  const updateDropdownPosition = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setDropdownStyle(null);
+      return;
+    }
+    setDropdownStyle({
+      left: rect.left,
+      top: rect.bottom + 4,
+      width: rect.width || containerRef.current?.offsetWidth || 384,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!showDropdown) {
+      setDropdownStyle(null);
+      return;
+    }
+
+    updateDropdownPosition();
+
+    const handlePositionUpdate = () => {
+      updateDropdownPosition();
+    };
+
+    window.addEventListener("resize", handlePositionUpdate);
+    window.addEventListener("scroll", handlePositionUpdate, true);
+    return () => {
+      window.removeEventListener("resize", handlePositionUpdate);
+      window.removeEventListener("scroll", handlePositionUpdate, true);
+    };
+  }, [showDropdown, updateDropdownPosition]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -75,10 +169,19 @@ export function TopBarSearch() {
     };
   }, [query]);
 
+  useEffect(() => {
+    if (query.trim()) {
+      setExpanded(true);
+    }
+  }, [query]);
+
   useDismissibleLayer({
     active: showDropdown,
-    refs: [dropdownRef, inputRef],
-    onDismiss: () => setShowDropdown(false),
+    refs: [containerRef, dropdownRef, inputRef],
+    onDismiss: () => {
+      setShowDropdown(false);
+      scheduleCollapseIfIdle(false);
+    },
     closeOnEscape: false,
   });
 
@@ -96,15 +199,17 @@ export function TopBarSearch() {
       }
       setShowDropdown(false);
       setQuery("");
+      setExpanded(false);
     },
     [navigate, play],
   );
 
   const selectRecent = useCallback((term: string) => {
+    setExpanded(true);
     setQuery(term);
     setShowDropdown(true);
-    inputRef.current?.focus();
-  }, []);
+    focusInputSoon();
+  }, [focusInputSoon]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     const items = query.trim() ? results : recents.map((label) => ({ label }));
@@ -123,25 +228,141 @@ export function TopBarSearch() {
       }
     } else if (e.key === "Escape") {
       setShowDropdown(false);
+      setQuery("");
+      setResults([]);
+      setExpanded(false);
       inputRef.current?.blur();
     }
   }
 
   const showRecents = showDropdown && !query.trim() && recents.length > 0;
   const showResults = showDropdown && query.trim().length > 0 && (results.length > 0 || loading);
+  const dropdown =
+    dropdownStyle && (showResults || showRecents)
+      ? createPortal(
+          <AppPopover
+            ref={dropdownRef}
+            className={cn(
+              "fixed max-h-80 overflow-y-auto py-1",
+              showRecents ? "max-h-none" : undefined,
+            )}
+            style={{
+              left: dropdownStyle.left,
+              top: dropdownStyle.top,
+              width: dropdownStyle.width,
+            }}
+          >
+            {showResults ? (
+              <>
+                {results.map((item, index) => (
+                  <button
+                    key={`${item.type}-${item.label}-${index}`}
+                    onClick={() => selectItem(item)}
+                    className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
+                      index === activeIdx ? "bg-white/10" : "hover:bg-white/5"
+                    }`}
+                  >
+                    <SearchResultThumb item={item} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] text-white/80">{item.label}</p>
+                      {item.sublabel ? (
+                        <p className="truncate text-[11px] text-white/40">{item.sublabel}</p>
+                      ) : null}
+                    </div>
+                    <span className="shrink-0 text-[10px] capitalize text-white/20">{item.type}</span>
+                  </button>
+                ))}
+                {query.trim() && (
+                  <button
+                    onClick={() => {
+                      navigate(`/search?q=${encodeURIComponent(query.trim())}`);
+                      setShowDropdown(false);
+                      setQuery("");
+                      setExpanded(false);
+                    }}
+                    className="mt-1 w-full border-t border-white/5 px-3 py-2 text-center text-xs text-primary transition-colors hover:bg-white/5"
+                  >
+                    See all results for "{query.trim()}"
+                  </button>
+                )}
+              </>
+            ) : null}
+
+            {showRecents ? (
+              <>
+                <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/40">
+                  Recent
+                </p>
+                {recents.map((term, index) => (
+                  <button
+                    key={term}
+                    onClick={() => selectRecent(term)}
+                    className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
+                      index === activeIdx ? "bg-white/10" : "hover:bg-white/5"
+                    }`}
+                  >
+                    <Search size={12} className="shrink-0 text-white/20" />
+                    <span className="truncate text-[13px] text-white/60">{term}</span>
+                  </button>
+                ))}
+              </>
+            ) : null}
+          </AppPopover>,
+          document.body,
+        )
+      : null;
 
   return (
-    <div className="relative flex-1 md:flex-none md:w-[440px] lg:w-[500px]">
-      <div className="relative md:origin-right md:transition-transform md:duration-300 md:ease-out md:focus-within:scale-x-[1.12] lg:focus-within:scale-x-[1.14]">
-        <div className="relative flex items-center">
-          <Search size={17} className="pointer-events-none absolute left-4 text-white/40" />
-          {loading ? <Loader2 size={15} className="absolute right-4 animate-spin text-white/40" /> : null}
-          {!loading && query ? (
+    <div
+      ref={containerRef}
+      className={cn(
+        "group relative flex-1 shrink-0 overflow-visible md:flex-none md:origin-right",
+        "transition-[width,transform] duration-500 ease-[cubic-bezier(0.22,1.18,0.36,1)] motion-reduce:transition-none",
+        searchOpen
+          ? "w-[min(20rem,calc(100vw-8.5rem))] sm:w-[min(24rem,calc(100vw-9.25rem))] md:w-[440px] lg:w-[500px]"
+          : "w-11",
+      )}
+      onMouseEnter={() => openSearch(false)}
+      onMouseLeave={() => scheduleCollapseIfIdle()}
+    >
+      <div
+        className={cn(
+          "relative overflow-visible rounded-xl transition-[background-color,border-color,box-shadow,transform] duration-500 ease-[cubic-bezier(0.22,1.18,0.36,1)] motion-reduce:transition-none",
+          "focus-within:border focus-within:border-cyan-400/25 focus-within:bg-app-surface/78 focus-within:shadow-[0_0_0_1px_rgba(34,211,238,0.08),0_18px_42px_rgba(0,0,0,0.22)]",
+          searchOpen
+            ? "border border-white/8 bg-app-surface/68 shadow-[0_18px_42px_rgba(0,0,0,0.22)]"
+            : "border-0 bg-transparent shadow-none",
+          searchOpen ? "md:scale-x-[1.01]" : "md:scale-x-100",
+        )}
+      >
+        <div className="relative flex items-center overflow-hidden rounded-xl">
+          <button
+            type="button"
+            aria-label="Search"
+            aria-expanded={searchOpen}
+            data-state={searchOpen ? "open" : "closed"}
+            onFocus={() => openSearch(true)}
+            onClick={() => {
+              openSearch(true);
+              focusInputSoon();
+            }}
+            className={cn(
+              "absolute left-0 top-0 z-10 flex h-11 w-11 items-center justify-center rounded-xl transition-[color,transform,opacity] duration-500 ease-[cubic-bezier(0.22,1.18,0.36,1)] motion-reduce:transition-none",
+              searchOpen
+                ? "text-white/42"
+                : "text-white/56 group-hover:text-white/82 group-hover:scale-[1.03]",
+            )}
+          >
+            <Search size={17} />
+          </button>
+          {loading && searchOpen ? <Loader2 size={15} className="absolute right-4 animate-spin text-white/40" /> : null}
+          {!loading && query && searchOpen ? (
             <button
               onClick={() => {
                 setQuery("");
                 setResults([]);
-                inputRef.current?.focus();
+                setShowDropdown(true);
+                focusInputSoon();
               }}
               className="absolute right-4 text-white/30 hover:text-white/60"
               aria-label="Clear search"
@@ -153,71 +374,32 @@ export function TopBarSearch() {
             ref={inputRef}
             type="text"
             value={query}
+            tabIndex={searchOpen ? 0 : -1}
+            aria-hidden={!searchOpen}
             onChange={(e) => {
+              openSearch(true);
               setQuery(e.target.value);
-              setShowDropdown(true);
             }}
-            onFocus={() => setShowDropdown(true)}
+            onFocus={() => {
+              openSearch(true);
+            }}
+            onBlur={() => {
+              scheduleCollapseIfIdle();
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Search artists, albums, tracks..."
-            className="h-12 w-full rounded-xl border border-white/8 bg-black/25 backdrop-blur-sm pl-11 pr-11 text-[15px] text-white outline-none transition-[background-color,border-color,box-shadow] placeholder:text-white/40 focus:border-cyan-400/25 focus:bg-black/40 focus:shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
+            className={cn(
+              "h-11 w-full rounded-xl border-0 bg-transparent pl-11 text-[15px] text-white outline-none",
+              "transition-[opacity,transform,box-shadow,padding] duration-500 ease-[cubic-bezier(0.22,1.18,0.36,1)] motion-reduce:transition-none",
+              "placeholder:text-white/40",
+              searchOpen
+                ? "pointer-events-auto translate-x-0 scale-100 pr-11 opacity-100"
+                : "pointer-events-none translate-x-3 scale-[0.985] pr-4 opacity-0",
+            )}
           />
         </div>
-
-        {showResults ? (
-          <AppPopover
-            ref={dropdownRef}
-            className="absolute left-0 right-0 top-full mt-1 max-h-80 overflow-y-auto py-1"
-          >
-            {results.map((item, index) => (
-              <button
-                key={`${item.type}-${item.label}-${index}`}
-                onClick={() => selectItem(item)}
-                className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
-                  index === activeIdx ? "bg-white/10" : "hover:bg-white/5"
-                }`}
-              >
-                <SearchResultThumb item={item} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] text-white/80">{item.label}</p>
-                  {item.sublabel ? (
-                    <p className="truncate text-[11px] text-white/40">{item.sublabel}</p>
-                  ) : null}
-                </div>
-                <span className="shrink-0 text-[10px] capitalize text-white/20">{item.type}</span>
-              </button>
-            ))}
-            {query.trim() && (
-              <button
-                onClick={() => { navigate(`/search?q=${encodeURIComponent(query.trim())}`); setShowDropdown(false); setQuery(""); }}
-                className="w-full px-3 py-2 text-xs text-primary hover:bg-white/5 transition-colors text-center border-t border-white/5 mt-1"
-              >
-                See all results for "{query.trim()}"
-              </button>
-            )}
-          </AppPopover>
-        ) : null}
-
-        {showRecents ? (
-          <AppPopover ref={dropdownRef} className="absolute left-0 right-0 top-full mt-1 py-1">
-            <p className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/40">
-              Recent
-            </p>
-            {recents.map((term, index) => (
-              <button
-                key={term}
-                onClick={() => selectRecent(term)}
-                className={`flex w-full items-center gap-3 px-3 py-2 text-left transition-colors ${
-                  index === activeIdx ? "bg-white/10" : "hover:bg-white/5"
-                }`}
-              >
-                <Search size={12} className="shrink-0 text-white/20" />
-                <span className="truncate text-[13px] text-white/60">{term}</span>
-              </button>
-            ))}
-          </AppPopover>
-        ) : null}
       </div>
+      {dropdown}
     </div>
   );
 }

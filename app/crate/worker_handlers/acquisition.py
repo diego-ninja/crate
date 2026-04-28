@@ -8,10 +8,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from crate.audio import get_audio_files, read_tags
-from crate.db import create_task, create_task_dedup, emit_task_event, get_setting, get_task
-from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
+from crate.db.cache_settings import get_setting
+from crate.db.cache_store import delete_cache, set_cache
+from crate.db.events import emit_task_event
 from crate.db.jobs.acquisition import update_artist_latest_release_date
-from crate.db.user_library import follow_artist, like_track, save_album
+from crate.db.repositories.library import (
+    delete_quarantined_album,
+    get_library_album,
+    get_library_artist,
+    get_library_artists,
+    get_library_tracks,
+    quarantine_album,
+    unquarantine_album,
+)
+from crate.db.releases import mark_release_downloaded, mark_release_downloading, upsert_new_release
+from crate.db.queries.tasks import get_task
+from crate.db.repositories.tasks import create_task, create_task_dedup
+from crate.db.tidal import get_tidal_download, update_tidal_download
+from crate.db.repositories.user_library import follow_artist, like_track, save_album
+from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
 from crate.storage_import import resolve_import_album_target
 from crate.storage_layout import resolve_artist_dir
 from crate.worker_handlers import TaskHandler, is_cancelled, start_scan
@@ -38,8 +53,6 @@ def _safe_artist_folder_name(name: str) -> str:
 
 
 def _resolve_library_artist_folder_name(lib: Path, preferred_artist: str = "", staged_artist: str = "") -> str:
-    from crate.db import get_library_artist
-
     candidates = [
         preferred_artist,
         staged_artist,
@@ -88,8 +101,6 @@ def _resolve_library_artist_folder_name(lib: Path, preferred_artist: str = "", s
 
 
 def _resolve_tidal_preferred_artist_name(url: str, params: dict, download_id: int | None) -> str:
-    from crate.db.tidal import get_tidal_download
-
     if params.get("artist"):
         return params["artist"]
 
@@ -179,8 +190,6 @@ def _group_loose_audio_files(raw_dir: Path, grouped_dir: Path, extensions: set[s
 
 
 def _seed_uploaded_library(user_id: int | None, imported_albums: list[dict]):
-    from crate.db import get_library_album, get_library_tracks
-
     if not user_id:
         return
 
@@ -215,9 +224,9 @@ def _seed_uploaded_library(user_id: int | None, imported_albums: list[dict]):
 
 
 def _tidal_download_inner(task_id, params, config, url, quality, download_id, lib):
-    from crate.db import delete_cache, mark_release_downloaded, set_cache, update_tidal_download
     from crate.library_sync import LibrarySync
-    from crate.tidal import download, move_to_library
+    from crate.m4a_fix import repair_tidal_artifacts
+    from crate.tidal import download, get_album_track_count, get_album_tracks, inspect_download_tree, move_to_library
 
     from crate.tidal import ensure_auth
     if not ensure_auth():
@@ -228,7 +237,6 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # Quarantine old album if this is a quality upgrade
     upgrade_album_id = params.get("upgrade_album_id")
     if upgrade_album_id:
-        from crate.db import quarantine_album
         if quarantine_album(int(upgrade_album_id), task_id):
             emit_task_event(task_id, "info", {"message": f"Quarantined existing album #{upgrade_album_id} for upgrade"})
 
@@ -262,12 +270,91 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
             update_tidal_download(download_id, status="failed", error=result.get("error", "Download failed"))
         return {"error": result.get("error", "Download failed"), "phase": "download"}
 
+    def _cleanup_progress(data):
+        p.phase = "cleanup"
+        p.done = data.get("done", p.done)
+        p.total = data.get("total", p.total)
+        emit_progress(task_id, p)
+
+    def _refresh_result(current_result: dict) -> dict:
+        refreshed = inspect_download_tree(Path(current_result["path"]))
+        merged = dict(current_result)
+        merged.update(refreshed)
+        return merged
+
+    def _repair_result(current_result: dict) -> tuple[dict, dict]:
+        repair = repair_tidal_artifacts(
+            Path(current_result["path"]),
+            allow_lossy_rename=True,
+            progress_callback=_cleanup_progress,
+        )
+        refreshed = _refresh_result(current_result)
+        refreshed["repair_summary"] = repair
+        return refreshed, repair
+
+    def _is_lossless_request(requested_quality: str) -> bool:
+        return (requested_quality or "").lower() in {"high", "max", "lossless"}
+
+    def _run_normal_fallback(current_result: dict, reason: str) -> dict:
+        emit_task_event(task_id, "warn", {"message": reason})
+        fallback = download(
+            url,
+            quality="normal",
+            task_id=f"{task_id}_normal",
+            progress_callback=_dl_progress,
+        )
+        if not fallback.get("success"):
+            return {"error": fallback.get("error", "Fallback download failed"), "phase": "download"}
+        fallback, fallback_repair = _repair_result(fallback)
+        fallback["quality_fallback"] = "normal"
+        fallback["repair_summary"] = fallback_repair
+        try:
+            shutil.rmtree(current_result.get("path", ""), ignore_errors=True)
+        except Exception:
+            log.debug("Failed to remove abandoned Tidal staging dir %s", current_result.get("path"), exc_info=True)
+        emit_task_event(
+            task_id,
+            "info",
+            {"message": "Tidal delivered lossy/incomplete lossless output; using clean M4A fallback instead"},
+        )
+        return fallback
+
+    result, repair = _repair_result(result)
+
+    if repair.get("deleted"):
+        mb = repair["bytes_freed"] / (1024 * 1024)
+        emit_task_event(task_id, "info", {
+            "message": f"Cleaned up {repair['deleted']} Tidal temp artifacts ({mb:.0f} MB)",
+        })
+    if repair.get("remuxed_to_flac") or repair.get("renamed_to_flac"):
+        recovered = repair.get("remuxed_to_flac", 0) + repair.get("renamed_to_flac", 0)
+        emit_task_event(task_id, "info", {
+            "message": f"Recovered {recovered} lossless files from Tidal wrappers before import",
+        })
+    if repair.get("renamed_to_m4a"):
+        emit_task_event(task_id, "warn", {
+            "message": f"Normalized {repair['renamed_to_m4a']} AAC/ALAC files to M4A so they can be served directly",
+        })
+
+    if _is_lossless_request(quality) and repair.get("unrecoverable"):
+        fallback = _run_normal_fallback(
+            result,
+            "Lossless Tidal output contained unrecoverable temp/AAC wrappers; retrying in normal quality",
+        )
+        if fallback.get("error"):
+            if download_id:
+                update_tidal_download(download_id, status="failed", error=str(fallback["error"])[:200])
+            return fallback
+        result = fallback
+        repair = result.get("repair_summary", {})
+
     # Validate track count for album downloads and retry if partial
     content_type = params.get("content_type", "album")
     if content_type == "album" and result.get("success"):
-        from crate.tidal import get_album_track_count
         album_id = url.rstrip("/").split("/")[-1]
         expected = get_album_track_count(album_id)
+        if not expected:
+            expected = len(get_album_tracks(album_id) or []) or None
         actual_audio = result.get("audio_file_count", result.get("file_count", 0))
         if expected and actual_audio < expected:
             emit_task_event(task_id, "warn", {
@@ -275,9 +362,15 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
             })
             retry_result = download(url, quality=quality, task_id=f"{task_id}_retry", progress_callback=_dl_progress)
             if retry_result.get("success"):
+                retry_result, retry_repair = _repair_result(retry_result)
                 retry_audio = retry_result.get("audio_file_count", 0)
                 if retry_audio > actual_audio:
+                    try:
+                        shutil.rmtree(result.get("path", ""), ignore_errors=True)
+                    except Exception:
+                        log.debug("Failed to remove abandoned Tidal retry dir %s", result.get("path"), exc_info=True)
                     result = retry_result
+                    repair = retry_repair
                     emit_task_event(task_id, "info", {
                         "message": f"Retry improved: {retry_audio}/{expected} tracks"
                     })
@@ -285,33 +378,43 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
                     emit_task_event(task_id, "warn", {
                         "message": f"Retry didn't improve: still {actual_audio}/{expected} tracks"
                     })
+            actual_audio = result.get("audio_file_count", result.get("file_count", 0))
+            if actual_audio < expected and _is_lossless_request(quality):
+                fallback = _run_normal_fallback(
+                    result,
+                    f"Lossless download only produced {actual_audio}/{expected} usable tracks; retrying in normal quality",
+                )
+                if fallback.get("error"):
+                    if download_id:
+                        update_tidal_download(download_id, status="failed", error=str(fallback["error"])[:200])
+                    return fallback
+                result = fallback
+                repair = result.get("repair_summary", {})
+                actual_audio = result.get("audio_file_count", result.get("file_count", 0))
+            if actual_audio < expected:
+                message = f"Partial Tidal download: got {actual_audio}/{expected} tracks"
+                if result.get("errors"):
+                    message = f"{message}. {result['errors'][-1]}"
+                if download_id:
+                    update_tidal_download(download_id, status="failed", error=message[:200])
+                return {"error": message, "phase": "download"}
 
     if download_id:
         update_tidal_download(download_id, status="processing")
     if result.get("warning"):
         emit_task_event(task_id, "info", {"message": f"Tidal reported partial issues but files were produced: {result['warning']}"})
 
-    # Clean up tiddl intermediate M4A files before moving to the library.
-    # tiddl fetches raw DASH streams as .m4a, converts to .flac, but
-    # sometimes leaves the intermediates behind.  If we move them into
-    # the library, sync indexes them as ghost tracks with no metadata.
-    from crate.m4a_fix import cleanup_tidal_intermediates
-
-    def _cleanup_progress(data):
-        p.phase = "cleanup"
-        p.done = data.get("done", p.done)
-        p.total = data.get("total", p.total)
-        emit_progress(task_id, p)
-
-    cleanup = cleanup_tidal_intermediates(
-        Path(result["path"]),
-        progress_callback=_cleanup_progress,
-    )
-    if cleanup.get("deleted"):
-        mb = cleanup["bytes_freed"] / (1024 * 1024)
-        emit_task_event(task_id, "info", {
-            "message": f"Cleaned up {cleanup['deleted']} tiddl intermediate M4A files ({mb:.0f} MB)",
-        })
+    invalid_audio = list(result.get("invalid_audio_files") or [])
+    temp_artifacts = list(result.get("temp_artifact_files") or [])
+    if invalid_audio or temp_artifacts:
+        artifact_count = len(invalid_audio) + len(temp_artifacts)
+        message = f"Tidal download produced invalid staging artifacts ({artifact_count} files); import aborted"
+        details = invalid_audio[:2] + temp_artifacts[:2]
+        emit_task_event(task_id, "warn", {"message": message, "files": details})
+        error_detail = result.get("errors", [])[-1] if result.get("errors") else message
+        if download_id:
+            update_tidal_download(download_id, status="failed", error=str(error_detail)[:200])
+        return {"error": message, "phase": "cleanup", "invalid_files": details}
 
     preferred_artist_name = _resolve_tidal_preferred_artist_name(url, params, download_id)
     staged_artists = _align_tidal_staged_artist_dirs(result["path"], lib, preferred_artist_name)
@@ -363,19 +466,16 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # All post-move work runs under the processing flag so the watcher's
     # debounce loop treats any filesystem activity as ours and stays out.
     try:
-        from crate.db import get_library_artist as _get_artist
-
         # Download Tidal cover for specific album if provided
         cover_url = params.get("cover_url", "")
         current_album = params.get("album", "")
         if cover_url and current_album and modified_artists:
             for current_artist in modified_artists:
-                artist_row = _get_artist(current_artist)
+                artist_row = get_library_artist(current_artist)
                 found_artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=current_artist, existing_only=True)
                 if not found_artist_dir:
                     continue
                 # Search all subdirs for the album (V2: subdirs are UUIDs)
-                from crate.db import get_library_album
                 album_row = get_library_album(current_artist, current_album)
                 if album_row and album_row.get("path"):
                     album_dir = Path(album_row["path"])
@@ -405,7 +505,7 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
         emit_progress(task_id, p, force=True)
         sync = LibrarySync(config)
         for current_artist in modified_artists:
-            artist_row = _get_artist(current_artist)
+            artist_row = get_library_artist(current_artist)
             found_artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=current_artist, existing_only=True)
             if found_artist_dir and found_artist_dir.is_dir():
                 try:
@@ -457,7 +557,6 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     # (files not deleted — new download may share the same directory)
     if upgrade_album_id:
         try:
-            from crate.db import delete_quarantined_album
             deleted = delete_quarantined_album(int(upgrade_album_id))
             if deleted:
                 emit_task_event(task_id, "info", {"message": f"Replaced old album records (id={upgrade_album_id})"})
@@ -467,15 +566,14 @@ def _tidal_download_inner(task_id, params, config, url, quality, download_id, li
     return {
         "success": True,
         "url": url,
-        "quality": quality,
+        "quality": result.get("quality_fallback", quality),
+        "requested_quality": quality,
         "files": result.get("file_count", 0),
         "artists": modified_artists,
     }
 
 
 def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import update_tidal_download
-
     url = params.get("url", "")
     quality = params.get("quality", "max")
     download_id = params.get("download_id")
@@ -501,7 +599,6 @@ def _handle_tidal_download(task_id: str, params: dict, config: dict) -> dict:
         upgrade_album_id = params.get("upgrade_album_id")
         if upgrade_album_id:
             try:
-                from crate.db import unquarantine_album
                 unquarantine_album(int(upgrade_album_id))
                 log.info("Restored quarantined album %s after download failure", upgrade_album_id)
             except Exception:
@@ -550,8 +647,6 @@ def _register_new_release(
     known_date: str,
     auto_download: bool,
 ) -> tuple[int, bool]:
-    from crate.db import mark_release_downloading, upsert_new_release
-
     release_date = release.get("first_release_date", "")
     if not release_date:
         return 0, False
@@ -612,7 +707,6 @@ def _register_new_release(
 
 
 def _handle_check_new_releases(task_id: str, params: dict, config: dict) -> dict:
-    from crate.db import get_library_artists
     from crate.musicbrainz_ext import get_artist_releases as mb_get_releases
 
     auto_download = get_setting("auto_download_new_releases", "false").lower() == "true"
@@ -934,7 +1028,6 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     # Quarantine old album if this is a quality upgrade
     upgrade_album_id = params.get("upgrade_album_id")
     if upgrade_album_id:
-        from crate.db import quarantine_album
         if quarantine_album(int(upgrade_album_id), task_id):
             emit_task_event(task_id, "info", {"message": f"Quarantined existing album #{upgrade_album_id} for upgrade"})
 
@@ -1008,7 +1101,6 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
         # Incomplete download — restore quarantined album
         if upgrade_album_id:
             try:
-                from crate.db import unquarantine_album
                 unquarantine_album(int(upgrade_album_id))
             except Exception:
                 log.warning("Failed to unquarantine album %s", upgrade_album_id, exc_info=True)
@@ -1053,7 +1145,6 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     # Clean up quarantined album after successful upgrade
     if upgrade_album_id and moved > 0:
         try:
-            from crate.db import delete_quarantined_album
             deleted = delete_quarantined_album(int(upgrade_album_id))
             if deleted:
                 emit_task_event(task_id, "info", {"message": f"Replaced old album records (id={upgrade_album_id})"})
@@ -1062,7 +1153,6 @@ def _handle_soulseek_download(task_id: str, params: dict, config: dict) -> dict:
     elif upgrade_album_id and moved == 0:
         # Download produced no files — restore the old album
         try:
-            from crate.db import unquarantine_album
             unquarantine_album(int(upgrade_album_id))
         except Exception:
             log.warning("Failed to unquarantine album %s", upgrade_album_id, exc_info=True)
@@ -1211,8 +1301,7 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
     p_upload.total = len(modified_artists)
     emit_progress(task_id, p_upload, force=True)
     for artist in modified_artists:
-        from crate.db import get_library_artist as _get_artist_fn
-        artist_row = _get_artist_fn(artist)
+        artist_row = get_library_artist(artist)
         found_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist, existing_only=True)
         if found_dir and found_dir.is_dir():
             try:
@@ -1249,90 +1338,66 @@ def _handle_library_upload(task_id: str, params: dict, config: dict) -> dict:
 
 
 def _handle_remux_m4a_dash(task_id: str, params: dict, config: dict) -> dict:
-    """Fix tiddl intermediate M4A files in the library.
+    """Fix Tidal download artifacts in the library.
 
-    tiddl fetches raw DASH streams as .m4a, converts to .flac with tags,
-    but sometimes leaves the intermediates behind.  These ghost files
-    have no metadata, zero duration, and pollute the library.
+    Kept under the legacy task name for compatibility, but the repair now
+    covers more than ``*.m4a`` leftovers:
 
-    For each album directory:
-    - If FLAC files already exist alongside → delete the M4A intermediates
-    - If M4A-only (conversion failed) → remux to native FLAC via ffmpeg
+    - temp ``tmp*`` files and zero-byte artifacts
+    - raw FLAC streams with the wrong extension
+    - MP4 containers carrying real FLAC that can be remuxed losslessly
+    - named AAC/ALAC containers that should be served as ``.m4a`` instead
+      of pretending to be ``.flac``
     """
-    from crate.m4a_fix import cleanup_tidal_intermediates, is_tidal_intermediate, remux_m4a_dash_to_flac
+    from crate.m4a_fix import repair_tidal_artifacts
 
     lib = Path(config.get("library_path", "/music"))
     dry_run = bool(params.get("dry_run", False))
 
-    emit_task_event(task_id, "info", {"message": "Scanning library for tiddl intermediate M4A files..."})
+    emit_task_event(task_id, "info", {"message": "Scanning library for Tidal download artifacts..."})
 
-    p_remux = TaskProgress(phase="cleanup", phase_count=2)
+    p_remux = TaskProgress(phase="repairing", phase_count=1)
 
     def _remux_cleanup_progress(data):
+        p_remux.phase = data.get("phase", p_remux.phase)
         p_remux.done = data.get("done", p_remux.done)
         p_remux.total = data.get("total", p_remux.total)
+        p_remux.item = data.get("file", p_remux.item)
         emit_progress(task_id, p_remux)
 
-    # Phase 1: cleanup intermediates where FLACs exist
-    cleanup = cleanup_tidal_intermediates(
+    summary = repair_tidal_artifacts(
         lib,
+        allow_lossy_rename=True,
         progress_callback=_remux_cleanup_progress,
+        dry_run=dry_run,
     )
 
-    deleted = cleanup["deleted"]
-    bytes_freed = cleanup["bytes_freed"]
-
-    # Phase 2: find M4A-only albums (conversion failed) and remux
-    m4a_only: dict[Path, list[Path]] = {}
-    for f in lib.rglob("*.m4a"):
-        if f.is_file() and is_tidal_intermediate(f):
-            parent = f.parent
-            has_flac = any(x.suffix.lower() == ".flac" for x in parent.iterdir() if x.is_file())
-            if not has_flac:
-                m4a_only.setdefault(parent, []).append(f)
-
-    converted = 0
-    failed = 0
-    total_remux = sum(len(files) for files in m4a_only.values())
-
-    if total_remux and not dry_run:
-        emit_task_event(task_id, "info", {
-            "message": f"Found {total_remux} M4A files in {len(m4a_only)} albums with no FLACs — remuxing",
-        })
-        p_remux.phase = "remuxing"
-        p_remux.phase_index = 1
-        p_remux.done = 0
-        p_remux.total = total_remux
-        done = 0
-        for album_dir, m4a_files in m4a_only.items():
-            try:
-                rel = album_dir.relative_to(lib)
-                parts = rel.parts
-                artist_guess = parts[0] if len(parts) >= 2 else ""
-                album_guess = parts[1] if len(parts) >= 3 else ""
-            except ValueError:
-                artist_guess = ""
-                album_guess = ""
-
-            for m4a_path in m4a_files:
-                done += 1
-                p_remux.done = done
-                p_remux.item = m4a_path.name
-                emit_progress(task_id, p_remux)
-                if remux_m4a_dash_to_flac(m4a_path, artist=artist_guess, album=album_guess):
-                    converted += 1
-                else:
-                    failed += 1
-
+    deleted = summary["deleted"]
+    bytes_freed = summary["bytes_freed"]
+    recovered_lossless = summary["remuxed_to_flac"] + summary["renamed_to_flac"]
+    renamed_to_m4a = summary["renamed_to_m4a"]
+    failed = summary["unrecoverable"]
     mb_freed = bytes_freed / (1024 * 1024)
+
     emit_task_event(task_id, "info", {
         "message": (
-            f"M4A fix complete: {deleted} intermediates deleted ({mb_freed:.0f} MB freed), "
-            f"{converted} remuxed to FLAC, {failed} failed"
+            f"Tidal artifact fix complete: {deleted} temp files deleted ({mb_freed:.0f} MB freed), "
+            f"{recovered_lossless} lossless files recovered, {renamed_to_m4a} files normalized to M4A, "
+            f"{failed} unrecoverable"
         ),
     })
+    if summary["lossy_files"]:
+        emit_task_event(task_id, "warn", {
+            "message": "Some Tidal files are only available as AAC/ALAC wrappers and will be served as M4A",
+            "files": summary["lossy_files"][:5],
+        })
+    if summary["unrecoverable_files"]:
+        emit_task_event(task_id, "warn", {
+            "message": "Some Tidal artifacts could not be repaired automatically",
+            "files": summary["unrecoverable_files"][:5],
+        })
 
-    if (deleted > 0 or converted > 0) and not dry_run:
+    if (deleted > 0 or recovered_lossless > 0 or renamed_to_m4a > 0) and not dry_run:
         from crate.library_sync import start_scan
         try:
             start_scan()
@@ -1342,11 +1407,130 @@ def _handle_remux_m4a_dash(task_id: str, params: dict, config: dict) -> dict:
     return {
         "deleted": deleted,
         "bytes_freed": bytes_freed,
-        "converted": converted,
+        "converted": recovered_lossless,
         "failed": failed,
-        "m4a_only_albums": len(m4a_only),
+        "renamed_to_m4a": renamed_to_m4a,
+        "lossy_files": summary["lossy_files"],
+        "unrecoverable_files": summary["unrecoverable_files"],
+        "m4a_only_albums": 0,
         "dry_run": dry_run,
     }
+
+
+def _handle_import_queue_item(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.import_queue_read_models import mark_import_queue_item_imported
+    from crate.importer import ImportQueue
+
+    source_path = str(params.get("source_path") or "").strip()
+    if not source_path:
+        return {"error": "source_path is required"}
+
+    queue = ImportQueue(config)
+    artist = params.get("artist")
+    album = params.get("album")
+    emit_task_event(task_id, "info", {"message": f"Importing staged album from {source_path}"})
+    result = queue.import_item(source_path, artist, album)
+    if result.get("error"):
+        emit_task_event(task_id, "error", {"message": result["error"], "source_path": source_path})
+        return result
+
+    mark_import_queue_item_imported(source_path, result=result)
+    emit_task_event(
+        task_id,
+        "info",
+        {
+            "message": f"Imported staged album to {result.get('dest')}",
+            "source_path": source_path,
+            "dest": result.get("dest"),
+            "status": result.get("status"),
+        },
+    )
+    start_scan()
+    return result
+
+
+def _handle_import_queue_all(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.import_queue_read_models import list_import_queue_items, mark_import_queue_item_imported
+    from crate.importer import ImportQueue
+
+    items = list_import_queue_items(status="pending", limit=5000)
+    if not items:
+        emit_task_event(task_id, "info", {"message": "No pending staged imports"})
+        return {"status": "noop", "imported": 0, "failed": 0, "results": []}
+
+    queue = ImportQueue(config)
+    progress = TaskProgress(phase="importing", phase_count=1, total=len(items), done=0)
+    emit_progress(task_id, progress, force=True)
+    results: list[dict] = []
+    imported = 0
+    failed = 0
+
+    for index, item in enumerate(items, start=1):
+        if is_cancelled(task_id):
+            emit_task_event(task_id, "warning", {"message": "Import-all cancelled"})
+            break
+
+        result = queue.import_item(item["source_path"], item.get("artist"), item.get("album"))
+        result["source"] = item.get("source")
+        result["source_path"] = item["source_path"]
+        results.append(result)
+        if result.get("error"):
+            failed += 1
+            emit_task_event(
+                task_id,
+                "error",
+                {
+                    "message": result["error"],
+                    "source_path": item["source_path"],
+                },
+            )
+        else:
+            imported += 1
+            mark_import_queue_item_imported(
+                item["source_path"],
+                result=result,
+                source=item.get("source"),
+            )
+            emit_item_event(
+                task_id,
+                level="info",
+                message=f"Imported {item.get('artist') or 'Unknown Artist'} — {item.get('album') or 'Unknown Album'}",
+                artist=item.get("artist"),
+                album=item.get("album"),
+            )
+
+        progress.done = index
+        progress.item = entity_label(artist=item.get("artist"), album=item.get("album"))
+        emit_progress(task_id, progress)
+
+    if imported > 0:
+        start_scan()
+
+    return {
+        "status": "completed",
+        "imported": imported,
+        "failed": failed,
+        "results": results,
+    }
+
+
+def _handle_import_queue_remove(task_id: str, params: dict, config: dict) -> dict:
+    from crate.db.import_queue_read_models import remove_import_queue_item
+    from crate.importer import ImportQueue
+
+    source_path = str(params.get("source_path") or "").strip()
+    if not source_path:
+        return {"error": "source_path is required"}
+
+    queue = ImportQueue(config)
+    emit_task_event(task_id, "info", {"message": f"Removing staged source {source_path}"})
+    ok = queue.remove_source(source_path)
+    if ok:
+        remove_import_queue_item(source_path)
+        emit_task_event(task_id, "info", {"message": "Staged source removed", "source_path": source_path})
+    else:
+        emit_task_event(task_id, "warning", {"message": "Staged source not found", "source_path": source_path})
+    return {"removed": ok, "source_path": source_path}
 
 
 ACQUISITION_TASK_HANDLERS: dict[str, TaskHandler] = {
@@ -1355,5 +1539,8 @@ ACQUISITION_TASK_HANDLERS: dict[str, TaskHandler] = {
     "soulseek_download": _handle_soulseek_download,
     "cleanup_incomplete_downloads": _handle_cleanup_incomplete_downloads,
     "library_upload": _handle_library_upload,
+    "import_queue_item": _handle_import_queue_item,
+    "import_queue_all": _handle_import_queue_all,
+    "import_queue_remove": _handle_import_queue_remove,
     "remux_m4a_dash": _handle_remux_m4a_dash,
 }

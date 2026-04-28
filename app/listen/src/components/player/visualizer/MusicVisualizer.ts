@@ -135,7 +135,7 @@ export class MusicVisualizer {
     canvas: HTMLCanvasElement,
     analyser: AnalyserNode,
     getPlaybackState: () => { volume: number; isPlaying: boolean },
-    _mode: VisualizerMode = "spheres",
+    mode: VisualizerMode = "spheres",
   ) {
     const glCtx = canvas.getContext('webgl2', { alpha: true, antialias: false, preserveDrawingBuffer: false });
     if (!glCtx) throw new Error('WebGL2 not supported');
@@ -144,7 +144,7 @@ export class MusicVisualizer {
     this.glCtx = glCtx;
     this.analyser = analyser;
     this.getPlaybackState = getPlaybackState;
-    this.mode = "spheres";
+    this.mode = mode;
     this.freqDomain = new Uint8Array(analyser.frequencyBinCount);
     this.timeDomain = new Uint8Array(analyser.frequencyBinCount);
 

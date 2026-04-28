@@ -27,7 +27,7 @@ def detect_location_from_ip(ip: str) -> dict | None:
     if not ip or ip in ("127.0.0.1", "::1", "localhost"):
         return None
 
-    from crate.db.cache import get_cache, set_cache
+    from crate.db.cache_store import get_cache, set_cache
     cache_key = f"geo:ip:{ip}"
     cached = get_cache(cache_key, max_age_seconds=86400)
     if cached:
@@ -69,7 +69,7 @@ def geocode_city(query: str) -> dict | None:
     if not normalized:
         return None
 
-    from crate.db.cache import get_cache, set_cache
+    from crate.db.cache_store import get_cache, set_cache
     cache_key = f"geo:city:{normalized.lower()}"
     cached = get_cache(cache_key, max_age_seconds=30 * 86400)
     if cached:
@@ -119,7 +119,7 @@ def search_cities(query: str, limit: int = 5) -> list[dict]:
     if len(normalized) < 2:
         return []
 
-    from crate.db.cache import get_cache, set_cache
+    from crate.db.cache_store import get_cache, set_cache
     cache_key = f"geo:search:{normalized.lower()}"
     cached = get_cache(cache_key, max_age_seconds=7 * 86400)
     if cached:

@@ -280,7 +280,18 @@ export interface HomeFavoriteArtist {
   minutes_listened: number;
 }
 
+export interface SnapshotMetadata {
+  scope: string;
+  subject_key: string;
+  version: number;
+  built_at?: string | null;
+  stale_after?: string | null;
+  stale: boolean;
+  generation_ms: number;
+}
+
 export interface HomeDiscoveryPayload {
+  snapshot?: SnapshotMetadata;
   hero: HomeHeroArtist | HomeHeroArtist[] | null;
   recently_played: HomeRecentItem[];
   custom_mixes: HomeGeneratedPlaylistSummary[];
@@ -289,6 +300,9 @@ export interface HomeDiscoveryPayload {
   radio_stations: HomeRadioStation[];
   favorite_artists: HomeFavoriteArtist[];
   essentials: HomeGeneratedPlaylistSummary[];
+  recent_global_artists?: GlobalArtist[];
+  upcoming?: HomeUpcomingResponse;
+  replay?: ReplayMix;
 }
 
 export interface HomeGeneratedPlaylistDetail {

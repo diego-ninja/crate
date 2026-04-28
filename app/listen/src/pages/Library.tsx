@@ -73,6 +73,11 @@ interface CuratedPlaylist {
   category?: string | null;
 }
 
+interface LibraryPlaylistsPageData {
+  playlists: Playlist[];
+  followed_curated_playlists: CuratedPlaylist[];
+}
+
 interface FollowedArtist {
   artist_name: string;
   artist_id?: number;
@@ -136,26 +141,23 @@ function StatBox({ value, label }: { value: number; label: string }) {
 }
 
 function PlaylistsTab() {
-  const { data: playlists, loading, refetch: refetchPlaylists } = useApi<Playlist[]>("/api/playlists");
-  const {
-    data: followedCurated,
-    loading: followedLoading,
-    refetch: refetchFollowedCurated,
-  } = useApi<CuratedPlaylist[]>("/api/curation/followed");
+  const { data, loading, refetch } = useApi<LibraryPlaylistsPageData>("/api/me/playlists-page");
   const { openCreatePlaylist } = usePlaylistComposer();
   const [editingPlaylist, setEditingPlaylist] = useState<PlaylistDetail | null>(null);
   const [saving, setSaving] = useState(false);
   const [deletingPlaylist, setDeletingPlaylist] = useState<Playlist | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const playlists = data?.playlists;
+  const followedCurated = data?.followed_curated_playlists;
 
-  if (loading || followedLoading) return <Spinner />;
+  if (loading) return <Spinner />;
 
   async function toggleSystemPlaylistFollow(playlist: CuratedPlaylist) {
     try {
       const method = "DELETE";
       await api(`/api/curation/playlists/${playlist.id}/follow`, method);
       toast.success(`Removed ${playlist.name} from your library`);
-      refetchFollowedCurated();
+      refetch();
     } catch {
       toast.error("Failed to update playlist");
     }
@@ -226,7 +228,7 @@ function PlaylistsTab() {
 
       toast.success("Playlist updated");
       setEditingPlaylist(null);
-      refetchPlaylists();
+      refetch();
     } catch {
       toast.error("Failed to update playlist");
     } finally {
@@ -241,7 +243,7 @@ function PlaylistsTab() {
       await api(`/api/playlists/${deletingPlaylist.id}`, "DELETE");
       toast.success("Playlist deleted");
       setDeletingPlaylist(null);
-      refetchPlaylists();
+      refetch();
     } catch {
       toast.error("Failed to delete playlist");
     } finally {

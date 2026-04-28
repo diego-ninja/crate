@@ -11,7 +11,15 @@ from crate.api.schemas.utility import (
     SetlistPlaylistResponse,
 )
 from crate import spotify, setlistfm, musicbrainz_ext
-from crate.db import get_artist_refs_by_names, get_artist_analysis_tracks, get_artist_tracks_for_setlist, find_user_playlist_by_name
+from crate.db.cache_store import get_cache, set_cache
+from crate.db.repositories.library import (
+    find_user_playlist_by_name,
+    get_artist_analysis_tracks,
+    get_artist_refs_by_names,
+    get_artist_tracks_for_setlist,
+    get_library_artist,
+)
+from crate.db.repositories.playlists import create_playlist, update_playlist
 from crate.lastfm import get_artist_info, get_fanart_all_images
 
 log = logging.getLogger(__name__)
@@ -66,7 +74,6 @@ def get_artist_enrichment(request: Request, name: str):
     """Get consolidated enrichment data. Returns cached if available, otherwise fetches inline.
     For background enrichment, use POST /api/artists/{artist_id}/enrich which queues a worker task."""
     _require_admin(request)
-    from crate.db import get_cache, set_cache, get_library_artist
 
     # Try cache first
     cache_key = f"enrichment:{name.lower()}"
@@ -91,6 +98,26 @@ def get_artist_enrichment(request: Request, name: str):
         if "lastfm" in result or "spotify" in result:
             set_cache(cache_key, result)
     return result or {}
+
+
+def get_artist_page_enrichment(name: str) -> dict:
+    """Return only fast, cache-backed enrichment needed for Listen artist pages."""
+    cache_key = f"enrichment:{name.lower()}"
+    cached = get_cache(cache_key, max_age_seconds=86400)
+    if cached and isinstance(cached, dict):
+        setlist_payload = cached.get("setlist")
+        if isinstance(setlist_payload, dict):
+            return {"setlist": setlist_payload}
+
+    setlist = setlistfm.get_cached_probable_setlist(name)
+    if setlist:
+        return {
+            "setlist": {
+                "probable_setlist": setlist,
+                "total_shows": len(setlist),
+            }
+        }
+    return {}
 
 
 @router.get(
@@ -273,8 +300,7 @@ def create_setlist_playlist(request: Request, name: str):
         raise HTTPException(status_code=404, detail="No setlist data found")
 
     from crate.api.browse_artist import _match_setlist_track
-    from crate.db import create_playlist, update_playlist
-    from crate.db.playlists import replace_playlist_tracks
+    from crate.db.repositories.playlists import replace_playlist_tracks
 
     matched_tracks: list[dict] = []
     unmatched: list[str] = []

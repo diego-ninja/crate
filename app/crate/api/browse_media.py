@@ -23,7 +23,8 @@ from crate.api.schemas.media import (
     TrackRatingRequest,
     TrackRatingResponse,
 )
-from crate.db import get_cache
+from crate.db.cache_store import get_cache
+from crate.db.repositories.library import set_track_rating
 from crate.db.queries.browse_media import (
     add_favorite,
     count_mood_tracks,
@@ -44,6 +45,7 @@ from crate.db.queries.browse_media import (
     search_artists,
     search_tracks,
 )
+from crate.db.repositories.tasks import create_task_dedup
 
 log = logging.getLogger(__name__)
 
@@ -218,7 +220,6 @@ def api_favorites_remove(request: Request, body: FavoriteMutationRequest):
 )
 def api_rate_track(request: Request, body: TrackRatingRequest):
     _require_auth(request)
-    from crate.db import set_track_rating
 
     rating = body.rating
     track_id = body.track_id
@@ -381,7 +382,7 @@ def api_eq_features_by_storage_id(request: Request, storage_id: str):
 
 # ── Track primary genre ─────────────────────────────────────────────
 
-def _pick_primary_genre(rows):
+def _pick_primary_genre(rows, *, canonical_only: bool = False):
     """Prefer the highest-weight canonical genre; fall back to the
     highest-weight raw tag if none resolve cleanly. Canonical picks
     also carry the resolved EQ preset (direct or inherited)."""
@@ -438,17 +439,29 @@ def _pick_primary_genre(rows):
                 "preset": None,
             }
 
+    if canonical_only:
+        return canonical_pick
     return canonical_pick or raw_pick
 
 
 def _resolve_track_genre(track_id: int) -> dict | None:
     album_rows = get_track_album_genres(track_id)
-    picked = _pick_primary_genre(album_rows) if album_rows else None
+    picked = _pick_primary_genre(album_rows, canonical_only=True) if album_rows else None
     if picked:
         picked["source"] = "album"
         return picked
 
     artist_rows = get_track_artist_genres(track_id)
+    picked = _pick_primary_genre(artist_rows, canonical_only=True) if artist_rows else None
+    if picked:
+        picked["source"] = "artist"
+        return picked
+
+    picked = _pick_primary_genre(album_rows) if album_rows else None
+    if picked:
+        picked["source"] = "album"
+        return picked
+
     picked = _pick_primary_genre(artist_rows) if artist_rows else None
     if picked:
         picked["source"] = "artist"
@@ -502,7 +515,6 @@ def api_discover_completeness(request: Request):
     cached = get_cache("discover:completeness", max_age_seconds=86400)
     if cached is not None:
         return cached
-    from crate.db import create_task_dedup
     create_task_dedup("compute_completeness", {})
     return []
 
@@ -516,7 +528,6 @@ def api_discover_completeness(request: Request):
 def api_discover_completeness_refresh(request: Request):
     """Force recompute of completeness data."""
     _require_auth(request)
-    from crate.db import create_task_dedup
     task_id = create_task_dedup("compute_completeness", {})
     return {"task_id": task_id}
 

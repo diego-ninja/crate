@@ -3,6 +3,7 @@ import { Input } from "@crate/ui/shadcn/input";
 import { Button } from "@crate/ui/shadcn/button";
 import { Badge } from "@crate/ui/shadcn/badge";
 import { api } from "@/lib/api";
+import { waitForTask } from "@/lib/tasks";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
 
@@ -82,22 +83,14 @@ export function TagEditor({ albumId, tags, tracks, onSaved }: TagEditorProps) {
         body,
       );
       toast.success("Saving tags...");
-      const poll = setInterval(async () => {
-        try {
-          const task = await api<{ status: string; result?: { updated?: number } }>(`/api/tasks/${task_id}`);
-          if (task.status === "completed") {
-            clearInterval(poll);
-            setSaving(false);
-            toast.success(`Tags saved (${task.result?.updated ?? 0} tracks)`);
-            onSaved?.();
-          } else if (task.status === "failed") {
-            clearInterval(poll);
-            setSaving(false);
-            toast.error("Failed to save tags");
-          }
-        } catch { /* keep polling */ }
-      }, 2000);
-      setTimeout(() => { clearInterval(poll); setSaving(false); }, 60000);
+      const task = await waitForTask(task_id, 60000);
+      setSaving(false);
+      if (task.status === "completed") {
+        toast.success(`Tags saved (${Number(task.result?.updated ?? 0)} tracks)`);
+        onSaved?.();
+      } else if (task.status === "failed") {
+        toast.error("Failed to save tags");
+      }
     } catch (e) {
       toast.error(`Failed: ${e instanceof Error ? e.message : "Unknown"}`);
       setSaving(false);

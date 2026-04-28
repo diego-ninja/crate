@@ -12,7 +12,13 @@
 
 ---
 
-Crate is a full-stack, self-hosted music system. It watches your filesystem, pulls metadata from Last.fm / MusicBrainz / Fanart.tv / Setlist.fm / Spotify, analyzes audio with PANNs + Essentia + bliss-rs, and exposes two separate frontends on top of a single FastAPI backend: an **admin** web app for library management and a **Listen** app (PWA + iOS + Android via Capacitor) for playback and discovery.
+Crate is a full-stack, self-hosted music system. It watches your filesystem,
+pulls metadata from Last.fm / MusicBrainz / Fanart.tv / Setlist.fm / Spotify,
+analyzes audio with PANNs + Essentia + bliss-rs, and exposes two separate
+frontends on top of a single FastAPI backend: an **admin** web app for library
+management and a **Listen** app (PWA + iOS + Android via Capacitor) for
+playback and discovery. Underneath that, the backend now also maintains a
+snapshot/read-model plane for admin and Listen surfaces.
 
 ## Features
 
@@ -48,7 +54,7 @@ Crate is a full-stack, self-hosted music system. It watches your filesystem, pul
 - Alias matching across library tags
 
 **Acquisition**
-- **Tidal** — search, download (HiRes / FLAC / AAC) via `tiddl`
+- **Tidal** — search and download via `tiddl`, with artifact repair and best-quality-real-output fallback when a provider-labeled lossless download is not actually lossless
 - **Soulseek** — progressive search with quality filtering and alternate peer retry via `slskd`
 - Unified acquisition UI with download queue, concurrency limits (2 slots) and history
 - Automatic post-download pipeline: sync → enrich → analyze → artwork
@@ -65,7 +71,7 @@ Crate is a full-stack, self-hosted music system. It watches your filesystem, pul
 - Social layer: follow people, user connections, profile pages
 - Media session + lock-screen controls + keyboard shortcuts
 - PWA + native iOS / Android via Capacitor
-- Scrobbling to Last.fm and native play history
+- Rich play events, derived listening stats, and async scrobbling
 
 **Smart playlists**
 - Composable rules: genre, BPM, energy, danceability, valence, year, key, artist, format, popularity
@@ -85,11 +91,12 @@ Crate is a full-stack, self-hosted music system. It watches your filesystem, pul
 - Quality report (corrupt files, low bitrate, mixed formats)
 
 **System**
-- Multi-user auth (JWT + Google OAuth)
-- Scheduled tasks (APScheduler) with configurable intervals
+- Multi-user auth (persisted sessions + Google/Apple OAuth + bearer auth for native Listen)
+- Background scheduler/service loop with configurable recurring work
 - Docker stack management from the admin UI (containers, logs, restart)
 - Audit log for destructive operations
 - Three-tier cache: L1 in-memory, L2 Redis, L3 PostgreSQL
+- Snapshot-backed admin/listen surfaces warmed by domain events
 - Telegram bot for status, task control, and playback notifications
 
 ## Architecture
@@ -106,9 +113,9 @@ Crate is a full-stack, self-hosted music system. It watches your filesystem, pul
        +---------------+--------+-----------+------------+
                        |                    |
                   crate-worker         PostgreSQL 15
-                    (Dramatiq)              |
-                    /music:rw            Redis 7
-                                        (cache / broker)
+             (Dramatiq + daemons +          |
+                 projector)             Redis 7
+                    /music:rw      (cache / broker / event bus)
                        |
                  grooveyard-bliss
                     (Rust CLI)
@@ -116,12 +123,12 @@ Crate is a full-stack, self-hosted music system. It watches your filesystem, pul
 
 | Service | Tech | Role |
 |---------|------|------|
-| **crate-api** | FastAPI + Uvicorn | REST API, audio streaming, SSE events |
-| **crate-worker** | Python + Dramatiq (Redis broker) | Background tasks, filesystem writes, analysis |
+| **crate-api** | FastAPI + Uvicorn | REST API, audio streaming, SSE events, snapshot-driven surfaces |
+| **crate-worker** | Python + Dramatiq (Redis broker) | Background tasks, filesystem writes, daemons, projector |
 | **crate-ui** | React 19 + Vite + Tailwind 4 | Admin SPA (desktop-oriented library management) |
 | **crate-listen** | React 19 + Vite + Tailwind 4 + Capacitor | Consumer listening app (PWA + iOS + Android) |
 | **crate-postgres** | PostgreSQL 15 | Persistent storage |
-| **crate-redis** | Redis 7 | Cache + Dramatiq broker (512 MB, `volatile-lru`) |
+| **crate-redis** | Redis 7 | Cache + Dramatiq broker + invalidation replay + domain-event stream |
 | **slskd** | — | Soulseek client (REST API) |
 | **proton-vpn** | `genericmale/protonvpn` | HTTP proxy for scraping workloads (Last.fm events) |
 | **traefik** | — | Reverse proxy + automatic TLS (Let's Encrypt) |
@@ -130,7 +137,7 @@ The API container mounts the music library as **read-only**. All filesystem modi
 
 ## Tech Stack
 
-**Backend** — Python 3.13, FastAPI, Dramatiq, APScheduler, psycopg2, mutagen, Essentia, PANNs (PyTorch CPU), librosa, musicbrainzngs, tiddl, Pillow, Redis, BeautifulSoup.
+**Backend** — Python 3.13, FastAPI, Dramatiq, SQLAlchemy 2.0, psycopg2, Alembic, mutagen, Essentia, PANNs (PyTorch CPU), librosa, musicbrainzngs, tiddl, Pillow, Redis, BeautifulSoup.
 
 **Frontend** — React 19, TypeScript, Tailwind CSS 4, shadcn/ui, Nivo charts, Gapless-5 (Listen), Capacitor (Listen), Leaflet (admin maps), lucide-react, sonner.
 
@@ -293,11 +300,11 @@ app/
     db/                 PostgreSQL schema + typed query modules
     actors.py           Dramatiq actors (background tasks)
     broker.py           Dramatiq + Redis broker setup
-    scheduler.py        APScheduler periodic tasks
+    scheduler.py        Settings-driven recurring task scheduler
     enrichment.py       Last.fm / MusicBrainz / Fanart / Setlist pipeline
     audio_analysis.py   PANNs + Essentia hybrid engine
     bliss.py            grooveyard-bliss CLI integration
-    tidal.py            Tidal search + download (tiddl)
+    tidal.py            Tidal search + download orchestration (tiddl)
     soulseek.py         slskd REST client
     library_sync.py     Filesystem → DB sync
     library_watcher.py  Watchdog filesystem watcher
@@ -313,8 +320,8 @@ app/
     src/
       pages/            Home, Library, Album, Artist, Playlist, Shows, Jam, ...
       components/       Player, queue, lyrics, visualizer, show cards
-      contexts/         PlayerContext, auth, realtime
-      lib/              gapless-player, cache, api client
+      contexts/         Thin auth/offline facades + player orchestration
+      lib/              gapless-player, cache, api client, native/server boundary
     ios/                Capacitor iOS project
     android/            Capacitor Android project
   shared/               Frontend core shared between ui and listen

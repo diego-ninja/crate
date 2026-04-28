@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { startTransition, useState, useEffect, useCallback, useRef } from "react";
 
 import { api } from "@/lib/api";
 import { cacheGet, cacheSet, onCacheInvalidation, scopesForUrl } from "@/lib/cache";
@@ -8,6 +8,10 @@ export interface UseApiState<T> {
   loading: boolean;
   error: string | null;
   refetch: () => void;
+}
+
+interface UseApiOptions {
+  reactive?: boolean;
 }
 
 /**
@@ -21,13 +25,23 @@ export function useApi<T>(
   url: string | null,
   method: "GET" | "POST" | "PUT" | "DELETE" = "GET",
   body?: unknown,
+  options: UseApiOptions = {},
 ): UseApiState<T> {
-  const cached = url ? cacheGet<T>(url) : null;
-  const [data, setData] = useState<T | null>(cached);
-  const [loading, setLoading] = useState(!cached && !!url);
+  const { reactive = true } = options;
+  const initialStateRef = useRef<{ data: T | null; loading: boolean } | null>(null);
+  if (initialStateRef.current == null) {
+    const initialData = url ? cacheGet<T>(url) : null;
+    initialStateRef.current = {
+      data: initialData,
+      loading: !initialData && !!url,
+    };
+  }
+  const [data, setData] = useState<T | null>(initialStateRef.current.data);
+  const [loading, setLoading] = useState(initialStateRef.current.loading);
   const [error, setError] = useState<string | null>(null);
   const [trigger, setTrigger] = useState(0);
   const urlRef = useRef(url);
+  const dataUrlRef = useRef(url);
 
   const refetch = useCallback(() => setTrigger((t) => t + 1), []);
 
@@ -35,6 +49,7 @@ export function useApi<T>(
   useEffect(() => {
     if (url !== urlRef.current) {
       urlRef.current = url;
+      dataUrlRef.current = url;
       const freshCache = url ? cacheGet<T>(url) : null;
       setData(freshCache);
       setLoading(!freshCache && !!url);
@@ -45,6 +60,7 @@ export function useApi<T>(
   // Fetch + SWR
   useEffect(() => {
     if (!url) return;
+    const requestUrl = url;
     const controller = new AbortController();
     let cancelled = false;
 
@@ -52,11 +68,15 @@ export function useApi<T>(
     if (!data) setLoading(true);
     setError(null);
 
-    api<T>(url, method, body, { signal: controller.signal })
+    api<T>(requestUrl, method, body, { signal: controller.signal })
       .then((freshData) => {
+        cacheSet(requestUrl, freshData);
         if (cancelled) return;
-        cacheSet(url, freshData);
-        setData(freshData);
+        if (urlRef.current !== requestUrl) return;
+        dataUrlRef.current = requestUrl;
+        startTransition(() => {
+          setData(freshData);
+        });
       })
       .catch((e: Error) => {
         if (!cancelled && !controller.signal.aborted) {
@@ -71,7 +91,6 @@ export function useApi<T>(
       cancelled = true;
       controller.abort();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, method, trigger]);
 
   // Listen to SSE invalidation events — refetch when ANY matching scope fires.
@@ -79,7 +98,7 @@ export function useApi<T>(
   // localStorage entries prevent the refetch. Now we refetch unconditionally
   // whenever a scope that covers this URL is invalidated.
   useEffect(() => {
-    if (!url) return;
+    if (!url || !reactive) return;
     const myScopes = scopesForUrl(url);
     if (!myScopes.length) return;
     return onCacheInvalidation((scope) => {
@@ -87,7 +106,15 @@ export function useApi<T>(
         refetch();
       }
     });
-  }, [url, refetch]);
+  }, [reactive, url, refetch]);
 
-  return { data, loading, error, refetch };
+  const stateMatchesCurrentUrl = dataUrlRef.current === url;
+  const cachedForCurrentUrl = !stateMatchesCurrentUrl && url ? cacheGet<T>(url) : null;
+
+  return {
+    data: stateMatchesCurrentUrl ? data : cachedForCurrentUrl,
+    loading: stateMatchesCurrentUrl ? loading : !cachedForCurrentUrl && !!url,
+    error: stateMatchesCurrentUrl ? error : null,
+    refetch,
+  };
 }

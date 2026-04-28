@@ -8,6 +8,7 @@ import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerState, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
+import { resolvePlayableTrackId, toPlayableTrack } from "@/lib/playable-track";
 import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { TrackCoverThumb } from "@/components/cards/TrackCoverThumb";
 import { getOfflineStateLabel, isOfflineBusy } from "@/lib/offline";
@@ -28,6 +29,9 @@ export interface TrackRowData {
   path?: string;
   track_number?: number;
   format?: string;
+  bitrate?: number | null;
+  sample_rate?: number | null;
+  bit_depth?: number | null;
   library_track_id?: number;
 }
 
@@ -46,6 +50,7 @@ interface TrackRowProps {
   playlistOptions?: TrackRowPlaylistOption[];
   onAddToPlaylist?: (playlistId: number, track: TrackRowData) => void | Promise<void>;
   onCreatePlaylist?: (track: TrackRowData) => void | Promise<void>;
+  onActionMenuOpen?: () => void;
   onPlayOverride?: () => void;
   /** Pass the full sibling track list so clicking plays all from this track's position. */
   queueTracks?: TrackRowData[];
@@ -61,6 +66,7 @@ export const TrackRow = memo(function TrackRow({
   playlistOptions,
   onAddToPlaylist,
   onCreatePlaylist,
+  onActionMenuOpen,
   onPlayOverride,
   queueTracks,
 }: TrackRowProps) {
@@ -70,7 +76,6 @@ export const TrackRow = memo(function TrackRow({
   const { isLiked, toggleTrackLike } = useLikedTracks();
   const { getTrackState } = useOffline();
 
-  const playbackId = track.storage_id || track.path || String(track.id || "");
   const liked = isLiked(
     track.library_track_id ?? (typeof track.id === "number" ? track.id : null),
     track.storage_id,
@@ -78,25 +83,16 @@ export const TrackRow = memo(function TrackRow({
   );
   const offlineState = getTrackState(track.storage_id);
   const offlineLabel = getOfflineStateLabel(offlineState);
-  const isActive = currentTrack?.id === playbackId;
   const cover = albumCover || (track.album_id != null
-    ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
+    ? albumCoverApiUrl(
+        { albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album },
+        { size: 128 },
+      )
     : undefined);
 
-  const playerTrack: Track = {
-    id: playbackId,
-    storageId: track.storage_id,
-    title: track.title || "Unknown",
-    artist: track.artist,
-    artistId: track.artist_id,
-    artistSlug: track.artist_slug,
-    album: track.album,
-    albumId: track.album_id,
-    albumSlug: track.album_slug,
-    albumCover: cover,
-    path: track.path,
-    libraryTrackId: track.library_track_id ?? (typeof track.id === "number" ? track.id : undefined),
-  };
+  const playerTrack: Track = toPlayableTrack(track, { cover });
+  const playbackId = resolvePlayableTrackId(track);
+  const isActive = currentTrack?.id === playbackId;
   const actions = useTrackActionEntries({
     track,
     albumCover: cover,
@@ -121,10 +117,9 @@ export const TrackRow = memo(function TrackRow({
       return;
     }
     if (queueTracks && queueTracks.length > 1) {
-      const myId = track.storage_id || track.path || String(track.id || "");
+      const myId = resolvePlayableTrackId(track);
       const idx = queueTracks.findIndex((t) => {
-        const tId = t.storage_id || t.path || String(t.id || "");
-        return tId === myId;
+        return resolvePlayableTrackId(t) === myId;
       });
       playAll(queueTracks.map((t) => buildTrackMenuPlayerTrack(t)), Math.max(0, idx));
       return;
@@ -140,7 +135,10 @@ export const TrackRow = memo(function TrackRow({
           ? "bg-primary/10"
           : "hover:bg-white/5",
       )}
-      onContextMenu={actionMenu.handleContextMenu}
+      onContextMenu={(event) => {
+        onActionMenuOpen?.();
+        actionMenu.handleContextMenu(event);
+      }}
       onClick={handleActivate}
     >
       {showCoverThumb ? (
@@ -266,7 +264,14 @@ export const TrackRow = memo(function TrackRow({
         <ItemActionMenuButton
           buttonRef={actionMenu.triggerRef}
           hasActions={actionMenu.hasActions}
-          onClick={actionMenu.openFromTrigger}
+          onClick={(event) => {
+            onActionMenuOpen?.();
+            actionMenu.openFromTrigger(event);
+          }}
+          onContextMenu={(event) => {
+            onActionMenuOpen?.();
+            actionMenu.handleContextMenu(event);
+          }}
           className="h-9 w-9"
         />
       </div>

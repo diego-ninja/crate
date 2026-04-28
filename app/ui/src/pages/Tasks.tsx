@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import {
   Activity,
@@ -29,7 +29,6 @@ import { Button } from "@crate/ui/shadcn/button";
 import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { Input } from "@crate/ui/shadcn/input";
 import { Progress } from "@crate/ui/shadcn/progress";
-import { useApi } from "@/hooks/use-api";
 import { useTaskEvents } from "@/hooks/use-task-events";
 import { api } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
@@ -71,18 +70,34 @@ interface Task {
   updated_at: string;
 }
 
-interface WorkerStatusResponse {
-  engine: string;
-  running: number;
-  pending: number;
-  running_tasks: { id: string; type: string; pool?: string | null }[];
-  pending_tasks: { id: string; type: string; pool?: string | null }[];
-}
-
-interface SettingsSnapshot {
-  worker?: {
-    max_workers: number;
+interface TasksSnapshotData {
+  live: {
+    engine?: string;
+    running_tasks: Array<{
+      id: string;
+      type: string;
+      status?: string;
+      pool?: string | null;
+      progress: TaskProgress | string;
+      created_at?: string | null;
+      started_at?: string | null;
+      updated_at?: string | null;
+    }>;
+    pending_tasks: Array<{
+      id: string;
+      type: string;
+      status?: string;
+      pool?: string | null;
+      progress: TaskProgress | string;
+      created_at?: string | null;
+      started_at?: string | null;
+      updated_at?: string | null;
+    }>;
+    recent_tasks: Array<{ id: string; type: string; status: string; updated_at?: string | null }>;
+    worker_slots: { max: number; active: number };
+    systems: { postgres: boolean; watcher: boolean };
   };
+  history: Task[];
 }
 
 const STATUS_META: Record<string, { icon: typeof Clock; label: string; pill: string; iconClass: string; cardClass: string }> = {
@@ -302,48 +317,29 @@ function LiveTaskEvents({ taskId }: { taskId: string }) {
 }
 
 function WorkerControlPanel({
+  engine,
   running,
   pending,
+  slotLimit,
+  activeTasks,
+  refreshTasks,
 }: {
+  engine: string;
   running: number;
   pending: number;
+  slotLimit: number;
+  activeTasks: { id: string; type: string; pool?: string | null }[];
+  refreshTasks: (fresh?: boolean) => Promise<void>;
 }) {
-  const [workerInfo, setWorkerInfo] = useState<WorkerStatusResponse | null>(null);
-  const [slotLimit, setSlotLimit] = useState(3);
   const [restarting, setRestarting] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
   const [logs, setLogs] = useState<string | null>(null);
   const [logsLoading, setLogsLoading] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchWorker() {
-      try {
-        const [status, settings] = await Promise.all([
-          api<WorkerStatusResponse>("/api/worker/status"),
-          api<SettingsSnapshot>("/api/settings").catch(() => ({} as SettingsSnapshot)),
-        ]);
-        if (cancelled) return;
-        setWorkerInfo(status);
-        if (settings.worker?.max_workers) setSlotLimit(settings.worker.max_workers);
-      } catch {
-        // ignore transient worker polling failures
-      }
-    }
-
-    fetchWorker();
-    const timer = setInterval(fetchWorker, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, []);
-
   async function setSlots(next: number) {
     try {
       await api("/api/worker/slots", "POST", { slots: next });
-      setSlotLimit(next);
+      await refreshTasks(true);
       toast.success(`Worker slots set to ${next}`);
     } catch {
       toast.error("Failed to update worker slots");
@@ -354,6 +350,7 @@ function WorkerControlPanel({
     setRestarting(true);
     try {
       await api("/api/worker/restart", "POST");
+      await refreshTasks(true);
       toast.success("Worker restarting…");
     } catch {
       toast.error("Worker restart failed");
@@ -365,6 +362,7 @@ function WorkerControlPanel({
   async function cancelAll() {
     try {
       const response = await api<{ cancelled: number }>("/api/worker/cancel-all", "POST");
+      await refreshTasks(true);
       toast.success(`Cancelled ${response.cancelled} tasks`);
     } catch {
       toast.error("Failed to cancel tasks");
@@ -388,13 +386,11 @@ function WorkerControlPanel({
     }
   }
 
-  const activeTasks = workerInfo?.running_tasks ?? [];
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <CrateChip active>{workerInfo?.engine || "dramatiq"}</CrateChip>
+          <CrateChip active>{engine}</CrateChip>
           <CrateChip>{running} running</CrateChip>
           <CrateChip>{pending} pending</CrateChip>
           <CrateChip>{slotLimit} slots</CrateChip>
@@ -608,24 +604,82 @@ function HistoryTaskRow({
 }
 
 export function Tasks() {
-  const { data: tasks, loading, error, refetch } = useApi<Task[]>("/api/tasks?limit=100");
+  const [tasksSnapshot, setTasksSnapshot] = useState<TasksSnapshotData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchParams] = useSearchParams();
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [search, setSearch] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const loadedRef = useRef(false);
+  const reconnectTimerRef = useRef<number | null>(null);
+
+  const fetchSnapshot = useCallback(async (fresh = false) => {
+    if (!loadedRef.current) {
+      setLoading(true);
+    }
+    try {
+      const query = fresh ? "?limit=100&fresh=1" : "?limit=100";
+      const snapshot = await api<TasksSnapshotData>(`/api/admin/tasks-snapshot${query}`);
+      setTasksSnapshot(snapshot);
+      setError(null);
+      loadedRef.current = true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load task orchestration");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const hasActive = tasks?.some((task) => task.status === "running" || task.status === "pending");
-    const interval = hasActive ? 2000 : 5000;
-    const timer = setInterval(refetch, interval);
-    return () => clearInterval(timer);
-  }, [tasks, refetch]);
+    void fetchSnapshot();
+  }, [fetchSnapshot]);
+
+  useEffect(() => {
+    let disposed = false;
+    let stream: EventSource | null = null;
+
+    function connect() {
+      if (disposed) return;
+      stream = new EventSource("/api/admin/tasks-stream?limit=100", { withCredentials: true });
+      stream.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as TasksSnapshotData;
+          setTasksSnapshot(payload);
+          setError(null);
+          setLoading(false);
+          loadedRef.current = true;
+        } catch {
+          // Ignore malformed snapshots.
+        }
+      };
+      stream.onerror = () => {
+        stream?.close();
+        stream = null;
+        if (!disposed) {
+          reconnectTimerRef.current = window.setTimeout(connect, 5000);
+        }
+      };
+    }
+
+    connect();
+    return () => {
+      disposed = true;
+      stream?.close();
+      if (reconnectTimerRef.current != null) {
+        window.clearTimeout(reconnectTimerRef.current);
+      }
+    };
+  }, []);
+
+  const tasks = tasksSnapshot?.history ?? [];
+  const live = tasksSnapshot?.live;
 
   useEffect(() => {
     const highlightedTask = searchParams.get("task");
-    if (highlightedTask && tasks?.some((task) => task.id === highlightedTask)) {
+    if (highlightedTask && tasks.some((task) => task.id === highlightedTask)) {
       setExpandedId(highlightedTask);
       setFilterStatus("all");
     }
@@ -635,7 +689,7 @@ export function Tasks() {
     try {
       await api(`/api/tasks/${id}/cancel`, "POST");
       toast.success("Task cancelled");
-      refetch();
+      await fetchSnapshot(true);
     } catch {
       toast.error("Failed to cancel task");
     } finally {
@@ -647,7 +701,7 @@ export function Tasks() {
     try {
       await api("/api/tasks/retry", "POST", { task_id: task.id });
       toast.success(`Retrying ${getTaskLabel(task)}`);
-      refetch();
+      await fetchSnapshot(true);
     } catch {
       toast.error("Failed to retry task");
     }
@@ -657,7 +711,7 @@ export function Tasks() {
     try {
       const response = await api<{ deleted: number }>("/api/tasks/cleanup", "POST", { older_than_days: 7 });
       toast.success(`Cleaned up ${response.deleted} old tasks`);
-      refetch();
+      await fetchSnapshot(true);
     } catch {
       toast.error("Cleanup failed");
     }
@@ -667,27 +721,48 @@ export function Tasks() {
     try {
       const response = await api<{ deleted: number }>(`/api/tasks/clean/${status}`, "POST");
       toast.success(`Cleaned ${response.deleted} ${status} tasks`);
-      refetch();
+      await fetchSnapshot(true);
     } catch {
       toast.error(`Failed to clean ${status} tasks`);
     }
   }
 
   const taskTypes = useMemo(() => {
-    if (!tasks) return [];
     return Array.from(new Set(tasks.map((task) => task.type))).sort().map((type) => ({
       value: type,
       label: taskLabel(type),
     }));
   }, [tasks]);
 
-  const activeTasks = useMemo(
-    () => (tasks ?? []).filter((task) => task.status === "running" || task.status === "pending"),
-    [tasks],
-  );
+  const activeTasks = useMemo(() => {
+    const taskMap = new Map(tasks.map((task) => [task.id, task]));
+    const snapshotTasks = [
+      ...(live?.running_tasks ?? []),
+      ...(live?.pending_tasks ?? []),
+    ];
+
+    return snapshotTasks.map((task) => {
+      const existing = taskMap.get(task.id);
+      if (existing) return existing;
+      return {
+        id: task.id,
+        type: task.type,
+        status: task.status || "pending",
+        progress: task.progress,
+        error: null,
+        params: null,
+        result: null,
+        priority: null,
+        pool: task.pool ?? null,
+        created_at: task.created_at ?? task.updated_at ?? new Date().toISOString(),
+        started_at: task.started_at ?? null,
+        updated_at: task.updated_at ?? task.created_at ?? new Date().toISOString(),
+      } satisfies Task;
+    });
+  }, [live, tasks]);
 
   const completedTasks = useMemo(
-    () => (tasks ?? []).filter((task) => task.status !== "running" && task.status !== "pending"),
+    () => tasks.filter((task) => task.status !== "running" && task.status !== "pending"),
     [tasks],
   );
 
@@ -713,7 +788,6 @@ export function Tasks() {
   }, [activeTasks, filterType, search]);
 
   const stats = useMemo(() => {
-    if (!tasks) return null;
     const today = new Date().toDateString();
     const todayTasks = tasks.filter((task) => new Date(task.created_at).toDateString() === today);
     const todayCompleted = todayTasks.filter((task) => task.status === "completed").length;
@@ -732,7 +806,7 @@ export function Tasks() {
     };
   }, [tasks]);
 
-  if (loading && !tasks) {
+  if (loading && !tasksSnapshot) {
     return (
       <div className="flex justify-center py-16 text-white/45">
         <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -740,8 +814,8 @@ export function Tasks() {
     );
   }
 
-  if (error && !tasks) {
-    return <ErrorState message="Failed to load task orchestration" onRetry={refetch} />;
+  if (error && !tasksSnapshot) {
+    return <ErrorState message="Failed to load task orchestration" onRetry={() => void fetchSnapshot(true)} />;
   }
 
   return (
@@ -756,29 +830,34 @@ export function Tasks() {
               <Trash2 size={14} />
               Cleanup old
             </Button>
-            <Button variant="outline" size="sm" className="gap-2" onClick={refetch}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              onClick={() => {
+                void fetchSnapshot(true);
+              }}
+            >
               <RefreshCw size={14} />
               Refresh
             </Button>
           </>
         }
       >
-        <CratePill active icon={Activity}>{tasks?.length ?? 0} tasks</CratePill>
+        <CratePill active icon={Activity}>{tasks.length} tasks</CratePill>
         <CratePill icon={Loader2}>{activeTasks.length} active</CratePill>
         <CratePill icon={Clock}>{activeTasks.filter((task) => task.status === "pending").length} queued</CratePill>
-        <CratePill icon={CheckCircle2}>{tasks?.filter((task) => task.status === "completed").length ?? 0} completed</CratePill>
-        <CratePill className="border-red-500/25 bg-red-500/10 text-red-100">{tasks?.filter((task) => task.status === "failed").length ?? 0} failed</CratePill>
+        <CratePill icon={CheckCircle2}>{tasks.filter((task) => task.status === "completed").length} completed</CratePill>
+        <CratePill className="border-red-500/25 bg-red-500/10 text-red-100">{tasks.filter((task) => task.status === "failed").length} failed</CratePill>
       </OpsPageHero>
 
-      {stats ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <OpsStatTile icon={Activity} label="Today" value={stats.todayTotal.toLocaleString()} caption="Tasks created today" />
-          <OpsStatTile icon={CheckCircle2} label="Completed today" value={stats.todayCompleted.toLocaleString()} caption="Successful jobs in the current day" tone={stats.todayCompleted > 0 ? "success" : "default"} />
-          <OpsStatTile icon={XCircle} label="Failed today" value={stats.todayFailed.toLocaleString()} caption="Tasks that need operator attention" tone={stats.todayFailed > 0 ? "danger" : "default"} />
-          <OpsStatTile icon={Zap} label="Success rate" value={`${stats.successRate}%`} caption="Completed vs failed, same-day only" tone={stats.successRate >= 90 ? "success" : "warning"} />
-          <OpsStatTile icon={Clock} label="Avg duration" value={`${stats.avgDurationSec}s`} caption="Last 20 completed tasks" />
-        </div>
-      ) : null}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <OpsStatTile icon={Activity} label="Today" value={stats.todayTotal.toLocaleString()} caption="Tasks created today" />
+        <OpsStatTile icon={CheckCircle2} label="Completed today" value={stats.todayCompleted.toLocaleString()} caption="Successful jobs in the current day" tone={stats.todayCompleted > 0 ? "success" : "default"} />
+        <OpsStatTile icon={XCircle} label="Failed today" value={stats.todayFailed.toLocaleString()} caption="Tasks that need operator attention" tone={stats.todayFailed > 0 ? "danger" : "default"} />
+        <OpsStatTile icon={Zap} label="Success rate" value={`${stats.successRate}%`} caption="Completed vs failed, same-day only" tone={stats.successRate >= 90 ? "success" : "warning"} />
+        <OpsStatTile icon={Clock} label="Avg duration" value={`${stats.avgDurationSec}s`} caption="Last 20 completed tasks" />
+      </div>
 
       <OpsPanel
         icon={Filter}
@@ -840,8 +919,12 @@ export function Tasks() {
         description="Queue depth, concurrency slots and quick access to worker logs when orchestration starts to stall."
       >
         <WorkerControlPanel
+          engine={live?.engine || "dramatiq"}
           running={activeTasks.filter((task) => task.status === "running").length}
           pending={activeTasks.filter((task) => task.status === "pending").length}
+          slotLimit={live?.worker_slots.max ?? 3}
+          activeTasks={activeTasks.filter((task) => task.status === "running").map((task) => ({ id: task.id, type: task.type, pool: task.pool }))}
+          refreshTasks={fetchSnapshot}
         />
       </OpsPanel>
 

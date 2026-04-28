@@ -1,16 +1,185 @@
 """Unified artist enrichment — fetches all sources and persists to DB."""
 
-import json
-import logging
-import time
-from pathlib import Path
+from __future__ import annotations
 
-from crate.db import (
-    get_cache, set_cache, delete_cache, get_library_artist,
-    update_artist_enrichment, get_setting, update_artist_has_photo,
-)
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any, Callable
+
+from crate.db.cache_settings import get_setting
+from crate.db.cache_store import delete_cache, set_cache
+from crate.db.genres import set_artist_genres
+from crate.db.repositories.library import get_library_artist, update_artist_enrichment, update_artist_has_photo
+from crate.db.similarities import bulk_upsert_similarities
 
 log = logging.getLogger(__name__)
+
+_ENRICHMENT_FETCH_ORDER = (
+    "lastfm",
+    "spotify",
+    "musicbrainz",
+    "setlist",
+    "fanart",
+    "discogs",
+)
+
+
+def _get_enrichment_parallelism(config: dict) -> int:
+    raw = config.get("enrichment_parallelism", 3)
+    try:
+        parallelism = int(raw or 3)
+    except (TypeError, ValueError):
+        parallelism = 3
+    return max(1, min(parallelism, len(_ENRICHMENT_FETCH_ORDER)))
+
+
+def _provider_label(source: str) -> str:
+    labels = {
+        "lastfm": "Last.fm",
+        "spotify": "Spotify",
+        "musicbrainz": "MusicBrainz",
+        "setlist": "Setlist.fm",
+        "fanart": "Fanart.tv",
+        "discogs": "Discogs",
+    }
+    return labels.get(source, source)
+
+
+def _execute_enrichment_fetcher(source: str, artist_name: str, fetcher: Callable[[], Any]) -> Any | None:
+    try:
+        payload = fetcher()
+    except Exception:
+        log.debug("%s failed for %s", _provider_label(source), artist_name, exc_info=True)
+        return None
+    return payload or None
+
+
+def _run_enrichment_fetchers(
+    artist_name: str,
+    fetchers: dict[str, Callable[[], Any]],
+    *,
+    max_workers: int,
+) -> dict[str, Any]:
+    if not fetchers:
+        return {}
+
+    worker_count = max(1, min(int(max_workers or 1), len(fetchers)))
+    results: dict[str, Any] = {}
+    if worker_count == 1:
+        for source, fetcher in fetchers.items():
+            payload = _execute_enrichment_fetcher(source, artist_name, fetcher)
+            if payload is not None:
+                results[source] = payload
+        return results
+
+    with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="enrichment") as executor:
+        future_map = {
+            executor.submit(_execute_enrichment_fetcher, source, artist_name, fetcher): source
+            for source, fetcher in fetchers.items()
+        }
+        for future in as_completed(future_map):
+            source = future_map[future]
+            try:
+                payload = future.result()
+            except Exception:
+                log.debug("%s failed for %s", _provider_label(source), artist_name, exc_info=True)
+                continue
+            if payload is not None:
+                results[source] = payload
+    return results
+
+
+def _fetch_lastfm_payload(name: str) -> dict | None:
+    from crate.lastfm import get_artist_info
+
+    return get_artist_info(name)
+
+
+def _fetch_spotify_payload(name: str) -> dict | None:
+    from crate import spotify
+
+    artist = spotify.search_artist(name)
+    if not artist:
+        return None
+
+    return {
+        "artist": dict(artist),
+        "top_tracks": spotify.get_top_tracks(artist["id"]) or [],
+        "related_artists": spotify.get_related_artists(artist["id"]) or [],
+    }
+
+
+def _fetch_musicbrainz_payload(name: str) -> dict | None:
+    from crate import musicbrainz_ext
+
+    return musicbrainz_ext.get_artist_details(name)
+
+
+def _fetch_setlist_payload(name: str) -> list[dict] | None:
+    from crate import setlistfm
+
+    return setlistfm.get_probable_setlist(name)
+
+
+def _fetch_fanart_payload(name: str) -> dict | None:
+    from crate.lastfm import get_fanart_all_images
+
+    return get_fanart_all_images(name)
+
+
+def _fetch_discogs_payload(name: str) -> dict | None:
+    from crate.discogs import enrich_artist as discogs_enrich
+
+    return discogs_enrich(name)
+
+
+def _discogs_is_configured() -> bool:
+    try:
+        from crate.discogs import is_configured as discogs_configured
+    except Exception:
+        log.debug("Discogs config check failed", exc_info=True)
+        return False
+    return bool(discogs_configured())
+
+
+def _collect_enrichment_payloads(name: str, *, max_workers: int) -> dict[str, Any]:
+    fetchers: dict[str, Callable[[], Any]] = {
+        "lastfm": lambda: _fetch_lastfm_payload(name),
+        "spotify": lambda: _fetch_spotify_payload(name),
+        "musicbrainz": lambda: _fetch_musicbrainz_payload(name),
+        "setlist": lambda: _fetch_setlist_payload(name),
+        "fanart": lambda: _fetch_fanart_payload(name),
+    }
+    if _discogs_is_configured():
+        fetchers["discogs"] = lambda: _fetch_discogs_payload(name)
+    return _run_enrichment_fetchers(name, fetchers, max_workers=max_workers)
+
+
+def _has_local_artist_photo(artist_dir: Path) -> bool:
+    return artist_dir.is_dir() and any(
+        (artist_dir / photo_name).exists() for photo_name in ("artist.jpg", "artist.png", "photo.jpg")
+    )
+
+
+def _download_artist_photo(name: str, artist_dir: Path) -> bool:
+    if not artist_dir.is_dir():
+        return False
+
+    try:
+        from crate.lastfm import get_best_artist_image
+    except Exception:
+        return False
+
+    try:
+        image = get_best_artist_image(name)
+        if not image:
+            return False
+        (artist_dir / "artist.jpg").write_bytes(image)
+        update_artist_has_photo(name)
+        return True
+    except OSError:
+        return False
 
 
 def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
@@ -18,8 +187,6 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
 
     Returns dict with source flags (has_lastfm, has_spotify, etc.)
     """
-    from crate.lastfm import get_artist_info, get_best_artist_image, get_fanart_all_images
-    from crate import spotify, setlistfm, musicbrainz_ext
 
     lib = Path(config["library_path"])
     db_artist = get_library_artist(name)
@@ -47,130 +214,84 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
 
     enrichment_data: dict = {}
     persist_data: dict = {}
+    similar_list: list[dict] = []
+    payloads = _collect_enrichment_payloads(name, max_workers=_get_enrichment_parallelism(config))
 
-    # ── Last.fm ──
-    try:
-        info = get_artist_info(name)
-        if info:
-            enrichment_data["lastfm"] = info
-            persist_data["bio"] = info.get("bio", "")
-            persist_data["tags"] = info.get("tags", [])
-            persist_data["similar"] = info.get("similar", [])
-            persist_data["listeners"] = info.get("listeners")
-            persist_data["lastfm_playcount"] = info.get("playcount")
-            if info.get("url"):
-                persist_data.setdefault("urls", {})["lastfm"] = info["url"]
-            # Persist similar artists to dedicated table
-            similar_list = info.get("similar", [])
-            if similar_list:
-                try:
-                    from crate.db import bulk_upsert_similarities
-                    bulk_upsert_similarities(name, similar_list)
-                except Exception:
-                    log.debug("Failed to persist similarities for %s", name)
-    except Exception:
-        log.debug("Last.fm failed for %s", name)
-    time.sleep(0.3)
+    info = payloads.get("lastfm")
+    if info:
+        enrichment_data["lastfm"] = info
+        persist_data["bio"] = info.get("bio", "")
+        persist_data["tags"] = info.get("tags", [])
+        persist_data["similar"] = info.get("similar", [])
+        persist_data["listeners"] = info.get("listeners")
+        persist_data["lastfm_playcount"] = info.get("playcount")
+        if info.get("url"):
+            persist_data.setdefault("urls", {})["lastfm"] = info["url"]
+        similar_list = info.get("similar", [])
 
-    # ── Spotify ──
-    try:
-        sp = spotify.search_artist(name)
-        if sp:
-            spotify_data = {
-                "popularity": sp.get("popularity"),
-                "followers": sp.get("followers"),
-                "genres": sp.get("genres", []),
-                "url": sp.get("url"),
-            }
-            persist_data["spotify_id"] = sp.get("id")
-            persist_data["spotify_popularity"] = sp.get("popularity")
-            persist_data["spotify_followers"] = sp.get("followers")
-            if sp.get("url"):
-                persist_data.setdefault("urls", {})["spotify"] = sp["url"]
+    spotify_payload = payloads.get("spotify")
+    if spotify_payload:
+        spotify_artist = spotify_payload.get("artist", {})
+        spotify_data = {
+            "popularity": spotify_artist.get("popularity"),
+            "followers": spotify_artist.get("followers"),
+            "genres": spotify_artist.get("genres", []),
+            "url": spotify_artist.get("url"),
+            "top_tracks": spotify_payload.get("top_tracks", []),
+            "related_artists": spotify_payload.get("related_artists", []),
+        }
+        enrichment_data["spotify"] = spotify_data
+        persist_data["spotify_id"] = spotify_artist.get("id")
+        persist_data["spotify_popularity"] = spotify_artist.get("popularity")
+        persist_data["spotify_followers"] = spotify_artist.get("followers")
+        if spotify_artist.get("url"):
+            persist_data.setdefault("urls", {})["spotify"] = spotify_artist["url"]
 
-            # Merge Spotify genres into tags
-            sp_genres = sp.get("genres", [])
-            if sp_genres:
-                existing_tags = persist_data.get("tags", [])
-                merged = list(dict.fromkeys(existing_tags + sp_genres))
-                persist_data["tags"] = merged
+        spotify_genres = spotify_artist.get("genres", [])
+        if spotify_genres:
+            existing_tags = persist_data.get("tags", [])
+            persist_data["tags"] = list(dict.fromkeys(existing_tags + spotify_genres))
 
-            try:
-                top = spotify.get_top_tracks(sp["id"])
-                spotify_data["top_tracks"] = top or []
-            except Exception:
-                spotify_data["top_tracks"] = []
-            try:
-                related = spotify.get_related_artists(sp["id"])
-                spotify_data["related_artists"] = related or []
-                # Merge into similar if empty
-                if not persist_data.get("similar") and related:
-                    persist_data["similar"] = [{"name": r["name"]} for r in related[:10]]
-            except Exception:
-                spotify_data["related_artists"] = []
-            enrichment_data["spotify"] = spotify_data
-    except Exception:
-        log.debug("Spotify failed for %s", name)
-    time.sleep(0.3)
+        related_artists = spotify_payload.get("related_artists", [])
+        if not persist_data.get("similar") and related_artists:
+            persist_data["similar"] = [{"name": artist["name"]} for artist in related_artists[:10]]
 
-    # ── MusicBrainz ──
-    try:
-        mb = musicbrainz_ext.get_artist_details(name)
-        if mb:
-            enrichment_data["musicbrainz"] = mb
-            persist_data["mbid"] = mb.get("mbid")
-            persist_data["country"] = mb.get("country")
-            persist_data["area"] = mb.get("area")
-            persist_data["formed"] = mb.get("begin_date")
-            persist_data["ended"] = mb.get("end_date")
-            persist_data["artist_type"] = mb.get("type")
-            persist_data["members"] = mb.get("members", [])
-            # Merge MB urls with any already collected (Last.fm, Spotify)
-            mb_urls = mb.get("urls", {})
-            existing_urls = persist_data.get("urls", {})
-            persist_data["urls"] = {**mb_urls, **existing_urls}
-    except Exception:
-        log.debug("MusicBrainz failed for %s", name)
-    time.sleep(0.3)
+    musicbrainz_payload = payloads.get("musicbrainz")
+    if musicbrainz_payload:
+        enrichment_data["musicbrainz"] = musicbrainz_payload
+        persist_data["mbid"] = musicbrainz_payload.get("mbid")
+        persist_data["country"] = musicbrainz_payload.get("country")
+        persist_data["area"] = musicbrainz_payload.get("area")
+        persist_data["formed"] = musicbrainz_payload.get("begin_date")
+        persist_data["ended"] = musicbrainz_payload.get("end_date")
+        persist_data["artist_type"] = musicbrainz_payload.get("type")
+        persist_data["members"] = musicbrainz_payload.get("members", [])
+        musicbrainz_urls = musicbrainz_payload.get("urls", {})
+        existing_urls = persist_data.get("urls", {})
+        persist_data["urls"] = {**musicbrainz_urls, **existing_urls}
 
-    # ── Setlist.fm ──
-    try:
-        setlist = setlistfm.get_probable_setlist(name)
-        if setlist:
-            enrichment_data["setlist"] = {
-                "probable_setlist": setlist,
-                "total_shows": len(setlist),
-            }
-    except Exception:
-        log.debug("Setlist.fm failed for %s", name)
-    time.sleep(0.3)
+    setlist_payload = payloads.get("setlist")
+    if setlist_payload:
+        enrichment_data["setlist"] = {
+            "probable_setlist": setlist_payload,
+            "total_shows": len(setlist_payload),
+        }
 
-    # ── Fanart.tv ──
-    try:
-        fanart = get_fanart_all_images(name)
-        if fanart:
-            enrichment_data["fanart"] = fanart
-    except Exception:
-        log.debug("Fanart.tv failed for %s", name)
+    fanart_payload = payloads.get("fanart")
+    if fanart_payload:
+        enrichment_data["fanart"] = fanart_payload
 
-    # ── Discogs ──
-    try:
-        from crate.discogs import enrich_artist as discogs_enrich, is_configured as discogs_configured
-        if discogs_configured():
-            dc = discogs_enrich(name)
-            if dc:
-                enrichment_data["discogs"] = dc
-                if dc.get("discogs_id"):
-                    persist_data["discogs_id"] = str(dc["discogs_id"])
-                if dc.get("discogs_profile"):
-                    persist_data["discogs_profile"] = dc["discogs_profile"][:2000]
-                if dc.get("discogs_members"):
-                    persist_data["discogs_members"] = dc["discogs_members"]
-                if dc.get("discogs_url"):
-                    persist_data.setdefault("urls", {})["discogs"] = dc["discogs_url"]
-    except Exception:
-        log.debug("Discogs failed for %s", name)
-    time.sleep(0.3)
+    discogs_payload = payloads.get("discogs")
+    if discogs_payload:
+        enrichment_data["discogs"] = discogs_payload
+        if discogs_payload.get("discogs_id"):
+            persist_data["discogs_id"] = str(discogs_payload["discogs_id"])
+        if discogs_payload.get("discogs_profile"):
+            persist_data["discogs_profile"] = discogs_payload["discogs_profile"][:2000]
+        if discogs_payload.get("discogs_members"):
+            persist_data["discogs_members"] = discogs_payload["discogs_members"]
+        if discogs_payload.get("discogs_url"):
+            persist_data.setdefault("urls", {})["discogs"] = discogs_payload["discogs_url"]
 
     # ── Persist to cache ──
     if enrichment_data:
@@ -183,11 +304,16 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
         except Exception:
             log.warning("Failed to persist enrichment for %s", name, exc_info=True)
 
+    if similar_list:
+        try:
+            bulk_upsert_similarities(name, similar_list)
+        except Exception:
+            log.debug("Failed to persist similarities for %s", name)
+
     # ── Update genre index ──
     tags = persist_data.get("tags", [])
     if tags:
         try:
-            from crate.db import set_artist_genres
             genres = []
             for j, tag in enumerate(tags):
                 tag = tag.strip()
@@ -200,18 +326,8 @@ def enrich_artist(name: str, config: dict, force: bool = False) -> dict:
             log.debug("Failed to index genres for %s", name)
 
     # ── Download photo ──
-    has_photo = artist_dir.is_dir() and any(
-        (artist_dir / p).exists() for p in ("artist.jpg", "artist.png", "photo.jpg")
-    )
-    if not has_photo and artist_dir.is_dir():
-        try:
-            img = get_best_artist_image(name)
-            if img:
-                (artist_dir / "artist.jpg").write_bytes(img)
-                update_artist_has_photo(name)
-        except OSError:
-            pass
-        time.sleep(0.3)
+    if not _has_local_artist_photo(artist_dir):
+        _download_artist_photo(name, artist_dir)
 
     return {
         "artist": name,

@@ -16,7 +16,7 @@ import {
   Ticket, Sparkles, List, CalendarDays,
   ChevronLeft, ChevronRight, Check, Clock, Search, Trash2,
 } from "lucide-react";
-import L from "leaflet";
+import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 // Fix Leaflet default marker icon

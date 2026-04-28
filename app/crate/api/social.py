@@ -6,21 +6,24 @@ from crate.api.schemas.social import (
     SocialFollowResponse,
     SocialMeResponse,
     SocialProfileDetailResponse,
+    SocialProfilePageResponse,
     SocialSearchResultResponse,
     SocialUnfollowResponse,
     SocialUserRelationResponse,
 )
-from crate.db import (
-    follow_user,
-    get_affinity,
+from crate.db.queries.social import (
     get_followers,
     get_following,
-    get_me_social,
     get_public_playlists_for_user,
     get_public_user_profile,
     get_public_user_profile_by_username,
     get_relationship_state,
     search_users,
+)
+from crate.db.repositories.social import (
+    follow_user,
+    get_affinity,
+    get_me_social,
     unfollow_user,
 )
 
@@ -78,6 +81,27 @@ def social_profile(request: Request, username: str):
     profile["public_playlists"] = get_public_playlists_for_user(target_user_id)
     profile["relationship_state"] = get_relationship_state(viewer["id"], target_user_id)
     profile.update(get_affinity(viewer["id"], target_user_id))
+    return profile
+
+
+@router.get(
+    "/api/users/{username}/page",
+    response_model=SocialProfilePageResponse,
+    responses=_SOCIAL_RESPONSES,
+    summary="Get the bundled Listen user-profile page payload",
+)
+def social_profile_page(request: Request, username: str):
+    viewer = _require_auth(request)
+    profile = get_public_user_profile_by_username(username)
+    if not profile:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    target_user_id = profile["id"]
+    profile["public_playlists"] = get_public_playlists_for_user(target_user_id)
+    profile["relationship_state"] = get_relationship_state(viewer["id"], target_user_id)
+    profile.update(get_affinity(viewer["id"], target_user_id))
+    profile["followers_preview"] = get_followers(target_user_id, limit=8)
+    profile["following_preview"] = get_following(target_user_id, limit=8)
     return profile
 
 

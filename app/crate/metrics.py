@@ -11,11 +11,17 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
+from queue import Empty, Full, Queue
+from threading import Lock, Thread
 
 log = logging.getLogger(__name__)
 
 _REDIS_PREFIX = "crate:metrics"
 _BUCKET_TTL = 48 * 3600  # 48 hours
+_ASYNC_QUEUE_MAX = 10_000
+_async_metric_queue: Queue[tuple[str, float, dict | None]] = Queue(maxsize=_ASYNC_QUEUE_MAX)
+_async_worker_lock = Lock()
+_async_worker_started = False
 
 
 def _minute_bucket(ts: float | None = None) -> int:
@@ -30,10 +36,10 @@ def _bucket_key(name: str, minute_ts: int) -> str:
 
 # ── Recording ────────────────────────────────────────────────────
 
-def record(name: str, value: float, tags: dict | None = None):
-    """Record a metric sample. Must be fast (<1ms)."""
+def _record_sync(name: str, value: float, tags: dict | None = None):
+    """Record a metric sample synchronously to Redis."""
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if r is None:
             return
@@ -74,9 +80,58 @@ def record(name: str, value: float, tags: dict | None = None):
         pass
 
 
+def _async_record_loop():
+    while True:
+        try:
+            name, value, tags = _async_metric_queue.get(timeout=0.5)
+        except Empty:
+            continue
+        try:
+            _record_sync(name, value, tags)
+        finally:
+            _async_metric_queue.task_done()
+
+
+def _ensure_async_worker():
+    global _async_worker_started
+    if _async_worker_started:
+        return
+    with _async_worker_lock:
+        if _async_worker_started:
+            return
+        worker = Thread(target=_async_record_loop, name="crate-metrics-buffer", daemon=True)
+        worker.start()
+        _async_worker_started = True
+
+
+def record(name: str, value: float, tags: dict | None = None):
+    """Record a metric sample synchronously."""
+    _record_sync(name, value, tags)
+
+
 def record_counter(name: str, tags: dict | None = None):
     """Shorthand for counter-style metrics (value=1)."""
     record(name, 1.0, tags)
+
+
+def record_later(name: str, value: float, tags: dict | None = None):
+    """Queue a metric sample for asynchronous write.
+
+    This is intended for the hottest API request-path middleware.
+    If the buffer is full we drop the sample rather than blocking
+    the response path.
+    """
+    try:
+        _ensure_async_worker()
+        _async_metric_queue.put_nowait((name, value, tags))
+    except Full:
+        return
+    except Exception:
+        return
+
+
+def record_counter_later(name: str, tags: dict | None = None):
+    record_later(name, 1.0, tags)
 
 
 # ── Querying ─────────────────────────────────────────────────────
@@ -84,7 +139,7 @@ def record_counter(name: str, tags: dict | None = None):
 def query_recent(name: str, minutes: int = 60) -> list[dict]:
     """Read minute-granularity buckets from Redis for the last N minutes."""
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
         r = _get_redis()
         if r is None:
             return []
@@ -201,6 +256,66 @@ def query_summary(name: str, minutes: int = 5) -> dict:
     }
 
 
+def query_summaries(specs: dict[str, tuple[str, int]]) -> dict[str, dict]:
+    """Aggregate multiple metric summaries with one Redis pipeline."""
+    defaults = {key: {"count": 0, "avg": 0, "min": 0, "max": 0, "sum": 0} for key in specs}
+    if not specs:
+        return {}
+
+    try:
+        from crate.db.cache_runtime import _get_redis
+
+        r = _get_redis()
+        if r is None:
+            return defaults
+
+        now_bucket = _minute_bucket()
+        pipe = r.pipeline(transaction=False)
+        lookup_keys: list[str] = []
+
+        for summary_key, (metric_name, minutes) in specs.items():
+            for offset in range(minutes):
+                bucket_ts = now_bucket - offset * 60
+                pipe.hgetall(_bucket_key(metric_name, bucket_ts))
+                lookup_keys.append(summary_key)
+
+        raw_results = pipe.execute()
+        aggregates: dict[str, dict[str, float | int | None]] = {
+            key: {"count": 0, "sum": 0.0, "min": None, "max": None}
+            for key in specs
+        }
+
+        for summary_key, data in zip(lookup_keys, raw_results):
+            if not data:
+                continue
+            count = int(data.get(b"count", data.get("count", 0)))
+            total = float(data.get(b"sum", data.get("sum", 0)))
+            aggregates[summary_key]["count"] += count
+            aggregates[summary_key]["sum"] += total
+
+            if count > 0:
+                min_value = float(data.get(b"min", data.get("min", 0)))
+                max_value = float(data.get(b"max", data.get("max", 0)))
+                current_min = aggregates[summary_key]["min"]
+                current_max = aggregates[summary_key]["max"]
+                aggregates[summary_key]["min"] = min_value if current_min is None else min(float(current_min), min_value)
+                aggregates[summary_key]["max"] = max_value if current_max is None else max(float(current_max), max_value)
+
+        return {
+            key: {
+                "count": int(aggregate["count"]),
+                "avg": round(float(aggregate["sum"]) / int(aggregate["count"]), 2) if int(aggregate["count"]) > 0 else 0,
+                "min": round(float(aggregate["min"] or 0), 2),
+                "max": round(float(aggregate["max"] or 0), 2),
+                "sum": round(float(aggregate["sum"]), 2),
+            }
+            for key, aggregate in aggregates.items()
+        }
+    except Exception:
+        log.debug("Failed to query batched metric summaries", exc_info=True)
+        return defaults
+
+
 # ── Flush to PostgreSQL ──────────────────────────────────────────
 
 def flush_to_postgres(period: str = "hour"):
@@ -209,8 +324,8 @@ def flush_to_postgres(period: str = "hour"):
     Called by the worker service loop every 5 minutes.
     """
     try:
-        from crate.db.cache import _get_redis
-        from crate.db.management import upsert_metric_rollup
+        from crate.db.cache_runtime import _get_redis
+        from crate.db.repositories.management import upsert_metric_rollup
 
         r = _get_redis()
         if r is None:
@@ -287,7 +402,7 @@ def flush_to_postgres(period: str = "hour"):
 def query_historical(name: str, period: str = "hour", start: str | None = None, end: str | None = None, limit: int = 168) -> list[dict]:
     """Read rollup data from PostgreSQL."""
     try:
-        from crate.db.management import query_metric_rollups
+        from crate.db.queries.management import query_metric_rollups
 
         rows = query_metric_rollups(name=name, period=period, start=start, end=end, limit=limit)
         return [

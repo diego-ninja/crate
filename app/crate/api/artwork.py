@@ -18,7 +18,8 @@ from crate.api.schemas.artwork import (
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
 from crate.artwork import extract_embedded_cover, save_cover
-from crate.db import create_task
+from crate.db.repositories.library import get_albums_missing_covers
+from crate.db.repositories.tasks import create_task
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +45,6 @@ def api_artwork_missing(request: Request):
     """List albums missing cover art with details."""
     _require_auth(request)
     import re
-    from crate.db import get_albums_missing_covers
     year_re = re.compile(r"^\d{4}\s*[-–]\s*")
     rows = get_albums_missing_covers()
     albums = []

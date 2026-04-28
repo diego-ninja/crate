@@ -5,13 +5,14 @@ import logging
 import re
 from collections import defaultdict
 
-from crate.db import set_artist_genres, set_album_genres
 from crate.db.genres import (
     get_albums_with_genres,
     get_artist_album_genres,
     get_artists_missing_genre_mapping,
     get_artists_with_tags,
     get_total_genre_count,
+    set_album_genres,
+    set_artist_genres,
 )
 from crate.db.queries.browse_artist import get_artist_genre_profile
 

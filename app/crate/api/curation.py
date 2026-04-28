@@ -9,7 +9,7 @@ from crate.api.schemas.curation import (
     CuratedPlaylistSummaryResponse,
 )
 from crate.api.schemas.common import OkResponse
-from crate.db import (
+from crate.db.repositories.playlists import (
     follow_playlist,
     get_followed_system_playlists,
     get_playlist,

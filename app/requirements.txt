@@ -19,11 +19,10 @@ librosa>=0.10
 essentia-tensorflow>=2.1b5; platform_machine == "x86_64"
 Pillow>=10.0
 numpy>=1.26
-tiddl>=3.2
+tiddl>=3.3.0
 dramatiq[redis]>=1.17
 apscheduler>=3.10,<4
 pytest>=8.0
 httpx>=0.27
 device-detector>=5.0
 beautifulsoup4>=4.12
-

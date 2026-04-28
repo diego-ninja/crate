@@ -13,6 +13,7 @@ import { GenreTaxonomyTree } from "@/components/genres/GenreTaxonomyTree";
 import { useApi } from "@/hooks/use-api";
 import { useTaskPoll } from "@/hooks/use-task-poll";
 import { api } from "@/lib/api";
+import { waitForTask } from "@/lib/tasks";
 import { formatNumber } from "@/lib/utils";
 import { albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 import { Search, Sparkles, Tag, Disc3, Users, ArrowLeft, Loader2, AlertTriangle, LayoutGrid, ListMusic, Network, RefreshCw } from "lucide-react";
@@ -201,22 +202,18 @@ function GenreList() {
     setIndexing(true);
     try {
       const { task_id } = await api<{ task_id: string }>("/api/genres/index", "POST");
-      const poll = setInterval(async () => {
-        try {
-          const task = await api<{ status: string }>(`/api/tasks/${task_id}`);
-          if (task.status === "completed") {
-            clearInterval(poll);
-            setIndexing(false);
-            toast.success("Genres re-indexed");
-            window.location.reload();
-          } else if (task.status === "failed") {
-            clearInterval(poll);
-            setIndexing(false);
-            toast.error("Genre indexing failed");
-          }
-        } catch { /* polling */ }
-      }, 2000);
-    } catch { setIndexing(false); toast.error("Failed to start indexing"); }
+      const task = await waitForTask(task_id, 30 * 60 * 1000);
+      if (task.status === "completed") {
+        afterSuccess();
+        toast.success("Genres re-indexed");
+      } else {
+        toast.error(task.error || "Genre indexing failed");
+      }
+    } catch {
+      toast.error("Failed to start indexing");
+    } finally {
+      setIndexing(false);
+    }
   }
 
   if (error) return <ErrorState message="Failed to load genres" onRetry={refetch} />;

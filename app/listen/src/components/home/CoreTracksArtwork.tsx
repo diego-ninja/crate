@@ -11,7 +11,7 @@ function coreArtistPhoto(item: CoreTracksLike): string | null {
     artistId: firstTrack?.artist_id,
     artistSlug: firstTrack?.artist_slug,
     artistName: item.name,
-  }) || null;
+  }, { size: 384 }) || null;
 }
 
 export function CoreTracksArtwork({

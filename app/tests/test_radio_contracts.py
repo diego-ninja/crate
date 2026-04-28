@@ -18,7 +18,8 @@ class TestRadioApiContracts:
         ]
 
         with patch("crate.api.radio.get_library_artist_by_id", return_value={"id": 7, "name": "Converge", "slug": "converge"}), \
-             patch("crate.api.radio.generate_artist_radio", return_value=tracks):
+             patch("crate.api.radio.generate_artist_radio", return_value=tracks), \
+             patch("crate.api.radio._enrich_radio_tracks", side_effect=lambda rows: rows):
             resp = test_app.get("/api/artists/7/radio?limit=25")
 
         assert resp.status_code == 200
@@ -54,7 +55,8 @@ class TestRadioApiContracts:
         ]
 
         with patch("crate.api.radio._resolve_track_path", return_value="/music/Converge/Jane Doe/01 - Concubine.flac"), \
-             patch("crate.api.radio.generate_track_radio", return_value=tracks):
+             patch("crate.api.radio.generate_track_radio", return_value=tracks), \
+             patch("crate.api.radio._enrich_radio_tracks", side_effect=lambda rows: rows):
             resp = test_app.get("/api/radio/track?track_id=99&limit=50")
 
         assert resp.status_code == 200
@@ -81,7 +83,8 @@ class TestRadioApiContracts:
                 "artist": "Converge",
                 "name": "Jane Doe",
              }), \
-             patch("crate.api.radio.generate_album_radio", return_value=tracks):
+             patch("crate.api.radio.generate_album_radio", return_value=tracks), \
+             patch("crate.api.radio._enrich_radio_tracks", side_effect=lambda rows: rows):
             resp = test_app.get("/api/radio/album/5?limit=50")
 
         assert resp.status_code == 200
@@ -110,7 +113,8 @@ class TestRadioApiContracts:
                 "user_id": None,
                 "is_active": True,
              }), \
-             patch("crate.api.radio.generate_playlist_radio", return_value=tracks):
+             patch("crate.api.radio.generate_playlist_radio", return_value=tracks), \
+             patch("crate.api.radio._enrich_radio_tracks", side_effect=lambda rows: rows):
             resp = test_app.get("/api/radio/playlist/7?limit=50")
 
         assert resp.status_code == 200

@@ -1,6 +1,7 @@
 export { ApiError } from "../../../shared/web/api";
 
 import { createApiClient } from "../../../shared/web/api";
+import { redirectToLoginOnUnauthorized, shouldRedirectToLoginOnUnauthorized } from "@/lib/auth-route-policy";
 import { isNative, platform } from "@/lib/capacitor";
 import {
   getCurrentServer,
@@ -50,6 +51,34 @@ export function apiUrl(path: string): string {
   return `${getApiBase()}${path}`;
 }
 
+/** Resolve an SSE path to a full URL, adding auth token for native clients. */
+export function apiSseUrl(path: string): string {
+  const token = getAuthToken();
+  if (!token) return apiUrl(path);
+  const separator = path.includes("?") ? "&" : "?";
+  return `${getApiBase()}${path}${separator}token=${encodeURIComponent(token)}`;
+}
+
+/** Resolve an API media path to a full URL, adding auth token for <img>/<video> requests. */
+export function apiAssetUrl(path: string): string {
+  const baseUrl = apiUrl(path);
+  const token = getAuthToken();
+  if (!token) return baseUrl;
+  const separator = baseUrl.includes("?") ? "&" : "?";
+  return `${baseUrl}${separator}token=${encodeURIComponent(token)}`;
+}
+
+export function resolveMaybeApiAssetUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  if (url.startsWith("/api/")) return apiAssetUrl(url);
+  const base = getApiBase();
+  if (base && url.startsWith(`${base}/api/`)) {
+    const relative = url.slice(base.length);
+    return apiAssetUrl(relative);
+  }
+  return url;
+}
+
 /** Resolve an API path to a full WebSocket URL. */
 export function apiWsUrl(path: string): string {
   const base = getApiBase();
@@ -77,7 +106,9 @@ export function setAuthToken(token: string | null) {
   try {
     if (token) localStorage.setItem("listen-auth-token", token);
     else localStorage.removeItem("listen-auth-token");
-  } catch {}
+  } catch {
+    // ignore persistence failures
+  }
 }
 
 export function getApiAuthHeaders(): Record<string, string> {
@@ -90,6 +121,13 @@ export function getApiAuthHeaders(): Record<string, string> {
   }
   return headers;
 }
+export { shouldRedirectToLoginOnUnauthorized };
+
+if (typeof window !== "undefined") {
+  (window as Window & typeof globalThis & {
+    __crateResolveApiAssetUrl?: (path: string) => string;
+  }).__crateResolveApiAssetUrl = apiAssetUrl;
+}
 
 // The shared api client is created ONCE, but we want the base URL to be
 // re-read on every request so server switches are live. We pass a
@@ -98,9 +136,9 @@ const innerApi = createApiClient({
   credentials: "include",
   defaultHeaders: getApiAuthHeaders,
   onUnauthorized: () => {
-    if (window.location.pathname !== "/login" && window.location.pathname !== "/server-setup") {
-      window.location.href = "/login";
-    }
+    redirectToLoginOnUnauthorized(window.location.pathname, (path) => {
+      window.location.href = path;
+    });
   },
 });
 

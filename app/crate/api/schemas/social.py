@@ -65,6 +65,11 @@ class SocialProfileDetailResponse(SocialPublicProfileResponse):
     computed_at: datetime | str | None = None
 
 
+class SocialProfilePageResponse(SocialProfileDetailResponse):
+    followers_preview: list[SocialUserRelationResponse] = Field(default_factory=list)
+    following_preview: list[SocialUserRelationResponse] = Field(default_factory=list)
+
+
 class SocialMeResponse(BaseModel):
     followers_count: int
     following_count: int

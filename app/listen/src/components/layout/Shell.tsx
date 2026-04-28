@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { VtNavLink as NavLink } from "@crate/ui/primitives/VtNavLink";
 import {
@@ -6,9 +6,10 @@ import {
   ListMusic, PanelLeftClose, PanelLeftOpen, ChevronRight, BarChart3,
 } from "lucide-react";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
-import { usePlayerActions } from "@/contexts/PlayerContext";
+import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import { PlayerBar } from "@/components/player/PlayerBar";
 import { TopBar } from "@/components/layout/TopBar";
+import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 
 const SIDEBAR_KEY = "listen-sidebar-expanded";
 const SIDEBAR_EVENT = "listen-sidebar-changed";
@@ -24,6 +25,24 @@ function Sidebar() {
   const [collectionOpen, setCollectionOpen] = useState(false);
   const collectionRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { isPlaying, playSource, currentTrack, analyserVersion } = usePlayer();
+  const discoveryRadioActive = isPlaying && playSource?.radio?.seedType === "discovery";
+  const { frequenciesDb } = useAudioVisualizer(
+    discoveryRadioActive,
+    `sidebar:${currentTrack?.id ?? "none"}:${analyserVersion}`,
+  );
+  const discoveryGlowStrength = useMemo(() => {
+    if (!discoveryRadioActive) return 0;
+    if (!frequenciesDb.length) return 0.42;
+    const bins = frequenciesDb.slice(2, 28);
+    if (!bins.length) return 0.42;
+    const energy =
+      bins.reduce((sum, db) => {
+        const normalized = Math.max(0, Math.min(1, (db + 88) / 60));
+        return sum + normalized * normalized;
+      }, 0) / bins.length;
+    return Math.min(1, Math.sqrt(energy));
+  }, [discoveryRadioActive, frequenciesDb]);
 
   function toggleExpanded() {
     const next = !expanded;
@@ -58,8 +77,36 @@ function Sidebar() {
       <div className={`flex items-center ${expanded ? "px-4 py-5 gap-3" : "justify-center py-5"}`}>
         {expanded ? (
           <>
-            <img src="/icons/logo.svg" alt="Crate" className="w-8 h-8 shrink-0" />
-            <span className="text-sm font-bold text-white flex-1">Crate</span>
+            <div className="relative shrink-0">
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-[-10px] rounded-[22px] bg-[radial-gradient(circle,rgba(34,211,238,0.34)_0%,rgba(45,212,191,0.18)_32%,rgba(14,165,233,0.08)_54%,transparent_72%)] blur-md transition-[opacity,filter] duration-300"
+                style={{
+                  opacity: discoveryRadioActive ? 0.22 + discoveryGlowStrength * 0.68 : 0,
+                  filter: `blur(${12 + discoveryGlowStrength * 8}px)`,
+                }}
+              />
+              <img
+                src="/icons/logo.svg"
+                alt="Crate"
+                className="relative z-10 h-8 w-8 shrink-0 transition-[filter] duration-300"
+                style={{
+                  filter: discoveryRadioActive
+                    ? `drop-shadow(0 0 ${10 + discoveryGlowStrength * 16}px rgba(34,211,238,${0.18 + discoveryGlowStrength * 0.24}))`
+                    : "none",
+                }}
+              />
+            </div>
+            <span
+              className={`text-sm font-bold flex-1 transition-[color,text-shadow] duration-300 ${discoveryRadioActive ? "text-cyan-50" : "text-white"}`}
+              style={{
+                textShadow: discoveryRadioActive
+                  ? `0 0 ${8 + discoveryGlowStrength * 10}px rgba(34,211,238,${0.12 + discoveryGlowStrength * 0.18})`
+                  : "none",
+              }}
+            >
+              Crate
+            </span>
             <button onClick={toggleExpanded} aria-label="Collapse sidebar" className="text-white/30 hover:text-white/60 transition-colors">
               <PanelLeftClose size={18} />
             </button>
@@ -67,10 +114,27 @@ function Sidebar() {
         ) : (
           <button
             onClick={() => { toggleExpanded(); navigate("/"); }}
-            className="w-10 h-10 rounded-lg flex items-center justify-center hover:bg-white/5 transition-colors"
+            className="relative h-10 w-10 rounded-lg flex items-center justify-center hover:bg-white/5 transition-colors"
             aria-label="Expand sidebar"
           >
-            <img src="/icons/logo.svg" alt="Crate" className="w-6 h-6" />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-[-6px] rounded-[18px] bg-[radial-gradient(circle,rgba(34,211,238,0.32)_0%,rgba(45,212,191,0.14)_40%,transparent_72%)] blur-md transition-[opacity,filter] duration-300"
+              style={{
+                opacity: discoveryRadioActive ? 0.2 + discoveryGlowStrength * 0.64 : 0,
+                filter: `blur(${10 + discoveryGlowStrength * 7}px)`,
+              }}
+            />
+            <img
+              src="/icons/logo.svg"
+              alt="Crate"
+              className="relative z-10 h-6 w-6 transition-[filter] duration-300"
+              style={{
+                filter: discoveryRadioActive
+                  ? `drop-shadow(0 0 ${8 + discoveryGlowStrength * 14}px rgba(34,211,238,${0.16 + discoveryGlowStrength * 0.22}))`
+                  : "none",
+              }}
+            />
           </button>
         )}
       </div>
@@ -199,16 +263,17 @@ export function Shell() {
   const hasTrack = !!currentTrack;
   const [sidebarExpanded, setSidebarExpanded] = useState(getStoredExpanded);
   const overlayHeader =
+    /^\/artists\/[^/]+$/.test(location.pathname) ||
     /^\/artists\/[^/]+\/[^/]+$/.test(location.pathname) ||
     /^\/artists\/[^/]+\/[^/]+\/top-tracks$/.test(location.pathname) ||
     /^\/albums\/[^/]+\/[^/]+$/.test(location.pathname);
   const headerOffsetClass = overlayHeader ? "" : "pt-16";
-  // Desktop: always transparent — individual elements carry their own backdrop.
-  // Mobile: subtle backdrop so the header stays visible while scrolling.
-  // On overlay pages (artist/album hero) both are fully transparent.
-  const headerChromeClass = isDesktop
-    ? "bg-transparent border-transparent border-b-0 shadow-none"
-    : "bg-app-surface/80 backdrop-blur-lg border-transparent border-b-0";
+  const desktopContentPadClass = overlayHeader ? "pt-0 pb-6" : "py-6";
+  const mobileContentPadClass = overlayHeader
+    ? "pt-0 pb-4"
+    : "py-4 pt-[calc(4rem+env(safe-area-inset-top,0px))]";
+  const headerChromeClass =
+    "border-b border-white/6 bg-app-surface/68 shadow-[0_12px_32px_rgba(0,0,0,0.18)] backdrop-blur-xl";
 
   // Sync with sidebar toggle without polling localStorage.
   useEffect(() => {
@@ -239,7 +304,7 @@ export function Shell() {
         </div>
 
         <main className={`relative z-0 flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[90px]" : ""}`}>
-          <div className={`mx-auto w-full max-w-[1440px] py-6 ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
+          <div className={`mx-auto w-full max-w-[1440px] ${desktopContentPadClass} ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
             <Outlet />
           </div>
         </main>
@@ -264,7 +329,7 @@ export function Shell() {
       </div>
 
       <main className={`relative z-0 flex-1 overflow-x-hidden ${mobileBottomPad}`}>
-        <div className={`mx-auto w-full max-w-[1440px] py-4 px-[max(1rem,env(safe-area-inset-left))] ${overlayHeader ? "" : "pt-[calc(4rem+env(safe-area-inset-top,0px))]"}`}>
+        <div className={`mx-auto w-full max-w-[1440px] px-[max(1rem,env(safe-area-inset-left))] ${mobileContentPadClass}`}>
           <Outlet />
         </div>
       </main>

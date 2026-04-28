@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
@@ -7,23 +7,32 @@ import {
 import { usePlayer, usePlayerActions } from "@/contexts/PlayerContext";
 import type { PlaySource } from "@/contexts/player-types";
 import { artistPagePath, albumPagePath } from "@/lib/library-routes";
-import { api } from "@/lib/api";
+import { getTrackQualityFallback, getTrackQualityFromInfo } from "@/lib/track-info";
 import { useLikedTracks } from "@/contexts/LikedTracksContext";
 import { useAudioVisualizer } from "@/hooks/use-audio-visualizer";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
+import { useTrackInfo } from "@/hooks/use-track-info";
 import { cn } from "@crate/ui/lib/cn";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { toast } from "sonner";
 import { RadioFeedback } from "@/components/player/RadioFeedback";
-import { QueuePanel } from "@/components/player/QueuePanel";
-import { LyricsPanel } from "@/components/player/LyricsPanel";
-import { EqualizerPopover } from "@/components/player/EqualizerPopover";
-import { ExtendedPlayer } from "@/components/player/ExtendedPlayer";
-import { FullscreenPlayer } from "@/components/player/FullscreenPlayer";
+import {
+  LazyEqualizerPopover,
+  LazyExtendedPlayer,
+  LazyFullscreenPlayer,
+  LazyLyricsPanel,
+  LazyQueuePanel,
+  preloadEqualizerPopover,
+  preloadExtendedPlayer,
+  preloadFullscreenPlayer,
+  preloadLyricsPanel,
+  preloadQueuePanel,
+} from "@/components/player/lazy-player-surfaces";
 import { PlayerTrackMenu } from "@/components/player/bar/PlayerTrackMenu";
 import { PlayerVolumeControl } from "@/components/player/bar/PlayerVolumeControl";
 import { WaveformCanvas } from "@/components/player/bar/WaveformCanvas";
+import { getPlaySourceLabel } from "@/components/player/player-source";
 import {
   formatPlayerTime,
   getTrackQualityBadge,
@@ -84,6 +93,24 @@ function getTransportButtonToneClass(playSource: PlaySource | null, active: bool
   }
 }
 
+function PlayerSurfaceFallback({ fullscreen = false }: { fullscreen?: boolean }) {
+  if (!fullscreen) {
+    return (
+      <div className="pointer-events-none fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom,0px)+88px)] z-app-player-overlay flex justify-end px-4">
+        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/75 px-3 py-2 text-[11px] text-white/70 shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+          <Loader2 size={14} className="animate-spin text-primary" />
+          Loading player…
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="fixed inset-0 z-app-player-overlay flex items-center justify-center bg-black/70 backdrop-blur-xl">
+      <Loader2 size={24} className="animate-spin text-primary" />
+    </div>
+  );
+}
+
 export function PlayerBar() {
   const navigate = useNavigate();
   const { currentTime, duration, isPlaying, isBuffering, volume, analyserVersion, crossfadeTransition } = usePlayer();
@@ -103,22 +130,6 @@ export function PlayerBar() {
     duration,
   );
 
-  // Smoothly fade the "Playing from: <source>" line when the source
-  // actually changes (album → playlist, etc.). Without this it would
-  // pop in/out on user-initiated source changes — a small but visible
-  // jitter at the edge of the player bar.
-  const [displayedSource, setDisplayedSource] = useState(playSource);
-  const [previousSource, setPreviousSource] = useState<typeof playSource>(null);
-  useEffect(() => {
-    const currentName = displayedSource?.name ?? null;
-    const nextName = playSource?.name ?? null;
-    if (currentName === nextName) return;
-    setPreviousSource(displayedSource);
-    setDisplayedSource(playSource);
-    const id = window.setTimeout(() => setPreviousSource(null), 320);
-    return () => window.clearTimeout(id);
-  }, [playSource, displayedSource]);
-
   const { frequenciesDb, sampleRate } = useAudioVisualizer(
     SHOW_PLAYER_BAR_ANALYZER && isPlaying,
     `${currentTrack?.id ?? "none"}:${analyserVersion}`,
@@ -132,6 +143,11 @@ export function PlayerBar() {
   const [showQueue, setShowQueue] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [showEqualizer, setShowEqualizer] = useState(false);
+  const [shouldRenderQueuePanel, setShouldRenderQueuePanel] = useState(false);
+  const [shouldRenderLyricsPanel, setShouldRenderLyricsPanel] = useState(false);
+  const [shouldRenderEqualizerPopover, setShouldRenderEqualizerPopover] = useState(false);
+  const [shouldRenderExtendedPlayer, setShouldRenderExtendedPlayer] = useState(false);
+  const [shouldRenderFullscreenPlayer, setShouldRenderFullscreenPlayer] = useState(false);
   const [hasFloatingOverlayOpen, setHasFloatingOverlayOpen] = useState(false);
   const { isLiked, likeTrack, unlikeTrack } = useLikedTracks();
 
@@ -175,51 +191,14 @@ export function PlayerBar() {
     }
   }
 
-  // Fetch quality metadata for the current track (format, bitrate, sample_rate, bit_depth).
-  // The Track object may not carry these fields depending on the source (playlist, radio, etc.)
-  // so we lazily fetch from the API when the track changes.
-  const [trackQuality, setTrackQuality] = useState<{
-    format?: string; bitrate?: number | null; sampleRate?: number | null; bitDepth?: number | null;
-  } | null>(null);
-
-  useEffect(() => {
-    setTrackQuality(null);
-    if (!currentTrack) return;
-
-    // If the track already has quality data, use it
-    if (currentTrack.format || currentTrack.sampleRate) {
-      setTrackQuality({
-        format: currentTrack.format,
-        bitrate: currentTrack.bitrate,
-        sampleRate: currentTrack.sampleRate,
-        bitDepth: currentTrack.bitDepth,
-      });
-      return;
-    }
-
-    // Otherwise fetch from API
-    const trackId = currentTrack.libraryTrackId;
-    const storageId = currentTrack.storageId;
-    if (!trackId && !storageId) return;
-
-    let cancelled = false;
-    const url = trackId
-      ? `/api/tracks/${trackId}/info`
-      : `/api/tracks/by-storage/${encodeURIComponent(storageId!)}/info`;
-
-    api<Record<string, unknown>>(url)
-      .then((info) => {
-        if (cancelled) return;
-        setTrackQuality({
-          format: (info.format as string) || undefined,
-          bitrate: (info.bitrate as number) || undefined,
-          sampleRate: (info.sample_rate as number) || undefined,
-          bitDepth: (info.bit_depth as number) || undefined,
-        });
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [currentTrack?.libraryTrackId, currentTrack?.storageId]);
+  const shouldResolveTrackInfo = !!currentTrack && !currentTrack.format && !currentTrack.sampleRate;
+  const { info: currentTrackInfo } = useTrackInfo(currentTrack, { enabled: shouldResolveTrackInfo });
+  const trackQuality = currentTrack
+    ? {
+        ...getTrackQualityFallback(currentTrack),
+        ...getTrackQualityFromInfo(currentTrackInfo),
+      }
+    : null;
 
   const qualityTrack = {
     ...currentTrack ?? { id: "", title: "", artist: "" },
@@ -229,11 +208,42 @@ export function PlayerBar() {
   const transportButtonClass = getTransportButtonToneClass(playSource, isPlaying || isBuffering);
   const shapedRadioSessionId = playSource?.radio?.shapedSessionId;
   const isShapedRadioTrack = !!(shapedRadioSessionId && currentTrack?.libraryTrackId);
+  const sourceLabel = getPlaySourceLabel(playSource);
 
 
   if (!currentTrack) return null;
 
   const liked = isLiked(currentTrack.libraryTrackId ?? null, currentTrack.storageId ?? null, currentTrack.path || currentTrack.id);
+
+  function prepareQueuePanel() {
+    setShouldRenderQueuePanel(true);
+    void preloadQueuePanel();
+  }
+
+  function prepareLyricsPanel() {
+    setShouldRenderLyricsPanel(true);
+    void preloadLyricsPanel();
+  }
+
+  function prepareEqualizerPopover() {
+    setShouldRenderEqualizerPopover(true);
+    void preloadEqualizerPopover();
+  }
+
+  function prepareExtendedPlayer() {
+    setShouldRenderExtendedPlayer(true);
+    void preloadExtendedPlayer();
+  }
+
+  function prepareFullscreenPlayer() {
+    setShouldRenderFullscreenPlayer(true);
+    void preloadFullscreenPlayer();
+  }
+
+  function openFullscreenPlayer() {
+    prepareFullscreenPlayer();
+    setFsOpen(true);
+  }
 
   async function toggleLike() {
     if (!currentTrack) return;
@@ -265,7 +275,7 @@ export function PlayerBar() {
       </div>
 
       <div
-        className={`fixed left-2 right-2 md:left-3 md:right-3 isolate h-[66px] md:h-[82px] overflow-hidden rounded-2xl border border-white/10 bg-black/50 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-200 ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
+        className={`fixed left-2 right-2 md:left-3 md:right-3 isolate h-[66px] md:h-[82px] overflow-hidden rounded-2xl border border-white/8 bg-app-surface/68 backdrop-blur-xl shadow-[0_24px_56px_rgba(0,0,0,0.34)] transition-all duration-200 ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
         style={{ bottom: isDesktop ? 12 : "calc(64px + env(safe-area-inset-bottom, 0px) + 8px)", contain: "paint" }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
@@ -277,9 +287,10 @@ export function PlayerBar() {
               role={isDesktop ? undefined : "button"}
               tabIndex={isDesktop ? undefined : 0}
               aria-label={isDesktop ? undefined : "Open fullscreen player"}
-              className="flex min-w-0 shrink-0 flex-1 cursor-pointer items-center gap-3 md:w-[240px] md:flex-none md:cursor-default xl:w-[280px]"
-              onClick={() => { if (!isDesktop) setFsOpen(true); }}
-              onKeyDown={(e) => { if (!isDesktop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setFsOpen(true); } }}
+              className="flex min-w-0 shrink-0 flex-1 cursor-pointer items-center gap-3 md:w-[260px] md:flex-none md:cursor-default lg:w-[340px] xl:w-[min(34vw,520px)] 2xl:w-[min(38vw,680px)]"
+              onTouchStart={() => { if (!isDesktop) prepareFullscreenPlayer(); }}
+              onClick={() => { if (!isDesktop) openFullscreenPlayer(); }}
+              onKeyDown={(e) => { if (!isDesktop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFullscreenPlayer(); } }}
             >
             {/* Album art — crossfades outgoing ↔ incoming during audio crossfade.
                 On desktop, clicking navigates to the album page. */}
@@ -320,7 +331,7 @@ export function PlayerBar() {
 
             {/* Text — crossfades outgoing ↔ incoming. Stacks absolutely to allow
                 overlap without layout jump. */}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 md:flex-none md:max-w-[220px] lg:max-w-[300px] xl:max-w-[min(24vw,420px)] 2xl:max-w-[min(28vw,520px)]">
               {/* Title + artist crossfade between outgoing and incoming.
                   Wrapped in its own relative block so the absolute
                   outgoing copy doesn't escape into the persistent rows
@@ -378,33 +389,22 @@ export function PlayerBar() {
                   track crossfade — kept outside the fading block.
                   When the source itself changes (album → playlist) the
                   outgoing line fades out while the incoming fades in. */}
-              {(displayedSource || previousSource) && (
+              {sourceLabel && (
                 <div className="relative mt-0.5 h-[14px] hidden lg:block">
-                  {previousSource && (
-                    <p
-                      key={`prev-${previousSource.name}`}
-                      className="absolute inset-0 text-[10px] text-white/40 truncate leading-tight"
-                      style={{ animation: "fadeOut 320ms ease-out forwards" }}
-                    >
-                      Playing from: {previousSource.name}
-                    </p>
-                  )}
-                  {displayedSource && (
-                    <p
-                      key={`cur-${displayedSource.name}`}
-                      className="text-[10px] text-white/40 truncate leading-tight animate-fade-in"
-                    >
-                      Playing from:{" "}
-                      {displayedSource.href ? (
-                        <span
-                          className="hover:text-foreground hover:underline cursor-pointer transition-colors"
-                          onClick={(e) => { e.stopPropagation(); navigate(displayedSource.href!); }}
-                        >
-                          {displayedSource.name}
-                        </span>
-                      ) : displayedSource.name}
-                    </p>
-                  )}
+                  <p
+                    key={`src-${sourceLabel}`}
+                    className="text-[10px] text-white/40 truncate leading-tight animate-fade-in"
+                  >
+                    Playing from:{" "}
+                    {playSource?.href && sourceLabel !== "Discovery Radio" ? (
+                      <span
+                        className="hover:text-foreground hover:underline cursor-pointer transition-colors"
+                        onClick={(e) => { e.stopPropagation(); navigate(playSource.href!); }}
+                      >
+                        {sourceLabel}
+                      </span>
+                    ) : sourceLabel}
+                  </p>
                 </div>
               )}
               {isBuffering && (
@@ -414,42 +414,41 @@ export function PlayerBar() {
               )}
               </div>
 
-            {/* Heart */}
+            <div className="ml-1 flex shrink-0 items-center gap-0.5">
               <button onClick={(e) => { e.stopPropagation(); toggleLike(); }} className="shrink-0 rounded-md p-1.5 transition-colors hover:bg-white/5">
-              <Heart size={16} className={liked ? "text-primary fill-primary" : "text-white/30 hover:text-white/60"} />
+                <Heart size={16} className={liked ? "text-primary fill-primary" : "text-white/30 hover:text-white/60"} />
               </button>
 
-            {/* Radio shaping — thumbs up/down when shaped radio is active */}
-            {isDesktop && isShapedRadioTrack && (
-              <RadioFeedback
-                sessionId={shapedRadioSessionId!}
-                trackId={currentTrack.libraryTrackId}
-                onDislike={() => next()}
-              />
-            )}
+              {/* Radio shaping — thumbs up/down when shaped radio is active */}
+              {isDesktop && isShapedRadioTrack && (
+                <RadioFeedback
+                  sessionId={shapedRadioSessionId!}
+                  trackId={currentTrack.libraryTrackId}
+                  onDislike={() => next()}
+                />
+              )}
 
+              <div onClick={(e) => e.stopPropagation()}>
+                <PlayerTrackMenu
+                  currentTrack={currentTrack}
+                  duration={duration}
+                  onOverlayChange={setHasFloatingOverlayOpen}
+                  onAddToCollection={handleAddToCollection}
+                />
+              </div>
             </div>
-            <div onClick={(e) => e.stopPropagation()}>
-              <PlayerTrackMenu
-                currentTrack={currentTrack}
-                duration={duration}
-                onOverlayChange={setHasFloatingOverlayOpen}
-                onAddToCollection={handleAddToCollection}
-              />
             </div>
 
           {/* ── Block 2: Controls + Progress ── */}
           <div className="mx-auto hidden max-w-[640px] flex-1 md:flex md:items-center md:justify-center">
-            <div className="relative w-full overflow-hidden px-4 py-2">
+            <div className="relative w-full overflow-visible px-4 py-2">
               {SHOW_PLAYER_BAR_ANALYZER ? (
-                <div className="pointer-events-none absolute inset-0 opacity-28">
+                <div className="pointer-events-none absolute -inset-y-2 -inset-x-10 opacity-26 [mask-image:radial-gradient(ellipse_at_center,rgba(0,0,0,0.96)_18%,rgba(0,0,0,0.9)_44%,rgba(0,0,0,0.34)_74%,transparent_100%)] [mask-repeat:no-repeat]">
                   <WaveformCanvas
                     frequenciesDb={frequenciesDb}
                     sampleRate={sampleRate}
                     isPlaying={isPlaying}
                   />
-                  <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(2,6,12,0.14),rgba(2,6,12,0.32)_44%,rgba(2,6,12,0.74))]" />
-                  <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(2,6,12,0.9),rgba(2,6,12,0.14)_12%,rgba(2,6,12,0.14)_88%,rgba(2,6,12,0.9))]" />
                 </div>
               ) : null}
 
@@ -567,7 +566,8 @@ export function PlayerBar() {
             </button>
             {isShapedRadioTrack ? (
               <button
-                onClick={() => setFsOpen(true)}
+                onTouchStart={prepareFullscreenPlayer}
+                onClick={openFullscreenPlayer}
                 aria-label="Open fullscreen player"
                 className="w-10 h-10 flex items-center justify-center text-white/35 transition-colors hover:text-white/60"
               >
@@ -605,10 +605,13 @@ export function PlayerBar() {
             {!extendedOpen && (
               <button
                 onClick={() => {
+                  prepareEqualizerPopover();
                   setShowEqualizer((v) => !v);
                   setShowQueue(false);
                   setShowLyrics(false);
                 }}
+                onMouseEnter={prepareEqualizerPopover}
+                onFocus={prepareEqualizerPopover}
                 aria-label="Equalizer"
                 className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${showEqualizer ? "text-primary" : "text-white/30 hover:text-white/60"}`}
               >
@@ -619,7 +622,9 @@ export function PlayerBar() {
             {/* Queue (hidden when extended player is open) */}
             {!extendedOpen && (
               <button
-                onClick={() => { setShowQueue(!showQueue); setShowLyrics(false); }}
+                onClick={() => { prepareQueuePanel(); setShowQueue(!showQueue); setShowLyrics(false); }}
+                onMouseEnter={prepareQueuePanel}
+                onFocus={prepareQueuePanel}
                 className={`p-1.5 hover:bg-white/5 rounded-md transition-colors relative ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
                 aria-label="Queue"
               >
@@ -635,7 +640,9 @@ export function PlayerBar() {
             {/* Lyrics (hidden when extended player is open) */}
             {!extendedOpen && (
               <button
-                onClick={() => { setShowLyrics(!showLyrics); setShowQueue(false); }}
+                onClick={() => { prepareLyricsPanel(); setShowLyrics(!showLyrics); setShowQueue(false); }}
+                onMouseEnter={prepareLyricsPanel}
+                onFocus={prepareLyricsPanel}
                 className={`p-1.5 hover:bg-white/5 rounded-md transition-colors hidden xl:block ${showLyrics ? "text-primary" : "text-white/30 hover:text-white/60"}`}
                 aria-label="Lyrics"
               >
@@ -646,9 +653,12 @@ export function PlayerBar() {
             {/* Extended / Full player */}
             <button
               onClick={() => {
+                prepareExtendedPlayer();
                 setExtendedOpen(!extendedOpen);
                 if (!extendedOpen) { setShowQueue(false); setShowLyrics(false); }
               }}
+              onMouseEnter={prepareExtendedPlayer}
+              onFocus={prepareExtendedPlayer}
               className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${extendedOpen ? "text-primary" : "text-white/30 hover:text-white/60"}`}
               aria-label="Expand player"
             >
@@ -660,7 +670,9 @@ export function PlayerBar() {
           <div className="hidden items-center gap-1 md:flex lg:hidden">
             {!extendedOpen && (
               <button
-                onClick={() => { setShowQueue(!showQueue); setShowLyrics(false); }}
+                onClick={() => { prepareQueuePanel(); setShowQueue(!showQueue); setShowLyrics(false); }}
+                onMouseEnter={prepareQueuePanel}
+                onFocus={prepareQueuePanel}
                 aria-label="Queue"
                 className={`p-1.5 hover:bg-white/5 rounded-md transition-colors relative ${showQueue ? "text-primary" : "text-white/30 hover:text-white/60"}`}
               >
@@ -669,9 +681,12 @@ export function PlayerBar() {
             )}
             <button
               onClick={() => {
+                prepareExtendedPlayer();
                 setExtendedOpen(!extendedOpen);
                 if (!extendedOpen) { setShowQueue(false); setShowLyrics(false); }
               }}
+              onMouseEnter={prepareExtendedPlayer}
+              onFocus={prepareExtendedPlayer}
               aria-label="Expand player"
               className={`p-1.5 hover:bg-white/5 rounded-md transition-colors ${extendedOpen ? "text-primary" : "text-white/30 hover:text-white/60"}`}
             >
@@ -681,11 +696,31 @@ export function PlayerBar() {
 
         </div>
       </div>
-      <QueuePanel open={showQueue} onClose={() => setShowQueue(false)} />
-      <LyricsPanel open={showLyrics} onClose={() => setShowLyrics(false)} />
-      <EqualizerPopover open={showEqualizer} onClose={() => setShowEqualizer(false)} />
-      <ExtendedPlayer open={extendedOpen} onClose={() => setExtendedOpen(false)} />
-      {!isDesktop && <FullscreenPlayer open={fsOpen} onClose={() => setFsOpen(false)} />}
+      {shouldRenderQueuePanel ? (
+        <Suspense fallback={<PlayerSurfaceFallback />}>
+          <LazyQueuePanel open={showQueue} onClose={() => setShowQueue(false)} />
+        </Suspense>
+      ) : null}
+      {shouldRenderLyricsPanel ? (
+        <Suspense fallback={<PlayerSurfaceFallback />}>
+          <LazyLyricsPanel open={showLyrics} onClose={() => setShowLyrics(false)} />
+        </Suspense>
+      ) : null}
+      {shouldRenderEqualizerPopover ? (
+        <Suspense fallback={<PlayerSurfaceFallback />}>
+          <LazyEqualizerPopover open={showEqualizer} onClose={() => setShowEqualizer(false)} />
+        </Suspense>
+      ) : null}
+      {shouldRenderExtendedPlayer ? (
+        <Suspense fallback={<PlayerSurfaceFallback />}>
+          <LazyExtendedPlayer open={extendedOpen} onClose={() => setExtendedOpen(false)} />
+        </Suspense>
+      ) : null}
+      {!isDesktop && shouldRenderFullscreenPlayer ? (
+        <Suspense fallback={<PlayerSurfaceFallback fullscreen />}>
+          <LazyFullscreenPlayer open={fsOpen} onClose={() => setFsOpen(false)} />
+        </Suspense>
+      ) : null}
     </>
   );
 }

@@ -3,8 +3,11 @@ import { useNavigate } from "react-router";
 import { ItemActionMenu, ItemActionMenuButton, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { trackToMenuData } from "@/components/actions/shared";
 import { useTrackActionEntries } from "@/components/actions/track-actions";
+import { PlayerTrackIdentity } from "@/components/player/PlayerTrackIdentity";
 import { PlayerSurfaceModeSwitch } from "@/components/player/PlayerSurfaceModeSwitch";
 import { SpinningDisc } from "@/components/player/SpinningDisc";
+import { getPlaySourceLabel } from "@/components/player/player-source";
+import { useResolvedPlayerArtist } from "@/components/player/useResolvedPlayerArtist";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { useVisualizerConfig } from "@/components/player/visualizer/useVisualizerConfig";
 import { measureVisualizerCanvasRect } from "@/components/player/visualizer/canvas-layout";
@@ -21,7 +24,7 @@ import {
   Settings,
   SlidersHorizontal,
 } from "lucide-react";
-import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { artistPagePath } from "@/lib/library-routes";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useCrossfadeAwareProgress, useCrossfadeProgress } from "@/hooks/use-crossfade-progress";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
@@ -32,21 +35,6 @@ import { formatPlayerTime } from "@/components/player/bar/player-bar-utils";
 type FSTab = "player" | "queue" | "lyrics" | "info";
 
 interface LyricLine { time: number; text: string; }
-interface ResolvedArtistMeta {
-  id: number;
-  name: string;
-  slug?: string;
-  hasPhoto?: boolean;
-}
-
-function normalizeArtistName(value: string | null | undefined) {
-  return (value ?? "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .toLowerCase();
-}
 
 function parseSyncedLyrics(raw: string): LyricLine[] {
   return raw.split("\n").reduce<LyricLine[]>((acc, line) => {
@@ -131,7 +119,7 @@ function FullscreenQueueRow({
 }
 
 export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
-  const { currentTrack, queue, currentIndex, currentTime, duration, isBuffering, seek, jumpTo, isPlaying, volume, analyserVersion, crossfadeTransition } = usePlayer();
+  const { currentTrack, queue, currentIndex, currentTime, duration, isBuffering, seek, jumpTo, isPlaying, volume, analyserVersion, crossfadeTransition, playSource } = usePlayer();
   const { pause, resume } = usePlayerActions();
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   // Keep the crossfade visuals, but let time/progress track the live
@@ -152,8 +140,8 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
   const [swipeY, setSwipeY] = useState(0);
   const [showVizSettings, setShowVizSettings] = useState(false);
   const [showEqualizer, setShowEqualizer] = useState(false);
-  const [artistPhotoFailed, setArtistPhotoFailed] = useState(false);
-  const [resolvedArtist, setResolvedArtist] = useState<ResolvedArtistMeta | null>(null);
+  const { resolvedArtist, artistAvatarUrl, markArtistPhotoFailed } = useResolvedPlayerArtist(currentTrack, queue);
+  const sourceLabel = getPlaySourceLabel(playSource);
 
   const swipeStartRef = useRef<number | null>(null);
   const draggingRef = useRef(false);
@@ -250,11 +238,6 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
     }));
   }
 
-  const artistPhotoUrl = resolvedArtist?.id != null
-    ? artistPhotoApiUrl({ artistId: resolvedArtist.id, artistSlug: resolvedArtist.slug, artistName: resolvedArtist.name })
-    : null;
-  const artistAvatarUrl = !artistPhotoFailed && artistPhotoUrl ? artistPhotoUrl : null;
-
   // Lyrics fetch
   useEffect(() => {
     if (!visible || !currentTrack) { setLyrics(null); return; }
@@ -271,73 +254,6 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
       .catch(() => {});
     return () => { cancelled = true; };
   }, [visible, currentTrack?.id]);
-
-  useEffect(() => {
-    setArtistPhotoFailed(false);
-  }, [artistPhotoUrl, currentTrack?.artistId]);
-
-  useEffect(() => {
-    if (!currentTrack?.artist) {
-      setResolvedArtist(null);
-      return;
-    }
-
-    const artistName = currentTrack.artist.trim();
-    const normalizedArtist = normalizeArtistName(artistName);
-    if (normalizedArtist.length < 2) {
-      setResolvedArtist(null);
-      return;
-    }
-
-    if (currentTrack.artistId != null) {
-      setResolvedArtist({
-        id: currentTrack.artistId,
-        name: currentTrack.artist,
-        slug: currentTrack.artistSlug,
-      });
-      return;
-    }
-
-    const queueMatch = queue.find((track) => {
-      return track.artistId != null && normalizeArtistName(track.artist) === normalizedArtist;
-    });
-    if (queueMatch?.artistId != null) {
-      setResolvedArtist({
-        id: queueMatch.artistId,
-        name: queueMatch.artist || artistName,
-        slug: queueMatch.artistSlug,
-      });
-      return;
-    }
-
-    let cancelled = false;
-
-    api<{ artists?: { id: number; name: string; slug?: string; has_photo?: boolean }[] }>(
-      `/api/search?q=${encodeURIComponent(artistName)}&limit=5`,
-    )
-      .then((result) => {
-        if (cancelled) return;
-        const exactMatches = result.artists?.filter((artist) => normalizeArtistName(artist.name) === normalizedArtist) ?? [];
-        const bestMatch = exactMatches.find((artist) => artist.has_photo) ?? exactMatches[0] ?? result.artists?.[0] ?? null;
-        setResolvedArtist(
-          bestMatch
-            ? {
-                id: bestMatch.id,
-                name: bestMatch.name,
-                slug: bestMatch.slug,
-                hasPhoto: bestMatch.has_photo,
-              }
-            : null,
-        );
-      })
-      .catch(() => {
-        if (!cancelled) setResolvedArtist(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentTrack?.artist, currentTrack?.artistId, currentTrack?.artistSlug, queue]);
 
   // Active lyric index
   const activeLyricIndex = lyrics?.synced
@@ -598,63 +514,18 @@ export function FullscreenPlayer({ open, onClose }: FullscreenPlayerProps) {
 
         {/* Track info */}
         <div className="w-full mt-5 text-center">
-          {/* Title + album crossfade during audio crossfade; overlap via
-              absolute positioning of the outgoing copy. */}
-          <div className="relative">
-            {crossfadeTransition ? (
-              <>
-                <div className="absolute inset-0" style={{ opacity: 1 - crossfadeProgress }}>
-                  <h2 className="text-lg font-bold text-white truncate">
-                    {crossfadeTransition.outgoing.title}
-                  </h2>
-                  {crossfadeTransition.outgoing.album && (
-                    <p className="mt-1 text-xs text-white/40 truncate">{crossfadeTransition.outgoing.album}</p>
-                  )}
-                </div>
-                <div style={{ opacity: crossfadeProgress }}>
-                  <h2 className="text-lg font-bold text-white truncate">
-                    {crossfadeTransition.incoming.title}
-                  </h2>
-                  {crossfadeTransition.incoming.album && (
-                    <p className="mt-1 text-xs text-white/40 truncate">{crossfadeTransition.incoming.album}</p>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className="text-lg font-bold text-white truncate">
-                  {currentTrack.title}
-                </h2>
-                {currentTrack.album && (
-                  <p className="mt-1 text-xs text-white/40 truncate">{currentTrack.album}</p>
-                )}
-              </>
-            )}
-          </div>
-          <div className="mt-2 flex items-center justify-center">
-            <button
-              onClick={goToArtist}
-              aria-label={`Go to ${currentTrack.artist}`}
-              disabled={!resolvedArtist?.id}
-              className="inline-flex max-w-[240px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.07] px-2 py-1.5 active:bg-white/12 transition-colors"
-            >
-              {artistAvatarUrl ? (
-                <img
-                  src={artistAvatarUrl}
-                  alt={currentTrack.artist}
-                  className="h-7 w-7 rounded-full object-cover"
-                  onError={() => setArtistPhotoFailed(true)}
-                />
-              ) : (
-                <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 text-[11px] font-semibold text-white/55">
-                  {currentTrack.artist.slice(0, 1).toUpperCase()}
-                </div>
-              )}
-              <span className="truncate text-[12px] font-medium text-white/78">
-                {currentTrack.artist}
-              </span>
-            </button>
-          </div>
+          <PlayerTrackIdentity
+            currentTrack={currentTrack}
+            crossfadeTransition={crossfadeTransition}
+            crossfadeProgress={crossfadeProgress}
+            sourceLabel={sourceLabel}
+            artistAvatarUrl={artistAvatarUrl}
+            onArtistAvatarError={markArtistPhotoFailed}
+            onArtistClick={goToArtist}
+            artistClickable={!!resolvedArtist?.id}
+            titleClassName="text-lg"
+            albumClassName="text-xs"
+          />
           {vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
             <p className="mt-1 text-[9px] font-medium uppercase tracking-[0.18em] text-white/40">
               {vizCfg.trackVizProfile.summary}

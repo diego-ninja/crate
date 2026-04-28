@@ -90,6 +90,48 @@
   50% { opacity: 0.7; transform: scale(1.02); }
 }
 
+/* Discovery Radio sidebar glow (listen) */
+@keyframes discoveryLogoPulse {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+    filter: saturate(1) brightness(1);
+  }
+  38% {
+    transform: translateY(-1px) scale(1.045);
+    filter: saturate(1.08) brightness(1.08);
+  }
+  58% {
+    transform: translateY(0) scale(0.992);
+    filter: saturate(1.02) brightness(1.02);
+  }
+}
+
+@keyframes discoveryLogoGlow {
+  0%, 100% {
+    opacity: 0.36;
+    transform: scale(0.9);
+  }
+  52% {
+    opacity: 0.92;
+    transform: scale(1.16);
+  }
+}
+
+.animate-discovery-logo-pulse {
+  animation: discoveryLogoPulse 2.8s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+.animate-discovery-logo-glow {
+  animation: discoveryLogoGlow 2.8s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-discovery-logo-pulse,
+  .animate-discovery-logo-glow {
+    animation: none;
+  }
+}
+
 /* View Transitions API */
 ::view-transition-old(root) {
   animation: 0.2s ease both vt-out;

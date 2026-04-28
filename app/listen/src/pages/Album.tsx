@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useNavigate, useLocation } from "react-router";
 import { AlertCircle, ArrowDownToLine, CheckCircle2, Clock, Disc, Heart, ListPlus, Loader2, MoreHorizontal, Play, Radio, Share2, Shuffle, User } from "lucide-react";
 import { toast } from "sonner";
 
@@ -8,18 +8,21 @@ import { AppModal, ModalBody } from "@crate/ui/primitives/AppModal";
 import { GenrePillRow, type GenreProfileItem } from "@crate/ui/domain/genres/GenrePill";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useApi } from "@/hooks/use-api";
+import { useLazyPlaylistOptions } from "@/hooks/use-lazy-playlist-options";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { api } from "@/lib/api";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { useOffline } from "@/contexts/OfflineContext";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { useSavedAlbums } from "@/contexts/SavedAlbumsContext";
+import { QualityBadge } from "@/components/player/bar/QualityBadge";
 import { TrackRow, type TrackRowData } from "@/components/cards/TrackRow";
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
 import { isOfflineBusy } from "@/lib/offline";
 import { fetchAlbumRadio } from "@/lib/radio";
-import { formatBadgeClass, shuffleArray, formatTotalDuration } from "@/lib/utils";
+import { shuffleArray, formatTotalDuration } from "@/lib/utils";
 import { albumApiPath, albumCoverApiUrl, albumPagePath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { buildAlbumPlayerTracks, buildAlbumQualityBadges } from "@/pages/album-model";
 
 function albumGenreSlug(name: string) {
   return name
@@ -36,6 +39,8 @@ interface AlbumTrack {
   format: string;
   size_mb: number;
   bitrate: number | null;
+  sample_rate?: number | null;
+  bit_depth?: number | null;
   length_sec: number;
   rating: number;
   tags: {
@@ -79,34 +84,14 @@ interface AlbumData {
   genre_profile?: GenreProfileItem[];
 }
 
-interface Playlist {
-  id: number;
-  name: string;
-}
-
-
-function buildPlayerTracks(data: AlbumData): Track[] {
-  const cover = albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name });
-  return data.tracks.map((t) => ({
-    id: t.storage_id || t.path || String(t.id),
-      storageId: t.storage_id,
-      title: t.tags.title || t.filename,
-      artist: data.artist,
-      artistId: data.artist_id,
-      artistSlug: data.artist_slug,
-      album: data.display_name || data.name,
-      albumId: data.id,
-      albumSlug: data.slug,
-      albumCover: cover,
-      path: t.path,
-      libraryTrackId: t.id,
-  }));
-}
-
-
 export function Album() {
-  const { albumId: albumIdParam } = useParams<{ albumId?: string }>();
+  const {
+    albumId: albumIdParam,
+    artistSlug: routeArtistSlug,
+    albumSlug: routeAlbumSlug,
+  } = useParams<{ albumId?: string; artistSlug?: string; albumSlug?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const isDesktop = useIsDesktop();
   const { playAll, playNext } = usePlayerActions();
   const { openCreatePlaylist } = usePlaylistComposer();
@@ -119,9 +104,13 @@ export function Album() {
   const routeAlbumId = albumIdParam ? Number(albumIdParam) : undefined;
 
   const { data, loading, error } = useApi<AlbumData>(
-    routeAlbumId != null ? albumApiPath({ albumId: routeAlbumId }) : null,
+    routeAlbumId != null
+      ? albumApiPath({ albumId: routeAlbumId })
+      : routeArtistSlug && routeAlbumSlug
+        ? albumApiPath({ artistSlug: routeArtistSlug, albumSlug: routeAlbumSlug })
+        : null,
   );
-  const { data: playlists } = useApi<Playlist[]>("/api/playlists");
+  const { playlistOptions: playlists, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
 
   useDismissibleLayer({
     active: menuOpen || playlistPickerOpen,
@@ -131,6 +120,20 @@ export function Album() {
       setPlaylistPickerOpen(false);
     },
   });
+
+  useEffect(() => {
+    if (!data?.name) return;
+    const canonicalPath = albumPagePath({
+      albumId: data.id,
+      albumSlug: data.slug,
+      artistSlug: data.artist_slug,
+      artistName: data.artist,
+      albumName: data.name,
+    });
+    if (location.pathname !== canonicalPath) {
+      navigate(canonicalPath, { replace: true });
+    }
+  }, [data?.artist, data?.artist_slug, data?.id, data?.name, data?.slug, location.pathname, navigate]);
 
   if (loading) {
     return (
@@ -148,15 +151,21 @@ export function Album() {
     );
   }
 
-  const coverUrl = albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name });
-  const artistPhotoUrl = artistPhotoApiUrl({ artistId: data.artist_id, artistSlug: data.artist_slug, artistName: data.artist });
+  const coverUrl = albumCoverApiUrl(
+    { albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name },
+    { size: 768 },
+  );
+  const artistPhotoUrl = artistPhotoApiUrl(
+    { artistId: data.artist_id, artistSlug: data.artist_slug, artistName: data.artist },
+    { size: 512 },
+  );
   const displayName = data.display_name || data.name;
   const albumId = data.id;
   const artistName = data.artist;
   const albumTracks = data.tracks;
   const year = data.album_tags?.year?.slice(0, 4);
   const genre = data.genres.length > 0 ? data.genres.join(", ") : data.album_tags?.genre;
-  const playerTracks = buildPlayerTracks(data);
+  const playerTracks: Track[] = buildAlbumPlayerTracks(data);
   const saved = isSaved(albumId);
   const offlineState = getAlbumState(albumId);
   const offlineRecord = getAlbumRecord(albumId);
@@ -188,7 +197,7 @@ export function Album() {
             : "Offline copy failed. Retry to finish the album mirror."
           : null;
 
-  const formats = [...new Set(albumTracks.map((t) => t.format).filter(Boolean))];
+  const qualityBadges = buildAlbumQualityBadges(albumTracks);
   const hasMultipleDiscs = albumTracks.some(
     (t) => t.tags.discnumber && parseInt(t.tags.discnumber) > 1,
   );
@@ -198,7 +207,7 @@ export function Album() {
       playAll(playerTracks, startIndex, {
         type: "album",
         name: `${artistName} — ${displayName}`,
-        href: albumPagePath({ albumId, albumSlug: data.slug, artistName, albumName: displayName }),
+        href: albumPagePath({ albumId, albumSlug: data.slug, artistSlug: data.artist_slug, artistName, albumName: displayName }),
         radio: {
           seedType: "album",
           seedId: albumId,
@@ -219,7 +228,7 @@ export function Album() {
     playAll(shuffled, 0, {
       type: "album",
       name: `${artistName} — ${displayName}`,
-      href: albumPagePath({ albumId, albumSlug: data.slug, artistName, albumName: displayName }),
+      href: albumPagePath({ albumId, albumSlug: data.slug, artistSlug: data.artist_slug, artistName, albumName: displayName }),
       radio: {
         seedType: "album",
         seedId: albumId,
@@ -250,7 +259,7 @@ export function Album() {
     setMenuOpen(false);
   };
 
-  const shareUrl = `${window.location.origin}${albumPagePath({ albumId, albumSlug: data.slug })}`;
+  const shareUrl = `${window.location.origin}${albumPagePath({ albumId, albumSlug: data.slug, artistSlug: data.artist_slug, artistName, albumName: data.name })}`;
 
   async function handleShare() {
     try {
@@ -354,6 +363,11 @@ export function Album() {
     });
   }
 
+  function handleTogglePlaylistPicker() {
+    ensurePlaylistOptionsLoaded();
+    setPlaylistPickerOpen((open) => !open);
+  }
+
   // Group tracks by disc if multi-disc
   const tracksByDisc = new Map<number, AlbumTrack[]>();
   for (const t of data.tracks) {
@@ -418,8 +432,8 @@ export function Album() {
                   {formatTotalDuration(data.total_length_sec)}
                 </span>
               )}
-              {formats.map((f) => (
-                <span key={f} className={`${formatBadgeClass(f)} text-[11px] px-2.5 py-0.5`}>{f}</span>
+              {qualityBadges.map((badge) => (
+                <QualityBadge key={`${badge.tier}-${badge.label}`} badge={badge} />
               ))}
             </div>
 
@@ -512,7 +526,7 @@ export function Album() {
                 saved={saved}
                 playlists={playlists}
                 playlistPickerOpen={playlistPickerOpen}
-                setPlaylistPickerOpen={setPlaylistPickerOpen}
+                onTogglePlaylistPicker={handleTogglePlaylistPicker}
                 onPlay={() => { handlePlay(); setMenuOpen(false); }}
                 onPlayNext={handlePlayNextAlbum}
                 onCreatePlaylist={handleCreatePlaylistFromAlbum}
@@ -537,7 +551,7 @@ export function Album() {
                   saved={saved}
                   playlists={playlists}
                   playlistPickerOpen={playlistPickerOpen}
-                  setPlaylistPickerOpen={setPlaylistPickerOpen}
+                  onTogglePlaylistPicker={handleTogglePlaylistPicker}
                   onPlay={() => { handlePlay(); setMenuOpen(false); }}
                   onPlayNext={handlePlayNextAlbum}
                   onCreatePlaylist={handleCreatePlaylistFromAlbum}
@@ -592,6 +606,9 @@ export function Album() {
                       path: t.path,
                       track_number: parseInt(t.tags.tracknumber) || idx + 1,
                       format: t.format,
+                      bitrate: t.bitrate,
+                      sample_rate: t.sample_rate,
+                      bit_depth: t.bit_depth,
                       library_track_id: t.id,
                     }}
                     index={parseInt(t.tags.tracknumber) || idx + 1}
@@ -599,6 +616,7 @@ export function Album() {
                     playlistOptions={playlists ?? undefined}
                     onAddToPlaylist={handleAddTrackToPlaylist}
                     onCreatePlaylist={handleCreatePlaylistFromTrack}
+                    onActionMenuOpen={ensurePlaylistOptionsLoaded}
                     onPlayOverride={() => handlePlayTrack(t.id)}
                   />
                 ))}
@@ -622,6 +640,9 @@ export function Album() {
                 path: t.path,
                 track_number: parseInt(t.tags.tracknumber) || idx + 1,
                 format: t.format,
+                bitrate: t.bitrate,
+                sample_rate: t.sample_rate,
+                bit_depth: t.bit_depth,
                 library_track_id: t.id,
               }}
               index={parseInt(t.tags.tracknumber) || idx + 1}
@@ -629,6 +650,7 @@ export function Album() {
               playlistOptions={playlists ?? undefined}
               onAddToPlaylist={handleAddTrackToPlaylist}
               onCreatePlaylist={handleCreatePlaylistFromTrack}
+              onActionMenuOpen={ensurePlaylistOptionsLoaded}
               onPlayOverride={() => handlePlayTrack(t.id)}
             />
           ))
@@ -639,16 +661,16 @@ export function Album() {
 }
 
 function AlbumMenuContent({
-  data, coverUrl, displayName, saved, playlists, playlistPickerOpen, setPlaylistPickerOpen,
+  data, coverUrl, displayName, saved, playlists, playlistPickerOpen, onTogglePlaylistPicker,
   onPlay, onPlayNext, onCreatePlaylist, onAddToPlaylist, onToggleSaved, offlineSupported, offlineState, offlineLabel, onToggleOffline, onGoToArtist, onShare,
 }: {
   data: { has_cover: boolean; artist: string };
   coverUrl: string;
   displayName: string;
   saved: boolean;
-  playlists: { id: number; name: string }[] | null;
+  playlists: { id: number; name: string }[];
   playlistPickerOpen: boolean;
-  setPlaylistPickerOpen: (fn: (open: boolean) => boolean) => void;
+  onTogglePlaylistPicker: () => void;
   onPlay: () => void;
   onPlayNext: () => void;
   onCreatePlaylist: () => void;
@@ -685,7 +707,7 @@ function AlbumMenuContent({
         <AppMenuButton onClick={onPlayNext}>
           <ListPlus size={15} /> Play next
         </AppMenuButton>
-        <AppMenuButton className="justify-between" onClick={() => setPlaylistPickerOpen((o) => !o)}>
+        <AppMenuButton className="justify-between" onClick={onTogglePlaylistPicker}>
           <span className="flex items-center gap-3"><ListPlus size={15} /> Add to playlist</span>
           <span className="text-white/40">{playlistPickerOpen ? "−" : "+"}</span>
         </AppMenuButton>
@@ -694,8 +716,8 @@ function AlbumMenuContent({
             <button className="w-full text-left rounded-lg px-3 py-2 text-sm text-foreground hover:bg-white/5 transition-colors" onClick={onCreatePlaylist}>
               Add new playlist
             </button>
-            {playlists && playlists.length > 0 ? <AppPopoverDivider className="mx-1" /> : null}
-            {playlists?.map((p) => (
+            {playlists.length > 0 ? <AppPopoverDivider className="mx-1" /> : null}
+            {playlists.map((p) => (
               <button key={p.id} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors" onClick={() => onAddToPlaylist(p.id)}>
                 {p.name}
               </button>

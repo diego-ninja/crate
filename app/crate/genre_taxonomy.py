@@ -338,7 +338,7 @@ _STATIC_RUNTIME_GRAPH = _build_static_runtime_graph()
 
 def _load_shared_taxonomy_revision() -> str | None:
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
 
         redis_client = _get_redis()
         if redis_client:
@@ -349,7 +349,7 @@ def _load_shared_taxonomy_revision() -> str | None:
         pass
 
     try:
-        from crate.db.cache import get_setting
+        from crate.db.cache_settings import get_setting
 
         value = get_setting(_RUNTIME_GRAPH_REVISION_KEY)
         if value:
@@ -364,7 +364,7 @@ def _publish_shared_taxonomy_revision(revision: str | None = None) -> str:
     revision_value = revision or datetime.now(timezone.utc).isoformat()
 
     try:
-        from crate.db.cache import _get_redis
+        from crate.db.cache_runtime import _get_redis
 
         redis_client = _get_redis()
         if redis_client:
@@ -373,7 +373,7 @@ def _publish_shared_taxonomy_revision(revision: str | None = None) -> str:
         pass
 
     try:
-        from crate.db.cache import set_setting
+        from crate.db.cache_settings import set_setting
 
         set_setting(_RUNTIME_GRAPH_REVISION_KEY, revision_value)
     except Exception:

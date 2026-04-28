@@ -63,7 +63,6 @@ export function usePlaybackPersistence({
   // Structural: immediate writes on queue / cursor / play-pause / shuffle changes.
   useEffect(() => {
     persistNow(isPlaying);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queue, currentIndex, isPlaying, shuffle]);
 
   // Periodic checkpoint so a crash mid-playback doesn't erase resume
@@ -74,7 +73,6 @@ export function usePlaybackPersistence({
       persistNow(isPlayingRef.current);
     }, CHECKPOINT_INTERVAL_MS);
     return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Unload: final snapshot for resume on next session. Both events fire
@@ -90,6 +88,5 @@ export function usePlaybackPersistence({
       window.removeEventListener("pagehide", handler);
       window.removeEventListener("beforeunload", handler);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 }

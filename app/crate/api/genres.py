@@ -21,7 +21,8 @@ from crate.db.genres import (
     list_invalid_genre_taxonomy_nodes,
     set_genre_eq_gains,
 )
-from crate.db.tasks import create_task, list_tasks
+from crate.db.queries.tasks import list_tasks
+from crate.db.repositories.tasks import create_task
 from crate.genre_taxonomy import invalidate_runtime_taxonomy_cache, resolve_genre_eq_preset
 
 router = APIRouter(prefix="/api/genres", tags=["genres"])

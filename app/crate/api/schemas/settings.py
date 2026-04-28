@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, RootModel
 
-from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
+from crate.api.schemas.common import OkResponse
 
 
 class WorkerSettingsRequest(BaseModel):
@@ -39,14 +39,6 @@ class TelegramSettingsUpdateRequest(BaseModel):
     chat_id: str | int | None = None
 
 
-class ShowsSettingsUpdateRequest(BaseModel):
-    lastfm_scraping_enabled: bool | None = None
-
-
-class LastfmSyncRequest(BaseModel):
-    city: str | None = None
-
-
 class SoulseekSettingsUpdateRequest(BaseModel):
     url: str | None = None
     quality: str | None = None
@@ -77,10 +69,8 @@ class ShowsActiveCityResponse(BaseModel):
 
 
 class ShowsSettingsResponse(BaseModel):
-    lastfm_scraping_enabled: bool
     active_cities: list[ShowsActiveCityResponse]
     upcoming_shows: int
-    lastfm_shows: int
 
 
 class SoulseekSettingsResponse(BaseModel):
@@ -129,15 +119,6 @@ class CacheClearResponse(OkResponse):
     type: str
 
 
-class LastfmSyncResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    task_id: str | None = None
-    city: str | None = None
-    task_ids: list[str] | None = None
-    cities: list[str] | None = None
-
-
 class ScheduleUpdateResponse(OkResponse):
     pass
 
@@ -148,9 +129,3 @@ class SettingsUpdateResponse(OkResponse):
 
 class TelegramTestResponse(OkResponse):
     pass
-
-
-class LastfmSyncEnqueueResponse(TaskEnqueueResponse):
-    city: str | None = None
-    task_ids: list[str] | None = None
-    cities: list[str] | None = None

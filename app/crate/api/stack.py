@@ -1,25 +1,33 @@
 """Stack management API — monitor and control Docker containers."""
 
+from __future__ import annotations
+
+import asyncio
 import logging
+import os
+from typing import AsyncIterator
 
 from fastapi import APIRouter, HTTPException, Request
+from starlette.responses import StreamingResponse
 
+from crate.api._deps import json_dumps
 from crate.api.auth import _require_admin
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.utility import (
+    AdminStackSnapshotResponse,
     StackActionResponse,
     StackContainerDetailResponse,
     StackContainerLogsResponse,
     StackStatusResponse,
 )
+from crate.db.admin_stack_surface import STACK_SNAPSHOT_SCOPE, get_cached_stack_surface, publish_stack_surface_signal
+from crate.db.snapshot_events import snapshot_channel
 from crate.docker_ctl import (
-    is_available,
-    list_containers,
     get_container,
-    restart_container,
-    stop_container,
-    start_container,
     get_container_logs,
+    restart_container,
+    start_container,
+    stop_container,
 )
 
 log = logging.getLogger(__name__)
@@ -34,25 +42,71 @@ _STACK_RESPONSES = merge_responses(
     },
 )
 
+
+def _get_redis_url() -> str:
+    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+
+async def _stack_stream() -> AsyncIterator[str]:
+    yield f"data: {json_dumps(get_cached_stack_surface())}\n\n"
+    try:
+        import redis.asyncio as aioredis
+
+        redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(snapshot_channel(STACK_SNAPSHOT_SCOPE, "global"))
+        heartbeat_counter = 0
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message.get("type") == "message":
+                yield f"data: {json_dumps(get_cached_stack_surface())}\n\n"
+                heartbeat_counter = 0
+                continue
+            heartbeat_counter += 1
+            if heartbeat_counter >= 30:
+                heartbeat_counter = 0
+                yield ": heartbeat\n\n"
+    except Exception:
+        while True:
+            yield f"data: {json_dumps(get_cached_stack_surface())}\n\n"
+            await asyncio.sleep(30)
+
+
+@router.get(
+    "/api/admin/stack-snapshot",
+    response_model=AdminStackSnapshotResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the canonical admin stack snapshot",
+)
+def admin_stack_snapshot(request: Request, fresh: bool = False):
+    _require_admin(request)
+    return get_cached_stack_surface(fresh=fresh)
+
+
+@router.get(
+    "/api/admin/stack-stream",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Stream admin stack snapshot updates",
+)
+async def admin_stack_stream(request: Request):
+    _require_admin(request)
+    return StreamingResponse(
+        _stack_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.get(
     "/api/stack/status",
     response_model=StackStatusResponse,
     responses=AUTH_ERROR_RESPONSES,
     summary="Get Docker stack status",
 )
-def stack_status(request: Request):
+def stack_status(request: Request, fresh: bool = False):
     _require_admin(request)
-    available = is_available()
-    if not available:
-        return {"available": False, "containers": []}
-    containers = list_containers(all_containers=True)
-    running = sum(1 for c in containers if c["state"] == "running")
-    return {
-        "available": True,
-        "total": len(containers),
-        "running": running,
-        "containers": containers,
-    }
+    snapshot = get_cached_stack_surface(fresh=fresh)
+    return snapshot.get("stack") or {"available": False, "total": 0, "running": 0, "containers": []}
 
 
 @router.get(
@@ -99,6 +153,7 @@ def stack_restart_container(request: Request, name: str):
 
     ok = restart_container(name)
     if ok:
+        publish_stack_surface_signal()
         return {"status": "restarting", "name": name}
     raise HTTPException(status_code=500, detail="Restart failed")
 
@@ -125,6 +180,7 @@ def stack_stop_container(request: Request, name: str):
         raise HTTPException(status_code=403, detail=f"Cannot stop '{name}': not a managed container")
     ok = stop_container(name)
     if ok:
+        publish_stack_surface_signal()
         return {"status": "stopped", "name": name}
     raise HTTPException(status_code=500, detail="Stop failed")
 
@@ -141,5 +197,6 @@ def stack_start_container(request: Request, name: str):
         raise HTTPException(status_code=403, detail=f"Cannot start '{name}': not a managed container")
     ok = start_container(name)
     if ok:
+        publish_stack_surface_signal()
         return {"status": "started", "name": name}
     raise HTTPException(status_code=500, detail="Start failed")

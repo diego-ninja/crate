@@ -1,10 +1,19 @@
-from fastapi import APIRouter, Request, HTTPException
+from __future__ import annotations
 
+import asyncio
+import os
+from typing import AsyncIterator
+
+from fastapi import APIRouter, HTTPException, Request
+from starlette.responses import StreamingResponse
+
+from crate.api._deps import json_dumps
 from crate.api.auth import _require_admin
 from crate.api._deps import artist_name_from_id, album_names_from_id
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
 from crate.api.schemas.management import (
+    AdminHealthSnapshotResponse,
     AnalysisStatusResponse,
     ArtistHealthIssuesResponse,
     ArtistRepairResponse,
@@ -22,12 +31,23 @@ from crate.api.schemas.management import (
     StorageV2StatusResponse,
     WipeRequest,
 )
-from crate.db import (
-    create_task, get_audit_log,
-    get_open_issues, get_issue_counts, resolve_issue, dismiss_issue,
+from crate.db.admin_health_surface import (
+    HEALTH_SURFACE_STREAM_CHANNEL,
+    get_cached_health_surface,
+    publish_health_surface_signal,
 )
+from crate.db.audit import get_audit_log
+from crate.db.cache_store import get_cache, set_cache
+from crate.db.health import dismiss_issue, get_artist_issues, get_issue_counts, get_open_issues, resolve_issue, resolve_issues_by_type
+from crate.db.ops_snapshot import get_cached_ops_snapshot
+from crate.db.queries.management import get_last_analyzed_track, get_last_bliss_track, get_storage_v2_status
+from crate.db.repositories.tasks import create_task
 
 router = APIRouter(prefix="/api/manage", tags=["management"])
+admin_router = APIRouter(prefix="/api/admin", tags=["management"])
+
+_ANALYSIS_STATUS_CACHE_KEY = "api:manage:analysis-status:v1"
+_ANALYSIS_STATUS_TTL = 10
 
 _MANAGEMENT_RESPONSES = merge_responses(
     AUTH_ERROR_RESPONSES,
@@ -36,6 +56,70 @@ _MANAGEMENT_RESPONSES = merge_responses(
         422: error_response("The request payload failed validation."),
     },
 )
+
+
+def _get_redis_url() -> str:
+    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+
+async def _health_stream(*, check_type: str | None = None, limit: int = 500) -> AsyncIterator[str]:
+    yield f"data: {json_dumps(get_cached_health_surface(check_type=check_type, limit=limit))}\n\n"
+    redis = None
+    pubsub = None
+    try:
+        import redis.asyncio as aioredis
+
+        redis = aioredis.from_url(_get_redis_url(), decode_responses=True)
+        pubsub = redis.pubsub()
+        await pubsub.subscribe(HEALTH_SURFACE_STREAM_CHANNEL)
+        heartbeat_counter = 0
+        while True:
+            message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+            if message and message.get("type") == "message":
+                yield f"data: {json_dumps(get_cached_health_surface(check_type=check_type, limit=limit, fresh=True))}\n\n"
+                heartbeat_counter = 0
+                continue
+            heartbeat_counter += 1
+            if heartbeat_counter >= 30:
+                heartbeat_counter = 0
+                yield ": heartbeat\n\n"
+    except Exception:
+        while True:
+            yield f"data: {json_dumps(get_cached_health_surface(check_type=check_type, limit=limit))}\n\n"
+            await asyncio.sleep(15)
+    finally:
+        if pubsub is not None:
+            await pubsub.unsubscribe(HEALTH_SURFACE_STREAM_CHANNEL)
+        if redis is not None:
+            await redis.aclose()
+
+
+@admin_router.get(
+    "/health-snapshot",
+    response_model=AdminHealthSnapshotResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the canonical admin health snapshot",
+)
+def api_admin_health_snapshot(request: Request, check_type: str = "", fresh: bool = False, limit: int = 500):
+    _require_admin(request)
+    normalized = check_type or None
+    return get_cached_health_surface(check_type=normalized, limit=limit, fresh=fresh)
+
+
+@admin_router.get(
+    "/health-stream",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Stream admin health snapshot updates",
+)
+async def api_admin_health_stream(request: Request, check_type: str = "", limit: int = 500):
+    _require_admin(request)
+    normalized = check_type or None
+    safe_limit = min(max(limit, 1), 1000)
+    return StreamingResponse(
+        _health_stream(check_type=normalized, limit=safe_limit),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ── Health Check & Repair ────────────────────────────────────────
@@ -61,9 +145,8 @@ def run_health_check(request: Request):
 def get_health_report(request: Request):
     """Get persisted health issues from DB (survives restarts)."""
     _require_admin(request)
-    issues = get_open_issues()
-    counts = get_issue_counts()
-    return {"issues": issues, "summary": counts, "total": len(issues)}
+    snapshot = get_cached_health_surface()
+    return {"issues": snapshot.get("issues", []), "summary": snapshot.get("counts", {}), "total": snapshot.get("total", 0)}
 
 
 @router.get(
@@ -75,9 +158,12 @@ def get_health_report(request: Request):
 def list_health_issues(request: Request, check_type: str = ""):
     """Get open health issues, optionally filtered by type."""
     _require_admin(request)
-    issues = get_open_issues(check_type=check_type or None)
-    counts = get_issue_counts()
-    return {"issues": issues, "counts": counts, "total": len(issues)}
+    snapshot = get_cached_health_surface(check_type=check_type or None)
+    return {
+        "issues": snapshot.get("issues", []),
+        "counts": snapshot.get("counts", {}),
+        "total": snapshot.get("total", 0),
+    }
 
 
 @router.post(
@@ -89,6 +175,7 @@ def list_health_issues(request: Request, check_type: str = ""):
 def api_resolve_issue(request: Request, issue_id: int):
     _require_admin(request)
     resolve_issue(issue_id)
+    publish_health_surface_signal()
     return {"ok": True}
 
 
@@ -101,6 +188,7 @@ def api_resolve_issue(request: Request, issue_id: int):
 def api_dismiss_issue(request: Request, issue_id: int):
     _require_admin(request)
     dismiss_issue(issue_id)
+    publish_health_surface_signal()
     return {"ok": True}
 
 
@@ -141,8 +229,8 @@ def repair_specific_issues(request: Request, body: RepairIssuesRequest):
 def api_resolve_type(request: Request, check_type: str):
     """Resolve all open issues of a given check type."""
     _require_admin(request)
-    from crate.db import resolve_issues_by_type
     resolve_issues_by_type(check_type)
+    publish_health_surface_signal()
     return {"ok": True, "check_type": check_type}
 
 
@@ -164,6 +252,7 @@ def api_fix_type(request: Request, check_type: str):
         "auto_only": False,
         "issues": fixable,
     })
+    publish_health_surface_signal()
     return {"task_id": task_id, "fixable": len(fixable)}
 
 
@@ -172,7 +261,6 @@ def api_fix_type(request: Request, check_type: str):
 def get_artist_health_issues(request: Request, name: str):
     """Get open health issues for a specific artist."""
     _require_admin(request)
-    from crate.db import get_artist_issues
     issues = get_artist_issues(name)
     return {"artist": name, "issues": issues, "count": len(issues)}
 
@@ -180,7 +268,6 @@ def get_artist_health_issues(request: Request, name: str):
 def repair_artist(request: Request, name: str):
     """Repair all auto-fixable issues for a specific artist."""
     _require_admin(request)
-    from crate.db import get_artist_issues
     issues = get_artist_issues(name)
     fixable = [i for i in issues if i.get("auto_fixable")]
     if not fixable:
@@ -339,11 +426,20 @@ def rebuild_library(request: Request):
 def analysis_status(request: Request):
     """Return current background analysis progress for audio analysis and bliss daemons."""
     _require_admin(request)
-    from crate.analysis_daemon import get_analysis_status
-    from crate.db.management import get_last_analyzed_track, get_last_bliss_track
-    status = get_analysis_status()
+    snapshot = get_cached_ops_snapshot().get("analysis")
+    if snapshot:
+        return snapshot
 
-    return {**status, "last_analyzed": get_last_analyzed_track(), "last_bliss": get_last_bliss_track()}
+    cached = get_cache(_ANALYSIS_STATUS_CACHE_KEY)
+    if cached:
+        return cached
+
+    from crate.analysis_daemon import get_analysis_status
+
+    status = get_analysis_status()
+    payload = {**status, "last_analyzed": get_last_analyzed_track(), "last_bliss": get_last_bliss_track()}
+    set_cache(_ANALYSIS_STATUS_CACHE_KEY, payload, ttl=_ANALYSIS_STATUS_TTL)
+    return payload
 
 
 @router.post(
@@ -495,5 +591,4 @@ def verify_storage_v2(request: Request):
 def storage_v2_status(request: Request):
     """Get migration progress: how many artists/albums/tracks are on V2 layout."""
     _require_admin(request)
-    from crate.db.management import get_storage_v2_status
     return get_storage_v2_status()

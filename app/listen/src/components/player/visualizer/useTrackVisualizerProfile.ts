@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import type { Track } from "@/contexts/player-types";
-import { api } from "@/lib/api";
+import { useTrackInfo } from "@/hooks/use-track-info";
+import type { TrackInfo } from "@/lib/track-info";
 
 interface MoodMap {
   [key: string]: number | null | undefined;
@@ -102,7 +103,6 @@ const DEFAULT_PROFILE: VisualizerTrackProfile = {
   },
 };
 
-const profileCache = new Map<string, TrackVisualizerInfo | null>();
 const KEY_INDEX: Record<string, number> = {
   c: 0,
   "b#": 0,
@@ -183,6 +183,42 @@ function describeTempo(bpm: number) {
 function getKeyIndex(audioKey: string | null | undefined) {
   if (!audioKey) return null;
   return KEY_INDEX[audioKey.trim().toLowerCase()] ?? null;
+}
+
+function normalizeMoodMap(moodJson: TrackInfo["mood_json"]): MoodMap | null {
+  if (!moodJson) return null;
+  if (typeof moodJson === "string") {
+    try {
+      const parsed = JSON.parse(moodJson);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? parsed as MoodMap
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  return typeof moodJson === "object" && !Array.isArray(moodJson)
+    ? moodJson as MoodMap
+    : null;
+}
+
+function toVisualizerInfo(info: TrackInfo | null): TrackVisualizerInfo | null {
+  if (!info) return null;
+  return {
+    bpm: info.bpm,
+    audio_key: info.audio_key,
+    audio_scale: info.audio_scale,
+    energy: info.energy,
+    danceability: info.danceability,
+    valence: info.valence,
+    acousticness: info.acousticness,
+    instrumentalness: info.instrumentalness,
+    loudness: info.loudness,
+    dynamic_range: info.dynamic_range,
+    mood_json: normalizeMoodMap(info.mood_json),
+    bliss_signature: info.bliss_signature,
+  };
 }
 
 function buildProfile(info: TrackVisualizerInfo | null): VisualizerTrackProfile {
@@ -334,52 +370,7 @@ function buildProfile(info: TrackVisualizerInfo | null): VisualizerTrackProfile 
 }
 
 export function useTrackVisualizerProfile(track: Track | undefined, enabled: boolean) {
-  const [info, setInfo] = useState<TrackVisualizerInfo | null>(null);
-
-  useEffect(() => {
-    if (!enabled || !track) {
-      setInfo(null);
-      return;
-    }
-
-    const cacheKey = track.libraryTrackId != null
-      ? `id:${track.libraryTrackId}`
-      : `path:${track.path || track.id}`;
-
-    if (profileCache.has(cacheKey)) {
-      setInfo(profileCache.get(cacheKey) ?? null);
-      return;
-    }
-
-    const controller = new AbortController();
-    const resolvedId = track.libraryTrackId ?? (
-      /^\d+$/.test(track.id) ? Number(track.id) : null
-    );
-    const infoUrl = resolvedId != null
-      ? `/api/tracks/${resolvedId}/info`
-      : track.storageId
-        ? `/api/tracks/by-storage/${encodeURIComponent(track.storageId)}/info`
-        : `/api/track-info/${encodeURIComponent(
-            (track.path || track.id).startsWith("/music/")
-              ? (track.path || track.id).slice(7)
-              : (track.path || track.id),
-          ).replace(/%2F/g, "/")}`;
-
-    api<TrackVisualizerInfo>(infoUrl, "GET", undefined, { signal: controller.signal })
-      .then((data) => {
-        profileCache.set(cacheKey, data);
-        setInfo(data);
-      })
-      .catch((error) => {
-        if (controller.signal.aborted || (error as Error).name === "AbortError") return;
-        profileCache.set(cacheKey, null);
-        setInfo(null);
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [enabled, track?.id, track?.libraryTrackId, track?.path]);
-
-  return useMemo(() => buildProfile(info), [info]);
+  const { info } = useTrackInfo(track, { enabled });
+  const visualizerInfo = useMemo(() => toVisualizerInfo(info), [info]);
+  return useMemo(() => buildProfile(visualizerInfo), [visualizerInfo]);
 }

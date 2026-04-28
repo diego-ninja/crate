@@ -10,7 +10,7 @@ from crate.api.schemas.utility import (
 )
 from crate.organizer import preview_organize, organize_album, suggest_folder_name, PRESETS
 from crate.api._deps import library_path, extensions, safe_path
-from crate.db import get_library_album_by_id
+from crate.db.repositories.library import get_library_album_by_id
 
 router = APIRouter(tags=["organizer"])
 

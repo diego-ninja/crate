@@ -60,7 +60,9 @@ export function createUseApi(reactHooks: ReactHookDeps, apiFn: ApiFn) {
           }
         })
         .catch((e: Error) => {
-          if (!cancelled && controller.signal.aborted !== true) {
+          const wasAborted =
+            controller.signal.aborted === true || e.name === "AbortError";
+          if (!cancelled && !wasAborted) {
             setError(e.message);
           }
         })

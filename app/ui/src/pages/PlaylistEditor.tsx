@@ -26,7 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@crate/ui/shadcn/card"
 import { Input } from "@crate/ui/shadcn/input";
 import { Textarea } from "@crate/ui/shadcn/textarea";
 import { useApi } from "@/hooks/use-api";
-import { api } from "@/lib/api";
+import { api, apiSseUrl } from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
 
 interface Playlist {
@@ -102,6 +102,11 @@ interface PreviewResult {
   duration_total_sec: number;
   avg_year: number | null;
   year_range: number[] | null;
+}
+
+interface PlaylistEditorSurface {
+  playlist: Playlist;
+  history: GenerationLog[];
 }
 
 interface FilterOptions {
@@ -287,25 +292,35 @@ export function PlaylistEditor() {
   const id = Number(playlistId);
 
   const {
-    data: playlist,
+    data: surface,
     loading,
     refetch,
-  } = useApi<Playlist>(id ? `/api/admin/system-playlists/${id}` : null);
-  const {
-    data: history,
-    refetch: refetchHistory,
-  } = useApi<GenerationLog[]>(id ? `/api/admin/system-playlists/${id}/generation-history` : null);
+  } = useApi<PlaylistEditorSurface>(id ? `/api/admin/system-playlists/${id}/editor-snapshot` : null);
   const { data: filterOptions } = useApi<FilterOptions>("/api/playlists/filter-options");
+  const [liveSurface, setLiveSurface] = useState<PlaylistEditorSurface | null>(null);
+
+  const playlist = liveSurface?.playlist ?? surface?.playlist ?? null;
+  const history = liveSurface?.history ?? surface?.history ?? [];
 
   useEffect(() => {
-    const status = playlist?.generation_status;
-    if (status !== "queued" && status !== "running") return;
-    const interval = setInterval(() => {
-      void refetch();
-      void refetchHistory();
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [playlist?.generation_status, refetch, refetchHistory]);
+    setLiveSurface(surface);
+  }, [surface]);
+
+  useEffect(() => {
+    if (!id) return;
+    const source = new EventSource(apiSseUrl(`/api/admin/system-playlists/${id}/stream`));
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as PlaylistEditorSurface;
+        setLiveSurface(payload);
+      } catch {
+        // Ignore malformed frames and keep the stream alive.
+      }
+    };
+    return () => {
+      source.close();
+    };
+  }, [id]);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -326,29 +341,31 @@ export function PlaylistEditor() {
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!playlist) return;
-    setName(playlist.name);
-    setDescription(playlist.description || "");
-    setCategory(playlist.category || "");
-    setFeaturedRank(playlist.featured_rank);
-    setIsActive(playlist.is_active);
-    setIsCurated(playlist.is_curated);
-    setAutoRefresh(playlist.auto_refresh_enabled);
-    if (playlist.smart_rules) {
-      setRules(playlist.smart_rules.rules || []);
-      setMatch(playlist.smart_rules.match || "all");
-      setLimit(playlist.smart_rules.limit || 50);
-      setSort(playlist.smart_rules.sort || "random");
+    const basePlaylist = surface?.playlist;
+    if (!basePlaylist) return;
+    setName(basePlaylist.name);
+    setDescription(basePlaylist.description || "");
+    setCategory(basePlaylist.category || "");
+    setFeaturedRank(basePlaylist.featured_rank);
+    setIsActive(basePlaylist.is_active);
+    setIsCurated(basePlaylist.is_curated);
+    setAutoRefresh(basePlaylist.auto_refresh_enabled);
+    if (basePlaylist.smart_rules) {
+      setRules(basePlaylist.smart_rules.rules || []);
+      setMatch(basePlaylist.smart_rules.match || "all");
+      setLimit(basePlaylist.smart_rules.limit || 50);
+      setSort(basePlaylist.smart_rules.sort || "random");
     } else {
       setRules([]);
       setMatch("all");
       setLimit(50);
       setSort("random");
     }
-  }, [playlist]);
+  }, [surface]);
 
-  const isSmart = playlist?.is_smart ?? false;
-  const persistedSmartRules = playlist?.smart_rules;
+  const basePlaylist = surface?.playlist ?? null;
+  const isSmart = basePlaylist?.is_smart ?? false;
+  const persistedSmartRules = basePlaylist?.smart_rules;
   const currentSmartRules = { match, rules, limit, sort };
   const smartRulesChanged = isSmart
     && JSON.stringify(currentSmartRules) !== JSON.stringify(persistedSmartRules ?? null);
@@ -371,7 +388,6 @@ export function PlaylistEditor() {
       await api(`/api/admin/system-playlists/${id}`, "PUT", body);
       toast.success("Playlist saved");
       void refetch();
-      void refetchHistory();
     } catch {
       toast.error("Failed to save playlist");
     } finally {
@@ -391,7 +407,6 @@ export function PlaylistEditor() {
     name,
     currentSmartRules,
     refetch,
-    refetchHistory,
   ]);
 
   const handleGenerate = useCallback(async () => {
@@ -408,13 +423,12 @@ export function PlaylistEditor() {
         toast.success("Generation enqueued");
       }
       void refetch();
-      void refetchHistory();
     } catch {
       toast.error("Failed to enqueue generation");
     } finally {
       setGenerating(false);
     }
-  }, [autoRefresh, currentSmartRules, id, refetch, refetchHistory, smartRulesChanged]);
+  }, [autoRefresh, currentSmartRules, id, refetch, smartRulesChanged]);
 
   const handlePreview = useCallback(async () => {
     setPreviewing(true);

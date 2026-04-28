@@ -5,7 +5,8 @@ from crate.api._deps import album_names_from_id, library_path, safe_path
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.api.schemas.utility import AlbumTagsUpdate, TrackTagsUpdate
-from crate.db import create_task, get_library_album_by_id, get_track_path_by_id
+from crate.db.repositories.library import get_library_album_by_id, get_track_path_by_id
+from crate.db.repositories.tasks import create_task
 
 router = APIRouter(tags=["metadata"])
 

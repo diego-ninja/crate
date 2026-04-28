@@ -16,6 +16,7 @@ from crate.db.tx import transaction_scope
 from sqlalchemy import text
 
 _log = logging.getLogger(__name__)
+_ADMIN_LOGS_STREAM_CHANNEL = "crate:sse:admin:logs"
 
 
 def _worker_id() -> str:
@@ -47,6 +48,7 @@ def insert_log(
                     "metadata": json.dumps(metadata) if metadata else None,
                 },
             )
+        _publish_logs_signal()
     except Exception:
         _log.debug("Failed to insert worker log", exc_info=True)
 
@@ -114,6 +116,22 @@ def cleanup_old_logs(max_age_days: int = 7):
             _log.debug("Cleaned up %d old worker log entries", deleted)
     except Exception:
         _log.debug("Worker log cleanup failed", exc_info=True)
+
+
+def _publish_logs_signal() -> None:
+    try:
+        from crate.db.cache_runtime import _get_redis
+
+        redis = _get_redis()
+        if not redis:
+            return
+        payload = json.dumps({
+            "kind": "worker_log",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        redis.publish(_ADMIN_LOGS_STREAM_CHANNEL, payload)
+    except Exception:
+        _log.debug("Failed to publish worker log signal", exc_info=True)
 
 
 def _row_to_log(row) -> dict:

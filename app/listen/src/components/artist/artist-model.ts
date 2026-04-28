@@ -20,6 +20,7 @@ export interface ArtistData {
   id?: number;
   slug?: string;
   name: string;
+  updated_at?: string | null;
   albums: ArtistAlbum[];
   total_tracks: number;
   total_size_mb: number;
@@ -71,12 +72,32 @@ export interface StatsListResponse<T> {
   items: T[];
 }
 
-export function buildArtistPhotoUrl(artistName: string, artistId?: number, artistSlug?: string) {
-  return artistPhotoApiUrl({ artistId, artistSlug, artistName });
+export interface ArtistPageEnrichment {
+  setlist?: {
+    probable_setlist: { title: string; frequency: number; play_count: number; last_played?: string }[];
+    total_shows: number;
+  };
+}
+
+export interface ArtistPageData {
+  artist: ArtistData;
+  info: ArtistInfo;
+  top_tracks: ArtistTopTrack[];
+  shows: {
+    events: ArtistShowEvent[];
+    configured: boolean;
+    source: string;
+  };
+  enrichment: ArtistPageEnrichment;
+  artist_hot_rank?: number | null;
+}
+
+export function buildArtistPhotoUrl(artistName: string, artistId?: number, artistSlug?: string, version?: string | null) {
+  return artistPhotoApiUrl({ artistId, artistSlug, artistName }, { size: 384, version });
 }
 
 export function buildArtistAlbumCover(artistName: string, albumName: string, albumId?: number, albumSlug?: string) {
-  return albumCoverApiUrl({ albumId, albumSlug, artistName, albumName });
+  return albumCoverApiUrl({ albumId, albumSlug, artistName, albumName }, { size: 512 });
 }
 
 export function artistGenreSlug(name: string) {
@@ -118,5 +139,21 @@ export function buildArtistPlayerTrack(
 }
 
 export function buildArtistShowItems(events: ArtistShowEvent[]) {
-  return events.map(artistShowToUpcomingItem);
+  const seenKeys = new Set<string>();
+  const deduped: ArtistShowEvent[] = [];
+
+  for (const event of events) {
+    const key = event.id || [
+      event.artist_name,
+      event.date,
+      event.venue,
+      event.city,
+      event.country_code || event.country,
+    ].filter(Boolean).join("|").toLowerCase();
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    deduped.push(event);
+  }
+
+  return deduped.map(artistShowToUpcomingItem);
 }

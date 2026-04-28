@@ -7,7 +7,7 @@ from pathlib import Path
 import mutagen
 
 from crate.audio import get_audio_files, read_tags
-from crate.db import get_all_dir_mtimes, set_dir_mtime, delete_dir_mtime
+from crate.db.cache_dir_mtimes import delete_dir_mtime, get_all_dir_mtimes, set_dir_mtime
 
 log = logging.getLogger(__name__)
 

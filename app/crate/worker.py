@@ -1,7 +1,10 @@
 import logging
 import threading
 
-from crate.db import set_cache
+from crate.db.cache_store import set_cache
+from crate.db.core import init_db
+from crate.db.queries.tasks import get_task, get_task_activity_snapshot
+from crate.db.repositories.tasks import cleanup_orphaned_tasks, cleanup_zombie_tasks
 from crate.worker_handlers.acquisition import ACQUISITION_TASK_HANDLERS
 from crate.worker_handlers.analysis import ANALYSIS_TASK_HANDLERS
 from crate.worker_handlers.artwork import ARTWORK_TASK_HANDLERS
@@ -19,8 +22,6 @@ DB_HEAVY_TASKS = {"library_sync", "library_pipeline", "wipe_library", "rebuild_l
 
 def _is_cancelled(task_id: str) -> bool:
     try:
-        from crate.db import get_task
-
         task = get_task(task_id)
         return task is not None and task.get("status") == "cancelled"
     except Exception:
@@ -39,8 +40,6 @@ def run_worker(config: dict):
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    from crate.db import init_db
-    from crate.db.tasks import cleanup_orphaned_tasks
     from crate.utils import init_musicbrainz
 
     init_db()
@@ -71,6 +70,13 @@ def run_worker(config: dict):
     analysis_thread.start()
     bliss_thread.start()
     log.info("Background analysis daemons started")
+
+    # Start projector daemon (domain events → snapshot warming)
+    projector_thread = threading.Thread(
+        target=_run_projector_loop, args=(service_stop,), daemon=True, name="projector",
+    )
+    projector_thread.start()
+    log.info("Projector daemon started")
 
     # Start Telegram bot
     from crate.telegram import telegram_bot_loop
@@ -104,6 +110,19 @@ def run_worker(config: dict):
     sys.exit(exit_code)
 
 
+def _run_projector_loop(stop_event: threading.Event):
+    """Dedicated thread: consume domain events from Redis Stream and warm snapshots."""
+    from crate.projector import process_domain_events
+
+    while not stop_event.is_set():
+        try:
+            process_domain_events(limit=200)
+        except Exception:
+            log.debug("Snapshot projector failed", exc_info=True)
+        stop_event.wait(5)
+    log.info("Projector loop stopped")
+
+
 def _run_service_loop(config: dict, stop_event: threading.Event):
     """Background thread: scheduler checks, watcher, zombie cleanup, import queue."""
     import time as _time
@@ -126,6 +145,7 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
     last_cleanup = 0
     last_status_update = 0
     last_metrics_flush = 0
+    last_shadow_backfill = 0
 
     while not stop_event.is_set():
         now = _time.time()
@@ -146,7 +166,7 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                 from crate.importer import ImportQueue
                 from crate.config import load_config
                 queue = ImportQueue(load_config())
-                count = len(queue.scan_pending())
+                count = len(queue.refresh_pending_state())
                 set_cache("imports_pending", {"count": count})
             except Exception:
                 pass
@@ -155,7 +175,6 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
         if now - last_zombie_check > 30:
             last_zombie_check = now
             try:
-                from crate.db.tasks import cleanup_zombie_tasks
                 cleanup_zombie_tasks(heartbeat_timeout_min=5, no_heartbeat_timeout_min=3)
             except Exception:
                 log.debug("Zombie cleanup failed", exc_info=True)
@@ -164,19 +183,77 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
         if now - last_status_update > 15:
             last_status_update = now
             try:
-                from crate.db import list_tasks as _lt
-                running = _lt(status="running", limit=100)
-                pending = _lt(status="pending", limit=100)
+                from crate.db.cache_settings import get_setting
+                from crate.db.ops_runtime import set_ops_runtime_state
+                activity = get_task_activity_snapshot(running_limit=100, pending_limit=100, recent_limit=10)
+                running = activity["running_tasks"]
+                pending = activity["pending_tasks"]
+                recent = activity["recent_tasks"]
+                max_workers = int(get_setting("max_workers", str(config.get("worker_processes", 6))) or config.get("worker_processes", 6) or 6)
+                scan_running = next((task for task in running if task.get("type") == "scan"), None)
+                worker_live = {
+                    "engine": "dramatiq",
+                    "running_count": int(activity["running_count"]),
+                    "pending_count": int(activity["pending_count"]),
+                    "running_tasks": [
+                        {
+                            "id": task["id"],
+                            "type": task["type"],
+                            "status": task["status"],
+                            "pool": task.get("pool", "default"),
+                            "progress": task.get("progress", ""),
+                            "created_at": task.get("created_at"),
+                            "started_at": task.get("started_at"),
+                            "updated_at": task.get("updated_at"),
+                        }
+                        for task in running
+                    ],
+                    "pending_tasks": [
+                        {
+                            "id": task["id"],
+                            "type": task["type"],
+                            "status": task["status"],
+                            "pool": task.get("pool", "default"),
+                            "progress": task.get("progress", ""),
+                            "created_at": task.get("created_at"),
+                            "started_at": task.get("started_at"),
+                            "updated_at": task.get("updated_at"),
+                        }
+                        for task in pending[:12]
+                    ],
+                    "recent_tasks": [
+                        {
+                            "id": task["id"],
+                            "type": task["type"],
+                            "status": task["status"],
+                            "updated_at": task.get("updated_at"),
+                        }
+                        for task in recent
+                    ],
+                    "worker_slots": {
+                        "max": max_workers,
+                        "active": int(activity["running_count"]),
+                    },
+                    "scan": {
+                        "running": scan_running is not None,
+                        "progress": (scan_running or {}).get("progress", {}) if scan_running else {},
+                    },
+                    "systems": {
+                        "postgres": True,
+                        "watcher": True,
+                    },
+                }
                 set_cache("worker_status", {
-                    "running": len(running),
-                    "pending": len(pending),
+                    "running": int(activity["running_count"]),
+                    "pending": int(activity["pending_count"]),
                     "engine": "dramatiq",
                 }, ttl=60)
+                set_ops_runtime_state("worker_live", worker_live)
                 # Record queue depth as a metric
                 try:
                     from crate.metrics import record
-                    record("worker.queue.depth", len(pending))
-                    record("worker.queue.running", len(running))
+                    record("worker.queue.depth", int(activity["pending_count"]))
+                    record("worker.queue.running", int(activity["running_count"]))
                 except Exception:
                     pass
             except Exception:
@@ -191,16 +268,34 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
             except Exception:
                 log.debug("Metrics flush failed", exc_info=True)
 
+        # Incrementally backfill shadow pipeline read models every 30s
+        if now - last_shadow_backfill > 30:
+            last_shadow_backfill = now
+            try:
+                from crate.db.jobs.analysis import backfill_pipeline_read_models
+
+                result = backfill_pipeline_read_models(limit=1000)
+                if any(result.values()):
+                    log.info(
+                        "Pipeline shadow backfill: analysis=%d bliss=%d features=%d embeddings=%d",
+                        result["processing_analysis"],
+                        result["processing_bliss"],
+                        result["analysis_features"],
+                        result["bliss_embeddings"],
+                    )
+            except Exception:
+                log.debug("Pipeline shadow backfill failed", exc_info=True)
+
         # Old task/event/log cleanup every hour
         if now - last_cleanup > 3600:
             last_cleanup = now
             try:
                 from crate.db.events import cleanup_old_events, cleanup_old_tasks
-                from crate.db.auth import cleanup_expired_sessions, cleanup_ended_jam_rooms
+                from crate.db.repositories.auth import cleanup_expired_sessions, cleanup_ended_jam_rooms
                 from crate.db.worker_logs import cleanup_old_logs
                 cleanup_old_events(max_age_hours=48)
                 cleanup_old_tasks(max_age_days=7)
-                cleanup_expired_sessions(max_age_days=7)
+                cleanup_expired_sessions(max_age_days=3, stale_age_days=30)
                 cleanup_ended_jam_rooms(max_age_days=30)
                 cleanup_old_logs(max_age_days=7)
             except Exception:

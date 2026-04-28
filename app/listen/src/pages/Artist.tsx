@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import {
@@ -15,6 +15,8 @@ import {
 } from "@/components/artist/ArtistPageSections";
 import {
   buildArtistAlbumCover,
+  type ArtistPageData,
+  type ArtistPageEnrichment,
   buildArtistPhotoUrl,
   buildArtistPlayerTrack,
   buildArtistShowItems,
@@ -22,8 +24,6 @@ import {
   type ArtistData,
   type ArtistInfo,
   type ArtistTopTrack,
-  type StatsArtist,
-  type StatsListResponse,
 } from "@/components/artist/artist-model";
 import { type ArtistShowEvent } from "@/components/upcoming/UpcomingRows";
 import { useArtistFollows } from "@/contexts/ArtistFollowsContext";
@@ -32,20 +32,34 @@ import { useApi } from "@/hooks/use-api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchArtistRadio } from "@/lib/radio";
 import { shuffleArray } from "@/lib/utils";
-import { artistApiPath, artistBackgroundApiUrl, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { artistBackgroundApiUrl, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export function Artist() {
-  const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
-  const artistId = artistIdParam ? Number(artistIdParam) : undefined;
+  const { artistSlug: routeArtistSlug } = useParams<{ artistSlug?: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [bioModalOpen, setBioModalOpen] = useState(false);
   const [setlistModalOpen, setSetlistModalOpen] = useState(false);
   const [expandedShowId, setExpandedShowId] = useState<string | null>(null);
   const { isFollowing, toggleArtistFollow } = useArtistFollows();
   const { playAll } = usePlayerActions();
 
-  const { data, loading, error } = useApi<ArtistData>(
-    artistId != null ? artistApiPath({ artistId }) : null,
+  const { data: pageData, loading, error } = useApi<ArtistPageData>(
+    routeArtistSlug ? `/api/artist-slugs/${encodeURIComponent(routeArtistSlug)}/page` : null,
   );
+  const data: ArtistData | undefined = pageData?.artist;
+
+  useEffect(() => {
+    if (!data?.name) return;
+    const canonicalPath = artistPagePath({
+      artistId: data.id,
+      artistSlug: data.slug,
+      artistName: data.name,
+    });
+    if (location.pathname !== canonicalPath) {
+      navigate(canonicalPath, { replace: true });
+    }
+  }, [data?.id, data?.name, data?.slug, location.pathname, navigate]);
 
   async function toggleFollow() {
     if (!data?.id) return;
@@ -75,26 +89,10 @@ export function Artist() {
       toast.error("Failed to share artist");
     }
   }
-  const { data: info } = useApi<ArtistInfo>(
-    artistId != null ? `/api/artists/${artistId}/info` : null,
-  );
-  const { data: topTracks } = useApi<ArtistTopTrack[]>(
-    artistId != null ? `/api/artists/${artistId}/top-tracks?count=12` : null,
-  );
-  const { data: showsData } = useApi<{ events: ArtistShowEvent[] }>(
-    artistId != null ? `/api/artists/${artistId}/shows?limit=12` : null,
-  );
-  const { data: enrichment } = useApi<{
-    setlist?: {
-      probable_setlist: { title: string; frequency: number; play_count: number; last_played?: string }[];
-      total_shows: number;
-    };
-  }>(
-    artistId != null ? `/api/artists/${artistId}/enrichment` : null,
-  );
-  const { data: topArtistsStats } = useApi<StatsListResponse<StatsArtist>>(
-    artistId != null ? "/api/me/stats/top-artists?window=30d&limit=12" : null,
-  );
+  const info: ArtistInfo | undefined = pageData?.info;
+  const topTracks: ArtistTopTrack[] | undefined = pageData?.top_tracks;
+  const showsData: { events: ArtistShowEvent[] } | undefined = pageData?.shows;
+  const enrichment: ArtistPageEnrichment | undefined = pageData?.enrichment;
 
   const coverFallback = data?.albums?.[0]
     ? buildArtistAlbumCover(data.name, data.albums[0]!.name, data.albums[0]!.id, data.albums[0]!.slug)
@@ -144,9 +142,7 @@ export function Artist() {
   const visibleShowItems = [...artistShowItems]
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
     .slice(0, 5);
-  const artistHotNow = Boolean(
-    data?.id && topArtistsStats?.items?.some((item) => item.artist_id === data.id),
-  );
+  const artistHotNow = pageData?.artist_hot_rank != null;
 
   async function handlePlayArtistSetlist() {
     try {
@@ -179,9 +175,16 @@ export function Artist() {
     );
   }
 
-  const photoUrl = buildArtistPhotoUrl(data.name, data.id, data.slug);
-  const canonicalPhotoUrl = artistPhotoApiUrl({ artistId: data.id, artistSlug: data.slug, artistName: data.name });
-  const backgroundUrl = artistBackgroundApiUrl({ artistId: data.id, artistSlug: data.slug, artistName: data.name });
+  const imageVersion = data.updated_at ?? undefined;
+  const photoUrl = buildArtistPhotoUrl(data.name, data.id, data.slug, imageVersion);
+  const canonicalPhotoUrl = artistPhotoApiUrl(
+    { artistId: data.id, artistSlug: data.slug, artistName: data.name },
+    { size: 512, version: imageVersion },
+  );
+  const backgroundUrl = artistBackgroundApiUrl(
+    { artistId: data.id, artistSlug: data.slug, artistName: data.name },
+    { size: 1280, version: imageVersion },
+  );
   const tags = data.genres.length > 0 ? data.genres : (info?.tags ?? []);
 
   return (

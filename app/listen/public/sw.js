@@ -4,6 +4,35 @@ const CACHE_NAME = "crate-listen-v1";
 const OFFLINE_CACHE_PREFIX = "crate-listen-offline-media::";
 const APP_SHELL = ["/", "/index.html"];
 let activeOfflineProfile = null;
+const IS_DEV_HOST =
+  self.location.hostname === "localhost" ||
+  self.location.hostname.endsWith(".dev.lespedants.org");
+
+async function clearListenCaches() {
+  const names = await caches.keys();
+  await Promise.all(
+    names
+      .filter((name) => name === CACHE_NAME || name.startsWith(OFFLINE_CACHE_PREFIX))
+      .map((name) => caches.delete(name))
+  );
+}
+
+if (IS_DEV_HOST) {
+  self.addEventListener("install", () => {
+    self.skipWaiting();
+  });
+
+  self.addEventListener("activate", (event) => {
+    event.waitUntil((async () => {
+      await clearListenCaches();
+      await self.registration.unregister();
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of clients) {
+        client.navigate(client.url);
+      }
+    })());
+  });
+} else {
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -111,3 +140,5 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+
+}

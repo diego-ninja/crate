@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from crate.api.auth import _require_auth
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.utility import LyricsResponse
-from crate.db import get_cache, set_cache
+from crate.db.cache_store import get_cache, set_cache
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["lyrics"])

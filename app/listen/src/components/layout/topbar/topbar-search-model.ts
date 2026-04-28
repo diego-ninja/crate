@@ -53,7 +53,7 @@ export function flattenTopBarSearchResults(data: SearchResult): TopBarSearchItem
       type: "artist",
       label: artist.name,
       navigateTo: artistPagePath({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name }),
-      imageUrl: artistPhotoApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name }),
+      imageUrl: artistPhotoApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name }, { size: 128 }),
     });
   }
 
@@ -63,7 +63,7 @@ export function flattenTopBarSearchResults(data: SearchResult): TopBarSearchItem
       label: album.name,
       sublabel: album.artist,
       navigateTo: albumPagePath({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name }),
-      imageUrl: albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name }),
+      imageUrl: albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name }, { size: 128 }),
     });
   }
 
@@ -77,7 +77,7 @@ export function flattenTopBarSearchResults(data: SearchResult): TopBarSearchItem
         albumSlug: track.album_slug,
         artistName: track.artist,
         albumName: track.album,
-      }) : undefined,
+      }, { size: 128 }) : undefined,
       trackData: {
         id: track.storage_id || track.path || String(track.id),
         storageId: track.storage_id,

@@ -24,6 +24,74 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function generateClientEventId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildSession(
+  track: Track,
+  source: PlaySource | null,
+  snapshot: { currentTime: number; duration: number },
+): PlayEventSession {
+  return {
+    trackKey: getTrackCacheKey(track),
+    track,
+    playSource: source,
+    startedAt: nowIso(),
+    trackDurationSeconds:
+      Number.isFinite(snapshot.duration) && snapshot.duration > 0 ? snapshot.duration : null,
+    lastKnownTime: snapshot.currentTime || 0,
+    listenedSeconds: 0,
+    maxProgressSeconds: snapshot.currentTime || 0,
+  };
+}
+
+function dispatchPlayEvent(session: PlayEventSession, reason: FlushReason) {
+  const trackDurationSeconds = session.trackDurationSeconds;
+  const playedSeconds = Math.max(0, session.listenedSeconds);
+
+  if (playedSeconds < PLAY_EVENT_MIN_SECONDS && reason !== "completed") {
+    return;
+  }
+
+  const completionRatio = trackDurationSeconds && trackDurationSeconds > 0
+    ? Math.min(1, playedSeconds / trackDurationSeconds)
+    : null;
+  const wasCompleted = reason === "completed";
+  const wasSkipped = reason === "skipped";
+
+  void postWithRetry("/api/me/play-events", {
+    client_event_id: generateClientEventId(),
+    track_id: session.track.libraryTrackId ?? null,
+    track_storage_id: session.track.storageId ?? null,
+    track_path: session.track.path || session.track.id,
+    title: session.track.title,
+    artist: session.track.artist,
+    album: session.track.album || "",
+    started_at: session.startedAt,
+    ended_at: nowIso(),
+    played_seconds: playedSeconds,
+    track_duration_seconds: trackDurationSeconds,
+    completion_ratio: completionRatio,
+    was_skipped: wasSkipped,
+    was_completed: wasCompleted,
+    play_source_type: session.playSource?.type ?? null,
+    play_source_id: session.playSource?.id != null ? String(session.playSource.id) : null,
+    play_source_name: session.playSource?.name ?? null,
+    context_artist: session.track.artist,
+    context_album: session.track.album || null,
+    context_playlist_id:
+      session.playSource?.type === "playlist" && typeof session.playSource.id === "number"
+        ? session.playSource.id
+        : null,
+    device_type: "web",
+    app_platform: "listen-web",
+  });
+}
+
 /**
  * Tracks listening time + attribution for the currently active track.
  *
@@ -44,10 +112,13 @@ function nowIso(): string {
  *   - `flushCurrentPlayEvent(reason, expectedTrack?)` — end the current
  *     session and POST the event. expectedTrack stays as a defensive
  *     guard against bugs in the caller's lifecycle.
+ *   - `rotateSession(reason, expectedTrack, nextTrack, nextSource)` —
+ *     atomically flush the outgoing session and seed the next one
+ *     without leaving a gap where incoming progress could be dropped.
  *
- * In practice the Context calls `flushCurrentPlayEvent("completed", old)`
- * THEN `startSession(new)` in `onTrackFinished` — ordering guaranteed
- * regardless of React's render timing.
+ * In practice the Context now calls `rotateSession(...)` from
+ * `onTrackFinished`, keeping the completion flush and the next session
+ * handoff in a single step.
  */
 export function usePlayEventTracker(
   getPlaybackSnapshot: () => { currentTime: number; duration: number },
@@ -68,17 +139,7 @@ export function usePlayEventTracker(
         return;
       }
       const snapshot = getPlaybackSnapshot();
-      sessionRef.current = {
-        trackKey,
-        track,
-        playSource: source,
-        startedAt: nowIso(),
-        trackDurationSeconds:
-          Number.isFinite(snapshot.duration) && snapshot.duration > 0 ? snapshot.duration : null,
-        lastKnownTime: snapshot.currentTime || 0,
-        listenedSeconds: 0,
-        maxProgressSeconds: snapshot.currentTime || 0,
-      };
+      sessionRef.current = buildSession(track, source, snapshot);
     },
     [getPlaybackSnapshot],
   );
@@ -95,47 +156,36 @@ export function usePlayEventTracker(
       if (session.trackKey !== expectedKey) return;
     }
     sessionRef.current = null;
-
-    const trackDurationSeconds = session.trackDurationSeconds;
-    const playedSeconds = Math.max(0, session.listenedSeconds);
-
-    if (playedSeconds < PLAY_EVENT_MIN_SECONDS && reason !== "completed") {
-      return;
-    }
-
-    const completionRatio = trackDurationSeconds && trackDurationSeconds > 0
-      ? Math.min(1, playedSeconds / trackDurationSeconds)
-      : null;
-    const wasCompleted = reason === "completed";
-    const wasSkipped = reason === "skipped";
-
-    void postWithRetry("/api/me/play-events", {
-      track_id: session.track.libraryTrackId ?? null,
-      track_storage_id: session.track.storageId ?? null,
-      track_path: session.track.path || session.track.id,
-      title: session.track.title,
-      artist: session.track.artist,
-      album: session.track.album || "",
-      started_at: session.startedAt,
-      ended_at: nowIso(),
-      played_seconds: playedSeconds,
-      track_duration_seconds: trackDurationSeconds,
-      completion_ratio: completionRatio,
-      was_skipped: wasSkipped,
-      was_completed: wasCompleted,
-      play_source_type: session.playSource?.type ?? null,
-      play_source_id: session.playSource?.id != null ? String(session.playSource.id) : null,
-      play_source_name: session.playSource?.name ?? null,
-      context_artist: session.track.artist,
-      context_album: session.track.album || null,
-      context_playlist_id:
-        session.playSource?.type === "playlist" && typeof session.playSource.id === "number"
-          ? session.playSource.id
-          : null,
-      device_type: "web",
-      app_platform: "listen-web",
-    });
+    dispatchPlayEvent(session, reason);
   }, []);
+
+  const rotateSession = useCallback(
+    (
+      reason: FlushReason,
+      expectedTrack: Track | undefined,
+      nextTrack: Track | undefined,
+      nextSource: PlaySource | null,
+    ) => {
+      const session = sessionRef.current;
+      if (!session) {
+        if (nextTrack) {
+          sessionRef.current = buildSession(nextTrack, nextSource, getPlaybackSnapshot());
+        }
+        return;
+      }
+      if (expectedTrack) {
+        const expectedKey = getTrackCacheKey(expectedTrack);
+        if (session.trackKey !== expectedKey) return;
+      }
+
+      const nextSession = nextTrack
+        ? buildSession(nextTrack, nextSource, getPlaybackSnapshot())
+        : null;
+      sessionRef.current = nextSession;
+      dispatchPlayEvent(session, reason);
+    },
+    [getPlaybackSnapshot],
+  );
 
   const recordProgress = useCallback((nextTime: number) => {
     const session = sessionRef.current;
@@ -182,6 +232,7 @@ export function usePlayEventTracker(
     startSession,
     ensureSession,
     flushCurrentPlayEvent,
+    rotateSession,
     markSeekPosition,
     recordProgress,
   };

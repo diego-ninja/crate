@@ -52,7 +52,14 @@ describe("usePlayEventTracker — explicit lifecycle", () => {
     act(() => { result.current.flushCurrentPlayEvent("skipped"); });
 
     expect(mockPost).toHaveBeenCalledTimes(1);
-    const payload = mockPost.mock.calls[0]![1] as { played_seconds: number; track_duration_seconds: number; was_skipped: boolean };
+    const payload = mockPost.mock.calls[0]![1] as {
+      client_event_id: string;
+      played_seconds: number;
+      track_duration_seconds: number;
+      was_skipped: boolean;
+    };
+    expect(payload.client_event_id).toEqual(expect.any(String));
+    expect(payload.client_event_id.length).toBeGreaterThan(0);
     expect(payload.played_seconds).toBeCloseTo(10, 5);
     expect(payload.track_duration_seconds).toBe(240);
     expect(payload.was_skipped).toBe(true);
@@ -124,6 +131,31 @@ describe("usePlayEventTracker — explicit lifecycle", () => {
     // the correct session so a subsequent correct flush still works.
     act(() => { result.current.flushCurrentPlayEvent("completed", TRACK_A); });
     expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+
+  it("rotateSession flushes the outgoing track and immediately tracks the incoming one", () => {
+    const { result } = setup();
+    act(() => { result.current.startSession(TRACK_A, SRC); });
+    for (let t = 1; t <= 5; t++) {
+      act(() => { result.current.recordProgress(t); });
+    }
+
+    act(() => {
+      result.current.rotateSession("completed", TRACK_A, TRACK_B, SRC);
+    });
+    act(() => { result.current.recordProgress(1); });
+    act(() => { result.current.recordProgress(2); });
+    act(() => { result.current.flushCurrentPlayEvent("skipped", TRACK_B); });
+
+    expect(mockPost).toHaveBeenCalledTimes(2);
+    const firstPayload = mockPost.mock.calls[0]![1] as { title: string; played_seconds: number; was_completed: boolean };
+    const secondPayload = mockPost.mock.calls[1]![1] as { title: string; played_seconds: number; was_skipped: boolean };
+    expect(firstPayload.title).toBe("A");
+    expect(firstPayload.played_seconds).toBeCloseTo(5, 5);
+    expect(firstPayload.was_completed).toBe(true);
+    expect(secondPayload.title).toBe("B");
+    expect(secondPayload.played_seconds).toBeCloseTo(2, 5);
+    expect(secondPayload.was_skipped).toBe(true);
   });
 
   it("completed flush is posted even with 0 listened seconds", () => {

@@ -14,7 +14,7 @@ function tilePhoto(artist: HomeArtworkArtist): string | null {
     artistId: artist.artist_id,
     artistSlug: artist.artist_slug,
     artistName: artist.artist_name,
-  }) || null;
+  }, { size: 256 }) || null;
 }
 
 export function MixArtwork({

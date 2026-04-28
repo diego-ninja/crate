@@ -27,6 +27,7 @@ import {
 import type { ArtistData, TabKey } from "@/components/artist/artistPageTypes";
 import { api } from "@/lib/api";
 import { artistApiPath } from "@/lib/library-routes";
+import { waitForTask } from "@/lib/tasks";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -149,28 +150,14 @@ export function Artist() {
       if (artistId == null) throw new Error("artist id missing");
       const res = await api<{ status: string; task_id: string }>(`/api/artists/${artistId}/enrich`, "POST");
       toast.success("Enrichment started", { description: "This may take a moment..." });
-      const taskId = res.task_id;
-      const poll = setInterval(async () => {
-        try {
-          const task = await api<{ status: string }>(`/api/tasks/${taskId}`);
-          if (task.status === "completed") {
-            clearInterval(poll);
-            setEnriching(false);
-            toast.success("Artist enriched!");
-            window.location.reload();
-          } else if (task.status === "failed") {
-            clearInterval(poll);
-            setEnriching(false);
-            toast.error("Enrichment failed");
-          }
-        } catch {
-          // Keep polling while the task endpoint is reachable.
-        }
-      }, 3000);
-      setTimeout(() => {
-        clearInterval(poll);
-        setEnriching(false);
-      }, 120000);
+      const task = await waitForTask(res.task_id, 120000);
+      setEnriching(false);
+      if (task.status === "completed") {
+        toast.success("Artist enriched!");
+        window.location.reload();
+      } else if (task.status === "failed") {
+        toast.error("Enrichment failed");
+      }
     } catch {
       setEnriching(false);
       toast.error("Failed to start enrichment");
@@ -205,21 +192,14 @@ export function Artist() {
     try {
       const { task_id } = await api<{ task_id: string }>("/api/manage/migrate-storage-v2", "POST", { artist: data.name });
       toast.success(`V2 migration started for ${data.name}`);
-      const poll = setInterval(async () => {
-        try {
-          const task = await api<{ status: string }>(`/api/tasks/${task_id}`);
-          if (task.status === "completed") {
-            clearInterval(poll);
-            setMigrating(false);
-            toast.success(`${data.name} migrated to V2`);
-            window.location.reload();
-          } else if (task.status === "failed") {
-            clearInterval(poll);
-            setMigrating(false);
-            toast.error("V2 migration failed");
-          }
-        } catch { /* polling */ }
-      }, 3000);
+      const task = await waitForTask(task_id, 300000);
+      setMigrating(false);
+      if (task.status === "completed") {
+        toast.success(`${data.name} migrated to V2`);
+        window.location.reload();
+      } else if (task.status === "failed") {
+        toast.error("V2 migration failed");
+      }
     } catch {
       setMigrating(false);
       toast.error("Failed to start V2 migration");
@@ -249,6 +229,7 @@ export function Artist() {
           artistName={artistName}
           artistId={data.id}
           artistSlug={data.slug}
+          imageVersion={data.updated_at}
           letter={letter}
         albumCount={data.albums.length}
         totalTracks={totalTracks}

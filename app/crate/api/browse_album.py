@@ -1,18 +1,27 @@
 from pathlib import Path
 
 import mutagen
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from crate.api._deps import COVER_NAMES, extensions, library_path
 from crate.api.auth import _require_auth
+from crate.api.image_variants import build_image_response
 from crate.api.browse_shared import build_genre_profile, display_name, find_album_dir, find_album_row, fs_album_detail, has_library_data
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.browse import AlbumDetailResponse, RelatedAlbumResponse
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
-from crate.db import get_library_album_by_id, get_library_artist, get_library_tracks
+from crate.db.repositories.library import (
+    get_library_album_by_id,
+    get_library_albums,
+    get_library_artist,
+    get_library_artist_by_slug,
+    get_library_tracks,
+)
 from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list, get_album_genre_profile
+from crate.db.repositories.tasks import create_task
+from crate.slugs import build_public_album_slug
 from crate.storage_layout import resolve_album_dir
 
 router = APIRouter(tags=["browse"])
@@ -207,6 +216,31 @@ def api_album(request: Request, artist: str, album: str):
 
 
 @router.get(
+    "/api/artist-slugs/{artist_slug}/albums/{album_slug}",
+    response_model=AlbumDetailResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get detailed album information by artist and album slug",
+)
+def api_album_by_artist_slug(request: Request, artist_slug: str, album_slug: str):
+    artist = get_library_artist_by_slug(artist_slug)
+    if not artist:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+
+    album = next(
+        (
+            current
+            for current in get_library_albums(artist["name"])
+            if build_public_album_slug(current.get("name")) == album_slug
+            or current.get("slug") == album_slug
+        ),
+        None,
+    )
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_album(request, artist["name"], album["name"])
+
+
+@router.get(
     "/api/albums/{album_id}",
     response_model=AlbumDetailResponse,
     responses=_BROWSE_RESPONSES,
@@ -284,7 +318,7 @@ def _extract_embedded_cover(audio_file: Path) -> tuple[bytes, str] | None:
     return None
 
 
-def api_cover(artist: str, album: str, album_dir: Path | None = None):
+def api_cover(artist: str, album: str, album_dir: Path | None = None, *, size: int | None = None):
     lib = library_path()
     # Prefer the caller-supplied canonical directory (from api_cover_by_id)
     # so we don't get fooled by a loose duplicate folder under /Artist/Album
@@ -300,7 +334,7 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None):
         cover = album_dir / cover_name
         if cover.exists():
             media_type = "image/jpeg" if cover.suffix == ".jpg" else "image/png"
-            return Response(content=cover.read_bytes(), media_type=media_type, headers=_IMG_CACHE)
+            return build_image_response(cover.read_bytes(), media_type, size=size, headers=_IMG_CACHE)
 
     exts = extensions()
     tracks = get_audio_files(album_dir, exts)
@@ -308,7 +342,7 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None):
         extracted = _extract_embedded_cover(track)
         if extracted:
             data, mime = extracted
-            return Response(content=data, media_type=mime, headers=_IMG_CACHE)
+            return build_image_response(data, mime, size=size, headers=_IMG_CACHE)
 
     return _placeholder_cover(album or artist)
 
@@ -325,7 +359,6 @@ def api_enrich_album(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
         return JSONResponse({"error": "Not found"}, status_code=404)
-    from crate.db import create_task
     task_id = create_task("process_new_content", {
         "artist": album["artist"],
         "album": album["name"],
@@ -346,7 +379,6 @@ def api_fetch_cover(request: Request, album_id: int):
     album = get_library_album_by_id(album_id)
     if not album:
         return JSONResponse({"error": "Album not found"}, status_code=404)
-    from crate.db import create_task
     task_id = create_task("fetch_album_cover", {
         "album_id": album_id,
         "artist": album["artist"],
@@ -362,13 +394,13 @@ def api_fetch_cover(request: Request, album_id: int):
     responses=_IMAGE_RESPONSES,
     summary="Get album artwork",
 )
-def api_cover_by_id(album_id: int):
+def api_cover_by_id(album_id: int, size: int | None = Query(None, ge=32, le=1024)):
     album = get_library_album_by_id(album_id)
     if not album:
         return _placeholder_cover("?")
     artist = get_library_artist(album["artist"])
     album_dir = resolve_album_dir(library_path(), album, artist=artist)
-    return api_cover(album["artist"], album["name"], album_dir=album_dir)
+    return api_cover(album["artist"], album["name"], album_dir=album_dir, size=size)
 
 
 def api_download_album(request: Request, artist: str, album: str):

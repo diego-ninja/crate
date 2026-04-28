@@ -163,6 +163,7 @@ def _openapi_servers() -> list[dict[str, str]]:
 
 _AUTH_REQUIRED_PREFIXES = frozenset({
     "/api/admin/auth", "/api/admin/system-playlists",
+    "/api/admin",
     "/api/me", "/api/offline", "/api/users", "/api/jam", "/api/curation",
     "/api/artwork", "/api/manage",
     "/api/acquisition", "/api/tidal",

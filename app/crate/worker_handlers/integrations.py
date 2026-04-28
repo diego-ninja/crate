@@ -1,7 +1,12 @@
 import json
 import logging
-from crate.db import emit_task_event, update_task
+
+from crate.db.events import emit_task_event
 from crate.db.jobs.integrations import get_artists_with_similar_json
+from crate.db.repositories.library import get_library_artists
+from crate.db.repositories.shows import delete_past_shows, upsert_show
+from crate.db.similarities import bulk_upsert_similarities, mark_library_status
+from crate.db.repositories.tasks import update_task
 from crate.task_progress import TaskProgress, emit_progress, entity_label
 from crate.worker_handlers import TaskHandler, is_cancelled
 
@@ -10,7 +15,6 @@ log = logging.getLogger(__name__)
 
 def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
     """Sync shows from Ticketmaster to DB for all library artists."""
-    from crate.db import delete_past_shows, get_library_artists, upsert_show
     from crate.ticketmaster import get_upcoming_shows as tm_get_shows
     from crate.ticketmaster import is_configured
 
@@ -82,8 +86,6 @@ def _handle_sync_shows(task_id: str, params: dict, config: dict) -> dict:
 
 def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> dict:
     """Populate artist_similarities from existing similar_json on library_artists."""
-    from crate.db import bulk_upsert_similarities, mark_library_status
-
     rows = get_artists_with_similar_json()
 
     total = len(rows)
@@ -117,87 +119,7 @@ def _handle_backfill_similarities(task_id: str, params: dict, config: dict) -> d
 
     emit_task_event(task_id, "info", {"message": f"Backfill similarities complete: {total} artists, {upserted} rows upserted"})
     return {"artists_processed": total, "rows_upserted": upserted}
-
-
-def _handle_sync_shows_lastfm(task_id: str, params: dict, config: dict) -> dict:
-    """Scrape Last.fm events for a specific city and consolidate with DB."""
-    from crate.db.shows import consolidate_show
-    from crate.lastfm_events import scrape_lastfm_events
-    from pathlib import Path
-    from datetime import date, timedelta
-
-    city = params.get("city", "")
-    latitude = float(params.get("latitude", 0))
-    longitude = float(params.get("longitude", 0))
-    radius_km = int(params.get("radius_km", 60))
-
-    if not city or not latitude:
-        return {"error": "Missing city or coordinates"}
-
-    emit_task_event(task_id, "info", {"message": f"Scraping Last.fm events near {city}..."})
-
-    events = scrape_lastfm_events(
-        city=city,
-        latitude=latitude,
-        longitude=longitude,
-        radius_km=radius_km,
-        max_pages=10,
-        from_date=date.today(),
-        to_date=date.today() + timedelta(days=180),
-        fetch_details=False,
-        progress_callback=lambda data: emit_progress(task_id, TaskProgress(phase="scraping", done=data.get("done", 0), total=data.get("total", 0), item=data.get("page", ""))),
-    )
-
-    # Write JSON intermediate for debugging
-    try:
-        slug = city.lower().replace(" ", "-").replace(",", "")
-        json_dir = Path("/data/shows/lastfm")
-        json_dir.mkdir(parents=True, exist_ok=True)
-        json_path = json_dir / f"{slug}-{date.today().isoformat()}.json"
-        json_path.write_text(json.dumps(events, indent=2, ensure_ascii=False, default=str))
-
-        # Clean old intermediates (>7 days)
-        for old_file in json_dir.iterdir():
-            if old_file.is_file() and old_file.stat().st_mtime < (date.today() - timedelta(days=7)).toordinal():
-                old_file.unlink(missing_ok=True)
-    except Exception:
-        log.debug("Failed to write Last.fm JSON intermediate", exc_info=True)
-
-    # Consolidate
-    inserted, merged, skipped = 0, 0, 0
-    for i, event in enumerate(events):
-        if is_cancelled(task_id):
-            break
-        if i % 10 == 0:
-            p_cons = TaskProgress(phase="consolidating", done=i, total=len(events))
-            emit_progress(task_id, p_cons)
-        try:
-            result = consolidate_show(event)
-            if result == "inserted":
-                inserted += 1
-            elif result == "merged":
-                merged += 1
-            else:
-                skipped += 1
-        except Exception:
-            log.debug("Failed to consolidate event: %s", event.get("artist_name"), exc_info=True)
-            skipped += 1
-
-    emit_task_event(task_id, "info", {
-        "message": f"Last.fm sync for {city}: {len(events)} scraped, {inserted} new, {merged} merged, {skipped} skipped",
-    })
-
-    return {
-        "city": city,
-        "scraped": len(events),
-        "inserted": inserted,
-        "merged": merged,
-        "skipped": skipped,
-    }
-
-
 INTEGRATION_TASK_HANDLERS: dict[str, TaskHandler] = {
     "sync_shows": _handle_sync_shows,
-    "sync_shows_lastfm": _handle_sync_shows_lastfm,
     "backfill_similarities": _handle_backfill_similarities,
 }

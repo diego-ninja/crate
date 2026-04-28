@@ -4,12 +4,15 @@ import { ChevronDown, Settings, SlidersHorizontal } from "lucide-react";
 
 import { EqualizerPanel } from "@/components/player/EqualizerPanel";
 import { PlayerSurfaceModeSwitch } from "@/components/player/PlayerSurfaceModeSwitch";
+import { PlayerTrackIdentity } from "@/components/player/PlayerTrackIdentity";
 import { InfoTab } from "@/components/player/extended/InfoTab";
 import { SpinningDisc } from "@/components/player/SpinningDisc";
-import { artistPagePath, albumPagePath } from "@/lib/library-routes";
+import { artistPagePath } from "@/lib/library-routes";
+import { getPlaySourceLabel } from "@/components/player/player-source";
 import { LyricsTab } from "@/components/player/extended/LyricsTab";
 import { QueueTab } from "@/components/player/extended/QueueTab";
 import { SuggestedTab } from "@/components/player/extended/SuggestedTab";
+import { useResolvedPlayerArtist } from "@/components/player/useResolvedPlayerArtist";
 import { useMusicVisualizer } from "@/components/player/visualizer/useMusicVisualizer";
 import { useVisualizerConfig } from "@/components/player/visualizer/useVisualizerConfig";
 import { measureVisualizerCanvasRect } from "@/components/player/visualizer/canvas-layout";
@@ -39,7 +42,7 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const navigate = useNavigate();
   const isDesktop = useIsDesktop();
   const { currentTrack, currentTime, duration, isPlaying, isBuffering, volume, analyserVersion, crossfadeTransition } = usePlayer();
-  const { pause, resume } = usePlayerActions();
+  const { pause, resume, playSource, queue } = usePlayerActions();
   const crossfadeProgress = useCrossfadeProgress(crossfadeTransition);
   const { displayedTime, displayedDuration } = useCrossfadeAwareProgress(
     crossfadeTransition,
@@ -49,6 +52,8 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   const [tab, setTab] = useState<TabId>("queue");
   const [showVizSettings, setShowVizSettings] = useState(false);
   const [showEqualizer, setShowEqualizer] = useState(false);
+  const { resolvedArtist, artistAvatarUrl, markArtistPhotoFailed } = useResolvedPlayerArtist(currentTrack, queue);
+  const sourceLabel = getPlaySourceLabel(playSource);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const coverRef = useRef<HTMLDivElement>(null);
@@ -137,6 +142,15 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
   useEscapeKey(open, handleEscape);
 
   if (!isDesktop || !currentTrack) return null;
+
+  function goToArtist() {
+    if (!resolvedArtist?.id) return;
+    navigate(artistPagePath({
+      artistId: resolvedArtist.id,
+      artistSlug: resolvedArtist.slug,
+      artistName: resolvedArtist.name,
+    }));
+  }
 
   return (
     <div
@@ -280,59 +294,18 @@ export function ExtendedPlayer({ open, onClose }: ExtendedPlayerProps) {
         </div>
 
         <div className="relative z-20 mt-6 max-w-full px-8 text-center">
-          {/* Title / artist / album also crossfade during audio crossfade */}
-          <div className="relative">
-            {crossfadeTransition ? (
-              <>
-                <div className="absolute inset-0" style={{ opacity: 1 - crossfadeProgress }}>
-                  <h2 className="truncate text-xl font-bold leading-tight text-white">
-                    {crossfadeTransition.outgoing.title}
-                  </h2>
-                  <p className="mt-1 truncate text-base text-muted-foreground">{crossfadeTransition.outgoing.artist}</p>
-                  {crossfadeTransition.outgoing.album ? (
-                    <p className="mt-0.5 truncate text-sm text-white/40">{crossfadeTransition.outgoing.album}</p>
-                  ) : null}
-                </div>
-                <div style={{ opacity: crossfadeProgress }}>
-                  <h2 className="truncate text-xl font-bold leading-tight text-white">
-                    {crossfadeTransition.incoming.title}
-                  </h2>
-                  <p className="mt-1 truncate text-base text-muted-foreground">{crossfadeTransition.incoming.artist}</p>
-                  {crossfadeTransition.incoming.album ? (
-                    <p className="mt-0.5 truncate text-sm text-white/40">{crossfadeTransition.incoming.album}</p>
-                  ) : null}
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className="truncate text-xl font-bold leading-tight text-white">
-                  {currentTrack.title}
-                </h2>
-                {currentTrack.artistId ? (
-                  <p
-                    className="mt-1 truncate text-base text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer"
-                    onClick={() => navigate(artistPagePath({ artistId: currentTrack.artistId, artistSlug: currentTrack.artistSlug, artistName: currentTrack.artist }))}
-                  >
-                    {currentTrack.artist}
-                  </p>
-                ) : (
-                  <p className="mt-1 truncate text-base text-muted-foreground">{currentTrack.artist}</p>
-                )}
-                {currentTrack.album ? (
-                  currentTrack.albumId ? (
-                    <p
-                      className="mt-0.5 truncate text-sm text-white/40 hover:text-foreground hover:underline transition-colors cursor-pointer"
-                      onClick={() => navigate(albumPagePath({ albumId: currentTrack.albumId, albumSlug: currentTrack.albumSlug, albumName: currentTrack.album, artistName: currentTrack.artist }))}
-                    >
-                      {currentTrack.album}
-                    </p>
-                  ) : (
-                    <p className="mt-0.5 truncate text-sm text-white/40">{currentTrack.album}</p>
-                  )
-                ) : null}
-              </>
-            )}
-          </div>
+          <PlayerTrackIdentity
+            currentTrack={currentTrack}
+            crossfadeTransition={crossfadeTransition}
+            crossfadeProgress={crossfadeProgress}
+            sourceLabel={sourceLabel}
+            artistAvatarUrl={artistAvatarUrl}
+            onArtistAvatarError={markArtistPhotoFailed}
+            onArtistClick={goToArtist}
+            artistClickable={!!resolvedArtist?.id}
+            titleClassName="text-xl leading-tight"
+            albumClassName="text-sm"
+          />
           {vizCfg.trackVizProfile.hasAnalysis && vizCfg.trackVizProfile.summary ? (
             <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.22em] text-white/40">
               {vizCfg.trackVizProfile.summary}

@@ -166,12 +166,16 @@ def test_openapi_types_settings_routes_and_marks_them_authenticated(test_app):
 def test_openapi_types_task_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
     list_operation = data["paths"]["/api/tasks"]["get"]
+    admin_snapshot_operation = data["paths"]["/api/admin/tasks-snapshot"]["get"]
     worker_status_operation = data["paths"]["/api/worker/status"]["get"]
     retry_operation = data["paths"]["/api/tasks/retry"]["post"]
 
     assert list_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert list_operation["responses"]["200"]["content"]["application/json"]["schema"]["type"] == "array"
     assert list_operation["responses"]["200"]["content"]["application/json"]["schema"]["items"]["$ref"].endswith("/TaskResponse")
+
+    assert admin_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert admin_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminTasksSnapshotResponse")
 
     assert worker_status_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert worker_status_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/WorkerStatusResponse")
@@ -224,6 +228,7 @@ def test_openapi_types_social_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
     me_social_operation = data["paths"]["/api/me/social"]["get"]
     profile_operation = data["paths"]["/api/users/{username}"]["get"]
+    profile_page_operation = data["paths"]["/api/users/{username}/page"]["get"]
     followers_operation = data["paths"]["/api/users/{username}/followers"]["get"]
     follow_operation = data["paths"]["/api/users/{user_id}/follow"]["post"]
 
@@ -232,6 +237,9 @@ def test_openapi_types_social_routes_and_marks_them_authenticated(test_app):
 
     assert profile_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert profile_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/SocialProfileDetailResponse")
+
+    assert profile_page_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert profile_page_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/SocialProfilePageResponse")
 
     assert followers_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert followers_operation["responses"]["200"]["content"]["application/json"]["schema"]["items"]["$ref"].endswith("/SocialUserRelationResponse")
@@ -243,13 +251,18 @@ def test_openapi_types_social_routes_and_marks_them_authenticated(test_app):
 def test_openapi_types_me_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
     library_operation = data["paths"]["/api/me"]["get"]
+    playlists_page_operation = data["paths"]["/api/me/playlists-page"]["get"]
     history_operation = data["paths"]["/api/me/history"]["get"]
     play_events_operation = data["paths"]["/api/me/play-events"]["post"]
     overview_operation = data["paths"]["/api/me/stats/overview"]["get"]
+    dashboard_operation = data["paths"]["/api/me/stats/dashboard"]["get"]
     replay_operation = data["paths"]["/api/me/stats/replay"]["get"]
 
     assert library_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert library_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/UserLibraryCountsResponse")
+
+    assert playlists_page_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert playlists_page_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/LibraryPlaylistsPageResponse")
 
     assert history_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert history_operation["responses"]["200"]["content"]["application/json"]["schema"]["items"]["$ref"].endswith("/PlayHistoryEntryResponse")
@@ -260,6 +273,9 @@ def test_openapi_types_me_routes_and_marks_them_authenticated(test_app):
 
     assert overview_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert overview_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/StatsOverviewResponse")
+
+    assert dashboard_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert dashboard_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/StatsDashboardResponse")
 
     assert replay_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert replay_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ReplayMixResponse")
@@ -466,6 +482,8 @@ def test_openapi_types_system_playlist_and_curation_routes(test_app):
 
 def test_openapi_types_imports_organizer_and_stack_routes(test_app):
     data = test_app.get("/openapi.json").json()
+    logs_snapshot_operation = data["paths"]["/api/admin/logs-snapshot"]["get"]
+    admin_stack_snapshot_operation = data["paths"]["/api/admin/stack-snapshot"]["get"]
     imports_pending_operation = data["paths"]["/api/imports/pending"]["get"]
     imports_import_operation = data["paths"]["/api/imports/import"]["post"]
     imports_all_operation = data["paths"]["/api/imports/import-all"]["post"]
@@ -477,19 +495,25 @@ def test_openapi_types_imports_organizer_and_stack_routes(test_app):
     stack_logs_operation = data["paths"]["/api/stack/container/{name}/logs"]["get"]
     stack_restart_operation = data["paths"]["/api/stack/container/{name}/restart"]["post"]
 
+    assert logs_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert logs_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminLogsSnapshotResponse")
+
+    assert admin_stack_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert admin_stack_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminStackSnapshotResponse")
+
     assert imports_pending_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert imports_pending_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportPendingResponse")
 
     assert imports_import_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert imports_import_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportItemRequest")
-    assert imports_import_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportResultResponse")
+    assert imports_import_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
 
     assert imports_all_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
-    assert imports_all_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportResultsResponse")
+    assert imports_all_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
 
     assert imports_remove_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert imports_remove_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportRemoveRequest")
-    assert imports_remove_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ImportRemoveResponse")
+    assert imports_remove_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")
 
     assert organize_presets_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert organize_presets_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/OrganizePresetsResponse")
@@ -584,13 +608,18 @@ def test_openapi_types_artwork_routes_and_marks_them_authenticated(test_app):
 
 def test_openapi_types_browse_artist_and_album_routes(test_app):
     data = test_app.get("/openapi.json").json()
+    explore_page_operation = data["paths"]["/api/browse/explore-page"]["get"]
     filters_operation = data["paths"]["/api/browse/filters"]["get"]
     artists_operation = data["paths"]["/api/artists"]["get"]
     artist_detail_operation = data["paths"]["/api/artists/{artist_id}"]["get"]
+    artist_page_operation = data["paths"]["/api/artists/{artist_id}/page"]["get"]
     artist_enrich_operation = data["paths"]["/api/artists/{artist_id}/enrich"]["post"]
     album_detail_operation = data["paths"]["/api/albums/{album_id}"]["get"]
     related_albums_operation = data["paths"]["/api/albums/{album_id}/related"]["get"]
     fetch_cover_operation = data["paths"]["/api/albums/{album_id}/fetch-cover"]["post"]
+
+    assert explore_page_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert explore_page_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/BrowseExplorePageResponse")
 
     assert filters_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert filters_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/BrowseFiltersResponse")
@@ -600,6 +629,9 @@ def test_openapi_types_browse_artist_and_album_routes(test_app):
 
     assert artist_detail_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert artist_detail_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ArtistDetailResponse")
+
+    assert artist_page_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert artist_page_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ArtistPageResponse")
 
     assert artist_enrich_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert artist_enrich_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ArtistEnqueueResponse")
@@ -635,12 +667,15 @@ def test_openapi_types_browse_shows_upcoming_and_media_routes(test_app):
 
     assert artist_photo_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "image/jpeg" in artist_photo_operation["responses"]["200"]["content"]
+    assert any(param["name"] == "size" for param in artist_photo_operation.get("parameters", []))
 
     assert artist_background_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "image/svg+xml" in artist_background_operation["responses"]["200"]["content"]
+    assert any(param["name"] == "size" for param in artist_background_operation.get("parameters", []))
 
     assert album_cover_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "image/png" in album_cover_operation["responses"]["200"]["content"]
+    assert any(param["name"] == "size" for param in album_cover_operation.get("parameters", []))
 
     assert album_download_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}, {"queryTokenAuth": []}]
     assert "application/zip" in album_download_operation["responses"]["200"]["content"]
@@ -786,6 +821,7 @@ def test_openapi_types_analytics_routes_and_marks_them_authenticated(test_app):
 
 def test_openapi_types_management_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
+    admin_health_snapshot_operation = data["paths"]["/api/admin/health-snapshot"]["get"]
     health_check_operation = data["paths"]["/api/manage/health-check"]["post"]
     health_issues_operation = data["paths"]["/api/manage/health-issues"]["get"]
     resolve_issue_operation = data["paths"]["/api/manage/health-issues/{issue_id}/resolve"]["post"]
@@ -794,6 +830,9 @@ def test_openapi_types_management_routes_and_marks_them_authenticated(test_app):
     analysis_status_operation = data["paths"]["/api/manage/analysis-status"]["get"]
     audit_log_operation = data["paths"]["/api/manage/audit-log"]["get"]
     storage_status_operation = data["paths"]["/api/manage/storage-v2-status"]["get"]
+
+    assert admin_health_snapshot_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert admin_health_snapshot_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/AdminHealthSnapshotResponse")
 
     assert health_check_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert health_check_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/TaskEnqueueResponse")

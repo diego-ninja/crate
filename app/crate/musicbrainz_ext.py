@@ -2,7 +2,7 @@ import logging
 
 import musicbrainzngs
 
-from crate.db import get_cache, set_cache
+from crate.db.cache_store import get_cache, set_cache
 
 log = logging.getLogger(__name__)
 

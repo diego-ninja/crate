@@ -35,6 +35,7 @@ interface ArtistHeroSectionProps {
   artistName: string;
   artistId?: number;
   artistSlug?: string;
+  imageVersion?: string | null;
   letter: string;
   albumCount: number;
   totalTracks: number;
@@ -71,6 +72,7 @@ export function ArtistHeroSection({
   artistName,
   artistId,
   artistSlug,
+  imageVersion,
   letter,
   albumCount,
   totalTracks,
@@ -102,8 +104,8 @@ export function ArtistHeroSection({
   onRepair,
   onDelete,
 }: ArtistHeroSectionProps) {
-  const backgroundUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName });
-  const photoUrl = artistPhotoApiUrl({ artistId, artistSlug, artistName });
+  const backgroundUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName }, { version: imageVersion });
+  const photoUrl = artistPhotoApiUrl({ artistId, artistSlug, artistName }, { version: imageVersion });
   const backgroundSrc = `${backgroundUrl}?v=stable-hero-bg-v2${bgCacheBust ? `&t=${bgCacheBust}` : ""}`;
   const photoSrc = `${photoUrl}?v=stable-hero-photo${photoCacheBust ? `&t=${photoCacheBust}` : ""}`;
 

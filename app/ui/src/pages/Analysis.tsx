@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Activity,
   AudioWaveform,
@@ -15,38 +15,10 @@ import { toast } from "sonner";
 import { OpsPageHero, OpsPanel, OpsStatTile } from "@/components/admin/ops-surfaces";
 import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
 import { Button } from "@crate/ui/shadcn/button";
+import { useOpsSnapshot, type AnalysisStatusSnapshot } from "@/contexts/OpsSnapshotContext";
 import { ErrorState } from "@crate/ui/primitives/ErrorState";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
-
-interface AnalysisStatus {
-  total: number;
-  analysis_done: number;
-  analysis_pending: number;
-  analysis_active: number;
-  analysis_failed: number;
-  bliss_done: number;
-  bliss_pending: number;
-  bliss_active: number;
-  bliss_failed: number;
-  last_analyzed: {
-    title?: string;
-    artist?: string;
-    album?: string;
-    bpm?: number;
-    audio_key?: string;
-    energy?: number;
-    danceability?: number;
-    has_mood?: boolean;
-    updated_at?: string;
-  };
-  last_bliss: {
-    title?: string;
-    artist?: string;
-    album?: string;
-    updated_at?: string;
-  };
-}
 
 type ActionKey = "analysis" | "bliss" | "popularity" | null;
 
@@ -152,7 +124,7 @@ function RecentTrackCard({
 }: {
   icon: typeof Activity;
   title: string;
-  track: AnalysisStatus["last_analyzed"] | AnalysisStatus["last_bliss"];
+  track: AnalysisStatusSnapshot["last_analyzed"] | AnalysisStatusSnapshot["last_bliss"];
 }) {
   return (
     <div className="rounded-md border border-white/8 bg-black/20 p-4">
@@ -202,36 +174,16 @@ function RecentTrackCard({
 }
 
 export function Analysis() {
-  const [status, setStatus] = useState<AnalysisStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: opsSnapshot, loading, error, refresh } = useOpsSnapshot();
+  const status = opsSnapshot?.analysis ?? null;
   const [activeAction, setActiveAction] = useState<ActionKey>(null);
-
-  async function refresh(silent = false) {
-    if (!silent) setLoading(true);
-    try {
-      const data = await api<AnalysisStatus>("/api/manage/analysis-status");
-      setStatus(data);
-      setError(null);
-    } catch {
-      setError("Could not load analysis status");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    refresh();
-    const interval = setInterval(() => refresh(true), 10000);
-    return () => clearInterval(interval);
-  }, []);
 
   async function queueAction(path: string, action: Exclude<ActionKey, null>, success: string) {
     setActiveAction(action);
     try {
       await api(path, "POST");
       toast.success(success);
-      setTimeout(() => refresh(true), 800);
+      setTimeout(() => void refresh(true), 800);
     } catch {
       toast.error("The analysis task could not be queued");
     } finally {
@@ -266,11 +218,11 @@ export function Analysis() {
   }
 
   if (error && !status) {
-    return <ErrorState message={error} onRetry={() => refresh()} />;
+    return <ErrorState message={error} onRetry={() => void refresh(true)} />;
   }
 
   if (!status) {
-    return <ErrorState message="No analysis status available" onRetry={() => refresh()} />;
+    return <ErrorState message="No analysis status available" onRetry={() => void refresh(true)} />;
   }
 
   return (
@@ -281,7 +233,7 @@ export function Analysis() {
         description="Audio features, similarity vectors and background processing coverage across the whole library."
         actions={
           <>
-            <Button variant="outline" size="sm" onClick={() => refresh()} className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => void refresh(true)} className="gap-2">
               <RefreshCw size={14} />
               Refresh
             </Button>

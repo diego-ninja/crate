@@ -1,5 +1,8 @@
+import { resolveMaybeApiAssetUrl } from "@/lib/api";
+
 export interface UpcomingItem {
   id?: number;
+  event_key?: string;
   type: "release" | "show";
   date: string;
   time?: string;
@@ -57,6 +60,7 @@ export interface ArtistShowEvent {
 export function artistShowToUpcomingItem(show: ArtistShowEvent): UpcomingItem {
   return {
     id: show.show_id,
+    event_key: show.id,
     type: "show",
     date: show.date,
     time: show.local_time,
@@ -65,7 +69,7 @@ export function artistShowToUpcomingItem(show: ArtistShowEvent): UpcomingItem {
     artist_slug: show.artist_slug,
     title: show.venue || "",
     subtitle: [show.city, show.country].filter(Boolean).join(", "),
-    cover_url: show.image_url || null,
+    cover_url: resolveMaybeApiAssetUrl(show.image_url) || null,
     status: "onsale",
     url: show.url,
     venue: show.venue,
@@ -86,7 +90,7 @@ export function artistShowToUpcomingItem(show: ArtistShowEvent): UpcomingItem {
 }
 
 export function itemKey(item: UpcomingItem, index: number): string {
-  return `${item.type}-${item.artist}-${item.release_id ?? item.venue ?? index}-${item.date}`;
+  return item.event_key || `${item.type}-${item.artist}-${item.release_id ?? item.venue ?? index}-${item.date}-${item.time ?? ""}`;
 }
 
 export function groupByMonth(items: UpcomingItem[]): [string, UpcomingItem[]][] {

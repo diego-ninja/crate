@@ -30,8 +30,10 @@ export function Explore() {
   const genreSlug = searchParams.get("genre");
   const playlistCategory = searchParams.get("playlistCategory");
 
-  const { data: filters, loading: filtersLoading } = useApi<BrowseFilters>("/api/browse/filters");
-  const { data: systemPlaylists, loading: playlistsLoading, refetch: refetchSystemPlaylists } = useApi<SystemPlaylist[]>("/api/curation/playlists");
+  const { data: explorePage, loading, refetch } = useApi<ExplorePageData>("/api/browse/explore-page");
+  const filters = explorePage?.filters;
+  const featuredPlaylists = explorePage?.playlists || [];
+  const moods = explorePage?.moods || [];
 
   async function handlePlayPlaylist(playlistId: number, playlistName: string) {
     try {
@@ -48,7 +50,7 @@ export function Explore() {
     try {
       await api(`/api/curation/playlists/${playlistId}/follow`, isFollowed ? "DELETE" : "POST");
       toast.success(isFollowed ? "Removed from your library" : "Added to your library");
-      refetchSystemPlaylists();
+      refetch();
     } catch {
       toast.error("Failed to update playlist");
     }
@@ -65,14 +67,11 @@ export function Explore() {
   if (playlistCategory) {
     return <PlaylistCategoryView category={playlistCategory} onBack={() => setSearchParams({})} />;
   }
-
-  const featuredPlaylists = (systemPlaylists || []).slice(0, 8);
-
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Explore</h1>
       <div className="space-y-6">
-        {playlistsLoading ? (
+        {loading ? (
           <ExploreLoadingState />
         ) : featuredPlaylists.length > 0 ? (
           <div className="space-y-4">
@@ -108,9 +107,7 @@ export function Explore() {
           </div>
         ) : null}
 
-        {filtersLoading ? (
-          <ExploreLoadingState />
-        ) : filters ? (
+        {filters ? (
           <>
             {/* Radio + Paths */}
             <div className="grid gap-3 sm:grid-cols-2">
@@ -181,7 +178,7 @@ export function Explore() {
               </div>
             )}
             {/* Moods — browse by audio analysis */}
-            <MoodBrowseSection />
+            <MoodBrowseSection moods={moods} />
           </>
         ) : (
           <p className="text-muted-foreground text-sm">No filters available.</p>
@@ -204,8 +201,13 @@ const MOOD_COLORS: Record<string, string> = {
 
 interface MoodPreset { name: string; track_count: number; }
 
-function MoodBrowseSection() {
-  const { data: moods } = useApi<MoodPreset[]>("/api/browse/moods");
+interface ExplorePageData {
+  filters: BrowseFilters;
+  playlists: SystemPlaylist[];
+  moods: MoodPreset[];
+}
+
+function MoodBrowseSection({ moods }: { moods: MoodPreset[] }) {
   const { playAll } = usePlayerActions();
   const [loadingMood, setLoadingMood] = useState<string | null>(null);
 
@@ -259,7 +261,7 @@ function MoodBrowseSection() {
     }
   }
 
-  if (!moods || moods.length === 0) return null;
+  if (moods.length === 0) return null;
 
   return (
     <div className="space-y-3">

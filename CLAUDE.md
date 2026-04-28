@@ -2,20 +2,20 @@
 
 ## Project Overview
 
-Self-hosted music library manager with enrichment, analysis, streaming, and Tidal integration. Manages ~900 artists, 4400 albums, 48K tracks, 1.2TB.
+Self-hosted music platform with enrichment, analysis, streaming, acquisition, and a snapshot-backed read plane. Manages ~900 artists, 4400 albums, 48K tracks, 1.2TB.
 
 ## Architecture
 
 ```
-crate-api       (FastAPI, Python 3.12)        → port 8585, /music:ro
-crate-worker    (Dramatiq + daemons)          → /music:rw, background processing
+crate-api       (FastAPI, Python 3.13)        → port 8585, /music:ro
+crate-worker    (Dramatiq + daemons + projector) → /music:rw, background processing
 @crate/ui       (React 19 + TW4 + shadcn)   → shared design system (npm workspace)
 crate-ui        (React 19 + Vite + TW4)      → admin web app
 crate-listen    (React 19 + Vite + TW4)      → consumer listening app (PWA + Capacitor)
 crate-site      (React 19 + Vite)            → marketing landing page (cratemusic.app)
 crate-reference (Scalar)                     → API docs (reference.cratemusic.app)
 crate-postgres  (PostgreSQL 15)              → data persistence
-crate-redis     (Redis 7)                    → cache (DB 0) + Dramatiq broker (DB 1) + SSE pub/sub + metrics
+crate-redis     (Redis 7)                    → cache + invalidation replay + metrics + Redis Streams domain events + Dramatiq broker
 ```
 
 API mounts /music as **read-only**. All filesystem writes go through **worker tasks**. Never write to filesystem from API endpoints.
@@ -57,13 +57,13 @@ test-music/                 Local dev music (3 artists, not committed)
 
 ## Tech Stack
 
-### Backend (Python 3.12)
+### Backend (Python 3.13)
 - FastAPI + Uvicorn (API server)
 - SQLAlchemy 2.0 (ORM for CRUD domains) + psycopg2 (driver)
-- Alembic (schema migrations)
+- Alembic (authoritative schema bootstrap + migrations)
 - Pydantic v2 (API schemas + data models)
 - Dramatiq + Redis broker (async task processing, 3 queues: fast/heavy/default)
-- Redis 7 (cache, broker, SSE pub/sub, metrics)
+- Redis 7 (cache, broker, invalidation replay, domain-event stream, metrics)
 - mutagen (audio tag reading/writing)
 - essentia (audio analysis — x86_64 only, librosa fallback on ARM)
 - musicbrainzngs (MusicBrainz API)
@@ -91,11 +91,11 @@ test-music/                 Local dev music (3 artists, not committed)
 
 ## Database Patterns
 
-Hybrid DB strategy — two layers coexist:
+Hybrid DB strategy — two runtime layers coexist:
 
 - **SQLAlchemy ORM** (`db/orm/`): Mapped models for simple CRUD (users, sessions, settings, tidal, genres, health, releases)
 - **SQLAlchemy Core / `text()`** (`db/queries/`, `db/jobs/`): Complex queries (analytics, browse, bliss, task claiming)
-- **Alembic** (`db/migrations/`): Schema migrations (7 versions)
+- **Alembic** (`db/migrations/`): authoritative schema bootstrap and migrations
 - **Transaction scopes** (`db/tx.py`): `transaction_scope()`, `read_scope()`, `optional_scope()`
 
 ```python
@@ -111,7 +111,7 @@ with read_scope() as session:
     rows = session.execute(text("SELECT ...")).mappings().all()
 ```
 
-Key tables: `library_artists`, `library_albums`, `library_tracks`, `genres`, `artist_genres`, `album_genres`, `playlists`, `playlist_tracks`, `tidal_downloads`, `tidal_monitored_artists`, `cache`, `tasks`, `audit_log`, `users`, `sessions`, `settings`, `metric_rollups`, `worker_logs`
+Key tables: `library_artists`, `library_albums`, `library_tracks`, `tasks`, `task_events`, `users`, `sessions`, `user_play_events`, `ui_snapshots`, `ops_runtime_state`, `import_queue_items`, `track_processing_state`, `track_analysis_features`, `track_bliss_embeddings`, `track_popularity_features`, `metric_rollups`, `worker_logs`
 
 ## Worker & Background Processing
 
@@ -131,6 +131,7 @@ Tasks that write to filesystem (tags, delete, move) MUST run in the worker (has 
 ### Daemons (outside task system)
 - **Analysis daemon**: Infinite loop, claims tracks via `FOR UPDATE SKIP LOCKED`, pauses under load
 - **Bliss daemon**: Same pattern for bliss vector computation
+- **Projector daemon**: Consumes Redis Stream domain events and warms snapshots
 - **Filesystem watcher**: Watchdog-based, debounced (30s), triggers library sync
 - **Scheduler**: 6 recurring tasks (enrich_artists 24h, library_pipeline 6h, analytics 4h, new_releases 12h, cleanup 48h, shows 24h)
 
@@ -139,19 +140,25 @@ Tasks that write to filesystem (tags, delete, move) MUST run in the worker (has 
 
 ## SSE & Real-time
 
-3 SSE endpoints via Redis pub/sub (cross-worker distribution):
+Crate uses both classic SSE feeds and snapshot-driven streams:
 
 | Endpoint | Purpose |
 |----------|---------|
 | `/api/events` | Global status stream |
 | `/api/events/task/{id}` | Per-task progress |
 | `/api/cache/events` | Cache invalidation (with Last-Event-ID replay) |
+| `/api/admin/ops-stream` | Snapshot-driven admin dashboard updates |
+| `/api/admin/tasks-stream` | Admin task surface updates |
+| `/api/admin/health-stream` | Admin health surface updates |
+| `/api/admin/logs-stream` | Admin worker-log surface updates |
+| `/api/admin/stack-stream` | Admin stack snapshot updates |
+| `/api/me/home/discovery-stream` | Per-user Listen home snapshot updates |
 
 `CacheInvalidationMiddleware` auto-broadcasts invalidation events after write mutations.
 
 ## Enrichment Pipeline
 
-When new content arrives (watcher or Tidal download):
+When new content arrives (watcher or acquisition import):
 
 ```
 process_new_content task:
@@ -161,6 +168,7 @@ process_new_content task:
   4. Audio analysis (Essentia: BPM, key, energy, danceability, mood)
   5. Bliss vectors (Rust CLI: 20-float song DNA for similarity)
   6. Popularity (Last.fm listeners/playcount)
+  7. Snapshot/read-model refresh follow-ups
 ```
 
 *Spotify requires Premium account — currently returns 403.
@@ -212,11 +220,11 @@ Login: admin@cratemusic.app / admin (dev seed user, also used in production).
 ## Code Conventions
 
 ### Python
-- Type hints on function signatures (Python 3.12 union syntax `str | None`)
+- Type hints on function signatures (Python 3.13 union syntax `str | None`)
 - `log = logging.getLogger(__name__)` per module
 - Imports: stdlib → third-party → local, separated by blank lines
 - **DB boundary**: ALL database access (`session.execute`, `transaction_scope`, `read_scope`) MUST live inside `crate/db/` modules. Code outside `db/` must call functions from `crate.db.*`, never use SQLAlchemy directly. Tests enforce this.\
-- **DB facade**: Every public function in `crate/db/*.py` must be re-exported in `crate/db/__init__.py`. Tests enforce this.\
+- **DB facade**: `crate/db/__init__.py` is a frozen compatibility facade. Preserve existing imports when needed, but do not widen it; new runtime code should import concrete `queries/`, `repositories/`, `jobs/`, or `surface` modules directly.\
 - **Run tests before committing**: `docker compose -f docker-compose.dev.yaml exec worker pytest tests/ -v`
 - Worker handlers in `worker_handlers/`, registered via Dramatiq actors
 - ORM models in `db/orm/` (SQLAlchemy 2.0 Mapped style), complex queries in `db/queries/` and `db/jobs/`
@@ -246,8 +254,8 @@ For detailed patterns (FastAPI, SQLAlchemy 2.0, async, testing): consult the `py
 - Shared utilities go in `app/shared/web/` (API client, formatters, route builders)
 
 #### Auth differences
-- **ui**: Cookie-based sessions, admin-only, no registration
-- **listen**: Bearer token (localStorage on web, per-server store on Capacitor), OAuth, registration, multi-server support
+- **ui**: Cookie-based persisted sessions, admin-oriented
+- **listen**: OAuth + persisted-session bootstrap on web, bearer-token storage for native multi-server flows, registration
 
 #### Frontend Skills (`.claude/skills/`)
 
@@ -283,6 +291,7 @@ Additional graph-powered skills for code navigation:
 | `app/crate/worker_handlers/` | 8 task handler modules (~111 handlers) |
 | `app/crate/actors.py` | Dramatiq actor wrappers + queue config |
 | `app/crate/orchestrator.py` | Worker process manager + scheduler + watcher |
+| `app/crate/projector.py` | Domain events → snapshot warming |
 | `app/crate/analysis_daemon.py` | Audio analysis + bliss daemon loops |
 | `app/crate/enrichment.py` | Unified artist enrichment (all sources) |
 | `app/crate/audio_analysis.py` | Essentia/librosa dual backend |
@@ -300,7 +309,7 @@ Additional graph-powered skills for code navigation:
 | `app/shared/web/utils.ts` | Shared utilities (formatDuration, encPath, etc.) |
 | `package.json` | Root workspace config (orchestrates shared/ui, ui, listen) |
 | `app/ui/src/components/layout/Shell.tsx` | Admin layout (sidebar, main) |
-| `app/listen/src/contexts/PlayerContext.tsx` | Full player state (gapless, crossfade, EQ, queue, offline) |
+| `app/listen/src/contexts/PlayerContext.tsx` | Public player provider/orchestrator; heavy internals now split across focused hooks |
 | `app/listen/src/components/layout/Shell.tsx` | Listen layout (desktop/mobile adaptive) |
 | `Makefile` | Dev, deploy, Capacitor, utilities |
 | `docker-compose.yaml` | Production stack (12 services) |

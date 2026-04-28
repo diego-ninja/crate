@@ -26,7 +26,7 @@ def get_cached_session(session_id: str) -> dict | None:
     if entry and (now - entry[0]) < _SESSION_TTL:
         return entry[1]
 
-    from crate.db.auth import get_session
+    from crate.db.repositories.auth import get_session
     session = get_session(session_id)
     if session:
         _session_cache[session_id] = (now, session)
@@ -40,7 +40,7 @@ def get_cached_user(user_id: int) -> dict | None:
     if entry and (now - entry[0]) < _USER_TTL:
         return entry[1]
 
-    from crate.db.auth import get_user_by_id
+    from crate.db.repositories.auth import get_user_by_id
     user = get_user_by_id(user_id)
     if user:
         _user_cache[user_id] = (now, user)

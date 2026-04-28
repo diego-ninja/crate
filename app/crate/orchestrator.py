@@ -8,7 +8,11 @@ import signal
 import time
 
 from crate.config import load_config
-from crate.db import init_db, get_setting, set_setting, list_tasks, set_cache
+from crate.db.cache_settings import get_setting
+from crate.db.cache_store import set_cache
+from crate.db.core import init_db
+from crate.db.queries.tasks import list_tasks
+from crate.db.repositories.tasks import claim_next_task, update_task
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +97,7 @@ class Orchestrator:
                 try:
                     from crate.importer import ImportQueue
                     queue = ImportQueue(load_config())
-                    count = len(queue.scan_pending())
+                    count = len(queue.refresh_pending_state())
                     set_cache("imports_pending", {"count": count})
                 except Exception:
                     pass
@@ -215,7 +219,6 @@ class Orchestrator:
     def _cleanup_orphaned_tasks(self):
         """Mark tasks stuck in 'running' as failed."""
         try:
-            from crate.db import update_task
             orphaned = list_tasks(status="running")
             for t in orphaned:
                 log.warning("Marking orphaned task %s (type=%s) as failed", t["id"], t["type"])
@@ -248,7 +251,6 @@ class Orchestrator:
         """Mark tasks stuck in 'running' for >30min as failed.
         Workers that die (OOM, crash) leave tasks in running state."""
         try:
-            from crate.db import update_task
             running = list_tasks(status="running")
             now_ts = time.time()
             for t in running:
@@ -324,7 +326,6 @@ def _worker_process_entry(config: dict, worker_id: int, max_tasks: int, max_rss_
     wlog.info("Started (PID %d, max_tasks=%d, max_rss=%dMB)", os.getpid(), max_tasks, max_rss_mb)
 
     from crate.worker import TASK_HANDLERS, _is_cancelled
-    from crate.db import claim_next_task, update_task, get_setting, get_task
 
     while not shutdown:
         # Check recycle conditions

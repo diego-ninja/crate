@@ -3,9 +3,13 @@ import io as _io
 import logging
 import time
 from pathlib import Path
-from crate.db import emit_task_event, get_library_artist, get_task, set_cache
-from crate.task_progress import TaskProgress, emit_progress, emit_item_event, entity_label
-from crate.db.jobs.artwork import set_album_has_cover, set_artist_has_photo
+
+from crate.db.cache_store import set_cache
+from crate.db.events import emit_task_event
+from crate.db.repositories.library import get_library_album, get_library_artist
+from crate.db.queries.tasks import get_task
+from crate.task_progress import TaskProgress, emit_item_event, emit_progress, entity_label
+from crate.db.jobs.artwork import set_album_has_cover, set_artist_has_photo, touch_artist_artwork
 from crate.storage_layout import resolve_artist_dir
 from crate.worker_handlers import DEFAULT_AUDIO_EXTENSIONS, TaskHandler, is_cancelled, start_scan
 
@@ -447,14 +451,18 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
             raise ValueError(f"Path traversal blocked: {resolved} is outside {lib}")
         return resolved
 
-    if img_type == "cover":
-        from crate.db import get_library_album
+    invalidation_scopes: list[str] = []
 
+    if img_type == "cover":
         album_data = get_library_album(artist, album)
         if not album_data:
             return {"error": "Album not found"}
         dest = _safe_dest(Path(album_data["path"]) / "cover.jpg")
         img.save(str(dest), "JPEG", quality=92)
+        if album_data.get("id"):
+            set_album_has_cover(int(album_data["id"]))
+            invalidation_scopes.append(f"album:{album_data['id']}")
+        invalidation_scopes.extend(["library", "home"])
     elif img_type == "artist_photo":
         artist_row = get_library_artist(artist)
         found_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist, existing_only=True)
@@ -463,13 +471,20 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
         dest = _safe_dest(found_dir / "artist.jpg")
         img.save(str(dest), "JPEG", quality=92)
         set_artist_has_photo(artist)
+        if artist_row and artist_row.get("id"):
+            invalidation_scopes.append(f"artist:{artist_row['id']}")
+        invalidation_scopes.extend(["library", "home", "shows", "upcoming"])
     elif img_type == "background":
         artist_row = get_library_artist(artist)
         found_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist, existing_only=True)
         if not found_dir or not found_dir.is_dir():
             return {"error": "Artist directory not found"}
-        dest = found_dir / "background.jpg"
+        dest = _safe_dest(found_dir / "background.jpg")
         img.save(str(dest), "JPEG", quality=90)
+        touch_artist_artwork(artist)
+        if artist_row and artist_row.get("id"):
+            invalidation_scopes.append(f"artist:{artist_row['id']}")
+        invalidation_scopes.extend(["library", "home", "shows", "upcoming"])
     else:
         return {"error": f"Unknown image type: {img_type}"}
 
@@ -481,6 +496,17 @@ def _handle_upload_image(task_id: str, params: dict, config: dict) -> dict:
             start_scan()
         except Exception:
             log.debug("Failed to start library scan after cover upload", exc_info=True)
+
+    try:
+        import requests as _req
+
+        _req.post(
+            "http://crate-api:8585/api/cache/invalidate",
+            json={"scopes": list(dict.fromkeys(invalidation_scopes))},
+            timeout=3,
+        )
+    except Exception:
+        log.debug("Failed to broadcast artwork cache invalidation", exc_info=True)
 
     return {"type": img_type, "path": str(dest), "width": img.width, "height": img.height}
 

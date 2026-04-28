@@ -4,7 +4,7 @@ import mutagen
 
 from crate.api._deps import COVER_NAMES, exclude_dirs, extensions, library_path, safe_path
 from crate.audio import get_audio_files, read_tags
-from crate.db import get_library_album, get_library_track_count
+from crate.db.repositories.library import get_library_album, get_library_track_count
 from crate.db.queries.browse import find_album_row
 
 import re as _re

@@ -4,6 +4,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel
 
+from crate.api.schemas.common import SnapshotMetadataResponse
+from crate.api.schemas.tidal import TidalQueueItemResponse
+
 
 class AcquisitionSourceStatusResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -119,6 +122,11 @@ class NewReleasesResponse(BaseModel):
     releases: list[NewReleaseResponse] = Field(default_factory=list)
 
 
+class NewReleasesSurfaceResponse(BaseModel):
+    releases: list[NewReleaseResponse] = Field(default_factory=list)
+    snapshot: SnapshotMetadataResponse | None = None
+
+
 class AcquisitionQueueItemResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -136,6 +144,13 @@ class AcquisitionQueueItemResponse(BaseModel):
 
 class AcquisitionQueueResponse(RootModel[list[AcquisitionQueueItemResponse]]):
     pass
+
+
+class AcquisitionSurfaceResponse(BaseModel):
+    tidal_authenticated: bool
+    tidal_queue: list[TidalQueueItemResponse] = Field(default_factory=list)
+    soulseek_queue: list[AcquisitionQueueItemResponse] = Field(default_factory=list)
+    snapshot: SnapshotMetadataResponse | None = None
 
 
 class QueueClearResponse(BaseModel):

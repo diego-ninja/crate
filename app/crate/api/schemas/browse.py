@@ -1,10 +1,14 @@
 """Schema models for browse artist and album endpoints."""
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from crate.api.schemas.common import TaskEnqueueResponse
+from crate.api.schemas.curation import CuratedPlaylistSummaryResponse
+from crate.api.schemas.media import MoodPresetResponse
+from crate.api.schemas.utility import ArtistEnrichmentResponse
 
 
 class BrowseGenreFilterOptionResponse(BaseModel):
@@ -38,6 +42,12 @@ class BrowseFiltersResponse(BaseModel):
     countries: list[BrowseCountryFilterOptionResponse] = Field(default_factory=list)
     decades: list[str] = Field(default_factory=list)
     formats: list[BrowseFormatFilterOptionResponse] = Field(default_factory=list)
+
+
+class BrowseExplorePageResponse(BaseModel):
+    filters: BrowseFiltersResponse
+    playlists: list[CuratedPlaylistSummaryResponse] = Field(default_factory=list)
+    moods: list[MoodPresetResponse] = Field(default_factory=list)
 
 
 class GenreProfileResponse(BaseModel):
@@ -104,6 +114,7 @@ class ArtistDetailResponse(BaseModel):
     id: int | None = None
     slug: str | None = None
     name: str
+    updated_at: datetime | str | None = None
     albums: list[ArtistAlbumSummaryResponse] = Field(default_factory=list)
     total_tracks: int
     total_size_mb: int
@@ -188,6 +199,15 @@ class ArtistShowsResponse(BaseModel):
     events: list[ArtistShowEventResponse] = Field(default_factory=list)
     configured: bool
     source: str
+
+
+class ArtistPageResponse(BaseModel):
+    artist: ArtistDetailResponse
+    info: ArtistInfoResponse = Field(default_factory=ArtistInfoResponse)
+    top_tracks: list[ArtistTopTrackResponse] = Field(default_factory=list)
+    shows: ArtistShowsResponse
+    enrichment: ArtistEnrichmentResponse = Field(default_factory=ArtistEnrichmentResponse)
+    artist_hot_rank: int | None = None
 
 
 class ShowArtistRefResponse(BaseModel):

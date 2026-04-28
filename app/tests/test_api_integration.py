@@ -43,18 +43,17 @@ def api_client(pg_db):
         "exclude_dirs": [],
     }
 
-    async def _fake_admin_dispatch(self, request, call_next):
-        request.state.user = {
+    async def _fake_admin_resolve_user(self, request):
+        return {
             "id": 1,
             "email": "admin@cratemusic.app",
             "role": "admin",
             "username": "admin",
             "name": "Test Admin",
         }
-        return await call_next(request)
 
     with patch("crate.api._deps.load_config", return_value=mock_config), \
-         patch("crate.api.auth.AuthMiddleware.dispatch", _fake_admin_dispatch):
+         patch("crate.api.auth.AuthMiddleware.resolve_user", _fake_admin_resolve_user):
         from crate.api import create_app
         app = create_app()
         with TestClient(app) as client:
@@ -128,10 +127,18 @@ class TestUserEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         # The home payload should always have these keys, even on empty library
-        for key in ("hero", "custom_mixes", "radio_stations", "favorite_artists"):
+        for key in (
+            "hero",
+            "custom_mixes",
+            "radio_stations",
+            "favorite_artists",
+            "recent_global_artists",
+            "upcoming",
+            "replay",
+        ):
             assert key in data, f"Missing key: {key}"
 
-    def test_home_discovery_resolves_legacy_play_history_by_artist_title(self, api_client, pg_db):
+    def test_home_discovery_resolves_play_events_by_artist_title_when_track_path_cannot_resolve(self, api_client, pg_db):
         artist_name = "Fallback Artist"
         album_name = "Fallback Album"
         track_title = "Fallback Track"
@@ -183,14 +190,21 @@ class TestUserEndpoints:
             }
         )
 
-        # Simulate a legacy play-history row that cannot resolve by track_id/path
-        # anymore, but should still recover album/artist metadata by title + artist.
-        pg_db.record_play(
+        # Simulate a rich play event that cannot resolve by track_id/path anymore,
+        # but should still recover album/artist metadata by title + artist.
+        pg_db.record_play_event(
             1,
+            client_event_id="evt-fallback-track",
             track_path="/legacy/missing-file.flac",
             title=track_title,
             artist=artist_name,
             album=album_name,
+            started_at="2026-04-01T10:00:00+00:00",
+            ended_at="2026-04-01T10:04:00+00:00",
+            played_seconds=240,
+            track_duration_seconds=240,
+            completion_ratio=1.0,
+            was_completed=True,
         )
 
         resp = api_client.get("/api/me/home/discovery?fresh=1")

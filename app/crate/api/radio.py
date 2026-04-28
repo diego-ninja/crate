@@ -13,9 +13,9 @@ from crate.bliss import (
     generate_track_radio,
     generate_virtual_playlist_radio,
 )
-from crate.db.auth import get_user_by_email
-from crate.db.cache import get_cache, set_cache
-from crate.db.library import get_library_artist_by_id, get_library_track_by_storage_id
+from crate.db.repositories.auth import get_user_by_email
+from crate.db.cache_store import get_cache, set_cache
+from crate.db.repositories.library import get_library_artist_by_id, get_library_track_by_storage_id
 from crate.db.queries.radio import (
     get_track_path_by_id,
     get_track_path_by_pattern,

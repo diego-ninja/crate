@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   AlertTriangle,
@@ -38,6 +38,11 @@ interface WorkerInfo {
   worker_id: string;
   last_seen: string;
   log_count: number;
+}
+
+interface LogsSnapshotData {
+  logs: LogEntry[];
+  workers: WorkerInfo[];
 }
 
 const KNOWN_CATEGORIES = ["general", "enrichment", "analysis", "tidal", "sync", "system"];
@@ -159,8 +164,7 @@ function LogRow({ entry }: { entry: LogEntry }) {
 }
 
 export function Logs() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [workers, setWorkers] = useState<WorkerInfo[]>([]);
+  const [snapshot, setSnapshot] = useState<LogsSnapshotData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState("");
@@ -168,43 +172,68 @@ export function Logs() {
   const [workerId, setWorkerId] = useState("");
   const [search, setSearch] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const loadedRef = useRef(false);
+  const reconnectTimerRef = useRef<number | null>(null);
 
-  const fetchLogs = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true);
+  const fetchSnapshot = useCallback(async (fresh = false) => {
+    if (!loadedRef.current) setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: "100" });
-      if (level) params.set("level", level);
-      if (category) params.set("category", category);
-      if (workerId) params.set("worker_id", workerId);
-      const data = await api<LogEntry[]>(`/api/admin/logs?${params.toString()}`);
-      setLogs(data);
+      const query = fresh ? "?limit=100&fresh=1" : "?limit=100";
+      const data = await api<LogsSnapshotData>(`/api/admin/logs-snapshot${query}`);
+      setSnapshot(data);
       setError(null);
+      loadedRef.current = true;
     } catch {
       setError("Failed to load worker logs");
     } finally {
       setLoading(false);
     }
-  }, [level, category, workerId]);
-
-  const fetchWorkers = useCallback(async () => {
-    try {
-      const data = await api<WorkerInfo[]>("/api/admin/logs/workers");
-      setWorkers(data);
-    } catch {
-      // Worker list is secondary; leave page usable without it.
-    }
   }, []);
 
   useEffect(() => {
-    fetchLogs();
-    fetchWorkers();
-  }, [fetchLogs, fetchWorkers]);
+    void fetchSnapshot();
+  }, [fetchSnapshot]);
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(() => fetchLogs(true), 3000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, fetchLogs]);
+    let disposed = false;
+    let stream: EventSource | null = null;
+
+    function connect() {
+      if (disposed) return;
+      stream = new EventSource("/api/admin/logs-stream?limit=100", { withCredentials: true });
+      stream.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as LogsSnapshotData;
+          setSnapshot(payload);
+          setError(null);
+          setLoading(false);
+          loadedRef.current = true;
+        } catch {
+          // Ignore malformed snapshots.
+        }
+      };
+      stream.onerror = () => {
+        stream?.close();
+        stream = null;
+        if (!disposed) {
+          reconnectTimerRef.current = window.setTimeout(connect, 5000);
+        }
+      };
+    }
+
+    connect();
+    return () => {
+      disposed = true;
+      stream?.close();
+      if (reconnectTimerRef.current != null) {
+        window.clearTimeout(reconnectTimerRef.current);
+      }
+    };
+  }, [autoRefresh]);
+
+  const logs = snapshot?.logs ?? [];
+  const workers = snapshot?.workers ?? [];
 
   const categories = useMemo(() => {
     const dynamic = new Set(logs.map((entry) => entry.category).filter(Boolean));
@@ -214,14 +243,16 @@ export function Logs() {
 
   const visibleLogs = useMemo(() => {
     const normalized = search.trim().toLowerCase();
-    if (!normalized) return logs;
-
     return logs.filter((entry) => {
+      if (level && entry.level !== level) return false;
+      if (category && entry.category !== category) return false;
+      if (workerId && entry.worker_id !== workerId) return false;
+      if (!normalized) return true;
       const metadata = metadataPreview(entry.metadata).toLowerCase();
       const haystack = `${entry.message} ${entry.category} ${entry.worker_id} ${entry.task_id ?? ""} ${metadata}`.toLowerCase();
       return haystack.includes(normalized);
     });
-  }, [logs, search]);
+  }, [category, level, logs, search, workerId]);
 
   const summary = useMemo(() => {
     const errors = visibleLogs.filter((entry) => entry.level === "error").length;
@@ -231,7 +262,7 @@ export function Logs() {
     return { errors, warnings, infos, onlineWorkers };
   }, [visibleLogs, workers]);
 
-  if (loading && logs.length === 0) {
+  if (loading && !snapshot) {
     return (
       <div className="flex justify-center py-16 text-white/45">
         <Loader2 className="h-5 w-5 animate-spin text-primary" />
@@ -239,8 +270,8 @@ export function Logs() {
     );
   }
 
-  if (error && logs.length === 0) {
-    return <ErrorState message={error} onRetry={() => fetchLogs()} />;
+  if (error && !snapshot) {
+    return <ErrorState message={error} onRetry={() => void fetchSnapshot(true)} />;
   }
 
   return (
@@ -260,7 +291,7 @@ export function Logs() {
               {autoRefresh ? <Pause size={14} /> : <Play size={14} />}
               {autoRefresh ? "Pause live" : "Resume live"}
             </Button>
-            <Button variant="outline" size="sm" className="gap-2" onClick={() => fetchLogs()}>
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => void fetchSnapshot(true)}>
               <RefreshCw size={14} />
               Refresh
             </Button>

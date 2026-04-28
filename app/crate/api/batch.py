@@ -8,7 +8,7 @@ from crate.api.schemas.operations import (
     BatchRetagRequest,
     BatchTaskEnqueueResponse,
 )
-from crate.db import create_task
+from crate.db.repositories.tasks import create_task
 
 router = APIRouter(tags=["batch"])
 

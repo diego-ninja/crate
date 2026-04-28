@@ -17,8 +17,8 @@ class TestUpcomingIntelligenceContracts:
             "probable_setlist": [{"title": "Concubine"}],
         }]
 
-        with patch("crate.db.get_show_reminders", return_value=[]), patch(
-            "crate.db.user_library.get_top_artists",
+        with patch("crate.api.me.get_show_reminders", return_value=[]), patch(
+            "crate.api.me.get_top_artists",
             return_value=[{"artist_name": "Converge"}],
         ):
             insights = _build_upcoming_insights(1, shows, {42})
@@ -31,7 +31,7 @@ class TestUpcomingIntelligenceContracts:
         assert show_prep["has_setlist"] is True
 
     def test_create_show_reminder_endpoint_accepts_supported_types(self, test_app):
-        with patch("crate.db.create_show_reminder", return_value=True) as mock_create:
+        with patch("crate.api.me.create_show_reminder", return_value=True) as mock_create:
             resp = test_app.post("/api/me/shows/42/reminders", json={"reminder_type": "show_prep"})
 
         assert resp.status_code == 200

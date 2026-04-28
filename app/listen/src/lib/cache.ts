@@ -1,5 +1,6 @@
-import { getApiBase, getAuthToken } from "@/lib/api";
+import { apiSseUrl } from "@/lib/api";
 import { isNative } from "@/lib/capacitor";
+import { recordAssetInvalidationScope } from "@/lib/library-routes";
 
 // ── Cache Store ────────────────────────────────────────────────
 
@@ -11,12 +12,60 @@ interface CacheEntry<T = unknown> {
 
 const STORAGE_KEY = "crate-api-cache";
 const memoryCache = new Map<string, CacheEntry>();
+type ScheduledStorageWriteHandle = number | ReturnType<typeof setTimeout>;
+const pendingStorageWrites = new Map<string, ScheduledStorageWriteHandle>();
 
 /** Safety-net TTL for localStorage entries. Data older than this is
  *  discarded on retrieval even if no invalidation event was missed.
  *  24 hours is generous — scope-based invalidation should clear it
  *  much sooner in practice. */
 const LOCALSTORAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const STORAGE_WRITE_TIMEOUT_MS = 250;
+
+function _cancelPendingStorageWrite(url: string): void {
+  const handle = pendingStorageWrites.get(url);
+  if (handle == null) return;
+  pendingStorageWrites.delete(url);
+  if (typeof handle === "number" && typeof globalThis.cancelIdleCallback === "function") {
+    globalThis.cancelIdleCallback(handle);
+    return;
+  }
+  globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>);
+}
+
+function _writeEntryToStorage(url: string): void {
+  pendingStorageWrites.delete(url);
+  const entry = memoryCache.get(url);
+  if (!entry) return;
+
+  try {
+    localStorage.setItem(`${STORAGE_KEY}:${url}`, JSON.stringify(entry));
+  } catch {
+    _evictOldest(5);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}:${url}`, JSON.stringify(entry));
+    } catch {
+      /* give up */
+    }
+  }
+}
+
+function _scheduleStorageWrite(url: string): void {
+  _cancelPendingStorageWrite(url);
+
+  const runWrite = () => _writeEntryToStorage(url);
+
+  if (typeof globalThis.requestIdleCallback === "function") {
+    const handle = globalThis.requestIdleCallback(runWrite, {
+      timeout: STORAGE_WRITE_TIMEOUT_MS,
+    });
+    pendingStorageWrites.set(url, handle);
+    return;
+  }
+
+  const handle = globalThis.setTimeout(runWrite, 0);
+  pendingStorageWrites.set(url, handle);
+}
 
 /** Scope tags for API URLs — determines what invalidation events
  *  affect which cache entries. Every URL that goes through useApi
@@ -25,6 +74,7 @@ export function scopesForUrl(url: string): string[] {
   const scopes: string[] = [];
 
   // Home — per-section scopes
+  if (url === "/api/me/home/discovery") return ["home", "library", "follows", "history", "likes"];
   if (url === "/api/me/home/hero") return ["home", "library", "follows"];
   if (url === "/api/me/home/recently-played") return ["home", "history"];
   if (url === "/api/me/home/mixes") return ["home", "library"];
@@ -59,12 +109,14 @@ export function scopesForUrl(url: string): string[] {
     if (m) scopes.push(`artist:${m[1]}`);
     scopes.push("library", "follows");
   }
+  else if (url.startsWith("/api/artist-slugs/")) scopes.push("library", "follows");
   // Album detail
   else if (url.match(/^\/api\/albums\/\d+/)) {
     const m = url.match(/^\/api\/albums\/(\d+)/);
     if (m) scopes.push(`album:${m[1]}`);
     scopes.push("library");
   }
+  else if (url.match(/^\/api\/artist-slugs\/[^/]+\/albums\//)) scopes.push("library");
   // Artist/album listings
   else if (url.startsWith("/api/artists")) scopes.push("library");
   else if (url.startsWith("/api/albums")) scopes.push("library");
@@ -109,15 +161,7 @@ export function cacheSet<T>(url: string, data: T): void {
   const scopes = scopesForUrl(url);
   const entry: CacheEntry<T> = { data, timestamp: Date.now(), scopes };
   memoryCache.set(url, entry);
-
-  try {
-    localStorage.setItem(`${STORAGE_KEY}:${url}`, JSON.stringify(entry));
-  } catch {
-    _evictOldest(5);
-    try {
-      localStorage.setItem(`${STORAGE_KEY}:${url}`, JSON.stringify(entry));
-    } catch { /* give up */ }
-  }
+  _scheduleStorageWrite(url);
 }
 
 /** Invalidate all cache entries matching a scope. */
@@ -131,6 +175,7 @@ export function cacheInvalidate(scope: string): void {
   }
 
   for (const key of keysToRemove) {
+    _cancelPendingStorageWrite(key);
     memoryCache.delete(key);
     try { localStorage.removeItem(`${STORAGE_KEY}:${key}`); } catch { /* ignore */ }
   }
@@ -138,6 +183,9 @@ export function cacheInvalidate(scope: string): void {
 
 /** Clear entire cache. */
 export function cacheClear(): void {
+  for (const key of pendingStorageWrites.keys()) {
+    _cancelPendingStorageWrite(key);
+  }
   memoryCache.clear();
   try {
     const keys = Object.keys(localStorage).filter((k) => k.startsWith(STORAGE_KEY));
@@ -150,6 +198,7 @@ function _evictOldest(count: number): void {
     .sort((a, b) => a[1].timestamp - b[1].timestamp)
     .slice(0, count);
   for (const [key] of entries) {
+    _cancelPendingStorageWrite(key);
     memoryCache.delete(key);
     try { localStorage.removeItem(`${STORAGE_KEY}:${key}`); } catch { /* ignore */ }
   }
@@ -175,11 +224,7 @@ export function onCacheInvalidation(fn: (scope: string) => void): () => void {
 export function connectCacheEvents(): () => void {
   if (eventSource) return () => {};
 
-  const base = getApiBase();
-  const token = isNative ? getAuthToken() : null;
-  const url = token
-    ? `${base}/api/cache/events?token=${encodeURIComponent(token)}`
-    : `${base}/api/cache/events`;
+  const url = apiSseUrl("/api/cache/events");
 
   try {
     eventSource = new EventSource(url, { withCredentials: !isNative });
@@ -187,6 +232,7 @@ export function connectCacheEvents(): () => void {
     eventSource.onmessage = (event) => {
       const scope = event.data?.trim();
       if (!scope) return;
+      recordAssetInvalidationScope(scope);
       cacheInvalidate(scope);
       for (const fn of invalidationListeners) {
         try { fn(scope); } catch { /* ignore listener errors */ }

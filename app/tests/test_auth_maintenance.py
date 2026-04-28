@@ -23,18 +23,20 @@ class TestAuthMaintenanceIntegration:
         assert stored["use_count"] == 1
         assert stored["accepted_at"] is not None
 
-    def test_cleanup_expired_sessions_removes_only_old_sessions(self, pg_db):
+    def test_cleanup_expired_sessions_prunes_closed_and_stale_sessions(self, pg_db):
         from crate.db.tx import transaction_scope
 
         user = pg_db.create_user("cleanup-sessions@test.com")
         now = datetime.now(timezone.utc)
 
-        expired = pg_db.create_session("expired-session", user["id"], (now - timedelta(days=10)).isoformat())
+        expired_old = pg_db.create_session("expired-old-session", user["id"], (now - timedelta(days=10)).isoformat())
+        expired_recent = pg_db.create_session("expired-recent-session", user["id"], (now - timedelta(days=1)).isoformat())
         revoked_old = pg_db.create_session("revoked-old-session", user["id"], (now + timedelta(days=10)).isoformat())
         revoked_recent = pg_db.create_session("revoked-recent-session", user["id"], (now + timedelta(days=10)).isoformat())
         active = pg_db.create_session("active-session", user["id"], (now + timedelta(days=10)).isoformat())
+        stale_history = pg_db.create_session("stale-history-session", user["id"], (now + timedelta(days=10)).isoformat())
 
-        assert expired["id"] == "expired-session"
+        assert expired_old["id"] == "expired-old-session"
         assert active["id"] == "active-session"
 
         pg_db.revoke_session(revoked_old["id"])
@@ -45,13 +47,30 @@ class TestAuthMaintenanceIntegration:
                 text("UPDATE sessions SET revoked_at = :revoked_at WHERE id = :id"),
                 {"revoked_at": (now - timedelta(days=10)).isoformat(), "id": revoked_old["id"]},
             )
+            session.execute(
+                text(
+                    """
+                    UPDATE sessions
+                    SET created_at = :created_at,
+                        last_seen_at = :last_seen_at
+                    WHERE id = :id
+                    """
+                ),
+                {
+                    "created_at": (now - timedelta(days=45)).isoformat(),
+                    "last_seen_at": (now - timedelta(days=45)).isoformat(),
+                    "id": stale_history["id"],
+                },
+            )
 
-        deleted = pg_db.cleanup_expired_sessions(max_age_days=7)
+        deleted = pg_db.cleanup_expired_sessions(max_age_days=3, stale_age_days=30)
         remaining = {session["id"] for session in pg_db.list_sessions(user["id"], include_revoked=True)}
 
-        assert deleted == 2
-        assert expired["id"] not in remaining
+        assert deleted == 3
+        assert expired_old["id"] not in remaining
+        assert stale_history["id"] not in remaining
         assert revoked_old["id"] not in remaining
+        assert expired_recent["id"] in remaining
         assert revoked_recent["id"] in remaining
         assert active["id"] in remaining
 

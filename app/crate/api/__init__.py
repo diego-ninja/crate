@@ -9,7 +9,7 @@ from pathlib import Path
 
 from crate.api._deps import json_dumps
 from crate.api.openapi import custom_openapi, variant_openapi
-from crate.db import init_db
+from crate.db.core import init_db
 
 
 class DateAwareJSONResponse(JSONResponse):
@@ -163,7 +163,7 @@ def create_app() -> FastAPI:
     from crate.api.tasks import router as tasks_router
     from crate.api.stack import router as stack_router
     from crate.api.enrichment import router as enrichment_router
-    from crate.api.management import router as management_router
+    from crate.api.management import router as management_router, admin_router as management_admin_router
     from crate.api.settings import router as settings_router
     from crate.api.playlists import router as playlists_router
     from crate.api.offline import router as offline_router
@@ -180,6 +180,7 @@ def create_app() -> FastAPI:
     from crate.api.jam import router as jam_router
     from crate.api.subsonic import router as subsonic_router
     from crate.api.paths import router as paths_router
+    from crate.api.admin_ops import router as admin_ops_router
 
     # Auth + management + settings + enrichment BEFORE browse (browse has {name:path} catch-all)
     app.include_router(setup_router)
@@ -192,6 +193,7 @@ def create_app() -> FastAPI:
     app.include_router(radio_router)
     app.include_router(lyrics_router)
     app.include_router(management_router)
+    app.include_router(management_admin_router)
     app.include_router(settings_router)
     app.include_router(playlists_router)
     app.include_router(curation_router)
@@ -217,6 +219,7 @@ def create_app() -> FastAPI:
     app.include_router(tasks_router)
     app.include_router(stack_router)
     from crate.api.admin_metrics import router as admin_metrics_router
+    app.include_router(admin_ops_router)
     app.include_router(admin_metrics_router)
 
     # Static files

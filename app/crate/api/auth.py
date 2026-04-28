@@ -10,7 +10,7 @@ import jwt
 import requests
 from sqlalchemy.exc import IntegrityError as SAIntegrityError
 from fastapi import APIRouter, Request, HTTPException
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.responses import Response, RedirectResponse, JSONResponse
 
 from crate.auth import (
@@ -19,6 +19,7 @@ from crate.auth import (
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.auth import (
     AdminAuthConfigResponse,
+    AdminSetPasswordRequest,
     AdminUserDetailResponse,
     AdminUserSummaryResponse,
     AuthConfigResponse,
@@ -44,14 +45,33 @@ from crate.api.schemas.auth import (
     UpdateProfileRequest,
 )
 from crate.api.schemas.common import OkResponse
-from crate.db import (
-    count_users, create_user, get_user_by_email, get_user_by_google_id, get_user_by_id,
-    get_user_by_external_identity, update_user_last_login, update_user, list_users, delete_user,
-    get_user_external_identity, upsert_user_external_identity, list_user_external_identities,
-    unlink_user_external_identity, create_session, list_sessions, touch_session, revoke_session,
-    revoke_other_sessions, get_session, get_setting, set_setting,
-    create_auth_invite, list_auth_invites, consume_auth_invite, get_user_presence,
+from crate.db.repositories.auth import (
+    consume_auth_invite,
+    count_users,
+    create_auth_invite,
+    create_session,
+    create_user,
+    delete_user,
+    get_session,
+    get_user_by_email,
+    get_user_by_external_identity,
+    get_user_by_google_id,
+    get_user_by_id,
+    get_user_external_identity,
+    get_user_presence,
+    list_auth_invites,
+    list_sessions,
+    list_user_external_identities,
+    list_users,
+    revoke_other_sessions,
+    revoke_session,
+    touch_session,
+    unlink_user_external_identity,
+    update_user,
+    update_user_last_login,
+    upsert_user_external_identity,
 )
+from crate.db.cache_settings import get_setting, set_setting
 
 log = logging.getLogger(__name__)
 
@@ -389,35 +409,16 @@ _AUTH_ADMIN_RESPONSES = merge_responses(
 
 # ── Middleware ───────────────────────────────────────────────────
 
-
-def _should_skip_session_touch(path: str) -> bool:
-    if path.startswith("/api/admin/metrics"):
-        return True
-    if path.startswith("/api/events"):
-        return True
-    if path.startswith("/api/cache/events"):
-        return True
-    if path in {"/api/status", "/api/worker/status", "/api/setup/status"}:
-        return True
-    if path.startswith("/api/tasks"):
-        return True
-    if path.startswith(("/api/stream/", "/api/download/")):
-        return True
-    if path.startswith("/api/tracks/") and path.endswith(("/stream", "/download")):
-        return True
-    if path.startswith("/api/tracks/by-storage/") and path.endswith(("/stream", "/download")):
-        return True
-    if path.startswith("/api/albums/") and path.endswith("/download"):
-        return True
-    return False
-
-class AuthMiddleware(BaseHTTPMiddleware):
+class AuthMiddleware:
     """Resolve auth via Bearer header, query param, or cookie (in that order).
 
     Falls back to Remote-User headers from trusted reverse proxy.
     """
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+    def __init__(self, app: ASGIApp):
+        self.app = app
+
+    async def resolve_user(self, request: Request) -> dict | None:
         user = None
 
         # 1. Bearer token auth (primary for all clients)
@@ -437,9 +438,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if token:
             payload = verify_jwt(token)
             if payload:
-                from crate.api.auth_cache import get_cached_session, get_cached_user, should_touch_session
+                from crate.api.auth_cache import get_cached_session, get_cached_user
                 session_id = payload.get("sid")
-                request_path = request.url.path
                 session = get_cached_session(session_id) if session_id else None
                 if session_id and (
                     not session
@@ -447,14 +447,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     or (session.get("expires_at") and session["expires_at"] <= datetime.now(timezone.utc))
                 ):
                     payload = None
-                if payload and session_id and not _should_skip_session_touch(request_path) and should_touch_session(session_id):
-                    touch_session(
-                        session_id,
-                        last_seen_ip=request.client.host if request.client else None,
-                        user_agent=request.headers.get("user-agent"),
-                        app_id=request.headers.get("x-crate-app"),
-                        device_label=request.headers.get("x-device-label"),
-                    )
             if payload:
                 current_user = get_cached_user(payload["user_id"])
                 if current_user:
@@ -484,8 +476,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     "role": "admin" if "admins" in groups else "user",
                 }
 
-        request.state.user = user
-        return await call_next(request)
+        return user
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope, receive=receive)
+        scope.setdefault("state", {})
+        scope["state"]["user"] = await self.resolve_user(request)
+        await self.app(scope, receive, send)
 
 
 def _require_auth(request: Request) -> dict:
@@ -1250,12 +1251,36 @@ async def admin_get_user_detail(request: Request, user_id: int):
     payload = _user_public(user)
     payload["username"] = user.get("username")
     payload["bio"] = user.get("bio")
+    payload["has_password"] = bool(user.get("password_hash"))
     payload["created_at"] = _iso_datetime(user.get("created_at"))
     payload["last_login"] = _iso_datetime(user.get("last_login"))
     payload["connected_accounts"] = list_user_external_identities(user_id)
     payload["sessions"] = list_sessions(user_id, include_revoked=True)
     payload.update(get_user_presence(user_id))
     return payload
+
+
+@router.post(
+    "/users/{user_id}/set-password",
+    response_model=RevokeSessionsResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Set or reset a user's local password",
+)
+async def admin_set_user_password(request: Request, user_id: int, body: AdminSetPasswordRequest):
+    admin_user = _require_admin(request)
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    update_user(user_id, password_hash=hash_password(body.new_password))
+
+    revoked = 0
+    if body.revoke_all_sessions:
+        current_session_id = admin_user.get("session_id") if admin_user.get("id") == user_id else None
+        revoked = revoke_other_sessions(user_id, current_session_id)
+    return {"ok": True, "revoked": revoked}
 
 
 @router.get(

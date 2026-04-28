@@ -1,9 +1,10 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   Activity,
   Headphones,
   Info,
+  Key,
   Loader2,
   Mail,
   Monitor,
@@ -26,6 +27,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AdminSelect } from "@/components/ui/AdminSelect";
 import { CrateChip, CratePill } from "@crate/ui/primitives/CrateBadge";
+import { useAuth } from "@/contexts/AuthContext";
 import { api, ApiError } from "@/lib/api";
 import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 import { timeAgo } from "@/lib/utils";
@@ -56,6 +58,7 @@ interface UserRecord {
   name: string;
   avatar?: string | null;
   role: string;
+  has_password?: boolean;
   active_sessions?: number;
   active_devices?: number;
   online_now?: boolean;
@@ -78,6 +81,18 @@ interface UserSession {
   user_agent?: string | null;
   app_id?: string | null;
   device_label?: string | null;
+  display_label?: string | null;
+  client_name?: string | null;
+  client_version?: string | null;
+  os_name?: string | null;
+  os_version?: string | null;
+  device_type?: string | null;
+  device_brand?: string | null;
+  device_model?: string | null;
+  device_fingerprint?: string | null;
+  activity_state?: "active" | "recent" | "history" | "expired" | "revoked" | null;
+  is_active?: boolean | null;
+  is_recent?: boolean | null;
 }
 
 interface UserDetail extends UserRecord {
@@ -86,10 +101,9 @@ interface UserDetail extends UserRecord {
 }
 
 type UserFilter = "all" | "online" | "listening" | "admins";
-type SessionFilter = "connected" | "recent" | "all";
+type SessionFilter = "active" | "recent" | "all";
 
-const SESSION_ONLINE_WINDOW_MS = 10 * 60 * 1000;
-const SESSION_CONNECTED_WINDOW_MS = 30 * 60 * 1000;
+const SESSION_ACTIVE_WINDOW_MS = 3 * 60 * 1000;
 const SESSION_RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface SessionSourceSummary {
@@ -159,71 +173,94 @@ function sessionUaLabel(userAgent?: string | null) {
   return raw.split(" ")[0]?.split("/")[0] || "Unknown client";
 }
 
+function deviceTypeLabel(deviceType?: string | null) {
+  const normalized = (deviceType || "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "smartphone") return "Phone";
+  if (normalized === "desktop") return "Desktop";
+  if (normalized === "tablet") return "Tablet";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 function sessionDisplayName(session: UserSession) {
-  return session.device_label || session.app_id || sessionUaLabel(session.user_agent);
+  return session.display_label || session.device_label || session.app_id || sessionUaLabel(session.user_agent);
 }
 
 function sessionSourceKey(session: UserSession) {
+  const appKey = session.app_id?.trim().toLowerCase() || "web";
   return [
+    session.device_fingerprint || "",
+    appKey,
+    session.display_label?.trim().toLowerCase() || "",
     session.device_label?.trim().toLowerCase() || "",
-    session.app_id?.trim().toLowerCase() || "",
     sessionUaLabel(session.user_agent).trim().toLowerCase(),
   ].join("::");
 }
 
-function getSessionStatus(session: UserSession) {
+function sessionActivityState(session: UserSession) {
+  if (session.activity_state) return session.activity_state;
+
   const now = Date.now();
   const lastSeen = new Date(session.last_seen_at || session.created_at).getTime();
   const expires = new Date(session.expires_at).getTime();
 
-  if (session.revoked_at) {
-    return {
-      key: "revoked",
-      label: "Revoked",
-      className: "border-white/12 bg-transparent text-white/60",
-    };
+  if (session.revoked_at) return "revoked";
+  if (!Number.isNaN(expires) && expires < now) return "expired";
+  if (!Number.isNaN(lastSeen) && (now - lastSeen) <= SESSION_ACTIVE_WINDOW_MS) return "active";
+  if (!Number.isNaN(lastSeen) && (now - lastSeen) <= SESSION_RECENT_WINDOW_MS) return "recent";
+  return "history";
+}
+
+function sessionMetaLine(session: UserSession) {
+  const parts = [
+    [session.client_name, session.client_version].filter(Boolean).join(" "),
+    [session.os_name, session.os_version].filter(Boolean).join(" "),
+    deviceTypeLabel(session.device_type),
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function getSessionStatus(session: UserSession) {
+  switch (sessionActivityState(session)) {
+    case "revoked":
+      return {
+        key: "revoked",
+        label: "Revoked",
+        className: "border-white/12 bg-transparent text-white/60",
+      };
+    case "expired":
+      return {
+        key: "expired",
+        label: "Expired",
+        className: "border-amber-500/25 bg-amber-500/10 text-amber-200",
+      };
+    case "active":
+      return {
+        key: "active",
+        label: "Active now",
+        className: "border-green-500/25 bg-green-500/10 text-green-300",
+      };
+    case "recent":
+      return {
+        key: "recent",
+        label: "Recent",
+        className: "border-cyan-400/25 bg-cyan-400/10 text-cyan-200",
+      };
+    default:
+      return {
+        key: "history",
+        label: "History",
+        className: "border-white/8 bg-black/15 text-white/45",
+      };
   }
-  if (!Number.isNaN(expires) && expires < now) {
-    return {
-      key: "expired",
-      label: "Expired",
-      className: "border-amber-500/25 bg-amber-500/10 text-amber-200",
-    };
-  }
-  if (!Number.isNaN(lastSeen) && (now - lastSeen) <= SESSION_ONLINE_WINDOW_MS) {
-    return {
-      key: "online",
-      label: "Online now",
-      className: "border-green-500/25 bg-green-500/10 text-green-300",
-    };
-  }
-  if (!Number.isNaN(lastSeen) && (now - lastSeen) <= SESSION_CONNECTED_WINDOW_MS) {
-    return {
-      key: "connected",
-      label: "Connected",
-      className: "border-cyan-400/25 bg-cyan-400/10 text-cyan-200",
-    };
-  }
-  if (!Number.isNaN(lastSeen) && (now - lastSeen) <= SESSION_RECENT_WINDOW_MS) {
-    return {
-      key: "recent",
-      label: "Recent",
-      className: "border-white/12 bg-white/[0.04] text-white/70",
-    };
-  }
-  return {
-    key: "history",
-    label: "History",
-    className: "border-white/8 bg-black/15 text-white/45",
-  };
 }
 
 function filterSessions(sessions: UserSession[], mode: SessionFilter) {
   if (mode === "all") return sessions;
   return sessions.filter((session) => {
     const status = getSessionStatus(session).key;
-    if (mode === "connected") return status === "online" || status === "connected";
-    return status === "online" || status === "connected" || status === "recent";
+    if (mode === "active") return status === "active";
+    return status === "active" || status === "recent";
   });
 }
 
@@ -239,8 +276,7 @@ function summarizeSessions(sessions: UserSession[]): SessionSourceSummary[] {
     if (existing) {
       existing.count += 1;
       existing.last_seen_at = toTimestamp(lastSeenAt) > toTimestamp(existing.last_seen_at) ? lastSeenAt : existing.last_seen_at;
-      if (status === "online") existing.online += 1;
-      else if (status === "connected") existing.connected += 1;
+      if (status === "active") existing.online += 1;
       else if (status === "recent") existing.recent += 1;
       else if (status === "revoked") existing.revoked += 1;
       else existing.history += 1;
@@ -251,8 +287,8 @@ function summarizeSessions(sessions: UserSession[]): SessionSourceSummary[] {
       key,
       label: sessionDisplayName(session),
       count: 1,
-      online: status === "online" ? 1 : 0,
-      connected: status === "connected" ? 1 : 0,
+      online: status === "active" ? 1 : 0,
+      connected: 0,
       recent: status === "recent" ? 1 : 0,
       history: status === "history" || status === "expired" ? 1 : 0,
       revoked: status === "revoked" ? 1 : 0,
@@ -295,7 +331,7 @@ function UserPresence({
         icon={Activity}
         className={user.online_now ? "border-green-500/25 bg-green-500/10 text-green-300" : "border-white/10 bg-white/[0.04] text-white/55"}
       >
-        {user.online_now ? "Online now" : user.last_seen_at ? `Last seen ${formatRelativeTimestamp(user.last_seen_at)}` : "Offline"}
+        {user.online_now ? "Active now" : user.last_seen_at ? `Last seen ${formatRelativeTimestamp(user.last_seen_at)}` : "Offline"}
       </CrateChip>
       <CrateChip
         icon={Headphones}
@@ -307,7 +343,7 @@ function UserPresence({
         {user.active_devices ?? 0} device{(user.active_devices ?? 0) === 1 ? "" : "s"}
       </CrateChip>
       <CrateChip icon={ShieldCheck} className={baseClass}>
-        {user.active_sessions ?? 0} live session{(user.active_sessions ?? 0) === 1 ? "" : "s"}
+        {user.active_sessions ?? 0} active session{(user.active_sessions ?? 0) === 1 ? "" : "s"}
       </CrateChip>
     </div>
   );
@@ -342,7 +378,22 @@ function CurrentTrackLine({ track }: { track?: CurrentTrack | null }) {
   );
 }
 
+function authModeSummary(user: Pick<UserRecord, "has_password" | "connected_accounts">) {
+  const providerCount = user.connected_accounts?.length ?? 0;
+  if (user.has_password && providerCount > 0) {
+    return `Password + ${providerCount} linked provider${providerCount === 1 ? "" : "s"}`;
+  }
+  if (user.has_password) {
+    return "Password login enabled";
+  }
+  if (providerCount > 0) {
+    return providerCount === 1 ? "SSO-only account" : `SSO-only · ${providerCount} providers`;
+  }
+  return "No sign-in method configured";
+}
+
 export function Users() {
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
@@ -350,6 +401,19 @@ export function Users() {
   const [detailTarget, setDetailTarget] = useState<UserRecord | null>(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<UserFilter>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  function setInspectParam(userId: number | null) {
+    const next = new URLSearchParams(searchParams);
+    if (userId == null) next.delete("inspect");
+    else next.set("inspect", String(userId));
+    setSearchParams(next, { replace: true });
+  }
+
+  function openUserDetail(user: UserRecord) {
+    setDetailTarget(user);
+    setInspectParam(user.id);
+  }
 
   async function fetchUsers() {
     try {
@@ -365,6 +429,28 @@ export function Users() {
   useEffect(() => {
     void fetchUsers();
   }, []);
+
+  useEffect(() => {
+    const inspectRaw = searchParams.get("inspect");
+    if (!inspectRaw) {
+      if (detailTarget) setDetailTarget(null);
+      return;
+    }
+    const inspectId = Number(inspectRaw);
+    if (!Number.isFinite(inspectId)) {
+      setInspectParam(null);
+      return;
+    }
+    if (detailTarget?.id === inspectId) {
+      return;
+    }
+    const target = users.find((candidate) => candidate.id === inspectId);
+    if (target) {
+      setDetailTarget(target);
+    } else if (users.length > 0 && currentUser?.id === inspectId) {
+      setInspectParam(null);
+    }
+  }, [currentUser?.id, detailTarget, searchParams, users]);
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -430,7 +516,7 @@ export function Users() {
             <div className="flex flex-wrap gap-2">
               <CrateChip icon={UserRound}>{counts.total} total users</CrateChip>
               <CrateChip icon={Activity} className={counts.online > 0 ? "border-green-500/25 bg-green-500/10 text-green-300" : undefined}>
-                {counts.online} online now
+                {counts.online} active now
               </CrateChip>
               <CrateChip icon={Headphones} className={counts.listening > 0 ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-200" : undefined}>
                 {counts.listening} listening
@@ -467,7 +553,7 @@ export function Users() {
             <div className="flex flex-wrap gap-2">
               {[
                 { key: "all", label: "All", count: users.length },
-                { key: "online", label: "Online", count: users.filter((user) => user.online_now).length },
+                { key: "online", label: "Active", count: users.filter((user) => user.online_now).length },
                 { key: "listening", label: "Listening", count: users.filter((user) => user.listening_now).length },
                 { key: "admins", label: "Admins", count: users.filter((user) => user.role === "admin").length },
               ].map((item) => (
@@ -528,7 +614,7 @@ export function Users() {
                         <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">Presence</div>
                         <div className="mt-1 text-sm text-white/78">
                           {(user.active_devices ?? 0) > 0
-                            ? `${user.active_devices} live device${(user.active_devices ?? 0) === 1 ? "" : "s"}`
+                            ? `${user.active_devices} active device${(user.active_devices ?? 0) === 1 ? "" : "s"}`
                             : user.last_seen_at
                               ? `Seen ${formatRelativeTimestamp(user.last_seen_at)}`
                               : "No activity yet"}
@@ -547,9 +633,7 @@ export function Users() {
                       <div className="rounded-md border border-white/8 bg-black/15 p-3">
                         <div className="text-[11px] uppercase tracking-[0.12em] text-white/28">Identity</div>
                         <div className="mt-1 text-sm text-white/78">
-                          {(user.connected_accounts || []).length > 0
-                            ? `${user.connected_accounts?.length ?? 0} linked provider${(user.connected_accounts?.length ?? 0) === 1 ? "" : "s"}`
-                            : "Password-only account"}
+                          {authModeSummary(user)}
                         </div>
                       </div>
                     </div>
@@ -567,7 +651,7 @@ export function Users() {
                       </div>
                     </div>
                     <div className="flex gap-2 xl:justify-end">
-                      <Button variant="outline" size="sm" onClick={() => setDetailTarget(user)}>
+                      <Button variant="outline" size="sm" onClick={() => openUserDetail(user)}>
                         <Info size={14} className="mr-2" />
                         Inspect
                       </Button>
@@ -599,7 +683,12 @@ export function Users() {
 
       <UserDetailDialog
         user={detailTarget}
-        onOpenChange={(open) => { if (!open) setDetailTarget(null); }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetailTarget(null);
+            setInspectParam(null);
+          }
+        }}
         onSuccess={fetchUsers}
       />
 
@@ -630,7 +719,8 @@ function UserDetailDialog({
   const [loading, setLoading] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [revokingAll, setRevokingAll] = useState(false);
-  const [sessionFilter, setSessionFilter] = useState<SessionFilter>("connected");
+  const [sessionFilter, setSessionFilter] = useState<SessionFilter>("active");
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   async function fetchDetail(userId: number) {
     setLoading(true);
@@ -648,9 +738,10 @@ function UserDetailDialog({
   useEffect(() => {
     if (!open || !user) {
       setDetail(null);
+      setPasswordDialogOpen(false);
       return;
     }
-    setSessionFilter("connected");
+    setSessionFilter("active");
     void fetchDetail(user.id);
   }, [open, user]);
 
@@ -698,7 +789,7 @@ function UserDetailDialog({
     () => (detail?.sessions ?? []).reduce(
       (acc, session) => {
         const status = getSessionStatus(session).key;
-        if (status === "online" || status === "connected") acc.connected += 1;
+        if (status === "active") acc.connected += 1;
         else if (status === "recent") acc.recent += 1;
         else if (status === "revoked") acc.revoked += 1;
         else acc.history += 1;
@@ -711,8 +802,9 @@ function UserDetailDialog({
   const hiddenSessionsCount = Math.max((detail?.sessions?.length ?? 0) - visibleSessions.length, 0);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-6xl">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-6xl">
         <DialogHeader>
           <DialogTitle>User Detail</DialogTitle>
           <DialogDescription>
@@ -725,7 +817,7 @@ function UserDetailDialog({
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
         ) : detail ? (
-          <div className="space-y-5">
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
             <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
               <Card className="border-white/10 bg-panel-surface">
                 <CardContent className="pt-6">
@@ -802,12 +894,12 @@ function UserDetailDialog({
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-md border border-white/8 bg-black/15 p-3">
-                      <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">Live footprint</div>
+                      <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">Active footprint</div>
                       <div className="mt-1 text-lg font-semibold text-white">
                         {detail.active_devices ?? 0} device{(detail.active_devices ?? 0) === 1 ? "" : "s"}
                       </div>
                       <div className="mt-1 text-xs text-white/38">
-                        {detail.active_sessions ?? 0} current session token{(detail.active_sessions ?? 0) === 1 ? "" : "s"}
+                        {detail.active_sessions ?? 0} active session token{(detail.active_sessions ?? 0) === 1 ? "" : "s"}
                       </div>
                     </div>
                     <div className="rounded-md border border-white/8 bg-black/15 p-3">
@@ -816,6 +908,16 @@ function UserDetailDialog({
                       <div className="mt-1 text-xs text-white/38">
                         {sessionStatusCounts.history} stale/history · {sessionStatusCounts.revoked} revoked
                       </div>
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-white/8 bg-black/15 p-3">
+                    <div className="text-[11px] uppercase tracking-[0.12em] text-white/30">Security</div>
+                    <div className="mt-1 text-sm text-white/78">{authModeSummary(detail)}</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => setPasswordDialogOpen(true)}>
+                        <Key size={14} className="mr-2" />
+                        {detail.has_password ? "Reset password" : "Set password"}
+                      </Button>
                     </div>
                   </div>
                   {sessionSourceSummary.length > 0 ? (
@@ -834,7 +936,7 @@ function UserDetailDialog({
                               <div className="flex flex-wrap gap-2">
                                 {(source.online + source.connected) > 0 ? (
                                   <CrateChip className="border-green-500/25 bg-green-500/10 text-green-300 text-[11px]">
-                                    {source.online + source.connected} live
+                                    {source.online + source.connected} active
                                   </CrateChip>
                                 ) : null}
                                 {source.recent > 0 ? <CrateChip className="text-[11px]">{source.recent} recent</CrateChip> : null}
@@ -849,7 +951,7 @@ function UserDetailDialog({
                   ) : null}
                   {staleOpenCount > 0 ? (
                     <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-100/80">
-                      {staleOpenCount} open session{staleOpenCount === 1 ? "" : "s"} look stale or historical. These rows are real session records, but they do not mean the user has that many devices connected right now.
+                      {staleOpenCount} open session{staleOpenCount === 1 ? "" : "s"} look stale or historical. They remain valid records, but they are not counted as active devices anymore.
                     </div>
                   ) : null}
                   <div>
@@ -873,12 +975,12 @@ function UserDetailDialog({
                   <div>
                     <CardTitle className="text-base text-white">Sessions</CardTitle>
                     <CardDescription>
-                      `Connected` shows live devices, `Recent` keeps the last few days, and `All` exposes full history.
+                      `Active` shows only real live sessions, `Recent` keeps the last few days, and `All` exposes full history.
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <CratePill active={sessionFilter === "connected"} onClick={() => setSessionFilter("connected")}>
-                      Connected
+                    <CratePill active={sessionFilter === "active"} onClick={() => setSessionFilter("active")}>
+                      Active
                     </CratePill>
                     <CratePill active={sessionFilter === "recent"} onClick={() => setSessionFilter("recent")}>
                       Recent
@@ -902,6 +1004,7 @@ function UserDetailDialog({
                 {visibleSessions.length > 0 ? (
                   visibleSessions.map((session) => {
                     const status = getSessionStatus(session);
+                    const metaLine = sessionMetaLine(session);
                     return (
                       <div
                         key={session.id}
@@ -918,9 +1021,16 @@ function UserDetailDialog({
                             <span>Created {formatRelativeTimestamp(session.created_at)}</span>
                             <span>IP {session.last_seen_ip || "—"}</span>
                           </div>
-                          <div className="text-xs text-white/28">
-                            {session.user_agent || "No user agent"}
-                          </div>
+                          {metaLine ? (
+                            <div className="text-xs text-white/28">
+                              {metaLine}
+                            </div>
+                          ) : null}
+                          {(session.device_brand || session.device_model) ? (
+                            <div className="text-xs text-white/36">
+                              {[session.device_brand, session.device_model].filter(Boolean).join(" · ")}
+                            </div>
+                          ) : null}
                           <div className="text-xs font-mono text-white/20">
                             {session.id}
                           </div>
@@ -947,6 +1057,139 @@ function UserDetailDialog({
             </Card>
           </div>
         ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <SetPasswordDialog
+        open={passwordDialogOpen && !!detail}
+        onOpenChange={setPasswordDialogOpen}
+        user={detail}
+        onSuccess={async () => {
+          if (detail) {
+            await fetchDetail(detail.id);
+          }
+          onSuccess();
+        }}
+      />
+    </>
+  );
+}
+
+function SetPasswordDialog({
+  open,
+  onOpenChange,
+  user,
+  onSuccess,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  user: UserDetail | null;
+  onSuccess: () => Promise<void> | void;
+}) {
+  const [newPassword, setNewPassword] = useState("");
+  const [revokeAllSessions, setRevokeAllSessions] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  function generatePassword() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+    const values = new Uint32Array(16);
+    if (globalThis.crypto?.getRandomValues) {
+      globalThis.crypto.getRandomValues(values);
+    } else {
+      for (let index = 0; index < values.length; index += 1) {
+        values[index] = Math.floor(Math.random() * chars.length);
+      }
+    }
+    return Array.from(values, (value) => chars[value % chars.length]).join("");
+  }
+
+  useEffect(() => {
+    if (!open) {
+      setNewPassword("");
+      setRevokeAllSessions(true);
+      return;
+    }
+    setNewPassword(generatePassword());
+    setRevokeAllSessions(true);
+  }, [open]);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!user) return;
+    setSubmitting(true);
+    try {
+      const result = await api<{ revoked: number }>(`/api/auth/users/${user.id}/set-password`, "POST", {
+        new_password: newPassword,
+        revoke_all_sessions: revokeAllSessions,
+      });
+      toast.success(
+        revokeAllSessions
+          ? `Password updated and ${result.revoked} session${result.revoked === 1 ? "" : "s"} revoked`
+          : "Password updated",
+      );
+      onOpenChange(false);
+      await onSuccess();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Failed to update password");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{user?.has_password ? "Reset local password" : "Set local password"}</DialogTitle>
+          <DialogDescription>
+            {user?.has_password
+              ? "Replace the current local password. SSO sign-in stays linked."
+              : "Enable password login for this account without removing SSO providers."}
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-sm font-medium text-white/80" htmlFor="admin-user-password">New password</label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-auto px-2 py-1 text-xs text-white/60 hover:text-white"
+                onClick={() => setNewPassword(generatePassword())}
+              >
+                Generate
+              </Button>
+            </div>
+            <Input
+              id="admin-user-password"
+              type="text"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              minLength={8}
+              required
+            />
+          </div>
+          <label className="flex items-start gap-3 rounded-md border border-white/8 bg-black/15 p-3 text-sm text-white/72">
+            <input
+              type="checkbox"
+              checked={revokeAllSessions}
+              onChange={(event) => setRevokeAllSessions(event.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-white/20 bg-transparent"
+            />
+            <span>
+              Revoke other sessions after changing the password
+            </span>
+          </label>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submitting || newPassword.trim().length < 8}>
+              {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : user?.has_password ? "Reset password" : "Set password"}
+            </Button>
+          </div>
+        </form>
       </DialogContent>
     </Dialog>
   );

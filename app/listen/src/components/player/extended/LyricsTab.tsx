@@ -29,7 +29,8 @@ function parseSyncedLyrics(lrc: string): LyricLine[] {
   return lines;
 }
 
-export function LyricsTab({ useAlbumPalette: _useAlbumPalette }: { useAlbumPalette: boolean }) {
+export function LyricsTab({ useAlbumPalette }: { useAlbumPalette: boolean }) {
+  void useAlbumPalette;
   const { currentTime } = usePlayer();
   const { currentTrack, seek } = usePlayerActions();
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);

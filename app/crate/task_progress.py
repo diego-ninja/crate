@@ -135,7 +135,7 @@ def emit_progress(task_id: str, progress: TaskProgress, *, force: bool = False):
     and would flood the event log. The UI reads the progress field
     from the task row directly (via SSE global stream or polling).
     """
-    from crate.db.tasks import update_task
+    from crate.db.repositories.tasks import update_task
 
     progress.update_rate()
 

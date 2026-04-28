@@ -255,20 +255,19 @@ def test_app():
         "exclude_dirs": [],
     }
 
-    async def _fake_dispatch(self, request, call_next):
-        request.state.user = {
+    async def _fake_resolve_user(self, request):
+        return {
             "id": 1,
             "email": "test@test.com",
             "role": "admin",
             "username": "testadmin",
             "name": "Test Admin",
         }
-        return await call_next(request)
 
     with patch("crate.api._deps.load_config", return_value=mock_config), \
          patch("crate.db.init_db"), \
          patch("crate.api.cache_events.broadcast_invalidation"), \
-         patch("crate.api.auth.AuthMiddleware.dispatch", _fake_dispatch):
+         patch("crate.api.auth.AuthMiddleware.resolve_user", _fake_resolve_user):
         from crate.api import create_app
         app = create_app()
         client = TestClient(app)

@@ -41,13 +41,36 @@ class TestExploreFiltersContract:
             [{"format": "FLAC", "cnt": 12}],
         ])
 
-        with patch("crate.db.queries.browse_artist.transaction_scope", mock_scope):
+        with patch("crate.db.queries.browse_artist_filters.read_scope", mock_scope):
             resp = test_app.get("/api/browse/filters")
             assert resp.status_code == 200
             data = resp.json()
             assert [genre["name"] for genre in data["genres"]] == ["Metalcore", "Post-Hardcore"]
             assert data["decades"] == ["1990s", "2000s"]
             assert data["formats"][0]["name"] == "FLAC"
+
+    def test_explore_page_bundles_filters_playlists_and_moods(self, test_app):
+        playlist_rows = [
+            {"id": index, "name": f"Playlist {index}", "track_count": 12, "is_smart": False, "follower_count": 0, "is_followed": False}
+            for index in range(1, 11)
+        ]
+
+        with patch("crate.api.browse.api_browse_filters", return_value={
+            "genres": [{"name": "Metalcore", "count": 4}],
+            "countries": [],
+            "decades": ["2000s"],
+            "formats": [],
+        }), patch("crate.api.browse.curated_playlists", return_value=playlist_rows), patch(
+            "crate.api.browse.api_browse_moods",
+            return_value=[{"name": "energetic", "track_count": 42, "filters": {"energy_min": 0.7}}],
+        ):
+            resp = test_app.get("/api/browse/explore-page")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["filters"]["genres"][0]["name"] == "Metalcore"
+            assert len(data["playlists"]) == 8
+            assert data["playlists"][0]["name"] == "Playlist 1"
+            assert data["moods"][0]["name"] == "energetic"
 
 
 class TestExploreSearchContract:
@@ -78,7 +101,7 @@ class TestExploreSearchContract:
         ])
 
         with patch("crate.api.browse_media.has_library_data", return_value=True), \
-             patch("crate.db.queries.browse_media.transaction_scope", mock_scope):
+             patch("crate.db.queries.browse_media_search.transaction_scope", mock_scope):
             resp = test_app.get("/api/search?q=converge&limit=10")
             assert resp.status_code == 200
             data = resp.json()

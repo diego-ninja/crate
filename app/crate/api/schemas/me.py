@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
-from crate.api.schemas.common import OkResponse
+from crate.api.schemas.common import OkResponse, SnapshotMetadataResponse
 
 
 class _StorageIdMixin(BaseModel):
@@ -55,6 +55,7 @@ class NowPlayingRequest(BaseModel):
 
 
 class RecordPlayEventRequest(BaseModel):
+    client_event_id: str | None = None
     track_id: int | None = None
     track_storage_id: str | None = None
     track_path: str | None = None
@@ -217,6 +218,11 @@ class FollowedPlaylistResponse(PlaylistSummaryResponse):
     follower_count: int | None = None
     is_followed: bool = True
     followed_at: datetime | str | None = None
+
+
+class LibraryPlaylistsPageResponse(BaseModel):
+    playlists: list[PlaylistSummaryResponse] = Field(default_factory=list)
+    followed_curated_playlists: list[FollowedPlaylistResponse] = Field(default_factory=list)
 
 
 class FollowedArtistResponse(BaseModel):
@@ -431,6 +437,17 @@ class ReplayMixResponse(BaseModel):
     items: list[StatsTrackResponse] = Field(default_factory=list)
 
 
+class StatsDashboardResponse(BaseModel):
+    window: str
+    overview: StatsOverviewResponse
+    trends: StatsTrendsResponse
+    top_tracks: TopTracksResponse
+    top_artists: TopArtistsResponse
+    top_albums: TopAlbumsResponse
+    top_genres: TopGenresResponse
+    replay: ReplayMixResponse
+
+
 class HomeArtworkRefResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -484,6 +501,7 @@ class HomeCardResponse(BaseModel):
 class HomeDiscoveryResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
+    snapshot: SnapshotMetadataResponse | None = None
     hero: dict[str, Any] | list[dict[str, Any]] | None = None
     recently_played: list[dict[str, Any]] = Field(default_factory=list)
     custom_mixes: list[HomeCardResponse] = Field(default_factory=list)

@@ -1,5 +1,4 @@
-import type { Track } from "@/contexts/player-types";
-import type { PlaySource, RepeatMode } from "@/contexts/player-types";
+import type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
 import { getApiBase, getAuthToken } from "@/lib/api";
 import { getOfflineNativePlaybackUrl } from "@/lib/offline";
 

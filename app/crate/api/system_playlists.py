@@ -1,27 +1,39 @@
-from fastapi import APIRouter, HTTPException, Request
+import asyncio
+from typing import AsyncIterator
 
+from fastapi import APIRouter, HTTPException, Request
+from starlette.responses import StreamingResponse
+
+from crate.api._deps import json_dumps
 from crate.api.auth import _require_admin
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
-from crate.api.playlist_utils import apply_playlist_cover_payload, execute_smart_rules
+from crate.api.playlist_utils import apply_playlist_cover_payload
 from crate.api.schemas.common import OkResponse
 from crate.api.schemas.curation import (
     CreateSystemPlaylistRequest,
     PreviewSystemPlaylistRequest,
     SystemPlaylistDetailResponse,
+    SystemPlaylistEditorSnapshotResponse,
     SystemPlaylistGenerateResponse,
     SystemPlaylistSummaryResponse,
     UpdateSystemPlaylistRequest,
 )
 from crate.playlist_covers import delete_playlist_cover
-from crate.db import (
+from crate.db.cache_runtime import _get_redis
+from crate.db.repositories.playlists import (
     create_playlist,
     delete_playlist,
+    duplicate_playlist,
+    execute_smart_rules,
+    get_generation_history,
     get_playlist,
     get_playlist_followers_count,
     get_playlist_tracks,
     list_system_playlists,
+    set_generation_status,
     update_playlist,
 )
+from crate.db.repositories.tasks import create_task
 
 router = APIRouter(prefix="/api/admin/system-playlists", tags=["admin"])
 
@@ -44,6 +56,58 @@ def _serialize_admin_playlist(playlist: dict, *, include_tracks: bool = False) -
     if include_tracks:
         item["tracks"] = get_playlist_tracks(item["id"])
     return item
+
+
+def _build_system_playlist_editor_surface(playlist_id: int) -> dict:
+    playlist = _require_system_playlist(playlist_id)
+    return {
+        "playlist": _serialize_admin_playlist(playlist, include_tracks=True),
+        "history": get_generation_history(playlist_id, limit=10),
+    }
+
+
+def _system_playlist_editor_signature(surface: dict) -> str:
+    playlist = surface.get("playlist") or {}
+    history = surface.get("history") or []
+    signature = {
+        "playlist": {
+            "id": playlist.get("id"),
+            "generation_status": playlist.get("generation_status"),
+            "generation_error": playlist.get("generation_error"),
+            "last_generated_at": playlist.get("last_generated_at"),
+            "track_count": playlist.get("track_count"),
+            "total_duration": playlist.get("total_duration"),
+            "updated_at": playlist.get("updated_at"),
+            "cover_data_url": playlist.get("cover_data_url"),
+        },
+        "history": [
+            {
+                "id": entry.get("id"),
+                "status": entry.get("status"),
+                "completed_at": entry.get("completed_at"),
+                "track_count": entry.get("track_count"),
+                "error": entry.get("error"),
+            }
+            for entry in history
+        ],
+    }
+    return json_dumps(signature, sort_keys=True)
+
+
+async def _stream_system_playlist_editor(playlist_id: int) -> AsyncIterator[str]:
+    last_signature: str | None = None
+    heartbeat_counter = 0
+    while True:
+        surface = _build_system_playlist_editor_surface(playlist_id)
+        signature = _system_playlist_editor_signature(surface)
+        if signature != last_signature:
+            last_signature = signature
+            yield f"data: {json_dumps(surface)}\n\n"
+        await asyncio.sleep(2)
+        heartbeat_counter += 2
+        if heartbeat_counter >= 30:
+            heartbeat_counter = 0
+            yield ": heartbeat\n\n"
 
 
 def _require_system_playlist(playlist_id: int) -> dict:
@@ -108,8 +172,6 @@ def admin_create_system_playlist(request: Request, body: CreateSystemPlaylistReq
     # Cover via Redis staging → worker task
     if body.cover_data_url:
         try:
-            from crate.db.cache import _get_redis
-            from crate.db.tasks import create_task
             r = _get_redis()
             if r:
                 r.set(f"cover:staging:{playlist_id}", body.cover_data_url, ex=600)
@@ -123,10 +185,8 @@ def admin_create_system_playlist(request: Request, body: CreateSystemPlaylistReq
 
     # For smart playlists, enqueue initial generation
     if mode == "smart":
-        from crate.db.tasks import create_task as _ct
-        from crate.db.playlists import set_generation_status
         set_generation_status(playlist_id, "queued")
-        _ct("generate_system_playlist", {"playlist_id": playlist_id, "triggered_by": "creation"})
+        create_task("generate_system_playlist", {"playlist_id": playlist_id, "triggered_by": "creation"})
 
     playlist = _require_system_playlist(playlist_id)
     return _serialize_admin_playlist(playlist)
@@ -142,6 +202,32 @@ def admin_get_system_playlist(request: Request, playlist_id: int):
     _require_admin(request)
     playlist = _require_system_playlist(playlist_id)
     return _serialize_admin_playlist(playlist, include_tracks=True)
+
+
+@router.get(
+    "/{playlist_id}/editor-snapshot",
+    response_model=SystemPlaylistEditorSnapshotResponse,
+    responses=_SYSTEM_PLAYLIST_RESPONSES,
+    summary="Get the canonical editor snapshot for a system playlist",
+)
+def admin_get_system_playlist_editor_snapshot(request: Request, playlist_id: int):
+    _require_admin(request)
+    return _build_system_playlist_editor_surface(playlist_id)
+
+
+@router.get(
+    "/{playlist_id}/stream",
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Stream system playlist editor updates",
+)
+async def admin_stream_system_playlist(request: Request, playlist_id: int):
+    _require_admin(request)
+    _require_system_playlist(playlist_id)
+    return StreamingResponse(
+        _stream_system_playlist_editor(playlist_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.put(
@@ -171,12 +257,10 @@ def admin_update_system_playlist(request: Request, playlist_id: int, body: Updat
     if body.cover_data_url is not None:
         if body.cover_data_url:
             try:
-                from crate.db.cache import _get_redis
-                from crate.db.tasks import create_task as _ct
                 r = _get_redis()
                 if r:
                     r.set(f"cover:staging:{playlist_id}", body.cover_data_url, ex=600)
-                    _ct("persist_playlist_cover", {"playlist_id": playlist_id})
+                    create_task("persist_playlist_cover", {"playlist_id": playlist_id})
             except Exception:
                 kwargs.update(apply_playlist_cover_payload(playlist_id, body.cover_data_url, playlist.get("cover_path")) or {})
         else:
@@ -202,10 +286,8 @@ def admin_update_system_playlist(request: Request, playlist_id: int, body: Updat
     # Auto-regenerate if smart rules changed
     rules_changed = body.smart_rules is not None and body.smart_rules != playlist.get("smart_rules")
     if rules_changed and mode == "smart":
-        from crate.db.tasks import create_task as _ct
-        from crate.db.playlists import set_generation_status
         set_generation_status(playlist_id, "queued")
-        _ct("generate_system_playlist", {"playlist_id": playlist_id, "triggered_by": "rule_change"})
+        create_task("generate_system_playlist", {"playlist_id": playlist_id, "triggered_by": "rule_change"})
 
     playlist = _require_system_playlist(playlist_id)
     return _serialize_admin_playlist(playlist)
@@ -265,8 +347,6 @@ def admin_generate_system_playlist(request: Request, playlist_id: int):
     if playlist.get("generation_mode") != "smart" or not playlist.get("smart_rules"):
         raise HTTPException(status_code=400, detail="Not a smart system playlist")
 
-    from crate.db.tasks import create_task
-    from crate.db.playlists import set_generation_status
     set_generation_status(playlist_id, "queued")
     task_id = create_task("generate_system_playlist", {
         "playlist_id": playlist_id,
@@ -291,7 +371,6 @@ def admin_preview_system_playlist(
     if not rules:
         raise HTTPException(status_code=400, detail="No smart rules configured")
 
-    from crate.db.playlists import execute_smart_rules
     total_matching = execute_smart_rules(rules, count_only=True)
     tracks = execute_smart_rules(rules)
 
@@ -340,15 +419,12 @@ def admin_preview_system_playlist(
 def admin_duplicate_system_playlist(request: Request, playlist_id: int):
     _require_admin(request)
     _require_system_playlist(playlist_id)
-    from crate.db.playlists import duplicate_playlist
     new_playlist = duplicate_playlist(playlist_id)
     if not new_playlist:
         raise HTTPException(status_code=500, detail="Failed to duplicate playlist")
 
     # For smart playlists, enqueue initial generation
     if new_playlist.get("generation_mode") == "smart" and new_playlist.get("smart_rules"):
-        from crate.db.tasks import create_task
-        from crate.db.playlists import set_generation_status
         set_generation_status(new_playlist["id"], "queued")
         create_task("generate_system_playlist", {
             "playlist_id": new_playlist["id"],
@@ -366,5 +442,4 @@ def admin_duplicate_system_playlist(request: Request, playlist_id: int):
 def admin_generation_history(request: Request, playlist_id: int):
     _require_admin(request)
     _require_system_playlist(playlist_id)
-    from crate.db.playlists import get_generation_history
     return get_generation_history(playlist_id, limit=10)
