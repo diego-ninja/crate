@@ -250,6 +250,7 @@ def test_openapi_types_me_routes_and_marks_them_authenticated(test_app):
     history_operation = data["paths"]["/api/me/history"]["get"]
     play_events_operation = data["paths"]["/api/me/play-events"]["post"]
     overview_operation = data["paths"]["/api/me/stats/overview"]["get"]
+    dashboard_operation = data["paths"]["/api/me/stats/dashboard"]["get"]
     replay_operation = data["paths"]["/api/me/stats/replay"]["get"]
 
     assert library_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
@@ -264,6 +265,9 @@ def test_openapi_types_me_routes_and_marks_them_authenticated(test_app):
 
     assert overview_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert overview_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/StatsOverviewResponse")
+
+    assert dashboard_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert dashboard_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/StatsDashboardResponse")
 
     assert replay_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert replay_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ReplayMixResponse")
@@ -599,6 +603,7 @@ def test_openapi_types_browse_artist_and_album_routes(test_app):
     filters_operation = data["paths"]["/api/browse/filters"]["get"]
     artists_operation = data["paths"]["/api/artists"]["get"]
     artist_detail_operation = data["paths"]["/api/artists/{artist_id}"]["get"]
+    artist_page_operation = data["paths"]["/api/artists/{artist_id}/page"]["get"]
     artist_enrich_operation = data["paths"]["/api/artists/{artist_id}/enrich"]["post"]
     album_detail_operation = data["paths"]["/api/albums/{album_id}"]["get"]
     related_albums_operation = data["paths"]["/api/albums/{album_id}/related"]["get"]
@@ -612,6 +617,9 @@ def test_openapi_types_browse_artist_and_album_routes(test_app):
 
     assert artist_detail_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert artist_detail_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ArtistDetailResponse")
+
+    assert artist_page_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert artist_page_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ArtistPageResponse")
 
     assert artist_enrich_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert artist_enrich_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/ArtistEnqueueResponse")
@@ -647,12 +655,15 @@ def test_openapi_types_browse_shows_upcoming_and_media_routes(test_app):
 
     assert artist_photo_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "image/jpeg" in artist_photo_operation["responses"]["200"]["content"]
+    assert any(param["name"] == "size" for param in artist_photo_operation.get("parameters", []))
 
     assert artist_background_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "image/svg+xml" in artist_background_operation["responses"]["200"]["content"]
+    assert any(param["name"] == "size" for param in artist_background_operation.get("parameters", []))
 
     assert album_cover_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "image/png" in album_cover_operation["responses"]["200"]["content"]
+    assert any(param["name"] == "size" for param in album_cover_operation.get("parameters", []))
 
     assert album_download_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}, {"queryTokenAuth": []}]
     assert "application/zip" in album_download_operation["responses"]["200"]["content"]

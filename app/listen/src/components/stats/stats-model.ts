@@ -90,6 +90,17 @@ export interface ReplayMix {
   items: StatsTrack[];
 }
 
+export interface StatsDashboard {
+  window: StatsWindow;
+  overview: StatsOverview;
+  trends: StatsTrends;
+  top_tracks: StatsListResponse<StatsTrack>;
+  top_artists: StatsListResponse<StatsArtist>;
+  top_albums: StatsListResponse<StatsAlbum>;
+  top_genres: StatsListResponse<StatsGenre>;
+  replay: ReplayMix;
+}
+
 export interface RecapHighlight {
   title: string;
   body: string;

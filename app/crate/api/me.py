@@ -51,6 +51,7 @@ from crate.api.schemas.me import (
     ShowAttendanceRemoveResponse,
     ShowReminderCreateResponse,
     ScrobbleStatusResponse,
+    StatsDashboardResponse,
     StatsOverviewResponse,
     StatsTrendsResponse,
     SyncStatusResponse,
@@ -124,6 +125,8 @@ _ME_RESPONSES = merge_responses(
         422: error_response("The request payload failed validation."),
     },
 )
+
+_STATS_DASHBOARD_CACHE_TTL_SECONDS = 90
 
 
 def _record_home_endpoint_metric(name: str, value: float = 1.0) -> None:
@@ -258,6 +261,38 @@ def _probable_setlists_for_artists(artist_names: list[str]) -> dict[str, list[di
                 pass
 
     return result
+
+
+def _get_cached_stats_dashboard(
+    user_id: int,
+    *,
+    window: str,
+    tracks_limit: int,
+    artists_limit: int,
+    albums_limit: int,
+    genres_limit: int,
+    replay_limit: int,
+) -> dict:
+    cache_key = (
+        f"listen:stats_dashboard:{user_id}:{window}:"
+        f"{tracks_limit}:{artists_limit}:{albums_limit}:{genres_limit}:{replay_limit}"
+    )
+    cached = get_cache(cache_key, max_age_seconds=_STATS_DASHBOARD_CACHE_TTL_SECONDS)
+    if cached is not None:
+        return cached
+
+    payload = {
+        "window": window,
+        "overview": get_stats_overview(user_id, window=window),
+        "trends": get_stats_trends(user_id, window=window),
+        "top_tracks": {"window": window, "items": get_top_tracks(user_id, window=window, limit=tracks_limit)},
+        "top_artists": {"window": window, "items": get_top_artists(user_id, window=window, limit=artists_limit)},
+        "top_albums": {"window": window, "items": get_top_albums(user_id, window=window, limit=albums_limit)},
+        "top_genres": {"window": window, "items": get_top_genres(user_id, window=window, limit=genres_limit)},
+        "replay": get_replay_mix(user_id, window=window, limit=replay_limit),
+    }
+    set_cache(cache_key, payload, ttl=_STATS_DASHBOARD_CACHE_TTL_SECONDS)
+    return payload
 
 
 def _build_upcoming_insights(
@@ -722,6 +757,36 @@ def stats_replay(request: Request, window: str = Query("30d"), limit: int = Quer
     user = _require_auth(request)
     try:
         return get_replay_mix(user["id"], window=window, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
+    "/stats/dashboard",
+    response_model=StatsDashboardResponse,
+    responses=_ME_RESPONSES,
+    summary="Get a listen-optimized stats dashboard payload for a time window",
+)
+def stats_dashboard(
+    request: Request,
+    window: str = Query("30d"),
+    tracks_limit: int = Query(10, ge=1, le=100),
+    artists_limit: int = Query(8, ge=1, le=100),
+    albums_limit: int = Query(8, ge=1, le=100),
+    genres_limit: int = Query(8, ge=1, le=100),
+    replay_limit: int = Query(30, ge=1, le=100),
+):
+    user = _require_auth(request)
+    try:
+        return _get_cached_stats_dashboard(
+            user["id"],
+            window=window,
+            tracks_limit=tracks_limit,
+            artists_limit=artists_limit,
+            albums_limit=albums_limit,
+            genres_limit=genres_limit,
+            replay_limit=replay_limit,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

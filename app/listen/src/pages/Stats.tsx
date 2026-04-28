@@ -15,13 +15,8 @@ import {
   formatStatsPercent,
   toPlayerTrack,
   type ReplayMix,
-  type StatsAlbum,
-  type StatsArtist,
-  type StatsGenre,
-  type StatsListResponse,
-  type StatsOverview,
+  type StatsDashboard,
   type StatsTrack,
-  type StatsTrends,
   type StatsWindow,
   STATS_WINDOW_OPTIONS,
 } from "@/components/stats/stats-model";
@@ -32,14 +27,17 @@ import { albumPagePath, artistPagePath } from "@/lib/library-routes";
 export function Stats() {
   const [selectedWindow, setSelectedWindow] = useState<StatsWindow>("30d");
   const { play, playAll } = usePlayerActions();
-  const { data: overview, loading: overviewLoading } = useApi<StatsOverview>(`/api/me/stats/overview?window=${selectedWindow}`);
-  const { data: trends, loading: trendsLoading } = useApi<StatsTrends>(`/api/me/stats/trends?window=${selectedWindow}`);
-  const { data: topTracks, loading: tracksLoading } = useApi<StatsListResponse<StatsTrack>>(`/api/me/stats/top-tracks?window=${selectedWindow}&limit=10`);
-  const { data: topArtists, loading: artistsLoading } = useApi<StatsListResponse<StatsArtist>>(`/api/me/stats/top-artists?window=${selectedWindow}&limit=8`);
-  const { data: topAlbums, loading: albumsLoading } = useApi<StatsListResponse<StatsAlbum>>(`/api/me/stats/top-albums?window=${selectedWindow}&limit=8`);
-  const { data: topGenres, loading: genresLoading } = useApi<StatsListResponse<StatsGenre>>(`/api/me/stats/top-genres?window=${selectedWindow}&limit=8`);
-  const { data: replay, loading: replayLoading } = useApi<ReplayMix>(`/api/me/stats/replay?window=${selectedWindow}&limit=30`);
+  const { data: dashboard, loading: dashboardLoading } = useApi<StatsDashboard>(
+    `/api/me/stats/dashboard?window=${selectedWindow}&tracks_limit=10&artists_limit=8&albums_limit=8&genres_limit=8&replay_limit=30`,
+  );
 
+  const overview = dashboard?.overview;
+  const trends = dashboard?.trends;
+  const topTracks = dashboard?.top_tracks;
+  const topArtists = dashboard?.top_artists;
+  const topAlbums = dashboard?.top_albums;
+  const topGenres = dashboard?.top_genres;
+  const replay = dashboard?.replay as ReplayMix | undefined;
   const topTrackItems = topTracks?.items ?? [];
   const topArtistItems = topArtists?.items ?? [];
   const topAlbumItems = topAlbums?.items ?? [];
@@ -64,7 +62,7 @@ export function Stats() {
     );
   };
 
-  const allSectionsLoaded = !overviewLoading && !trendsLoading && !tracksLoading && !artistsLoading && !albumsLoading && !genresLoading && !replayLoading;
+  const allSectionsLoaded = !dashboardLoading;
 
   return (
     <div className="space-y-8">
@@ -86,25 +84,25 @@ export function Stats() {
           <OverviewCard
             icon={Clock3}
             label="Time listened"
-            value={overview ? formatStatsMinutes(overview.minutes_listened) : overviewLoading ? "..." : "0m"}
+            value={overview ? formatStatsMinutes(overview.minutes_listened) : dashboardLoading ? "..." : "0m"}
             hint={overview ? `${overview.active_days} active days` : "Listening time in the selected window"}
           />
         <OverviewCard
           icon={Music2}
           label="Qualified plays"
-          value={overview ? String(overview.play_count) : overviewLoading ? "..." : "0"}
+          value={overview ? String(overview.play_count) : dashboardLoading ? "..." : "0"}
           hint={overview ? `${overview.complete_play_count} completed plays` : "Valid plays recorded"}
         />
           <OverviewCard
             icon={SkipForward}
             label="Skip rate"
-            value={overview ? formatStatsPercent(overview.skip_rate) : overviewLoading ? "..." : "0%"}
+            value={overview ? formatStatsPercent(overview.skip_rate) : dashboardLoading ? "..." : "0%"}
             hint={overview ? `${overview.skip_count} skips` : "Tracks you moved on from"}
           />
         <OverviewCard
           icon={TrendingUp}
           label="Top artist"
-          value={overview?.top_artist?.artist_name ?? (overviewLoading ? "..." : "—")}
+          value={overview?.top_artist?.artist_name ?? (dashboardLoading ? "..." : "—")}
           hint={overview?.top_artist ? `${overview.top_artist.play_count} plays` : "No artist data yet"}
         />
       </div>
@@ -141,7 +139,7 @@ export function Stats() {
           </button>
         </div>
 
-        {replayLoading ? (
+        {dashboardLoading ? (
           <div className="mt-4 rounded-2xl border border-dashed border-white/10 bg-black/10 px-4 py-5 text-sm text-muted-foreground">
             Loading replay...
           </div>
@@ -195,7 +193,7 @@ export function Stats() {
         title="Daily trend"
         subtitle="Your listening curve across the selected time window."
       >
-        <TrendChart points={trends?.points ?? []} loading={trendsLoading} />
+        <TrendChart points={trends?.points ?? []} loading={dashboardLoading} />
       </StatsSection>
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -203,7 +201,7 @@ export function Stats() {
           title="Top tracks"
           subtitle="The songs that defined this window."
         >
-          <TopList title="Tracks" emptyText="No top tracks yet." loading={tracksLoading}>
+          <TopList title="Tracks" emptyText="No top tracks yet." loading={dashboardLoading}>
             {topTrackItems.map((item, index) => (
               <button
                 key={`${item.track_id ?? item.track_path ?? item.title}-${index}`}
@@ -230,7 +228,7 @@ export function Stats() {
           title="Top artists"
           subtitle="Who you kept coming back to."
         >
-          <TopList title="Artists" emptyText="No top artists yet." loading={artistsLoading}>
+          <TopList title="Artists" emptyText="No top artists yet." loading={dashboardLoading}>
             {topArtistItems.map((item, index) => (
               <Link
                 key={`${item.artist_name}-${index}`}
@@ -256,7 +254,7 @@ export function Stats() {
           title="Top albums"
           subtitle="Records that shaped the window."
         >
-          <TopList title="Albums" emptyText="No top albums yet." loading={albumsLoading}>
+          <TopList title="Albums" emptyText="No top albums yet." loading={dashboardLoading}>
             {topAlbumItems.map((item, index) => (
               <Link
                 key={`${item.artist}-${item.album}-${index}`}
@@ -283,7 +281,7 @@ export function Stats() {
           title="Top genres"
           subtitle="Your strongest stylistic pull in this window."
         >
-          <TopList title="Genres" emptyText="No top genres yet." loading={genresLoading}>
+          <TopList title="Genres" emptyText="No top genres yet." loading={dashboardLoading}>
             {topGenreItems.map((item, index) => (
               <div
                 key={`${item.genre_name}-${index}`}

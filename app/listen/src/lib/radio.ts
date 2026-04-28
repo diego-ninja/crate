@@ -64,16 +64,16 @@ function toTrack(payload: RadioTrackPayload): Track {
           albumSlug: payload.album_slug,
           artistName: payload.artist,
           albumName: payload.album,
-        }) || artistPhotoApiUrl({
+        }, { size: 512 }) || artistPhotoApiUrl({
           artistId: payload.artist_id,
           artistSlug: payload.artist_slug,
           artistName: payload.artist,
-        }) || undefined
+        }, { size: 512 }) || undefined
       : artistPhotoApiUrl({
           artistId: payload.artist_id,
           artistSlug: payload.artist_slug,
           artistName: payload.artist,
-        }) || undefined,
+        }, { size: 512 }) || undefined,
     path: trackPath || undefined,
     libraryTrackId: payload.track_id || undefined,
   };

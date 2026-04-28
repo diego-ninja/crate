@@ -82,7 +82,10 @@ export const TrackRow = memo(function TrackRow({
   const offlineState = getTrackState(track.storage_id);
   const offlineLabel = getOfflineStateLabel(offlineState);
   const cover = albumCover || (track.album_id != null
-    ? albumCoverApiUrl({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album })
+    ? albumCoverApiUrl(
+        { albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album },
+        { size: 128 },
+      )
     : undefined);
 
   const playerTrack: Track = toPlayableTrack(track, { cover });

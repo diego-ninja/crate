@@ -21,8 +21,22 @@ export interface AlbumRouteInput {
   albumName?: string | null;
 }
 
+export interface ImageAssetOptions {
+  size?: number | null;
+  random?: boolean;
+}
+
 function safeSlug(slug: string | null | undefined, fallback: string) {
   return encPath(slug && slug.trim() ? slug : fallback);
+}
+
+function withAssetOptions(path: string, options?: ImageAssetOptions) {
+  if (!options) return path;
+  const params = new URLSearchParams();
+  if (options.size != null) params.set("size", String(options.size));
+  if (options.random) params.set("random", "1");
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
 }
 
 export function artistPagePath(input: ArtistRouteInput) {
@@ -46,16 +60,16 @@ export function artistApiPath(input: ArtistRouteInput) {
   return "";
 }
 
-export function artistPhotoApiUrl(input: ArtistRouteInput) {
+export function artistPhotoApiUrl(input: ArtistRouteInput, options?: ImageAssetOptions) {
   if (input.artistId != null) {
-    return resolveAssetUrl(`/api/artists/${input.artistId}/photo`);
+    return resolveAssetUrl(withAssetOptions(`/api/artists/${input.artistId}/photo`, options));
   }
   return "";
 }
 
-export function artistBackgroundApiUrl(input: ArtistRouteInput) {
+export function artistBackgroundApiUrl(input: ArtistRouteInput, options?: ImageAssetOptions) {
   if (input.artistId != null) {
-    return resolveAssetUrl(`/api/artists/${input.artistId}/background`);
+    return resolveAssetUrl(withAssetOptions(`/api/artists/${input.artistId}/background`, options));
   }
   return "";
 }
@@ -81,9 +95,9 @@ export function albumRelatedApiPath(input: AlbumRouteInput) {
   return "";
 }
 
-export function albumCoverApiUrl(input: AlbumRouteInput) {
+export function albumCoverApiUrl(input: AlbumRouteInput, options?: ImageAssetOptions) {
   if (input.albumId != null) {
-    return resolveAssetUrl(`/api/albums/${input.albumId}/cover`);
+    return resolveAssetUrl(withAssetOptions(`/api/albums/${input.albumId}/cover`, options));
   }
   return "";
 }

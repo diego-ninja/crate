@@ -1,11 +1,12 @@
 from pathlib import Path
 
 import mutagen
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from crate.api._deps import COVER_NAMES, extensions, library_path
 from crate.api.auth import _require_auth
+from crate.api.image_variants import build_image_response
 from crate.api.browse_shared import build_genre_profile, display_name, find_album_dir, find_album_row, fs_album_detail, has_library_data
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.browse import AlbumDetailResponse, RelatedAlbumResponse
@@ -285,7 +286,7 @@ def _extract_embedded_cover(audio_file: Path) -> tuple[bytes, str] | None:
     return None
 
 
-def api_cover(artist: str, album: str, album_dir: Path | None = None):
+def api_cover(artist: str, album: str, album_dir: Path | None = None, *, size: int | None = None):
     lib = library_path()
     # Prefer the caller-supplied canonical directory (from api_cover_by_id)
     # so we don't get fooled by a loose duplicate folder under /Artist/Album
@@ -301,7 +302,7 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None):
         cover = album_dir / cover_name
         if cover.exists():
             media_type = "image/jpeg" if cover.suffix == ".jpg" else "image/png"
-            return Response(content=cover.read_bytes(), media_type=media_type, headers=_IMG_CACHE)
+            return build_image_response(cover.read_bytes(), media_type, size=size, headers=_IMG_CACHE)
 
     exts = extensions()
     tracks = get_audio_files(album_dir, exts)
@@ -309,7 +310,7 @@ def api_cover(artist: str, album: str, album_dir: Path | None = None):
         extracted = _extract_embedded_cover(track)
         if extracted:
             data, mime = extracted
-            return Response(content=data, media_type=mime, headers=_IMG_CACHE)
+            return build_image_response(data, mime, size=size, headers=_IMG_CACHE)
 
     return _placeholder_cover(album or artist)
 
@@ -361,13 +362,13 @@ def api_fetch_cover(request: Request, album_id: int):
     responses=_IMAGE_RESPONSES,
     summary="Get album artwork",
 )
-def api_cover_by_id(album_id: int):
+def api_cover_by_id(album_id: int, size: int | None = Query(None, ge=32, le=1024)):
     album = get_library_album_by_id(album_id)
     if not album:
         return _placeholder_cover("?")
     artist = get_library_artist(album["artist"])
     album_dir = resolve_album_dir(library_path(), album, artist=artist)
-    return api_cover(album["artist"], album["name"], album_dir=album_dir)
+    return api_cover(album["artist"], album["name"], album_dir=album_dir, size=size)
 
 
 def api_download_album(request: Request, artist: str, album: str):

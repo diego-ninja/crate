@@ -43,7 +43,10 @@ export function ArtistCard({
   const { isFollowing, toggleArtistFollow } = useArtistFollows();
   const [playingTopTracks, setPlayingTopTracks] = useState(false);
   const [togglingFollow, setTogglingFollow] = useState(false);
-  const photoUrl = photo || artistPhotoApiUrl({ artistId, artistSlug, artistName: name }) || undefined;
+  const photoUrl = photo || artistPhotoApiUrl(
+    { artistId, artistSlug, artistName: name },
+    { size: layout === "grid" ? 320 : compact ? 160 : large ? 320 : 256 },
+  ) || undefined;
   const targetHref = href || artistPagePath({ artistId, artistSlug, artistName: name });
   const following = isFollowing(artistId);
   const actions = useArtistActionEntries({

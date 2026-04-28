@@ -42,7 +42,7 @@ export function buildAlbumPlayerTracks(data: AlbumPlaybackData): Track[] {
     albumSlug: data.slug,
     artistName: data.artist,
     albumName: data.name,
-  });
+  }, { size: 512 });
 
   return data.tracks.map((track) => toPlayableTrack({
     id: track.id,

@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from crate.api.schemas.common import TaskEnqueueResponse
+from crate.api.schemas.utility import ArtistEnrichmentResponse
 
 
 class BrowseGenreFilterOptionResponse(BaseModel):
@@ -188,6 +189,15 @@ class ArtistShowsResponse(BaseModel):
     events: list[ArtistShowEventResponse] = Field(default_factory=list)
     configured: bool
     source: str
+
+
+class ArtistPageResponse(BaseModel):
+    artist: ArtistDetailResponse
+    info: ArtistInfoResponse = Field(default_factory=ArtistInfoResponse)
+    top_tracks: list[ArtistTopTrackResponse] = Field(default_factory=list)
+    shows: ArtistShowsResponse
+    enrichment: ArtistEnrichmentResponse = Field(default_factory=ArtistEnrichmentResponse)
+    artist_hot_rank: int | None = None
 
 
 class ShowArtistRefResponse(BaseModel):

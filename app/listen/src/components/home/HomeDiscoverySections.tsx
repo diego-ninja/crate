@@ -66,14 +66,14 @@ function recentArtwork(item: HomeRecentItem): string | null {
       artistId: item.artist_id,
       artistSlug: item.artist_slug,
       artistName: item.artist_name,
-    }) || null;
+    }, { size: 192 }) || null;
   }
   return albumCoverApiUrl({
     albumId: item.album_id,
     albumSlug: item.album_slug,
     artistName: item.artist_name,
     albumName: item.album_name,
-  }) || null;
+  }, { size: 192 }) || null;
 }
 
 function radioArtwork(station: HomeRadioStation): string | null {
@@ -83,13 +83,13 @@ function radioArtwork(station: HomeRadioStation): string | null {
       albumSlug: station.album_slug,
       artistName: station.artist_name,
       albumName: station.album_name,
-    }) || null;
+    }, { size: 256 }) || null;
   }
   return artistPhotoApiUrl({
     artistId: station.artist_id,
     artistSlug: station.artist_slug,
     artistName: station.artist_name,
-  }) || null;
+  }, { size: 256 }) || null;
 }
 
 export function HomeTasteHero({
@@ -237,7 +237,7 @@ function HeroSlide({
     artistId: hero.id,
     artistSlug: hero.slug,
     artistName: hero.name,
-  });
+  }, { size: 1280 });
   const backgroundSrc = backgroundUrl
     ? `${backgroundUrl}${backgroundUrl.includes("?") ? "&" : "?"}v=home-hero-bg-v2`
     : undefined;

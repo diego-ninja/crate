@@ -158,6 +158,66 @@ class TestArtistDetailAPI:
             resp = test_app.get("/api/artists/999")
             assert resp.status_code == 404
 
+    def test_get_artist_page_bundles_listen_payload(self, test_app):
+        artist_payload = {
+            "id": 7,
+            "slug": "tool",
+            "name": "Tool",
+            "albums": [{"id": 1, "slug": "lateralus", "name": "Lateralus", "display_name": "Lateralus", "tracks": 13, "formats": ["flac"], "size_mb": 512, "year": "2001", "has_cover": True}],
+            "total_tracks": 50,
+            "total_size_mb": 4096,
+            "primary_format": "flac",
+            "genres": ["Progressive Metal"],
+            "genre_profile": [],
+            "issue_count": 0,
+            "is_v2": True,
+        }
+        info_payload = {"similar": [{"name": "A Perfect Circle", "id": 9, "slug": "a-perfect-circle"}]}
+        top_tracks_payload = [{
+            "id": "track-1",
+            "track_id": 91,
+            "title": "The Grudge",
+            "artist": "Tool",
+            "artist_id": 7,
+            "artist_slug": "tool",
+            "album": "Lateralus",
+            "album_id": 1,
+            "album_slug": "lateralus",
+            "duration": 490,
+            "track": 1,
+            "format": "flac",
+        }]
+        shows_payload = {"events": [], "configured": True, "source": "cache"}
+        enrichment_payload = {"setlist": {"probable_setlist": [{"title": "The Grudge", "frequency": 7, "play_count": 3}], "total_shows": 1}}
+
+        with patch("crate.api.browse_artist.get_cache", return_value=None), \
+             patch("crate.api.browse_artist.set_cache") as mock_set_cache, \
+             patch("crate.api.browse_artist.artist_name_from_id", return_value="Tool"), \
+             patch("crate.api.browse_artist.api_artist", return_value=artist_payload) as mock_artist, \
+             patch("crate.api.browse_artist.api_artist_info", return_value=info_payload) as mock_info, \
+             patch("crate.api.browse_artist.api_artist_top_tracks", return_value=top_tracks_payload) as mock_top_tracks, \
+             patch("crate.api.browse_artist.api_artist_shows", return_value=shows_payload) as mock_shows, \
+             patch("crate.api.browse_artist.get_top_artists", return_value=[{"artist_id": 3}, {"artist_id": 7}, {"artist_id": 9}]) as mock_top_artists, \
+             patch("crate.api.enrichment.get_artist_enrichment_by_id", return_value=enrichment_payload) as mock_enrichment:
+            resp = test_app.get("/api/artists/7/page")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["artist"]["name"] == "Tool"
+        assert data["info"]["similar"][0]["name"] == "A Perfect Circle"
+        assert data["top_tracks"][0]["title"] == "The Grudge"
+        assert data["shows"]["configured"] is True
+        assert data["enrichment"]["setlist"]["total_shows"] == 1
+        assert data["artist_hot_rank"] == 2
+
+        mock_artist.assert_called_once()
+        mock_info.assert_called_once()
+        mock_top_tracks.assert_called_once()
+        mock_shows.assert_called_once()
+        mock_top_artists.assert_called_once_with(1, window="30d", limit=12)
+        mock_enrichment.assert_called_once()
+        mock_set_cache.assert_called_once()
+
 
 class TestStatsAPI:
     def test_get_stats_reads_from_ops_snapshot(self, test_app):

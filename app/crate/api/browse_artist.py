@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse, Response
 from crate.api._deps import COVER_NAMES, artist_name_from_id, coerce_date, extensions, library_path, safe_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import ARTIST_PHOTO_NAMES, build_genre_profile, display_name, fs_artist_detail, fs_build_artists_list, has_library_data
+from crate.api.image_variants import build_image_response
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.browse import (
     ArtistsWithShowsResponse,
@@ -18,6 +19,7 @@ from crate.api.schemas.browse import (
     ArtistEnqueueResponse,
     ArtistInfoResponse,
     ArtistNetworkResponse,
+    ArtistPageResponse,
     ArtistSetlistPlayableResponse,
     CachedShowsResponse,
     ShowsListResponse,
@@ -28,7 +30,9 @@ from crate.api.schemas.browse import (
     BrowseFiltersResponse,
 )
 from crate.audio import get_audio_files
+from crate.db.cache_store import get_cache, set_cache
 from crate.db.health import get_all_artist_issue_counts, get_artist_issue_count
+from crate.db.queries.user_library import get_top_artists
 from crate.db.repositories.library import get_album_quality_map, get_library_albums, get_library_artist
 from crate.db.queries.browse_artist import (
     check_artists_in_library,
@@ -222,6 +226,72 @@ def _match_setlist_track(
     return contains
 
 
+def _build_artist_page_payload(
+    request: Request,
+    *,
+    user_id: int,
+    artist_id: int,
+    top_tracks_count: int,
+    shows_limit: int,
+    stats_window: str,
+    stats_limit: int,
+) -> dict:
+    cache_key = (
+        f"listen:artist_page:{user_id}:{artist_id}:"
+        f"{top_tracks_count}:{shows_limit}:{stats_window}:{stats_limit}"
+    )
+    cached = get_cache(cache_key, max_age_seconds=300)
+    if cached is not None:
+        return cached
+
+    artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+
+    artist_payload = api_artist(request, artist_name)
+    if isinstance(artist_payload, JSONResponse):
+        return artist_payload
+
+    info_payload = api_artist_info(request, artist_name)
+    if isinstance(info_payload, JSONResponse):
+        info_payload = {"similar": []}
+
+    top_tracks_payload = api_artist_top_tracks(request, artist_id, count=top_tracks_count)
+    if isinstance(top_tracks_payload, JSONResponse):
+        top_tracks_payload = []
+
+    shows_payload = api_artist_shows(request, artist_name, limit=shows_limit)
+    if isinstance(shows_payload, JSONResponse):
+        shows_payload = {"events": [], "configured": False, "source": "none"}
+
+    try:
+        from crate.api.enrichment import get_artist_enrichment_by_id
+
+        enrichment_payload = get_artist_enrichment_by_id(request, artist_id)
+    except Exception:
+        enrichment_payload = {}
+
+    artist_hot_rank = next(
+        (
+            index + 1
+            for index, item in enumerate(get_top_artists(user_id, window=stats_window, limit=stats_limit))
+            if item.get("artist_id") == artist_id
+        ),
+        None,
+    )
+
+    payload = {
+        "artist": artist_payload,
+        "info": info_payload,
+        "top_tracks": top_tracks_payload,
+        "shows": shows_payload,
+        "enrichment": enrichment_payload,
+        "artist_hot_rank": artist_hot_rank,
+    }
+    set_cache(cache_key, payload, ttl=300)
+    return payload
+
+
 @router.get(
     "/api/browse/filters",
     response_model=BrowseFiltersResponse,
@@ -373,15 +443,52 @@ def api_artist_by_id(request: Request, artist_id: int):
 
 
 @router.get(
+    "/api/artists/{artist_id}/page",
+    response_model=ArtistPageResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get a listen-optimized artist page payload",
+)
+def api_artist_page_by_id(
+    request: Request,
+    artist_id: int,
+    top_tracks_count: int = Query(12, ge=1, le=50),
+    shows_limit: int = Query(12, ge=1, le=50),
+    stats_window: str = Query("30d"),
+    stats_limit: int = Query(12, ge=1, le=50),
+):
+    user = _require_auth(request)
+    try:
+        payload = _build_artist_page_payload(
+            request,
+            user_id=user["id"],
+            artist_id=artist_id,
+            top_tracks_count=top_tracks_count,
+            shows_limit=shows_limit,
+            stats_window=stats_window,
+            stats_limit=stats_limit,
+    )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    if isinstance(payload, JSONResponse):
+        return payload
+    return payload
+
+
+@router.get(
     "/api/artists/{artist_id}/background",
     responses=_IMAGE_RESPONSES,
     summary="Get an artist background image",
 )
-def api_artist_background_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
+def api_artist_background_by_id(
+    request: Request,
+    artist_id: int,
+    random_pick: bool = Query(False, alias="random"),
+    size: int | None = Query(None, ge=32, le=2048),
+):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         return Response(status_code=404)
-    return api_artist_background(request, artist_name, random_pick)
+    return api_artist_background(request, artist_name, random_pick, size=size)
 
 
 @router.get(
@@ -443,11 +550,16 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
     responses=_IMAGE_RESPONSES,
     summary="Get an artist photo",
 )
-def api_artist_photo_by_id(request: Request, artist_id: int, random_pick: bool = Query(False, alias="random")):
+def api_artist_photo_by_id(
+    request: Request,
+    artist_id: int,
+    random_pick: bool = Query(False, alias="random"),
+    size: int | None = Query(None, ge=32, le=2048),
+):
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         return Response(status_code=404)
-    return api_artist_photo(request, artist_name, random_pick)
+    return api_artist_photo(request, artist_name, random_pick, size=size)
 
 
 @router.get(
@@ -528,7 +640,7 @@ def api_artist_network_by_id(request: Request, artist_id: int, depth: int = 2):
     return api_artist_network(request, artist_name, depth)
 
 
-def api_artist_background(request: Request, name: str, random_pick: bool = Query(False, alias="random")):
+def api_artist_background(request: Request, name: str, random_pick: bool = Query(False, alias="random"), size: int | None = None):
     """Return artist background image."""
     _require_auth(request)
     import random as _random
@@ -543,7 +655,7 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
     if artist_dir and artist_dir.is_dir():
         bg_file = artist_dir / "background.jpg"
         if bg_file.exists():
-            return Response(content=bg_file.read_bytes(), media_type="image/jpeg", headers=_IMG_CACHE)
+            return build_image_response(bg_file.read_bytes(), "image/jpeg", size=size, headers=_IMG_CACHE)
 
     fanart = get_fanart_all_images(name)
     backgrounds = fanart.get("backgrounds", []) if fanart else []
@@ -551,25 +663,25 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
         url = _random.choice(backgrounds) if random_pick else backgrounds[0]
         image_data = download_artist_image(url)
         if image_data:
-            return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
+            return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
 
     url = get_fanart_background(name)
     if url:
         image_data = download_artist_image(url)
         if image_data:
-            return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
+            return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
 
     from crate.lastfm import get_lastfm_best_background
 
     lfm_bg = get_lastfm_best_background(name)
     if lfm_bg:
-        return Response(content=lfm_bg, media_type="image/jpeg", headers=_IMG_CACHE)
+        return build_image_response(lfm_bg, "image/jpeg", size=size, headers=_IMG_CACHE)
 
     deezer_url = _deezer_artist_image(name)
     if deezer_url:
         image_data = download_artist_image(deezer_url)
         if image_data:
-            return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
+            return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
 
     try:
         from crate.spotify import search_artist as spotify_search
@@ -580,7 +692,7 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
             if img_url:
                 image_data = download_artist_image(img_url)
                 if image_data:
-                    return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
+                    return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
     except Exception:
         pass
 
@@ -589,12 +701,12 @@ def api_artist_background(request: Request, name: str, random_pick: bool = Query
             photo = artist_dir / photo_name
             if photo.exists():
                 media_type = "image/jpeg" if photo.suffix == ".jpg" else "image/png"
-                return Response(content=photo.read_bytes(), media_type=media_type)
+                return build_image_response(photo.read_bytes(), media_type, size=size)
 
     return Response(status_code=404)
 
 
-def api_artist_photo(request: Request, name: str, random_pick: bool = Query(False, alias="random")):
+def api_artist_photo(request: Request, name: str, random_pick: bool = Query(False, alias="random"), size: int | None = None):
     _require_auth(request)
     import random as _random
 
@@ -610,9 +722,10 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
         photo = artist_dir / photo_name
         if photo.exists():
             media_type = "image/jpeg" if photo.suffix == ".jpg" else "image/png"
-            return Response(
-                content=photo.read_bytes(),
-                media_type=media_type,
+            return build_image_response(
+                photo.read_bytes(),
+                media_type,
+                size=size,
                 headers={"Cache-Control": "public, max-age=86400, stale-while-revalidate=604800"},
             )
 
@@ -625,7 +738,7 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
             url = _random.choice(thumbs)
             image_data = download_artist_image(url)
             if image_data:
-                return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
+                return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
 
     image_data = get_best_artist_image(name)
     if image_data:
@@ -634,7 +747,7 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
             save_path.write_bytes(image_data)
         except OSError:
             pass
-        return Response(content=image_data, media_type="image/jpeg", headers=_IMG_CACHE)
+        return build_image_response(image_data, "image/jpeg", size=size, headers=_IMG_CACHE)
 
     exts = extensions()
     for album_dir in sorted(artist_dir.iterdir()):
@@ -644,18 +757,18 @@ def api_artist_photo(request: Request, name: str, random_pick: bool = Query(Fals
             cover = album_dir / cover_name
             if cover.exists():
                 media_type = "image/jpeg" if cover.suffix == ".jpg" else "image/png"
-                return Response(content=cover.read_bytes(), media_type=media_type, headers=_IMG_CACHE)
+                return build_image_response(cover.read_bytes(), media_type, size=size, headers=_IMG_CACHE)
         tracks = get_audio_files(album_dir, exts)
         if tracks:
             audio = mutagen.File(tracks[0])
             if audio and hasattr(audio, "pictures") and audio.pictures:
                 pic = audio.pictures[0]
-                return Response(content=pic.data, media_type=pic.mime, headers=_IMG_CACHE)
+                return build_image_response(pic.data, pic.mime, size=size, headers=_IMG_CACHE)
             if audio and hasattr(audio, "tags") and audio.tags:
                 for key in audio.tags:
                     if isinstance(key, str) and key.startswith("APIC"):
                         pic = audio.tags[key]
-                        return Response(content=pic.data, media_type=pic.mime)
+                        return build_image_response(pic.data, pic.mime, size=size)
         break
 
     return Response(status_code=404)

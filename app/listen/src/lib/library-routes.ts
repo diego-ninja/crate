@@ -28,7 +28,9 @@ function authedUrl<F extends (...args: any[]) => string>(fn: F): F {
     const url = `${base}${path}`;
     if (!base) return url;
     const token = getAuthToken();
-    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+    if (!token) return url;
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}token=${encodeURIComponent(token)}`;
   }) as F;
 }
 

@@ -13,7 +13,7 @@ function buildCoverUrl(track: PlaylistArtworkTrack): string | null {
     albumSlug: track.album_slug,
     artistName: track.artist,
     albumName: track.album,
-  }) || null;
+  }, { size: 256 }) || null;
 }
 
 export function PlaylistArtwork(props: Omit<React.ComponentProps<typeof PlaylistArtworkBase>, "buildCoverUrl" | "logoSrc">) {

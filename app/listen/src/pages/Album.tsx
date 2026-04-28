@@ -105,7 +105,7 @@ export function Album() {
   const { data, loading, error } = useApi<AlbumData>(
     routeAlbumId != null ? albumApiPath({ albumId: routeAlbumId }) : null,
   );
-  const { data: playlists } = useApi<Playlist[]>("/api/playlists");
+  const { data: playlists } = useApi<Playlist[]>(playlistPickerOpen ? "/api/playlists" : null);
 
   useDismissibleLayer({
     active: menuOpen || playlistPickerOpen,
@@ -132,8 +132,14 @@ export function Album() {
     );
   }
 
-  const coverUrl = albumCoverApiUrl({ albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name });
-  const artistPhotoUrl = artistPhotoApiUrl({ artistId: data.artist_id, artistSlug: data.artist_slug, artistName: data.artist });
+  const coverUrl = albumCoverApiUrl(
+    { albumId: data.id, albumSlug: data.slug, artistName: data.artist, albumName: data.name },
+    { size: 768 },
+  );
+  const artistPhotoUrl = artistPhotoApiUrl(
+    { artistId: data.artist_id, artistSlug: data.artist_slug, artistName: data.artist },
+    { size: 512 },
+  );
   const displayName = data.display_name || data.name;
   const albumId = data.id;
   const artistName = data.artist;

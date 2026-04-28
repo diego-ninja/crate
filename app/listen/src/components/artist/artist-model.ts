@@ -71,12 +71,32 @@ export interface StatsListResponse<T> {
   items: T[];
 }
 
+export interface ArtistPageEnrichment {
+  setlist?: {
+    probable_setlist: { title: string; frequency: number; play_count: number; last_played?: string }[];
+    total_shows: number;
+  };
+}
+
+export interface ArtistPageData {
+  artist: ArtistData;
+  info: ArtistInfo;
+  top_tracks: ArtistTopTrack[];
+  shows: {
+    events: ArtistShowEvent[];
+    configured: boolean;
+    source: string;
+  };
+  enrichment: ArtistPageEnrichment;
+  artist_hot_rank?: number | null;
+}
+
 export function buildArtistPhotoUrl(artistName: string, artistId?: number, artistSlug?: string) {
-  return artistPhotoApiUrl({ artistId, artistSlug, artistName });
+  return artistPhotoApiUrl({ artistId, artistSlug, artistName }, { size: 384 });
 }
 
 export function buildArtistAlbumCover(artistName: string, albumName: string, albumId?: number, albumSlug?: string) {
-  return albumCoverApiUrl({ albumId, albumSlug, artistName, albumName });
+  return albumCoverApiUrl({ albumId, albumSlug, artistName, albumName }, { size: 512 });
 }
 
 export function artistGenreSlug(name: string) {

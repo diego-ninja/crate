@@ -432,6 +432,17 @@ class ReplayMixResponse(BaseModel):
     items: list[StatsTrackResponse] = Field(default_factory=list)
 
 
+class StatsDashboardResponse(BaseModel):
+    window: str
+    overview: StatsOverviewResponse
+    trends: StatsTrendsResponse
+    top_tracks: TopTracksResponse
+    top_artists: TopArtistsResponse
+    top_albums: TopAlbumsResponse
+    top_genres: TopGenresResponse
+    replay: ReplayMixResponse
+
+
 class HomeArtworkRefResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 

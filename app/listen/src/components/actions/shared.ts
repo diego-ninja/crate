@@ -101,7 +101,7 @@ export function buildTrackMenuPlayerTrack(track: TrackMenuData, cover?: string):
         albumSlug: track.album_slug,
         artistName: track.artist,
         albumName: track.album,
-      })
+      }, { size: 512 })
     : undefined);
 
   return toPlayableTrack(track, { cover: resolvedCover });
@@ -164,7 +164,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
     albumSlug: data.albumSlug,
     artistName: data.artist,
     albumName: data.album,
-  });
+  }, { size: 512 });
 
   return (response.tracks || []).map((track) => toPlayableTrack({
     id: track.id,
@@ -189,6 +189,6 @@ export async function fetchArtistTopTracks(artist: ArtistMenuData): Promise<Trac
     artistId: artist.artistId,
     artistSlug: artist.artistSlug,
     artistName: artist.name,
-  }) || undefined;
+  }, { size: 512 }) || undefined;
   return (topTracks || []).map((track) => buildArtistPlayerTrack(track, artist.name, coverFallback));
 }
