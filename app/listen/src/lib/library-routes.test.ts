@@ -5,7 +5,7 @@ vi.mock("@/lib/api", () => ({
   getAuthToken: vi.fn(() => "listen-token"),
 }));
 
-import { albumCoverApiUrl, artistBackgroundApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
+import { albumCoverApiUrl, artistApiPath, artistBackgroundApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
 
 describe("library route asset helpers", () => {
   it("appends query options before the auth token for album covers", () => {
@@ -24,5 +24,11 @@ describe("library route asset helpers", () => {
     const url = artistPhotoApiUrl({ artistId: 9 }, { size: 128 });
 
     expect(url).toBe("https://api.example.test/api/artists/9/photo?size=128&token=listen-token");
+  });
+
+  it("preserves the artist slug as a backend fallback for deep links", () => {
+    const path = artistApiPath({ artistId: 52, artistSlug: "poison-the-well" });
+
+    expect(path).toBe("/api/artists/52?slug=poison-the-well");
   });
 });

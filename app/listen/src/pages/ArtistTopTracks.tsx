@@ -40,15 +40,17 @@ function toPlayerTracks(tracks: ArtistTopTrack[]): Track[] {
 
 export function ArtistTopTracks() {
   const navigate = useNavigate();
-  const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
+  const { artistId: artistIdParam, slug: artistSlugParam } = useParams<{ artistId?: string; slug?: string }>();
   const artistId = artistIdParam ? Number(artistIdParam) : undefined;
   const { playAll } = usePlayerActions();
   const { data: artist } = useApi<{ id?: number; slug?: string; name: string }>(
-    artistId != null ? artistApiPath({ artistId }) : null,
+    artistId != null ? artistApiPath({ artistId, artistSlug: artistSlugParam }) : null,
   );
   const artistName = artist?.name || "";
   const { data: topTracks, loading } = useApi<ArtistTopTrack[]>(
-    artistId != null ? `/api/artists/${artistId}/top-tracks?count=50` : null,
+    artistId != null
+      ? `/api/artists/${artistId}/top-tracks?count=50${artistSlugParam ? `&slug=${encodeURIComponent(artistSlugParam)}` : ""}`
+      : null,
   );
 
   function handlePlayAll() {

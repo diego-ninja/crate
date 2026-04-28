@@ -140,7 +140,7 @@ class TestArtistDetailAPI:
         ])
 
         with patch("crate.api.browse_artist.has_library_data", return_value=True), \
-             patch("crate.api.browse_artist.artist_name_from_id", return_value="Tool"), \
+             patch("crate.api.browse_artist.artist_name_from_ref", return_value="Tool"), \
              patch("crate.api.browse_artist.get_library_artist", return_value=mock_artist), \
              patch("crate.api.browse_artist.get_library_albums", return_value=mock_albums), \
              patch("crate.api.browse_artist.get_album_quality_map", return_value={1: {"format": "flac", "bit_depth": 16, "sample_rate": 44100}}), \
@@ -154,7 +154,7 @@ class TestArtistDetailAPI:
             assert len(data["albums"]) == 1
 
     def test_get_artist_not_found(self, test_app):
-        with patch("crate.api.browse_artist.artist_name_from_id", return_value=None):
+        with patch("crate.api.browse_artist.artist_name_from_ref", return_value=None):
             resp = test_app.get("/api/artists/999")
             assert resp.status_code == 404
 
@@ -192,7 +192,7 @@ class TestArtistDetailAPI:
 
         with patch("crate.api.browse_artist.get_cache", return_value=None), \
              patch("crate.api.browse_artist.set_cache") as mock_set_cache, \
-             patch("crate.api.browse_artist.artist_name_from_id", return_value="Tool"), \
+             patch("crate.api.browse_artist.artist_name_from_ref", return_value="Tool"), \
              patch("crate.api.browse_artist.api_artist", return_value=artist_payload) as mock_artist, \
              patch("crate.api.browse_artist.api_artist_info", return_value=info_payload) as mock_info, \
              patch("crate.api.browse_artist.api_artist_top_tracks", return_value=top_tracks_payload) as mock_top_tracks, \
@@ -217,6 +217,36 @@ class TestArtistDetailAPI:
         mock_top_artists.assert_called_once_with(1, window="30d", limit=12)
         mock_enrichment.assert_called_once()
         mock_set_cache.assert_called_once()
+
+    def test_get_artist_page_falls_back_to_slug_when_artist_id_is_stale(self, test_app):
+        artist_payload = {
+            "id": 52,
+            "slug": "poison-the-well",
+            "name": "Poison The Well",
+            "albums": [],
+            "total_tracks": 0,
+            "total_size_mb": 0,
+            "primary_format": None,
+            "genres": [],
+            "genre_profile": [],
+            "issue_count": 0,
+            "is_v2": True,
+        }
+
+        with patch("crate.api.browse_artist.get_cache", return_value=None), \
+             patch("crate.api.browse_artist.set_cache"), \
+             patch("crate.api.browse_artist.artist_name_from_ref", return_value="Poison The Well") as mock_artist_name_from_ref, \
+             patch("crate.api.browse_artist.api_artist", return_value=artist_payload), \
+             patch("crate.api.browse_artist.api_artist_info", return_value={"similar": []}), \
+             patch("crate.api.browse_artist.api_artist_top_tracks", return_value=[]), \
+             patch("crate.api.browse_artist.api_artist_shows", return_value={"events": [], "configured": False, "source": "none"}), \
+             patch("crate.api.browse_artist.get_top_artists", return_value=[]), \
+             patch("crate.api.enrichment.get_artist_enrichment_by_id", return_value={}):
+            resp = test_app.get("/api/artists/52/page?slug=poison-the-well")
+
+        assert resp.status_code == 200
+        assert resp.json()["artist"]["name"] == "Poison The Well"
+        mock_artist_name_from_ref.assert_called_once_with(52, "poison-the-well")
 
 
 class TestStatsAPI:

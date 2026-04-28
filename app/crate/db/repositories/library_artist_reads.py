@@ -75,8 +75,20 @@ def get_library_artist_by_id(artist_id: int, *, session: Session | None = None) 
         return impl(s)
 
 
+def get_library_artist_by_slug(slug: str, *, session: Session | None = None) -> dict | None:
+    def impl(s: Session) -> dict | None:
+        row = s.execute(select(LibraryArtist).where(LibraryArtist.slug == slug).limit(1)).scalar_one_or_none()
+        return artist_to_dict(row)
+
+    if session is not None:
+        return impl(session)
+    with read_scope() as s:
+        return impl(s)
+
+
 __all__ = [
     "get_library_artist",
     "get_library_artist_by_id",
+    "get_library_artist_by_slug",
     "get_library_artists",
 ]

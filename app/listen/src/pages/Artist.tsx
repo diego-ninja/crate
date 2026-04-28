@@ -35,7 +35,7 @@ import { shuffleArray } from "@/lib/utils";
 import { artistBackgroundApiUrl, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export function Artist() {
-  const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
+  const { artistId: artistIdParam, slug: artistSlugParam } = useParams<{ artistId?: string; slug?: string }>();
   const artistId = artistIdParam ? Number(artistIdParam) : undefined;
   const [bioModalOpen, setBioModalOpen] = useState(false);
   const [setlistModalOpen, setSetlistModalOpen] = useState(false);
@@ -44,7 +44,9 @@ export function Artist() {
   const { playAll } = usePlayerActions();
 
   const { data: pageData, loading, error } = useApi<ArtistPageData>(
-    artistId != null ? `/api/artists/${artistId}/page` : null,
+    artistId != null
+      ? `/api/artists/${artistId}/page${artistSlugParam ? `?slug=${encodeURIComponent(artistSlugParam)}` : ""}`
+      : null,
   );
   const data: ArtistData | undefined = pageData?.artist;
 

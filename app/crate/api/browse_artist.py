@@ -5,7 +5,7 @@ import mutagen
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
 
-from crate.api._deps import COVER_NAMES, artist_name_from_id, coerce_date, extensions, library_path, safe_path
+from crate.api._deps import COVER_NAMES, artist_name_from_id, artist_name_from_ref, coerce_date, extensions, library_path, safe_path
 from crate.api.auth import _require_auth
 from crate.api.browse_shared import ARTIST_PHOTO_NAMES, build_genre_profile, display_name, fs_artist_detail, fs_build_artists_list, has_library_data
 from crate.api.image_variants import build_image_response
@@ -231,6 +231,7 @@ def _build_artist_page_payload(
     *,
     user_id: int,
     artist_id: int,
+    artist_slug: str | None,
     top_tracks_count: int,
     shows_limit: int,
     stats_window: str,
@@ -244,7 +245,7 @@ def _build_artist_page_payload(
     if cached is not None:
         return cached
 
-    artist_name = artist_name_from_id(artist_id)
+    artist_name = artist_name_from_ref(artist_id, artist_slug)
     if not artist_name:
         return JSONResponse({"error": "Not found"}, status_code=404)
 
@@ -436,7 +437,7 @@ def api_check_artists_in_library(request: Request, body: ArtistCheckLibraryReque
     summary="Get detailed artist information",
 )
 def api_artist_by_id(request: Request, artist_id: int):
-    artist_name = artist_name_from_id(artist_id)
+    artist_name = artist_name_from_ref(artist_id, request.query_params.get("slug"))
     if not artist_name:
         return JSONResponse({"error": "Not found"}, status_code=404)
     return api_artist(request, artist_name)
@@ -451,6 +452,7 @@ def api_artist_by_id(request: Request, artist_id: int):
 def api_artist_page_by_id(
     request: Request,
     artist_id: int,
+    slug: str | None = Query(None),
     top_tracks_count: int = Query(12, ge=1, le=50),
     shows_limit: int = Query(12, ge=1, le=50),
     stats_window: str = Query("30d"),
@@ -462,6 +464,7 @@ def api_artist_page_by_id(
             request,
             user_id=user["id"],
             artist_id=artist_id,
+            artist_slug=slug,
             top_tracks_count=top_tracks_count,
             shows_limit=shows_limit,
             stats_window=stats_window,
@@ -502,7 +505,7 @@ def api_artist_top_tracks(request: Request, artist_id: int, count: int = Query(2
     matched against tracks in the local library. Falls back to local play
     counts if Last.fm data doesn't match, then to album track order."""
     _require_auth(request)
-    artist_name = artist_name_from_id(artist_id)
+    artist_name = artist_name_from_ref(artist_id, request.query_params.get("slug"))
     if not artist_name:
         return JSONResponse([], status_code=200)
 

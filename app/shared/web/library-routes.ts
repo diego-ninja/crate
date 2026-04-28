@@ -55,7 +55,12 @@ export function artistTopTracksPath(input: ArtistRouteInput) {
 
 export function artistApiPath(input: ArtistRouteInput) {
   if (input.artistId != null) {
-    return `/api/artists/${input.artistId}`;
+    const params = new URLSearchParams();
+    if (input.artistSlug && input.artistSlug.trim()) {
+      params.set("slug", input.artistSlug.trim());
+    }
+    const query = params.toString();
+    return query ? `/api/artists/${input.artistId}?${query}` : `/api/artists/${input.artistId}`;
   }
   return "";
 }
