@@ -25,8 +25,7 @@ def _fanart_key() -> str | None:
 
 def get_artist_info(artist_name: str) -> dict | None:
     """Get artist info from Last.fm with cache."""
-    cache_key = f"lastfm:artist:v2:{artist_name.lower()}"
-    cached = get_cache(cache_key, max_age_seconds=86400)  # 24h
+    cached = get_cached_artist_info(artist_name)
     if cached:
         return cached
 
@@ -80,39 +79,37 @@ def get_artist_info(artist_name: str) -> dict | None:
         "url": artist.get("url", ""),
     }
 
-    set_cache(cache_key, result)
+    set_cache(_artist_info_cache_key(artist_name), result)
     return result
 
 
-def _get_similar_artists(artist_name: str, limit: int = 30) -> list[dict]:
-    """Get similar artists from Last.fm artist.getsimilar endpoint."""
-    key = _lastfm_key()
-    if not key:
-        return []
-    try:
-        resp = requests.get(LASTFM_BASE, params={
-            "method": "artist.getsimilar",
-            "artist": artist_name,
-            "api_key": key,
-            "format": "json",
-            "limit": limit,
-        }, timeout=10)
-        if resp.status_code != 200:
-            return []
-        data = resp.json()
-        artists = data.get("similarartists", {}).get("artist", [])
-        return [{"name": a["name"], "match": float(a.get("match", 0))} for a in artists[:limit]]
-    except Exception:
-        log.debug("Last.fm getsimilar failed for %s", artist_name)
-        return []
+def _artist_info_cache_key(artist_name: str) -> str:
+    return f"lastfm:artist:v2:{artist_name.lower()}"
+
+
+def get_cached_artist_info(artist_name: str) -> dict | None:
+    cache_key = _artist_info_cache_key(artist_name)
+    cached = get_cache(cache_key, max_age_seconds=86400)  # 24h
+    return cached if cached else None
+
+
+def _top_tracks_cache_key(artist_name: str, limit: int) -> str:
+    return f"lastfm:toptracks:{artist_name.lower()}:{limit}"
+
+
+def get_cached_top_tracks(artist_name: str, limit: int = 20) -> list[dict] | None:
+    cache_key = _top_tracks_cache_key(artist_name, limit)
+    cached = get_cache(cache_key, max_age_seconds=86400)
+    if not cached:
+        return None
+    return cached.get("tracks")
 
 
 def get_top_tracks(artist_name: str, limit: int = 20) -> list[dict] | None:
     """Get top tracks from Last.fm."""
-    cache_key = f"lastfm:toptracks:{artist_name.lower()}:{limit}"
-    cached = get_cache(cache_key, max_age_seconds=86400)
+    cached = get_cached_top_tracks(artist_name, limit)
     if cached:
-        return cached.get("tracks")
+        return cached
 
     api_key = _lastfm_key()
     if not api_key:
@@ -139,11 +136,36 @@ def get_top_tracks(artist_name: str, limit: int = 20) -> list[dict] | None:
                 "url": t.get("url", ""),
             })
 
-        set_cache(cache_key, {"tracks": tracks})
+        set_cache(_top_tracks_cache_key(artist_name, limit), {"tracks": tracks})
         return tracks
     except Exception:
         log.debug("Last.fm top tracks failed for %s", artist_name)
         return None
+
+
+def _get_similar_artists(artist_name: str, limit: int = 30) -> list[dict]:
+    """Get similar artists from Last.fm artist.getsimilar endpoint."""
+    key = _lastfm_key()
+    if not key:
+        return []
+    try:
+        resp = requests.get(LASTFM_BASE, params={
+            "method": "artist.getsimilar",
+            "artist": artist_name,
+            "api_key": key,
+            "format": "json",
+            "limit": limit,
+        }, timeout=10)
+        if resp.status_code != 200:
+            return []
+        data = resp.json()
+        artists = data.get("similarartists", {}).get("artist", [])
+        return [{"name": a["name"], "match": float(a.get("match", 0))} for a in artists[:limit]]
+    except Exception:
+        log.debug("Last.fm getsimilar failed for %s", artist_name)
+        return []
+
+
 
 
 def download_artist_image(image_url: str) -> bytes | None:

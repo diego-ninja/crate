@@ -45,6 +45,7 @@ export interface TrackMenuData {
 
 export interface AlbumMenuData {
   artist: string;
+  artistSlug?: string;
   album: string;
   albumId?: number;
   albumSlug?: string;
@@ -155,6 +156,7 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
   }>(albumApiPath({
     albumId: data.albumId,
     albumSlug: data.albumSlug,
+    artistSlug: data.artistSlug,
     artistName: data.artist,
     albumName: data.album,
   }));
@@ -183,8 +185,11 @@ export async function fetchAlbumTracks(data: AlbumMenuData): Promise<Track[]> {
 }
 
 export async function fetchArtistTopTracks(artist: ArtistMenuData): Promise<Track[]> {
-  if (artist.artistId == null) return [];
-  const topTracks = await api<ArtistTopTrack[]>(`/api/artists/${artist.artistId}/top-tracks?count=12`);
+  const topTracks = artist.artistSlug
+    ? await api<ArtistTopTrack[]>(`/api/artist-slugs/${encodeURIComponent(artist.artistSlug)}/top-tracks?count=12`)
+    : artist.artistId != null
+      ? await api<ArtistTopTrack[]>(`/api/artists/${artist.artistId}/top-tracks?count=12`)
+      : [];
   const coverFallback = artistPhotoApiUrl({
     artistId: artist.artistId,
     artistSlug: artist.artistSlug,

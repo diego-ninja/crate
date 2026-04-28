@@ -4,6 +4,7 @@ export interface ArtistData {
   id?: number;
   slug?: string;
   name: string;
+  updated_at?: string | null;
   albums: ArtistAlbumSummary[];
   genres?: string[];
   genre_profile?: GenreProfileItem[];

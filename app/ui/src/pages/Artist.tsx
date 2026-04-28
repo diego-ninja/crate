@@ -229,6 +229,7 @@ export function Artist() {
           artistName={artistName}
           artistId={data.id}
           artistSlug={data.slug}
+          imageVersion={data.updated_at}
           letter={letter}
         albumCount={data.albums.length}
         totalTracks={totalTracks}

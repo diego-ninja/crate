@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { useParams, useNavigate, useLocation } from "react-router";
 import { AlertCircle, ArrowDownToLine, CheckCircle2, Clock, Disc, Heart, ListPlus, Loader2, MoreHorizontal, Play, Radio, Share2, Shuffle, User } from "lucide-react";
 import { toast } from "sonner";
 
@@ -85,8 +85,13 @@ interface AlbumData {
 }
 
 export function Album() {
-  const { albumId: albumIdParam } = useParams<{ albumId?: string }>();
+  const {
+    albumId: albumIdParam,
+    artistSlug: routeArtistSlug,
+    albumSlug: routeAlbumSlug,
+  } = useParams<{ albumId?: string; artistSlug?: string; albumSlug?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const isDesktop = useIsDesktop();
   const { playAll, playNext } = usePlayerActions();
   const { openCreatePlaylist } = usePlaylistComposer();
@@ -99,7 +104,11 @@ export function Album() {
   const routeAlbumId = albumIdParam ? Number(albumIdParam) : undefined;
 
   const { data, loading, error } = useApi<AlbumData>(
-    routeAlbumId != null ? albumApiPath({ albumId: routeAlbumId }) : null,
+    routeAlbumId != null
+      ? albumApiPath({ albumId: routeAlbumId })
+      : routeArtistSlug && routeAlbumSlug
+        ? albumApiPath({ artistSlug: routeArtistSlug, albumSlug: routeAlbumSlug })
+        : null,
   );
   const { playlistOptions: playlists, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
 
@@ -111,6 +120,20 @@ export function Album() {
       setPlaylistPickerOpen(false);
     },
   });
+
+  useEffect(() => {
+    if (!data?.name) return;
+    const canonicalPath = albumPagePath({
+      albumId: data.id,
+      albumSlug: data.slug,
+      artistSlug: data.artist_slug,
+      artistName: data.artist,
+      albumName: data.name,
+    });
+    if (location.pathname !== canonicalPath) {
+      navigate(canonicalPath, { replace: true });
+    }
+  }, [data?.artist, data?.artist_slug, data?.id, data?.name, data?.slug, location.pathname, navigate]);
 
   if (loading) {
     return (
@@ -184,7 +207,7 @@ export function Album() {
       playAll(playerTracks, startIndex, {
         type: "album",
         name: `${artistName} — ${displayName}`,
-        href: albumPagePath({ albumId, albumSlug: data.slug, artistName, albumName: displayName }),
+        href: albumPagePath({ albumId, albumSlug: data.slug, artistSlug: data.artist_slug, artistName, albumName: displayName }),
         radio: {
           seedType: "album",
           seedId: albumId,
@@ -205,7 +228,7 @@ export function Album() {
     playAll(shuffled, 0, {
       type: "album",
       name: `${artistName} — ${displayName}`,
-      href: albumPagePath({ albumId, albumSlug: data.slug, artistName, albumName: displayName }),
+      href: albumPagePath({ albumId, albumSlug: data.slug, artistSlug: data.artist_slug, artistName, albumName: displayName }),
       radio: {
         seedType: "album",
         seedId: albumId,
@@ -236,7 +259,7 @@ export function Album() {
     setMenuOpen(false);
   };
 
-  const shareUrl = `${window.location.origin}${albumPagePath({ albumId, albumSlug: data.slug })}`;
+  const shareUrl = `${window.location.origin}${albumPagePath({ albumId, albumSlug: data.slug, artistSlug: data.artist_slug, artistName, albumName: data.name })}`;
 
   async function handleShare() {
     try {

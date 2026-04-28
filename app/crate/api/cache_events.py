@@ -163,6 +163,8 @@ def _clear_backend_cache_for_scopes(scopes: tuple[str, ...] | list[str]):
         # Parameterised scopes like "playlist:42" → clear "playlist:42"
         if ":" in scope:
             prefixes_to_clear.add(scope)
+        if scope.startswith("artist:"):
+            prefixes_to_clear.add("listen:artist_page:")
 
     for prefix in prefixes_to_clear:
         try:

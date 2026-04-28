@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useParams } from "react-router";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate, useParams } from "react-router";
 import { toast } from "sonner";
 
 import {
@@ -35,8 +35,9 @@ import { shuffleArray } from "@/lib/utils";
 import { artistBackgroundApiUrl, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 export function Artist() {
-  const { artistId: artistIdParam, slug: artistSlugParam } = useParams<{ artistId?: string; slug?: string }>();
-  const artistId = artistIdParam ? Number(artistIdParam) : undefined;
+  const { artistSlug: routeArtistSlug } = useParams<{ artistSlug?: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [bioModalOpen, setBioModalOpen] = useState(false);
   const [setlistModalOpen, setSetlistModalOpen] = useState(false);
   const [expandedShowId, setExpandedShowId] = useState<string | null>(null);
@@ -44,11 +45,21 @@ export function Artist() {
   const { playAll } = usePlayerActions();
 
   const { data: pageData, loading, error } = useApi<ArtistPageData>(
-    artistId != null
-      ? `/api/artists/${artistId}/page${artistSlugParam ? `?slug=${encodeURIComponent(artistSlugParam)}` : ""}`
-      : null,
+    routeArtistSlug ? `/api/artist-slugs/${encodeURIComponent(routeArtistSlug)}/page` : null,
   );
   const data: ArtistData | undefined = pageData?.artist;
+
+  useEffect(() => {
+    if (!data?.name) return;
+    const canonicalPath = artistPagePath({
+      artistId: data.id,
+      artistSlug: data.slug,
+      artistName: data.name,
+    });
+    if (location.pathname !== canonicalPath) {
+      navigate(canonicalPath, { replace: true });
+    }
+  }, [data?.id, data?.name, data?.slug, location.pathname, navigate]);
 
   async function toggleFollow() {
     if (!data?.id) return;
@@ -164,14 +175,15 @@ export function Artist() {
     );
   }
 
-  const photoUrl = buildArtistPhotoUrl(data.name, data.id, data.slug);
+  const imageVersion = data.updated_at ?? undefined;
+  const photoUrl = buildArtistPhotoUrl(data.name, data.id, data.slug, imageVersion);
   const canonicalPhotoUrl = artistPhotoApiUrl(
     { artistId: data.id, artistSlug: data.slug, artistName: data.name },
-    { size: 512 },
+    { size: 512, version: imageVersion },
   );
   const backgroundUrl = artistBackgroundApiUrl(
     { artistId: data.id, artistSlug: data.slug, artistName: data.name },
-    { size: 1280 },
+    { size: 1280, version: imageVersion },
   );
   const tags = data.genres.length > 0 ? data.genres : (info?.tags ?? []);
 

@@ -29,12 +29,14 @@ def get_track_artist_genres(track_id: int) -> list[dict]:
         rows = session.execute(
             text(
                 """
-                SELECT g.name, g.slug, arg.weight
+                SELECT g.name, g.slug, MAX(arg.weight) AS weight
                 FROM library_tracks t
-                JOIN artist_genres arg ON arg.artist_name = t.artist
+                LEFT JOIN library_albums a ON a.id = t.album_id
+                JOIN artist_genres arg ON arg.artist_name IN (t.artist, a.artist)
                 JOIN genres g ON g.id = arg.genre_id
                 WHERE t.id = :track_id
-                ORDER BY arg.weight DESC NULLS LAST, g.name ASC
+                GROUP BY g.name, g.slug
+                ORDER BY MAX(arg.weight) DESC NULLS LAST, g.name ASC
                 LIMIT 10
                 """
             ),

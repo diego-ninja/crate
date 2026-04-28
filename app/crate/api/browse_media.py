@@ -382,7 +382,7 @@ def api_eq_features_by_storage_id(request: Request, storage_id: str):
 
 # ── Track primary genre ─────────────────────────────────────────────
 
-def _pick_primary_genre(rows):
+def _pick_primary_genre(rows, *, canonical_only: bool = False):
     """Prefer the highest-weight canonical genre; fall back to the
     highest-weight raw tag if none resolve cleanly. Canonical picks
     also carry the resolved EQ preset (direct or inherited)."""
@@ -439,17 +439,29 @@ def _pick_primary_genre(rows):
                 "preset": None,
             }
 
+    if canonical_only:
+        return canonical_pick
     return canonical_pick or raw_pick
 
 
 def _resolve_track_genre(track_id: int) -> dict | None:
     album_rows = get_track_album_genres(track_id)
-    picked = _pick_primary_genre(album_rows) if album_rows else None
+    picked = _pick_primary_genre(album_rows, canonical_only=True) if album_rows else None
     if picked:
         picked["source"] = "album"
         return picked
 
     artist_rows = get_track_artist_genres(track_id)
+    picked = _pick_primary_genre(artist_rows, canonical_only=True) if artist_rows else None
+    if picked:
+        picked["source"] = "artist"
+        return picked
+
+    picked = _pick_primary_genre(album_rows) if album_rows else None
+    if picked:
+        picked["source"] = "album"
+        return picked
+
     picked = _pick_primary_genre(artist_rows) if artist_rows else None
     if picked:
         picked["source"] = "artist"

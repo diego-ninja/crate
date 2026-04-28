@@ -36,6 +36,7 @@ export function useAlbumActionEntries(input: AlbumMenuData): ItemActionMenuEntry
     const albumPath = albumPagePath({
       albumId: input.albumId,
       albumSlug: input.albumSlug,
+      artistSlug: input.artistSlug,
       artistName: input.artist,
       albumName: input.album,
     });

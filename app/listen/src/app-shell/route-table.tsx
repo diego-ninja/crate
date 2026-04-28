@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Navigate } from "react-router";
 
 import { DeferredRoute } from "@/app-shell/AppFallbacks";
+import { ArtistChildRoute, LegacyArtistTopTracksRedirect } from "@/app-shell/LibraryRouteCompat";
 import { Home } from "@/pages/Home";
 
 const ServerSetup = React.lazy(() =>
@@ -125,8 +126,10 @@ export const protectedAppRoutes: AppRouteDefinition[] = [
   { path: "paths", element: deferred(<PathsPage />) },
   { path: "paths/:id", element: deferred(<PathDetailPage />) },
   { path: "radio", element: deferred(<RadioPage />) },
-  { path: "artists/:artistId/:slug", element: deferred(<Artist />) },
-  { path: "artists/:artistId/:slug/top-tracks", element: deferred(<ArtistTopTracks />) },
+  { path: "artists/:artistId/:legacySlug/top-tracks", element: deferred(<LegacyArtistTopTracksRedirect />) },
+  { path: "artists/:artistSlug/top-tracks", element: deferred(<ArtistTopTracks />) },
+  { path: "artists/:artistSlug/:albumSlug", element: deferred(<ArtistChildRoute />) },
+  { path: "artists/:artistSlug", element: deferred(<Artist />) },
   { path: "albums/:albumId/:slug", element: deferred(<Album />) },
   { path: "playlist/:id", element: deferred(<Playlist />) },
   { path: "home/playlist/:playlistId", element: deferred(<HomePlaylist />) },

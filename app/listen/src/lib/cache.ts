@@ -1,5 +1,6 @@
 import { apiSseUrl } from "@/lib/api";
 import { isNative } from "@/lib/capacitor";
+import { recordAssetInvalidationScope } from "@/lib/library-routes";
 
 // ── Cache Store ────────────────────────────────────────────────
 
@@ -108,12 +109,14 @@ export function scopesForUrl(url: string): string[] {
     if (m) scopes.push(`artist:${m[1]}`);
     scopes.push("library", "follows");
   }
+  else if (url.startsWith("/api/artist-slugs/")) scopes.push("library", "follows");
   // Album detail
   else if (url.match(/^\/api\/albums\/\d+/)) {
     const m = url.match(/^\/api\/albums\/(\d+)/);
     if (m) scopes.push(`album:${m[1]}`);
     scopes.push("library");
   }
+  else if (url.match(/^\/api\/artist-slugs\/[^/]+\/albums\//)) scopes.push("library");
   // Artist/album listings
   else if (url.startsWith("/api/artists")) scopes.push("library");
   else if (url.startsWith("/api/albums")) scopes.push("library");
@@ -229,6 +232,7 @@ export function connectCacheEvents(): () => void {
     eventSource.onmessage = (event) => {
       const scope = event.data?.trim();
       if (!scope) return;
+      recordAssetInvalidationScope(scope);
       cacheInvalidate(scope);
       for (const fn of invalidationListeners) {
         try { fn(scope); } catch { /* ignore listener errors */ }

@@ -1,5 +1,6 @@
 """Schema models for browse artist and album endpoints."""
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
@@ -113,6 +114,7 @@ class ArtistDetailResponse(BaseModel):
     id: int | None = None
     slug: str | None = None
     name: str
+    updated_at: datetime | str | None = None
     albums: list[ArtistAlbumSummaryResponse] = Field(default_factory=list)
     total_tracks: int
     total_size_mb: int

@@ -5,7 +5,18 @@ vi.mock("@/lib/api", () => ({
   getAuthToken: vi.fn(() => "listen-token"),
 }));
 
-import { albumCoverApiUrl, artistApiPath, artistBackgroundApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
+import {
+  albumApiPath,
+  albumCoverApiUrl,
+  albumPagePath,
+  artistApiPath,
+  artistBackgroundApiUrl,
+  artistPagePath,
+  artistPhotoApiUrl,
+  artistTopTracksPath,
+  isReservedArtistChildSlug,
+  recordAssetInvalidationScope,
+} from "@/lib/library-routes";
 
 describe("library route asset helpers", () => {
   it("appends query options before the auth token for album covers", () => {
@@ -26,9 +37,58 @@ describe("library route asset helpers", () => {
     expect(url).toBe("https://api.example.test/api/artists/9/photo?size=128&token=listen-token");
   });
 
+  it("adds a cache-busting artist asset version after invalidation", () => {
+    recordAssetInvalidationScope("artist:9", "artwork-2");
+
+    const url = artistPhotoApiUrl({ artistId: 9 }, { size: 128 });
+
+    expect(url).toBe("https://api.example.test/api/artists/9/photo?size=128&v=artwork-2&token=listen-token");
+  });
+
   it("preserves the artist slug as a backend fallback for deep links", () => {
     const path = artistApiPath({ artistId: 52, artistSlug: "poison-the-well" });
 
-    expect(path).toBe("/api/artists/52?slug=poison-the-well");
+    expect(path).toBe("/api/artist-slugs/poison-the-well");
+  });
+
+  it("builds canonical artist paths from slugs", () => {
+    expect(artistPagePath({ artistId: 7, artistSlug: "quicksand", artistName: "Quicksand" })).toBe("/artists/quicksand");
+    expect(artistTopTracksPath({ artistId: 7, artistSlug: "quicksand", artistName: "Quicksand" })).toBe("/artists/quicksand/top-tracks");
+  });
+
+  it("builds nested album paths under the artist when the slug is not reserved", () => {
+    const path = albumPagePath({
+      albumId: 9,
+      artistSlug: "quicksand",
+      albumSlug: "quicksand-slip",
+      artistName: "Quicksand",
+      albumName: "Slip",
+    });
+
+    expect(path).toBe("/artists/quicksand/slip");
+  });
+
+  it("falls back to the legacy album route for reserved child slugs", () => {
+    const path = albumPagePath({
+      albumId: 9,
+      artistSlug: "quicksand",
+      albumSlug: "quicksand-top-tracks",
+      artistName: "Quicksand",
+      albumName: "Top Tracks",
+    });
+
+    expect(path).toBe("/albums/9/quicksand-top-tracks");
+    expect(isReservedArtistChildSlug("top-tracks")).toBe(true);
+  });
+
+  it("resolves album API paths by artist and public album slug", () => {
+    const path = albumApiPath({
+      artistSlug: "quicksand",
+      albumSlug: "quicksand-slip",
+      artistName: "Quicksand",
+      albumName: "Slip",
+    });
+
+    expect(path).toBe("/api/artist-slugs/quicksand/albums/slip");
   });
 });

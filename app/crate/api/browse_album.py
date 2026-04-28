@@ -12,9 +12,16 @@ from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, me
 from crate.api.schemas.browse import AlbumDetailResponse, RelatedAlbumResponse
 from crate.api.schemas.common import TaskEnqueueResponse
 from crate.audio import get_audio_files
-from crate.db.repositories.library import get_library_album_by_id, get_library_artist, get_library_tracks
+from crate.db.repositories.library import (
+    get_library_album_by_id,
+    get_library_albums,
+    get_library_artist,
+    get_library_artist_by_slug,
+    get_library_tracks,
+)
 from crate.db.queries.browse import get_album_genre_ids, get_related_albums, get_album_genres_list, get_album_genre_profile
 from crate.db.repositories.tasks import create_task
+from crate.slugs import build_public_album_slug
 from crate.storage_layout import resolve_album_dir
 
 router = APIRouter(tags=["browse"])
@@ -206,6 +213,31 @@ def api_album(request: Request, artist: str, album: str):
         "popularity_score": album_data.get("popularity_score"),
         "popularity_confidence": album_data.get("popularity_confidence"),
     }
+
+
+@router.get(
+    "/api/artist-slugs/{artist_slug}/albums/{album_slug}",
+    response_model=AlbumDetailResponse,
+    responses=_BROWSE_RESPONSES,
+    summary="Get detailed album information by artist and album slug",
+)
+def api_album_by_artist_slug(request: Request, artist_slug: str, album_slug: str):
+    artist = get_library_artist_by_slug(artist_slug)
+    if not artist:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+
+    album = next(
+        (
+            current
+            for current in get_library_albums(artist["name"])
+            if build_public_album_slug(current.get("name")) == album_slug
+            or current.get("slug") == album_slug
+        ),
+        None,
+    )
+    if not album:
+        return JSONResponse({"error": "Not found"}, status_code=404)
+    return api_album(request, artist["name"], album["name"])
 
 
 @router.get(

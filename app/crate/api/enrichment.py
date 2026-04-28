@@ -100,6 +100,26 @@ def get_artist_enrichment(request: Request, name: str):
     return result or {}
 
 
+def get_artist_page_enrichment(name: str) -> dict:
+    """Return only fast, cache-backed enrichment needed for Listen artist pages."""
+    cache_key = f"enrichment:{name.lower()}"
+    cached = get_cache(cache_key, max_age_seconds=86400)
+    if cached and isinstance(cached, dict):
+        setlist_payload = cached.get("setlist")
+        if isinstance(setlist_payload, dict):
+            return {"setlist": setlist_payload}
+
+    setlist = setlistfm.get_cached_probable_setlist(name)
+    if setlist:
+        return {
+            "setlist": {
+                "probable_setlist": setlist,
+                "total_shows": len(setlist),
+            }
+        }
+    return {}
+
+
 @router.get(
     "/api/artists/{artist_id}/analysis-data",
     response_model=ArtistAnalysisDataResponse,

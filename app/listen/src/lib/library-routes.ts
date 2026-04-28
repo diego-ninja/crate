@@ -8,6 +8,8 @@ import {
   albumApiPath as _albumApiPath,
   albumRelatedApiPath as _albumRelatedApiPath,
   albumCoverApiUrl as _albumCoverApiUrl,
+  isReservedArtistChildSlug as _isReservedArtistChildSlug,
+  recordAssetInvalidationScope as _recordAssetInvalidationScope,
 } from "../../../shared/web/library-routes";
 export type { ArtistRouteInput, AlbumRouteInput } from "../../../shared/web/library-routes";
 
@@ -17,6 +19,7 @@ import { getApiBase, getAuthToken } from "@/lib/api";
 export const artistPagePath = _artistPagePath;
 export const artistTopTracksPath = _artistTopTracksPath;
 export const albumPagePath = _albumPagePath;
+export const isReservedArtistChildSlug = _isReservedArtistChildSlug;
 
 // Image/media URLs — prefix with the active API base + append ?token=
 // for <img> elements that can't send headers.
@@ -42,3 +45,4 @@ export const albumRelatedApiPath = _albumRelatedApiPath;
 export const artistPhotoApiUrl = authedUrl(_artistPhotoApiUrl);
 export const artistBackgroundApiUrl = authedUrl(_artistBackgroundApiUrl);
 export const albumCoverApiUrl = authedUrl(_albumCoverApiUrl);
+export const recordAssetInvalidationScope = _recordAssetInvalidationScope;

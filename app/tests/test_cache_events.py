@@ -141,3 +141,22 @@ def test_invalidation_stream_replays_events_and_switches_to_pubsub(monkeypatch):
     assert fake_pubsub.unsubscribed == [cache_events._LIVE_CHANNEL]
     assert fake_pubsub.closed is True
     assert fake_redis.closed is True
+
+
+def test_artist_invalidation_clears_listen_artist_page_cache(monkeypatch):
+    from crate.api import cache_events
+
+    deleted_prefixes: list[str] = []
+    marked: list[tuple[str | None, str | None]] = []
+
+    monkeypatch.setattr("crate.db.cache_store.delete_cache_prefix", lambda prefix: deleted_prefixes.append(prefix))
+    monkeypatch.setattr(
+        "crate.db.ui_snapshot_store.mark_ui_snapshots_stale",
+        lambda scope=None, subject_key=None, scope_prefix=None: marked.append((scope or scope_prefix, subject_key)),
+    )
+
+    cache_events._clear_backend_cache_for_scopes(["artist:52"])
+
+    assert "artist:52" in deleted_prefixes
+    assert "listen:artist_page:" in deleted_prefixes
+    assert ("home:", None) in marked

@@ -20,5 +20,9 @@ def build_album_slug(artist_name: str | None, album_name: str | None) -> str:
     return slugify(f"{artist_name or ''}-{album_name or ''}", "album")
 
 
+def build_public_album_slug(album_name: str | None) -> str:
+    return slugify(album_name, "album")
+
+
 def build_track_slug(artist_name: str | None, title: str | None, filename: str | None = None) -> str:
     return slugify(f"{artist_name or ''}-{title or filename or ''}", "track")

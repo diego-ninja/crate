@@ -20,6 +20,7 @@ export interface ArtistData {
   id?: number;
   slug?: string;
   name: string;
+  updated_at?: string | null;
   albums: ArtistAlbum[];
   total_tracks: number;
   total_size_mb: number;
@@ -91,8 +92,8 @@ export interface ArtistPageData {
   artist_hot_rank?: number | null;
 }
 
-export function buildArtistPhotoUrl(artistName: string, artistId?: number, artistSlug?: string) {
-  return artistPhotoApiUrl({ artistId, artistSlug, artistName }, { size: 384 });
+export function buildArtistPhotoUrl(artistName: string, artistId?: number, artistSlug?: string, version?: string | null) {
+  return artistPhotoApiUrl({ artistId, artistSlug, artistName }, { size: 384, version });
 }
 
 export function buildArtistAlbumCover(artistName: string, albumName: string, albumId?: number, albumSlug?: string) {

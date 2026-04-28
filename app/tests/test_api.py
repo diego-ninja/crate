@@ -1,6 +1,6 @@
 """Tests for the FastAPI API endpoints with mocked DB layer."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import ANY, MagicMock, patch
 from contextlib import contextmanager
 
 
@@ -158,6 +158,68 @@ class TestArtistDetailAPI:
             resp = test_app.get("/api/artists/999")
             assert resp.status_code == 404
 
+    def test_get_artist_by_slug_found(self, test_app):
+        artist_payload = {
+            "id": 7,
+            "slug": "tool",
+            "name": "Tool",
+            "albums": [],
+            "total_tracks": 50,
+            "total_size_mb": 1024,
+            "primary_format": "flac",
+            "genres": [],
+            "genre_profile": [],
+            "issue_count": 0,
+            "is_v2": True,
+        }
+
+        with patch("crate.api.browse_artist.get_library_artist_by_slug", return_value={"id": 7, "slug": "tool", "name": "Tool"}), \
+             patch("crate.api.browse_artist.api_artist", return_value=artist_payload) as mock_api_artist:
+            resp = test_app.get("/api/artist-slugs/tool")
+
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "Tool"
+        mock_api_artist.assert_called_once_with(ANY, "Tool")
+
+    def test_get_artist_page_by_slug(self, test_app):
+        artist_payload = {
+            "artist": {
+                "id": 7,
+                "slug": "tool",
+                "name": "Tool",
+                "albums": [],
+                "total_tracks": 50,
+                "total_size_mb": 1024,
+                "primary_format": "flac",
+                "genres": [],
+                "genre_profile": [],
+                "issue_count": 0,
+                "is_v2": True,
+            },
+            "info": {"similar": []},
+            "top_tracks": [],
+            "shows": {"events": [], "configured": False, "source": "none"},
+            "enrichment": {},
+            "artist_hot_rank": None,
+        }
+
+        with patch("crate.api.browse_artist.get_library_artist_by_slug", return_value={"id": 7, "slug": "tool", "name": "Tool"}), \
+             patch("crate.api.browse_artist._build_artist_page_payload", return_value=artist_payload) as mock_payload:
+            resp = test_app.get("/api/artist-slugs/tool/page")
+
+        assert resp.status_code == 200
+        assert resp.json()["artist"]["slug"] == "tool"
+        mock_payload.assert_called_once_with(
+            ANY,
+            user_id=1,
+            artist_id=7,
+            artist_slug="tool",
+            top_tracks_count=12,
+            shows_limit=12,
+            stats_window="30d",
+            stats_limit=12,
+        )
+
     def test_get_artist_page_bundles_listen_payload(self, test_app):
         artist_payload = {
             "id": 7,
@@ -194,11 +256,11 @@ class TestArtistDetailAPI:
              patch("crate.api.browse_artist.set_cache") as mock_set_cache, \
              patch("crate.api.browse_artist.artist_name_from_ref", return_value="Tool"), \
              patch("crate.api.browse_artist.api_artist", return_value=artist_payload) as mock_artist, \
-             patch("crate.api.browse_artist.api_artist_info", return_value=info_payload) as mock_info, \
-             patch("crate.api.browse_artist.api_artist_top_tracks", return_value=top_tracks_payload) as mock_top_tracks, \
-             patch("crate.api.browse_artist.api_artist_shows", return_value=shows_payload) as mock_shows, \
+             patch("crate.api.browse_artist._get_artist_page_info", return_value=info_payload) as mock_info, \
+             patch("crate.api.browse_artist._get_artist_page_top_tracks", return_value=top_tracks_payload) as mock_top_tracks, \
+             patch("crate.api.browse_artist._get_artist_page_shows", return_value=shows_payload) as mock_shows, \
              patch("crate.api.browse_artist.get_top_artists", return_value=[{"artist_id": 3}, {"artist_id": 7}, {"artist_id": 9}]) as mock_top_artists, \
-             patch("crate.api.enrichment.get_artist_enrichment_by_id", return_value=enrichment_payload) as mock_enrichment:
+             patch("crate.api.enrichment.get_artist_page_enrichment", return_value=enrichment_payload) as mock_enrichment:
             resp = test_app.get("/api/artists/7/page")
 
         assert resp.status_code == 200
@@ -211,11 +273,11 @@ class TestArtistDetailAPI:
         assert data["artist_hot_rank"] == 2
 
         mock_artist.assert_called_once()
-        mock_info.assert_called_once()
-        mock_top_tracks.assert_called_once()
-        mock_shows.assert_called_once()
+        mock_info.assert_called_once_with("Tool")
+        mock_top_tracks.assert_called_once_with("Tool", count=12)
+        mock_shows.assert_called_once_with(user_id=1, name="Tool", limit=12, country="")
         mock_top_artists.assert_called_once_with(1, window="30d", limit=12)
-        mock_enrichment.assert_called_once()
+        mock_enrichment.assert_called_once_with("Tool")
         mock_set_cache.assert_called_once()
 
     def test_get_artist_page_falls_back_to_slug_when_artist_id_is_stale(self, test_app):
@@ -237,18 +299,18 @@ class TestArtistDetailAPI:
              patch("crate.api.browse_artist.set_cache"), \
              patch("crate.api.browse_artist.artist_name_from_ref", return_value="Poison The Well") as mock_artist_name_from_ref, \
              patch("crate.api.browse_artist.api_artist", return_value=artist_payload), \
-             patch("crate.api.browse_artist.api_artist_info", return_value={"similar": []}), \
-             patch("crate.api.browse_artist.api_artist_top_tracks", return_value=[]), \
-             patch("crate.api.browse_artist.api_artist_shows", return_value={"events": [], "configured": False, "source": "none"}), \
+             patch("crate.api.browse_artist._get_artist_page_info", return_value={"similar": []}), \
+             patch("crate.api.browse_artist._get_artist_page_top_tracks", return_value=[]), \
+             patch("crate.api.browse_artist._get_artist_page_shows", return_value={"events": [], "configured": False, "source": "none"}), \
              patch("crate.api.browse_artist.get_top_artists", return_value=[]), \
-             patch("crate.api.enrichment.get_artist_enrichment_by_id", return_value={}):
+             patch("crate.api.enrichment.get_artist_page_enrichment", return_value={}):
             resp = test_app.get("/api/artists/52/page?slug=poison-the-well")
 
         assert resp.status_code == 200
         assert resp.json()["artist"]["name"] == "Poison The Well"
         mock_artist_name_from_ref.assert_called_once_with(52, "poison-the-well")
 
-    def test_get_artist_page_passes_plain_country_to_shows_helper(self, test_app):
+    def test_get_artist_page_uses_cached_shows_helper(self, test_app):
         artist_payload = {
             "id": 52,
             "slug": "poison-the-well",
@@ -263,30 +325,55 @@ class TestArtistDetailAPI:
             "is_v2": True,
         }
 
-        def fake_db_get_shows(*, artist_name, country, limit):
-            assert artist_name == "Poison The Well"
-            assert country is None
-            assert limit == 12
-            return []
-
         with patch("crate.api.browse_artist.get_cache", return_value=None), \
              patch("crate.api.browse_artist.set_cache"), \
              patch("crate.api.browse_artist.artist_name_from_ref", return_value="Poison The Well"), \
              patch("crate.api.browse_artist.api_artist", return_value=artist_payload), \
-             patch("crate.api.browse_artist.api_artist_info", return_value={"similar": []}), \
-             patch("crate.api.browse_artist.api_artist_top_tracks", return_value=[]), \
-             patch("crate.api.browse_artist._library_artist_ref", return_value={"id": 52, "slug": "poison-the-well"}), \
+             patch("crate.api.browse_artist._get_artist_page_info", return_value={"similar": []}), \
+             patch("crate.api.browse_artist._get_artist_page_top_tracks", return_value=[]), \
+             patch("crate.api.browse_artist._get_artist_page_shows", return_value={"events": [], "configured": False, "source": "none"}) as mock_shows, \
              patch("crate.api.browse_artist.get_top_artists", return_value=[]), \
-             patch("crate.api.browse_artist.get_artist_genres_by_name", return_value=[]), \
-             patch("crate.api.browse_artist.db_get_shows", side_effect=fake_db_get_shows), \
-             patch("crate.api.browse_artist.get_attending_show_ids", return_value=[]), \
-             patch("crate.api.enrichment.get_artist_enrichment_by_id", return_value={}), \
-             patch("crate.ticketmaster.is_configured", return_value=False), \
-             patch("crate.setlistfm.get_probable_setlist", return_value=[]):
+             patch("crate.api.enrichment.get_artist_page_enrichment", return_value={}):
             resp = test_app.get("/api/artists/52/page?slug=poison-the-well")
 
         assert resp.status_code == 200
         assert resp.json()["shows"]["events"] == []
+        mock_shows.assert_called_once_with(user_id=1, name="Poison The Well", limit=12, country="")
+
+    def test_get_album_by_artist_and_album_slug(self, test_app):
+        artist = {"id": 5, "slug": "quicksand", "name": "Quicksand"}
+        albums = [
+            {"id": 14, "slug": "quicksand-slip", "artist": "Quicksand", "name": "Slip"},
+        ]
+        album_payload = {
+            "id": 14,
+            "slug": "quicksand-slip",
+            "artist_id": 5,
+            "artist_slug": "quicksand",
+            "artist": "Quicksand",
+            "name": "Slip",
+            "display_name": "Slip",
+            "path": "Quicksand/Slip",
+            "track_count": 10,
+            "total_size_mb": 412,
+            "total_length_sec": 2140,
+            "has_cover": True,
+            "cover_file": "cover.jpg",
+            "tracks": [],
+            "album_tags": {"artist": "Quicksand", "album": "Slip", "year": "1993", "genre": "", "musicbrainz_albumid": None},
+            "musicbrainz_albumid": None,
+            "genres": [],
+            "genre_profile": [],
+        }
+
+        with patch("crate.api.browse_album.get_library_artist_by_slug", return_value=artist), \
+             patch("crate.api.browse_album.get_library_albums", return_value=albums), \
+             patch("crate.api.browse_album.api_album", return_value=album_payload) as mock_api_album:
+            resp = test_app.get("/api/artist-slugs/quicksand/albums/slip")
+
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "Slip"
+        mock_api_album.assert_called_once_with(ANY, "Quicksand", "Slip")
 
 
 class TestStatsAPI:
@@ -1319,3 +1406,33 @@ class TestLibraryPlaylistsPage:
         assert data["playlists"][0]["name"] == "Personal"
         assert data["followed_curated_playlists"][0]["name"] == "Crate Picks"
         assert data["followed_curated_playlists"][0]["is_followed"] is True
+
+
+def test_resolve_track_genre_prefers_artist_canonical_over_album_raw_tag():
+    from crate.api import browse_media
+
+    album_rows = [{"name": "x-unknown-core", "slug": "x-unknown-core", "weight": 1.0}]
+    artist_rows = [{"name": "Post-Hardcore", "slug": "post-hardcore", "weight": 0.82}]
+
+    with patch("crate.api.browse_media.get_track_album_genres", return_value=album_rows), \
+         patch("crate.api.browse_media.get_track_artist_genres", return_value=artist_rows):
+        result = browse_media._resolve_track_genre(91)
+
+    assert result is not None
+    assert result["source"] == "artist"
+    assert result["primary"]["slug"] == "post-hardcore"
+
+
+def test_resolve_track_genre_keeps_album_canonical_when_available():
+    from crate.api import browse_media
+
+    album_rows = [{"name": "Shoegaze", "slug": "shoegaze", "weight": 0.91}]
+    artist_rows = [{"name": "Alternative Rock", "slug": "alternative-rock", "weight": 0.95}]
+
+    with patch("crate.api.browse_media.get_track_album_genres", return_value=album_rows), \
+         patch("crate.api.browse_media.get_track_artist_genres", return_value=artist_rows):
+        result = browse_media._resolve_track_genre(92)
+
+    assert result is not None
+    assert result["source"] == "album"
+    assert result["primary"]["slug"] == "shoegaze"

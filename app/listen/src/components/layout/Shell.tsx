@@ -199,16 +199,17 @@ export function Shell() {
   const hasTrack = !!currentTrack;
   const [sidebarExpanded, setSidebarExpanded] = useState(getStoredExpanded);
   const overlayHeader =
+    /^\/artists\/[^/]+$/.test(location.pathname) ||
     /^\/artists\/[^/]+\/[^/]+$/.test(location.pathname) ||
     /^\/artists\/[^/]+\/[^/]+\/top-tracks$/.test(location.pathname) ||
     /^\/albums\/[^/]+\/[^/]+$/.test(location.pathname);
   const headerOffsetClass = overlayHeader ? "" : "pt-16";
-  // Desktop: always transparent — individual elements carry their own backdrop.
-  // Mobile: subtle backdrop so the header stays visible while scrolling.
-  // On overlay pages (artist/album hero) both are fully transparent.
-  const headerChromeClass = isDesktop
-    ? "bg-transparent border-transparent border-b-0 shadow-none"
-    : "bg-app-surface/80 backdrop-blur-lg border-transparent border-b-0";
+  const desktopContentPadClass = overlayHeader ? "pt-0 pb-6" : "py-6";
+  const mobileContentPadClass = overlayHeader
+    ? "pt-0 pb-4"
+    : "py-4 pt-[calc(4rem+env(safe-area-inset-top,0px))]";
+  const headerChromeClass =
+    "border-b border-white/6 bg-app-surface/68 shadow-[0_12px_32px_rgba(0,0,0,0.18)] backdrop-blur-xl";
 
   // Sync with sidebar toggle without polling localStorage.
   useEffect(() => {
@@ -239,7 +240,7 @@ export function Shell() {
         </div>
 
         <main className={`relative z-0 flex-1 ${sidebarW} overflow-x-hidden transition-all duration-200 ${hasTrack ? "pb-[90px]" : ""}`}>
-          <div className={`mx-auto w-full max-w-[1440px] py-6 ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
+          <div className={`mx-auto w-full max-w-[1440px] ${desktopContentPadClass} ${sidebarExpanded ? "px-6" : "px-10"} transition-all duration-200 ${headerOffsetClass}`}>
             <Outlet />
           </div>
         </main>
@@ -264,7 +265,7 @@ export function Shell() {
       </div>
 
       <main className={`relative z-0 flex-1 overflow-x-hidden ${mobileBottomPad}`}>
-        <div className={`mx-auto w-full max-w-[1440px] py-4 px-[max(1rem,env(safe-area-inset-left))] ${overlayHeader ? "" : "pt-[calc(4rem+env(safe-area-inset-top,0px))]"}`}>
+        <div className={`mx-auto w-full max-w-[1440px] px-[max(1rem,env(safe-area-inset-left))] ${mobileContentPadClass}`}>
           <Outlet />
         </div>
       </main>

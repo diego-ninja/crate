@@ -50,11 +50,18 @@ def get_setlists(mbid: str, page: int = 1, per_page: int = 20) -> dict | None:
     return _api_get(f"artist/{mbid}/setlists", {"p": page})
 
 
-def get_probable_setlist(artist_name: str, num_setlists: int = 30) -> list[dict] | None:
+def get_cached_probable_setlist(artist_name: str) -> list[dict] | None:
     cache_key = f"setlistfm:probable:{artist_name.lower()}"
     cached = get_cache(cache_key, max_age_seconds=86400 * 7)
+    if not cached:
+        return None
+    return cached.get("songs")
+
+
+def get_probable_setlist(artist_name: str, num_setlists: int = 30) -> list[dict] | None:
+    cached = get_cached_probable_setlist(artist_name)
     if cached:
-        return cached.get("songs")
+        return cached
 
     mbid = search_artist(artist_name)
     if not mbid:
@@ -68,7 +75,7 @@ def get_probable_setlist(artist_name: str, num_setlists: int = 30) -> list[dict]
     result = _predict_setlist(raw_setlists)
 
     if result:
-        set_cache(cache_key, {"songs": result}, ttl=604800)
+        set_cache(f"setlistfm:probable:{artist_name.lower()}", {"songs": result}, ttl=604800)
     return result
 
 

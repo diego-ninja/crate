@@ -289,7 +289,7 @@ export function PlayerBar() {
       </div>
 
       <div
-        className={`fixed left-2 right-2 md:left-3 md:right-3 isolate h-[66px] md:h-[82px] overflow-hidden rounded-2xl border border-white/10 bg-black/50 backdrop-blur-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all duration-200 ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
+        className={`fixed left-2 right-2 md:left-3 md:right-3 isolate h-[66px] md:h-[82px] overflow-hidden rounded-2xl border border-white/8 bg-app-surface/68 backdrop-blur-xl shadow-[0_24px_56px_rgba(0,0,0,0.34)] transition-all duration-200 ${hasFloatingOverlayOpen ? "z-app-player-overlay" : "z-app-player"}`}
         style={{ bottom: isDesktop ? 12 : "calc(64px + env(safe-area-inset-bottom, 0px) + 8px)", contain: "paint" }}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
@@ -465,16 +465,14 @@ export function PlayerBar() {
 
           {/* ── Block 2: Controls + Progress ── */}
           <div className="mx-auto hidden max-w-[640px] flex-1 md:flex md:items-center md:justify-center">
-            <div className="relative w-full overflow-hidden px-4 py-2">
+            <div className="relative w-full overflow-visible px-4 py-2">
               {SHOW_PLAYER_BAR_ANALYZER ? (
-                <div className="pointer-events-none absolute inset-0 opacity-28">
+                <div className="pointer-events-none absolute -inset-y-2 -inset-x-10 opacity-26 [mask-image:radial-gradient(ellipse_at_center,rgba(0,0,0,0.96)_18%,rgba(0,0,0,0.9)_44%,rgba(0,0,0,0.34)_74%,transparent_100%)] [mask-repeat:no-repeat]">
                   <WaveformCanvas
                     frequenciesDb={frequenciesDb}
                     sampleRate={sampleRate}
                     isPlaying={isPlaying}
                   />
-                  <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(2,6,12,0.14),rgba(2,6,12,0.32)_44%,rgba(2,6,12,0.74))]" />
-                  <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(2,6,12,0.9),rgba(2,6,12,0.14)_12%,rgba(2,6,12,0.14)_88%,rgba(2,6,12,0.9))]" />
                 </div>
               ) : null}
 
