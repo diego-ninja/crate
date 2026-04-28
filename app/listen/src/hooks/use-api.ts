@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { startTransition, useState, useEffect, useCallback, useRef } from "react";
 
 import { api } from "@/lib/api";
 import { cacheGet, cacheSet, onCacheInvalidation, scopesForUrl } from "@/lib/cache";
@@ -28,9 +28,16 @@ export function useApi<T>(
   options: UseApiOptions = {},
 ): UseApiState<T> {
   const { reactive = true } = options;
-  const cached = url ? cacheGet<T>(url) : null;
-  const [data, setData] = useState<T | null>(cached);
-  const [loading, setLoading] = useState(!cached && !!url);
+  const initialStateRef = useRef<{ data: T | null; loading: boolean } | null>(null);
+  if (initialStateRef.current == null) {
+    const initialData = url ? cacheGet<T>(url) : null;
+    initialStateRef.current = {
+      data: initialData,
+      loading: !initialData && !!url,
+    };
+  }
+  const [data, setData] = useState<T | null>(initialStateRef.current.data);
+  const [loading, setLoading] = useState(initialStateRef.current.loading);
   const [error, setError] = useState<string | null>(null);
   const [trigger, setTrigger] = useState(0);
   const urlRef = useRef(url);
@@ -62,7 +69,9 @@ export function useApi<T>(
       .then((freshData) => {
         if (cancelled) return;
         cacheSet(url, freshData);
-        setData(freshData);
+        startTransition(() => {
+          setData(freshData);
+        });
       })
       .catch((e: Error) => {
         if (!cancelled && !controller.signal.aborted) {

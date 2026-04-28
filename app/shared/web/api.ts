@@ -29,6 +29,34 @@ export function createApiClient(options: ApiClientOptions = {}) {
   } = options;
   const inflightGets = new Map<string, Promise<unknown>>();
 
+  const withAbortSignal = async <T>(
+    request: Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> => {
+    if (!signal) return request;
+    if (signal.aborted) {
+      throw new DOMException("The request was aborted", "AbortError");
+    }
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = () => {
+        cleanup();
+        reject(new DOMException("The request was aborted", "AbortError"));
+      };
+      const cleanup = () => signal.removeEventListener("abort", onAbort);
+      signal.addEventListener("abort", onAbort, { once: true });
+      request.then(
+        (value) => {
+          cleanup();
+          resolve(value);
+        },
+        (error) => {
+          cleanup();
+          reject(error);
+        },
+      );
+    });
+  };
+
   return async function api<T = unknown>(
     url: string,
     method: ApiMethod = "GET",
@@ -40,7 +68,6 @@ export function createApiClient(options: ApiClientOptions = {}) {
     const requestOptions: RequestInit = {
       method,
       headers,
-      signal: options.signal,
     };
 
     if (credentials) {
@@ -56,8 +83,11 @@ export function createApiClient(options: ApiClientOptions = {}) {
       }
     }
 
-    const execute = async () => {
-      const res = await fetch(`${base}${url}`, requestOptions);
+    const execute = async (signal?: AbortSignal) => {
+      const res = await fetch(`${base}${url}`, {
+        ...requestOptions,
+        signal,
+      });
       if (!res.ok) {
         if (res.status === 401 && onUnauthorized && !url.includes("/auth/login")) {
           onUnauthorized();
@@ -69,14 +99,9 @@ export function createApiClient(options: ApiClientOptions = {}) {
       return text ? JSON.parse(text) : (null as T);
     };
 
-    const isAbortableGet = method === "GET" && body === undefined && options.signal != null;
-
     if (method === "GET" && body === undefined) {
       if (options.signal?.aborted) {
         throw new DOMException("The request was aborted", "AbortError");
-      }
-      if (isAbortableGet) {
-        return execute();
       }
       const key = JSON.stringify({
         base,
@@ -87,15 +112,15 @@ export function createApiClient(options: ApiClientOptions = {}) {
       });
       const existing = inflightGets.get(key);
       if (existing) {
-        return existing as Promise<T>;
+        return withAbortSignal(existing as Promise<T>, options.signal);
       }
       const request = execute().finally(() => {
         inflightGets.delete(key);
       });
       inflightGets.set(key, request);
-      return request as Promise<T>;
+      return withAbortSignal(request as Promise<T>, options.signal);
     }
 
-    return execute();
+    return execute(options.signal);
   };
 }

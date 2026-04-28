@@ -28,7 +28,7 @@ describe("createApiClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("does not reuse an inflight GET when the original request is abortable", async () => {
+  it("dedupes identical abortable GET requests without letting one abort cancel the shared fetch", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
       const signal = init?.signal;
       return new Promise((resolve, reject) => {
@@ -59,6 +59,22 @@ describe("createApiClient", () => {
 
     await expect(firstPromise).rejects.toMatchObject({ name: "AbortError" });
     await expect(secondPromise).resolves.toEqual({ ok: true });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start a GET when its abort signal is already aborted", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => jsonResponse({ ok: true }) as Response);
+
+    const api = createApiClient();
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      api("/api/artists/99", "GET", undefined, { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
