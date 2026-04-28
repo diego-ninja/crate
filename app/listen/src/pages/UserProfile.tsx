@@ -49,6 +49,8 @@ interface PublicProfile {
   affinity_score: number;
   affinity_band: "low" | "medium" | "high" | "very_high";
   affinity_reasons: string[];
+  followers_preview: UserListItem[];
+  following_preview: UserListItem[];
 }
 
 function UserAvatar({
@@ -95,13 +97,7 @@ export function UserProfile() {
   const { username } = useParams<{ username: string }>();
   const { user } = useAuth();
   const { data, loading, refetch } = useApi<PublicProfile>(
-    username ? `/api/users/${encodeURIComponent(username)}` : null,
-  );
-  const { data: followers } = useApi<UserListItem[]>(
-    username ? `/api/users/${encodeURIComponent(username)}/followers?limit=8` : null,
-  );
-  const { data: following } = useApi<UserListItem[]>(
-    username ? `/api/users/${encodeURIComponent(username)}/following?limit=8` : null,
+    username ? `/api/users/${encodeURIComponent(username)}/page` : null,
   );
   const [busy, setBusy] = useState(false);
 
@@ -149,6 +145,8 @@ export function UserProfile() {
   }
 
   const displayName = data.display_name || data.username || "Unknown user";
+  const followers = data.followers_preview || [];
+  const following = data.following_preview || [];
 
   return (
     <div className="space-y-6">

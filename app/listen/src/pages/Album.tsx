@@ -8,6 +8,7 @@ import { AppModal, ModalBody } from "@crate/ui/primitives/AppModal";
 import { GenrePillRow, type GenreProfileItem } from "@crate/ui/domain/genres/GenrePill";
 import { useIsDesktop } from "@crate/ui/lib/use-breakpoint";
 import { useApi } from "@/hooks/use-api";
+import { useLazyPlaylistOptions } from "@/hooks/use-lazy-playlist-options";
 import { useDismissibleLayer } from "@crate/ui/lib/use-dismissible-layer";
 import { api } from "@/lib/api";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
@@ -83,11 +84,6 @@ interface AlbumData {
   genre_profile?: GenreProfileItem[];
 }
 
-interface Playlist {
-  id: number;
-  name: string;
-}
-
 export function Album() {
   const { albumId: albumIdParam } = useParams<{ albumId?: string }>();
   const navigate = useNavigate();
@@ -105,7 +101,7 @@ export function Album() {
   const { data, loading, error } = useApi<AlbumData>(
     routeAlbumId != null ? albumApiPath({ albumId: routeAlbumId }) : null,
   );
-  const { data: playlists } = useApi<Playlist[]>(playlistPickerOpen ? "/api/playlists" : null);
+  const { playlistOptions: playlists, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
 
   useDismissibleLayer({
     active: menuOpen || playlistPickerOpen,
@@ -344,6 +340,11 @@ export function Album() {
     });
   }
 
+  function handleTogglePlaylistPicker() {
+    ensurePlaylistOptionsLoaded();
+    setPlaylistPickerOpen((open) => !open);
+  }
+
   // Group tracks by disc if multi-disc
   const tracksByDisc = new Map<number, AlbumTrack[]>();
   for (const t of data.tracks) {
@@ -502,7 +503,7 @@ export function Album() {
                 saved={saved}
                 playlists={playlists}
                 playlistPickerOpen={playlistPickerOpen}
-                setPlaylistPickerOpen={setPlaylistPickerOpen}
+                onTogglePlaylistPicker={handleTogglePlaylistPicker}
                 onPlay={() => { handlePlay(); setMenuOpen(false); }}
                 onPlayNext={handlePlayNextAlbum}
                 onCreatePlaylist={handleCreatePlaylistFromAlbum}
@@ -527,7 +528,7 @@ export function Album() {
                   saved={saved}
                   playlists={playlists}
                   playlistPickerOpen={playlistPickerOpen}
-                  setPlaylistPickerOpen={setPlaylistPickerOpen}
+                  onTogglePlaylistPicker={handleTogglePlaylistPicker}
                   onPlay={() => { handlePlay(); setMenuOpen(false); }}
                   onPlayNext={handlePlayNextAlbum}
                   onCreatePlaylist={handleCreatePlaylistFromAlbum}
@@ -592,6 +593,7 @@ export function Album() {
                     playlistOptions={playlists ?? undefined}
                     onAddToPlaylist={handleAddTrackToPlaylist}
                     onCreatePlaylist={handleCreatePlaylistFromTrack}
+                    onActionMenuOpen={ensurePlaylistOptionsLoaded}
                     onPlayOverride={() => handlePlayTrack(t.id)}
                   />
                 ))}
@@ -625,6 +627,7 @@ export function Album() {
               playlistOptions={playlists ?? undefined}
               onAddToPlaylist={handleAddTrackToPlaylist}
               onCreatePlaylist={handleCreatePlaylistFromTrack}
+              onActionMenuOpen={ensurePlaylistOptionsLoaded}
               onPlayOverride={() => handlePlayTrack(t.id)}
             />
           ))
@@ -635,16 +638,16 @@ export function Album() {
 }
 
 function AlbumMenuContent({
-  data, coverUrl, displayName, saved, playlists, playlistPickerOpen, setPlaylistPickerOpen,
+  data, coverUrl, displayName, saved, playlists, playlistPickerOpen, onTogglePlaylistPicker,
   onPlay, onPlayNext, onCreatePlaylist, onAddToPlaylist, onToggleSaved, offlineSupported, offlineState, offlineLabel, onToggleOffline, onGoToArtist, onShare,
 }: {
   data: { has_cover: boolean; artist: string };
   coverUrl: string;
   displayName: string;
   saved: boolean;
-  playlists: { id: number; name: string }[] | null;
+  playlists: { id: number; name: string }[];
   playlistPickerOpen: boolean;
-  setPlaylistPickerOpen: (fn: (open: boolean) => boolean) => void;
+  onTogglePlaylistPicker: () => void;
   onPlay: () => void;
   onPlayNext: () => void;
   onCreatePlaylist: () => void;
@@ -681,7 +684,7 @@ function AlbumMenuContent({
         <AppMenuButton onClick={onPlayNext}>
           <ListPlus size={15} /> Play next
         </AppMenuButton>
-        <AppMenuButton className="justify-between" onClick={() => setPlaylistPickerOpen((o) => !o)}>
+        <AppMenuButton className="justify-between" onClick={onTogglePlaylistPicker}>
           <span className="flex items-center gap-3"><ListPlus size={15} /> Add to playlist</span>
           <span className="text-white/40">{playlistPickerOpen ? "−" : "+"}</span>
         </AppMenuButton>
@@ -690,8 +693,8 @@ function AlbumMenuContent({
             <button className="w-full text-left rounded-lg px-3 py-2 text-sm text-foreground hover:bg-white/5 transition-colors" onClick={onCreatePlaylist}>
               Add new playlist
             </button>
-            {playlists && playlists.length > 0 ? <AppPopoverDivider className="mx-1" /> : null}
-            {playlists?.map((p) => (
+            {playlists.length > 0 ? <AppPopoverDivider className="mx-1" /> : null}
+            {playlists.map((p) => (
               <button key={p.id} className="w-full text-left rounded-lg px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors" onClick={() => onAddToPlaylist(p.id)}>
                 {p.name}
               </button>

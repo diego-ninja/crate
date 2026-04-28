@@ -5,6 +5,8 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from crate.api.schemas.common import TaskEnqueueResponse
+from crate.api.schemas.curation import CuratedPlaylistSummaryResponse
+from crate.api.schemas.media import MoodPresetResponse
 from crate.api.schemas.utility import ArtistEnrichmentResponse
 
 
@@ -39,6 +41,12 @@ class BrowseFiltersResponse(BaseModel):
     countries: list[BrowseCountryFilterOptionResponse] = Field(default_factory=list)
     decades: list[str] = Field(default_factory=list)
     formats: list[BrowseFormatFilterOptionResponse] = Field(default_factory=list)
+
+
+class BrowseExplorePageResponse(BaseModel):
+    filters: BrowseFiltersResponse
+    playlists: list[CuratedPlaylistSummaryResponse] = Field(default_factory=list)
+    moods: list[MoodPresetResponse] = Field(default_factory=list)
 
 
 class GenreProfileResponse(BaseModel):

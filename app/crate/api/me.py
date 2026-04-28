@@ -33,6 +33,7 @@ from crate.api.schemas.me import (
     LikeMutationResponse,
     LikeTrackRequest,
     LikedTrackResponse,
+    LibraryPlaylistsPageResponse,
     ListenBrainzConnectResponse,
     ListenBrainzConnectRequest,
     LocationPreferencesResponse,
@@ -75,7 +76,7 @@ from crate.db.repositories.auth import (
 )
 from crate.db.cache_store import delete_cache, get_cache, set_cache
 from crate.db.home import get_cached_home_discovery, get_home_playlist, get_home_section
-from crate.db.repositories.playlists import get_followed_system_playlists
+from crate.db.repositories.playlists import get_followed_system_playlists, get_playlists
 from crate.db.snapshot_events import snapshot_channel
 from crate.db.queries.user import (
     get_artist_genres_for_names,
@@ -198,9 +199,10 @@ def _is_home_discovery_invalidation(scope: str, user_id: int) -> bool:
     return scope.startswith(_HOME_DISCOVERY_INVALIDATION_PREFIXES)
 
 
-async def _home_discovery_stream(user_id: int, last_event_id: int):
+async def _home_discovery_stream(user_id: int, last_event_id: int, *, include_initial: bool = True):
     heartbeat_counter = 0
-    yield f"data: {json_dumps(_get_home_discovery_payload(user_id))}\n\n"
+    if include_initial:
+        yield f"data: {json_dumps(_get_home_discovery_payload(user_id))}\n\n"
 
     try:
         import redis.asyncio as aioredis
@@ -418,6 +420,20 @@ def my_followed_playlists(request: Request):
         item["is_followed"] = True
         results.append(item)
     return results
+
+
+@router.get(
+    "/playlists-page",
+    response_model=LibraryPlaylistsPageResponse,
+    responses=AUTH_ERROR_RESPONSES,
+    summary="Get the bundled Listen playlists-library page payload",
+)
+def my_playlists_page(request: Request):
+    user = _require_auth(request)
+    return {
+        "playlists": get_playlists(user_id=user["id"]),
+        "followed_curated_playlists": my_followed_playlists(request),
+    }
 
 
 # ── Follows ──────────────────────────────────────────────────
@@ -889,7 +905,7 @@ def home_discovery(request: Request):
     responses=AUTH_ERROR_RESPONSES,
     summary="Stream personalized home discovery snapshot updates",
 )
-async def home_discovery_stream(request: Request):
+async def home_discovery_stream(request: Request, initial: bool = Query(True)):
     user = _require_auth(request)
     last_event_id_str = request.headers.get("Last-Event-ID", "0")
     try:
@@ -898,7 +914,7 @@ async def home_discovery_stream(request: Request):
         last_event_id = get_latest_invalidation_event_id()
 
     return StreamingResponse(
-        _home_discovery_stream(user["id"], last_event_id),
+        _home_discovery_stream(user["id"], last_event_id, include_initial=initial),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

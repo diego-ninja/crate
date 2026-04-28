@@ -50,6 +50,7 @@ interface TrackRowProps {
   playlistOptions?: TrackRowPlaylistOption[];
   onAddToPlaylist?: (playlistId: number, track: TrackRowData) => void | Promise<void>;
   onCreatePlaylist?: (track: TrackRowData) => void | Promise<void>;
+  onActionMenuOpen?: () => void;
   onPlayOverride?: () => void;
   /** Pass the full sibling track list so clicking plays all from this track's position. */
   queueTracks?: TrackRowData[];
@@ -65,6 +66,7 @@ export const TrackRow = memo(function TrackRow({
   playlistOptions,
   onAddToPlaylist,
   onCreatePlaylist,
+  onActionMenuOpen,
   onPlayOverride,
   queueTracks,
 }: TrackRowProps) {
@@ -133,7 +135,10 @@ export const TrackRow = memo(function TrackRow({
           ? "bg-primary/10"
           : "hover:bg-white/5",
       )}
-      onContextMenu={actionMenu.handleContextMenu}
+      onContextMenu={(event) => {
+        onActionMenuOpen?.();
+        actionMenu.handleContextMenu(event);
+      }}
       onClick={handleActivate}
     >
       {showCoverThumb ? (
@@ -259,7 +264,14 @@ export const TrackRow = memo(function TrackRow({
         <ItemActionMenuButton
           buttonRef={actionMenu.triggerRef}
           hasActions={actionMenu.hasActions}
-          onClick={actionMenu.openFromTrigger}
+          onClick={(event) => {
+            onActionMenuOpen?.();
+            actionMenu.openFromTrigger(event);
+          }}
+          onContextMenu={(event) => {
+            onActionMenuOpen?.();
+            actionMenu.handleContextMenu(event);
+          }}
           className="h-9 w-9"
         />
       </div>

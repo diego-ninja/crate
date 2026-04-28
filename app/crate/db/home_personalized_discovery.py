@@ -162,9 +162,9 @@ def build_home_discovery_payload(user_id: int) -> dict:
         "radio_stations": _build_radio_stations(merged_artists, top_albums, 14),
         "favorite_artists": get_home_favorite_artists(user_id),
         "essentials": _build_core_playlists(user_id, merged_artists, 6),
-        "recent_global_artists": _build_recent_global_artists(10),
+        "recent_global_artists": _build_recent_global_artists(7),
         "replay": get_replay_mix(user_id, window="30d", limit=18),
-        "upcoming": _build_home_upcoming(user_id, limit=120),
+        "upcoming": _build_home_upcoming(user_id, lookup_limit=120, item_limit=12),
     }
 
 

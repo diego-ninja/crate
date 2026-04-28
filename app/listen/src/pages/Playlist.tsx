@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router";
 import { AlertCircle, ArrowDownToLine, CheckCircle2, Play, Shuffle, Loader2, Sparkles, RefreshCw, Pencil, Trash2, Share2, Radio, Users, Copy, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { useApi } from "@/hooks/use-api";
+import { useLazyPlaylistOptions } from "@/hooks/use-lazy-playlist-options";
 import { api } from "@/lib/api";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { PlaylistArtwork, type PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
@@ -87,7 +88,7 @@ export function Playlist() {
   const { data, loading, refetch } = useApi<PlaylistData>(
     id ? `/api/playlists/${id}` : null,
   );
-  const { data: playlistOptions } = useApi<Array<{ id: number; name: string }>>("/api/playlists");
+  const { playlistOptions, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
   const { playAll } = usePlayerActions();
   const { openCreatePlaylist } = usePlaylistComposer();
   const { supported: offlineSupported, getPlaylistState, getPlaylistRecord, togglePlaylistOffline } = useOffline();
@@ -179,6 +180,10 @@ export function Playlist() {
   const filteredTracks = useMemo(
     () => filterPlaylistTracks(data?.tracks || [], deferredFilterQuery),
     [data?.tracks, deferredFilterQuery],
+  );
+  const destinationPlaylistOptions = useMemo(
+    () => playlistOptions.filter((playlist) => playlist.id !== data?.id),
+    [playlistOptions, data?.id],
   );
 
   function handlePlay() {
@@ -625,11 +630,10 @@ export function Playlist() {
               index={i + 1}
               showArtist
               showAlbum
-              playlistOptions={(playlistOptions || [])
-                .filter((playlist) => playlist.id !== data.id)
-                .map((playlist) => ({ id: playlist.id, name: playlist.name }))}
+              playlistOptions={destinationPlaylistOptions}
               onAddToPlaylist={handleAddTrackToPlaylist}
               onCreatePlaylist={handleCreatePlaylistFromTrack}
+              onActionMenuOpen={ensurePlaylistOptionsLoaded}
               onPlayOverride={() => handlePlayTrack(t.id)}
             />
           ))}

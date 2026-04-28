@@ -4,6 +4,7 @@ import { AlertCircle, ArrowLeft, ArrowDownToLine, CheckCircle2, Heart, Loader2, 
 import { toast } from "sonner";
 
 import { useApi } from "@/hooks/use-api";
+import { useLazyPlaylistOptions } from "@/hooks/use-lazy-playlist-options";
 import { api } from "@/lib/api";
 import { TrackRow } from "@/components/cards/TrackRow";
 import { OfflineBadge } from "@/components/offline/OfflineBadge";
@@ -63,7 +64,7 @@ export function CuratedPlaylist() {
   const { data, loading, refetch } = useApi<CuratedPlaylistData>(
     id ? `/api/curation/playlists/${id}` : null,
   );
-  const { data: playlistOptions } = useApi<Array<{ id: number; name: string }>>("/api/playlists");
+  const { playlistOptions, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
   const [togglingFollow, setTogglingFollow] = useState(false);
   const [filterQuery, setFilterQuery] = useState("");
   const deferredFilterQuery = useDeferredValue(filterQuery);
@@ -443,9 +444,10 @@ export function CuratedPlaylist() {
               index={index + 1}
               showArtist
               showAlbum
-              playlistOptions={(playlistOptions || []).map((playlist) => ({ id: playlist.id, name: playlist.name }))}
+              playlistOptions={playlistOptions}
               onAddToPlaylist={handleAddTrackToPlaylist}
               onCreatePlaylist={handleCreatePlaylistFromTrack}
+              onActionMenuOpen={ensurePlaylistOptionsLoaded}
               onPlayOverride={() => handlePlayTrack(track.id)}
             />
           ))}

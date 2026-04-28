@@ -220,6 +220,11 @@ class FollowedPlaylistResponse(PlaylistSummaryResponse):
     followed_at: datetime | str | None = None
 
 
+class LibraryPlaylistsPageResponse(BaseModel):
+    playlists: list[PlaylistSummaryResponse] = Field(default_factory=list)
+    followed_curated_playlists: list[FollowedPlaylistResponse] = Field(default_factory=list)
+
+
 class FollowedArtistResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 

@@ -228,6 +228,7 @@ def test_openapi_types_social_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
     me_social_operation = data["paths"]["/api/me/social"]["get"]
     profile_operation = data["paths"]["/api/users/{username}"]["get"]
+    profile_page_operation = data["paths"]["/api/users/{username}/page"]["get"]
     followers_operation = data["paths"]["/api/users/{username}/followers"]["get"]
     follow_operation = data["paths"]["/api/users/{user_id}/follow"]["post"]
 
@@ -236,6 +237,9 @@ def test_openapi_types_social_routes_and_marks_them_authenticated(test_app):
 
     assert profile_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert profile_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/SocialProfileDetailResponse")
+
+    assert profile_page_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert profile_page_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/SocialProfilePageResponse")
 
     assert followers_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert followers_operation["responses"]["200"]["content"]["application/json"]["schema"]["items"]["$ref"].endswith("/SocialUserRelationResponse")
@@ -247,6 +251,7 @@ def test_openapi_types_social_routes_and_marks_them_authenticated(test_app):
 def test_openapi_types_me_routes_and_marks_them_authenticated(test_app):
     data = test_app.get("/openapi.json").json()
     library_operation = data["paths"]["/api/me"]["get"]
+    playlists_page_operation = data["paths"]["/api/me/playlists-page"]["get"]
     history_operation = data["paths"]["/api/me/history"]["get"]
     play_events_operation = data["paths"]["/api/me/play-events"]["post"]
     overview_operation = data["paths"]["/api/me/stats/overview"]["get"]
@@ -255,6 +260,9 @@ def test_openapi_types_me_routes_and_marks_them_authenticated(test_app):
 
     assert library_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert library_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/UserLibraryCountsResponse")
+
+    assert playlists_page_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert playlists_page_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/LibraryPlaylistsPageResponse")
 
     assert history_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert history_operation["responses"]["200"]["content"]["application/json"]["schema"]["items"]["$ref"].endswith("/PlayHistoryEntryResponse")
@@ -600,6 +608,7 @@ def test_openapi_types_artwork_routes_and_marks_them_authenticated(test_app):
 
 def test_openapi_types_browse_artist_and_album_routes(test_app):
     data = test_app.get("/openapi.json").json()
+    explore_page_operation = data["paths"]["/api/browse/explore-page"]["get"]
     filters_operation = data["paths"]["/api/browse/filters"]["get"]
     artists_operation = data["paths"]["/api/artists"]["get"]
     artist_detail_operation = data["paths"]["/api/artists/{artist_id}"]["get"]
@@ -608,6 +617,9 @@ def test_openapi_types_browse_artist_and_album_routes(test_app):
     album_detail_operation = data["paths"]["/api/albums/{album_id}"]["get"]
     related_albums_operation = data["paths"]["/api/albums/{album_id}/related"]["get"]
     fetch_cover_operation = data["paths"]["/api/albums/{album_id}/fetch-cover"]["post"]
+
+    assert explore_page_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
+    assert explore_page_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/BrowseExplorePageResponse")
 
     assert filters_operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert filters_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("/BrowseFiltersResponse")

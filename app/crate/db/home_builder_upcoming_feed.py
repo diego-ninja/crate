@@ -69,7 +69,7 @@ def _build_show_items(
     return items
 
 
-def _build_home_upcoming(user_id: int, limit: int = 120) -> dict:
+def _build_home_upcoming(user_id: int, *, lookup_limit: int = 120, item_limit: int = 12) -> dict:
     from crate.db.queries.shows import get_attending_show_ids
     from crate.db.queries.user import get_upcoming_releases, get_upcoming_shows
     from crate.db.repositories.auth import get_user_by_id
@@ -97,10 +97,10 @@ def _build_home_upcoming(user_id: int, limit: int = 120) -> dict:
     user_lon = full_user.get("longitude")
     user_radius = full_user.get("show_radius_km") or 60
 
-    releases = get_upcoming_releases(followed_names, today, recent_cutoff, limit)
+    releases = get_upcoming_releases(followed_names, today, recent_cutoff, lookup_limit)
     items = _build_release_items(releases, today=today)
 
-    shows = get_upcoming_shows(followed_names, today, user_lat, user_lon, user_radius, limit)
+    shows = get_upcoming_shows(followed_names, today, user_lat, user_lon, user_radius, lookup_limit)
     attending_show_ids = get_attending_show_ids(user_id, [show["id"] for show in shows if show.get("id") is not None])
     show_artists = sorted({show["artist_name"] for show in shows if show.get("artist_name")})
     probable_setlists = _load_probable_setlists(show_artists) if show_artists else {}
@@ -118,7 +118,7 @@ def _build_home_upcoming(user_id: int, limit: int = 120) -> dict:
     release_count = sum(1 for item in items if item.get("type") == "release")
 
     return {
-        "items": items[:limit],
+        "items": items[:item_limit],
         "insights": insights,
         "summary": {
             "followed_artists": len(followed_names),

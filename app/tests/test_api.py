@@ -1197,3 +1197,55 @@ class TestStackAPI:
 
         assert resp.status_code == 200
         assert resp.json()["snapshot"]["scope"] == "ops:stack"
+
+
+class TestSocialProfilePage:
+    def test_profile_page_bundles_previews(self, test_app):
+        profile = {
+            "id": 7,
+            "username": "jane",
+            "display_name": "Jane",
+            "avatar": None,
+            "bio": "hello",
+            "joined_at": "2026-01-01T00:00:00Z",
+            "followers_count": 12,
+            "following_count": 9,
+            "friends_count": 3,
+        }
+        relation = {"following": True, "followed_by": False, "is_friend": False}
+        affinity = {"affinity_score": 87, "affinity_band": "high", "affinity_reasons": ["shared artists"]}
+        playlists = [{"id": 11, "name": "Public Mix", "visibility": "public", "is_collaborative": False, "track_count": 4, "total_duration": 900}]
+        followers = [{"id": 1, "username": "sam", "display_name": "Sam", "avatar": None, "followed_at": "2026-02-01T00:00:00Z"}]
+        following = [{"id": 2, "username": "lee", "display_name": "Lee", "avatar": None, "followed_at": "2026-02-02T00:00:00Z"}]
+
+        with patch("crate.api.social.get_public_user_profile_by_username", return_value=profile), \
+             patch("crate.api.social.get_public_playlists_for_user", return_value=playlists), \
+             patch("crate.api.social.get_relationship_state", return_value=relation), \
+             patch("crate.api.social.get_affinity", return_value=affinity), \
+             patch("crate.api.social.get_followers", return_value=followers), \
+             patch("crate.api.social.get_following", return_value=following):
+            resp = test_app.get("/api/users/jane/page")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["display_name"] == "Jane"
+        assert data["public_playlists"][0]["name"] == "Public Mix"
+        assert data["followers_preview"][0]["username"] == "sam"
+        assert data["following_preview"][0]["username"] == "lee"
+        assert data["affinity_score"] == 87
+
+
+class TestLibraryPlaylistsPage:
+    def test_playlists_page_bundles_personal_and_curated(self, test_app):
+        playlists = [{"id": 1, "name": "Personal", "track_count": 5, "is_smart": False, "total_duration": 1000}]
+        followed = [{"id": 2, "name": "Crate Picks", "track_count": 9, "is_smart": True, "follower_count": 10}]
+
+        with patch("crate.api.me.get_playlists", return_value=playlists), \
+             patch("crate.api.me.get_followed_system_playlists", return_value=followed):
+            resp = test_app.get("/api/me/playlists-page")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["playlists"][0]["name"] == "Personal"
+        assert data["followed_curated_playlists"][0]["name"] == "Crate Picks"
+        assert data["followed_curated_playlists"][0]["is_followed"] is True

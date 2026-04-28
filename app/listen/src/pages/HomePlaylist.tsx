@@ -12,6 +12,7 @@ import { PlaylistTrackFilterBar, filterPlaylistTracks } from "@/components/playl
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { usePlaylistComposer } from "@/contexts/PlaylistComposerContext";
 import { useApi } from "@/hooks/use-api";
+import { useLazyPlaylistOptions } from "@/hooks/use-lazy-playlist-options";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl } from "@/lib/library-routes";
 import { fetchHomePlaylistRadio } from "@/lib/radio";
@@ -27,7 +28,7 @@ export function HomePlaylist() {
   const { data, loading } = useApi<HomeGeneratedPlaylistDetail>(
     playlistId ? `/api/me/home/playlists/${encodeURIComponent(playlistId)}` : null,
   );
-  const { data: playlistOptions } = useApi<Array<{ id: number; name: string }>>("/api/playlists");
+  const { playlistOptions, ensurePlaylistOptionsLoaded } = useLazyPlaylistOptions();
 
   const playerTracks = useMemo(() => {
     if (!data?.tracks?.length) return [];
@@ -296,9 +297,10 @@ export function HomePlaylist() {
               index={index + 1}
               showArtist
               showAlbum
-              playlistOptions={(playlistOptions || []).map((playlist) => ({ id: playlist.id, name: playlist.name }))}
+              playlistOptions={playlistOptions}
               onAddToPlaylist={handleAddTrackToPlaylist}
               onCreatePlaylist={handleCreatePlaylistFromTrack}
+              onActionMenuOpen={ensurePlaylistOptionsLoaded}
               queueTracks={trackRows}
             />
           ))}

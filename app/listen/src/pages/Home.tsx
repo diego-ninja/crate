@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 
@@ -95,15 +95,20 @@ export function Home() {
 
   useEffect(() => {
     if (discovery) {
-      setLiveDiscovery(discovery);
+      startTransition(() => {
+        setLiveDiscovery(discovery);
+      });
     }
   }, [discovery]);
 
   useEffect(() => {
-    const source = new EventSource(apiSseUrl("/api/me/home/discovery-stream"));
+    const source = new EventSource(apiSseUrl("/api/me/home/discovery-stream?initial=0"));
     source.onmessage = (event) => {
       try {
-        setLiveDiscovery(JSON.parse(event.data) as HomeDiscoveryPayload);
+        const next = JSON.parse(event.data) as HomeDiscoveryPayload;
+        startTransition(() => {
+          setLiveDiscovery(next);
+        });
       } catch {
         // Ignore malformed snapshots and keep the last good payload.
       }
