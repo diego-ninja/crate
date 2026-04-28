@@ -248,6 +248,46 @@ class TestArtistDetailAPI:
         assert resp.json()["artist"]["name"] == "Poison The Well"
         mock_artist_name_from_ref.assert_called_once_with(52, "poison-the-well")
 
+    def test_get_artist_page_passes_plain_country_to_shows_helper(self, test_app):
+        artist_payload = {
+            "id": 52,
+            "slug": "poison-the-well",
+            "name": "Poison The Well",
+            "albums": [],
+            "total_tracks": 0,
+            "total_size_mb": 0,
+            "primary_format": None,
+            "genres": [],
+            "genre_profile": [],
+            "issue_count": 0,
+            "is_v2": True,
+        }
+
+        def fake_db_get_shows(*, artist_name, country, limit):
+            assert artist_name == "Poison The Well"
+            assert country is None
+            assert limit == 12
+            return []
+
+        with patch("crate.api.browse_artist.get_cache", return_value=None), \
+             patch("crate.api.browse_artist.set_cache"), \
+             patch("crate.api.browse_artist.artist_name_from_ref", return_value="Poison The Well"), \
+             patch("crate.api.browse_artist.api_artist", return_value=artist_payload), \
+             patch("crate.api.browse_artist.api_artist_info", return_value={"similar": []}), \
+             patch("crate.api.browse_artist.api_artist_top_tracks", return_value=[]), \
+             patch("crate.api.browse_artist._library_artist_ref", return_value={"id": 52, "slug": "poison-the-well"}), \
+             patch("crate.api.browse_artist.get_top_artists", return_value=[]), \
+             patch("crate.api.browse_artist.get_artist_genres_by_name", return_value=[]), \
+             patch("crate.api.browse_artist.db_get_shows", side_effect=fake_db_get_shows), \
+             patch("crate.api.browse_artist.get_attending_show_ids", return_value=[]), \
+             patch("crate.api.enrichment.get_artist_enrichment_by_id", return_value={}), \
+             patch("crate.ticketmaster.is_configured", return_value=False), \
+             patch("crate.setlistfm.get_probable_setlist", return_value=[]):
+            resp = test_app.get("/api/artists/52/page?slug=poison-the-well")
+
+        assert resp.status_code == 200
+        assert resp.json()["shows"]["events"] == []
+
 
 class TestStatsAPI:
     def test_get_stats_reads_from_ops_snapshot(self, test_app):

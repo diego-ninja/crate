@@ -261,7 +261,7 @@ def _build_artist_page_payload(
     if isinstance(top_tracks_payload, JSONResponse):
         top_tracks_payload = []
 
-    shows_payload = api_artist_shows(request, artist_name, limit=shows_limit)
+    shows_payload = api_artist_shows(request, artist_name, limit=shows_limit, country="")
     if isinstance(shows_payload, JSONResponse):
         shows_payload = {"events": [], "configured": False, "source": "none"}
 
@@ -588,7 +588,7 @@ def api_artist_shows_by_id(request: Request, artist_id: int, limit: int = Query(
     artist_name = artist_name_from_id(artist_id)
     if not artist_name:
         return JSONResponse({"error": "Not found"}, status_code=404)
-    return api_artist_shows(request, artist_name, limit, country)
+    return api_artist_shows(request, artist_name, limit=limit, country=country)
 
 
 @router.post(
@@ -787,7 +787,7 @@ def api_artist_info(request: Request, name: str):
     return enriched
 
 
-def api_artist_shows(request: Request, name: str, limit: int = Query(10), country: str = Query("")):
+def api_artist_shows(request: Request, name: str, limit: int = 10, country: str = ""):
     user = _require_auth(request)
     from crate.ticketmaster import get_upcoming_shows, is_configured
     from crate import setlistfm
