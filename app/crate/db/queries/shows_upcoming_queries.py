@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from crate.db.queries.shows_shared import dedupe_show_rows
 from sqlalchemy import text
 
 from crate.db.tx import read_scope
@@ -15,7 +16,7 @@ def get_upcoming_shows(
 ) -> list[dict]:
     today = datetime.now(timezone.utc).date()
     conditions = ["date >= :today", "status != 'cancelled'"]
-    params: dict[str, object] = {"today": today, "lim": limit}
+    params: dict[str, object] = {"today": today, "lim": limit * 3}
     if artist_name:
         conditions.append("artist_name = :artist_name")
         params["artist_name"] = artist_name
@@ -30,7 +31,7 @@ def get_upcoming_shows(
             text(f"SELECT * FROM shows WHERE {' AND '.join(conditions)} ORDER BY date ASC LIMIT :lim"),
             params,
         ).mappings().all()
-    return [dict(row) for row in rows]
+    return dedupe_show_rows([dict(row) for row in rows])[:limit]
 
 
 def get_upcoming_shows_near(
@@ -91,9 +92,9 @@ def get_upcoming_shows_near(
             result.append(item)
         elif dist is None:
             result.append(item)
-        if len(result) >= limit:
+        if len(result) >= limit * 3:
             break
-    return result
+    return dedupe_show_rows(result)[:limit]
 
 
 def get_all_shows(limit: int = 500) -> list[dict]:

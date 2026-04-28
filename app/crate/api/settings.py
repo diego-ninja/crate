@@ -9,14 +9,11 @@ from crate.api.schemas.settings import (
     CacheClearRequest,
     CacheClearResponse,
     EnrichmentUpdateRequest,
-    LastfmSyncRequest,
-    LastfmSyncResponse,
     LibrarySettingsUpdateRequest,
     ProcessingSettingsUpdateRequest,
     ScheduleIntervalsRequest,
     SettingsResponse,
     SettingsUpdateResponse,
-    ShowsSettingsUpdateRequest,
     SoulseekSettingsUpdateRequest,
     TelegramSettingsUpdateRequest,
     TelegramTestResponse,
@@ -104,10 +101,8 @@ def _get_shows_settings() -> dict:
     except Exception:
         pass
     return {
-        "lastfm_scraping_enabled": get_setting("lastfm_scraping_enabled", "true") == "true",
         "active_cities": [{"city": c["city"], "country": c.get("country", "")} for c in cities],
         "upcoming_shows": counts["show_count"],
-        "lastfm_shows": counts["lastfm_count"],
     }
 
 
@@ -304,57 +299,6 @@ def test_telegram(request: Request):
     if not ok:
         raise HTTPException(status_code=400, detail="Failed to send message. Check bot token and chat ID.")
     return {"ok": True}
-
-
-@router.put(
-    "/shows",
-    response_model=SettingsUpdateResponse,
-    responses=_SETTINGS_RESPONSES,
-    summary="Update live-show scraping settings",
-)
-def update_shows_settings(request: Request, body: ShowsSettingsUpdateRequest):
-    _require_admin(request)
-    if body.lastfm_scraping_enabled is not None:
-        set_setting("lastfm_scraping_enabled", "true" if body.lastfm_scraping_enabled else "false")
-    return {"ok": True}
-
-
-@router.post(
-    "/shows/sync-lastfm",
-    response_model=LastfmSyncResponse,
-    responses=_SETTINGS_RESPONSES,
-    summary="Queue a Last.fm show sync",
-)
-def trigger_lastfm_sync(request: Request, body: LastfmSyncRequest | None = None):
-    """Manually trigger Last.fm scrape for a specific city or all user cities."""
-    _require_admin(request)
-    from crate.db.queries.shows import get_unique_user_cities
-
-    payload = body.model_dump(exclude_none=True) if body else {}
-    city = (payload.get("city") or "").strip()
-
-    if city:
-        from crate.geolocation import geocode_city
-        geo = geocode_city(city)
-        if not geo:
-            raise HTTPException(status_code=422, detail=f"Could not geocode city: {city}")
-        task_id = create_task("sync_shows_lastfm", {
-            "city": geo["city"],
-            "latitude": geo["latitude"],
-            "longitude": geo["longitude"],
-        })
-        return {"task_id": task_id, "city": geo["city"]}
-
-    cities = get_unique_user_cities()
-    task_ids = []
-    for c in cities:
-        tid = create_task("sync_shows_lastfm", {
-            "city": c["city"],
-            "latitude": c["latitude"],
-            "longitude": c["longitude"],
-        })
-        task_ids.append(tid)
-    return {"task_ids": task_ids, "cities": [c["city"] for c in cities]}
 
 
 @router.put(

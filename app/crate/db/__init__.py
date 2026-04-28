@@ -174,7 +174,7 @@ from crate.db.releases import (
 
 # Shows
 from crate.db.shows import (
-    upsert_show, consolidate_show, get_unique_user_cities,
+    upsert_show, get_unique_user_cities,
     get_upcoming_shows, get_upcoming_shows_near, get_all_shows,
     get_show_cities, get_show_countries, delete_past_shows,
     attend_show, unattend_show, get_attending_show_ids,

@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
@@ -32,6 +32,7 @@ import {
 import { PlayerTrackMenu } from "@/components/player/bar/PlayerTrackMenu";
 import { PlayerVolumeControl } from "@/components/player/bar/PlayerVolumeControl";
 import { WaveformCanvas } from "@/components/player/bar/WaveformCanvas";
+import { getPlaySourceLabel } from "@/components/player/player-source";
 import {
   formatPlayerTime,
   getTrackQualityBadge,
@@ -129,22 +130,6 @@ export function PlayerBar() {
     duration,
   );
 
-  // Smoothly fade the "Playing from: <source>" line when the source
-  // actually changes (album → playlist, etc.). Without this it would
-  // pop in/out on user-initiated source changes — a small but visible
-  // jitter at the edge of the player bar.
-  const [displayedSource, setDisplayedSource] = useState(playSource);
-  const [previousSource, setPreviousSource] = useState<typeof playSource>(null);
-  useEffect(() => {
-    const currentName = displayedSource?.name ?? null;
-    const nextName = playSource?.name ?? null;
-    if (currentName === nextName) return;
-    setPreviousSource(displayedSource);
-    setDisplayedSource(playSource);
-    const id = window.setTimeout(() => setPreviousSource(null), 320);
-    return () => window.clearTimeout(id);
-  }, [playSource, displayedSource]);
-
   const { frequenciesDb, sampleRate } = useAudioVisualizer(
     SHOW_PLAYER_BAR_ANALYZER && isPlaying,
     `${currentTrack?.id ?? "none"}:${analyserVersion}`,
@@ -223,6 +208,7 @@ export function PlayerBar() {
   const transportButtonClass = getTransportButtonToneClass(playSource, isPlaying || isBuffering);
   const shapedRadioSessionId = playSource?.radio?.shapedSessionId;
   const isShapedRadioTrack = !!(shapedRadioSessionId && currentTrack?.libraryTrackId);
+  const sourceLabel = getPlaySourceLabel(playSource);
 
 
   if (!currentTrack) return null;
@@ -301,7 +287,7 @@ export function PlayerBar() {
               role={isDesktop ? undefined : "button"}
               tabIndex={isDesktop ? undefined : 0}
               aria-label={isDesktop ? undefined : "Open fullscreen player"}
-              className="flex min-w-0 shrink-0 flex-1 cursor-pointer items-center gap-3 md:w-[240px] md:flex-none md:cursor-default xl:w-[280px]"
+              className="flex min-w-0 shrink-0 flex-1 cursor-pointer items-center gap-3 md:w-[260px] md:flex-none md:cursor-default lg:w-[340px] xl:w-[min(34vw,520px)] 2xl:w-[min(38vw,680px)]"
               onTouchStart={() => { if (!isDesktop) prepareFullscreenPlayer(); }}
               onClick={() => { if (!isDesktop) openFullscreenPlayer(); }}
               onKeyDown={(e) => { if (!isDesktop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openFullscreenPlayer(); } }}
@@ -345,7 +331,7 @@ export function PlayerBar() {
 
             {/* Text — crossfades outgoing ↔ incoming. Stacks absolutely to allow
                 overlap without layout jump. */}
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 md:flex-none md:max-w-[220px] lg:max-w-[300px] xl:max-w-[min(24vw,420px)] 2xl:max-w-[min(28vw,520px)]">
               {/* Title + artist crossfade between outgoing and incoming.
                   Wrapped in its own relative block so the absolute
                   outgoing copy doesn't escape into the persistent rows
@@ -403,33 +389,22 @@ export function PlayerBar() {
                   track crossfade — kept outside the fading block.
                   When the source itself changes (album → playlist) the
                   outgoing line fades out while the incoming fades in. */}
-              {(displayedSource || previousSource) && (
+              {sourceLabel && (
                 <div className="relative mt-0.5 h-[14px] hidden lg:block">
-                  {previousSource && (
-                    <p
-                      key={`prev-${previousSource.name}`}
-                      className="absolute inset-0 text-[10px] text-white/40 truncate leading-tight"
-                      style={{ animation: "fadeOut 320ms ease-out forwards" }}
-                    >
-                      Playing from: {previousSource.name}
-                    </p>
-                  )}
-                  {displayedSource && (
-                    <p
-                      key={`cur-${displayedSource.name}`}
-                      className="text-[10px] text-white/40 truncate leading-tight animate-fade-in"
-                    >
-                      Playing from:{" "}
-                      {displayedSource.href ? (
-                        <span
-                          className="hover:text-foreground hover:underline cursor-pointer transition-colors"
-                          onClick={(e) => { e.stopPropagation(); navigate(displayedSource.href!); }}
-                        >
-                          {displayedSource.name}
-                        </span>
-                      ) : displayedSource.name}
-                    </p>
-                  )}
+                  <p
+                    key={`src-${sourceLabel}`}
+                    className="text-[10px] text-white/40 truncate leading-tight animate-fade-in"
+                  >
+                    Playing from:{" "}
+                    {playSource?.href && sourceLabel !== "Discovery Radio" ? (
+                      <span
+                        className="hover:text-foreground hover:underline cursor-pointer transition-colors"
+                        onClick={(e) => { e.stopPropagation(); navigate(playSource.href!); }}
+                      >
+                        {sourceLabel}
+                      </span>
+                    ) : sourceLabel}
+                  </p>
                 </div>
               )}
               {isBuffering && (
@@ -439,28 +414,29 @@ export function PlayerBar() {
               )}
               </div>
 
-            {/* Heart */}
+            <div className="ml-1 flex shrink-0 items-center gap-0.5">
               <button onClick={(e) => { e.stopPropagation(); toggleLike(); }} className="shrink-0 rounded-md p-1.5 transition-colors hover:bg-white/5">
-              <Heart size={16} className={liked ? "text-primary fill-primary" : "text-white/30 hover:text-white/60"} />
+                <Heart size={16} className={liked ? "text-primary fill-primary" : "text-white/30 hover:text-white/60"} />
               </button>
 
-            {/* Radio shaping — thumbs up/down when shaped radio is active */}
-            {isDesktop && isShapedRadioTrack && (
-              <RadioFeedback
-                sessionId={shapedRadioSessionId!}
-                trackId={currentTrack.libraryTrackId}
-                onDislike={() => next()}
-              />
-            )}
+              {/* Radio shaping — thumbs up/down when shaped radio is active */}
+              {isDesktop && isShapedRadioTrack && (
+                <RadioFeedback
+                  sessionId={shapedRadioSessionId!}
+                  trackId={currentTrack.libraryTrackId}
+                  onDislike={() => next()}
+                />
+              )}
 
+              <div onClick={(e) => e.stopPropagation()}>
+                <PlayerTrackMenu
+                  currentTrack={currentTrack}
+                  duration={duration}
+                  onOverlayChange={setHasFloatingOverlayOpen}
+                  onAddToCollection={handleAddToCollection}
+                />
+              </div>
             </div>
-            <div onClick={(e) => e.stopPropagation()}>
-              <PlayerTrackMenu
-                currentTrack={currentTrack}
-                duration={duration}
-                onOverlayChange={setHasFloatingOverlayOpen}
-                onAddToCollection={handleAddToCollection}
-              />
             </div>
 
           {/* ── Block 2: Controls + Progress ── */}

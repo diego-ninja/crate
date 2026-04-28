@@ -19,7 +19,6 @@ from crate.db.queries.shows import (
 )
 from crate.db.repositories.shows import (
     attend_show,
-    consolidate_show,
     create_show_reminder,
     delete_past_shows,
     unattend_show,
@@ -28,7 +27,6 @@ from crate.db.repositories.shows import (
 
 __all__ = [
     "attend_show",
-    "consolidate_show",
     "create_show_reminder",
     "delete_past_shows",
     "get_all_shows",

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
+from crate.db.repositories.auth_shared import coerce_datetime, enrich_auth_session, promote_now_playing_session
 from crate.db.tx import read_scope
 
 
@@ -18,30 +19,19 @@ def get_users_presence(user_ids: list[int]) -> dict[int, dict]:
             text(
                 """
                 SELECT
+                    s.id,
                     s.user_id,
-                    COUNT(*) FILTER (
-                        WHERE s.revoked_at IS NULL
-                          AND (s.expires_at IS NULL OR s.expires_at > NOW())
-                          AND COALESCE(s.last_seen_at, s.created_at) >= NOW() - INTERVAL '10 minutes'
-                    )::INTEGER AS active_sessions,
-                    COUNT(DISTINCT COALESCE(
-                        NULLIF(s.app_id, ''),
-                        NULLIF(s.device_label, ''),
-                        NULLIF(split_part(COALESCE(s.user_agent, ''), '/', 1), ''),
-                        NULLIF(s.last_seen_ip, ''),
-                        s.id
-                    )) FILTER (
-                        WHERE s.revoked_at IS NULL
-                          AND (s.expires_at IS NULL OR s.expires_at > NOW())
-                          AND COALESCE(s.last_seen_at, s.created_at) >= NOW() - INTERVAL '10 minutes'
-                    )::INTEGER AS active_devices,
-                    MAX(COALESCE(s.last_seen_at, s.created_at)) FILTER (
-                        WHERE s.revoked_at IS NULL
-                          AND (s.expires_at IS NULL OR s.expires_at > NOW())
-                    ) AS last_seen_at
+                    s.created_at,
+                    s.last_seen_at,
+                    s.expires_at,
+                    s.revoked_at,
+                    s.last_seen_ip,
+                    s.user_agent,
+                    s.app_id,
+                    s.device_label
                 FROM sessions s
                 WHERE s.user_id = ANY(:user_ids)
-                GROUP BY s.user_id
+                ORDER BY s.user_id, COALESCE(s.last_seen_at, s.created_at) DESC
                 """
             ),
             {"user_ids": user_ids},
@@ -95,20 +85,37 @@ def get_users_presence(user_ids: list[int]) -> dict[int, dict]:
         }
         for user_id in user_ids
     }
+    active_devices_by_user: dict[int, set[str]] = {user_id: set() for user_id in user_ids}
 
+    sessions_by_user: dict[int, list[dict]] = {user_id: [] for user_id in user_ids}
     for row in session_rows:
-        user_id = int(row["user_id"])
-        active_sessions = int(row.get("active_sessions") or 0)
-        active_devices = int(row.get("active_devices") or 0)
-        last_seen_at = row.get("last_seen_at")
-        presence[user_id].update(
-            {
-                "online_now": active_sessions > 0,
-                "active_sessions": active_sessions,
-                "active_devices": active_devices,
-                "last_seen_at": last_seen_at,
-            }
-        )
+        enriched = enrich_auth_session(dict(row), now=now)
+        sessions_by_user[int(enriched["user_id"])].append(enriched)
+
+    for user_id, sessions in sessions_by_user.items():
+        now_playing = now_playing_rows.get(user_id)
+        if now_playing:
+            sessions = promote_now_playing_session(sessions, now_playing=now_playing, now=now)
+            sessions_by_user[user_id] = sessions
+
+    for user_id, sessions in sessions_by_user.items():
+        for enriched in sessions:
+            last_seen_at = coerce_datetime(enriched.get("last_seen_at")) or coerce_datetime(enriched.get("created_at"))
+
+            if last_seen_at and (
+                presence[user_id]["last_seen_at"] is None
+                or last_seen_at > presence[user_id]["last_seen_at"]
+            ):
+                presence[user_id]["last_seen_at"] = last_seen_at
+
+            if enriched.get("is_active"):
+                presence[user_id]["active_sessions"] += 1
+                presence[user_id]["online_now"] = True
+                fingerprint = enriched.get("device_fingerprint") or str(enriched["id"])
+                active_devices_by_user[user_id].add(fingerprint)
+
+    for user_id in user_ids:
+        presence[user_id]["active_devices"] = len(active_devices_by_user[user_id])
 
     for user_id, row in now_playing_rows.items():
         started_at = row.get("started_at") or row.get("heartbeat_at")

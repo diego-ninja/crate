@@ -93,6 +93,19 @@ function withAssetOptions(path: string, options?: ImageAssetOptions) {
   return query ? `${path}?${query}` : path;
 }
 
+function resolveAssetVersion(
+  explicitVersion: string | number | null | undefined,
+  runtimeVersion: string | null | undefined,
+) {
+  if (runtimeVersion && String(runtimeVersion).trim()) {
+    return runtimeVersion;
+  }
+  if (explicitVersion != null && String(explicitVersion).trim()) {
+    return explicitVersion;
+  }
+  return undefined;
+}
+
 export function recordAssetInvalidationScope(scope: string, version: string | number = Date.now()) {
   if (scope === "library" || scope === "home" || scope === "shows" || scope === "upcoming") {
     globalArtistAssetVersion = String(version);
@@ -155,7 +168,7 @@ export function artistPhotoApiUrl(input: ArtistRouteInput, options?: ImageAssetO
   if (input.artistId != null) {
     const runtimeVersion = artistAssetVersions.get(input.artistId) ?? globalArtistAssetVersion;
     return resolveAssetUrl(
-      withAssetOptions(`/api/artists/${input.artistId}/photo`, { ...options, version: options?.version ?? runtimeVersion }),
+      withAssetOptions(`/api/artists/${input.artistId}/photo`, { ...options, version: resolveAssetVersion(options?.version, runtimeVersion) }),
     );
   }
   return "";
@@ -165,7 +178,7 @@ export function artistBackgroundApiUrl(input: ArtistRouteInput, options?: ImageA
   if (input.artistId != null) {
     const runtimeVersion = artistAssetVersions.get(input.artistId) ?? globalArtistAssetVersion;
     return resolveAssetUrl(
-      withAssetOptions(`/api/artists/${input.artistId}/background`, { ...options, version: options?.version ?? runtimeVersion }),
+      withAssetOptions(`/api/artists/${input.artistId}/background`, { ...options, version: resolveAssetVersion(options?.version, runtimeVersion) }),
     );
   }
   return "";
@@ -214,7 +227,7 @@ export function albumCoverApiUrl(input: AlbumRouteInput, options?: ImageAssetOpt
   if (input.albumId != null) {
     const runtimeVersion = albumAssetVersions.get(input.albumId) ?? globalAlbumAssetVersion;
     return resolveAssetUrl(
-      withAssetOptions(`/api/albums/${input.albumId}/cover`, { ...options, version: options?.version ?? runtimeVersion }),
+      withAssetOptions(`/api/albums/${input.albumId}/cover`, { ...options, version: resolveAssetVersion(options?.version, runtimeVersion) }),
     );
   }
   return "";

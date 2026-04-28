@@ -295,7 +295,7 @@ def _run_service_loop(config: dict, stop_event: threading.Event):
                 from crate.db.worker_logs import cleanup_old_logs
                 cleanup_old_events(max_age_hours=48)
                 cleanup_old_tasks(max_age_days=7)
-                cleanup_expired_sessions(max_age_days=7)
+                cleanup_expired_sessions(max_age_days=3, stale_age_days=30)
                 cleanup_ended_jam_rooms(max_age_days=30)
                 cleanup_old_logs(max_age_days=7)
             except Exception:

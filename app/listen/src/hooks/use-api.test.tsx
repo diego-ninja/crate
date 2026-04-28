@@ -50,7 +50,10 @@ describe("useApi", () => {
     expect(cacheGetMock).toHaveBeenCalledTimes(initialCacheReads);
 
     rerender({ url: "/api/me/stats" });
-    expect(cacheGetMock).toHaveBeenCalledTimes(initialCacheReads + 1);
+    expect(cacheGetMock.mock.calls.slice(initialCacheReads).map(([url]) => url)).toContain("/api/me/stats");
+    await waitFor(() => {
+      expect(apiMock).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("does not let a stale in-flight response overwrite the current URL data", async () => {
@@ -78,5 +81,41 @@ describe("useApi", () => {
 
     expect(cacheSetMock).toHaveBeenCalledWith("/api/tracks/1", { id: "track-a" });
     expect(cacheSetMock).toHaveBeenCalledWith("/api/tracks/2", { id: "track-b" });
+  });
+
+  it("does not expose the previous URL data during the first render after a URL change", async () => {
+    const apiMock = vi.mocked(api);
+    const cacheGetMock = vi.mocked(cacheGet);
+    const first = deferred<{ id: string }>();
+    const second = deferred<{ id: string }>();
+
+    cacheGetMock.mockImplementation((url) => {
+      if (url === "/api/artists/high-vis/page") return { id: "cached-high-vis" };
+      return null;
+    });
+
+    apiMock
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    const { result, rerender } = renderHook(
+      ({ url }) => useApi<{ id: string }>(url),
+      { initialProps: { url: "/api/artists/quicksand/page" as string | null } },
+    );
+
+    first.resolve({ id: "quicksand" });
+    await waitFor(() => {
+      expect(result.current.data).toEqual({ id: "quicksand" });
+    });
+
+    rerender({ url: "/api/artists/high-vis/page" });
+
+    expect(result.current.data).toEqual({ id: "cached-high-vis" });
+    expect(result.current.error).toBeNull();
+
+    second.resolve({ id: "high-vis" });
+    await waitFor(() => {
+      expect(result.current.data).toEqual({ id: "high-vis" });
+    });
   });
 });

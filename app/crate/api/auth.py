@@ -19,6 +19,7 @@ from crate.auth import (
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.auth import (
     AdminAuthConfigResponse,
+    AdminSetPasswordRequest,
     AdminUserDetailResponse,
     AdminUserSummaryResponse,
     AuthConfigResponse,
@@ -1250,12 +1251,36 @@ async def admin_get_user_detail(request: Request, user_id: int):
     payload = _user_public(user)
     payload["username"] = user.get("username")
     payload["bio"] = user.get("bio")
+    payload["has_password"] = bool(user.get("password_hash"))
     payload["created_at"] = _iso_datetime(user.get("created_at"))
     payload["last_login"] = _iso_datetime(user.get("last_login"))
     payload["connected_accounts"] = list_user_external_identities(user_id)
     payload["sessions"] = list_sessions(user_id, include_revoked=True)
     payload.update(get_user_presence(user_id))
     return payload
+
+
+@router.post(
+    "/users/{user_id}/set-password",
+    response_model=RevokeSessionsResponse,
+    responses=_AUTH_ADMIN_RESPONSES,
+    summary="Set or reset a user's local password",
+)
+async def admin_set_user_password(request: Request, user_id: int, body: AdminSetPasswordRequest):
+    admin_user = _require_admin(request)
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if len(body.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+
+    update_user(user_id, password_hash=hash_password(body.new_password))
+
+    revoked = 0
+    if body.revoke_all_sessions:
+        current_session_id = admin_user.get("session_id") if admin_user.get("id") == user_id else None
+        revoked = revoke_other_sessions(user_id, current_session_id)
+    return {"ok": True, "revoked": revoked}
 
 
 @router.get(

@@ -41,6 +41,7 @@ export function useApi<T>(
   const [error, setError] = useState<string | null>(null);
   const [trigger, setTrigger] = useState(0);
   const urlRef = useRef(url);
+  const dataUrlRef = useRef(url);
 
   const refetch = useCallback(() => setTrigger((t) => t + 1), []);
 
@@ -48,6 +49,7 @@ export function useApi<T>(
   useEffect(() => {
     if (url !== urlRef.current) {
       urlRef.current = url;
+      dataUrlRef.current = url;
       const freshCache = url ? cacheGet<T>(url) : null;
       setData(freshCache);
       setLoading(!freshCache && !!url);
@@ -71,6 +73,7 @@ export function useApi<T>(
         cacheSet(requestUrl, freshData);
         if (cancelled) return;
         if (urlRef.current !== requestUrl) return;
+        dataUrlRef.current = requestUrl;
         startTransition(() => {
           setData(freshData);
         });
@@ -105,5 +108,13 @@ export function useApi<T>(
     });
   }, [reactive, url, refetch]);
 
-  return { data, loading, error, refetch };
+  const stateMatchesCurrentUrl = dataUrlRef.current === url;
+  const cachedForCurrentUrl = !stateMatchesCurrentUrl && url ? cacheGet<T>(url) : null;
+
+  return {
+    data: stateMatchesCurrentUrl ? data : cachedForCurrentUrl,
+    loading: stateMatchesCurrentUrl ? loading : !cachedForCurrentUrl && !!url,
+    error: stateMatchesCurrentUrl ? error : null,
+    refetch,
+  };
 }

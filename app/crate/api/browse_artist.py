@@ -59,6 +59,7 @@ from crate.db.queries.browse_artist import (
     get_browse_filter_genres,
     get_similar_artist_refs,
 )
+from crate.db.queries.shows_shared import dedupe_show_rows
 from crate.db.queries.shows import (
     get_attending_show_ids,
     get_show_cities,
@@ -407,7 +408,9 @@ def _get_artist_page_shows(*, user_id: int, name: str, limit: int, country: str)
     except Exception:
         probable_setlist = []
 
-    cached = db_get_shows(artist_name=name, country=country or None, limit=limit)
+    cached = dedupe_show_rows(
+        db_get_shows(artist_name=name, country=country or None, limit=limit),
+    )
     if cached:
         attending_show_ids = get_attending_show_ids(
             user_id,

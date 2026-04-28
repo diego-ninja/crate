@@ -139,5 +139,21 @@ export function buildArtistPlayerTrack(
 }
 
 export function buildArtistShowItems(events: ArtistShowEvent[]) {
-  return events.map(artistShowToUpcomingItem);
+  const seenKeys = new Set<string>();
+  const deduped: ArtistShowEvent[] = [];
+
+  for (const event of events) {
+    const key = event.id || [
+      event.artist_name,
+      event.date,
+      event.venue,
+      event.city,
+      event.country_code || event.country,
+    ].filter(Boolean).join("|").toLowerCase();
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    deduped.push(event);
+  }
+
+  return deduped.map(artistShowToUpcomingItem);
 }

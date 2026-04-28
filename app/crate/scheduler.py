@@ -91,25 +91,3 @@ def check_and_create_scheduled_tasks():
             log.info("Scheduling task: %s (interval=%ds)", task_type, interval)
             create_task(task_type)
             mark_run(task_type)
-
-    # Last.fm scrapes per unique user city — disabled by default.
-    # Enable via admin settings: lastfm_scraping_enabled = true
-    # Can always be triggered manually via Command Palette or API.
-    #
-    # if should_run("sync_shows_lastfm", schedules):
-    #     try:
-    #         from crate.db.shows import get_unique_user_cities
-    #         from crate.db.cache_settings import get_setting
-    #         if get_setting("lastfm_scraping_enabled", "true") == "true":
-    #             cities = get_unique_user_cities()
-    #             for city_row in cities:
-    #                 create_task("sync_shows_lastfm", {
-    #                     "city": city_row["city"],
-    #                     "latitude": city_row["latitude"],
-    #                     "longitude": city_row["longitude"],
-    #                 })
-    #             if cities:
-    #                 log.info("Scheduled Last.fm scrape for %d cities", len(cities))
-    #                 mark_run("sync_shows_lastfm")
-    #     except Exception:
-    #         log.debug("Failed to schedule Last.fm scrapes", exc_info=True)

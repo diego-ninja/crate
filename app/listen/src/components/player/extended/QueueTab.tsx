@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { ItemActionMenu, ItemActionMenuButton, type ItemActionMenuEntry, useItemActionMenu } from "@/components/actions/ItemActionMenu";
 import { trackToMenuData } from "@/components/actions/shared";
 import { useTrackActionEntries } from "@/components/actions/track-actions";
+import { getPlaySourceLabel } from "@/components/player/player-source";
 import { usePlayer, usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
 
@@ -94,7 +95,7 @@ export function QueueTab() {
 
   const history = queue.slice(0, currentIndex).reverse();
   const upcoming = queue.slice(currentIndex + 1);
-  const sourceName = playSource?.name || "Queue";
+  const sourceName = getPlaySourceLabel(playSource) || "Queue";
 
   async function handleSaveAsPlaylist() {
     const validTracks = queue.filter((t) => t.path && t.path.includes("/"));
@@ -104,7 +105,7 @@ export function QueueTab() {
     }
     try {
       await api("/api/playlists", "POST", {
-        name: playSource?.name || "Queue",
+        name: getPlaySourceLabel(playSource) || "Queue",
         tracks: validTracks.map((t) => ({
           path: t.path,
           title: t.title,

@@ -20,6 +20,7 @@ def list_users() -> list[dict]:
                     u.role,
                     u.google_id,
                     u.bio,
+                    CASE WHEN u.password_hash IS NOT NULL AND u.password_hash <> '' THEN TRUE ELSE FALSE END AS has_password,
                     u.created_at,
                     u.last_login,
                     COALESCE((
@@ -69,10 +70,17 @@ def list_users_map_rows() -> list[dict]:
                 """
                 SELECT u.id, u.name, u.email, u.avatar, u.city, u.country, u.latitude, u.longitude,
                        u.created_at,
-                       MAX(s.last_seen_at) AS last_seen_at,
-                       CASE WHEN MAX(s.last_seen_at) > NOW() - interval '5 minutes' THEN TRUE ELSE FALSE END AS online
+                       MAX(COALESCE(s.last_seen_at, s.created_at)) AS last_seen_at,
+                       CASE
+                         WHEN MAX(COALESCE(s.last_seen_at, s.created_at)) > NOW() - interval '3 minutes'
+                         THEN TRUE
+                         ELSE FALSE
+                       END AS online
                 FROM users u
-                LEFT JOIN sessions s ON s.user_id = u.id
+                LEFT JOIN sessions s
+                  ON s.user_id = u.id
+                 AND s.revoked_at IS NULL
+                 AND (s.expires_at IS NULL OR s.expires_at > NOW())
                 WHERE u.latitude IS NOT NULL AND u.longitude IS NOT NULL
                 GROUP BY u.id
                 """

@@ -6,12 +6,18 @@ import path from "path";
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    alias: [
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+      { find: /^leaflet$/, replacement: path.resolve(__dirname, "../../node_modules/leaflet/dist/leaflet-src.esm.js") },
+      { find: "lodash", replacement: "lodash-es" },
+    ],
   },
   optimizeDeps: {
     include: [
+      "prop-types",
+      "react-force-graph-2d",
+    ],
+    exclude: [
       "@nivo/core",
       "@nivo/bar",
       "@nivo/line",

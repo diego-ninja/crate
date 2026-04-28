@@ -267,7 +267,7 @@ function HeroSlide({
           src={backgroundSrc}
           alt=""
           aria-hidden="true"
-          className="absolute inset-0 h-full w-full object-cover object-center"
+          className="absolute inset-0 h-full w-full object-cover object-top"
         />
       ) : null}
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(5,7,11,0.92)_0%,rgba(5,7,11,0.75)_45%,rgba(5,7,11,0.32)_100%)]" />

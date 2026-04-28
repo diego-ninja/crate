@@ -1,6 +1,7 @@
 import type { PlaySource, Track } from "@/contexts/PlayerContext";
 import { ApiError, api } from "@/lib/api";
 import { albumCoverApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
+import { getPlaySourceLabel } from "@/components/player/player-source";
 
 export interface RadioTrackPayload {
   track_id?: number | null;
@@ -113,7 +114,15 @@ async function startSeededRadioSession(
     tracks: data.tracks.map(shapedToTrack),
     source: {
       type: "radio",
-      name: `${data.seed_label || seedLabel} Radio`,
+      name: getPlaySourceLabel({
+        type: "radio",
+        name: `${data.seed_label || seedLabel} Radio`,
+        radio: {
+          seedType,
+          seedId: Number.isNaN(Number(seedValue)) ? seedValue : Number(seedValue),
+          shapedSessionId: data.session_id,
+        },
+      }) || `${data.seed_label || seedLabel} Radio`,
       radio: {
         seedType,
         seedId: Number.isNaN(Number(seedValue)) ? seedValue : Number(seedValue),
@@ -316,7 +325,7 @@ export async function startShapedRadio(
       tracks: data.tracks.map(shapedToTrack),
       source: {
         type: "radio",
-        name: `${data.seed_label} Radio`,
+        name: mode === "discovery" ? "Discovery Radio" : `${data.seed_label} Radio`,
         radio: {
           seedType: (seedType || "discovery") as "track" | "album" | "artist" | "playlist" | "home-playlist" | "genre" | "discovery",
           seedId: seedValue ? (isNaN(Number(seedValue)) ? seedValue : Number(seedValue)) : null,

@@ -2,6 +2,7 @@ import { resolveMaybeApiAssetUrl } from "@/lib/api";
 
 export interface UpcomingItem {
   id?: number;
+  event_key?: string;
   type: "release" | "show";
   date: string;
   time?: string;
@@ -59,6 +60,7 @@ export interface ArtistShowEvent {
 export function artistShowToUpcomingItem(show: ArtistShowEvent): UpcomingItem {
   return {
     id: show.show_id,
+    event_key: show.id,
     type: "show",
     date: show.date,
     time: show.local_time,
@@ -88,7 +90,7 @@ export function artistShowToUpcomingItem(show: ArtistShowEvent): UpcomingItem {
 }
 
 export function itemKey(item: UpcomingItem, index: number): string {
-  return `${item.type}-${item.artist}-${item.release_id ?? item.venue ?? index}-${item.date}`;
+  return item.event_key || `${item.type}-${item.artist}-${item.release_id ?? item.venue ?? index}-${item.date}-${item.time ?? ""}`;
 }
 
 export function groupByMonth(items: UpcomingItem[]): [string, UpcomingItem[]][] {

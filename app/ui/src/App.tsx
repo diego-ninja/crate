@@ -24,7 +24,6 @@ const Users = lazy(() => import("@/pages/Users").then(m => ({ default: m.Users }
 const DownloadPage = lazy(() => import("@/pages/Download").then(m => ({ default: m.DownloadPage })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
 const Discover = lazy(() => import("@/pages/Discover").then(m => ({ default: m.Discover })));
-const Profile = lazy(() => import("@/pages/Profile").then(m => ({ default: m.Profile })));
 const NewReleases = lazy(() => import("@/pages/NewReleases").then(m => ({ default: m.NewReleases })));
 const Upcoming = lazy(() => import("@/pages/Upcoming").then(m => ({ default: m.Upcoming })));
 const Setup = lazy(() => import("@/pages/Setup").then(m => ({ default: m.Setup })));
@@ -76,6 +75,13 @@ function SetupGuard() {
   return null;
 }
 
+function ProfileRedirect() {
+  const { user, loading } = useAuth();
+  if (loading) return <PageSpinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  return <Navigate to={`/users?inspect=${user.id}`} replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -115,7 +121,7 @@ export default function App() {
                 <Route path="users" element={<Users />} />
                 <Route path="discover" element={<Discover />} />
                 <Route path="settings" element={<Settings />} />
-                <Route path="profile" element={<Profile />} />
+                <Route path="profile" element={<ProfileRedirect />} />
                 <Route path="new-releases" element={<NewReleases />} />
                 <Route path="upcoming" element={<Upcoming />} />
               </Route>

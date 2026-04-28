@@ -1,6 +1,7 @@
 """Tests for the auth system (JWT, password hashing, middleware, API endpoints)."""
 
 import asyncio
+from typing import Any
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime, timezone, timedelta
 
@@ -445,6 +446,189 @@ class TestAuthIntegration:
 
         assert resp.status_code == 200
         assert resp.json()["role"] == "admin"
+
+    def test_parse_device_details_returns_structured_mobile_client_metadata(self):
+        from crate.db.repositories.auth_shared import parse_device_details, parse_device_label
+
+        user_agent = (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 "
+            "Mobile/15E148 Safari/604.1"
+        )
+
+        details = parse_device_details(user_agent)
+
+        assert details["client_name"] == "Mobile Safari"
+        assert details["os_name"] == "iOS"
+        assert details["device_brand"] == "Apple"
+        assert details["device_model"] == "iPhone"
+        assert details["device_type"] == "smartphone"
+        assert parse_device_label(user_agent) == "Apple iPhone · iOS 17.4"
+
+    def test_user_presence_counts_only_active_sessions_from_active_devices(self, pg_db):
+        from sqlalchemy import text
+
+        from crate.db.queries.auth_presence import get_users_presence
+        from crate.db.repositories.auth_sessions import list_sessions
+        from crate.db.tx import transaction_scope
+
+        user = pg_db.create_user("presence-auth@test.com")
+        now = datetime.now(timezone.utc)
+        iphone_ua = (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 "
+            "Mobile/15E148 Safari/604.1"
+        )
+        mac_ua = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+        )
+
+        pg_db.create_session("iphone-a", user["id"], (now + timedelta(days=7)).isoformat(), user_agent=iphone_ua, last_seen_ip="10.0.0.5")
+        pg_db.create_session("iphone-b", user["id"], (now + timedelta(days=7)).isoformat(), user_agent=iphone_ua, last_seen_ip="10.0.0.5")
+        pg_db.create_session("desktop-a", user["id"], (now + timedelta(days=7)).isoformat(), user_agent=mac_ua, last_seen_ip="10.0.0.8")
+        pg_db.create_session("history-a", user["id"], (now + timedelta(days=7)).isoformat(), user_agent=iphone_ua, last_seen_ip="10.0.0.5")
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE sessions
+                    SET last_seen_at = CASE id
+                        WHEN 'iphone-a' THEN :active_one
+                        WHEN 'iphone-b' THEN :active_two
+                        WHEN 'desktop-a' THEN :active_three
+                        WHEN 'history-a' THEN :history
+                    END
+                    WHERE id IN ('iphone-a', 'iphone-b', 'desktop-a', 'history-a')
+                    """
+                ),
+                {
+                    "active_one": now - timedelta(seconds=45),
+                    "active_two": now - timedelta(seconds=75),
+                    "active_three": now - timedelta(seconds=90),
+                    "history": now - timedelta(days=12),
+                },
+            )
+
+        presence = get_users_presence([user["id"]])[user["id"]]
+        sessions = list_sessions(user["id"], include_revoked=True)
+        session_map = {session["id"]: session for session in sessions}
+
+        assert presence["online_now"] is True
+        assert presence["active_sessions"] == 3
+        assert presence["active_devices"] == 2
+        assert session_map["iphone-a"]["activity_state"] == "active"
+        assert session_map["history-a"]["activity_state"] == "history"
+        assert session_map["iphone-a"]["display_label"] == "Apple iPhone · iOS 17.4"
+        assert session_map["desktop-a"]["client_name"] == "Chrome"
+
+    def test_listen_now_playing_promotes_hidden_listen_session_to_active(self, pg_db):
+        from sqlalchemy import text
+
+        from crate.db.queries.auth_presence import get_users_presence
+        from crate.db.repositories.auth_sessions import list_sessions
+        from crate.db.tx import transaction_scope
+
+        user = pg_db.create_user("presence-listen@test.com")
+        now = datetime.now(timezone.utc)
+        mac_ua = (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+        )
+
+        pg_db.create_session(
+            "admin-active",
+            user["id"],
+            (now + timedelta(days=7)).isoformat(),
+            user_agent=mac_ua,
+            last_seen_ip="10.0.0.8",
+            app_id="admin-web",
+        )
+        pg_db.create_session(
+            "listen-hidden",
+            user["id"],
+            (now + timedelta(days=7)).isoformat(),
+            user_agent=mac_ua,
+            last_seen_ip="10.0.0.8",
+            app_id="listen-web",
+        )
+
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    UPDATE sessions
+                    SET last_seen_at = CASE id
+                        WHEN 'admin-active' THEN :admin_seen
+                        WHEN 'listen-hidden' THEN :listen_seen
+                    END
+                    WHERE id IN ('admin-active', 'listen-hidden')
+                    """
+                ),
+                {
+                    "admin_seen": now - timedelta(seconds=30),
+                    "listen_seen": now - timedelta(minutes=10),
+                },
+            )
+
+        def fake_get_cache(key: str, max_age_seconds: int | None = None) -> dict[str, Any] | None:
+            if key == f"now_playing:{user['id']}":
+                return {
+                    "title": "Mind's A Lie",
+                    "artist": "High Vis",
+                    "album": "Guided Tour",
+                    "heartbeat_at": now.isoformat(),
+                    "app_platform": "listen-web",
+                }
+            return None
+
+        with patch("crate.db.repositories.auth_sessions.get_cache", side_effect=fake_get_cache), patch(
+            "crate.db.cache_store.get_cache",
+            side_effect=fake_get_cache,
+        ):
+            presence = get_users_presence([user["id"]])[user["id"]]
+            sessions = list_sessions(user["id"], include_revoked=True)
+
+        session_map = {session["id"]: session for session in sessions}
+
+        assert presence["listening_now"] is True
+        assert presence["active_sessions"] == 2
+        assert presence["active_devices"] == 1
+        assert session_map["listen-hidden"]["activity_state"] == "active"
+        assert session_map["admin-active"]["activity_state"] == "active"
+
+    def test_admin_can_set_password_for_sso_only_user_and_revoke_sessions(self, real_auth_client, pg_db):
+        from crate.auth import verify_password
+
+        now = datetime.now(timezone.utc)
+        user = pg_db.create_user("sso-only@test.com", password_hash=None, google_id="google-123")
+        pg_db.create_session("target-sess-a", user["id"], now + timedelta(days=7))
+        pg_db.create_session("target-sess-b", user["id"], now + timedelta(days=7))
+
+        login = real_auth_client.post(
+            "/api/auth/login",
+            json={"email": "admin@cratemusic.app", "password": "admin"},
+        )
+        assert login.status_code == 200
+        token = login.json()["token"]
+
+        response = real_auth_client.post(
+            f"/api/auth/users/{user['id']}/set-password",
+            json={"new_password": "BetterPass123!", "revoke_all_sessions": True},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert response.json()["revoked"] == 2
+
+        updated = pg_db.get_user_by_id(user["id"])
+        assert updated is not None
+        assert verify_password("BetterPass123!", updated["password_hash"])
+
+        sessions = pg_db.list_sessions(user["id"], include_revoked=True)
+        assert all(session["revoked_at"] is not None for session in sessions)
 
 
 class TestLogout:

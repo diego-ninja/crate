@@ -1,5 +1,6 @@
 from datetime import date, datetime
 
+from crate.db.queries.shows_shared import dedupe_show_rows
 from crate.db.serialize import serialize_rows
 from crate.db.tx import read_scope
 from sqlalchemy import text
@@ -92,7 +93,7 @@ def get_upcoming_shows(
     user_radius: int,
     limit: int,
 ) -> list[dict]:
-    params: dict = {"followed_names": followed_names, "today": today, "limit": limit}
+    params: dict = {"followed_names": followed_names, "today": today, "limit": limit * 3}
     geo_clause = ""
     if user_lat:
         geo_clause = "AND (s.latitude BETWEEN :lat_min AND :lat_max AND s.longitude BETWEEN :lon_min AND :lon_max OR s.latitude IS NULL)"
@@ -130,7 +131,7 @@ def get_upcoming_shows(
             """),
             params,
         ).mappings().all()
-        return serialize_rows(rows)
+        return dedupe_show_rows(serialize_rows(rows))[:limit]
 
 
 def get_artist_genres_for_names(artist_names: list[str]) -> dict[str, list[str]]:

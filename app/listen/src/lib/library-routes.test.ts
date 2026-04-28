@@ -45,6 +45,14 @@ describe("library route asset helpers", () => {
     expect(url).toBe("https://api.example.test/api/artists/9/photo?size=128&v=artwork-2&token=listen-token");
   });
 
+  it("prefers the runtime invalidation version over a stale explicit asset version", () => {
+    recordAssetInvalidationScope("artist:11", "artwork-live");
+
+    const url = artistBackgroundApiUrl({ artistId: 11 }, { size: 1280, version: "stale-db-version" });
+
+    expect(url).toBe("https://api.example.test/api/artists/11/background?size=1280&v=artwork-live&token=listen-token");
+  });
+
   it("preserves the artist slug as a backend fallback for deep links", () => {
     const path = artistApiPath({ artistId: 52, artistSlug: "poison-the-well" });
 

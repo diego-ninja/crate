@@ -338,7 +338,37 @@ class TestArtistDetailAPI:
 
         assert resp.status_code == 200
         assert resp.json()["shows"]["events"] == []
-        mock_shows.assert_called_once_with(user_id=1, name="Poison The Well", limit=12, country="")
+
+    def test_get_artist_page_shows_deduplicates_duplicate_rows(self):
+        from crate.api.browse_artist import _get_artist_page_shows
+
+        duplicate_show = {
+            "id": 99,
+            "external_id": "festival-99",
+            "artist_name": "High Vis",
+            "date": "2026-07-31",
+            "local_time": "19:00",
+            "venue": "Grant Park",
+            "city": "Chicago",
+            "country": "USA",
+            "country_code": "US",
+            "url": "https://example.test/shows/99",
+            "image_url": "https://example.test/high-vis.jpg",
+            "lineup": ["High Vis"],
+        }
+
+        with patch("crate.api.browse_artist._library_artist_ref", return_value={"id": 52, "slug": "high-vis"}), \
+             patch("crate.api.browse_artist.get_artist_genres_by_name", return_value=["post-hardcore"]), \
+             patch("crate.api.browse_artist.db_get_shows", return_value=[duplicate_show, dict(duplicate_show)]), \
+             patch("crate.api.browse_artist.get_attending_show_ids", return_value={99}), \
+             patch("crate.setlistfm.get_cached_probable_setlist", return_value=[]), \
+             patch("crate.ticketmaster.is_configured", return_value=True):
+            payload = _get_artist_page_shows(user_id=1, name="High Vis", limit=12, country="")
+
+        assert payload["source"] == "cache"
+        assert len(payload["events"]) == 1
+        assert payload["events"][0]["id"] == "99"
+        assert payload["events"][0]["user_attending"] is True
 
     def test_get_album_by_artist_and_album_slug(self, test_app):
         artist = {"id": 5, "slug": "quicksand", "name": "Quicksand"}

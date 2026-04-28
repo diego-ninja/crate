@@ -86,6 +86,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const [expanded, setExpanded] = useState(getStoredSidebarExpanded);
   const { user, isAdmin, logout } = useAuth();
   const { data: opsSnapshot } = useOpsSnapshot();
+  const profileHref = user ? `/users?inspect=${user.id}` : "/users";
 
   const stats = {
     issue_count: opsSnapshot?.status.issue_count || 0,
@@ -207,7 +208,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         <div className="mt-auto border-t border-white/6 p-3">
           {expanded ? (
             <div className="flex items-center gap-3 rounded-md border border-white/8 bg-white/[0.03] px-3 py-3">
-              <Link to="/profile" className="flex min-w-0 flex-1 items-center gap-3" onClick={onNavigate}>
+              <Link to={profileHref} className="flex min-w-0 flex-1 items-center gap-3" onClick={onNavigate}>
                 {user.avatar ? (
                   <img src={user.avatar} alt="" className="h-10 w-10 rounded-md object-cover" />
                 ) : (
@@ -236,7 +237,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           ) : (
             <div className="flex flex-col items-center gap-2">
               <Link
-                to="/profile"
+                to={profileHref}
                 onClick={onNavigate}
                 className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 bg-white/5 text-white/70"
               >
