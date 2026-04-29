@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import uuid
 
 from sqlalchemy import text
 
@@ -36,6 +37,26 @@ def get_track_info_cols_by_storage_id(storage_id: str, cols: str) -> dict | None
         return dict(row) if row else None
 
 
+def _coerce_uuid_or_none(value: str) -> str | None:
+    try:
+        return str(uuid.UUID(str(value)))
+    except Exception:
+        return None
+
+
+def get_track_info_cols_by_entity_uid(entity_uid: str, cols: str) -> dict | None:
+    _validate_cols(cols)
+    normalized = _coerce_uuid_or_none(entity_uid)
+    if normalized is None:
+        return None
+    with transaction_scope() as session:
+        row = session.execute(
+            text(f"SELECT {cols} FROM library_tracks WHERE entity_uid = CAST(:entity_uid AS uuid)"),
+            {"entity_uid": normalized},
+        ).mappings().first()
+        return dict(row) if row else None
+
+
 def get_track_info_cols_by_path(filepath: str, cols: str) -> dict | None:
     _validate_cols(cols)
     with transaction_scope() as session:
@@ -55,6 +76,18 @@ def get_track_exists(track_id: int) -> bool:
 def get_track_id_by_storage_id(storage_id: str) -> int | None:
     with transaction_scope() as session:
         row = session.execute(text("SELECT id FROM library_tracks WHERE storage_id = :storage_id"), {"storage_id": storage_id}).mappings().first()
+        return row["id"] if row else None
+
+
+def get_track_id_by_entity_uid(entity_uid: str) -> int | None:
+    normalized = _coerce_uuid_or_none(entity_uid)
+    if normalized is None:
+        return None
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT id FROM library_tracks WHERE entity_uid = CAST(:entity_uid AS uuid)"),
+            {"entity_uid": normalized},
+        ).mappings().first()
         return row["id"] if row else None
 
 
@@ -80,14 +113,29 @@ def get_track_path_by_storage_id(storage_id: str) -> str | None:
         return row["path"] if row else None
 
 
+def get_track_path_by_entity_uid(entity_uid: str) -> str | None:
+    normalized = _coerce_uuid_or_none(entity_uid)
+    if normalized is None:
+        return None
+    with transaction_scope() as session:
+        row = session.execute(
+            text("SELECT path FROM library_tracks WHERE entity_uid = CAST(:entity_uid AS uuid)"),
+            {"entity_uid": normalized},
+        ).mappings().first()
+        return row["path"] if row else None
+
+
 __all__ = [
     "clear_track_path_cache",
     "find_track_id_by_path",
     "get_track_exists",
+    "get_track_id_by_entity_uid",
     "get_track_id_by_storage_id",
     "get_track_info_cols",
+    "get_track_info_cols_by_entity_uid",
     "get_track_info_cols_by_path",
     "get_track_info_cols_by_storage_id",
     "get_track_path",
+    "get_track_path_by_entity_uid",
     "get_track_path_by_storage_id",
 ]

@@ -5,16 +5,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator, model_validator
 
-from crate.api.schemas.common import OkResponse, SnapshotMetadataResponse
+from crate.api.schemas.common import IdentityFieldsMixin, OkResponse, SnapshotMetadataResponse
 
 
-class _StorageIdMixin(BaseModel):
-    """Coerce UUID track_storage_id to str for JSON serialization."""
-
-    @field_validator("track_storage_id", mode="before", check_fields=False)
-    @classmethod
-    def coerce_storage_id(cls, v: Any) -> str | None:
-        return str(v) if v is not None else None
 from crate.api.schemas.playlists import PlaylistSummaryResponse
 
 
@@ -26,25 +19,25 @@ class SaveAlbumRequest(BaseModel):
     album_id: int
 
 
-class LikeTrackRequest(BaseModel):
+class LikeTrackRequest(IdentityFieldsMixin):
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
 
 
-class RecordPlayRequest(BaseModel):
+class RecordPlayRequest(IdentityFieldsMixin):
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     title: str = ""
     artist: str = ""
     album: str = ""
 
 
-class NowPlayingRequest(BaseModel):
+class NowPlayingRequest(IdentityFieldsMixin):
     playing: bool = True
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     title: str = ""
     artist: str = ""
@@ -54,10 +47,10 @@ class NowPlayingRequest(BaseModel):
     app_platform: str | None = None
 
 
-class RecordPlayEventRequest(BaseModel):
+class RecordPlayEventRequest(IdentityFieldsMixin):
     client_event_id: str | None = None
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     title: str = ""
     artist: str = ""
@@ -231,6 +224,7 @@ class FollowedArtistResponse(BaseModel):
     artist_name: str
     created_at: datetime | str | None = None
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album_count: int | None = None
     track_count: int | None = None
@@ -250,9 +244,11 @@ class SavedAlbumResponse(BaseModel):
 
     saved_at: datetime | str | None = None
     id: int
+    album_entity_uid: str | None = None
     slug: str | None = None
     artist: str | None = None
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     name: str | None = None
     year: int | str | None = None
@@ -265,20 +261,22 @@ class SaveAlbumResponse(OkResponse):
     added: bool
 
 
-class LikedTrackResponse(_StorageIdMixin, BaseModel):
+class LikedTrackResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     liked_at: datetime | str | None = None
     path: str | None = None
     relative_path: str | None = None
     title: str | None = None
     artist: str | None = None
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album: str | None = None
     album_id: int | None = None
+    album_entity_uid: str | None = None
     album_slug: str | None = None
     duration: float | int | None = None
 
@@ -291,11 +289,11 @@ class UnlikeMutationResponse(OkResponse):
     removed: bool
 
 
-class PlayHistoryEntryResponse(_StorageIdMixin, BaseModel):
+class PlayHistoryEntryResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     relative_path: str | None = None
     title: str | None = None
@@ -354,11 +352,11 @@ class StatsTrendsResponse(BaseModel):
     points: list[TrendPointResponse] = Field(default_factory=list)
 
 
-class StatsTrackResponse(_StorageIdMixin, BaseModel):
+class StatsTrackResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     title: str | None = None
     artist: str | None = None
@@ -453,25 +451,29 @@ class HomeArtworkRefResponse(BaseModel):
 
     artist: str | None = None
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album: str | None = None
     album_id: int | None = None
+    album_entity_uid: str | None = None
     album_slug: str | None = None
     artist_name: str | None = None
 
 
-class HomeTrackResponse(_StorageIdMixin, BaseModel):
+class HomeTrackResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     title: str | None = None
     artist: str | None = None
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album: str | None = None
     album_id: int | None = None
+    album_entity_uid: str | None = None
     album_slug: str | None = None
     duration: float | int | None = None
     format: str | None = None

@@ -620,7 +620,7 @@ def _handle_generate_system_playlist(task_id: str, params: dict, config: dict) -
         tracks = execute_smart_rules(rules)
         track_dicts = [
             {"track_path": t.get("path", ""), "track_id": t.get("id"),
-             "track_storage_id": t.get("storage_id"),
+             "track_entity_uid": t.get("entity_uid"),
              "title": t.get("title", ""), "artist": t.get("artist", ""),
              "album": t.get("album", ""), "duration": t.get("duration")}
             for t in tracks

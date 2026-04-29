@@ -103,6 +103,8 @@ export default function App() {
               >
                 <Route index element={<Dashboard />} />
                 <Route path="browse" element={<Browse />} />
+                <Route path="artists/:artistSlug/:albumSlug" element={<Album />} />
+                <Route path="artists/:artistSlug" element={<Artist />} />
                 <Route path="artists/:artistId/:slug" element={<Artist />} />
                 <Route path="albums/:albumId/:slug" element={<Album />} />
                 <Route path="health" element={<Health />} />

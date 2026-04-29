@@ -20,6 +20,7 @@ import {
 import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { albumCoverApiUrl } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
 import { PlaylistCard } from "@/components/playlists/PlaylistCard";
 import { usePlayerActions } from "@/contexts/PlayerContext";
 
@@ -222,32 +223,32 @@ function MoodBrowseSection({ moods }: { moods: MoodPreset[] }) {
     try {
       const data = await api<{ tracks: Array<{
         id: number;
-        storage_id?: string;
+        entity_uid?: string;
         title: string;
         artist: string;
         artist_id?: number;
+        artist_entity_uid?: string;
         artist_slug?: string;
         album: string;
         album_id?: number;
+        album_entity_uid?: string;
         album_slug?: string;
         path: string;
       }> }>(`/api/browse/mood/${mood}?limit=50`);
       if (data.tracks.length > 0) {
         playAll(
-          data.tracks.map((t) => ({
-            id: t.storage_id || t.path || String(t.id),
-            storageId: t.storage_id,
-            title: t.title,
-            artist: t.artist,
-            artistId: t.artist_id,
-            artistSlug: t.artist_slug,
-            album: t.album,
-            albumId: t.album_id,
-            albumSlug: t.album_slug,
-            path: t.path,
-            libraryTrackId: t.id,
-            albumCover: albumCoverApiUrl({ albumId: t.album_id, albumSlug: t.album_slug, artistName: t.artist, albumName: t.album }),
-          })),
+          data.tracks.map((t) =>
+            toPlayableTrack(t, {
+              cover: albumCoverApiUrl({
+                albumId: t.album_id,
+                albumEntityUid: t.album_entity_uid,
+                artistEntityUid: t.artist_entity_uid,
+                albumSlug: t.album_slug,
+                artistName: t.artist,
+                albumName: t.album,
+              }),
+            }),
+          ),
           0,
           { type: "playlist", name: `${mood.charAt(0).toUpperCase() + mood.slice(1)} Mix` },
         );

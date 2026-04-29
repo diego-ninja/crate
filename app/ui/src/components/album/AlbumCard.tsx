@@ -7,13 +7,15 @@ import { ActionIconButton } from "@crate/ui/primitives/ActionIconButton";
 import { CrateChip } from "@crate/ui/primitives/CrateBadge";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { api } from "@/lib/api";
-import { albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
+import { albumActionApiPath, albumCoverApiUrl, albumPagePath } from "@/lib/library-routes";
 
 interface AlbumCardProps {
   albumId?: number;
+  albumEntityUid?: string;
   albumSlug?: string;
   artist: string;
   artistId?: number;
+  artistEntityUid?: string;
   artistSlug?: string;
   name: string;
   displayName?: string;
@@ -54,9 +56,11 @@ function qualityLabel(formats: string[], bitDepth?: number | null, sampleRate?: 
 
 export const AlbumCard = React.memo(function AlbumCard({
   albumId,
+  albumEntityUid,
   albumSlug,
   artist,
   artistId,
+  artistEntityUid,
   artistSlug,
   name,
   displayName,
@@ -70,14 +74,14 @@ export const AlbumCard = React.memo(function AlbumCard({
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [fetchingCover, setFetchingCover] = useState(false);
-  const coverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: name });
+  const coverUrl = albumCoverApiUrl({ albumId, albumEntityUid, albumSlug, artistName: artist, albumName: name });
 
   async function handleFetchCover(event: React.MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
     if (!albumId || fetchingCover) return;
     setFetchingCover(true);
     try {
-      await api(`/api/albums/${albumId}/fetch-cover`, "POST");
+      await api(albumActionApiPath({ albumId, albumEntityUid }, "fetch-cover"), "POST");
       toast.success("Searching for cover...");
       setTimeout(() => {
         setImgError(false);
@@ -95,9 +99,11 @@ export const AlbumCard = React.memo(function AlbumCard({
       type="album"
       artist={artist}
       artistId={artistId}
+      artistEntityUid={artistEntityUid}
       artistSlug={artistSlug}
       album={name}
       albumId={albumId}
+      albumEntityUid={albumEntityUid}
       albumSlug={albumSlug}
     >
       <div

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { PlaylistCreateModal, type PlaylistComposerTrack } from "@/components/playlists/PlaylistCreateModal";
 import { api } from "@/lib/api";
+import { hasTrackReference, toTrackReferencePayload } from "@/lib/track-reference";
 
 interface OpenPlaylistComposerOptions {
   name?: string;
@@ -57,12 +58,9 @@ export function PlaylistComposerProvider({ children }: { children: ReactNode }) 
       });
 
       const tracksPayload = payload.tracks
-        .filter((track) => track.path || track.libraryTrackId != null)
-        .map((track) => ({
-          track_id: track.libraryTrackId,
-          path: track.path,
-          title: track.title,
-          artist: track.artist,
+        .filter((track) => hasTrackReference(track))
+        .map((track) => toTrackReferencePayload({
+          ...track,
           album: track.album || "",
           duration: track.duration || 0,
         }));

@@ -105,6 +105,12 @@ export interface AnalysisStatusSnapshot {
   bliss_pending: number;
   bliss_active: number;
   bliss_failed: number;
+  fingerprint_done: number;
+  fingerprint_pending: number;
+  fingerprint_chromaprint: number;
+  fingerprint_pcm: number;
+  chromaprint_available: boolean;
+  fingerprint_strategy: string;
   last_analyzed: {
     title?: string;
     artist?: string;

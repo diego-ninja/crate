@@ -28,13 +28,13 @@ def match_album(album_dir: Path, extensions: set[str]) -> list[dict]:
     album = local_info["album"]
 
     if not artist and not album:
-        # Fallback to directory names (skip UUID-based names from V2 storage)
-        from crate.storage_layout import looks_like_storage_id
+        # Fallback to directory names (skip entity-managed UUID folders)
+        from crate.storage_layout import looks_like_entity_uid
         parent_name = album_dir.parent.name
         dir_name = album_dir.name
-        if not looks_like_storage_id(parent_name):
+        if not looks_like_entity_uid(parent_name):
             artist = parent_name
-        if not looks_like_storage_id(dir_name):
+        if not looks_like_entity_uid(dir_name):
             album = dir_name
 
     # Search MusicBrainz

@@ -5,12 +5,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from crate.api.schemas.common import OkResponse
+from crate.api.schemas.common import IdentityFieldsMixin, OkResponse
 
 
-class PlaylistTrackInput(BaseModel):
+class PlaylistTrackInput(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
+    entity_uid: str | None = None
     path: str | None = None
     title: str | None = None
     artist: str | None = None
@@ -18,7 +19,6 @@ class PlaylistTrackInput(BaseModel):
     duration: float | int | None = None
     track_id: int | None = None
     libraryTrackId: int | None = None
-
 
 class CreatePlaylistRequest(BaseModel):
     name: str
@@ -62,19 +62,21 @@ class PlaylistArtworkTrackResponse(BaseModel):
 
     artist: str | None = None
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album: str | None = None
     album_id: int | None = None
+    album_entity_uid: str | None = None
     album_slug: str | None = None
 
 
-class PlaylistTrackResponse(BaseModel):
+class PlaylistTrackResponse(IdentityFieldsMixin):
     model_config = ConfigDict(extra="allow")
 
     id: int | None = None
     playlist_id: int | None = None
     track_id: int | None = None
-    track_storage_id: str | None = None
+    track_entity_uid: str | None = None
     track_path: str | None = None
     title: str | None = None
     artist: str | None = None
@@ -83,8 +85,10 @@ class PlaylistTrackResponse(BaseModel):
     position: int | None = None
     added_at: datetime | str | None = None
     artist_id: int | None = None
+    artist_entity_uid: str | None = None
     artist_slug: str | None = None
     album_id: int | None = None
+    album_entity_uid: str | None = None
     album_slug: str | None = None
 
 

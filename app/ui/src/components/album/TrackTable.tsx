@@ -23,10 +23,12 @@ import {
 } from "@crate/ui/shadcn/tooltip";
 import { MusicContextMenu } from "@/components/ui/music-context-menu";
 import { api } from "@/lib/api";
+import { trackDownloadApiPath } from "@/lib/library-routes";
 import { formatDuration, formatBitrate } from "@/lib/utils";
 
 interface Track {
   id?: number;
+  entity_uid?: string;
   filename: string;
   format: string;
   size_mb: number;
@@ -394,9 +396,13 @@ export function TrackTable({
                     </TableCell>
                   ) : null}
                   <TableCell>
-                    {track.path ? (
+                    {track.entity_uid || track.id || track.path ? (
                       <a
-                        href={`/api/download/track/${track.path}`}
+                        href={trackDownloadApiPath({
+                          entityUid: track.entity_uid,
+                          id: track.id,
+                          path: track.path,
+                        }) || "#"}
                         download
                         className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/40 transition-colors hover:bg-white/5 hover:text-white"
                         title="Download track"

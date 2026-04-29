@@ -10,12 +10,14 @@ const SMART_PLAYLIST_SUGGESTION_BATCH_SIZE = 12;
 
 function getPlaySourceSignature(source: PlaySource | null): string | null {
   if (!source) return null;
+  const legacySeedStorageId = (source.radio as { seedStorageId?: string | null } | undefined)?.seedStorageId ?? "";
   return [
     source.type,
     source.name,
     source.radio?.seedType ?? "",
     source.radio?.seedId ?? "",
-    source.radio?.seedStorageId ?? "",
+    source.radio?.seedEntityUid ?? "",
+    source.radio?.seedEntityUid ? "" : legacySeedStorageId,
     source.radio?.seedPath ?? "",
     source.radio?.shapedSessionId ?? "",
   ].join("::");

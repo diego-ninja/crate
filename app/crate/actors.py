@@ -81,6 +81,7 @@ TASK_POOL_CONFIG: dict[str, tuple[str, int, int, int]] = {
     "compute_bliss":        ("fast",    3, 60, 0),   # just resets state for background daemon
     "analyze_tracks":       ("fast",    2, 60, 0),   # just resets state for background daemon
     "analyze_all":          ("fast",    3, 60, 0),    # just resets state for background daemon
+    "backfill_track_audio_fingerprints": ("heavy", 3, 14400, 0),
     "index_genres":         ("fast",    3, 600, 0),
     "infer_genre_taxonomy": ("fast",    3, 3600, 0),
     "enrich_genre_descriptions": ("fast", 3, 3600, 0),

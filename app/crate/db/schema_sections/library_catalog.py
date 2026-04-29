@@ -14,7 +14,8 @@ def create_library_catalog_schema(cur) -> None:
             dir_mtime DOUBLE PRECISION,
             updated_at TIMESTAMPTZ,
             id BIGINT DEFAULT nextval('library_artists_id_seq'),
-            storage_id UUID NOT NULL,
+            storage_id UUID,
+            entity_uid UUID,
             slug TEXT,
             folder_name TEXT,
             bio TEXT,
@@ -45,7 +46,14 @@ def create_library_catalog_schema(cur) -> None:
     cur.execute("""
         DO $$ BEGIN
             IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_artists' AND column_name='storage_id') THEN
-                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_storage_id ON library_artists(storage_id)';
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_storage_id ON library_artists(storage_id) WHERE storage_id IS NOT NULL';
+            END IF;
+        END $$
+    """)
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_artists' AND column_name='entity_uid') THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_artists_entity_uid ON library_artists(entity_uid)';
             END IF;
         END $$
     """)
@@ -55,7 +63,8 @@ def create_library_catalog_schema(cur) -> None:
     cur.execute("""
         CREATE TABLE IF NOT EXISTS library_albums (
             id SERIAL PRIMARY KEY,
-            storage_id UUID NOT NULL,
+            storage_id UUID,
+            entity_uid UUID,
             artist TEXT NOT NULL REFERENCES library_artists(name),
             name TEXT NOT NULL,
             path TEXT UNIQUE NOT NULL,
@@ -83,7 +92,14 @@ def create_library_catalog_schema(cur) -> None:
     cur.execute("""
         DO $$ BEGIN
             IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_albums' AND column_name='storage_id') THEN
-                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_storage_id ON library_albums(storage_id)';
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_storage_id ON library_albums(storage_id) WHERE storage_id IS NOT NULL';
+            END IF;
+        END $$
+    """)
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_albums' AND column_name='entity_uid') THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_albums_entity_uid ON library_albums(entity_uid)';
             END IF;
         END $$
     """)
@@ -94,7 +110,8 @@ def create_library_catalog_schema(cur) -> None:
     cur.execute("""
         CREATE TABLE IF NOT EXISTS library_tracks (
             id SERIAL PRIMARY KEY,
-            storage_id UUID NOT NULL,
+            storage_id UUID,
+            entity_uid UUID,
             album_id INTEGER REFERENCES library_albums(id) ON DELETE CASCADE,
             artist TEXT NOT NULL,
             album TEXT NOT NULL,
@@ -113,6 +130,9 @@ def create_library_catalog_schema(cur) -> None:
             albumartist TEXT,
             musicbrainz_albumid TEXT,
             musicbrainz_trackid TEXT,
+            audio_fingerprint TEXT,
+            audio_fingerprint_source TEXT,
+            audio_fingerprint_computed_at TIMESTAMPTZ,
             path TEXT UNIQUE NOT NULL,
             updated_at TIMESTAMPTZ,
             bpm DOUBLE PRECISION,
@@ -142,7 +162,14 @@ def create_library_catalog_schema(cur) -> None:
     cur.execute("""
         DO $$ BEGIN
             IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_tracks' AND column_name='storage_id') THEN
-                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_storage_id ON library_tracks(storage_id)';
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_storage_id ON library_tracks(storage_id) WHERE storage_id IS NOT NULL';
+            END IF;
+        END $$
+    """)
+    cur.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='library_tracks' AND column_name='entity_uid') THEN
+                EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_lib_tracks_entity_uid ON library_tracks(entity_uid)';
             END IF;
         END $$
     """)

@@ -42,9 +42,11 @@ def get_recent_playlist_rows_with_artwork(user_id: int, limit: int) -> list[dict
                     pt.playlist_id,
                     lt.artist,
                     art.id AS artist_id,
+                    art.entity_uid::text AS artist_entity_uid,
                     art.slug AS artist_slug,
                     lt.album,
                     alb.id AS album_id,
+                    alb.entity_uid::text AS album_entity_uid,
                     alb.slug AS album_slug
                 FROM playlist_tracks pt
                 LEFT JOIN LATERAL (
@@ -74,9 +76,15 @@ def get_recent_playlist_rows_with_artwork(user_id: int, limit: int) -> list[dict
             {
                 "artist": row.get("artist"),
                 "artist_id": row.get("artist_id"),
+                "artist_entity_uid": (
+                    str(row["artist_entity_uid"]) if row.get("artist_entity_uid") is not None else None
+                ),
                 "artist_slug": row.get("artist_slug"),
                 "album": row.get("album"),
                 "album_id": row.get("album_id"),
+                "album_entity_uid": (
+                    str(row["album_entity_uid"]) if row.get("album_entity_uid") is not None else None
+                ),
                 "album_slug": row.get("album_slug"),
             }
         )

@@ -1,12 +1,14 @@
 export interface Track {
   id: string;
-  storageId?: string;
+  entityUid?: string;
   title: string;
   artist: string;
   artistId?: number;
+  artistEntityUid?: string;
   artistSlug?: string;
   album?: string;
   albumId?: number;
+  albumEntityUid?: string;
   albumSlug?: string;
   albumCover?: string;
   path?: string;
@@ -26,7 +28,7 @@ type RadioSeedType = "track" | "album" | "artist" | "playlist" | "home-playlist"
 interface RadioSession {
   seedType: RadioSeedType;
   seedId?: string | number | null;
-  seedStorageId?: string | null;
+  seedEntityUid?: string | null;
   seedPath?: string | null;
   shapedSessionId?: string | null;
 }

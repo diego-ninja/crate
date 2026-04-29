@@ -18,6 +18,7 @@ class GenreRow(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    entity_uid: str | None = None
     name: str
     slug: str
     artist_count: int = 0
@@ -47,6 +48,7 @@ class GenreDetail(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    entity_uid: str | None = None
     name: str
     slug: str
     artist_count: int = 0

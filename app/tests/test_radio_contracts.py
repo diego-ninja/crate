@@ -27,7 +27,7 @@ class TestRadioApiContracts:
         assert data["session"]["type"] == "artist"
         assert data["session"]["name"] == "Converge Radio"
         assert data["session"]["seed"]["artist_id"] == 7
-        # Tracks may have extra keys added by the serializer (track_storage_id, path);
+        # Tracks may have extra keys added by the serializer (for example path);
         # verify core fields rather than exact equality.
         assert len(data["tracks"]) == len(tracks)
         assert data["tracks"][0]["title"] == tracks[0]["title"]
@@ -65,6 +65,35 @@ class TestRadioApiContracts:
         assert data["session"]["seed"]["track_id"] == 99
         assert data["session"]["seed"]["track_path"] == "Converge/Jane Doe/01 - Concubine.flac"
         assert data["tracks"][1]["artist"] == "Botch"
+
+    def test_track_radio_accepts_entity_uid_and_returns_seed_identity(self, test_app):
+        tracks = [
+            {
+                "track_id": 99,
+                "track_entity_uid": "123e4567-e89b-12d3-a456-426614174000",
+                "track_storage_id": "123e4567-e89b-12d3-a456-426614174099",
+                "track_path": "Converge/Jane Doe/01 - Concubine.flac",
+                "title": "Concubine",
+                "artist": "Converge",
+                "album": "Jane Doe",
+                "duration": 94.0,
+                "score": None,
+            },
+        ]
+
+        with patch("crate.api.radio.get_cache", return_value=None), \
+             patch("crate.api.radio.set_cache"), \
+             patch("crate.api.radio._resolve_track_path", return_value="/music/Converge/Jane Doe/01 - Concubine.flac"), \
+             patch("crate.api.radio.generate_track_radio", return_value=tracks), \
+             patch("crate.api.radio._enrich_radio_tracks", side_effect=lambda rows: rows):
+            resp = test_app.get("/api/radio/track?entity_uid=123e4567-e89b-12d3-a456-426614174000&limit=50")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["session"]["seed"]["track_entity_uid"] == "123e4567-e89b-12d3-a456-426614174000"
+        assert "track_storage_id" not in data["session"]["seed"]
+        assert data["tracks"][0]["track_entity_uid"] == "123e4567-e89b-12d3-a456-426614174000"
+        assert "track_storage_id" not in data["tracks"][0]
 
     def test_album_radio_returns_session_and_tracks(self, test_app):
         tracks = [

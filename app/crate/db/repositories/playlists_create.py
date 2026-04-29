@@ -56,6 +56,10 @@ def create_playlist(
             curation_key=curation_key,
             featured_rank=featured_rank,
             category=category,
+            auto_refresh_enabled=True,
+            track_count=0,
+            total_duration=0,
+            generation_status="idle",
             created_at=now,
             updated_at=now,
         )

@@ -1,5 +1,6 @@
 import type { PlaySource, RepeatMode, Track } from "@/contexts/player-types";
 import { getApiBase, getAuthToken } from "@/lib/api";
+import { trackStreamApiPath } from "@/lib/library-routes";
 import { getOfflineNativePlaybackUrl } from "@/lib/offline";
 
 export const STORAGE_KEY = "listen-player-state";
@@ -104,28 +105,17 @@ export function saveRecentlyPlayed(tracks: Track[]) {
 }
 
 export function getStreamUrl(track: Track): string {
-  if (track.storageId) {
-    const localOfflineUrl = getOfflineNativePlaybackUrl(track.storageId);
+  if (track.entityUid || track.path) {
+    const localOfflineUrl = getOfflineNativePlaybackUrl(
+      track.entityUid ? { entityUid: track.entityUid } : (track.path ?? null),
+    );
     if (localOfflineUrl) return localOfflineUrl;
   }
 
   const base = _apiBase();
   const suffix = _tokenSuffix();
-
-  if (track.storageId) {
-    return `${base}/api/tracks/by-storage/${encodeURIComponent(track.storageId)}/stream${suffix}`;
-  }
-
-  if (track.libraryTrackId != null) {
-    return `${base}/api/tracks/${track.libraryTrackId}/stream${suffix}`;
-  }
-
-  const playbackPath = track.path || track.id;
-  if (playbackPath.includes("/")) {
-    return `${base}/api/stream/${encodeURIComponent(playbackPath).replace(/%2F/g, "/")}${suffix}`;
-  }
-
-  return `${base}/api/tracks/${track.id}/stream${suffix}`;
+  const path = trackStreamApiPath(track);
+  return path ? `${base}${path}${suffix}` : `${base}/api/tracks/${track.id}/stream${suffix}`;
 }
 
 /** Append ?token= for auth. Gapless-5 creates its own Audio elements
@@ -145,7 +135,12 @@ function _apiBase(): string {
 }
 
 export function getTrackCacheKey(track: Track): string {
-  return [track.libraryTrackId ?? "", track.storageId ?? "", track.path ?? "", track.id].join("::");
+  return [
+    track.libraryTrackId ?? "",
+    track.entityUid ?? "",
+    track.path ?? "",
+    track.id,
+  ].join("::");
 }
 
 export function areTracksFromSameAlbum(currentTrack: Track | undefined, nextTrack: Track | null | undefined): boolean {

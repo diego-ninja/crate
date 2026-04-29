@@ -132,6 +132,8 @@ export function HomeLibrarySection({
                   artist={item.album_artist}
                   album={item.album_name}
                   albumId={item.album_id}
+                  albumEntityUid={item.album_entity_uid}
+                  artistEntityUid={item.album_artist_entity_uid}
                   albumSlug={item.album_slug}
                   year={item.album_year}
                 />
@@ -181,6 +183,7 @@ export function JustLandedSection({
                     key={`just-landed-${artist.id ?? artist.name}`}
                     name={artist.name}
                     artistId={artist.id}
+                    artistEntityUid={artist.entity_uid}
                     artistSlug={artist.slug}
                     subtitle={`${albumCount} album${albumCount === 1 ? "" : "s"} · ${trackCount} tracks`}
                   />
@@ -197,6 +200,7 @@ export function JustLandedSection({
                   key={`just-landed-grid-${artist.id ?? artist.name}`}
                   name={artist.name}
                   artistId={artist.id}
+                  artistEntityUid={artist.entity_uid}
                   artistSlug={artist.slug}
                   subtitle={`${albumCount} album${albumCount === 1 ? "" : "s"} · ${trackCount} tracks`}
                   layout="grid"

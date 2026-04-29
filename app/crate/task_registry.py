@@ -22,6 +22,7 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "audio_analysis": "Audio Analysis",
     "bliss_analysis": "Bliss Similarity",
     "analyze_batch": "Batch Analysis",
+    "backfill_track_audio_fingerprints": "Track Fingerprint Backfill",
     # Tidal / Downloads
     "tidal_download": "Tidal Download",
     "soulseek_download": "Soulseek Download",
@@ -58,6 +59,7 @@ TASK_TYPE_ICONS: dict[str, str] = {
     "audio_analysis": "\U0001f3b5",
     "bliss_analysis": "\U0001f9ec",
     "analyze_batch": "\U0001f3b5",
+    "backfill_track_audio_fingerprints": "\U0001f9ec",
     "tidal_download": "\U0001f4e5",
     "soulseek_download": "\U0001f4e5",
     "index_genres": "\U0001f3f7\ufe0f",

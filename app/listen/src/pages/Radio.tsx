@@ -42,8 +42,8 @@ export function RadioPage() {
     try {
       const [searchData, genresData] = await Promise.all([
         api<{
-          artists?: { id: number; name: string; slug?: string }[];
-          albums?: { id: number; name: string; artist: string }[];
+          artists?: { id: number; entity_uid?: string; name: string; slug?: string }[];
+          albums?: { id: number; entity_uid?: string; name: string; artist: string; artist_entity_uid?: string; slug?: string }[];
         }>(`/api/search?q=${encodeURIComponent(q)}&limit=5`),
         api<{ slug: string; name: string }[]>("/api/genres"),
       ]);
@@ -54,14 +54,21 @@ export function RadioPage() {
       }
       for (const a of searchData.artists?.slice(0, 3) ?? []) {
         items.push({
-          type: "artist", value: String(a.id), label: a.name,
-          imageUrl: artistPhotoApiUrl({ artistId: a.id, artistSlug: a.slug, artistName: a.name }),
+          type: "artist", value: a.entity_uid || String(a.id), label: a.name,
+          imageUrl: artistPhotoApiUrl({ artistId: a.id, artistEntityUid: a.entity_uid, artistSlug: a.slug, artistName: a.name }),
         });
       }
       for (const a of searchData.albums?.slice(0, 3) ?? []) {
         items.push({
-          type: "album", value: String(a.id ?? 0), label: `${a.name} — ${a.artist}`,
-          imageUrl: albumCoverApiUrl({ albumId: a.id, albumName: a.name, artistName: a.artist }),
+          type: "album", value: a.entity_uid || String(a.id ?? 0), label: `${a.name} — ${a.artist}`,
+          imageUrl: albumCoverApiUrl({
+            albumId: a.id,
+            albumEntityUid: a.entity_uid,
+            artistEntityUid: a.artist_entity_uid,
+            albumSlug: a.slug,
+            albumName: a.name,
+            artistName: a.artist,
+          }),
         });
       }
       setResults(items);

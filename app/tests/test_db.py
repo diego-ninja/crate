@@ -141,6 +141,186 @@ class TestBootstrap:
         assert expected <= present
 
 
+class TestPlaylistTrackEntityRefs:
+    def test_add_playlist_tracks_persists_entity_and_storage_refs(self, pg_db):
+        from crate.db.repositories.playlists_create import create_playlist
+        from crate.db.repositories.playlists_tracks import add_playlist_tracks
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Playlist Ref Artist"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Playlist Ref Artist",
+                "name": "Playlist Ref Album",
+                "path": "/music/playlist-ref-artist/playlist-ref-album",
+                "track_count": 1,
+                "total_size": 1024,
+                "total_duration": 180.0,
+                "formats": ["flac"],
+            }
+        )
+        track_path = "/music/playlist-ref-artist/playlist-ref-album/01-track.flac"
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Playlist Ref Artist",
+                "album": "Playlist Ref Album",
+                "filename": "01-track.flac",
+                "title": "Playlist Ref Track",
+                "path": track_path,
+                "duration": 180.0,
+                "size": 1024,
+                "format": "flac",
+            }
+        )
+
+        with transaction_scope() as session:
+            track_row = session.execute(
+                text(
+                    """
+                    SELECT id, entity_uid::text AS entity_uid, storage_id::text AS storage_id, path
+                    FROM library_tracks
+                    WHERE path = :track_path
+                    """
+                ),
+                {"track_path": track_path},
+            ).mappings().first()
+        track_id = track_row["id"]
+
+        playlist_id = create_playlist("Playlist Ref Test")
+        add_playlist_tracks(playlist_id, [{"track_id": track_id}])
+
+        with transaction_scope() as session:
+            row = session.execute(
+                text(
+                    """
+                    SELECT
+                        track_id,
+                        track_entity_uid::text AS track_entity_uid,
+                        track_storage_id::text AS track_storage_id,
+                        track_path,
+                        title,
+                        artist,
+                        album
+                    FROM playlist_tracks
+                    WHERE playlist_id = :playlist_id
+                    ORDER BY position
+                    LIMIT 1
+                    """
+                ),
+                {"playlist_id": playlist_id},
+            ).mappings().first()
+
+        assert row is not None
+        assert row["track_id"] == track_id
+        assert row["track_entity_uid"] == track_row["entity_uid"]
+        assert row["track_storage_id"] == track_row["storage_id"]
+        assert row["track_path"] == track_row["path"]
+        assert row["title"] == "Playlist Ref Track"
+        assert row["artist"] == "Playlist Ref Artist"
+        assert row["album"] == "Playlist Ref Album"
+
+    def test_get_playlist_tracks_resolves_by_persisted_entity_uid_when_track_id_is_missing(self, pg_db):
+        from crate.db.repositories.playlists_create import create_playlist
+        from crate.db.repositories.playlists_detail_reads import get_playlist_tracks
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Playlist Resolve Artist"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Playlist Resolve Artist",
+                "name": "Playlist Resolve Album",
+                "path": "/music/playlist-resolve-artist/playlist-resolve-album",
+                "track_count": 1,
+                "total_size": 2048,
+                "total_duration": 210.0,
+                "formats": ["flac"],
+            }
+        )
+        track_path = "/music/playlist-resolve-artist/playlist-resolve-album/01-resolve.flac"
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Playlist Resolve Artist",
+                "album": "Playlist Resolve Album",
+                "filename": "01-resolve.flac",
+                "title": "Resolve Me",
+                "path": track_path,
+                "duration": 210.0,
+                "size": 2048,
+                "format": "flac",
+            }
+        )
+
+        with transaction_scope() as session:
+            track_row = session.execute(
+                text(
+                    """
+                    SELECT id, entity_uid::text AS entity_uid, storage_id::text AS storage_id, path
+                    FROM library_tracks
+                    WHERE path = :track_path
+                    """
+                ),
+                {"track_path": track_path},
+            ).mappings().first()
+        track_id = track_row["id"]
+
+        playlist_id = create_playlist("Playlist Resolve Test")
+        with transaction_scope() as session:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO playlist_tracks (
+                        playlist_id,
+                        track_id,
+                        track_entity_uid,
+                        track_storage_id,
+                        track_path,
+                        title,
+                        artist,
+                        album,
+                        duration,
+                        position,
+                        added_at
+                    )
+                    VALUES (
+                        :playlist_id,
+                        NULL,
+                        :track_entity_uid,
+                        :track_storage_id,
+                        :track_path,
+                        :title,
+                        :artist,
+                        :album,
+                        0,
+                        1,
+                        NOW()
+                    )
+                    """
+                ),
+                {
+                    "playlist_id": playlist_id,
+                    "track_entity_uid": track_row["entity_uid"],
+                    "track_storage_id": track_row["storage_id"],
+                    "track_path": "stale/path.flac",
+                    "title": "Stale Title",
+                    "artist": "Stale Artist",
+                    "album": "Stale Album",
+                },
+            )
+
+        tracks = get_playlist_tracks(playlist_id)
+
+        assert len(tracks) == 1
+        assert tracks[0]["track_id"] == track_id
+        assert tracks[0]["track_entity_uid"] == track_row["entity_uid"]
+        assert tracks[0]["track_storage_id"] == track_row["storage_id"]
+        assert tracks[0]["track_path"] == track_row["path"]
+        assert tracks[0]["title"] == "Resolve Me"
+        assert tracks[0]["artist"] == "Playlist Resolve Artist"
+        assert tracks[0]["album"] == "Playlist Resolve Album"
+
+
 class TestAnalyticsQueries:
     def test_get_insights_mood_distribution_aggregates_in_sql_with_shadow_fallback(self, pg_db):
         from crate.db.queries.analytics_audio_feature_queries import get_insights_mood_distribution
@@ -314,6 +494,37 @@ class TestRepairJobs:
 
 
 class TestGenreTaxonomyCleanup:
+    def test_genre_entities_get_deterministic_entity_uids(self, pg_db):
+        from crate.db.repositories.genres_assignments import get_or_create_genre
+        from crate.db.tx import transaction_scope
+        from crate.entity_ids import genre_entity_uid
+
+        with transaction_scope() as session:
+            genre_id = get_or_create_genre("Rock en español", session=session)
+            row = session.execute(
+                text("SELECT entity_uid::text AS entity_uid, slug FROM genres WHERE id = :genre_id"),
+                {"genre_id": genre_id},
+            ).mappings().first()
+
+        assert row is not None
+        assert row["entity_uid"] == str(genre_entity_uid(name="rock en español", slug=row["slug"]))
+
+    def test_genre_taxonomy_entity_uid_stays_stable_when_mbid_arrives_later(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        first = pg_db.upsert_genre_taxonomy_node("post-hardcore", name="post hardcore")
+        with transaction_scope() as session:
+            second = pg_db.upsert_genre_taxonomy_node(
+                "post-hardcore",
+                name="post hardcore",
+                musicbrainz_mbid="123e4567-e89b-12d3-a456-426614174000",
+                session=session,
+            )
+
+        assert first is not None
+        assert second is not None
+        assert first["entity_uid"] == second["entity_uid"]
+
     def test_assign_genre_alias_is_noop_when_alias_already_points_to_same_canonical(self, pg_db):
         from crate.db.jobs.genre_taxonomy import assign_genre_alias_in_session
         from crate.db.tx import transaction_scope
@@ -333,6 +544,47 @@ class TestGenreTaxonomyCleanup:
                 )
             ).mappings().first()["cnt"]
         assert count == 1
+
+    def test_list_unmapped_genres_for_inference_skips_legacy_row_when_alias_name_already_exists(self, pg_db):
+        from crate.db.jobs.genre_taxonomy import assign_genre_alias_in_session
+        from crate.db.queries.genres_library_catalog import (
+            get_unmapped_genre_count,
+            list_unmapped_genres_for_inference,
+        )
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Duncan Dhu"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Duncan Dhu",
+                "name": "20 anos de canciones",
+                "path": "/music/Duncan Dhu/20 anos de canciones",
+            }
+        )
+        with transaction_scope() as session:
+            pg_db.upsert_genre_taxonomy_node("rock", name="rock", session=session)
+            assert assign_genre_alias_in_session(session, "rock en español", "rock") is True
+            session.execute(
+                text(
+                    """
+                    INSERT INTO genres (id, name, slug)
+                    VALUES (353, 'rock en español', 'rock-en-espaol')
+                    """
+                )
+            )
+            session.execute(
+                text(
+                    """
+                    INSERT INTO album_genres (album_id, genre_id, weight, source)
+                    VALUES (:album_id, 353, 1.0, 'tags')
+                    """
+                ),
+                {"album_id": album_id},
+            )
+
+        items = list_unmapped_genres_for_inference(limit=20)
+        assert all(item["slug"] != "rock-en-espaol" for item in items)
+        assert get_unmapped_genre_count() == 0
 
     def test_merge_duplicate_library_genres_merges_references_and_deletes_duplicates(self, pg_db):
         from crate.db.jobs.genre_taxonomy import merge_duplicate_library_genres_in_session
@@ -1275,6 +1527,8 @@ class TestLibraryCRUD:
         assert artist["album_count"] == 3
         assert artist["track_count"] == 30
         assert "flac" in artist["formats"]
+        assert artist["entity_uid"] is not None
+        assert artist["storage_id"] is None
 
     def test_upsert_artist_update(self, pg_db):
         pg_db.upsert_artist({"name": "Artist A", "album_count": 1, "track_count": 5})
@@ -1282,6 +1536,18 @@ class TestLibraryCRUD:
         artist = pg_db.get_library_artist("Artist A")
         assert artist["album_count"] == 2
         assert artist["track_count"] == 15
+
+    def test_upsert_artist_entity_uid_stays_stable_when_mbid_arrives_later(self, pg_db):
+        pg_db.upsert_artist({"name": "High Vis"})
+        original = pg_db.get_library_artist("High Vis")
+        assert original is not None
+
+        pg_db.upsert_artist({"name": "High Vis", "mbid": "123e4567-e89b-12d3-a456-426614174000"})
+        updated = pg_db.get_library_artist("High Vis")
+
+        assert updated is not None
+        assert updated["entity_uid"] == original["entity_uid"]
+        assert updated["mbid"] == "123e4567-e89b-12d3-a456-426614174000"
 
     def test_upsert_artist_reuses_canonical_name_for_same_storage_identity(self, pg_db):
         storage_id = "d7b2189f-8d0c-4909-87fe-fd465daa2aac"
@@ -1350,10 +1616,34 @@ class TestLibraryCRUD:
         artist = pg_db.get_library_artist("Terror")
         assert artist is not None
         assert artist["track_count"] == 22
-        assert artist["storage_id"] == storage_id
         artists, _total = pg_db.get_library_artists(per_page=100)
-        terror_rows = [row for row in artists if row["storage_id"] == storage_id]
+        terror_rows = [row for row in artists if row["name"] == "Terror"]
         assert len(terror_rows) == 1
+        with transaction_scope() as session:
+            raw_artist = session.execute(
+                text(
+                    """
+                    SELECT storage_id::text AS storage_id
+                    FROM library_artists
+                    WHERE name = :name
+                    """
+                ),
+                {"name": "Terror"},
+            ).mappings().first()
+            keys = session.execute(
+                text(
+                    """
+                    SELECT key_type, key_value
+                    FROM entity_identity_keys
+                    WHERE entity_type = 'artist' AND entity_uid::text = :entity_uid
+                    ORDER BY key_type
+                    """
+                ),
+                {"entity_uid": artist["entity_uid"]},
+            ).mappings().all()
+        assert raw_artist is not None
+        assert raw_artist["storage_id"] == storage_id
+        assert {row["key_type"] for row in keys} >= {"name", "slug"}
 
     def test_upsert_album(self, pg_db):
         pg_db.upsert_artist({"name": "Artist B"})
@@ -1371,6 +1661,10 @@ class TestLibraryCRUD:
         })
         assert album_id is not None
         assert isinstance(album_id, int)
+        album = pg_db.get_library_album("Artist B", "Album One")
+        assert album is not None
+        assert album["entity_uid"] is not None
+        assert album["storage_id"] is None
 
     def test_upsert_track(self, pg_db):
         from crate.db.tx import transaction_scope
@@ -1394,6 +1688,8 @@ class TestLibraryCRUD:
         tracks = pg_db.get_library_tracks(album_id)
         assert len(tracks) == 1
         assert tracks[0]["title"] == "Song"
+        assert tracks[0]["entity_uid"] is not None
+        assert tracks[0]["storage_id"] is None
 
         with transaction_scope() as session:
             rows = session.execute(
@@ -1410,6 +1706,51 @@ class TestLibraryCRUD:
 
         assert [row["pipeline"] for row in rows] == ["analysis", "bliss"]
         assert all(row["state"] == "pending" for row in rows)
+
+    def test_upsert_track_reuses_row_when_path_changes_but_entity_uid_matches(self, pg_db):
+        from crate.db.tx import transaction_scope
+
+        pg_db.upsert_artist({"name": "Converge"})
+        album_id = pg_db.upsert_album(
+            {
+                "artist": "Converge",
+                "name": "Jane Doe",
+                "path": "/music/converge/jane-doe",
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Converge",
+                "album": "Jane Doe",
+                "entity_uid": "123e4567-e89b-12d3-a456-426614174100",
+                "filename": "01.flac",
+                "title": "Concubine",
+                "track_number": 1,
+                "disc_number": 1,
+                "path": "/music/converge/jane-doe/01.flac",
+            }
+        )
+        pg_db.upsert_track(
+            {
+                "album_id": album_id,
+                "artist": "Converge",
+                "album": "Jane Doe",
+                "entity_uid": "123e4567-e89b-12d3-a456-426614174100",
+                "filename": "01-concubine.flac",
+                "title": "Concubine",
+                "track_number": 1,
+                "disc_number": 1,
+                "path": "/music/converge/jane-doe-remastered/01-concubine.flac",
+            }
+        )
+
+        tracks = pg_db.get_library_tracks(album_id)
+        assert len(tracks) == 1
+        assert tracks[0]["path"] == "/music/converge/jane-doe-remastered/01-concubine.flac"
+        with transaction_scope() as session:
+            count = session.execute(text("SELECT COUNT(*)::int AS cnt FROM library_tracks")).mappings().first()["cnt"]
+        assert count == 1
 
     def test_get_library_artists_pagination(self, pg_db):
         for i in range(5):

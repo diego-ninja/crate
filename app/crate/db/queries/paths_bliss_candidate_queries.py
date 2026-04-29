@@ -11,6 +11,8 @@ def _normalize_track_row(row) -> dict | None:
     if not row:
         return None
     data = dict(row)
+    entity_uid = str(data["entity_uid"]) if data.get("entity_uid") is not None else None
+    data["entity_uid"] = entity_uid
     if data.get("bliss_vector"):
         data["bliss_vector"] = list(data["bliss_vector"])
     return data
@@ -34,23 +36,50 @@ def find_anchor_track_row(
             row = session.execute(
                 text(
                     """
-                    SELECT t.id, t.storage_id, t.title, a.artist, a.name AS album,
-                           t.album_id, t.bliss_vector, 0.0 AS distance
+                    SELECT t.id, t.entity_uid, t.title, a.artist, a.name AS album,
+                           t.album_id, a.entity_uid::text AS album_entity_uid,
+                           ar.entity_uid::text AS artist_entity_uid,
+                           t.bliss_vector, 0.0 AS distance
                     FROM library_tracks t
                     JOIN library_albums a ON a.id = t.album_id
-                    WHERE t.id = :track_id AND t.bliss_vector IS NOT NULL
+                    LEFT JOIN library_artists ar ON ar.name = a.artist
+                    WHERE t.bliss_vector IS NOT NULL
+                      AND (
+                        CAST(t.id AS text) = :track_ref
+                        OR (t.entity_uid IS NOT NULL AND CAST(t.entity_uid AS text) = :track_ref)
+                      )
+                    ORDER BY
+                      CASE
+                        WHEN CAST(t.id AS text) = :track_ref THEN 0
+                        ELSE 1
+                      END
+                    LIMIT 1
                     """
                 ),
-                {"track_id": int(endpoint_value)},
+                {"track_ref": endpoint_value},
             ).mappings().first()
             return _normalize_track_row(row)
 
         if endpoint_type == "artist":
-            scope_clause = "AND a.artist = (SELECT name FROM library_artists WHERE id = :scope_id)"
-            params["scope_id"] = int(endpoint_value)
+            scope_clause = """AND a.artist = (
+                SELECT name
+                FROM library_artists
+                WHERE CAST(id AS text) = :scope_ref
+                   OR (entity_uid IS NOT NULL AND CAST(entity_uid AS text) = :scope_ref)
+                ORDER BY
+                  CASE
+                    WHEN CAST(id AS text) = :scope_ref THEN 0
+                    ELSE 1
+                  END
+                LIMIT 1
+            )"""
+            params["scope_ref"] = endpoint_value
         elif endpoint_type == "album":
-            scope_clause = "AND t.album_id = :scope_id"
-            params["scope_id"] = int(endpoint_value)
+            scope_clause = """AND (
+                CAST(t.album_id AS text) = :scope_ref
+                OR (a.entity_uid IS NOT NULL AND CAST(a.entity_uid AS text) = :scope_ref)
+            )"""
+            params["scope_ref"] = endpoint_value
         elif endpoint_type == "genre":
             scope_clause = """AND a.artist IN (
                 SELECT ag.artist_name FROM artist_genres ag
@@ -64,11 +93,14 @@ def find_anchor_track_row(
         row = session.execute(
             text(
                 f"""
-                SELECT t.id, t.storage_id, t.title, a.artist, a.name AS album,
-                       t.album_id, t.bliss_vector,
+                SELECT t.id, t.entity_uid, t.title, a.artist, a.name AS album,
+                       t.album_id, a.entity_uid::text AS album_entity_uid,
+                       ar.entity_uid::text AS artist_entity_uid,
+                       t.bliss_vector,
                        (t.bliss_embedding <-> CAST(:probe_vector AS vector(20))) AS distance
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
+                LEFT JOIN library_artists ar ON ar.name = a.artist
                 WHERE t.bliss_embedding IS NOT NULL
                 {scope_clause}
                 {exclude_clause}
@@ -84,11 +116,14 @@ def find_anchor_track_row(
             row = session.execute(
                 text(
                     f"""
-                    SELECT t.id, t.storage_id, t.title, a.artist, a.name AS album,
-                           t.album_id, t.bliss_vector,
+                    SELECT t.id, t.entity_uid, t.title, a.artist, a.name AS album,
+                           t.album_id, a.entity_uid::text AS album_entity_uid,
+                           ar.entity_uid::text AS artist_entity_uid,
+                           t.bliss_vector,
                            {fallback_distance} AS distance
                     FROM library_tracks t
                     JOIN library_albums a ON a.id = t.album_id
+                    LEFT JOIN library_artists ar ON ar.name = a.artist
                     WHERE t.bliss_vector IS NOT NULL
                     {scope_clause}
                     {exclude_clause}
@@ -121,11 +156,14 @@ def find_candidate_rows(
         rows = session.execute(
             text(
                 f"""
-                SELECT t.id, t.storage_id, t.title, a.artist,
-                       a.name AS album, t.album_id, t.bliss_vector,
+                SELECT t.id, t.entity_uid, t.title, a.artist,
+                       a.name AS album, t.album_id, a.entity_uid::text AS album_entity_uid,
+                       ar.entity_uid::text AS artist_entity_uid,
+                       t.bliss_vector,
                        (t.bliss_embedding <-> CAST(:probe_vector AS vector(20))) AS distance
                 FROM library_tracks t
                 JOIN library_albums a ON a.id = t.album_id
+                LEFT JOIN library_artists ar ON ar.name = a.artist
                 WHERE t.bliss_embedding IS NOT NULL
                 {exclude_clause}
                 ORDER BY t.bliss_embedding <-> CAST(:probe_vector AS vector(20))
@@ -140,11 +178,14 @@ def find_candidate_rows(
             rows = session.execute(
                 text(
                     f"""
-                    SELECT t.id, t.storage_id, t.title, a.artist,
-                           a.name AS album, t.album_id, t.bliss_vector,
+                    SELECT t.id, t.entity_uid, t.title, a.artist,
+                           a.name AS album, t.album_id, a.entity_uid::text AS album_entity_uid,
+                           ar.entity_uid::text AS artist_entity_uid,
+                           t.bliss_vector,
                            {fallback_distance} AS distance
                     FROM library_tracks t
                     JOIN library_albums a ON a.id = t.album_id
+                    LEFT JOIN library_artists ar ON ar.name = a.artist
                     WHERE t.bliss_vector IS NOT NULL
                     {exclude_clause}
                     ORDER BY {fallback_distance}

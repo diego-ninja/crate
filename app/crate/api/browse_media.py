@@ -2,6 +2,7 @@ import logging
 import math
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse
 
 from crate.api._deps import enrich_radio_tracks as _enrich_radio_tracks, library_path, safe_path
 from crate.api.auth import _require_auth
@@ -33,18 +34,19 @@ from crate.db.queries.browse_media import (
     get_track_album_genres,
     get_track_artist_genres,
     get_track_exists,
-    get_track_id_by_storage_id,
+    get_track_id_by_entity_uid,
     get_track_info_cols,
+    get_track_info_cols_by_entity_uid,
     get_track_info_cols_by_path,
-    get_track_info_cols_by_storage_id,
     get_track_path,
-    get_track_path_by_storage_id,
+    get_track_path_by_entity_uid,
     list_favorites,
     remove_favorite,
     search_albums,
     search_artists,
     search_tracks,
 )
+from crate.db.queries.browse_media_track_lookup import get_track_info_cols_by_storage_id
 from crate.db.repositories.tasks import create_task_dedup
 
 log = logging.getLogger(__name__)
@@ -118,6 +120,7 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     artists = [
         {
             "id": row["id"],
+            "entity_uid": row.get("entity_uid"),
             "slug": row.get("slug"),
             "name": row["name"],
             "album_count": row.get("album_count", 0),
@@ -128,9 +131,11 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     albums = [
         {
             "id": row["id"],
+            "entity_uid": row.get("entity_uid"),
             "slug": row.get("slug"),
             "artist": row["artist"],
             "artist_id": row.get("artist_id"),
+            "artist_entity_uid": row.get("artist_entity_uid"),
             "artist_slug": row.get("artist_slug"),
             "name": row["name"],
             "year": row.get("year") or "",
@@ -141,19 +146,22 @@ def api_search(request: Request, q: str = "", limit: int = 20):
     tracks = [
         {
             "id": row["id"],
-            "storage_id": str(row["storage_id"]) if row.get("storage_id") is not None else None,
+            "entity_uid": entity_uid,
             "slug": row.get("slug"),
             "title": row["title"],
             "artist": row["artist"],
             "artist_id": row.get("artist_id"),
+            "artist_entity_uid": row.get("artist_entity_uid"),
             "artist_slug": row.get("artist_slug"),
             "album_id": row.get("album_id"),
+            "album_entity_uid": row.get("album_entity_uid"),
             "album_slug": row.get("album_slug"),
             "album": row["album"],
             "path": row["path"],
             "duration": row["duration"],
         }
         for row in track_rows
+        for entity_uid in [str(row["entity_uid"]) if row.get("entity_uid") is not None else None]
     ]
     return {"artists": artists, "albums": albums, "tracks": tracks}
 
@@ -239,7 +247,7 @@ def api_rate_track(request: Request, body: TrackRatingRequest):
 
 
 _TRACK_INFO_QUERY_COLS = (
-    "title, artist, album, format, bitrate, sample_rate, bit_depth, "
+    "entity_uid, title, artist, album, format, bitrate, sample_rate, bit_depth, "
     "bpm, audio_key, audio_scale, energy, "
     "danceability, valence, acousticness, instrumentalness, loudness, "
     "dynamic_range, mood_json, bliss_vector, lastfm_listeners, lastfm_playcount, popularity, rating"
@@ -278,9 +286,55 @@ def _derive_bliss_signature(bliss_vector) -> dict[str, float] | None:
 
 def _serialize_track_info_row(row) -> dict:
     payload = dict(row)
+    if payload.get("entity_uid") is not None:
+        payload["entity_uid"] = str(payload["entity_uid"])
+        payload.pop("storage_id", None)
     bliss_vector = payload.pop("bliss_vector", None)
     payload["bliss_signature"] = _derive_bliss_signature(bliss_vector)
     return payload
+
+
+def _get_track_info_cols_via_storage_alias(storage_id: str, cols: str) -> dict | None:
+    row = get_track_info_cols_by_storage_id(storage_id, cols)
+    if not row:
+        return None
+    entity_uid = str(row["entity_uid"]) if row.get("entity_uid") is not None else None
+    if not entity_uid:
+        return row
+    canonical = get_track_info_cols_by_entity_uid(entity_uid, cols)
+    return canonical or row
+
+
+def _get_entity_uid_from_storage_alias(storage_id: str) -> str | None:
+    row = get_track_info_cols_by_storage_id(storage_id, "entity_uid")
+    entity_uid = row.get("entity_uid") if row else None
+    return str(entity_uid) if entity_uid is not None else None
+
+
+def _get_track_id_via_storage_alias(storage_id: str) -> int | None:
+    row = _get_track_info_cols_via_storage_alias(storage_id, "id, entity_uid")
+    if not row:
+        return None
+    track_id = row.get("id")
+    if track_id is not None:
+        return int(track_id)
+    entity_uid = row.get("entity_uid")
+    if entity_uid is None:
+        return None
+    return get_track_id_by_entity_uid(str(entity_uid))
+
+
+def _get_track_path_via_storage_alias(storage_id: str) -> str | None:
+    row = _get_track_info_cols_via_storage_alias(storage_id, "entity_uid, path")
+    if not row:
+        return None
+    path = row.get("path")
+    if path:
+        return path
+    entity_uid = row.get("entity_uid")
+    if entity_uid is None:
+        return None
+    return get_track_path_by_entity_uid(str(entity_uid))
 
 
 @router.get(
@@ -298,14 +352,33 @@ def api_track_info_by_id(request: Request, track_id: int):
 
 
 @router.get(
+    "/api/tracks/by-entity/{entity_uid}/info",
+    response_model=TrackInfoResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get detailed track metadata by entity UID",
+)
+def api_track_info_by_entity_uid(request: Request, entity_uid: str):
+    _require_auth(request)
+    row = get_track_info_cols_by_entity_uid(entity_uid, _TRACK_INFO_QUERY_COLS)
+    if not row:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return _serialize_track_info_row(row)
+
+
+@router.get(
     "/api/tracks/by-storage/{storage_id}/info",
     response_model=TrackInfoResponse,
     responses=_BROWSE_MEDIA_RESPONSES,
-    summary="Get detailed track metadata by storage ID",
+    summary="Get detailed track metadata by legacy storage ID",
+    deprecated=True,
+    include_in_schema=False,
 )
 def api_track_info_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    row = get_track_info_cols_by_storage_id(storage_id, _TRACK_INFO_QUERY_COLS)
+    entity_uid = _get_entity_uid_from_storage_alias(storage_id)
+    if entity_uid:
+        return RedirectResponse(url=f"/api/tracks/by-entity/{entity_uid}/info", status_code=307)
+    row = _get_track_info_cols_via_storage_alias(storage_id, _TRACK_INFO_QUERY_COLS)
     if not row:
         raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_track_info_row(row)
@@ -367,14 +440,33 @@ def api_eq_features_by_id(request: Request, track_id: int):
 
 
 @router.get(
+    "/api/tracks/by-entity/{entity_uid}/eq-features",
+    response_model=EqFeaturesResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get adaptive EQ features for a track by entity UID",
+)
+def api_eq_features_by_entity_uid(request: Request, entity_uid: str):
+    _require_auth(request)
+    row = get_track_info_cols_by_entity_uid(entity_uid, _EQ_FEATURES_QUERY_COLS)
+    if not row:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return _serialize_eq_features(row)
+
+
+@router.get(
     "/api/tracks/by-storage/{storage_id}/eq-features",
     response_model=EqFeaturesResponse,
     responses=_BROWSE_MEDIA_RESPONSES,
-    summary="Get adaptive EQ features for a track by storage ID",
+    summary="Get adaptive EQ features for a track by legacy storage ID",
+    deprecated=True,
+    include_in_schema=False,
 )
 def api_eq_features_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    row = get_track_info_cols_by_storage_id(storage_id, _EQ_FEATURES_QUERY_COLS)
+    entity_uid = _get_entity_uid_from_storage_alias(storage_id)
+    if entity_uid:
+        return RedirectResponse(url=f"/api/tracks/by-entity/{entity_uid}/eq-features", status_code=307)
+    row = _get_track_info_cols_via_storage_alias(storage_id, _EQ_FEATURES_QUERY_COLS)
     if not row:
         raise HTTPException(status_code=404, detail="Track not found")
     return _serialize_eq_features(row)
@@ -487,14 +579,36 @@ def api_track_genre_by_id(request: Request, track_id: int):
 
 
 @router.get(
+    "/api/tracks/by-entity/{entity_uid}/genre",
+    response_model=TrackGenreResponse,
+    responses=_BROWSE_MEDIA_RESPONSES,
+    summary="Get the primary genre for a track by entity UID",
+)
+def api_track_genre_by_entity_uid(request: Request, entity_uid: str):
+    _require_auth(request)
+    tid = get_track_id_by_entity_uid(entity_uid)
+    if tid is None:
+        raise HTTPException(status_code=404, detail="Track not found")
+    result = _resolve_track_genre(tid)
+    if result is None:
+        return {"primary": None, "topLevel": None, "source": None, "preset": None}
+    return result
+
+
+@router.get(
     "/api/tracks/by-storage/{storage_id}/genre",
     response_model=TrackGenreResponse,
     responses=_BROWSE_MEDIA_RESPONSES,
-    summary="Get the primary genre for a track by storage ID",
+    summary="Get the primary genre for a track by legacy storage ID",
+    deprecated=True,
+    include_in_schema=False,
 )
 def api_track_genre_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    tid = get_track_id_by_storage_id(storage_id)
+    entity_uid = _get_entity_uid_from_storage_alias(storage_id)
+    if entity_uid:
+        return RedirectResponse(url=f"/api/tracks/by-entity/{entity_uid}/genre", status_code=307)
+    tid = _get_track_id_via_storage_alias(storage_id)
     if tid is None:
         raise HTTPException(status_code=404, detail="Track not found")
     result = _resolve_track_genre(tid)
@@ -586,13 +700,31 @@ def api_stream_by_id(request: Request, track_id: int):
 
 
 @router.get(
+    "/api/tracks/by-entity/{entity_uid}/stream",
+    responses=_STREAM_RESPONSES,
+    summary="Stream a track by entity UID",
+)
+def api_stream_by_entity_uid(request: Request, entity_uid: str):
+    _require_auth(request)
+    path = get_track_path_by_entity_uid(entity_uid)
+    if not path:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return _stream_file(request, path)
+
+
+@router.get(
     "/api/tracks/by-storage/{storage_id}/stream",
     responses=_STREAM_RESPONSES,
-    summary="Stream a track by storage ID",
+    summary="Stream a track by legacy storage ID",
+    deprecated=True,
+    include_in_schema=False,
 )
 def api_stream_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    path = get_track_path_by_storage_id(storage_id)
+    entity_uid = _get_entity_uid_from_storage_alias(storage_id)
+    if entity_uid:
+        return RedirectResponse(url=f"/api/tracks/by-entity/{entity_uid}/stream", status_code=307)
+    path = _get_track_path_via_storage_alias(storage_id)
     if not path:
         raise HTTPException(status_code=404, detail="Track not found")
     return _stream_file(request, path)
@@ -678,13 +810,31 @@ def api_download_track_by_id(request: Request, track_id: int):
 
 
 @router.get(
+    "/api/tracks/by-entity/{entity_uid}/download",
+    responses=_DOWNLOAD_RESPONSES,
+    summary="Download a track by entity UID",
+)
+def api_download_track_by_entity_uid(request: Request, entity_uid: str):
+    _require_auth(request)
+    path = get_track_path_by_entity_uid(entity_uid)
+    if not path:
+        raise HTTPException(status_code=404, detail="Track not found")
+    return _download_track(request, path)
+
+
+@router.get(
     "/api/tracks/by-storage/{storage_id}/download",
     responses=_DOWNLOAD_RESPONSES,
-    summary="Download a track by storage ID",
+    summary="Download a track by legacy storage ID",
+    deprecated=True,
+    include_in_schema=False,
 )
 def api_download_track_by_storage_id(request: Request, storage_id: str):
     _require_auth(request)
-    path = get_track_path_by_storage_id(storage_id)
+    entity_uid = _get_entity_uid_from_storage_alias(storage_id)
+    if entity_uid:
+        return RedirectResponse(url=f"/api/tracks/by-entity/{entity_uid}/download", status_code=307)
+    path = _get_track_path_via_storage_alias(storage_id)
     if not path:
         raise HTTPException(status_code=404, detail="Track not found")
     return _download_track(request, path)

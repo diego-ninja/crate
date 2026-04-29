@@ -460,6 +460,31 @@ class TestTimelineAPI:
         assert resp.status_code == 200
         assert resp.json() == {}
 
+    def test_timeline_includes_entity_uids(self, test_app):
+        rows = [
+            {
+                "id": 5,
+                "entity_uid": "123e4567-e89b-12d3-a456-426614174005",
+                "slug": "ok-computer",
+                "year": "1997",
+                "artist": "Radiohead",
+                "artist_id": 1,
+                "artist_entity_uid": "123e4567-e89b-12d3-a456-426614174001",
+                "artist_slug": "radiohead",
+                "name": "OK Computer",
+                "track_count": 12,
+            }
+        ]
+
+        with patch("crate.api.analytics._has_library_data", return_value=True), \
+             patch("crate.api.analytics.get_timeline_albums", return_value=rows):
+            resp = test_app.get("/api/timeline")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["1997"][0]["entity_uid"] == "123e4567-e89b-12d3-a456-426614174005"
+        assert data["1997"][0]["artist_entity_uid"] == "123e4567-e89b-12d3-a456-426614174001"
+
 
 class TestSearchAPI:
     def test_search_short_query(self, test_app):
@@ -471,10 +496,14 @@ class TestSearchAPI:
 
     def test_search_from_db(self, test_app):
         mock_scope = _make_mock_session(fetchall_side_effects=[
-            [{"id": 1, "slug": "radiohead", "name": "Radiohead", "album_count": 9, "has_photo": 1}],
-            [{"id": 5, "slug": "ok-computer", "artist": "Radiohead", "name": "OK Computer",
-              "year": "1997", "has_cover": 1, "artist_id": 1, "artist_slug": "radiohead"}],
-            [],  # track results
+            [{"id": 1, "entity_uid": "123e4567-e89b-12d3-a456-426614174001", "slug": "radiohead", "name": "Radiohead", "album_count": 9, "has_photo": 1}],
+            [{"id": 5, "entity_uid": "123e4567-e89b-12d3-a456-426614174002", "slug": "ok-computer", "artist": "Radiohead", "name": "OK Computer",
+              "year": "1997", "has_cover": 1, "artist_id": 1, "artist_entity_uid": "123e4567-e89b-12d3-a456-426614174001", "artist_slug": "radiohead"}],
+            [{"id": 9, "entity_uid": "123e4567-e89b-12d3-a456-426614174000", "storage_id": "legacy-storage",
+              "slug": "paranoid-android", "title": "Paranoid Android", "artist": "Radiohead", "album_id": 5,
+              "album_entity_uid": "123e4567-e89b-12d3-a456-426614174002", "album_slug": "ok-computer",
+              "album": "OK Computer", "artist_id": 1, "artist_entity_uid": "123e4567-e89b-12d3-a456-426614174001", "artist_slug": "radiohead",
+              "path": "/music/Radiohead/OK Computer/02 - Paranoid Android.flac", "duration": 387.0}],
         ])
 
         with patch("crate.api.browse_media.has_library_data", return_value=True), \
@@ -484,6 +513,13 @@ class TestSearchAPI:
             data = resp.json()
             assert len(data["artists"]) == 1
             assert data["artists"][0]["name"] == "Radiohead"
+            assert data["artists"][0]["entity_uid"] == "123e4567-e89b-12d3-a456-426614174001"
+            assert data["albums"][0]["entity_uid"] == "123e4567-e89b-12d3-a456-426614174002"
+            assert data["albums"][0]["artist_entity_uid"] == "123e4567-e89b-12d3-a456-426614174001"
+            assert data["tracks"][0]["entity_uid"] == "123e4567-e89b-12d3-a456-426614174000"
+            assert data["tracks"][0]["album_entity_uid"] == "123e4567-e89b-12d3-a456-426614174002"
+            assert data["tracks"][0]["artist_entity_uid"] == "123e4567-e89b-12d3-a456-426614174001"
+            assert "storage_id" not in data["tracks"][0]
 
 
 class TestScanAPI:
@@ -678,6 +714,32 @@ class TestOfflineAPI:
             assert data["tracks"][0]["stream_url"] == "/api/tracks/by-storage/track-storage-24/stream"
             assert data["tracks"][0]["download_url"] == "/api/tracks/by-storage/track-storage-24/download"
 
+    def test_get_track_manifest_by_storage_prefers_entity_uid_when_available(self, test_app):
+        track = {
+            "id": 24,
+            "entity_uid": "123e4567-e89b-12d3-a456-426614174000",
+            "storage_id": "track-storage-24",
+            "title": "Distant Populations",
+            "artist": "Quicksand",
+            "album": "Distant Populations",
+            "album_id": 14,
+            "duration": 221,
+            "format": "flac",
+            "bitrate": 950,
+            "sample_rate": 44100,
+            "bit_depth": 16,
+            "size": 12_345_678,
+            "updated_at": "2026-04-18T10:00:00",
+        }
+        album = {"id": 14, "slug": "quicksand-distant-populations"}
+
+        with patch("crate.api.offline.get_library_track_by_storage_id", return_value=track), \
+             patch("crate.api.offline.get_library_album_by_id", return_value=album), \
+             patch("crate.api.offline.get_library_artist", return_value={"id": 7, "slug": "quicksand"}):
+            resp = test_app.get("/api/offline/tracks/by-storage/track-storage-24/manifest", follow_redirects=False)
+            assert resp.status_code == 307
+            assert resp.headers["location"] == "/api/offline/tracks/by-entity/123e4567-e89b-12d3-a456-426614174000/manifest"
+
     def test_get_track_manifest_by_path(self, test_app):
         track = {
             "id": 24,
@@ -694,7 +756,7 @@ class TestOfflineAPI:
              patch("crate.api.offline.get_library_artist", return_value={"id": 7, "slug": "quicksand"}):
             resp = test_app.get("/api/offline/tracks/by-path/music/Quicksand/Distant Populations/01 Omission.flac/manifest")
             assert resp.status_code == 200
-            assert resp.json()["tracks"][0]["storage_id"] == "track-storage-24"
+            assert "storage_id" not in resp.json()["tracks"][0]
 
     def test_get_album_manifest(self, test_app):
         album = {
@@ -816,6 +878,80 @@ class TestOfflineAPI:
             assert data["total_bytes"] == 25_000
             mock_batch.assert_called_once_with(["track-storage-24", "track-storage-25"])
 
+    def test_get_playlist_manifest_prefers_entity_uid_over_legacy_storage_lookup(self, test_app):
+        playlist = {
+            "id": 52,
+            "name": "Post-hardcore forever",
+            "generation_mode": "static",
+            "visibility": "private",
+            "updated_at": "2026-04-18T10:00:00",
+        }
+        entity_uid = "123e4567-e89b-12d3-a456-426614174000"
+        tracks = [
+            {
+                "position": 1,
+                "track_entity_uid": entity_uid,
+                "track_storage_id": "track-storage-24",
+                "artist_id": 7,
+                "artist_slug": "quicksand",
+                "album_id": 14,
+                "album_slug": "quicksand-distant-populations",
+                "duration": 221,
+            },
+        ]
+        library_track = {
+            "id": 24,
+            "entity_uid": entity_uid,
+            "storage_id": "track-storage-24",
+            "title": "Dine Alone",
+            "artist": "Quicksand",
+            "album": "Distant Populations",
+            "album_id": 14,
+            "size": 12_000,
+            "updated_at": "2026-04-18T10:00:00",
+        }
+
+        with patch("crate.api.offline.get_playlist", return_value=playlist), \
+             patch("crate.api.offline.can_view_playlist", return_value=True), \
+             patch("crate.api.offline.get_playlist_tracks", return_value=tracks), \
+             patch("crate.api.offline.get_library_tracks_by_entity_uids", return_value={entity_uid: library_track}) as mock_entity_batch, \
+             patch("crate.api.offline.get_library_tracks_by_storage_ids", return_value={}) as mock_storage_batch, \
+             patch("crate.api.offline.get_library_artist", return_value={"id": 7, "slug": "quicksand"}):
+            resp = test_app.get("/api/offline/playlists/52/manifest")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["track_count"] == 1
+            assert data["tracks"][0]["entity_uid"] == entity_uid
+            assert "storage_id" not in data["tracks"][0]
+            mock_entity_batch.assert_called_once_with([entity_uid])
+            mock_storage_batch.assert_not_called()
+
+    def test_get_track_manifest_by_entity_uid(self, test_app):
+        track = {
+            "id": 24,
+            "entity_uid": "123e4567-e89b-12d3-a456-426614174000",
+            "storage_id": "track-storage-24",
+            "title": "Dine Alone",
+            "artist": "Quicksand",
+            "album": "Distant Populations",
+            "album_id": 14,
+            "size": 12_000,
+            "updated_at": "2026-04-18T10:00:00",
+        }
+        album = {"id": 14, "slug": "quicksand-distant-populations"}
+
+        with patch("crate.api.offline.get_library_track_by_entity_uid", return_value=track), \
+             patch("crate.api.offline.get_library_album_by_id", return_value=album), \
+             patch("crate.api.offline.get_library_artist", return_value={"id": 7, "slug": "quicksand"}):
+            resp = test_app.get("/api/offline/tracks/by-entity/123e4567-e89b-12d3-a456-426614174000/manifest")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["id"] == "123e4567-e89b-12d3-a456-426614174000"
+        assert data["tracks"][0]["entity_uid"] == "123e4567-e89b-12d3-a456-426614174000"
+        assert "storage_id" not in data["tracks"][0]
+        assert data["tracks"][0]["stream_url"] == "/api/tracks/by-entity/123e4567-e89b-12d3-a456-426614174000/stream"
+
 
 class TestSyncLibraryAPI:
     def test_sync_library(self, test_app):
@@ -829,6 +965,19 @@ class TestSyncLibraryAPI:
     def test_sync_library_already_running(self, test_app):
         with patch("crate.api.tasks.list_tasks", side_effect=[[{"id": "x"}], []]):
             resp = test_app.post("/api/tasks/sync-library")
+            assert resp.status_code == 409
+
+    def test_backfill_track_fingerprints(self, test_app):
+        with patch("crate.api.tasks.list_tasks", return_value=[]), \
+             patch("crate.api.tasks.create_task", return_value="fingerprints123"):
+            resp = test_app.post("/api/tasks/backfill-track-fingerprints")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["task_id"] == "fingerprints123"
+
+    def test_backfill_track_fingerprints_already_running(self, test_app):
+        with patch("crate.api.tasks.list_tasks", side_effect=[[{"id": "x"}], []]):
+            resp = test_app.post("/api/tasks/backfill-track-fingerprints")
             assert resp.status_code == 409
 
 
@@ -1472,3 +1621,117 @@ def test_resolve_track_genre_keeps_album_canonical_when_available():
     assert result is not None
     assert result["source"] == "album"
     assert result["primary"]["slug"] == "shoegaze"
+
+
+def test_track_info_by_entity_uid_endpoint(test_app):
+    row = {
+        "entity_uid": "123e4567-e89b-12d3-a456-426614174000",
+        "storage_id": "123e4567-e89b-12d3-a456-426614174001",
+        "title": "Dine Alone",
+        "artist": "Quicksand",
+        "album": "Distant Populations",
+        "format": "flac",
+        "bitrate": 900,
+        "sample_rate": 44100,
+        "bit_depth": 16,
+        "bpm": 120.0,
+        "audio_key": "D",
+        "audio_scale": "minor",
+        "energy": 0.82,
+        "danceability": 0.44,
+        "valence": 0.55,
+        "acousticness": 0.03,
+        "instrumentalness": 0.0,
+        "loudness": -8.2,
+        "dynamic_range": 10.1,
+        "mood_json": {"aggressive": 0.9},
+        "bliss_vector": [0.1, 0.2, 0.3],
+        "lastfm_listeners": 10,
+        "lastfm_playcount": 20,
+        "popularity": 0.5,
+        "rating": 4,
+    }
+
+    with patch("crate.api.browse_media.get_track_info_cols_by_entity_uid", return_value=row):
+        resp = test_app.get("/api/tracks/by-entity/123e4567-e89b-12d3-a456-426614174000/info")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["entity_uid"] == "123e4567-e89b-12d3-a456-426614174000"
+    assert "storage_id" not in data
+    assert data["title"] == "Dine Alone"
+
+
+def test_track_info_by_storage_id_endpoint_prefers_entity_uid_lookup(test_app):
+    storage_row = {
+        "entity_uid": "123e4567-e89b-12d3-a456-426614174000",
+        "storage_id": "123e4567-e89b-12d3-a456-426614174001",
+        "title": "Dine Alone",
+        "artist": "Quicksand",
+        "album": "Distant Populations",
+        "format": "flac",
+        "bitrate": 900,
+        "sample_rate": 44100,
+        "bit_depth": 16,
+        "bpm": 120.0,
+        "audio_key": "D",
+        "audio_scale": "minor",
+        "energy": 0.82,
+        "danceability": 0.44,
+        "valence": 0.55,
+        "acousticness": 0.03,
+        "instrumentalness": 0.0,
+        "loudness": -8.2,
+        "dynamic_range": 10.1,
+        "mood_json": {"aggressive": 0.9},
+        "bliss_vector": [0.1, 0.2, 0.3],
+        "lastfm_listeners": 10,
+        "lastfm_playcount": 20,
+        "popularity": 0.5,
+        "rating": 4,
+    }
+
+    with patch("crate.api.browse_media.get_track_info_cols_by_storage_id", return_value={"entity_uid": storage_row["entity_uid"]}):
+        resp = test_app.get("/api/tracks/by-storage/123e4567-e89b-12d3-a456-426614174001/info", follow_redirects=False)
+
+    assert resp.status_code == 307
+    assert resp.headers["location"] == "/api/tracks/by-entity/123e4567-e89b-12d3-a456-426614174000/info"
+
+
+def test_track_info_by_path_endpoint(test_app):
+    row = {
+        "entity_uid": "123e4567-e89b-12d3-a456-426614174000",
+        "storage_id": "123e4567-e89b-12d3-a456-426614174001",
+        "title": "Dine Alone",
+        "artist": "Quicksand",
+        "album": "Distant Populations",
+        "format": "flac",
+        "bitrate": 900,
+        "sample_rate": 44100,
+        "bit_depth": 16,
+        "bpm": 120.0,
+        "audio_key": "D",
+        "audio_scale": "minor",
+        "energy": 0.82,
+        "danceability": 0.44,
+        "valence": 0.55,
+        "acousticness": 0.03,
+        "instrumentalness": 0.0,
+        "loudness": -8.2,
+        "dynamic_range": 10.1,
+        "mood_json": {"aggressive": 0.9},
+        "bliss_vector": [0.1, 0.2, 0.3],
+        "lastfm_listeners": 10,
+        "lastfm_playcount": 20,
+        "popularity": 0.5,
+        "rating": 4,
+    }
+
+    with patch("crate.api.browse_media.get_track_info_cols_by_path", return_value=row):
+        resp = test_app.get("/api/track-info/Quicksand/Distant%20Populations/Dine%20Alone.flac")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["entity_uid"] == "123e4567-e89b-12d3-a456-426614174000"
+    assert "storage_id" not in data
+    assert data["title"] == "Dine Alone"

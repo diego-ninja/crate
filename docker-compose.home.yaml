@@ -1,0 +1,250 @@
+networks:
+  crate:
+    name: crate
+
+services:
+  # Home-oriented core stack. Keep DATA_DIR on the internal disk and MEDIA_DIR
+  # on the external SSD when you want simple, predictable storage behavior.
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - "no-new-privileges:true"
+    networks:
+      - crate
+    environment:
+      - TZ=${TZ}
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}
+    ports:
+      - "${TRAEFIK_HTTP_PORT}:80"
+      - "${TRAEFIK_HTTPS_PORT}:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${DATA_DIR}/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ${DATA_DIR}/traefik/acme.json:/acme.json
+      - ${DATA_DIR}/traefik/conf:/conf
+      - ${DATA_DIR}/traefik/logs:/var/log/traefik
+    labels:
+      traefik.enable: true
+      traefik.http.services.traefik.loadbalancer.server.port: 80
+      traefik.http.routers.traefik-secure.rule: Host(`traefik.${DOMAIN}`)
+      traefik.http.routers.traefik-secure.entryPoints: websecure
+      traefik.http.routers.traefik-secure.tls: true
+      traefik.http.routers.traefik-secure.tls.certresolver: letsencrypt
+      traefik.http.routers.traefik-secure.service: api@internal
+
+  crate-redis:
+    image: redis:7-alpine
+    container_name: crate-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 512mb --maxmemory-policy volatile-lru
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - ${DATA_DIR}/redis:/data
+    networks:
+      - crate
+
+  crate-postgres:
+    image: pgvector/pgvector:pg15
+    container_name: crate-postgres
+    restart: unless-stopped
+    mem_limit: 1g
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.max=10000
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - track_io_timing=on
+      - -c
+      - log_min_duration_statement=1000
+      - -c
+      - log_lock_waits=on
+      - -c
+      - log_line_prefix=%m [%p] %q%u@%d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER_USER:-crate}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    environment:
+      - POSTGRES_USER=${POSTGRES_SUPERUSER_USER:-crate}
+      - POSTGRES_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-crate}
+      - POSTGRES_DB=${POSTGRES_SUPERUSER_DB:-crate}
+    volumes:
+      - ${DATA_DIR}/postgres:/var/lib/postgresql/data
+    networks:
+      - crate
+
+  crate-api:
+    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
+    build: ./app
+    container_name: crate-api
+    restart: unless-stopped
+    user: ${PUID}:${PGID}
+    group_add:
+      - "${DOCKER_GID:-988}"
+    environment:
+      - TZ=${TZ}
+      - CRATE_RUNTIME=api
+      - CRATE_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - LASTFM_APIKEY=${LASTFM_APIKEY}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
+      - FANART_API_KEY=${FANART_API_KEY:-}
+      - DOMAIN=${DOMAIN}
+      - SPOTIFY_ID=${SPOTIFY_ID}
+      - SPOTIFY_SECRET=${SPOTIFY_SECRET}
+      - SETLISTFM_API_KEY=${SETLISTFM_API_KEY}
+      - CRATE_POSTGRES_USER=${CRATE_POSTGRES_USER}
+      - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
+      - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
+      - CRATE_POSTGRES_HOST=crate-postgres
+      - POSTGRES_SUPERUSER_USER=${POSTGRES_SUPERUSER_USER:-crate}
+      - POSTGRES_SUPERUSER_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-crate}
+      - POSTGRES_SUPERUSER_DB=${POSTGRES_SUPERUSER_DB:-crate}
+      - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - REDIS_URL=redis://crate-redis:6379/0
+      - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
+      - SLSKD_API_KEY=${SLSKD_API_KEY:-}
+      - DISCOGS_CONSUMER_KEY=${DISCOGS_CONSUMER_KEY:-}
+      - DISCOGS_CONSUMER_SECRET=${DISCOGS_CONSUMER_SECRET:-}
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+    volumes:
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ${MEDIA_DIR}/music:/music:ro
+      - ${DATA_DIR}/librarian:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - crate
+    depends_on:
+      crate-postgres:
+        condition: service_healthy
+      crate-redis:
+        condition: service_healthy
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8585/api/status', timeout=5).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      traefik.enable: true
+      traefik.docker.network: crate
+      traefik.http.routers.crate-api.rule: Host(`api.${DOMAIN}`)
+      traefik.http.routers.crate-api.entryPoints: websecure
+      traefik.http.services.crate-api.loadbalancer.server.port: 8585
+      traefik.http.routers.crate-api.tls: true
+      traefik.http.routers.crate-api.tls.certresolver: letsencrypt
+    command: ["api"]
+
+  crate-worker:
+    image: ghcr.io/diego-ninja/crate-backend:${CRATE_IMAGE_TAG:-latest}
+    build: ./app
+    container_name: crate-worker
+    restart: unless-stopped
+    user: ${PUID}:${PGID}
+    environment:
+      - TZ=${TZ}
+      - CRATE_RUNTIME=worker
+      - CRATE_CONFIG=/app/config.yaml
+      - DATA_DIR=/data
+      - LASTFM_APIKEY=${LASTFM_APIKEY}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
+      - FANART_API_KEY=${FANART_API_KEY:-}
+      - DOMAIN=${DOMAIN}
+      - SPOTIFY_ID=${SPOTIFY_ID}
+      - SPOTIFY_SECRET=${SPOTIFY_SECRET}
+      - SETLISTFM_API_KEY=${SETLISTFM_API_KEY}
+      - CRATE_POSTGRES_USER=${CRATE_POSTGRES_USER}
+      - CRATE_POSTGRES_PASSWORD=${CRATE_POSTGRES_PASSWORD}
+      - CRATE_POSTGRES_DB=${CRATE_POSTGRES_DB}
+      - CRATE_POSTGRES_HOST=crate-postgres
+      - POSTGRES_SUPERUSER_USER=${POSTGRES_SUPERUSER_USER:-crate}
+      - POSTGRES_SUPERUSER_PASSWORD=${POSTGRES_SUPERUSER_PASSWORD:-crate}
+      - POSTGRES_SUPERUSER_DB=${POSTGRES_SUPERUSER_DB:-crate}
+      - JWT_SECRET=${JWT_SECRET}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - NUMBA_CACHE_DIR=/tmp/numba_cache
+      - REDIS_URL=redis://crate-redis:6379/0
+      - SLSKD_URL=${SLSKD_URL:-http://slskd:5030}
+      - SLSKD_API_KEY=${SLSKD_API_KEY:-}
+      - DISCOGS_CONSUMER_KEY=${DISCOGS_CONSUMER_KEY:-}
+      - DISCOGS_CONSUMER_SECRET=${DISCOGS_CONSUMER_SECRET:-}
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+    volumes:
+      - ./app/config.yaml:/app/config.yaml:ro
+      - ${MEDIA_DIR}/music:/music
+      - ${MEDIA_DIR}/downloads/soulseek:/downloads/soulseek
+      - ${DATA_DIR}/librarian:/data
+    networks:
+      - crate
+    depends_on:
+      crate-postgres:
+        condition: service_healthy
+      crate-redis:
+        condition: service_healthy
+    mem_limit: 4g
+    command: ["worker"]
+
+  crate-ui:
+    image: ghcr.io/diego-ninja/crate-ui:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      dockerfile: ui/Dockerfile
+    container_name: crate-ui
+    restart: unless-stopped
+    depends_on:
+      crate-api:
+        condition: service_healthy
+    networks:
+      - crate
+    labels:
+      traefik.enable: true
+      traefik.docker.network: crate
+      traefik.http.routers.admin.rule: Host(`admin.${DOMAIN}`)
+      traefik.http.routers.admin.entryPoints: websecure
+      traefik.http.services.admin.loadbalancer.server.port: 80
+      traefik.http.routers.admin.tls: true
+      traefik.http.routers.admin.tls.certresolver: letsencrypt
+
+  crate-listen:
+    image: ghcr.io/diego-ninja/crate-listen:${CRATE_IMAGE_TAG:-latest}
+    build:
+      context: ./app
+      dockerfile: listen/Dockerfile
+    container_name: crate-listen
+    restart: unless-stopped
+    depends_on:
+      crate-api:
+        condition: service_healthy
+    networks:
+      - crate
+    labels:
+      traefik.enable: true
+      traefik.docker.network: crate
+      traefik.http.routers.listen.rule: Host(`listen.${DOMAIN}`)
+      traefik.http.routers.listen.entryPoints: websecure
+      traefik.http.services.listen.loadbalancer.server.port: 80
+      traefik.http.routers.listen.tls: true
+      traefik.http.routers.listen.tls.certresolver: letsencrypt
+      traefik.http.middlewares.crate-auth.forwardAuth.address: http://crate-api:8585/api/auth/verify
+      traefik.http.middlewares.crate-auth.forwardAuth.trustForwardHeader: true
+      traefik.http.middlewares.crate-auth.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role
+      traefik.http.middlewares.crate-auth-soft.forwardAuth.address: http://crate-api:8585/api/auth/verify-soft
+      traefik.http.middlewares.crate-auth-soft.forwardAuth.trustForwardHeader: true
+      traefik.http.middlewares.crate-auth-soft.forwardAuth.authResponseHeaders: Remote-User,Remote-Name,Remote-Role

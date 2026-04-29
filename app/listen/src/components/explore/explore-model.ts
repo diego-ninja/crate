@@ -2,9 +2,11 @@ import { api } from "@/lib/api";
 import type { Track } from "@/contexts/PlayerContext";
 import type { PlaylistArtworkTrack } from "@/components/playlists/PlaylistArtwork";
 import { albumCoverApiUrl } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
 
 export interface SearchArtist {
   id?: number;
+  entity_uid?: string;
   slug?: string;
   name: string;
   album_count: number;
@@ -13,9 +15,11 @@ export interface SearchArtist {
 
 export interface SearchAlbum {
   id: number;
+  entity_uid?: string;
   slug?: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   name: string;
   year: string;
@@ -24,14 +28,16 @@ export interface SearchAlbum {
 
 export interface SearchTrack {
   id: number;
-  storage_id?: string;
+  entity_uid?: string;
   slug?: string;
   title: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   path: string;
   duration: number;
@@ -64,14 +70,16 @@ export interface SystemPlaylist {
 interface PlaylistDetailTrack {
   id?: number;
   track_id?: number;
-  track_storage_id?: string;
+  track_entity_uid?: string;
   track_path: string;
   title: string;
   artist: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
   duration: number;
 }
@@ -124,28 +132,21 @@ export async function loadSystemPlaylistTracks(playlistId: number): Promise<{
 }> {
   const data = await api<PlaylistDetailData>(`/api/curation/playlists/${playlistId}`);
   return {
-    tracks: (data.tracks || []).map((track) => ({
-      id: track.track_storage_id || track.track_path || String(track.id || track.track_id || Math.random()),
-      storageId: track.track_storage_id || undefined,
-      title: track.title || "Unknown",
-      artist: track.artist || "",
-      album: track.album || "",
-      albumCover:
-        track.artist && track.album
-          ? albumCoverApiUrl({
-              albumId: track.album_id,
-              albumSlug: track.album_slug,
-              artistName: track.artist,
-              albumName: track.album,
-            })
-          : data.cover_data_url || undefined,
-      path: track.track_path,
-      libraryTrackId: track.track_id,
-      artistId: track.artist_id,
-      artistSlug: track.artist_slug,
-      albumId: track.album_id,
-      albumSlug: track.album_slug,
-    })),
+    tracks: (data.tracks || []).map((track) =>
+      toPlayableTrack(track, {
+        cover:
+          track.artist && track.album
+            ? albumCoverApiUrl({
+                albumId: track.album_id,
+                albumEntityUid: track.album_entity_uid,
+                artistEntityUid: track.artist_entity_uid,
+                albumSlug: track.album_slug,
+                artistName: track.artist,
+                albumName: track.album,
+              })
+            : data.cover_data_url || undefined,
+      }),
+    ),
     source: {
       type: "playlist",
       name: data.name,

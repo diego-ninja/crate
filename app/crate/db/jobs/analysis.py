@@ -17,6 +17,10 @@ from crate.db.jobs.analysis_popularity import (
     update_album_popularity,
     update_track_popularity,
 )
+from crate.db.jobs.analysis_fingerprints import (
+    list_tracks_missing_audio_fingerprints,
+    store_track_audio_fingerprint,
+)
 from crate.db.jobs.analysis_status import (
     get_analysis_status,
     get_artists_needing_analysis,
@@ -42,6 +46,7 @@ __all__ = [
     "get_artists_needing_bliss",
     "get_pending_count",
     "get_tracks_needing_popularity",
+    "list_tracks_missing_audio_fingerprints",
     "mark_done",
     "mark_failed",
     "release_claims",
@@ -51,6 +56,7 @@ __all__ = [
     "store_analysis_results",
     "store_bliss_vector",
     "store_bliss_vectors",
+    "store_track_audio_fingerprint",
     "update_album_popularity",
     "update_track_popularity",
 ]

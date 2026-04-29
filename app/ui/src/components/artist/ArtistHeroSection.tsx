@@ -4,7 +4,7 @@ import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
 import { Button } from "@crate/ui/shadcn/button";
 import { CratePill } from "@crate/ui/primitives/CrateBadge";
-import { artistBackgroundApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
+import { artistArtworkApiPath, artistBackgroundApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
 import { formatCompact, formatNumber, formatSize } from "@/lib/utils";
 import {
   Calendar,
@@ -34,6 +34,7 @@ interface ArtistHeroMusicBrainz {
 interface ArtistHeroSectionProps {
   artistName: string;
   artistId?: number;
+  artistEntityUid?: string;
   artistSlug?: string;
   imageVersion?: string | null;
   letter: string;
@@ -71,6 +72,7 @@ interface ArtistHeroSectionProps {
 export function ArtistHeroSection({
   artistName,
   artistId,
+  artistEntityUid,
   artistSlug,
   imageVersion,
   letter,
@@ -104,8 +106,8 @@ export function ArtistHeroSection({
   onRepair,
   onDelete,
 }: ArtistHeroSectionProps) {
-  const backgroundUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName }, { version: imageVersion });
-  const photoUrl = artistPhotoApiUrl({ artistId, artistSlug, artistName }, { version: imageVersion });
+  const backgroundUrl = artistBackgroundApiUrl({ artistId, artistEntityUid, artistSlug, artistName }, { version: imageVersion });
+  const photoUrl = artistPhotoApiUrl({ artistId, artistEntityUid, artistSlug, artistName }, { version: imageVersion });
   const backgroundSrc = `${backgroundUrl}?v=stable-hero-bg-v2${bgCacheBust ? `&t=${bgCacheBust}` : ""}`;
   const photoSrc = `${photoUrl}?v=stable-hero-photo${photoCacheBust ? `&t=${photoCacheBust}` : ""}`;
 
@@ -142,7 +144,7 @@ export function ArtistHeroSection({
 
       {isAdmin ? (
         <ImageCropUpload
-          endpoint={artistId != null ? `/api/artwork/artists/${artistId}/upload-background` : ""}
+          endpoint={artistArtworkApiPath({ artistId, artistEntityUid }, "upload-background")}
           aspect={21 / 9}
           onUploaded={onBackgroundUploaded}
           label="Edit hero"
@@ -170,7 +172,7 @@ export function ArtistHeroSection({
             )}
             {isAdmin ? (
               <ImageCropUpload
-                endpoint={artistId != null ? `/api/artwork/artists/${artistId}/upload-photo` : ""}
+                endpoint={artistArtworkApiPath({ artistId, artistEntityUid }, "upload-photo")}
                 aspect={1}
                 onUploaded={onPhotoUploaded}
                 className="absolute bottom-2 right-2 z-20 inline-flex items-center gap-1 rounded-md border border-white/15 bg-black/60 px-2 py-1.5 text-xs font-medium text-white/75 opacity-0 shadow-lg shadow-black/30 transition-all duration-200 group-hover/photo:translate-y-0 group-hover/photo:opacity-100 hover:bg-black/80 hover:text-white"

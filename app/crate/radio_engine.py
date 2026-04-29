@@ -334,7 +334,7 @@ def _generate_batch(session: dict, count: int = _BATCH_SIZE) -> list[dict]:
 
         tracks.append({
             "track_id": track_id,
-            "storage_id": str(candidate["storage_id"]) if candidate.get("storage_id") else None,
+            "entity_uid": str(candidate["entity_uid"]) if candidate.get("entity_uid") else None,
             "title": title,
             "artist": artist,
             "album": candidate.get("album"),

@@ -37,6 +37,7 @@ def create_activity_schema(cur) -> None:
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
+            track_entity_uid UUID,
             track_path TEXT NOT NULL,
             title TEXT,
             artist TEXT,
@@ -44,8 +45,10 @@ def create_activity_schema(cur) -> None:
             played_at TIMESTAMPTZ NOT NULL
         )
     """)
+    cur.execute("ALTER TABLE play_history ADD COLUMN IF NOT EXISTS track_entity_uid UUID")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_user ON play_history(user_id, played_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_track ON play_history(track_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_play_history_track_entity_uid ON play_history(track_entity_uid)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_play_events (
@@ -53,6 +56,7 @@ def create_activity_schema(cur) -> None:
             user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             client_event_id TEXT,
             track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
+            track_entity_uid UUID,
             track_path TEXT,
             title TEXT,
             artist TEXT,
@@ -76,8 +80,10 @@ def create_activity_schema(cur) -> None:
         )
     """)
     cur.execute("ALTER TABLE user_play_events ADD COLUMN IF NOT EXISTS client_event_id TEXT")
+    cur.execute("ALTER TABLE user_play_events ADD COLUMN IF NOT EXISTS track_entity_uid UUID")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user ON user_play_events(user_id, ended_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_track ON user_play_events(track_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_track_entity_uid ON user_play_events(track_entity_uid)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_source ON user_play_events(user_id, play_source_type, ended_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_artist ON user_play_events(user_id, artist, ended_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_play_events_user_album ON user_play_events(user_id, album, ended_at DESC)")
@@ -111,6 +117,7 @@ def create_activity_schema(cur) -> None:
             stat_window TEXT NOT NULL,
             entity_key TEXT NOT NULL,
             track_id INTEGER REFERENCES library_tracks(id) ON DELETE SET NULL,
+            track_entity_uid UUID,
             track_path TEXT,
             title TEXT,
             artist TEXT,
@@ -123,7 +130,9 @@ def create_activity_schema(cur) -> None:
             PRIMARY KEY (user_id, stat_window, entity_key)
         )
     """)
+    cur.execute("ALTER TABLE user_track_stats ADD COLUMN IF NOT EXISTS track_entity_uid UUID")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_track_stats_lookup ON user_track_stats(user_id, stat_window, play_count DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_track_stats_entity_uid ON user_track_stats(track_entity_uid)")
 
     cur.execute("""
         CREATE TABLE IF NOT EXISTS user_artist_stats (

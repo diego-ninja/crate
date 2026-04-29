@@ -131,7 +131,10 @@ def get_storage_v2_status() -> dict:
                     """
                     SELECT
                         COUNT(*) AS total_artists,
-                        COUNT(*) FILTER (WHERE storage_id IS NOT NULL AND folder_name = storage_id::text) AS migrated_artists
+                        COUNT(*) FILTER (
+                            WHERE entity_uid IS NOT NULL
+                              AND folder_name = entity_uid::text
+                        ) AS migrated_artists
                     FROM library_artists
                     """
                 )
@@ -144,8 +147,8 @@ def get_storage_v2_status() -> dict:
                     SELECT
                         COUNT(*) AS total_albums,
                         COUNT(*) FILTER (
-                            WHERE storage_id IS NOT NULL
-                            AND path LIKE '%/' || storage_id::text
+                            WHERE entity_uid IS NOT NULL
+                            AND path LIKE '%/' || entity_uid::text
                         ) AS migrated_albums
                     FROM library_albums
                     """
@@ -159,8 +162,8 @@ def get_storage_v2_status() -> dict:
                     SELECT
                         COUNT(*) AS total_tracks,
                         COUNT(*) FILTER (
-                            WHERE storage_id IS NOT NULL
-                            AND filename = storage_id::text || SUBSTRING(filename FROM '\\.[^.]+$')
+                            WHERE entity_uid IS NOT NULL
+                            AND filename = entity_uid::text || SUBSTRING(filename FROM '\\.[^.]+$')
                         ) AS migrated_tracks
                     FROM library_tracks
                     """

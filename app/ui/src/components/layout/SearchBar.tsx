@@ -12,9 +12,26 @@ import {
 } from "@/lib/library-routes";
 
 interface LocalResults {
-  artists: { id?: number; slug?: string; name: string }[];
-  albums: { id?: number; slug?: string; artist: string; artist_id?: number; artist_slug?: string; name: string }[];
-  tracks: { title: string; artist: string; album: string; album_id?: number; album_slug?: string }[];
+  artists: { id?: number; entity_uid?: string; slug?: string; name: string }[];
+  albums: {
+    id?: number;
+    entity_uid?: string;
+    slug?: string;
+    artist: string;
+    artist_id?: number;
+    artist_entity_uid?: string;
+    artist_slug?: string;
+    name: string;
+  }[];
+  tracks: {
+    title: string;
+    artist: string;
+    album: string;
+    artist_entity_uid?: string;
+    album_id?: number;
+    album_entity_uid?: string;
+    album_slug?: string;
+  }[];
 }
 
 interface ResultItem {
@@ -162,7 +179,12 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
         label: artist.name,
         sublabel: "Artist",
         path: artistPagePath({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name }),
-        imageUrl: artistPhotoApiUrl({ artistId: artist.id, artistSlug: artist.slug, artistName: artist.name }),
+        imageUrl: artistPhotoApiUrl({
+          artistId: artist.id,
+          artistEntityUid: artist.entity_uid,
+          artistSlug: artist.slug,
+          artistName: artist.name,
+        }),
       });
     }
     for (const album of localResults.albums.slice(0, 4)) {
@@ -171,7 +193,14 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
         label: album.name,
         sublabel: album.artist,
         path: albumPagePath({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name }),
-        imageUrl: albumCoverApiUrl({ albumId: album.id, albumSlug: album.slug, artistName: album.artist, albumName: album.name }),
+        imageUrl: albumCoverApiUrl({
+          albumId: album.id,
+          albumEntityUid: album.entity_uid,
+          artistEntityUid: album.artist_entity_uid,
+          albumSlug: album.slug,
+          artistName: album.artist,
+          albumName: album.name,
+        }),
       });
     }
     for (const track of (localResults.tracks ?? []).slice(0, 4)) {
@@ -180,6 +209,14 @@ export function SearchBar({ inputRef, onQueryChange }: SearchBarProps) {
         label: track.title,
         sublabel: `${track.artist} — ${track.album}`,
         path: albumPagePath({ albumId: track.album_id, albumSlug: track.album_slug, artistName: track.artist, albumName: track.album }),
+        imageUrl: albumCoverApiUrl({
+          albumId: track.album_id,
+          albumEntityUid: track.album_entity_uid,
+          artistEntityUid: track.artist_entity_uid,
+          albumSlug: track.album_slug,
+          artistName: track.artist,
+          albumName: track.album,
+        }),
       });
     }
   }

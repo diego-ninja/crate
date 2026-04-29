@@ -9,7 +9,7 @@ from starlette.responses import StreamingResponse
 
 from crate.api._deps import json_dumps
 from crate.api.auth import _require_admin
-from crate.api._deps import artist_name_from_id, album_names_from_id
+from crate.api._deps import album_names_from_entity_uid, album_names_from_id, artist_name_from_entity_uid, artist_name_from_id
 from crate.api.openapi_responses import AUTH_ERROR_RESPONSES, error_response, merge_responses
 from crate.api.schemas.common import OkResponse, TaskEnqueueResponse
 from crate.api.schemas.management import (
@@ -302,6 +302,19 @@ def repair_artist_by_id(request: Request, artist_id: int):
     return repair_artist(request, artist_name)
 
 
+@router.post(
+    "/artists/by-entity/{artist_entity_uid}/repair",
+    response_model=ArtistRepairResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue repairs for a specific artist by entity UID",
+)
+def repair_artist_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return repair_artist(request, artist_name)
+
+
 # ── Artist Management ────────────────────────────────────────────
 
 def delete_artist(request: Request, name: str, body: DeleteRequest):
@@ -325,6 +338,19 @@ def delete_artist_by_id(request: Request, artist_id: int, body: DeleteRequest):
     return delete_artist(request, artist_name, body)
 
 
+@router.post(
+    "/artists/by-entity/{artist_entity_uid}/delete",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue deletion of an artist by entity UID",
+)
+def delete_artist_by_entity_uid(request: Request, artist_entity_uid: str, body: DeleteRequest):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return delete_artist(request, artist_name, body)
+
+
 def reset_enrichment(request: Request, name: str):
     _require_admin(request)
     task_id = create_task("reset_enrichment", {"artist": name})
@@ -339,6 +365,19 @@ def reset_enrichment(request: Request, name: str):
 )
 def reset_enrichment_by_id(request: Request, artist_id: int):
     artist_name = artist_name_from_id(artist_id)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return reset_enrichment(request, artist_name)
+
+
+@router.post(
+    "/artists/by-entity/{artist_entity_uid}/reset",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue enrichment reset for an artist by entity UID",
+)
+def reset_enrichment_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
     if not artist_name:
         raise HTTPException(status_code=404, detail="Artist not found")
     return reset_enrichment(request, artist_name)
@@ -365,6 +404,19 @@ def move_artist_by_id(request: Request, artist_id: int, body: MoveRequest):
     return move_artist(request, artist_name, body)
 
 
+@router.post(
+    "/artists/by-entity/{artist_entity_uid}/move",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue a move/rename for an artist by entity UID",
+)
+def move_artist_by_entity_uid(request: Request, artist_entity_uid: str, body: MoveRequest):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return move_artist(request, artist_name, body)
+
+
 # ── Album Management ────────────────────────────────────────────
 
 def delete_album(request: Request, artist: str, album: str, body: DeleteRequest):
@@ -383,6 +435,20 @@ def delete_album(request: Request, artist: str, album: str, body: DeleteRequest)
 )
 def delete_album_by_id(request: Request, album_id: int, body: DeleteRequest):
     album_names = album_names_from_id(album_id)
+    if not album_names:
+        raise HTTPException(status_code=404, detail="Album not found")
+    artist, album = album_names
+    return delete_album(request, artist, album, body)
+
+
+@router.post(
+    "/albums/by-entity/{album_entity_uid}/delete",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue deletion of an album by entity UID",
+)
+def delete_album_by_entity_uid(request: Request, album_entity_uid: str, body: DeleteRequest):
+    album_names = album_names_from_entity_uid(album_entity_uid)
     if not album_names:
         raise HTTPException(status_code=404, detail="Album not found")
     artist, album = album_names
@@ -476,6 +542,19 @@ def reanalyze_artist_by_id(request: Request, artist_id: int):
 
 
 @router.post(
+    "/artists/by-entity/{artist_entity_uid}/reanalyze",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue re-analysis for an artist by entity UID",
+)
+def reanalyze_artist_by_entity_uid(request: Request, artist_entity_uid: str):
+    artist_name = artist_name_from_entity_uid(artist_entity_uid)
+    if not artist_name:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return reanalyze_artist(request, artist_name)
+
+
+@router.post(
     "/reanalyze-album/{album_id}",
     response_model=TaskEnqueueResponse,
     responses=_MANAGEMENT_RESPONSES,
@@ -486,6 +565,24 @@ def reanalyze_album(request: Request, album_id: int):
     _require_admin(request)
     task_id = create_task("analyze_tracks", {"album_id": album_id, "what": "both"})
     return {"task_id": task_id}
+
+
+@router.post(
+    "/reanalyze-album/by-entity/{album_entity_uid}",
+    response_model=TaskEnqueueResponse,
+    responses=_MANAGEMENT_RESPONSES,
+    summary="Queue re-analysis for an album by entity UID",
+)
+def reanalyze_album_by_entity_uid(request: Request, album_entity_uid: str):
+    album_names = album_names_from_entity_uid(album_entity_uid)
+    if not album_names:
+        raise HTTPException(status_code=404, detail="Album not found")
+    from crate.db.repositories.library import get_library_album_by_entity_uid
+
+    album = get_library_album_by_entity_uid(album_entity_uid)
+    if not album:
+        raise HTTPException(status_code=404, detail="Album not found")
+    return reanalyze_album(request, album["id"])
 
 
 # ── Bliss (song similarity) ──────────────────────────────────────

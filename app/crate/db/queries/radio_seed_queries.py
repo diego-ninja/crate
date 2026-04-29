@@ -20,6 +20,7 @@ def get_track_seed(track_ref: str) -> tuple[list[float], str] | None:
                 WHERE bliss_vector IS NOT NULL
                   AND (
                     CAST(id AS text) = :track_ref
+                    OR (entity_uid IS NOT NULL AND CAST(entity_uid AS text) = :track_ref)
                     OR (storage_id IS NOT NULL AND CAST(storage_id AS text) = :track_ref)
                     OR path = :track_ref
                     OR path LIKE ('%/' || :track_ref)
@@ -27,9 +28,10 @@ def get_track_seed(track_ref: str) -> tuple[list[float], str] | None:
                 ORDER BY
                   CASE
                     WHEN CAST(id AS text) = :track_ref THEN 0
-                    WHEN storage_id IS NOT NULL AND CAST(storage_id AS text) = :track_ref THEN 1
-                    WHEN path = :track_ref THEN 2
-                    ELSE 3
+                    WHEN entity_uid IS NOT NULL AND CAST(entity_uid AS text) = :track_ref THEN 1
+                    WHEN storage_id IS NOT NULL AND CAST(storage_id AS text) = :track_ref THEN 2
+                    WHEN path = :track_ref THEN 3
+                    ELSE 4
                   END
                 LIMIT 1
                 """
@@ -61,14 +63,18 @@ def get_playlist_seed(playlist_id: int, limit: int = 30) -> tuple[list[list[floa
                     WHERE lt.bliss_vector IS NOT NULL
                       AND (
                         (pt.track_id IS NOT NULL AND lt.id = pt.track_id)
+                        OR (pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid)
+                        OR (pt.track_storage_id IS NOT NULL AND lt.storage_id = pt.track_storage_id)
                         OR lt.path = pt.track_path
                         OR lt.path LIKE ('%/' || pt.track_path)
                       )
                     ORDER BY
                       CASE
                         WHEN pt.track_id IS NOT NULL AND lt.id = pt.track_id THEN 0
-                        WHEN lt.path = pt.track_path THEN 1
-                        ELSE 2
+                        WHEN pt.track_entity_uid IS NOT NULL AND lt.entity_uid = pt.track_entity_uid THEN 1
+                        WHEN pt.track_storage_id IS NOT NULL AND lt.storage_id = pt.track_storage_id THEN 2
+                        WHEN lt.path = pt.track_path THEN 3
+                        ELSE 4
                       END
                     LIMIT 1
                 ) lt ON TRUE
@@ -99,7 +105,7 @@ def get_home_playlist_seed(user_id: int, playlist_id: str, limit: int = 30) -> t
         track_ref = (
             str(track.get("track_id"))
             if track.get("track_id") is not None
-            else str(track.get("track_storage_id") or track.get("track_path") or "")
+            else str(track.get("track_entity_uid") or track.get("track_path") or track.get("track_storage_id") or "")
         )
         if not track_ref:
             continue

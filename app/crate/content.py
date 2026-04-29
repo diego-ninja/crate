@@ -15,13 +15,35 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from pathlib import Path
 
-from crate.db.repositories.library import get_library_artist
-from crate.db.repositories.tasks import create_task_dedup
 from crate.storage_layout import resolve_artist_dir
 
 log = logging.getLogger(__name__)
+
+
+def _get_library_artist(artist_name: str):
+    from crate.db.repositories.library import get_library_artist
+
+    return get_library_artist(artist_name)
+
+
+def _create_process_new_content_task(params: dict, *, dedup_key: str) -> str | None:
+    from crate.db.repositories.tasks import create_task_dedup
+
+    return create_task_dedup("process_new_content", params, dedup_key=dedup_key)
+
+
+def process_new_content_dedup_key(artist_name: str) -> str:
+    """Return a stable task-dedup identity for ``process_new_content``.
+
+    We deduplicate by normalized artist identity rather than raw params so
+    call sites can safely vary incidental flags like ``force=True`` without
+    flooding the queue with parallel processing for the same artist.
+    """
+    normalized = re.sub(r"\s+", " ", str(artist_name or "").strip().lower())
+    return f"process_new_content:{normalized}"
 
 
 def compute_dir_hash(directory: Path) -> str:
@@ -67,7 +89,7 @@ def should_process_artist(artist_name: str, library_path: Path | str | None = No
         library_path = load_config()["library_path"]
     lib = Path(library_path)
 
-    artist_row = get_library_artist(artist_name)
+    artist_row = _get_library_artist(artist_name)
     artist_dir = resolve_artist_dir(lib, artist_row, fallback_name=artist_name, existing_only=True)
     if not artist_dir or not artist_dir.is_dir():
         return False
@@ -104,4 +126,7 @@ def queue_process_new_content_if_needed(
     params: dict = {"artist": artist_name}
     if force:
         params["force"] = True
-    return create_task_dedup("process_new_content", params)
+    return _create_process_new_content_task(
+        params,
+        dedup_key=process_new_content_dedup_key(artist_name),
+    )

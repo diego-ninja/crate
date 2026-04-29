@@ -115,6 +115,8 @@ from crate.db.repositories.user_library import (
     unlike_track,
     unsave_album,
 )
+from crate.db.repositories.user_library_shared import resolve_track_reference
+from crate.db.tx import read_scope
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -582,8 +584,8 @@ def like(request: Request, body: LikeTrackRequest):
     added = like_track(
         user["id"],
         track_id=body.track_id,
+        track_entity_uid=body.track_entity_uid,
         track_path=body.track_path,
-        track_storage_id=body.track_storage_id,
     )
     if added is None:
         raise HTTPException(status_code=404, detail="Track not found")
@@ -600,8 +602,8 @@ def unlike(request: Request, body: LikeTrackRequest):
     removed = unlike_track(
         user["id"],
         track_id=body.track_id,
+        track_entity_uid=body.track_entity_uid,
         track_path=body.track_path,
-        track_storage_id=body.track_storage_id,
     )
     return {"ok": True, "removed": removed}
 
@@ -635,7 +637,7 @@ def record(request: Request, body: RecordPlayRequest):
         artist=body.artist,
         album=body.album,
         track_id=body.track_id,
-        track_storage_id=body.track_storage_id,
+        track_entity_uid=body.track_entity_uid,
     )
     return {"ok": True}
 
@@ -653,10 +655,21 @@ def update_now_playing(request: Request, body: NowPlayingRequest):
         delete_cache(cache_key)
         return {"ok": True}
 
+    resolved_track = None
+    if any((body.track_id, body.track_entity_uid, body.track_path)):
+        with read_scope() as session:
+            resolved_track = resolve_track_reference(
+                session,
+                track_id=body.track_id,
+                track_entity_uid=body.track_entity_uid,
+                track_path=body.track_path,
+            )
+
+    track_entity_uid = body.track_entity_uid or (resolved_track or {}).get("track_entity_uid")
     payload = {
-        "track_id": body.track_id,
-        "track_storage_id": body.track_storage_id,
-        "track_path": body.track_path,
+        "track_id": body.track_id if body.track_id is not None else (resolved_track or {}).get("track_id"),
+        "track_entity_uid": track_entity_uid,
+        "track_path": body.track_path or (resolved_track or {}).get("track_path"),
         "title": body.title,
         "artist": body.artist,
         "album": body.album,
@@ -989,8 +1002,8 @@ def record_play_event_endpoint(request: Request, body: RecordPlayEventRequest):
         user["id"],
         client_event_id=body.client_event_id,
         track_id=body.track_id,
+        track_entity_uid=body.track_entity_uid,
         track_path=body.track_path,
-        track_storage_id=body.track_storage_id,
         title=body.title,
         artist=body.artist,
         album=body.album,

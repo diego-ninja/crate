@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import ForceGraph2D from "react-force-graph-2d";
 
 import { api } from "@/lib/api";
-import { artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
+import { artistActionApiPath, artistPagePath, artistPhotoApiUrl } from "@/lib/library-routes";
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -32,19 +32,21 @@ interface NetworkData {
 interface ArtistNetworkGraphProps {
   centerArtist: string;
   centerArtistId?: number;
+  centerArtistEntityUid?: string;
 }
 
-function artistNetworkApiPath(name: string, artistId?: number, depth?: number) {
-  if (artistId != null) {
+function artistNetworkApiPath(name: string, artistId?: number, artistEntityUid?: string, depth?: number) {
+  const byEntity = artistActionApiPath({ artistId, artistEntityUid }, "network");
+  if (byEntity) {
     const params = depth != null ? `?depth=${depth}` : "";
-    return `/api/artists/${artistId}/network${params}`;
+    return `${byEntity}${params}`;
   }
   const qs = new URLSearchParams({ name });
   if (depth != null) qs.set("depth", String(depth));
   return `/api/network/external-artist?${qs}`;
 }
 
-export function ArtistNetworkGraph({ centerArtist, centerArtistId }: ArtistNetworkGraphProps) {
+export function ArtistNetworkGraph({ centerArtist, centerArtistId, centerArtistEntityUid }: ArtistNetworkGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const fgRef = useRef<any>(undefined);
   const navigate = useNavigate();
@@ -62,16 +64,16 @@ export function ArtistNetworkGraph({ centerArtist, centerArtistId }: ArtistNetwo
 
     setLoading(true);
     setExpandedNodes(new Set([centerArtist]));
-    api<NetworkData>(artistNetworkApiPath(centerArtist, centerArtistId))
+    api<NetworkData>(artistNetworkApiPath(centerArtist, centerArtistId, centerArtistEntityUid))
       .then((data) => setNetworkData(data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [centerArtist, centerArtistId]);
+  }, [centerArtist, centerArtistEntityUid, centerArtistId]);
 
   function expandNode(node: NetworkNode) {
     if (expandedNodes.has(node.id)) return;
     setExpandedNodes((previous) => new Set([...previous, node.id]));
-    api<NetworkData>(artistNetworkApiPath(node.id, node.artist_id, 1))
+    api<NetworkData>(artistNetworkApiPath(node.id, node.artist_id, undefined, 1))
       .then((data) => {
         setNetworkData((previous) => {
           // Case-insensitive dedup — artist names vary in casing across sources

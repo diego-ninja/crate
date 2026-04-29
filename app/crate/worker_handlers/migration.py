@@ -26,24 +26,28 @@ from crate.db.jobs.migration import (
     update_artist_folder_name,
     update_track_path,
 )
-from crate.storage_layout import looks_like_storage_id
+from crate.storage_layout import entity_uid_for, looks_like_entity_uid
 from crate.worker_handlers import TaskHandler, is_cancelled
 
 log = logging.getLogger(__name__)
 
 
+def _uid(record: dict | None) -> str:
+    return str(entity_uid_for(record, "entity_uid") or "")
+
+
 def _is_already_migrated_artist(artist: dict) -> bool:
     """Check if an artist is fully migrated: folder_name is UUID AND all albums are in V2 paths."""
     folder = artist.get("folder_name") or ""
-    if not looks_like_storage_id(folder):
+    if not looks_like_entity_uid(folder):
         return False
     # Verify albums are actually at V2 paths
     albums = get_artist_album_paths(artist["name"], limit=5)
     if not albums:
         return True
-    # If any album path doesn't contain the artist's storage_id, not fully migrated
-    artist_sid = str(artist.get("storage_id") or "")
-    return all(artist_sid in (a.get("path") or "") for a in albums)
+    # If any album path doesn't contain the artist entity UID, not fully migrated
+    artist_uid = _uid(artist)
+    return all(artist_uid in (a.get("path") or "") for a in albums)
 
 
 def _is_already_migrated_album(album: dict) -> bool:
@@ -53,9 +57,9 @@ def _is_already_migrated_album(album: dict) -> bool:
     # V2 layout: /music/<artist_uuid>/<album_uuid>/...
     # Check if the last two directory segments are UUIDs
     if len(parts) >= 2:
-        return looks_like_storage_id(parts[-1]) and looks_like_storage_id(parts[-2])
+        return looks_like_entity_uid(parts[-1]) and looks_like_entity_uid(parts[-2])
     if len(parts) >= 1:
-        return looks_like_storage_id(parts[-1])
+        return looks_like_entity_uid(parts[-1])
     return False
 
 
@@ -70,13 +74,13 @@ def _migrate_album(
     Returns {"status": "migrated"|"skipped"|"error", ...}
     """
     album_id = album["id"]
-    album_storage_id = str(album["storage_id"])
+    album_entity_uid = _uid(album)
     old_album_path = Path(album["path"])
 
     if not old_album_path.is_dir():
         return {"status": "skipped", "reason": "source_missing", "album_id": album_id}
 
-    target_album_dir = target_artist_dir / album_storage_id
+    target_album_dir = target_artist_dir / album_entity_uid
 
     if target_album_dir.exists() and old_album_path.resolve() == target_album_dir.resolve():
         return {"status": "skipped", "reason": "already_at_target", "album_id": album_id}
@@ -91,12 +95,12 @@ def _migrate_album(
 
     for track in tracks:
         track_id = track["id"]
-        track_storage_id = str(track["storage_id"])
+        track_entity_uid = _uid(track)
         old_track_path = Path(track["path"])
 
         if not old_track_path.is_file():
             # Track file might already have been moved or doesn't exist
-            new_candidate = target_album_dir / f"{track_storage_id}{old_track_path.suffix.lower()}"
+            new_candidate = target_album_dir / f"{track_entity_uid}{old_track_path.suffix.lower()}"
             if new_candidate.is_file():
                 # Already moved — just update DB
                 update_track_path(track_id, str(new_candidate), new_candidate.name)
@@ -106,7 +110,7 @@ def _migrate_album(
             log.warning("Track file missing during migration: %s (id=%d)", old_track_path, track_id)
             continue
 
-        new_filename = f"{track_storage_id}{old_track_path.suffix.lower()}"
+        new_filename = f"{track_entity_uid}{old_track_path.suffix.lower()}"
         new_track_path = target_album_dir / new_filename
 
         try:
@@ -189,10 +193,9 @@ def _migrate_artist(
     task_id: str,
 ) -> dict:
     """Migrate all albums for a single artist to V2 layout."""
-    artist_id = artist["id"]
     artist_name = artist["name"]
-    artist_storage_id = str(artist["storage_id"])
-    target_artist_dir = lib / artist_storage_id
+    artist_entity_uid = _uid(artist)
+    target_artist_dir = lib / artist_entity_uid
 
     # Suppress the library watcher for this artist during migration
     set_cache(f"processing:{artist_name.lower()}", True, ttl=3600)
@@ -226,8 +229,8 @@ def _migrate_artist(
         else:
             albums_failed += 1
 
-    # Update artist folder_name to storage_id
-    update_artist_folder_name(artist_name, artist_storage_id)
+    # Update artist folder_name to entity UID
+    update_artist_folder_name(artist_name, artist_entity_uid)
 
     # Move artist-level files (artist.jpg, background.jpg) to new dir
     old_folder = artist.get("folder_name") or artist_name
@@ -345,7 +348,7 @@ def _handle_migrate_storage_v2(task_id: str, params: dict, config: dict) -> dict
             for item in lib.iterdir():
                 if not item.is_dir():
                     continue
-                if looks_like_storage_id(item.name):
+                if looks_like_entity_uid(item.name):
                     continue
                 # This is a legacy name-based directory
                 has_audio = any(
@@ -414,11 +417,11 @@ def _handle_verify_storage_v2(task_id: str, params: dict, config: dict) -> dict:
         if track_path.is_file():
             ok_tracks += 1
         else:
-            missing_files.append({
-                "track_id": track["id"],
-                "storage_id": str(track["storage_id"]),
-                "path": track["path"],
-                "artist": track["artist"],
+                missing_files.append({
+                    "track_id": track["id"],
+                    "entity_uid": str(track.get("entity_uid") or ""),
+                    "path": track["path"],
+                    "artist": track["artist"],
                 "title": track["title"],
             })
 

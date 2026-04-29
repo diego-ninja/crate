@@ -7,6 +7,7 @@ import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { albumCoverApiUrl } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
 
 interface PathEndpoint {
   type: string;
@@ -18,11 +19,13 @@ interface PathTrack {
   step: number;
   progress: number;
   track_id: number;
-  storage_id?: string;
+  entity_uid?: string;
   title: string;
   artist: string;
+  artist_entity_uid?: string;
   album?: string;
   album_id?: number;
+  album_entity_uid?: string;
   distance: number;
 }
 
@@ -38,16 +41,11 @@ interface PathData {
 }
 
 function mapToPlayerTrack(t: PathTrack): Track {
-  return {
-    id: t.storage_id || String(t.track_id),
-    storageId: t.storage_id,
-    title: t.title,
-    artist: t.artist,
-    album: t.album,
-    albumId: t.album_id,
-    albumCover: t.album_id ? albumCoverApiUrl({ albumId: t.album_id }) : undefined,
-    libraryTrackId: t.track_id,
-  };
+  return toPlayableTrack(t, {
+    cover: t.album_id || t.album_entity_uid
+      ? albumCoverApiUrl({ albumId: t.album_id, albumEntityUid: t.album_entity_uid, artistEntityUid: t.artist_entity_uid })
+      : undefined,
+  });
 }
 
 export function PathDetail() {
@@ -192,7 +190,11 @@ export function PathDetail() {
             <div className="flex items-center gap-3">
               {path.tracks[activeStep]!.album_id && (
                 <img
-                  src={albumCoverApiUrl({ albumId: path.tracks[activeStep]!.album_id! })}
+                  src={albumCoverApiUrl({
+                    albumId: path.tracks[activeStep]!.album_id!,
+                    albumEntityUid: path.tracks[activeStep]!.album_entity_uid,
+                    artistEntityUid: path.tracks[activeStep]!.artist_entity_uid,
+                  })}
                   alt="" className="h-10 w-10 flex-shrink-0 rounded-lg bg-white/5 object-cover shadow-md"
                 />
               )}
@@ -262,7 +264,11 @@ export function PathDetail() {
 
               {t.album_id ? (
                 <img
-                  src={albumCoverApiUrl({ albumId: t.album_id })}
+                  src={albumCoverApiUrl({
+                    albumId: t.album_id,
+                    albumEntityUid: t.album_entity_uid,
+                    artistEntityUid: t.artist_entity_uid,
+                  })}
                   alt="" className="h-10 w-10 flex-shrink-0 rounded-md bg-white/5 object-cover"
                 />
               ) : (

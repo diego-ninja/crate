@@ -18,14 +18,16 @@ import { CratePill } from "@crate/ui/primitives/CrateBadge";
 import { GenrePillRow, type GenreProfileItem } from "@/components/genres/GenrePill";
 import { ImageCropUpload } from "@/components/ImageCropUpload";
 import { api } from "@/lib/api";
-import { albumCoverApiUrl, artistBackgroundApiUrl, artistPagePath } from "@/lib/library-routes";
+import { albumActionApiPath, albumArtworkApiPath, albumCoverApiUrl, artistBackgroundApiUrl, artistPagePath } from "@/lib/library-routes";
 import { waitForTask } from "@/lib/tasks";
 import { formatDuration, formatSize } from "@/lib/utils";
 
 interface AlbumHeaderProps {
   albumId?: number;
+  albumEntityUid?: string;
   albumSlug?: string;
   artistId?: number;
+  artistEntityUid?: string;
   artistSlug?: string;
   artist: string;
   album: string;
@@ -54,8 +56,10 @@ interface AlbumHeaderProps {
 
 export function AlbumHeader({
   albumId,
+  albumEntityUid,
   albumSlug,
   artistId,
+  artistEntityUid,
   artistSlug,
   artist,
   album,
@@ -78,9 +82,9 @@ export function AlbumHeader({
   const [analyzing, setAnalyzing] = useState(false);
   const [bgLoaded, setBgLoaded] = useState(false);
 
-  const baseCoverUrl = albumCoverApiUrl({ albumId, albumSlug, artistName: artist, albumName: album });
+  const baseCoverUrl = albumCoverApiUrl({ albumId, albumEntityUid, albumSlug, artistName: artist, albumName: album });
   const coverUrl = `${baseCoverUrl}${coverCacheBust ? `${baseCoverUrl.includes("?") ? "&" : "?"}t=${coverCacheBust}` : ""}`;
-  const bgUrl = artistBackgroundApiUrl({ artistId, artistSlug, artistName: artist });
+  const bgUrl = artistBackgroundApiUrl({ artistId, artistEntityUid, artistSlug, artistName: artist });
   const resolvedDisplayName = albumTags.album || explicitDisplayName || album;
   const displayArtist = albumTags.artist || artist;
   const letter = resolvedDisplayName.charAt(0).toUpperCase();
@@ -98,7 +102,9 @@ export function AlbumHeader({
     }
     setAnalyzing(true);
     try {
-      const response = await api<{ task_id: string }>(`/api/albums/${albumId}/enrich`, "POST");
+      const endpoint = albumActionApiPath({ albumId, albumEntityUid }, "enrich");
+      if (!endpoint) throw new Error("album reference missing");
+      const response = await api<{ task_id: string }>(endpoint, "POST");
       toast.success("Enriching album...");
       const task = await waitForTask(response.task_id, 120000);
       setAnalyzing(false);
@@ -170,7 +176,7 @@ export function AlbumHeader({
             </ImageLightbox>
             {isAdmin ? (
               <ImageCropUpload
-                endpoint={albumId != null ? `/api/artwork/albums/${albumId}/upload-cover` : ""}
+                endpoint={albumArtworkApiPath({ albumId, albumEntityUid }, "upload-cover")}
                 aspect={1}
                 onUploaded={() => {
                   setCoverError(false);
@@ -266,7 +272,7 @@ export function AlbumHeader({
                 )}
               </Button>
               <Button size="sm" variant="outline" asChild>
-                <a href={albumId != null ? `/api/albums/${albumId}/download` : "#"} download>
+                <a href={albumActionApiPath({ albumId, albumEntityUid }, "download") || "#"} download>
                   <Download size={14} className="mr-1" />
                   Download
                 </a>

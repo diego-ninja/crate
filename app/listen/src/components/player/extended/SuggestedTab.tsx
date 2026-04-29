@@ -4,12 +4,13 @@ import { toast } from "sonner";
 
 import { usePlayerActions } from "@/contexts/PlayerContext";
 import { api } from "@/lib/api";
+import { hasPlayableTrackReference, toPlayableTrack } from "@/lib/playable-track";
 import { fetchTrackRadio } from "@/lib/radio";
 import { formatDuration } from "@/lib/utils";
 
 interface SimilarTrack {
   path: string;
-  track_storage_id?: string;
+  track_entity_uid?: string;
   track_id?: number;
   title: string;
   artist: string;
@@ -69,7 +70,7 @@ export function SuggestedTab() {
       setStartingRadio(true);
       const radio = await fetchTrackRadio({
         libraryTrackId: currentTrack.libraryTrackId ?? null,
-        storageId: currentTrack.storageId ?? null,
+        entityUid: currentTrack.entityUid ?? null,
         path: currentTrack.path ?? null,
         title: currentTrack.title,
       });
@@ -106,7 +107,7 @@ export function SuggestedTab() {
       <div className="mb-3 px-1">
         <button
           onClick={handleStartTrackRadio}
-          disabled={startingRadio || (!currentTrack?.libraryTrackId && !currentTrack?.storageId && !currentTrack?.path)}
+          disabled={startingRadio || !currentTrack || !hasPlayableTrackReference(currentTrack)}
           className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium text-white/80 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {startingRadio ? <Loader2 size={12} className="animate-spin" /> : <Star size={12} />}
@@ -118,15 +119,11 @@ export function SuggestedTab() {
           key={`${track.path}-${index}`}
           onClick={() =>
             play(
-              {
-                id: track.track_storage_id || track.path,
-                storageId: track.track_storage_id,
-                path: track.path,
-                title: track.title,
-                artist: track.artist,
-                album: track.album,
-                libraryTrackId: track.track_id,
-              },
+              toPlayableTrack({
+                ...track,
+                id: track.track_id ?? track.path,
+                library_track_id: track.track_id,
+              }),
               { type: "radio", name: `Similar to ${currentTrack?.title}` },
             )
           }

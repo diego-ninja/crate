@@ -52,13 +52,13 @@ async function loadTrackInfo(url: string): Promise<TrackInfo> {
 }
 
 export function useTrackInfo(
-  track: Pick<Track, "id" | "libraryTrackId" | "storageId" | "path"> | undefined,
+  track: Pick<Track, "id" | "entityUid" | "libraryTrackId" | "path"> | undefined,
   options: UseTrackInfoOptions = {},
 ): UseTrackInfoState {
   const { enabled = true } = options;
   const url = useMemo(
     () => (enabled && track ? resolveTrackInfoUrl(track) : null),
-    [enabled, track?.id, track?.libraryTrackId, track?.path, track?.storageId],
+    [enabled, track?.id, track?.entityUid, track?.libraryTrackId, track?.path],
   );
 
   const [info, setInfo] = useState<TrackInfo | null>(() => (url ? getCachedTrackInfo(url) : null));

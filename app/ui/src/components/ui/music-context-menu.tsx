@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { api } from "@/lib/api";
-import { albumPagePath, artistPagePath } from "@/lib/library-routes";
+import { albumPagePath, artistActionApiPath, artistPagePath } from "@/lib/library-routes";
 import { toast } from "sonner";
 import { Radar } from "lucide-react";
 import {
@@ -16,9 +16,11 @@ interface MusicContextMenuProps {
   type: "album" | "track" | "artist";
   artist: string;
   artistId?: number;
+  artistEntityUid?: string;
   artistSlug?: string;
   album?: string;
   albumId?: number;
+  albumEntityUid?: string;
   albumSlug?: string;
   trackId?: string;
   trackTitle?: string;
@@ -33,6 +35,7 @@ export function MusicContextMenu({
   type,
   artist,
   artistId,
+  artistEntityUid,
   artistSlug,
   album,
   albumId,
@@ -83,7 +86,9 @@ export function MusicContextMenu({
             <ContextMenuItem
               onClick={async () => {
                 try {
-                  await api(`/api/artists/${artistId}/enrich`, "POST");
+                  const endpoint = artistActionApiPath({ artistId, artistEntityUid }, "enrich");
+                  if (!endpoint) throw new Error("artist reference missing");
+                  await api(endpoint, "POST");
                   toast.success("Enrichment started");
                 } catch {
                   toast.error("Failed to start enrichment");

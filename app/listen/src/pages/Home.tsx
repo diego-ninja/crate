@@ -46,34 +46,24 @@ import { api, apiSseUrl } from "@/lib/api";
 import { fetchPlayableSetlist } from "@/lib/upcoming";
 import { fetchAlbumRadio, fetchArtistRadio, fetchHomePlaylistRadio } from "@/lib/radio";
 import { albumCoverApiUrl, artistPagePath } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
+import { toTrackRowData } from "@/lib/track-row-data";
 import { shuffleArray } from "@/lib/utils";
 
 function toPlayerTrack(item: HomeRecommendedTrack): Track {
-  return {
-    id: item.track_storage_id || item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
-    storageId: item.track_storage_id || undefined,
-    title: item.title,
-    artist: item.artist,
-    artistId: item.artist_id || undefined,
-    artistSlug: item.artist_slug || undefined,
-    album: item.album || undefined,
-    albumId: item.album_id || undefined,
-    albumSlug: item.album_slug || undefined,
-    albumCover: item.artist && item.album
-      ? albumCoverApiUrl({
-          albumId: item.album_id,
-          albumSlug: item.album_slug,
-          artistName: item.artist,
-          albumName: item.album,
-        }) || undefined
-      : undefined,
-    path: item.track_path || undefined,
-    libraryTrackId: item.track_id || undefined,
-    format: item.format || undefined,
-    bitrate: item.bitrate,
-    sampleRate: item.sample_rate,
-    bitDepth: item.bit_depth,
-  };
+  return toPlayableTrack(item, {
+    cover:
+      item.artist && item.album
+        ? albumCoverApiUrl({
+            albumId: item.album_id,
+            albumEntityUid: item.album_entity_uid,
+            artistEntityUid: item.artist_entity_uid,
+            albumSlug: item.album_slug,
+            artistName: item.artist,
+            albumName: item.album,
+          }) || undefined
+        : undefined,
+  });
 }
 
 function homePlaylistPath(playlistId: string): string {
@@ -140,20 +130,7 @@ export function Home() {
 
   const recommendedTracks = useMemo(
     () =>
-      (currentDiscovery?.recommended_tracks || []).map((item) => ({
-        id: item.track_id ?? item.track_storage_id ?? item.track_path ?? item.title,
-        storage_id: item.track_storage_id ?? undefined,
-        title: item.title,
-        artist: item.artist,
-        artist_id: item.artist_id ?? undefined,
-        artist_slug: item.artist_slug ?? undefined,
-        album: item.album ?? undefined,
-        album_id: item.album_id ?? undefined,
-        album_slug: item.album_slug ?? undefined,
-        path: item.track_path ?? undefined,
-        duration: item.duration ?? undefined,
-        library_track_id: item.track_id ?? undefined,
-      })),
+      (currentDiscovery?.recommended_tracks || []).map((item) => toTrackRowData(item)),
     [currentDiscovery?.recommended_tracks],
   );
 
@@ -313,22 +290,21 @@ export function Home() {
 
   function playReplayMix() {
     if (!replay?.items?.length) return;
-    const queue: Track[] = replay.items.map((item) => ({
-      id: item.track_storage_id || item.track_path || String(item.track_id || `${item.artist}-${item.title}`),
-      storageId: item.track_storage_id || undefined,
-      title: item.title,
-      artist: item.artist,
-      album: item.album,
-      path: item.track_path || undefined,
-      libraryTrackId: item.track_id || undefined,
-      albumCover: item.artist && item.album
-        ? albumCoverApiUrl({ albumId: item.album_id, albumSlug: item.album_slug, artistName: item.artist, albumName: item.album })
-        : undefined,
-      artistId: item.artist_id || undefined,
-      artistSlug: item.artist_slug || undefined,
-      albumId: item.album_id || undefined,
-      albumSlug: item.album_slug || undefined,
-    }));
+    const queue: Track[] = replay.items.map((item) =>
+      toPlayableTrack(item, {
+        cover:
+          item.artist && item.album
+            ? albumCoverApiUrl({
+                albumId: item.album_id,
+                albumEntityUid: item.album_entity_uid,
+                artistEntityUid: item.artist_entity_uid,
+                albumSlug: item.album_slug,
+                artistName: item.artist,
+                albumName: item.album,
+              })
+            : undefined,
+      }),
+    );
     playAll(queue, 0, { type: "playlist", name: replay.title });
   }
 

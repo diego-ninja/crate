@@ -5,10 +5,14 @@ def create_library_genres_schema(cur) -> None:
     cur.execute("""
         CREATE TABLE IF NOT EXISTS genres (
             id SERIAL PRIMARY KEY,
+            entity_uid UUID,
             name TEXT UNIQUE NOT NULL,
             slug TEXT UNIQUE NOT NULL
         )
     """)
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_genres_entity_uid ON genres(entity_uid) WHERE entity_uid IS NOT NULL"
+    )
     cur.execute("""
         CREATE TABLE IF NOT EXISTS artist_genres (
             artist_name TEXT NOT NULL REFERENCES library_artists(name) ON DELETE CASCADE,
@@ -33,6 +37,7 @@ def create_library_genres_schema(cur) -> None:
     cur.execute("""
         CREATE TABLE IF NOT EXISTS genre_taxonomy_nodes (
             id SERIAL PRIMARY KEY,
+            entity_uid UUID,
             slug TEXT UNIQUE NOT NULL,
             name TEXT UNIQUE NOT NULL,
             description TEXT NOT NULL DEFAULT '',
@@ -68,6 +73,9 @@ def create_library_genres_schema(cur) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_genre_taxonomy_alias_genre_id ON genre_taxonomy_aliases(genre_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_genre_taxonomy_edges_source ON genre_taxonomy_edges(source_genre_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_genre_taxonomy_edges_target ON genre_taxonomy_edges(target_genre_id)")
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_genre_taxonomy_nodes_entity_uid ON genre_taxonomy_nodes(entity_uid) WHERE entity_uid IS NOT NULL"
+    )
     cur.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_genre_taxonomy_nodes_musicbrainz_mbid

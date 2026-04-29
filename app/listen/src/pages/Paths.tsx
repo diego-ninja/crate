@@ -7,6 +7,7 @@ import { useApi } from "@/hooks/use-api";
 import { api } from "@/lib/api";
 import { usePlayerActions, type Track } from "@/contexts/PlayerContext";
 import { albumCoverApiUrl, artistPhotoApiUrl } from "@/lib/library-routes";
+import { toPlayableTrack } from "@/lib/playable-track";
 
 interface PathEndpoint {
   type: string;
@@ -29,11 +30,13 @@ interface PathTrack {
   step: number;
   progress: number;
   track_id: number;
-  storage_id?: string;
+  entity_uid?: string;
   title: string;
   artist: string;
+  artist_entity_uid?: string;
   album?: string;
   album_id?: number;
+  album_entity_uid?: string;
   distance: number;
 }
 
@@ -51,8 +54,10 @@ interface SearchResult {
   label: string;
   imageUrl?: string;
   artistId?: number;
+  artistEntityUid?: string;
   artistSlug?: string;
   albumId?: number;
+  albumEntityUid?: string;
 }
 
 // ── Endpoint panel ────────────────────────────────────────────────
@@ -76,9 +81,9 @@ function EndpointPanel({
     try {
       const [searchData, genresData] = await Promise.all([
         api<{
-          artists?: { id: number; name: string; slug?: string }[];
-          albums?: { id: number; name: string; artist: string; slug?: string; album_id?: number }[];
-          tracks?: { id: number; title: string; artist: string; album_id?: number; artist_id?: number; artist_slug?: string }[];
+          artists?: { id: number; entity_uid?: string; name: string; slug?: string }[];
+          albums?: { id: number; entity_uid?: string; name: string; artist: string; slug?: string; album_id?: number; artist_entity_uid?: string }[];
+          tracks?: { id: number; entity_uid?: string; title: string; artist: string; album_id?: number; album_entity_uid?: string; artist_id?: number; artist_entity_uid?: string; artist_slug?: string }[];
         }>(`/api/search?q=${encodeURIComponent(q)}&limit=5`),
         api<{ slug: string; name: string }[]>("/api/genres"),
       ]);
@@ -90,23 +95,36 @@ function EndpointPanel({
       }
       for (const a of searchData.artists?.slice(0, 3) ?? []) {
         items.push({
-          type: "artist", value: String(a.id), label: a.name,
-          artistId: a.id, artistSlug: a.slug,
-          imageUrl: artistPhotoApiUrl({ artistId: a.id, artistSlug: a.slug, artistName: a.name }),
+          type: "artist", value: a.entity_uid || String(a.id), label: a.name,
+          artistId: a.id, artistEntityUid: a.entity_uid, artistSlug: a.slug,
+          imageUrl: artistPhotoApiUrl({ artistId: a.id, artistEntityUid: a.entity_uid, artistSlug: a.slug, artistName: a.name }),
         });
       }
       for (const a of searchData.albums?.slice(0, 3) ?? []) {
         items.push({
-          type: "album", value: String(a.album_id ?? a.id ?? 0), label: `${a.name} — ${a.artist}`,
+          type: "album", value: a.entity_uid || String(a.album_id ?? a.id ?? 0), label: `${a.name} — ${a.artist}`,
           albumId: a.album_id ?? a.id,
-          imageUrl: albumCoverApiUrl({ albumId: a.album_id ?? a.id, albumName: a.name, artistName: a.artist }),
+          albumEntityUid: a.entity_uid,
+          artistEntityUid: a.artist_entity_uid,
+          imageUrl: albumCoverApiUrl({
+            albumId: a.album_id ?? a.id,
+            albumEntityUid: a.entity_uid,
+            artistEntityUid: a.artist_entity_uid,
+            albumName: a.name,
+            artistName: a.artist,
+          }),
         });
       }
       for (const t of searchData.tracks?.slice(0, 2) ?? []) {
         items.push({
-          type: "track", value: String(t.id), label: `${t.title} — ${t.artist}`,
-          albumId: t.album_id, artistId: t.artist_id,
-          imageUrl: t.album_id ? albumCoverApiUrl({ albumId: t.album_id }) : undefined,
+          type: "track", value: t.entity_uid || String(t.id), label: `${t.title} — ${t.artist}`,
+          albumId: t.album_id,
+          albumEntityUid: t.album_entity_uid,
+          artistId: t.artist_id,
+          artistEntityUid: t.artist_entity_uid,
+          imageUrl: t.album_id || t.album_entity_uid
+            ? albumCoverApiUrl({ albumId: t.album_id, albumEntityUid: t.album_entity_uid })
+            : undefined,
         });
       }
       setResults(items);
@@ -269,16 +287,13 @@ export function Paths() {
   const playPath = async (pathId: number) => {
     try {
       const detail = await api<PathDetail>(`/api/paths/${pathId}`);
-      const tracks: Track[] = detail.tracks.map((t) => ({
-        id: t.storage_id || String(t.track_id),
-        storageId: t.storage_id,
-        title: t.title,
-        artist: t.artist,
-        album: t.album,
-        albumId: t.album_id,
-        albumCover: t.album_id ? albumCoverApiUrl({ albumId: t.album_id }) : undefined,
-        libraryTrackId: t.track_id,
-      }));
+      const tracks: Track[] = detail.tracks.map((t) =>
+        toPlayableTrack(t, {
+          cover: t.album_id || t.album_entity_uid
+            ? albumCoverApiUrl({ albumId: t.album_id, albumEntityUid: t.album_entity_uid, artistEntityUid: t.artist_entity_uid })
+            : undefined,
+        }),
+      );
       playAll(tracks, 0, { type: "playlist", name: detail.name, id: detail.id });
     } catch {
       toast.error("Failed to load path");

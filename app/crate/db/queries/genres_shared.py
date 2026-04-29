@@ -60,6 +60,7 @@ def get_genre_summary_by_slug(session, slug: str) -> dict | None:
             """
             SELECT
                 g.id,
+                g.entity_uid::text AS entity_uid,
                 g.name,
                 g.slug,
                 COUNT(DISTINCT ag.artist_name)::INTEGER AS artist_count,
@@ -82,6 +83,7 @@ def get_genre_summary_by_slug(session, slug: str) -> dict | None:
             WHERE g.slug = :slug
             GROUP BY
                 g.id,
+                g.entity_uid,
                 g.name,
                 g.slug,
                 tn.slug,

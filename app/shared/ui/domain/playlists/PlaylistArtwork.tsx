@@ -3,9 +3,11 @@ import { ListMusic } from "lucide-react";
 export interface PlaylistArtworkTrack {
   artist?: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   album?: string;
   album_id?: number;
+  album_entity_uid?: string;
   album_slug?: string;
 }
 

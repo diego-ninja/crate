@@ -5,7 +5,7 @@ import { toPlayableTrack } from "@/lib/playable-track";
 
 export interface AlbumPlaybackTrack {
   id: number;
-  storage_id?: string;
+  entity_uid?: string;
   filename: string;
   format: string;
   bitrate: number | null;
@@ -19,8 +19,10 @@ export interface AlbumPlaybackTrack {
 
 export interface AlbumPlaybackData {
   id: number;
+  entity_uid?: string;
   slug?: string;
   artist_id?: number;
+  artist_entity_uid?: string;
   artist_slug?: string;
   artist: string;
   name: string;
@@ -39,6 +41,8 @@ function scoreTrackQuality(track: AlbumPlaybackTrack): number {
 export function buildAlbumPlayerTracks(data: AlbumPlaybackData): Track[] {
   const cover = albumCoverApiUrl({
     albumId: data.id,
+    albumEntityUid: data.entity_uid,
+    artistEntityUid: data.artist_entity_uid,
     albumSlug: data.slug,
     artistName: data.artist,
     albumName: data.name,
@@ -46,13 +50,15 @@ export function buildAlbumPlayerTracks(data: AlbumPlaybackData): Track[] {
 
   return data.tracks.map((track) => toPlayableTrack({
     id: track.id,
-    storage_id: track.storage_id,
+    entity_uid: track.entity_uid,
     title: track.tags.title || track.filename,
     artist: data.artist,
     artist_id: data.artist_id,
+    artist_entity_uid: data.artist_entity_uid,
     artist_slug: data.artist_slug,
     album: data.display_name || data.name,
     album_id: data.id,
+    album_entity_uid: data.entity_uid,
     album_slug: data.slug,
     path: track.path,
     library_track_id: track.id,
@@ -79,7 +85,7 @@ export function buildAlbumQualityBadges(tracks: AlbumPlaybackTrack[]): QualityBa
   return Array.from(byFormat.values())
     .map((track) => getTrackQualityBadge(toPlayableTrack({
       id: track.id,
-      storage_id: track.storage_id,
+      entity_uid: track.entity_uid,
       title: track.tags.title || track.filename,
       artist: "",
       path: track.path,

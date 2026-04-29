@@ -15,6 +15,7 @@ def get_followed_artists(user_id: int) -> list[dict]:
                     uf.artist_name,
                     uf.created_at,
                     la.id AS artist_id,
+                    la.entity_uid::text AS artist_entity_uid,
                     la.slug AS artist_slug,
                     la.album_count,
                     la.track_count,
@@ -38,9 +39,11 @@ def get_saved_albums(user_id: int) -> list[dict]:
                 SELECT
                     usa.created_at AS saved_at,
                     la.id,
+                    la.entity_uid::text AS album_entity_uid,
                     la.slug,
                     la.artist,
                     art.id AS artist_id,
+                    art.entity_uid::text AS artist_entity_uid,
                     art.slug AS artist_slug,
                     la.name,
                     la.year,
@@ -84,15 +87,17 @@ def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
                 """
                 SELECT
                     ult.track_id,
-                    lt.storage_id AS track_storage_id,
+                    lt.entity_uid AS track_entity_uid,
                     ult.created_at AS liked_at,
                     lt.path,
                     lt.title,
                     lt.artist,
                     ar.id AS artist_id,
+                    ar.entity_uid::text AS artist_entity_uid,
                     ar.slug AS artist_slug,
                     lt.album,
                     alb.id AS album_id,
+                    alb.entity_uid::text AS album_entity_uid,
                     alb.slug AS album_slug,
                     lt.duration
                 FROM user_liked_tracks ult
@@ -108,6 +113,12 @@ def get_liked_tracks(user_id: int, limit: int = 100) -> list[dict]:
         ).mappings().all()
     payload = [dict(row) for row in rows]
     for item in payload:
+        if item.get("track_entity_uid") is not None:
+            item["track_entity_uid"] = str(item["track_entity_uid"])
+        if item.get("artist_entity_uid") is not None:
+            item["artist_entity_uid"] = str(item["artist_entity_uid"])
+        if item.get("album_entity_uid") is not None:
+            item["album_entity_uid"] = str(item["album_entity_uid"])
         item["relative_path"] = relative_track_path(item.get("path") or "")
     return payload
 

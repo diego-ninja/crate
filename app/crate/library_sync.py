@@ -9,6 +9,7 @@ from pathlib import Path
 import mutagen
 
 from crate.audio import read_tags
+from crate.audio_fingerprint import compute_audio_fingerprint_with_source
 from crate.db.engine import get_engine
 from crate.db.repositories.library import (
     delete_album,
@@ -30,16 +31,11 @@ from crate.db.jobs.sync import (
     get_tracks_by_album_id,
     merge_artist_into,
 )
-from crate.storage_layout import looks_like_storage_id
+from crate.storage_layout import canonical_entity_uid, entity_uid_for, looks_like_entity_uid
 from crate.utils import COVER_NAMES, PHOTO_NAMES, normalize_key, to_datetime
 from crate.db.tx import transaction_scope
 
 log = logging.getLogger(__name__)
-
-
-def _storage_id_from_name(value: str | None) -> str | None:
-    candidate = (value or "").strip()
-    return candidate if looks_like_storage_id(candidate) else None
 
 
 def _ffprobe_duration_bitrate(filepath: Path) -> tuple[float, int]:
@@ -240,7 +236,7 @@ class LibrarySync:
         else:
             artist_name = upsert_artist({
                 "name": artist_name,
-                "storage_id": _storage_id_from_name(primary_folder),
+                "entity_uid": canonical_entity_uid(primary_folder),
                 "folder_name": primary_folder,
                 "album_count": 0,
                 "track_count": 0,
@@ -333,7 +329,7 @@ class LibrarySync:
 
         upsert_artist({
             "name": artist_name,
-            "storage_id": existing.get("storage_id") if existing else _storage_id_from_name(primary_folder),
+            "entity_uid": entity_uid_for(existing, "entity_uid") if existing else canonical_entity_uid(primary_folder),
             "folder_name": primary_folder,
             "album_count": len(all_albums),
             "track_count": db_track_count,
@@ -392,7 +388,7 @@ class LibrarySync:
         mb_albumid = None
         tag_album = None
         track_data_list = []
-        album_storage_id = _storage_id_from_name(album_dir.name)
+        album_entity_uid = canonical_entity_uid(album_dir.name)
 
         for f in audio_files:
             fpath = str(f)
@@ -422,7 +418,7 @@ class LibrarySync:
                         track_data_list.append({
                             "artist": existing["artist"],
                             "album": existing["album"],
-                            "storage_id": existing.get("storage_id"),
+                            "entity_uid": entity_uid_for(existing, "entity_uid"),
                             "filename": existing["filename"],
                             "title": existing.get("title"),
                             "track_number": existing.get("track_number"),
@@ -436,6 +432,8 @@ class LibrarySync:
                             "albumartist": existing.get("albumartist"),
                             "musicbrainz_albumid": existing.get("musicbrainz_albumid"),
                             "musicbrainz_trackid": existing.get("musicbrainz_trackid"),
+                            "audio_fingerprint": existing.get("audio_fingerprint"),
+                            "audio_fingerprint_source": existing.get("audio_fingerprint_source"),
                             "path": fpath,
                         })
                         continue
@@ -469,11 +467,14 @@ class LibrarySync:
                 mb_albumid = tags.get("musicbrainz_albumid")
             if not tag_album and tags.get("album"):
                 tag_album = tags["album"]
+            fingerprint_payload = compute_audio_fingerprint_with_source(f)
+            audio_fingerprint = fingerprint_payload[0] if fingerprint_payload else None
+            audio_fingerprint_source = fingerprint_payload[1] if fingerprint_payload else None
 
             track_data_list.append({
                 "artist": tags.get("artist") or artist_name,
                 "album": tags.get("album") or album_dir.name,
-                "storage_id": _storage_id_from_name(f.stem),
+                "entity_uid": canonical_entity_uid(f.stem),
                 "filename": f.name,
                 "title": tags.get("title"),
                 "track_number": _parse_int(tags.get("tracknumber")),
@@ -489,6 +490,8 @@ class LibrarySync:
                 "albumartist": tags.get("albumartist"),
                 "musicbrainz_albumid": tags.get("musicbrainz_albumid"),
                 "musicbrainz_trackid": tags.get("musicbrainz_trackid"),
+                "audio_fingerprint": audio_fingerprint,
+                "audio_fingerprint_source": audio_fingerprint_source,
                 "path": fpath,
             })
 
@@ -517,7 +520,7 @@ class LibrarySync:
             artist_name = upsert_artist(
                 {
                     "name": artist_name,
-                    "storage_id": _storage_id_from_name(artist_root.name),
+                    "entity_uid": canonical_entity_uid(artist_root.name),
                     "folder_name": artist_root.name,
                     "album_count": 0,
                     "track_count": 0,
@@ -532,7 +535,7 @@ class LibrarySync:
                 {
                     "artist": artist_name,
                     "name": album_name,
-                    "storage_id": album_storage_id,
+                    "entity_uid": album_entity_uid,
                     "path": str(album_dir),
                     "track_count": len(track_data_list),
                     "total_size": total_size,

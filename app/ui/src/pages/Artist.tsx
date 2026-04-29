@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { useApi } from "@/hooks/use-api";
 import {
   useTopTracks,
@@ -26,7 +26,7 @@ import {
 } from "@/components/artist/artistPageData";
 import type { ArtistData, TabKey } from "@/components/artist/artistPageTypes";
 import { api } from "@/lib/api";
-import { artistApiPath } from "@/lib/library-routes";
+import { artistActionApiPath, artistApiPath, artistManagementApiPath, artistPagePath, tidalDownloadMissingArtistApiPath, tidalMissingArtistApiPath } from "@/lib/library-routes";
 import { waitForTask } from "@/lib/tasks";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -35,10 +35,14 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 // ── Main Component ──
 
 export function Artist() {
-  const { artistId: artistIdParam } = useParams<{ artistId?: string }>();
+  const { artistId: artistIdParam, artistSlug } = useParams<{ artistId?: string; artistSlug?: string }>();
+  const navigate = useNavigate();
   const artistId = artistIdParam ? Number(artistIdParam) : undefined;
   const { data, loading } = useApi<ArtistData>(
-    artistId != null ? artistApiPath({ artistId }) : null,
+    artistApiPath({
+      artistId,
+      artistSlug,
+    }) || null,
   );
   const [sort, setSort] = useState("name");
   const [photoLoaded, setPhotoLoaded] = useState(false);
@@ -47,7 +51,7 @@ export function Artist() {
   const [bgCacheBust, setBgCacheBust] = useState("");
   const [bgLoaded, setBgLoaded] = useState(false);
   // Data fetching hooks (replace manual useEffect + useState)
-  const topTracks = useTopTracks(data?.id);
+  const topTracks = useTopTracks(data?.id, data?.entity_uid);
   const [enriching, setEnriching] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
@@ -67,10 +71,15 @@ export function Artist() {
     album_slug?: string;
   }[]>([]);
   const [bioExpanded, setBioExpanded] = useState(false);
-  const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.id);
+  const { enrichment: fetchedEnrichment, loading: enrichmentLoading } = useArtistEnrichment(data?.id, data?.entity_uid);
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { isAdmin } = useAuth();
+
+  useEffect(() => {
+    if (artistId == null || !data?.slug) return;
+    navigate(artistPagePath({ artistSlug: data.slug, artistName: data.name }), { replace: true });
+  }, [artistId, data?.slug, data?.name, navigate]);
 
   // Sync enrichment from hook (can be overridden by manual enrich)
   useEffect(() => {
@@ -79,37 +88,41 @@ export function Artist() {
 
   // Fetch upcoming shows
   useEffect(() => {
-    if (!data?.id || showsLoaded) return;
-    api<{ events: ArtistShowEvent[]; configured: boolean }>(`/api/artists/${data.id}/shows`)
+    const endpoint = artistActionApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "shows");
+    if (!endpoint || showsLoaded) return;
+    api<{ events: ArtistShowEvent[]; configured: boolean }>(endpoint)
       .then((d) => { setUpcomingShows(d.events || []); setShowsLoaded(true); })
       .catch(() => setShowsLoaded(true));
-  }, [data?.id, showsLoaded]);
+  }, [data?.entity_uid, data?.id, showsLoaded]);
 
   // Fetch all track titles for setlist matching (lazy)
   useEffect(() => {
-    if (!data?.id || activeTab !== "setlist" || allTrackTitles.length > 0) return;
-    api<{ title: string; album: string; path: string; album_id?: number; album_slug?: string }[]>(`/api/artists/${data.id}/track-titles`)
+    const endpoint = artistActionApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "track-titles");
+    if (!endpoint || activeTab !== "setlist" || allTrackTitles.length > 0) return;
+    api<{ title: string; album: string; path: string; album_id?: number; album_slug?: string }[]>(endpoint)
       .then((d) => { if (Array.isArray(d)) setAllTrackTitles(d); })
       .catch(() => {});
-  }, [data?.id, activeTab, allTrackTitles.length]);
+  }, [data?.entity_uid, data?.id, activeTab, allTrackTitles.length]);
 
   // Fetch missing albums (lazy, on discography tab)
   useEffect(() => {
-    if (!data?.id || activeTab !== "discography" || missingLoaded) return;
+    const endpoint = artistActionApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "missing");
+    if (!endpoint || activeTab !== "discography" || missingLoaded) return;
     let cancelled = false;
-    api<{ missing: { title: string; first_release_date: string; type: string }[] }>(`/api/artists/${data.id}/missing`)
+    api<{ missing: { title: string; first_release_date: string; type: string }[] }>(endpoint)
       .then((d) => { if (!cancelled) { setMissingAlbums(d.missing ?? []); setMissingLoaded(true); } })
       .catch(() => { if (!cancelled) setMissingLoaded(true); });
     return () => { cancelled = true; };
-  }, [data?.id, activeTab, missingLoaded]);
+  }, [data?.entity_uid, data?.id, activeTab, missingLoaded]);
 
   // Fetch Tidal missing albums (lazy, on discography tab)
   useEffect(() => {
-    if (!data?.id || activeTab !== "discography" || tidalMissingLoaded) return;
-    api<{ albums: typeof tidalMissing; authenticated: boolean }>(`/api/tidal/missing/artists/${data.id}`)
+    const endpoint = tidalMissingArtistApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid });
+    if (!endpoint || activeTab !== "discography" || tidalMissingLoaded) return;
+    api<{ albums: typeof tidalMissing; authenticated: boolean }>(endpoint)
       .then((d) => { if (d.albums) setTidalMissing(d.albums); setTidalMissingLoaded(true); })
       .catch(() => setTidalMissingLoaded(true));
-  }, [data?.id, activeTab, tidalMissingLoaded]);
+  }, [data?.entity_uid, data?.id, activeTab, tidalMissingLoaded]);
 
   if (loading) return <ArtistLoadingState />;
 
@@ -146,9 +159,9 @@ export function Artist() {
   async function enrichArtist() {
     setEnriching(true);
     try {
-      const artistId = data?.id;
-      if (artistId == null) throw new Error("artist id missing");
-      const res = await api<{ status: string; task_id: string }>(`/api/artists/${artistId}/enrich`, "POST");
+      const endpoint = artistActionApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "enrich");
+      if (!endpoint) throw new Error("artist reference missing");
+      const res = await api<{ status: string; task_id: string }>(endpoint, "POST");
       toast.success("Enrichment started", { description: "This may take a moment..." });
       const task = await waitForTask(res.task_id, 120000);
       setEnriching(false);
@@ -166,9 +179,9 @@ export function Artist() {
 
   async function analyzeArtist() {
     try {
-      const artistId = data?.id;
-      if (artistId == null) throw new Error("artist id missing");
-      await api(`/api/artists/${artistId}/analyze`, "POST");
+      const endpoint = artistManagementApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "reanalyze");
+      if (!endpoint) throw new Error("artist reference missing");
+      await api(endpoint, "POST");
       toast.success("Analysis queued", { description: "Background daemons will process the tracks." });
     } catch {
       toast.error("Failed to queue analysis");
@@ -177,9 +190,9 @@ export function Artist() {
 
   async function repairArtist() {
     try {
-      const artistId = data?.id;
-      if (artistId == null) throw new Error("artist id missing");
-      await api(`/api/manage/artists/${artistId}/repair`, "POST");
+      const endpoint = artistManagementApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "repair");
+      if (!endpoint) throw new Error("artist reference missing");
+      await api(endpoint, "POST");
       toast.success(`Repair started for ${issueCount} issue${issueCount !== 1 ? "s" : ""}`);
     } catch {
       toast.error("Failed to start repair");
@@ -209,9 +222,9 @@ export function Artist() {
   async function downloadMissingDiscography() {
     setDownloadingDiscog(true);
     try {
-      const artistId = data?.id;
-      if (artistId == null) throw new Error("artist id missing");
-      const res = await api<{ queued: number }>(`/api/tidal/download-missing/artists/${artistId}`, "POST", {
+      const endpoint = tidalDownloadMissingArtistApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid });
+      if (!endpoint) throw new Error("artist reference missing");
+      const res = await api<{ queued: number }>(endpoint, "POST", {
         albums: tidalMissing.map((album) => ({ url: album.url, title: album.title, cover_url: album.cover })),
       });
       toast.success(`Queued ${res.queued} albums for download`);
@@ -228,6 +241,7 @@ export function Artist() {
         <ArtistHeroSection
           artistName={artistName}
           artistId={data.id}
+          artistEntityUid={data.entity_uid}
           artistSlug={data.slug}
           imageVersion={data.updated_at}
           letter={letter}
@@ -311,6 +325,7 @@ export function Artist() {
           <ArtistDiscographySection
             artistName={artistName}
             artistId={data.id}
+            artistEntityUid={data.entity_uid}
             artistSlug={data.slug}
             albums={data.albums}
             sortedAlbums={sortedAlbums}
@@ -332,6 +347,7 @@ export function Artist() {
           <ArtistSetlistSection
             artistName={artistName}
             artistId={data.id}
+            artistEntityUid={data.entity_uid}
             setlistData={setlistData}
             allTrackTitles={allTrackTitles}
             onTrackTitlesLoaded={setAllTrackTitles}
@@ -350,12 +366,12 @@ export function Artist() {
 
         {/* ── Similar Artists Tab ── */}
         {activeTab === "similar" && (
-          <ArtistSimilarSection artistName={artistName} artistId={data.id} artists={mergedSimilar} />
+          <ArtistSimilarSection artistName={artistName} artistId={data.id} artistEntityUid={data.entity_uid} artists={mergedSimilar} />
         )}
 
         {/* ── Stats Tab ── */}
         {activeTab === "stats" && (
-          <ArtistStatsSection artistName={artistName} artistId={data.id} />
+          <ArtistStatsSection artistName={artistName} artistId={data.id} artistEntityUid={data.entity_uid} />
         )}
 
         {/* ── About Tab ── */}
@@ -385,7 +401,9 @@ export function Artist() {
         variant="destructive"
         onConfirm={async () => {
           try {
-            await api<{ task_id: string }>(`/api/manage/artists/${data!.id}/delete`, "POST", { mode: "full" });
+            const endpoint = artistManagementApiPath({ artistId: data?.id, artistEntityUid: data?.entity_uid }, "delete");
+            if (!endpoint) throw new Error("artist reference missing");
+            await api<{ task_id: string }>(endpoint, "POST", { mode: "full" });
             toast.success(`Deletion queued for ${data!.name}`, {
               description: "The worker will delete the artist in the background.",
             });

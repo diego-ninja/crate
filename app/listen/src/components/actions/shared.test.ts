@@ -16,7 +16,7 @@ describe("track action shared helpers", () => {
   it("builds a playable track preserving quality metadata and derived cover", () => {
     const track = buildTrackMenuPlayerTrack({
       id: 12,
-      storage_id: "storage-12",
+      entity_uid: "entity-12",
       title: "Track One",
       artist: "Artist",
       artist_id: 8,
@@ -32,8 +32,9 @@ describe("track action shared helpers", () => {
     });
 
     expect(track).toEqual(expect.objectContaining({
-      id: "storage-12",
-      storageId: "storage-12",
+      id: "entity-12",
+      entityUid: "entity-12",
+      storageId: undefined,
       albumCover: expect.stringContaining("/api/albums/44/cover"),
       format: "m4a",
       bitrate: 320,
@@ -44,8 +45,8 @@ describe("track action shared helpers", () => {
 
   it("converts player tracks back to menu data without losing suggestion metadata", () => {
     expect(trackToMenuData({
-      id: "storage-55",
-      storageId: "storage-55",
+      id: "entity-55",
+      entityUid: "entity-55",
       title: "Track Two",
       artist: "Artist",
       album: "Album",
@@ -56,7 +57,7 @@ describe("track action shared helpers", () => {
       sampleRate: 96000,
       bitDepth: 24,
     })).toEqual(expect.objectContaining({
-      storage_id: "storage-55",
+      entity_uid: "entity-55",
       is_suggested: true,
       suggestion_source: "playlist",
       format: "flac",
@@ -73,7 +74,7 @@ describe("track action shared helpers", () => {
       display_name: "Album",
       tracks: [{
         id: 7,
-        storage_id: "storage-7",
+        entity_uid: "entity-7",
         filename: "01-track.flac",
         path: "/music/Artist/Album/01-track.flac",
         length_sec: 211,
@@ -95,8 +96,9 @@ describe("track action shared helpers", () => {
     expect(apiMock).toHaveBeenCalledTimes(1);
     expect(tracks).toEqual([
       expect.objectContaining({
-        id: "storage-7",
-        storageId: "storage-7",
+        id: "entity-7",
+        entityUid: "entity-7",
+        storageId: undefined,
         title: "Track Seven",
         albumId: 77,
         albumSlug: "album",

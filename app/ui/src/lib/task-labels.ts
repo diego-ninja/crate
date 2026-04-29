@@ -15,6 +15,7 @@ const TASK_LABELS: Record<string, string> = {
   audio_analysis: "Audio Analysis",
   bliss_analysis: "Bliss Similarity",
   analyze_batch: "Batch Analysis",
+  backfill_track_audio_fingerprints: "Track Fingerprint Backfill",
   tidal_download: "Tidal Download",
   soulseek_download: "Soulseek Download",
   index_genres: "Genre Indexing",
